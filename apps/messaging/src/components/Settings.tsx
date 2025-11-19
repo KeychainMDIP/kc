@@ -3,8 +3,9 @@ import { Box, Flex, HStack, Text, IconButton } from "@chakra-ui/react";
 import { ColorModeButton, useColorMode } from "../contexts/ColorModeProvider";
 import { Avatar } from "@chatscope/chat-ui-kit-react";
 import {avatarDataUrl} from "../utils/utils";
-import { LuPencil } from "react-icons/lu";
+import { LuPencil, LuQrCode } from "react-icons/lu";
 import TextInputModal from "../modals/TextInputModal";
+import QRCodeModal from "../modals/QRCodeModal";
 import { useWalletContext } from "../contexts/WalletProvider";
 import { useSnackbar } from "../contexts/SnackbarProvider";
 import { useVariablesContext } from "../contexts/VariablesProvider";
@@ -23,9 +24,10 @@ export default function Settings({ isOpen }: SettingsProps) {
 
     const { keymaster } = useWalletContext();
     const { setError } = useSnackbar();
-    const { colorMode } = useColorMode()
+    const { colorMode } = useColorMode();
 
     const [renameOpen, setRenameOpen] = useState(false);
+    const [qrOpen, setQrOpen] = useState(false);
 
     if (!isOpen) {
         return null
@@ -60,7 +62,25 @@ export default function Settings({ isOpen }: SettingsProps) {
                 onClose={() => setRenameOpen(false)}
             />
 
-            <Box position="fixed" top="0" left="0" right="0" bottom="46px" zIndex={1100} bg={colorMode === "dark" ? "gray.900" : "white"} display="flex" flexDirection="column">
+            <QRCodeModal
+                isOpen={qrOpen}
+                onClose={() => setQrOpen(false)}
+                did={currentDID}
+                name={currentId}
+                userAvatar={userAvatar}
+            />
+
+            <Box
+                position="absolute"
+                top="0"
+                left="0"
+                right="0"
+                bottom="46px"
+                zIndex={1100}
+                bg={colorMode === "dark" ? "gray.900" : "white"}
+                display="flex"
+                flexDirection="column"
+            >
                 <Flex as="header" direction="column" align="center" justify="center" w="100%" px={2} py={3} gap={2} borderBottomWidth="1px" position="relative">
                     <Avatar src={userAvatar} />
                     <Text fontWeight="semibold">{currentId}</Text>
@@ -75,6 +95,17 @@ export default function Settings({ isOpen }: SettingsProps) {
                         onClick={() => setRenameOpen(true)}
                     >
                         <LuPencil />
+                    </IconButton>
+
+                    <IconButton
+                        position="absolute"
+                        top="8px"
+                        left="8px"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setQrOpen(true)}
+                    >
+                        <LuQrCode />
                     </IconButton>
                 </Flex>
 

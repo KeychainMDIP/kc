@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import BaseModal from "./BaseModal";
-import { Button, Input, Text, Field } from "@chakra-ui/react";
+import { Button, Input, Text, Field, Group } from "@chakra-ui/react";
+import { LuCamera } from "react-icons/lu"
+import { scanQrCode } from "../utils/utils";
 
 interface AddUserModalProps {
     isOpen: boolean;
@@ -41,6 +43,16 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onSubmit }
         onClose();
     }
 
+    async function scanQR() {
+        const qr = await scanQrCode();
+        if (!qr) {
+            setError("Failed to scan QR code");
+            return;
+        }
+
+        setDid(qr);
+    }
+
     return (
         <BaseModal
             isOpen={isOpen}
@@ -69,14 +81,19 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onSubmit }
 
                 <Field.Root mt={3}>
                     <Field.Label htmlFor="add-user-did">DID</Field.Label>
-                    <Input
-                        id="add-user-did"
-                        ref={didRef}
-                        type="text"
-                        value={did}
-                        onChange={(e) => setDid(e.target.value)}
-                        placeholder="did:mdip:..."
-                    />
+                    <Group attached width="100%">
+                        <Input
+                            id="add-user-did"
+                            ref={didRef}
+                            type="text"
+                            value={did}
+                            onChange={(e) => setDid(e.target.value)}
+                            placeholder="did:mdip:..."
+                        />
+                        <Button variant="outline" onClick={scanQR}>
+                            <LuCamera />
+                        </Button>
+                    </Group>
                 </Field.Root>
             </form>
         </BaseModal>

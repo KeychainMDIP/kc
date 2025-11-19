@@ -1,5 +1,5 @@
 import { createContext, ReactNode, useContext, useMemo } from "react";
-import { toaster } from "../modals/Toaster"; // <-- import your shared toaster
+import { toaster } from "../modals/Toaster";
 
 interface SnackbarContextValue {
     setError: (error: any) => void;
@@ -18,7 +18,6 @@ function extractMessage(error: any): string {
 }
 
 export function SnackbarProvider({ children }: { children: ReactNode }) {
-    // Defaults similar to your old 5s auto-hide
     const defaultDuration = 5000;
 
     const value = useMemo<SnackbarContextValue>(
@@ -48,7 +47,6 @@ export function SnackbarProvider({ children }: { children: ReactNode }) {
         []
     );
 
-    // No UI needed—Toaster handles rendering via Portal
     return (
         <SnackbarContext.Provider value={value}>
             {children}

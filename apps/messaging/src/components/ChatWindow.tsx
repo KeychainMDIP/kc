@@ -16,7 +16,7 @@ import {
     MenuPositioner,
     MenuItem,
 } from "@chakra-ui/react";
-import { LuEllipsisVertical, LuPencil, LuTrash2 } from "react-icons/lu";
+import { LuEllipsisVertical, LuQrCode, LuPencil, LuTrash2 } from "react-icons/lu";
 import { useSnackbar } from "../contexts/SnackbarProvider";
 import { useVariablesContext } from "../contexts/VariablesProvider";
 import { useWalletContext } from "../contexts/WalletProvider";
@@ -24,6 +24,7 @@ import { avatarDataUrl, formatTime } from "../utils/utils";
 import { CHAT_SUBJECT } from "../constants";
 import TextInputModal from "../modals/TextInputModal";
 import WarningModal from "../modals/WarningModal";
+import QRCodeModal from "../modals/QRCodeModal";
 
 type MessageModel = {
     message: string
@@ -56,6 +57,7 @@ const ChatWindow: React.FC = () => {
     const [renameDID, setRenameDID] = useState<string>("");
     const [renameOldName, setRenameOldName] = useState<string>("");
     const [removeOpen, setRemoveOpen] = useState<boolean>(false);
+    const [qrOpen, setQrOpen] = useState(false);
 
     const { setError } = useSnackbar();
 
@@ -74,7 +76,6 @@ const ChatWindow: React.FC = () => {
         }
         setRemoveOpen(true);
     };
-
 
     const confirmRemove = async () => {
         if (!keymaster || !activePeer) {
@@ -188,9 +189,6 @@ const ChatWindow: React.FC = () => {
         }
     }
 
-    const peerAvatar = activePeer ? avatarDataUrl(nameList[activePeer], 64) : undefined
-
-
     const conversation = useMemo(() => {
         if (!activePeer || !currentId) {
             return [] as { did: string; model: MessageModel }[]
@@ -236,6 +234,13 @@ const ChatWindow: React.FC = () => {
         return convo;
     }, [activePeer, currentId, dmailList])
 
+
+    if (!activePeer) {
+        return;
+    }
+
+    const peerAvatar = avatarDataUrl(nameList[activePeer], 64);
+
     return (
         <>
             <TextInputModal
@@ -255,6 +260,14 @@ const ChatWindow: React.FC = () => {
                 warningText={`This will remove "${activePeer}" from your contacts.`}
                 onSubmit={confirmRemove}
                 onClose={() => setRemoveOpen(false)}
+            />
+
+            <QRCodeModal
+                isOpen={qrOpen}
+                onClose={() => setQrOpen(false)}
+                did={nameList[activePeer]}
+                name={activePeer}
+                userAvatar={peerAvatar}
             />
 
             <ChatContainer style={{ height: "100%" }}>
@@ -280,6 +293,10 @@ const ChatWindow: React.FC = () => {
                                         <MenuItem value="rename" onSelect={onRename}>
                                             <LuPencil style={{ marginRight: 8 }} />
                                             Rename
+                                        </MenuItem>
+                                        <MenuItem value="export" onSelect={() => setQrOpen(true)}>
+                                            <LuQrCode style={{ marginRight: 8 }} />
+                                            Export
                                         </MenuItem>
                                         <MenuItem value="delete" onSelect={onRemove}>
                                             <LuTrash2 style={{ marginRight: 8 }} />

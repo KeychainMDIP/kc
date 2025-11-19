@@ -5,6 +5,7 @@ import TextInputModal from "./modals/TextInputModal";
 import { useSnackbar } from "./contexts/SnackbarProvider";
 import HomePage from "./components/HomePage";
 import ChatWindow from "./components/ChatWindow";
+import { useSafeArea } from "./contexts/SafeAreaContext";
 
 function BrowserContent() {
     const {
@@ -19,6 +20,7 @@ function BrowserContent() {
     } = useWalletContext();
 
     const { setError, setSuccess } = useSnackbar();
+    const insets = useSafeArea();
 
     const [isWelcomeOpen, setIsWelcomeOpen] = useState(false);
 
@@ -59,7 +61,15 @@ function BrowserContent() {
     };
 
     return (
-        <div style={{ position: "relative", height: "100vh" }}>
+        <div
+            style={{
+                position: "absolute",
+                top: insets.top,
+                bottom: insets.bottom,
+                left: insets.left,
+                right: insets.right,
+                overflow: "hidden"
+            }}>
             <TextInputModal
                 isOpen={isWelcomeOpen}
                 title="Welcome to MDIP Messaging"
