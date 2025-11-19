@@ -158,11 +158,10 @@ export default class Keymaster implements KeymasterInterface {
                 return;
             }
 
-            const reenc = isV1Decrypted(decrypted) ? await this.encryptWalletForStorage(decrypted) : decrypted;
-
+            const reenc = await this.encryptWalletForStorage(decrypted);
             Object.assign(stored as WalletEncFile, reenc);
 
-            this._walletCache = isV1WithEnc(decrypted) ? await this.decryptWalletFromStorage(decrypted) : decrypted;
+            this._walletCache = decrypted;
         });
     }
 
