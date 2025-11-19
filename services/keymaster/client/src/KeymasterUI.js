@@ -1736,14 +1736,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
                     return;
                 }
 
-                let backupMnemonic;
-                try {
-                    backupMnemonic = await keymaster.decryptMnemonic();
-                    await keymaster.backupWallet();
-                } catch {
-                    window.alert('Upload rejected: failed to backup existing wallet.');
-                    return;
-                }
+                const backupWallet = await keymaster.exportEncryptedWallet();
 
                 try {
                     await keymaster.saveWallet(wallet, true);
@@ -1751,8 +1744,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
                     refreshAll();
                 } catch (e) {
                     try {
-                        await keymaster.newWallet(backupMnemonic, true);
-                        await keymaster.recoverWallet();
+                        await keymaster.saveWallet(backupWallet, true);
                     } catch {}
                     window.alert('Upload rejected: the server could not decrypt the wallet with its configured passphrase.');
                 }
