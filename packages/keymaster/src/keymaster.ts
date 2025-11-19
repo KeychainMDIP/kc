@@ -546,6 +546,7 @@ export default class Keymaster implements KeymasterInterface {
                     delete current[k as keyof StoredWallet];
                 }
                 wallet = await this.upgradeWallet(wallet);
+                wallet = isV1WithEnc(wallet) ? await this.decryptWalletFromStorage(wallet) : wallet;
                 Object.assign(current, wallet);
             });
 
