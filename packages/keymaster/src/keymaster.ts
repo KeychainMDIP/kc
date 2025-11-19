@@ -464,8 +464,12 @@ export default class Keymaster implements KeymasterInterface {
         return await this.gatekeeper.updateDID(signed);
     }
 
-    async backupWallet(registry = this.defaultRegistry): Promise<string> {
-        const wallet = await this.loadWallet();
+    async backupWallet(registry = this.defaultRegistry, wallet?: WalletFile): Promise<string> {
+
+        if (!wallet) {
+            wallet = await this.loadWallet();
+        }
+
         const keypair = await this.hdKeyPair();
         const seedBank = await this.resolveSeedBank();
         const msg = JSON.stringify(wallet);
@@ -542,11 +546,20 @@ export default class Keymaster implements KeymasterInterface {
             }
 
             await this.mutateWallet(async (current) => {
+                // Clear all existing properties from the current wallet
+                // This ensures a clean slate before restoring the recovered wallet
                 for (const k in current) {
                     delete current[k as keyof StoredWallet];
                 }
+
+                // Upgrade the recovered wallet to the latest version if needed
                 wallet = await this.upgradeWallet(wallet);
+
+                // Decrypt the wallet if needed
                 wallet = isV1WithEnc(wallet) ? await this.decryptWalletFromStorage(wallet) : wallet;
+
+                // Copy all properties from the recovered wallet into the cleared current wallet
+                // This effectively replaces the current wallet with the recovered one
                 Object.assign(current, wallet);
             });
 

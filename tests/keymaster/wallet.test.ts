@@ -36,6 +36,30 @@ const MOCK_WALLET_V0_UNENCRYPTED: WalletFile = {
     "ids": {}
 }
 
+const MOCK_WALLET_V0_WITH_IDS: WalletFile = {
+    "seed": {
+        "mnemonic": "WLWbs2iHBobOaKVJXViqefiTYayURf-_6gh_ndflhTACKYG8WKn8WWsQHXNiyNYjU9sfM9kOce8fyAyKjUERgdjnZv2_y6MKO9QsnQMd4XUZceKSa22QGdzBSBFOZ13Odzj9fVd4W-bfvgSZuJJqMWwNhw",
+        "hdkey": {
+            "xpriv": "xprv9s21ZrQH143K2v1nGQ7a6WnEH9VQv6AT7FrxSPGPfSuvgz1mxGsazcTKNk58oRWVpB2MqgaRBPXevSuRbtUziXeQT2ZYmCXnUe6JRHomHrn",
+            "xpub": "xpub661MyMwAqRbcFQ6FNReaTeixqBKuKYtJUUnZEmg1DnSuZnLvVpBqYQmoE31V13nDfVQ8kMkfPKkMk1oWw77jUjXZJT22jH5dpRTvE8M84m9"
+        }
+    },
+    "counter": 2,
+    "ids": {
+        "id_1": {
+            "did": "did:test:z3v8AuakAd5R7WeGZUin2TtsqyxJPxouLfMEbpn5CmaNXChWq7r",
+            "account": 0,
+            "index": 0
+        },
+        "id_2": {
+            "did": "did:test:z3v8AuaiAYJ263LLYdApaUmGjy8Dnhx46LU1YDUvGHAcj9Ykgxg",
+            "account": 1,
+            "index": 0
+        }
+    },
+    "current": "id_2"
+}
+
 const MOCK_WALLET_V0_ENCRYPTED = {
     "salt": "SHUIyrheMkaGv7uyV+6ZHw==",
     "iv": "nW4a05eR2rxHY0T7",
@@ -599,6 +623,19 @@ describe('recoverWallet', () => {
                 ids: wallet.ids
             })
         );
+    });
+
+    it('should recover v0 wallet from seed bank', async () => {
+        await keymaster.saveWallet(MOCK_WALLET_V0_WITH_IDS);
+        const mnemonic = await keymaster.decryptMnemonic();
+        await keymaster.backupWallet(undefined, MOCK_WALLET_V0_WITH_IDS);
+
+        // Recover wallet from mnemonic
+        await keymaster.newWallet(mnemonic, true);
+        const recovered = await keymaster.recoverWallet();
+
+        expect(recovered).toBeDefined();
+        expect(recovered.ids).toStrictEqual(MOCK_WALLET_V0_WITH_IDS.ids);
     });
 
     it('should recover wallet from backup DID', async () => {
