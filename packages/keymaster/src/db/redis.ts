@@ -45,7 +45,7 @@ export default class WalletRedis extends AbstractBase {
         return true;
     }
 
-    async loadWallet(): Promise<StoredWallet> {
+    async loadWallet(): Promise<StoredWallet | null> {
         if (!this.redis) {
             throw new Error('Redis is not connected. Call connect() first or use WalletRedis.create().')
         }

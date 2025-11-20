@@ -61,7 +61,7 @@ export default class WalletSQLite extends AbstractBase {
         return true;
     }
 
-    async loadWallet(): Promise<StoredWallet> {
+    async loadWallet(): Promise<StoredWallet | null> {
         await this.connect();
 
         if (!this.db) {

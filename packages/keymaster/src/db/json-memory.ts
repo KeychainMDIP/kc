@@ -12,7 +12,7 @@ export default class WalletJsonMemory extends AbstractBase {
         return true;
     }
 
-    async loadWallet(): Promise<StoredWallet> {
+    async loadWallet(): Promise<StoredWallet | null> {
         if (!this.walletCache) {
             return null;
         }

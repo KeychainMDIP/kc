@@ -1,7 +1,18 @@
 #!/usr/bin/env expect
 
+spawn bash kc new-wallet
+expect {
+    -re {"version"\s*:\s*1} {
+        send_user "\n✅ Wallet Reset Complete!\n"
+    }
+    timeout {
+        send_user "\n❌ Wallet Reset Timeout.\n";
+        exit 1
+    }
+}
+
 # Start the CLI program you want to test
-spawn bash kc create-id "qa" local
+spawn bash kc create-id -r local "qa"
 
 # Wait for the output and check if 'qa' is present
 expect {
@@ -76,17 +87,5 @@ foreach {key val} $argv {
 
         # Print result
         puts "Resetted Redis!"
-    }
-}
-
-spawn bash kc create-wallet
-expect {
-    "true" {
-        send_user "\n✅ Wallet Reset Complete!\n"
-        exit 0
-    }
-    timeout {
-        send_user "\n❌ Wallet Reset Failed!.\n"
-        exit 1
     }
 }

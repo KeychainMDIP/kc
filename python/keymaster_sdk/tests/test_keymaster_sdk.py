@@ -3,6 +3,8 @@ from datetime import datetime, timedelta, timezone
 import random
 import string
 import base64
+from unittest.mock import ANY
+from copy import deepcopy
 
 # Test vars
 expires = datetime.now(timezone.utc) + timedelta(minutes=1)
@@ -178,9 +180,10 @@ def test_accept_remove_revoke_credential():
 def test_wallet():
     wallet = keymaster.load_wallet()
     assert "seed" in wallet, "seed not present in wallet"
-    assert "mnemonic" in wallet["seed"], "mnemonic not present in wallet"
-    assert "hdkey" in wallet["seed"], "hdkey not present in wallet"
-    assert "xpriv" in wallet["seed"]["hdkey"], "xpriv not present in wallet"
+    assert "mnemonicEnc" in wallet["seed"], "mnemonicEnc not present in wallet"
+    assert "data" in wallet["seed"]["mnemonicEnc"], "data not present in mnemonicEnc"
+    assert "iv" in wallet["seed"]["mnemonicEnc"], "iv not present in mnemonicEnc"
+    assert "salt" in wallet["seed"]["mnemonicEnc"], "salt not present in mnemonicEnc"
 
     response = keymaster.save_wallet(wallet)
     assert_equal(response, True)
@@ -189,14 +192,20 @@ def test_wallet():
     doc = keymaster.resolve_did(did)
     assert_equal(doc["didDocument"]["id"], did)
 
-    mnemonic = keymaster.decrypt_mnemonic()
-    assert_equal(len(mnemonic.split()), 12)
+    mnemonic1 = keymaster.decrypt_mnemonic()
+    assert_equal(len(mnemonic1.split()), 12)
 
-    new_wallet = keymaster.new_wallet(mnemonic, True)
-    assert_equal(wallet["seed"]["hdkey"]["xpriv"], new_wallet["seed"]["hdkey"]["xpriv"])
+    new_wallet = keymaster.new_wallet(mnemonic1, True)
+
+    mnemonic2 = keymaster.decrypt_mnemonic()
+    assert_equal(mnemonic1, mnemonic2)
 
     recovered = keymaster.recover_wallet()
-    assert_equal(recovered, wallet)
+
+    expected = deepcopy(wallet)
+    expected["seed"]["mnemonicEnc"] = ANY
+
+    assert_equal(expected, recovered)
 
     response = keymaster.check_wallet()
     assert "checked" in response, "checked not present in check_wallet response"

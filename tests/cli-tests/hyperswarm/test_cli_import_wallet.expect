@@ -3,6 +3,17 @@
 # Set timeout for commands
 set timeout 10
 
+spawn bash kc new-wallet
+expect {
+    -re {"version"\s*:\s*1} {
+        send_user "\n✅ Wallet Reset Complete!\n"
+    }
+    timeout {
+        send_user "\n❌ Wallet Reset Timeout.\n";
+        exit 1
+    }
+}
+
 # Start the CLI program you want to test
 spawn bash kc import-wallet "borrow submit turtle wrist behind announce leaf soccer juice choice oven above"
 
@@ -32,11 +43,11 @@ proc validate_wallet_output {output} {
 
     # Define exact required keys
     set required_keys [list \
-        "seed" \
-        "mnemonic" \
-        "hdkey" \
-        "xpriv" \
-        "xpub" \
+        "version" \
+        "mnemonicEnc" \
+        "salt" \
+        "iv" \
+        "data" \
         "counter" \
         "ids" \
     ]
@@ -137,16 +148,5 @@ foreach {key val} $argv {
 
         # Print result
         puts "Resetted Redis!"
-    }
-}
-
-spawn bash kc create-wallet
-expect {
-    "true" {
-        send_user "\n✅ Wallet Reset Complete!\n"
-    }
-    timeout {
-        send_user "\n❌ Wallet Reset Failed!.\n"
-        exit 1
     }
 }

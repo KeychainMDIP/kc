@@ -44,15 +44,24 @@ import {
     ViewPollResult,
     WalletBase,
     WalletFile,
+    WalletEncFile,
     SearchEngine,
-} from './types.js';
+    Seed,
+} from '@mdip/keymaster/types';
+import {
+    isV1WithEnc,
+    isV1Decrypted,
+    isLegacyV0,
+    isEncryptedWallet
+} from './db/typeGuards.js';
 import {
     Cipher,
     EcdsaJwkPair,
     EcdsaJwkPrivate,
-    EcdsaJwkPublic
+    EcdsaJwkPublic,
 } from '@mdip/cipher/types';
 import { isValidDID } from '@mdip/ipfs/utils';
+import { decMnemonic, encMnemonic } from "./encryption.js";
 
 const DefaultSchema = {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -85,6 +94,7 @@ export enum NoticeTags {
 }
 
 export default class Keymaster implements KeymasterInterface {
+    private readonly passphrase: string;
     private gatekeeper: GatekeeperInterface;
     private db: WalletBase;
     private cipher: Cipher;
@@ -93,6 +103,8 @@ export default class Keymaster implements KeymasterInterface {
     private readonly ephemeralRegistry: string;
     private readonly maxNameLength: number;
     private readonly maxDataLength: number;
+    private _walletCache?: WalletFile;
+    private _hdkeyCache?: any;
 
     constructor(options: KeymasterOptions) {
         if (!options || !options.gatekeeper || !options.gatekeeper.createDID) {
@@ -107,7 +119,11 @@ export default class Keymaster implements KeymasterInterface {
         if (options.search && !options.search.search) {
             throw new InvalidParameterError('options.search');
         }
+        if (!options.passphrase) {
+            throw new InvalidParameterError('options.passphrase');
+        }
 
+        this.passphrase = options.passphrase;
         this.gatekeeper = options.gatekeeper;
         this.db = options.wallet;
         this.cipher = options.cipher;
@@ -126,75 +142,82 @@ export default class Keymaster implements KeymasterInterface {
     private async mutateWallet(
         mutator: (wallet: WalletFile) => void | Promise<void>
     ): Promise<void> {
-        await this.loadWallet(); // Create wallet if it doesn't exist
-        await this.db.updateWallet(async (stored) => {
-            const wallet = stored as WalletFile;
-            await mutator(wallet);
+        // Create wallet if none and make sure _walletCache is set
+        if (!this._walletCache) {
+            await this.loadWallet();
+        }
+
+        await this.db.updateWallet(async (stored: StoredWallet) => {
+            const decrypted = this._walletCache!;
+
+            const before = JSON.stringify(decrypted);
+            await mutator(decrypted);
+            const after = JSON.stringify(decrypted);
+
+            if (before === after) {
+                return;
+            }
+
+            const reenc = await this.encryptWalletForStorage(decrypted);
+            Object.assign(stored as WalletEncFile, reenc);
+
+            this._walletCache = decrypted;
         });
     }
 
     async loadWallet(): Promise<WalletFile> {
-        let wallet = await this.db.loadWallet();
-
-        if (!wallet) {
-            wallet = await this.newWallet();
+        if (this._walletCache) {
+            return this._walletCache;
         }
 
-        if ('salt' in wallet) {
-            throw new KeymasterError("Wallet is encrypted");
+        let stored = await this.db.loadWallet() as WalletFile | null;
+
+        if (!stored) {
+            stored = await this.newWallet();
         }
 
-        if (!wallet.seed) {
-            throw new KeymasterError("Wallet is corrupted");
-        }
-
-        return wallet;
+        const upgraded: WalletFile = await this.upgradeWallet(stored);
+        this._walletCache = await this.decryptWallet(upgraded);
+        return this._walletCache;
     }
 
     async saveWallet(
         wallet: StoredWallet,
         overwrite = true
     ): Promise<boolean> {
-        // TBD validate wallet before saving
-        return this.db.saveWallet(wallet, overwrite);
+        let upgraded: WalletFile = await this.upgradeWallet(wallet);
+        let toStore: WalletEncFile = await this.encryptWallet(upgraded);
+
+        const ok = await this.db.saveWallet(toStore, overwrite);
+        if (ok) {
+            this._walletCache = await this.decryptWalletFromStorage(toStore);
+        }
+        return ok;
     }
 
     async newWallet(
         mnemonic?: string,
         overwrite = false
     ): Promise<WalletFile> {
-        let wallet: WalletFile;
-
         try {
             if (!mnemonic) {
                 mnemonic = this.cipher.generateMnemonic();
             }
-            const hdkey = this.cipher.generateHDKey(mnemonic);
-            const keypair = this.cipher.generateJwk(hdkey.privateKey!);
-            const backup = this.cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, mnemonic);
 
-            const keys = hdkey.toJSON();
-            if (!keys.xpub || !keys.xpriv) {
-                throw new KeymasterError('No xpub or xpriv found');
-            }
-
-            wallet = {
-                seed: {
-                    mnemonic: backup,
-                    hdkey: {
-                        xpriv: keys.xpriv,
-                        xpub: keys.xpub
-                    },
-                },
-                counter: 0,
-                ids: {},
-            }
-        }
-        catch (error) {
+            this._hdkeyCache = this.cipher.generateHDKey(mnemonic);
+        } catch (error) {
             throw new InvalidParameterError('mnemonic');
         }
 
-        const ok = await this.db.saveWallet(wallet, overwrite)
+        const mnemonicEnc = await encMnemonic(mnemonic, this.passphrase);
+        const wallet: WalletFile = {
+            version: 1,
+            seed: { mnemonicEnc },
+            counter: 0,
+            ids: {}
+        };
+
+        const ok = await this.saveWallet(wallet, overwrite)
         if (!ok) {
             throw new KeymasterError('save wallet failed');
         }
@@ -204,9 +227,11 @@ export default class Keymaster implements KeymasterInterface {
 
     async decryptMnemonic(): Promise<string> {
         const wallet = await this.loadWallet();
-        const keypair = await this.hdKeyPair();
+        return this.getMnemonicForDerivation(wallet);
+    }
 
-        return this.cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, wallet.seed!.mnemonic);
+    async getMnemonicForDerivation(wallet: WalletFile): Promise<string> {
+        return decMnemonic(wallet.seed.mnemonicEnc!, this.passphrase!);
     }
 
     async checkWallet(): Promise<CheckWalletResult> {
@@ -439,8 +464,12 @@ export default class Keymaster implements KeymasterInterface {
         return await this.gatekeeper.updateDID(signed);
     }
 
-    async backupWallet(registry = this.defaultRegistry): Promise<string> {
-        const wallet = await this.loadWallet();
+    async backupWallet(registry = this.defaultRegistry, wallet?: WalletFile): Promise<string> {
+
+        if (!wallet) {
+            wallet = await this.loadWallet();
+        }
+
         const keypair = await this.hdKeyPair();
         const seedBank = await this.resolveSeedBank();
         const msg = JSON.stringify(wallet);
@@ -508,12 +537,29 @@ export default class Keymaster implements KeymasterInterface {
             }
 
             const backup = this.cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, castData.backup);
-            const wallet = JSON.parse(backup);
+            let wallet = JSON.parse(backup);
 
-            await this.mutateWallet((current) => {
+            if (isV1Decrypted(wallet)) {
+                const mnemonic = await this.decryptMnemonic();
+                // Backup might have a different mnemonic passphase so re-encrypt
+                wallet.seed.mnemonicEnc = await encMnemonic(mnemonic, this.passphrase);
+            }
+
+            await this.mutateWallet(async (current) => {
+                // Clear all existing properties from the current wallet
+                // This ensures a clean slate before restoring the recovered wallet
                 for (const k in current) {
                     delete current[k as keyof StoredWallet];
                 }
+
+                // Upgrade the recovered wallet to the latest version if needed
+                wallet = await this.upgradeWallet(wallet);
+
+                // Decrypt the wallet if needed
+                wallet = isV1WithEnc(wallet) ? await this.decryptWalletFromStorage(wallet) : wallet;
+
+                // Copy all properties from the recovered wallet into the cleared current wallet
+                // This effectively replaces the current wallet with the recovered one
                 Object.assign(current, wallet);
             });
 
@@ -595,8 +641,7 @@ export default class Keymaster implements KeymasterInterface {
 
     async hdKeyPair(): Promise<EcdsaJwkPair> {
         const wallet = await this.loadWallet();
-        const hdkey = this.cipher.generateHDKeyJSON(wallet.seed!.hdkey);
-
+        const hdkey = await this.getHDKeyFromCacheOrMnemonic(wallet);
         return this.cipher.generateJwk(hdkey.privateKey!);
     }
 
@@ -619,7 +664,7 @@ export default class Keymaster implements KeymasterInterface {
     async fetchKeyPair(name?: string): Promise<EcdsaJwkPair | null> {
         const wallet = await this.loadWallet();
         const id = await this.fetchIdInfo(name);
-        const hdkey = this.cipher.generateHDKeyJSON(wallet.seed!.hdkey);
+        const hdkey = await this.getHDKeyFromCacheOrMnemonic(wallet);
         const doc = await this.resolveDID(id.did, { confirm: true });
         const confirmedPublicKeyJwk = this.getPublicKeyJwk(doc);
 
@@ -877,8 +922,8 @@ export default class Keymaster implements KeymasterInterface {
         return await this.createAsset({ encrypted }, options);
     }
 
-    private decryptWithDerivedKeys(wallet: WalletFile, id: IDInfo, senderPublicJwk: EcdsaJwkPublic, ciphertext: string): string {
-        const hdkey = this.cipher.generateHDKeyJSON(wallet.seed!.hdkey);
+    private async decryptWithDerivedKeys(wallet: WalletFile, id: IDInfo, senderPublicJwk: EcdsaJwkPublic, ciphertext: string): Promise<string> {
+        const hdkey = await this.getHDKeyFromCacheOrMnemonic(wallet);
 
         // Try all private keys for this ID, starting with the most recent and working backward
         let index = id.index;
@@ -917,7 +962,7 @@ export default class Keymaster implements KeymasterInterface {
         const senderPublicJwk = this.getPublicKeyJwk(doc);
 
         const ciphertext = (crypt.sender === id.did && crypt.cipher_sender) ? crypt.cipher_sender : crypt.cipher_receiver;
-        return this.decryptWithDerivedKeys(wallet, id, senderPublicJwk, ciphertext!);
+        return await this.decryptWithDerivedKeys(wallet, id, senderPublicJwk, ciphertext!);
     }
 
     async encryptJSON(
@@ -1287,7 +1332,7 @@ export default class Keymaster implements KeymasterInterface {
             const account = wallet.counter;
             const index = 0;
 
-            const hdkey = this.cipher.generateHDKeyJSON(wallet.seed!.hdkey);
+            const hdkey = await this.getHDKeyFromCacheOrMnemonic(wallet);
             const path = `m/44'/0'/${account}'/0/${index}`;
             const didkey = hdkey.derive(path);
             const keypair = this.cipher.generateJwk(didkey.privateKey!);
@@ -1438,7 +1483,7 @@ export default class Keymaster implements KeymasterInterface {
             const id = wallet.ids[wallet.current!];
             const nextIndex = id.index + 1;
 
-            const hdkey = this.cipher.generateHDKeyJSON(wallet.seed!.hdkey);
+            const hdkey = await this.getHDKeyFromCacheOrMnemonic(wallet);
             const path = `m/44'/0'/${id.account}'/0/${nextIndex}`;
             const didkey = hdkey.derive(path);
             const keypair = this.cipher.generateJwk(didkey.privateKey!);
@@ -2759,13 +2804,13 @@ export default class Keymaster implements KeymasterInterface {
             throw new KeymasterError('No access to group vault');
         }
 
-        const privKeyJSON = this.decryptWithDerivedKeys(wallet, id, groupVault.publicJwk, myVaultKey);
+        const privKeyJSON = await this.decryptWithDerivedKeys(wallet, id, groupVault.publicJwk, myVaultKey);
         const privateJwk = JSON.parse(privKeyJSON) as EcdsaJwkPrivate;
 
         let config: GroupVaultOptions = {};
         let isOwner = false;
         try {
-            const configJSON = this.decryptWithDerivedKeys(wallet, id, groupVault.publicJwk, groupVault.config);
+            const configJSON = await this.decryptWithDerivedKeys(wallet, id, groupVault.publicJwk, groupVault.config);
             config = JSON.parse(configJSON);
             isOwner = true;
         }
@@ -2777,7 +2822,7 @@ export default class Keymaster implements KeymasterInterface {
 
         if (config.secretMembers) {
             try {
-                const membersJSON = this.decryptWithDerivedKeys(wallet, id, groupVault.publicJwk, groupVault.members);
+                const membersJSON = await this.decryptWithDerivedKeys(wallet, id, groupVault.publicJwk, groupVault.members);
                 members = JSON.parse(membersJSON);
             }
             catch (error) {
@@ -3465,6 +3510,11 @@ export default class Keymaster implements KeymasterInterface {
         return this.cleanupNotices();
     }
 
+    async exportEncryptedWallet(): Promise<WalletEncFile> {
+        const wallet = await this.loadWallet();
+        return this.encryptWalletForStorage(wallet);
+    }
+
     private async isBallot(ballotDid: string): Promise<boolean> {
         let payload: any;
         try {
@@ -3481,5 +3531,90 @@ export default class Keymaster implements KeymasterInterface {
         try {
             await this.addName(fallbackName, did);
         } catch { }
+    }
+
+    private async getHDKeyFromCacheOrMnemonic(wallet: WalletFile) {
+        if (this._hdkeyCache) {
+            return this._hdkeyCache;
+        }
+
+        const mnemonic = await this.getMnemonicForDerivation(wallet);
+        return this.cipher.generateHDKey(mnemonic);
+    }
+
+    private async encryptWalletForStorage(decrypted: WalletFile): Promise<WalletEncFile> {
+        const { version, seed, ...rest } = decrypted;
+
+        const safeSeed: Seed = { mnemonicEnc: seed.mnemonicEnc };
+
+        const hdkey = await this.getHDKeyFromCacheOrMnemonic(decrypted);
+        const { publicJwk, privateJwk } = this.cipher.generateJwk(hdkey.privateKey!);
+
+        const plaintext = JSON.stringify(rest);
+        const enc = this.cipher.encryptMessage(publicJwk, privateJwk, plaintext);
+
+        return { version: version!, seed: safeSeed, enc };
+    }
+
+    private async decryptWalletFromStorage(stored: WalletEncFile): Promise<WalletFile> {
+        let mnemonic: string;
+        try {
+            mnemonic = await decMnemonic(stored.seed.mnemonicEnc!, this.passphrase);
+        } catch {
+            throw new KeymasterError('Incorrect passphrase.');
+        }
+
+        this._hdkeyCache = this.cipher.generateHDKey(mnemonic);
+        const { publicJwk, privateJwk } = this.cipher.generateJwk(this._hdkeyCache.privateKey!);
+
+        const plaintext = this.cipher.decryptMessage(publicJwk, privateJwk, stored.enc);
+        const data = JSON.parse(plaintext);
+
+        const wallet: WalletFile = { version: stored.version, seed: stored.seed, ...data };
+        return wallet;
+    }
+
+    private async decryptWallet(wallet: WalletFile): Promise<WalletFile> {
+        if (isV1WithEnc(wallet)) {
+            wallet = await this.decryptWalletFromStorage(wallet);
+        }
+
+        if (!isV1Decrypted(wallet)) {
+            throw new KeymasterError("Unsupported wallet version.");
+        }
+
+        return wallet;
+    }
+
+    private async encryptWallet(wallet: WalletFile): Promise<WalletEncFile> {
+        if (isV1Decrypted(wallet)) {
+            return this.encryptWalletForStorage(wallet);
+        }
+        return wallet;
+    }
+
+    private async upgradeWallet(wallet: any): Promise<WalletFile> {
+        if (isEncryptedWallet(wallet)) {
+            await this.db.saveWallet(wallet, true);
+            wallet = await this.db.loadWallet();
+        }
+
+        if (isLegacyV0(wallet)) {
+            const hdkey = this.cipher.generateHDKeyJSON(wallet.seed.hdkey!);
+            const keypair = this.cipher.generateJwk(hdkey.privateKey!);
+            const plaintext = this.cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, wallet.seed.mnemonic!);
+            const mnemonicEnc = await encMnemonic(plaintext, this.passphrase);
+            const { seed: _legacySeed, version: _legacyVersion, ...rest } = wallet;
+            const newWallet = { version: 1, seed: { mnemonicEnc }, ...rest };
+            this._hdkeyCache = this.cipher.generateHDKey(plaintext);
+            wallet = await this.encryptWallet(newWallet);
+            await this.db.saveWallet(wallet, true);
+        }
+
+        if (wallet.version !== 1) {
+            throw new KeymasterError("Unsupported wallet version.");
+        }
+
+        return wallet;
     }
 }

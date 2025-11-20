@@ -5,11 +5,22 @@
 # Set timeout for commands
 set timeout 30
 
+spawn bash kc new-wallet
+expect {
+    -re {"version"\s*:\s*1} {
+        send_user "\n✅ Wallet Reset Complete!\n"
+    }
+    timeout {
+        send_user "\n❌ Wallet Reset Timeout.\n";
+        exit 1
+    }
+}
+
 # Enable Expect's debugging output
 log_user 1
 
 # Start the CLI program for wallet creation
-spawn bash kc create-wallet
+spawn bash kc new-wallet
 
 # Wait for and capture the full output
 expect {
@@ -30,11 +41,11 @@ proc validate_wallet_output {output} {
 
     # Define exact required keys
     set required_keys [list \
-        "seed" \
-        "mnemonic" \
-        "hdkey" \
-        "xpriv" \
-        "xpub" \
+        "version" \
+        "mnemonicEnc" \
+        "salt" \
+        "iv" \
+        "data" \
         "counter" \
         "ids" \
     ]
@@ -130,16 +141,5 @@ foreach {key val} $argv {
 
         # Print result
         puts "Resetted Redis!"
-    }
-}
-
-spawn bash kc create-wallet
-expect {
-    "true" {
-        send_user "\n✅ Wallet Reset Complete!\n"
-    }
-    timeout {
-        send_user "\n❌ Wallet Reset Failed!.\n"
-        exit 1
     }
 }

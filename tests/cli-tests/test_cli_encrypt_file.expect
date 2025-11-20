@@ -3,11 +3,22 @@
 # Set timeout to avoid infinite waits
 set timeout 10
 
+spawn bash kc new-wallet
+expect {
+    -re {"version"\s*:\s*1} {
+        send_user "\n✅ Wallet Reset Complete!\n"
+    }
+    timeout {
+        send_user "\n❌ Wallet Reset Timeout.\n";
+        exit 1
+    }
+}
+
 # Generate a random number between 0 and 100
-set random_value [expr {int(rand() * 100)}]
+set random_value [expr {int(rand() * 1000)}]
 
 # Start the CLI program you want to test
-spawn bash kc create-id "$random_value"
+spawn bash kc create-id -r local "$random_value"
 
 # Look for the specific DID pattern
 expect {
@@ -103,16 +114,5 @@ foreach {key val} $argv {
 
         # Print result
         puts "Resetted Redis!"
-    }
-}
-
-spawn bash kc create-wallet
-expect {
-    "true" {
-        send_user "\n✅ Wallet Reset Complete!\n"
-    }
-    timeout {
-        send_user "\n❌ Wallet Reset Failed!.\n"
-        exit 1
     }
 }

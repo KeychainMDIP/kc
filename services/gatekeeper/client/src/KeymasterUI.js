@@ -75,7 +75,6 @@ import {
     RestoreFromTrash,
     Schema,
     Search,
-    Send,
     Token,
     Unarchive,
 } from "@mui/icons-material";
@@ -97,7 +96,7 @@ const DmailTags = {
     UNREAD: 'unread',
 };
 
-function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
+function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
     const [tab, setTab] = useState(null);
     const [currentId, setCurrentId] = useState('');
     const [saveId, setSaveId] = useState('');
@@ -440,7 +439,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
             const ok = await keymaster.backupId(selectedId);
 
             if (ok) {
-                showError(`${selectedId} backup succeeded`);
+                showSuccess(`${selectedId} backup succeeded`);
                 resolveId();
             }
             else {
@@ -1656,7 +1655,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
     async function backupWallet() {
         try {
             await keymaster.backupWallet();
-            showError('Wallet backup successful')
+            showSuccess('Wallet backup successful')
 
         } catch (error) {
             showError(error);
@@ -1715,23 +1714,40 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
             fileInput.onchange = async (event) => {
                 const file = event.target.files[0];
-                const reader = new FileReader();
+                if (!file) {
+                    return;
+                }
 
-                reader.onload = async (event) => {
-                    const walletUpload = event.target.result;
-                    const wallet = JSON.parse(walletUpload);
+                const text = await file.text();
+                let wallet;
+                try {
+                    wallet = JSON.parse(text);
+                } catch {
+                    showError("Invalid JSON file.");
+                }
 
-                    if (window.confirm('Overwrite wallet with upload?')) {
-                        await keymaster.saveWallet(wallet);
-                        refreshAll();
-                    }
-                };
+                if (!window.confirm('Overwrite wallet with upload?')) {
+                    return;
+                }
 
-                reader.onerror = (error) => {
-                    showError(error);
-                };
+                if (onWalletUpload) {
+                    await onWalletUpload(wallet);
+                    await refreshAll();
+                    return;
+                }
 
-                reader.readAsText(file);
+                const backupWallet = await keymaster.exportEncryptedWallet();
+
+                try {
+                    await keymaster.saveWallet(wallet, true);
+                    await keymaster.loadWallet();
+                    refreshAll();
+                } catch (e) {
+                    try {
+                        await keymaster.saveWallet(backupWallet, true);
+                    } catch {}
+                    window.alert('Upload rejected: the server could not decrypt the wallet with its configured passphrase.');
+                }
             };
 
             fileInput.click();
@@ -1743,7 +1759,7 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
 
     async function downloadWallet() {
         try {
-            const wallet = await keymaster.loadWallet();
+            const wallet = await keymaster.exportEncryptedWallet();
             const walletJSON = JSON.stringify(wallet, null, 4);
             const blob = new Blob([walletJSON], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
@@ -5138,24 +5154,6 @@ function KeymasterUI({ keymaster, title, challengeDID, encryption }) {
                                 </Grid>
                             </Grid>
                             <p />
-                            {encryption && (
-                                <>
-                                    <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                        <Grid item>
-                                            {encryption.isWalletEncrypted ? (
-                                                <Button variant="contained" color="primary" onClick={encryption.decryptWallet}>
-                                                    Decrypt Wallet
-                                                </Button>
-                                            ) : (
-                                                <Button variant="contained" color="primary" onClick={encryption.encryptWallet}>
-                                                    Encrypt Wallet
-                                                </Button>
-                                            )}
-                                        </Grid>
-                                    </Grid>
-                                    <p />
-                                </>
-                            )}
                             <Box>
                                 <pre>{mnemonicString}</pre>
                             </Box>
