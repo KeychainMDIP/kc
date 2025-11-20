@@ -13,11 +13,6 @@ import Keymaster from "@mdip/keymaster";
 import SearchClient from "@mdip/keymaster/search";
 import CipherWeb from "@mdip/cipher";
 import WalletWeb from "@mdip/keymaster/wallet/web";
-import { isEncryptedWallet } from '@mdip/keymaster/wallet/typeGuards'
-import type { WalletFile } from '@mdip/keymaster/types'
-import WalletWebEncrypted from "@mdip/keymaster/wallet/web-enc";
-import WalletCache from "@mdip/keymaster/wallet/cache";
-import { useSnackbar } from "./SnackbarProvider";
 import PassphraseModal from "../modals/PassphraseModal";
 import {
     DEFAULT_GATEKEEPER_URL,
@@ -41,7 +36,6 @@ interface WalletContextValue {
     setManifest: Dispatch<SetStateAction<Record<string, unknown> | undefined>>;
     registry: string;
     setRegistry: Dispatch<SetStateAction<string>>;
-    resolveDID: () => Promise<void>;
     initialiseWallet: () => Promise<void>;
     keymaster: Keymaster | null;
 }
@@ -54,124 +48,78 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     const [manifest, setManifest] = useState<Record<string, unknown> | undefined>(undefined);
     const [registry, setRegistry] = useState<string>("hyperswarm");
     const [passphraseErrorText, setPassphraseErrorText] = useState<string>("");
-    const [modalAction, setModalAction] = useState<string>("");
+    const [modalAction, setModalAction] = useState<null | "decrypt" | "set-passphrase">(null);
     const [isReady, setIsReady] = useState<boolean>(false);
-    const { setError } = useSnackbar();
 
     const keymasterRef = useRef<Keymaster | null>(null);
 
-    async function initialiseStorage() {
-        const gatekeeperUrl = localStorage.getItem(GATEKEEPER_KEY);
-        const searchServerUrl = localStorage.getItem(SEARCH_SERVER_KEY);
-        if (!gatekeeperUrl) {
-            localStorage.setItem(GATEKEEPER_KEY, DEFAULT_GATEKEEPER_URL);
-        }
-        if (!searchServerUrl) {
-            localStorage.setItem(SEARCH_SERVER_KEY, DEFAULT_SEARCH_SERVER_URL);
-        }
-    }
-
-    async function initialiseWallet() {
-        const gatekeeperUrl = localStorage.getItem(GATEKEEPER_KEY);
-        const searchServerUrl = localStorage.getItem(SEARCH_SERVER_KEY);
-
-        await gatekeeper.connect({ url: gatekeeperUrl || DEFAULT_GATEKEEPER_URL });
-        search = await SearchClient.create({ url: searchServerUrl || DEFAULT_SEARCH_SERVER_URL });
-
-        const wallet = new WalletWeb(WALLET_NAME);
-        const walletData = await wallet.loadWallet();
-
-        const pass = getSessionPassphrase();
-
-        if (pass) {
-            let res = await decryptWallet(pass);
-            if (res) {
-                return;
-            }
-        }
-
-        if (isEncryptedWallet(walletData)) {
-            setModalAction("decrypt");
-        } else {
-            keymasterRef.current = new Keymaster({
-                gatekeeper,
-                wallet,
-                cipher,
-                search,
-            });
-
-            if (!walletData) {
-                await keymasterRef.current.newWallet();
-            }
-
-            setModalAction("encrypt");
-        }
-    }
+    const walletWeb = new WalletWeb(WALLET_NAME);
 
     useEffect(() => {
         async function init() {
-            await initialiseStorage()
+            await initialiseServices()
             await initialiseWallet();
         }
         init();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    async function decryptWallet(passphrase: string, modal = false) {
-        const wallet_web = new WalletWeb(WALLET_NAME);
-        const wallet_enc = new WalletWebEncrypted(wallet_web, passphrase);
-        const wallet_cache = new WalletCache(wallet_enc);
+    async function initialiseWallet() {
+        const walletData = await walletWeb.loadWallet();
 
-        if (modal && modalAction === "encrypt") {
-            const walletData = await wallet_web.loadWallet();
-            await wallet_enc.saveWallet(walletData as WalletFile, true);
-        } else {
-            try {
-                await wallet_enc.loadWallet();
-            } catch (e) {
-                if (modal) {
-                    setPassphraseErrorText("Incorrect passphrase");
-                } else {
-                    clearSessionPassphrase();
-                }
-                return false;
+        const pass = getSessionPassphrase();
+        if (pass) {
+            let res = await buildKeymaster(pass);
+            if (res) {
+                return;
             }
+            setPassphraseErrorText("");
+            clearSessionPassphrase();
         }
 
-        if (modal) {
-            setSessionPassphrase(passphrase);
+        if (!walletData) {
+            // eslint-disable-next-line sonarjs/no-duplicate-string
+            setModalAction('set-passphrase');
+        } else {
+            setModalAction('decrypt');
         }
-
-        keymasterRef.current = new Keymaster({
-            gatekeeper,
-            wallet: wallet_cache,
-            cipher,
-            search,
-        });
-
-        setIsReady(true);
-        setModalAction("");
-        setPassphraseErrorText("");
-
-        return true;
     }
 
-    async function handlePassphraseSubmit(passphrase: string) {
-        await decryptWallet(passphrase, true);
+    async function initialiseServices() {
+        const gatekeeperUrl = localStorage.getItem(GATEKEEPER_KEY) || DEFAULT_GATEKEEPER_URL;
+        const searchServerUrl = localStorage.getItem(SEARCH_SERVER_KEY) || DEFAULT_SEARCH_SERVER_URL;
+        localStorage.setItem(GATEKEEPER_KEY, gatekeeperUrl);
+        localStorage.setItem(SEARCH_SERVER_KEY, searchServerUrl);
+        await gatekeeper.connect({ url: gatekeeperUrl });
+        search = await SearchClient.create({ url: searchServerUrl });
     }
 
-    async function resolveDID() {
-        const keymaster = keymasterRef.current;
-        if (!keymaster) {
-            return;
-        }
+    const buildKeymaster = async (passphrase: string) => {
+        const instance = new Keymaster({gatekeeper, wallet: walletWeb, cipher, search, passphrase});
 
         try {
-            const id = await keymaster.fetchIdInfo();
-            const docs = await keymaster.resolveDID(id.did);
-            setManifest((docs.didDocumentData as {manifest?: Record<string, unknown>}).manifest);
-        } catch (error: any) {
-            setError(error);
+            // check pass
+            await instance.loadWallet();
+        } catch {
+            setPassphraseErrorText("Incorrect passphrase");
+            return false;
+        }
+
+        setModalAction(null);
+        setPassphraseErrorText("");
+        keymasterRef.current = instance;
+        setIsReady(true);
+        setSessionPassphrase(passphrase);
+
+        return true;
+    };
+
+    async function handlePassphraseClose() {
+        setPassphraseErrorText("");
+
+        const walletData = await walletWeb.loadWallet();
+        if (walletData) {
+            setModalAction(null);
         }
     }
 
@@ -180,7 +128,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         setRegistry,
         manifest,
         setManifest,
-        resolveDID,
         initialiseWallet,
         keymaster: keymasterRef.current,
     };
@@ -188,15 +135,16 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     return (
         <>
             <PassphraseModal
-                isOpen={modalAction !== ""}
+                isOpen={modalAction !== null}
                 title={
                     modalAction === "decrypt"
                         ? "Enter Your Wallet Passphrase"
                         : "Set Your Wallet Passphrase"
                 }
                 errorText={passphraseErrorText}
-                onSubmit={handlePassphraseSubmit}
-                encrypt={modalAction === "encrypt"}
+                onSubmit={buildKeymaster}
+                onClose={handlePassphraseClose}
+                encrypt={modalAction === 'set-passphrase'}
             />
 
 

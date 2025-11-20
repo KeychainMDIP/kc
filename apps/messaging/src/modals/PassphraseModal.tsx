@@ -7,6 +7,7 @@ interface PassphraseModalProps {
     title: string,
     errorText: string,
     onSubmit: (passphrase: string) => void,
+    onClose: () => void,
     encrypt: boolean,
 }
 
@@ -16,11 +17,13 @@ const PassphraseModal: React.FC<PassphraseModalProps> = (
         title,
         errorText,
         onSubmit,
+        onClose,
         encrypt
     }) => {
     const [passphrase, setPassphrase] = useState("");
     const [confirmPassphrase, setConfirmPassphrase] = useState("");
     const [localError, setLocalError] = useState("");
+    const [submitting, setSubmitting] = useState(false);
     const combinedError = localError || errorText || "";
     const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -32,16 +35,33 @@ const PassphraseModal: React.FC<PassphraseModalProps> = (
         }
     }, [isOpen]);
 
-    function handleSubmit(e: FormEvent<HTMLFormElement>) {
+    async function handleSubmit(e: FormEvent<HTMLFormElement>) {
         e.preventDefault();
-        onSubmit(passphrase);
-        handleClose();
+        if (submitting) {
+            return;
+        }
+
+        setSubmitting(true);
+        await new Promise(requestAnimationFrame);
+
+        try {
+            onSubmit(passphrase);
+            setPassphrase("");
+            setConfirmPassphrase("");
+            setLocalError("");
+        } finally {
+            setSubmitting(false);
+        }
     }
 
     const handleClose = () => {
+        if (submitting) {
+            return;
+        }
         setPassphrase("");
         setConfirmPassphrase("");
         setLocalError("");
+        onClose();
     };
 
     function checkPassphraseMismatch(newPass: string, newConfirm: string) {
@@ -114,6 +134,7 @@ const PassphraseModal: React.FC<PassphraseModalProps> = (
                         value={passphrase}
                         onChange={(e) => handlePassphraseChange(e.target.value)}
                         required
+                        disabled={submitting}
                     />
                 </Field.Root>
 
@@ -126,6 +147,7 @@ const PassphraseModal: React.FC<PassphraseModalProps> = (
                             value={confirmPassphrase}
                             onChange={(e) => handleConfirmChange(e.target.value)}
                             required
+                            disabled={submitting}
                         />
                     </Field.Root>
                 )}
