@@ -218,6 +218,7 @@ function BrowserContent() {
         </>
     );
 
+    const BASE_CONTENT_WIDTH = 718;
     const sidebarWidthCollapsed = 72;
     const sidebarWidthExpanded = 220;
 
@@ -226,7 +227,9 @@ function BrowserContent() {
             <Box
                 sx={{
                     position: "fixed",
-                    maxWidth: menuOpen ? 938 : 790,
+                    maxWidth: menuOpen
+                        ? BASE_CONTENT_WIDTH + sidebarWidthExpanded
+                        : BASE_CONTENT_WIDTH + sidebarWidthCollapsed,
                     transition: 'max-width 0.2s ease',
                     inset: 0,
                     pt: `${safeTop}px`,
