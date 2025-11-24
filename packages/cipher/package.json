@@ -1,6 +1,6 @@
 {
   "name": "@mdip/cipher",
-  "version": "1.3.0",
+  "version": "1.4.0-beta.0",
   "description": "MDIP cipher lib",
   "type": "module",
   "main": "./dist/cjs/cipher-web.cjs",
