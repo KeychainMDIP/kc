@@ -284,15 +284,13 @@ function BrowserContent() {
                                             width: "100%",
                                             "& .MuiTab-root": {
                                                 minHeight: 44,
-                                                justifyContent: menuOpen
-                                                    ? "flex-start"
-                                                    : "center",
-                                                px: menuOpen ? 2 : 1,
+                                                maxHeight: 44,
+                                                justifyContent: "flex-start",
+                                                px: 2,
                                             },
-                                            "& .MuiTab-root .MuiTab-iconWrapper":
-                                                {
-                                                    mr: menuOpen ? 1.5 : 0,
-                                                },
+                                            "& .MuiTab-root .MuiTab-iconWrapper":{
+                                                mr: 1.5 ,
+                                            },
                                         }}
                                     >
                                         <Tab
@@ -302,7 +300,6 @@ function BrowserContent() {
                                             }
                                             value="identities"
                                             iconPosition="start"
-                                            sx={{ gap: 0.25 }}
                                         />
 
                                         {displayComponent && (
@@ -311,7 +308,6 @@ function BrowserContent() {
                                                 label={menuOpen ? "Auth" : ""}
                                                 value="auth"
                                                 iconPosition="start"
-                                                sx={{ gap: 0.25 }}
                                             />
                                         )}
 
@@ -321,7 +317,6 @@ function BrowserContent() {
                                                 label={menuOpen ? "DMail" : ""}
                                                 value="dmail"
                                                 iconPosition="start"
-                                                sx={{ gap: 0.25 }}
                                             />
                                         )}
 
@@ -335,7 +330,6 @@ function BrowserContent() {
                                                 }
                                                 value="credentials"
                                                 iconPosition="start"
-                                                sx={{ gap: 0.25 }}
                                             />
                                         )}
 
@@ -349,7 +343,6 @@ function BrowserContent() {
                                                 }
                                                 value="names"
                                                 iconPosition="start"
-                                                sx={{ gap: 0.25 }}
                                             />
                                         )}
 
@@ -361,7 +354,6 @@ function BrowserContent() {
                                                 }
                                                 value="polls"
                                                 iconPosition="start"
-                                                sx={{ gap: 0.25 }}
                                             />
                                         )}
 
@@ -373,7 +365,6 @@ function BrowserContent() {
                                                 }
                                                 value="assets"
                                                 iconPosition="start"
-                                                sx={{ gap: 0.25 }}
                                             />
                                         )}
 
@@ -384,7 +375,6 @@ function BrowserContent() {
                                             }
                                             value="wallet"
                                             iconPosition="start"
-                                            sx={{ gap: 0.25 }}
                                         />
 
                                         <Tab
@@ -397,7 +387,6 @@ function BrowserContent() {
                                             value="viewer"
                                             iconPosition="start"
                                             sx={{
-                                                gap: 0.25,
                                                 whiteSpace: "nowrap",
                                             }}
                                         />
@@ -409,7 +398,6 @@ function BrowserContent() {
                                             }
                                             value="settings"
                                             iconPosition="start"
-                                            sx={{ gap: 0.25 }}
                                         />
                                     </TabList>
                                 </Box>
