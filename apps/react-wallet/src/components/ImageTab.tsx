@@ -243,8 +243,7 @@ const ImageTab = () => {
                     position: "sticky",
                     zIndex: (t) => t.zIndex.appBar,
                     bgcolor: "background.paper",
-                    width: isTabletUp ? '70%' : '100%',
-                    mx: isTabletUp ? 'auto' : 0
+                    width: isTabletUp ? '70%' : '100%'
                 }}
             >
                 <Box display="flex" flexDirection="row" sx={{ gap: 0, width: "100%" }}>

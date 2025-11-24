@@ -160,7 +160,7 @@ const GroupsTab = () => {
     };
 
     return (
-        <Box display="flex" flexDirection="column" sx={{ mt: 1, gap: 0, width: isTabletUp ? '70%' : '100%', mx: isTabletUp ? 'auto' : 0 }}>
+        <Box display="flex" flexDirection="column" sx={{ mt: 1, gap: 0, width: isTabletUp ? '70%' : '100%' }}>
             <TextInputModal
                 isOpen={renameOpen}
                 title="Rename Group"

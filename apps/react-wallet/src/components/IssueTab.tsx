@@ -98,7 +98,7 @@ function IssueTab() {
     }, [credentialString]);
 
     return (
-        <Box sx={{ width: isTabletUp ? '70%' : '100%', mx: isTabletUp ? 'auto' : 0 }}>
+        <Box sx={{ width: isTabletUp ? '70%' : '100%' }}>
             <Box display="flex" flexDirection="column" sx={{ mb: 2 }}>
                 <Select
                     value={credentialSubject}

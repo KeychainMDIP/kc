@@ -462,7 +462,7 @@ const PollsTab: React.FC = () => {
             </Box>
 
             {activeTab === "create" && (
-                <Box sx={{ width: isTabletUp ? '70%' : '100%', mx: isTabletUp ? 'auto' : 0 }}>
+                <Box sx={{ width: isTabletUp ? '70%' : '100%' }}>
                     <TextField
                         fullWidth
                         label="Poll Name"
@@ -587,7 +587,7 @@ const PollsTab: React.FC = () => {
             )}
 
             {activeTab === "view" && (
-                <Box sx={{ width: isTabletUp ? '70%' : '100%', mx: isTabletUp ? 'auto' : 0 }}>
+                <Box sx={{ width: isTabletUp ? '70%' : '100%' }}>
                     {pollList.length > 0 ? (
                         <Box>
                             <Box className="flex-box" sx={{ display: "flex", alignItems: "center", width: "100%", flexWrap: "nowrap" }}>

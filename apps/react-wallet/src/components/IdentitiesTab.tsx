@@ -172,7 +172,7 @@ function IdentitiesTab() {
                 onClose={() => setRecoverModalOpen(false)}
             />
 
-            <Box sx={{ mt: 2, width: isTabletUp ? '50%' : '100%', mx: isTabletUp ? 'auto' : 0 }}>
+            <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 0, width: isTabletUp ? '80%' : '100%' }}>
                 <Box sx={{ display: 'flex', gap: 0, width: '100%', flexWrap: 'nowrap', flexDirection: 'row' }}>
                     <TextField
                         label="Create ID"

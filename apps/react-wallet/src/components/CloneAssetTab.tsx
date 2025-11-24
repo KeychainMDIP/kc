@@ -34,7 +34,7 @@ function CloneAssetTab() {
     const isDisabled = !aliasName || !aliasDID || !registry;
 
     return (
-        <Box display="flex" flexDirection="column" sx={{ mt: 1, gap: 0, width: isTabletUp ? '70%' : '100%', mx: isTabletUp ? 'auto' : 0 }}>
+        <Box display="flex" flexDirection="column" sx={{ mt: 1, gap: 0, width: isTabletUp ? '70%' : '100%' }}>
             <TextField
                 label="Asset Name"
                 size="small"

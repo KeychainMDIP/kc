@@ -1,14 +1,37 @@
-import { Box, Typography } from "@mui/material";
+import { Box, IconButton, Typography } from "@mui/material";
+import { Menu } from "@mui/icons-material";
 import DropDownID from "./DropDownID";
 
-const BrowserHeader = () => {
+const BrowserHeader = (
+    {
+        menuOpen,
+        toggleMenuOpen
+    }: {
+        menuOpen: boolean,
+        toggleMenuOpen?: () => void,
+    }) => {
     return (
         <Box
             sx={{
+                width: menuOpen ? 928 : 780,
+                maxWidth: "100%",
+                transition: 'width 0.2s ease',
                 display: "flex",
-                alignItems: "flex-end",
+                alignItems: "center",
+                height: 48,
+                px: 1,
             }}
         >
+            {toggleMenuOpen &&
+                <IconButton
+                    onClick={toggleMenuOpen}
+                    size="small"
+                    sx={{ ml: 0.25 }}
+                >
+                    <Menu />
+                </IconButton>
+            }
+
             <Typography variant="h6" component="h6" sx={{ ml: 2 }}>
                 MDIP
             </Typography>

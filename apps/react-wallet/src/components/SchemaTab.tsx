@@ -123,7 +123,7 @@ const SchemaTab = ()=> {
                 onClose={() => setRenameOpen(false)}
             />
 
-            <Box display="flex" flexDirection="column" sx={{ mb: 2, gap: 0, width: isTabletUp ? '70%' : '100%', mx: isTabletUp ? 'auto' : 0 }}>
+            <Box display="flex" flexDirection="column" sx={{ mb: 2, gap: 0, width: isTabletUp ? '70%' : '100%' }}>
                 <TextField
                     label="Schema Name"
                     size="small"
@@ -179,7 +179,7 @@ const SchemaTab = ()=> {
             </Box>
 
             {schemaList &&
-                <Box sx={{ display: "flex", alignItems: "center", width: isTabletUp ? '70%' : '100%', mx: isTabletUp ? 'auto' : 0, flexWrap: "nowrap" }}>
+                <Box sx={{ display: "flex", alignItems: "center", width: isTabletUp ? '70%' : '100%', flexWrap: "nowrap" }}>
                     <FormControl sx={{ flex: 1, minWidth: 0 }}>
                         <Select
                             value={selectedSchemaName}

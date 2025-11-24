@@ -35,7 +35,7 @@ const PollResultsModal: React.FC<PollResultsModalProps> = ({ open, onClose, resu
             slotProps={{
                 paper: {
                     sx: {
-                        width: isTabletUp ? '50%' : '100%'
+                        width: isTabletUp ? '65%' : '100%'
                     }
                 }
             }}
