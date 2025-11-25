@@ -1,5 +1,7 @@
 # Verify Verifiable Credential
 
+![Verifiable Credential Verification Flow](infographic.png)
+
 This script demonstrates the basic steps to verify a Verifiable Credential (VC):
 
 1. **Load the credential** from a JSON file
