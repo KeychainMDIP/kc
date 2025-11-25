@@ -18,7 +18,7 @@ node verify-vc.js <path-to-vc.json>
 ## Example
 
 ```bash
-node verify-vc.js examples/email-credential.json
+node verify-vc.js email-credential.json
 ```
 
 ## What Gets Verified

@@ -28,6 +28,7 @@ async function main() {
     console.log(`verifying credential: ${JSON.stringify(vc, null, 4)}`);
 
     const signature = vc.signature;
+    delete vc.signature;
 
     // Get public key of VC issuer by resolving their DID
     const doc = await gatekeeper.resolveDID(signature.signer, { atTime: signature.signed });
@@ -41,9 +42,7 @@ async function main() {
     console.log(`Signature valid: ${validSig}`);
 
     // Check hash of VC without the signature
-    delete vc.signature;
-    const canonicalized = cipher.canonicalizeJSON(vc);
-    const hash = cipher.hashMessage(canonicalized);
+    const hash = cipher.hashMessage(cipher.canonicalizeJSON(vc));
     const hashMatches = (hash === signature.hash);
     console.log(`Hash matches: ${hashMatches}`);
 
