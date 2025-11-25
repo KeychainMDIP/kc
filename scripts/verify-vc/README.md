@@ -20,7 +20,7 @@ node verify-vc.js <path-to-vc.json>
 ## Example
 
 ```bash
-node verify-vc.js email-credential.json
+node verify-vc.js email-vc.json
 ```
 
 ## What Gets Verified
