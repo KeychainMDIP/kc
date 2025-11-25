@@ -1,0 +1,24 @@
+{
+    "@context": [
+        "https://www.w3.org/ns/credentials/v2",
+        "https://www.w3.org/ns/credentials/examples/v2"
+    ],
+    "type": [
+        "VerifiableCredential",
+        "did:test:z3v8AuagEajBy1Yy98W2RDQ22stbbDQivZfgsRVC99Y1tJG5TrL"
+    ],
+    "issuer": "did:test:z3v8AuaWDR9HoKoH1cH7L5861pjvhGGKQb1Ny4xuQrAvDsmauFy",
+    "validFrom": "2025-11-25T14:47:59.071Z",
+    "credentialSubject": {
+        "id": "did:test:z3v8AuaVCj66HnWrzty8CV8iCGHu2qGUbdp6J2gyFwM7Dm3qxVy"
+    },
+    "credential": {
+        "email": "bob@email.com"
+    },
+    "signature": {
+        "signer": "did:test:z3v8AuaWDR9HoKoH1cH7L5861pjvhGGKQb1Ny4xuQrAvDsmauFy",
+        "signed": "2025-11-25T14:48:13.862Z",
+        "hash": "1211fab2ea9d4b5246dcf2502e1f35268b873fc644031c94286a4137bb687c0b",
+        "value": "0b30727fd56de2183094adb5bcc088aa4dfcad6d0927385f3f1273c8007f7d282d419fe66cb34656616bf5021a46cd23f823c8e097b528f5a2ffbc66ddda2991"
+    }
+}
