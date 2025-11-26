@@ -104,8 +104,8 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
             "gatekeeperUrl",
             "searchServerUrl"
         ]);
-        await gatekeeper.connect({ url: gatekeeperUrl });
-        search = await SearchClient.create({ url: searchServerUrl });
+        await gatekeeper.connect({ url: gatekeeperUrl as string });
+        search = await SearchClient.create({ url: searchServerUrl as string });
     }
 
     const buildKeymaster = async (wallet: WalletBase, passphrase: string) => {

@@ -113,7 +113,7 @@ function openBrowserWindowService(options: openBrowserValues) {
 
     const openNewBrowserTab = () => {
         chrome.tabs.create({ url }, (created) => {
-            const listener = (id: number, info: chrome.tabs.TabChangeInfo) => {
+            const listener = (id: number, info: { status?: string }) => {
                 if (id === created.id && info.status === "complete") {
                     deliverPayload(id);
                     chrome.tabs.onUpdated.removeListener(listener);

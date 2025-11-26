@@ -113,7 +113,7 @@ function BrowserContent() {
     }
 
     useEffect(() => {
-        chrome.storage.local.get(["menuOpen"], (result) => {
+        chrome.storage.local.get(["menuOpen"], (result: { [key: string]: boolean} ) => {
             if (result.menuOpen) {
                 setMenuOpen(result.menuOpen);
             }

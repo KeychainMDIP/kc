@@ -10,8 +10,8 @@ const SettingsTab = () => {
         const init = async () => {
             try {
                 const result = await chrome.storage.sync.get(["gatekeeperUrl", "searchServerUrl"]);
-                setGatekeeperUrl(result.gatekeeperUrl);
-                setSearchServerUrl(result.searchServerUrl);
+                setGatekeeperUrl(result.gatekeeperUrl as string);
+                setSearchServerUrl(result.searchServerUrl as string);
             } catch (error: any) {
                 console.error("Error retrieving gatekeeperUrl:", error);
             }

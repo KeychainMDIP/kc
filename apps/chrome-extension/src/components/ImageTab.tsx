@@ -35,10 +35,8 @@ const ImageTab = () => {
 
     useEffect(() => {
         const init = async () => {
-            const { gatekeeperUrl } = await chrome.storage.sync.get([
-                "gatekeeperUrl",
-            ]);
-            await gatekeeper.connect({ url: gatekeeperUrl });
+            const { gatekeeperUrl } = await chrome.storage.sync.get(["gatekeeperUrl"]);
+            await gatekeeper.connect({ url: gatekeeperUrl as string });
         }
         init();
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -110,7 +108,7 @@ const ImageTab = () => {
                         return;
                     }
                     const arrayBuffer = e.target.result;
-                    let buffer: Buffer<ArrayBuffer>;
+                    let buffer: Buffer;
                     if (arrayBuffer instanceof ArrayBuffer) {
                         buffer = Buffer.from(arrayBuffer);
                     } else {

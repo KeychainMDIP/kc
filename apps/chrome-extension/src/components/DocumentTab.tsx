@@ -36,7 +36,7 @@ const DocumentTab = () => {
     useEffect(() => {
         const init = async () => {
             const { gatekeeperUrl } = await chrome.storage.sync.get(["gatekeeperUrl"]);
-            await gatekeeper.connect({ url: gatekeeperUrl });
+            await gatekeeper.connect({ url: gatekeeperUrl as string });
         };
         init();
     }, []);
