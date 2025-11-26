@@ -432,7 +432,7 @@ describe('Inscription createTransactions', () => {
 
         const plaintext = 'plaintext';
 
-        const { commitHex, revealHex, batch } = await lib.createTransactions(
+        const { revealHex } = await lib.createTransactions(
             Buffer.from(plaintext, 'utf8'),
             parentPath,
             utxos,
@@ -493,7 +493,7 @@ describe('Inscription createTransactions', () => {
 
         const json =  { "test" : "test" };
 
-        const { commitHex, revealHex, batch } = await lib.createTransactions(
+        const { revealHex } = await lib.createTransactions(
             Buffer.from(JSON.stringify(json), 'utf8'),
             parentPath,
             utxos,
@@ -521,7 +521,7 @@ describe('Inscription createTransactions', () => {
 
         const json =  [{ "test" : "test" }];
 
-        const { commitHex, revealHex, batch } = await lib.createTransactions(
+        const { revealHex } = await lib.createTransactions(
             Buffer.from(JSON.stringify(json), 'utf8'),
             parentPath,
             utxos,
