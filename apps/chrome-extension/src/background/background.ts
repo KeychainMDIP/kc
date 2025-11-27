@@ -1,4 +1,4 @@
-import {openBrowserValues} from "../shared/contexts/UIContext";
+import {openBrowserValues} from "../contexts/UIContext";
 
 const DEFAULT_GATEKEEPER_URL = "http://localhost:4224";
 const DEFAULT_SEARCH_SERVER_URL = "http://localhost:4002";
@@ -113,7 +113,7 @@ function openBrowserWindowService(options: openBrowserValues) {
 
     const openNewBrowserTab = () => {
         chrome.tabs.create({ url }, (created) => {
-            const listener = (id: number, info: chrome.tabs.TabChangeInfo) => {
+            const listener = (id: number, info: { status?: string }) => {
                 if (id === created.id && info.status === "complete") {
                     deliverPayload(id);
                     chrome.tabs.onUpdated.removeListener(listener);

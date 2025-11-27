@@ -27,7 +27,7 @@ jobs:
         run: npm run build
 
       - name: Install app dependencies
-        working-directory: ./apps/android
+        working-directory: ./apps/react-wallet
         run: npm ci
 
       - name: Set up Java 21
@@ -43,7 +43,7 @@ jobs:
           build-tools: '35.0.0'
 
       - name: Build Android debug APK
-        working-directory: ./apps/android
+        working-directory: ./apps/react-wallet
         env:
           CI: true
         run: npm run android:build
@@ -52,7 +52,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: app-debug-artifact
-          path: apps/android/android/app/build/outputs/apk/debug/app-debug.apk
+          path: apps/react-wallet/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
        
   create-release:
