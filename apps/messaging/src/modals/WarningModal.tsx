@@ -1,6 +1,5 @@
 import React from "react";
-import BaseModal from "./BaseModal";
-import { Button, Text } from "@chakra-ui/react";
+import { Button, Text, Dialog } from "@chakra-ui/react";
 
 interface WarningModalProps {
     isOpen: boolean;
@@ -11,20 +10,29 @@ interface WarningModalProps {
 }
 
 const WarningModal: React.FC<WarningModalProps> = ({ isOpen, title, warningText, onSubmit, onClose }) => {
+    const handleOpenChange = (e: { open: boolean }) => {
+        if (!e.open) {
+            onClose?.();
+        }
+    };
+
     return (
-        <BaseModal
-            isOpen={isOpen}
-            title={title}
-            onClose={onClose}
-            actions={(
-                <>
+        <Dialog.Root open={isOpen} onOpenChange={handleOpenChange}>
+            <Dialog.Backdrop />
+            <Dialog.Content>
+                <Dialog.Header>
+                    <Dialog.Title>{title}</Dialog.Title>
+                    <Dialog.CloseTrigger />
+                </Dialog.Header>
+                <Dialog.Body>
+                    <Text opacity={0.9}>{warningText}</Text>
+                </Dialog.Body>
+                <Dialog.Footer>
                     <Button variant="outline" onClick={onClose}>Cancel</Button>
                     <Button colorScheme="blue" onClick={onSubmit}>Confirm</Button>
-                </>
-            )}
-        >
-            <Text opacity={0.9}>{warningText}</Text>
-        </BaseModal>
+                </Dialog.Footer>
+            </Dialog.Content>
+        </Dialog.Root>
     );
 };
 

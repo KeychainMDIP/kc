@@ -27,6 +27,7 @@ export default defineConfig({
     build: {
         sourcemap: true,
         outDir: 'dist',
+        chunkSizeWarningLimit: 2000,
         rollupOptions: {
             input: {
                 index: path.resolve(__dirname, 'index.html')

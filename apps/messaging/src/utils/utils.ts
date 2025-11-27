@@ -123,3 +123,10 @@ export async function scanQrCode() {
     return null;
 }
 
+export function truncateMiddle(str: string, max = 34) {
+    if (str.length <= max) {
+        return str;
+    }
+    const half = Math.floor((max - 3) / 2);
+    return `${str.slice(0, half)}...${str.slice(-half)}`;
+}

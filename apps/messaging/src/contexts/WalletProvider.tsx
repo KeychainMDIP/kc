@@ -26,16 +26,20 @@ import {
     setSessionPassphrase,
     clearSessionPassphrase,
 } from "../utils/sessionPassphrase";
+import OnboardingModal from "../modals/OnboardingModal";
+import MnemonicModal from "../modals/MnemonicModal";
+import {useSnackbar} from "./SnackbarProvider";
 
 const gatekeeper = new GatekeeperClient();
 const cipher = new CipherWeb();
-
 
 interface WalletContextValue {
     manifest: Record<string, unknown> | undefined;
     setManifest: Dispatch<SetStateAction<Record<string, unknown> | undefined>>;
     registry: string;
     setRegistry: Dispatch<SetStateAction<string>>;
+    wipeWallet: () => void;
+    restoreMnemonic: (mnemonic: string) => Promise<void>;
     initialiseWallet: () => Promise<void>;
     keymaster: Keymaster | null;
 }
@@ -50,6 +54,12 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     const [passphraseErrorText, setPassphraseErrorText] = useState<string>("");
     const [modalAction, setModalAction] = useState<null | "decrypt" | "set-passphrase">(null);
     const [isReady, setIsReady] = useState<boolean>(false);
+    const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
+    const [isMnemonicOpen, setIsMnemonicOpen] = useState(false);
+    const [mnemonicError, setMnemonicError] = useState("");
+    const [useMnemonic, setUseMnemonic] = useState(false);
+
+    const { setError } = useSnackbar();
 
     const keymasterRef = useRef<Keymaster | null>(null);
 
@@ -57,8 +67,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
     useEffect(() => {
         async function init() {
-            await initialiseServices()
-            await initialiseWallet();
+            await initialiseServices();
+            const walletData = await walletWeb.loadWallet();
+            if (!walletData) {
+                setIsOnboardingOpen(true);
+            } else {
+                await initialiseWallet();
+            }
         }
         init();
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -66,6 +81,12 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
     async function initialiseWallet() {
         const walletData = await walletWeb.loadWallet();
+
+        if (!walletData) {
+            // eslint-disable-next-line sonarjs/no-duplicate-string
+            setModalAction('set-passphrase');
+            return;
+        }
 
         const pass = getSessionPassphrase();
         if (pass) {
@@ -77,12 +98,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             clearSessionPassphrase();
         }
 
-        if (!walletData) {
-            // eslint-disable-next-line sonarjs/no-duplicate-string
-            setModalAction('set-passphrase');
-        } else {
-            setModalAction('decrypt');
-        }
+        setModalAction('decrypt');
     }
 
     async function initialiseServices() {
@@ -108,26 +124,90 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         setModalAction(null);
         setPassphraseErrorText("");
         keymasterRef.current = instance;
-        setIsReady(true);
         setSessionPassphrase(passphrase);
+
+        if (useMnemonic) {
+            setIsMnemonicOpen(true);
+        } else {
+            setIsReady(true);
+        }
 
         return true;
     };
 
     async function handlePassphraseClose() {
         setPassphraseErrorText("");
+        setModalAction(null);
 
         const walletData = await walletWeb.loadWallet();
-        if (walletData) {
-            setModalAction(null);
+        if (!walletData) {
+            setIsOnboardingOpen(true);
         }
     }
+
+    async function restoreMnemonic(mnemonic: string) {
+        const keymaster = keymasterRef.current;
+        if (!keymaster) {
+            throw new Error("Keymaster not initialised");
+        }
+
+        await keymaster.newWallet(mnemonic, true);
+        await keymaster.recoverWallet();
+    }
+
+
+    const handleOpenNew = async () => {
+        setModalAction(null);
+        setIsOnboardingOpen(false);
+        await initialiseWallet();
+    };
+
+    const handleOpenImport = () => {
+        setMnemonicError("");
+        setIsOnboardingOpen(false);
+        setUseMnemonic(true);
+        setModalAction('set-passphrase');
+    };
+
+    const handleImportMnemonic = async (mnemonic: string) => {
+        try {
+            await restoreMnemonic(mnemonic);
+        } catch (e) {
+            setMnemonicError("Invalid mnemonic");
+            return;
+        }
+
+        setIsMnemonicOpen(false);
+        setIsReady(true);
+        setUseMnemonic(false);
+    };
+
+    const handleCloseMnemonic = () => {
+        // Temp wallet was created so wipe it
+        wipeWallet();
+        setIsMnemonicOpen(false);
+        setUseMnemonic(false);
+    }
+
+    const wipeWallet = () => {
+        try {
+            window.localStorage.removeItem(WALLET_NAME);
+        } catch (e: any) {
+            setError(e);
+            return;
+        }
+
+        setIsReady(false);
+        setIsOnboardingOpen(true);
+    };
 
     const value: WalletContextValue = {
         registry,
         setRegistry,
         manifest,
         setManifest,
+        restoreMnemonic,
+        wipeWallet,
         initialiseWallet,
         keymaster: keymasterRef.current,
     };
@@ -147,6 +227,18 @@ export function WalletProvider({ children }: { children: ReactNode }) {
                 encrypt={modalAction === 'set-passphrase'}
             />
 
+            <OnboardingModal
+                isOpen={isOnboardingOpen}
+                onNew={handleOpenNew}
+                onImport={handleOpenImport}
+            />
+
+            <MnemonicModal
+                isOpen={isMnemonicOpen}
+                errorText={mnemonicError}
+                onSubmit={handleImportMnemonic}
+                onClose={handleCloseMnemonic}
+            />
 
             {isReady && (
                 <WalletContext.Provider value={value}>

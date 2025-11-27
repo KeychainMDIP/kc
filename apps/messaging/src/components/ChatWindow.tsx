@@ -246,8 +246,7 @@ const ChatWindow: React.FC = () => {
             <TextInputModal
                 isOpen={renameOpen}
                 title="Rename"
-                description="Enter a new name."
-                label="Name"
+                description="Enter a new name"
                 confirmText="Rename"
                 defaultValue={renameOldName}
                 onSubmit={handleRenameSubmit}

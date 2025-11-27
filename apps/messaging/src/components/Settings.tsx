@@ -1,33 +1,38 @@
 import { useState } from "react";
-import { Box, Flex, HStack, Text, IconButton } from "@chakra-ui/react";
+import { Box, Flex, HStack, Text, IconButton, Button } from "@chakra-ui/react";
 import { ColorModeButton, useColorMode } from "../contexts/ColorModeProvider";
 import { Avatar } from "@chatscope/chat-ui-kit-react";
 import {avatarDataUrl} from "../utils/utils";
 import { LuPencil, LuQrCode } from "react-icons/lu";
 import TextInputModal from "../modals/TextInputModal";
+import WarningModal from "../modals/WarningModal";
 import QRCodeModal from "../modals/QRCodeModal";
 import { useWalletContext } from "../contexts/WalletProvider";
 import { useSnackbar } from "../contexts/SnackbarProvider";
 import { useVariablesContext } from "../contexts/VariablesProvider";
+import { truncateMiddle } from "../utils/utils";
 
 export interface SettingsProps {
-    isOpen: boolean
-    onClose: () => void
+    isOpen: boolean;
+    onClose: () => void;
 }
 
-export default function Settings({ isOpen }: SettingsProps) {
+export default function Settings({ isOpen, onClose }: SettingsProps) {
     const {
         currentId,
         currentDID,
         refreshCurrentID,
     } = useVariablesContext()
-
-    const { keymaster } = useWalletContext();
+    const {
+        keymaster,
+        wipeWallet,
+    } = useWalletContext();
     const { setError } = useSnackbar();
     const { colorMode } = useColorMode();
 
     const [renameOpen, setRenameOpen] = useState(false);
     const [qrOpen, setQrOpen] = useState(false);
+    const [resetOpen, setResetOpen] = useState(false);
 
     if (!isOpen) {
         return null
@@ -49,13 +54,18 @@ export default function Settings({ isOpen }: SettingsProps) {
 
     const userAvatar = avatarDataUrl(currentDID, 64);
 
+    const handleConfirmReset = async () => {
+        onClose();
+        setResetOpen(false);
+        wipeWallet();
+    };
+
     return (
         <>
             <TextInputModal
                 isOpen={renameOpen}
                 title="Rename"
-                description="Enter a new name."
-                label="Name"
+                description="Enter a new name"
                 confirmText="Rename"
                 defaultValue={currentId}
                 onSubmit={handleRenameSubmit}
@@ -68,6 +78,14 @@ export default function Settings({ isOpen }: SettingsProps) {
                 did={currentDID}
                 name={currentId}
                 userAvatar={userAvatar}
+            />
+
+            <WarningModal
+                isOpen={resetOpen}
+                title="Reset Wallet"
+                warningText="This will wipe the wallet and all data associated with it. This action cannot be undone."
+                onSubmit={handleConfirmReset}
+                onClose={() => setResetOpen(false)}
             />
 
             <Box
@@ -84,7 +102,9 @@ export default function Settings({ isOpen }: SettingsProps) {
                 <Flex as="header" direction="column" align="center" justify="center" w="100%" px={2} py={3} gap={2} borderBottomWidth="1px" position="relative">
                     <Avatar src={userAvatar} />
                     <Text fontWeight="semibold">{currentId}</Text>
-                    <Text fontSize="sm" maxW="100%" whiteSpace="nowrap" overflow="hidden" textOverflow="ellipsis">{currentDID}</Text>
+                    <Text fontSize="sm" maxW="100%" whiteSpace="nowrap">
+                        {truncateMiddle(currentDID)}
+                    </Text>
 
                     <IconButton
                         position="absolute"
@@ -116,6 +136,17 @@ export default function Settings({ isOpen }: SettingsProps) {
                         </HStack>
                         <ColorModeButton />
                     </HStack>
+
+                    <Box py={3}>
+                        <Button
+                            width="100%"
+                            colorScheme="red"
+                            color="white"
+                            onClick={() => setResetOpen(true)}
+                        >
+                            RESET WALLET
+                        </Button>
+                    </Box>
                 </Box>
             </Box>
         </>

@@ -4,6 +4,7 @@ import { LuArrowLeft } from "react-icons/lu";
 import { QRCodeSVG } from "qrcode.react";
 import { Avatar } from "@chatscope/chat-ui-kit-react";
 import { useSnackbar } from "../contexts/SnackbarProvider";
+import { truncateMiddle } from "../utils/utils";
 
 interface QRCodeModalProps {
     isOpen: boolean;
@@ -13,13 +14,6 @@ interface QRCodeModalProps {
     userAvatar: string;
 }
 
-function truncateMiddle(str: string, max: number) {
-    if (str.length <= max) {
-        return str;
-    }
-    const half = Math.floor((max - 3) / 2);
-    return `${str.slice(0, half)}...${str.slice(-half)}`;
-}
 
 const QRCodeModal: React.FC<QRCodeModalProps> = ({ isOpen, onClose, did, name, userAvatar }) => {
     const { setSuccess } = useSnackbar();
@@ -58,8 +52,8 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({ isOpen, onClose, did, name, u
                                 <Box bg="white" p={2} borderRadius="md">
                                     <QRCodeSVG value={did} size={220} />
                                 </Box>
-                                <Text fontSize="sm" maxW="100%" whiteSpace="nowrap" overflow="hidden" textOverflow="ellipsis">
-                                    {truncateMiddle(did, 34)}
+                                <Text fontSize="sm" maxW="100%" whiteSpace="nowrap">
+                                    {truncateMiddle(did)}
                                 </Text>
                             </Flex>
                         </Box>

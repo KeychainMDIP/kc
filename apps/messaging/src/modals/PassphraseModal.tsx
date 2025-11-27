@@ -1,6 +1,5 @@
-import React, { FormEvent, useRef, useState, useEffect } from "react";
-import BaseModal from "./BaseModal";
-import { Button, Input, Text, Field } from "@chakra-ui/react";
+import React, { FormEvent, useState, useEffect } from "react";
+import { Button, Input, Text, Field, Dialog } from "@chakra-ui/react";
 
 interface PassphraseModalProps {
     isOpen: boolean,
@@ -25,7 +24,6 @@ const PassphraseModal: React.FC<PassphraseModalProps> = (
     const [localError, setLocalError] = useState("");
     const [submitting, setSubmitting] = useState(false);
     const combinedError = localError || errorText || "";
-    const inputRef = useRef<HTMLInputElement | null>(null);
 
     useEffect(() => {
         if (!isOpen) {
@@ -58,9 +56,6 @@ const PassphraseModal: React.FC<PassphraseModalProps> = (
         if (submitting) {
             return;
         }
-        setPassphrase("");
-        setConfirmPassphrase("");
-        setLocalError("");
         onClose();
     };
 
@@ -104,55 +99,73 @@ const PassphraseModal: React.FC<PassphraseModalProps> = (
         return false;
     };
 
-    return (
-        <BaseModal
-            isOpen={isOpen}
-            title={title}
-            onClose={handleClose}
-            initialFocusRef={inputRef as unknown as React.RefObject<HTMLElement>}
-            actions={(
-                <Button
-                    colorScheme="blue"
-                    type="submit"
-                    form="passphrase-form"
-                    disabled={isSubmitDisabled()}
-                >
-                    Submit
-                </Button>
-            )}
-        >
-            {combinedError && (
-                <Text color="red.500" mb={2}>{combinedError}</Text>
-            )}
-            <form onSubmit={handleSubmit} id="passphrase-form">
-                <Field.Root>
-                    <Field.Label htmlFor="passphrase-field">Passphrase</Field.Label>
-                    <Input
-                        id="passphrase-field"
-                        ref={inputRef}
-                        type="password"
-                        value={passphrase}
-                        onChange={(e) => handlePassphraseChange(e.target.value)}
-                        required
-                        disabled={submitting}
-                    />
-                </Field.Root>
+    const handleOpenChange = (e: { open: boolean }) => {
+        if (!e.open) {
+            handleClose();
+        }
+    };
 
-                {encrypt && (
-                    <Field.Root mt={3}>
-                        <Field.Label htmlFor="confirm-passphrase-field">Confirm Passphrase</Field.Label>
-                        <Input
-                            id="confirm-passphrase-field"
-                            type="password"
-                            value={confirmPassphrase}
-                            onChange={(e) => handleConfirmChange(e.target.value)}
-                            required
+    return (
+        <Dialog.Root open={isOpen} onOpenChange={handleOpenChange}>
+            <Dialog.Backdrop />
+            <Dialog.Content>
+                <Dialog.Header>
+                    <Dialog.Title textAlign="center" flex="1">{title}</Dialog.Title>
+                    <Dialog.CloseTrigger />
+                </Dialog.Header>
+                <Dialog.Body>
+                    {combinedError && (
+                        <Text color="red.500" mb={2}>{combinedError}</Text>
+                    )}
+                    <form onSubmit={handleSubmit} id="passphrase-form">
+                        <Field.Root>
+                            <Field.Label htmlFor="passphrase-field">Passphrase</Field.Label>
+                            <Input
+                                id="passphrase-field"
+                                type="password"
+                                value={passphrase}
+                                onChange={(e) => handlePassphraseChange(e.target.value)}
+                                required
+                                disabled={submitting}
+                            />
+                        </Field.Root>
+
+                        {encrypt && (
+                            <Field.Root mt={3}>
+                                <Field.Label htmlFor="confirm-passphrase-field">Confirm Passphrase</Field.Label>
+                                <Input
+                                    id="confirm-passphrase-field"
+                                    type="password"
+                                    value={confirmPassphrase}
+                                    onChange={(e) => handleConfirmChange(e.target.value)}
+                                    required
+                                    disabled={submitting}
+                                />
+                            </Field.Root>
+                        )}
+                    </form>
+                </Dialog.Body>
+                <Dialog.Footer>
+                    <Button
+                        colorScheme="blue"
+                        type="submit"
+                        form="passphrase-form"
+                        disabled={isSubmitDisabled()}
+                    >
+                        Submit
+                    </Button>
+                    {encrypt && (
+                        <Button
+                            variant="outline"
+                            onClick={handleClose}
                             disabled={submitting}
-                        />
-                    </Field.Root>
-                )}
-            </form>
-        </BaseModal>
+                        >
+                            Cancel
+                        </Button>
+                    )}
+                </Dialog.Footer>
+            </Dialog.Content>
+        </Dialog.Root>
     );
 };
 

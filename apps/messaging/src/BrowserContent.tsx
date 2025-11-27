@@ -2,39 +2,43 @@ import { useEffect, useState } from "react";
 import { useVariablesContext } from "./contexts/VariablesProvider";
 import { useWalletContext } from "./contexts/WalletProvider";
 import TextInputModal from "./modals/TextInputModal";
-import { useSnackbar } from "./contexts/SnackbarProvider";
 import HomePage from "./components/HomePage";
 import ChatWindow from "./components/ChatWindow";
+import { useSnackbar } from "./contexts/SnackbarProvider";
 import { useSafeArea } from "./contexts/SafeAreaContext";
 
 function BrowserContent() {
+    const [isWelcomeOpen, setIsWelcomeOpen] = useState(false);
+    const { setError, setSuccess } = useSnackbar();
     const {
         activePeer,
         currentId,
         refreshInbox,
         refreshCurrentID,
+        refreshAll,
     } = useVariablesContext();
     const {
         keymaster,
         registry,
     } = useWalletContext();
 
-    const { setError, setSuccess } = useSnackbar();
+
     const insets = useSafeArea();
 
-    const [isWelcomeOpen, setIsWelcomeOpen] = useState(false);
 
     useEffect(() => {
         const check = async () => {
             if (!keymaster) {
                 return;
             }
+
             try {
                 const cid = await keymaster.getCurrentId();
-                if (!cid) {
-                    setIsWelcomeOpen(true);
-                } else {
+                if (cid) {
+                    await refreshAll();
                     await refreshInbox();
+                } else {
+                    setIsWelcomeOpen(true);
                 }
             } catch {}
         };
@@ -70,14 +74,13 @@ function BrowserContent() {
                 right: insets.right,
                 overflow: "hidden"
             }}>
+
             <TextInputModal
                 isOpen={isWelcomeOpen}
                 title="Welcome to MDIP Messaging"
-                description="Please enter your name."
-                label="Name"
+                description="Please enter your name"
                 confirmText="Create"
                 onSubmit={handleCreateIdentity}
-                onClose={() => setIsWelcomeOpen(false)}
             />
 
             {currentId && (
