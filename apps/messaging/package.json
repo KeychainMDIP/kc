@@ -20,6 +20,7 @@
     "@chatscope/chat-ui-kit-react": "^2.1.1",
     "@chatscope/chat-ui-kit-styles": "^1.4.0",
     "@emotion/react": "^11.14.0",
+    "bip39": "^3.1.0",
     "buffer": "^6.0.3",
     "jdenticon": "^3.3.0",
     "next-themes": "^0.4.6",

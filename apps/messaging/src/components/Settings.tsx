@@ -179,7 +179,7 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
                             color="white"
                             onClick={() => setResetOpen(true)}
                         >
-                            RESET WALLET
+                            Wipe Wallet
                         </Button>
                     </Box>
                 </Box>

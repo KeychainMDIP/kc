@@ -21,11 +21,11 @@ const WarningModal: React.FC<WarningModalProps> = ({ isOpen, title, warningText,
             <Dialog.Backdrop />
             <Dialog.Content>
                 <Dialog.Header>
-                    <Dialog.Title>{title}</Dialog.Title>
+                    <Dialog.Title textAlign="center" flex="1">{title}</Dialog.Title>
                     <Dialog.CloseTrigger />
                 </Dialog.Header>
                 <Dialog.Body>
-                    <Text opacity={0.9}>{warningText}</Text>
+                    <Text textAlign="center" opacity={0.9}>{warningText}</Text>
                 </Dialog.Body>
                 <Dialog.Footer>
                     <Button variant="outline" onClick={onClose}>Cancel</Button>

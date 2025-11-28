@@ -2,6 +2,7 @@ import React, { MouseEvent, useEffect, useState } from "react";
 import { Button, Text, Input, SimpleGrid, Dialog, HStack, IconButton } from "@chakra-ui/react";
 import { LuCopy, LuEye, LuEyeOff } from "react-icons/lu";
 import { useSnackbar } from "../contexts/SnackbarProvider";
+import * as bip39 from 'bip39';
 
 interface MnemonicModalProps {
     isOpen: boolean;
@@ -14,9 +15,14 @@ interface MnemonicModalProps {
 const MnemonicModal: React.FC<MnemonicModalProps> = ({ isOpen, onSubmit, onClose, errorText, mnemonic }) => {
     const [words, setWords] = useState<string[]>(Array(12).fill(""));
     const [showWord, setShowWord] = useState<boolean[]>(Array(12).fill(false));
+    const [localError, setLocalError] = useState("");
     const { setSuccess } = useSnackbar();
+    const combinedError = localError || errorText || "";
 
-    const canConfirm = words.every((w) => w.trim().length > 0);
+    const isImportMode = !!onSubmit && !mnemonic;
+    const allFilled = words.every((w) => w.trim().length > 0);
+    const assembledMnemonic = words.map((w) => w.trim()).join(" ");
+    const canConfirm = allFilled && bip39.validateMnemonic(assembledMnemonic);
 
     const handleWordChange = (index: number, value: string) => {
         setWords((prev) => {
@@ -32,6 +38,10 @@ const MnemonicModal: React.FC<MnemonicModalProps> = ({ isOpen, onSubmit, onClose
         }
         event.preventDefault();
         const mnemonic = words.map((w) => w.trim()).join(" ");
+        if (!bip39.validateMnemonic(mnemonic)) {
+            setLocalError("Mnemonic is not valid, check for spelling mistakes");
+            return;
+        }
         onSubmit(mnemonic);
     };
 
@@ -39,6 +49,7 @@ const MnemonicModal: React.FC<MnemonicModalProps> = ({ isOpen, onSubmit, onClose
         if (!isOpen) {
             setWords(Array(12).fill(""));
             setShowWord(Array(12).fill(false));
+            setLocalError("");
             return;
         }
         if (mnemonic) {
@@ -51,6 +62,23 @@ const MnemonicModal: React.FC<MnemonicModalProps> = ({ isOpen, onSubmit, onClose
             setShowWord(Array(12).fill(false));
         }
     }, [isOpen, mnemonic]);
+
+    useEffect(() => {
+        if (!isImportMode) {
+            setLocalError("");
+            return;
+        }
+        if (!allFilled) {
+            setLocalError("");
+            return;
+        }
+        const isValid = bip39.validateMnemonic(assembledMnemonic);
+        if (!isValid) {
+            setLocalError("Mnemonic is not valid, check for spelling mistakes");
+        } else {
+            setLocalError("");
+        }
+    }, [isImportMode, allFilled, assembledMnemonic]);
 
     const toggleReveal = (index: number) => {
         setShowWord((prev) => {
@@ -79,11 +107,11 @@ const MnemonicModal: React.FC<MnemonicModalProps> = ({ isOpen, onSubmit, onClose
                     <Dialog.CloseTrigger />
                 </Dialog.Header>
                 <Dialog.Body>
-                    {errorText && (
-                        <Text color="red.500" mb={2}>{errorText}</Text>
+                    {combinedError && (
+                        <Text textAlign="center" color="red.500" mb={2}>{combinedError}</Text>
                     )}
                     <Text textAlign="center" mb={3} opacity={0.9}>
-                        {mnemonic ? "Tap the eye to reveal each word or copy the full phrase" : "Enter your 12-word mnemonic"}
+                        {mnemonic ? "Tap the eye to reveal each word or copy the full phrase" : "Enter your 12 word mnemonic"}
                     </Text>
                     <SimpleGrid columns={2} columnGap={3} rowGap={2}>
                         {words.map((value, idx) => (
@@ -121,19 +149,27 @@ const MnemonicModal: React.FC<MnemonicModalProps> = ({ isOpen, onSubmit, onClose
                     </SimpleGrid>
                 </Dialog.Body>
                 <Dialog.Footer>
-                    {!mnemonic && onSubmit &&
-                        <Button onClick={handleSubmit} colorScheme="blue" disabled={!canConfirm}>
-                            Confirm
-                        </Button>
-                    }
                     {mnemonic && (
-                        <Button onClick={handleCopy}>
-                            Copy <LuCopy />
-                        </Button>
+                        <>
+                            <Button onClick={handleCopy}>
+                                Copy <LuCopy />
+                            </Button>
+                            <Button variant="outline" onClick={onClose}>
+                                {onSubmit ? "Next" : "Close"}
+                            </Button>
+                        </>
                     )}
-                    <Button variant="outline" onClick={onClose}>
-                        {mnemonic ? "Close" : "Cancel"}
-                    </Button>
+
+                    {isImportMode &&
+                        <>
+                            <Button variant="outline" onClick={onClose}>
+                                Cancel
+                            </Button>
+                            <Button onClick={handleSubmit} colorScheme="blue" disabled={!canConfirm}>
+                                Confirm
+                            </Button>
+                        </>
+                    }
                 </Dialog.Footer>
             </Dialog.Content>
         </Dialog.Root>

@@ -29,6 +29,7 @@ import {
 import OnboardingModal from "../modals/OnboardingModal";
 import MnemonicModal from "../modals/MnemonicModal";
 import {useSnackbar} from "./SnackbarProvider";
+import VerifyMnemonicModal from "../modals/VerifyMnemonicModal";
 
 const gatekeeper = new GatekeeperClient();
 const cipher = new CipherWeb();
@@ -58,6 +59,9 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     const [isMnemonicOpen, setIsMnemonicOpen] = useState(false);
     const [mnemonicError, setMnemonicError] = useState("");
     const [useMnemonic, setUseMnemonic] = useState(false);
+    const [newWallet, setNewWallet] = useState(false);
+    const [revealMnemonic, setRevealMnemonic] = useState("");
+    const [isVerifyMnemonicOpen, setIsVerifyMnemonicOpen] = useState(false);
 
     const { setError } = useSnackbar();
 
@@ -128,6 +132,16 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
         if (useMnemonic) {
             setIsMnemonicOpen(true);
+        } else if (newWallet) {
+            try {
+                const mnemonic = await instance.decryptMnemonic();
+                setRevealMnemonic(mnemonic);
+                setIsMnemonicOpen(true);
+            } catch (e: any) {
+                setError(e);
+                setNewWallet(false);
+                wipeWallet();
+            }
         } else {
             setIsReady(true);
         }
@@ -159,6 +173,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     const handleOpenNew = async () => {
         setModalAction(null);
         setIsOnboardingOpen(false);
+        setNewWallet(true);
         await initialiseWallet();
     };
 
@@ -183,10 +198,29 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     };
 
     const handleCloseMnemonic = () => {
-        // Temp wallet was created so wipe it
-        wipeWallet();
         setIsMnemonicOpen(false);
-        setUseMnemonic(false);
+
+        if (useMnemonic) {
+            // Temp wallet was created so wipe it
+            wipeWallet();
+            setUseMnemonic(false);
+        }
+
+        if (newWallet) {
+            setIsVerifyMnemonicOpen(true);
+        }
+    }
+
+    const handleVerifyMnemonic = async () => {
+        setIsVerifyMnemonicOpen(false);
+        setIsReady(true);
+        setNewWallet(false);
+        setRevealMnemonic("");
+    }
+
+    const handleVerifyMnemonicBack = () => {
+        setIsVerifyMnemonicOpen(false);
+        setIsMnemonicOpen(true);
     }
 
     const wipeWallet = () => {
@@ -238,7 +272,17 @@ export function WalletProvider({ children }: { children: ReactNode }) {
                 errorText={mnemonicError}
                 onSubmit={handleImportMnemonic}
                 onClose={handleCloseMnemonic}
+                mnemonic={revealMnemonic || undefined}
             />
+
+            {newWallet && (
+                <VerifyMnemonicModal
+                    isOpen={isVerifyMnemonicOpen}
+                    mnemonic={revealMnemonic}
+                    onBack={handleVerifyMnemonicBack}
+                    onSuccess={handleVerifyMnemonic}
+                />
+            )}
 
             {isReady && (
                 <WalletContext.Provider value={value}>
