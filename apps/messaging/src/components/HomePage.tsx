@@ -113,7 +113,7 @@ export default function HomePage() {
                         .filter(([name]) => agentList.includes(name) && currentId !== name)
                         .map(([name, did]) => {
                             if (did === currentDID) {
-                                return;
+                                return null;
                             }
                             const src = avatarDataUrl(did, 64);
                             const selected = activePeer === name;
