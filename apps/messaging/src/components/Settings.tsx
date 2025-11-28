@@ -7,6 +7,7 @@ import { LuPencil, LuQrCode } from "react-icons/lu";
 import TextInputModal from "../modals/TextInputModal";
 import WarningModal from "../modals/WarningModal";
 import QRCodeModal from "../modals/QRCodeModal";
+import MnemonicModal from "../modals/MnemonicModal";
 import { useWalletContext } from "../contexts/WalletProvider";
 import { useSnackbar } from "../contexts/SnackbarProvider";
 import { useVariablesContext } from "../contexts/VariablesProvider";
@@ -33,6 +34,8 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
     const [renameOpen, setRenameOpen] = useState(false);
     const [qrOpen, setQrOpen] = useState(false);
     const [resetOpen, setResetOpen] = useState(false);
+    const [mnemonicOpen, setMnemonicOpen] = useState(false);
+    const [mnemonic, setMnemonic] = useState<string>("");
 
     if (!isOpen) {
         return null
@@ -58,6 +61,19 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
         onClose();
         setResetOpen(false);
         wipeWallet();
+    };
+
+    const handleRevealMnemonic = async () => {
+        if (!keymaster) {
+            return;
+        }
+        try {
+            const mnemonic = await keymaster.decryptMnemonic();
+            setMnemonic(mnemonic);
+            setMnemonicOpen(true);
+        } catch (e: any) {
+            setError(e);
+        }
     };
 
     return (
@@ -86,6 +102,16 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
                 warningText="This will wipe the wallet and all data associated with it. This action cannot be undone."
                 onSubmit={handleConfirmReset}
                 onClose={() => setResetOpen(false)}
+            />
+
+            <MnemonicModal
+                isOpen={mnemonicOpen}
+                onClose={() => {
+                    setMnemonicOpen(false);
+                    setMnemonic("");
+                }}
+                errorText={""}
+                mnemonic={mnemonic}
             />
 
             <Box
@@ -136,6 +162,15 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
                         </HStack>
                         <ColorModeButton />
                     </HStack>
+
+                    <Box py={3}>
+                        <Button
+                            width="100%"
+                            onClick={handleRevealMnemonic}
+                        >
+                            Reveal Mnemonic
+                        </Button>
+                    </Box>
 
                     <Box py={3}>
                         <Button
