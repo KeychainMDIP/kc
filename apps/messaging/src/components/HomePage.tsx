@@ -4,12 +4,11 @@ import { Avatar, Conversation, ConversationList } from "@chatscope/chat-ui-kit-r
 import { avatarDataUrl } from "../utils/utils";
 import { CHAT_SUBJECT } from "../constants";
 import AddUserModal from "../modals/AddUserModal";
-import { LuSettings, LuUserPlus } from "react-icons/lu";
-import { GoHome } from "react-icons/go";
-import { IconButton, Box, Flex } from "@chakra-ui/react";
+import { LuUser, LuUserPlus, LuMessagesSquare } from "react-icons/lu";
+import { IconButton, Box, Flex, Text } from "@chakra-ui/react";
 import { useWalletContext } from "../contexts/WalletProvider";
 import { useSnackbar } from "../contexts/SnackbarProvider";
-import Settings from "./Settings";
+import Profile from "./Profile";
 
 export default function HomePage() {
     const {
@@ -29,7 +28,7 @@ export default function HomePage() {
     const { setError, setSuccess } = useSnackbar();
 
     const [isAddOpen, setIsAddOpen] = useState(false);
-    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [isProfileOpen, setIsProfileOpen] = useState(false);
 
     const handleAddUser = async (did: string, name: string) => {
         if (!keymaster) {
@@ -91,9 +90,9 @@ export default function HomePage() {
                 onSubmit={handleAddUser}
             />
 
-            <Settings
-                isOpen={isSettingsOpen}
-                onClose={() => setIsSettingsOpen(false)}
+            <Profile
+                isOpen={isProfileOpen}
+                onClose={() => setIsProfileOpen(false)}
             />
 
             <Box position="sticky" top="0" zIndex={100} borderBottomWidth="1px">
@@ -138,27 +137,33 @@ export default function HomePage() {
             <Box
                 position="sticky"
                 bottom="0"
-                zIndex={100}
+                zIndex={2000}
                 borderTopWidth="1px"
             >
-                <Flex h="45px" align="center">
+                <Flex h="44px" align="center">
                     <Box flex="1" display="flex" justifyContent="center">
-                        <IconButton
-                            variant="ghost"
-                            size="md"
-                            onClick={() => setIsSettingsOpen(false)}
-                        >
-                            <GoHome />
-                        </IconButton>
+                        <Flex direction="column" align="center">
+                            <IconButton
+                                variant="ghost"
+                                size="md"
+                                onClick={() => setIsProfileOpen(false)}
+                            >
+                                <LuMessagesSquare />
+                            </IconButton>
+                            <Text fontSize="xs" textAlign="center" mt="-8px">Chats</Text>
+                        </Flex>
                     </Box>
                     <Box flex="1" display="flex" justifyContent="center">
-                        <IconButton
-                            variant="ghost"
-                            size="md"
-                            onClick={() => setIsSettingsOpen(true)}
-                        >
-                            <LuSettings />
-                        </IconButton>
+                        <Flex direction="column" align="center">
+                            <IconButton
+                                variant="ghost"
+                                size="md"
+                                onClick={() => setIsProfileOpen(true)}
+                            >
+                                <LuUser />
+                            </IconButton>
+                            <Text fontSize="xs" textAlign="center" mt="-8px">Profile</Text>
+                        </Flex>
                     </Box>
                 </Flex>
             </Box>
