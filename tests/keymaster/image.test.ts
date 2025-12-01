@@ -113,7 +113,7 @@ describe('updateImage', () => {
             }
         }
         expect(doc.didDocumentData).toStrictEqual(expected);
-        expect(doc.didDocumentMetadata!.version).toBe(2);
+        expect(doc.didDocumentMetadata!.version).toBe("2");
     });
 
     it('should add image to an empty asset', async () => {
@@ -146,7 +146,7 @@ describe('updateImage', () => {
             }
         }
         expect(doc.didDocumentData).toStrictEqual(expected);
-        expect(doc.didDocumentMetadata!.version).toBe(2);
+        expect(doc.didDocumentMetadata!.version).toBe("2");
     });
 
     it('should throw an exception on invalid update image buffer', async () => {
