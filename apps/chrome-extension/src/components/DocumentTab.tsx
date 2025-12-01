@@ -57,7 +57,7 @@ const DocumentTab = () => {
             const docs = await keymaster.resolveDID(documentName, version ? { atVersion: version } : {});
             setSelectedDocumentDocs(docs);
 
-            const currentVersion = docs.didDocumentMetadata?.version ?? 1;
+            const currentVersion = parseInt(docs.didDocumentMetadata?.version ?? "1", 10);
             setDocVersion(currentVersion);
             if (version === undefined) {
                 setDocVersionMax(currentVersion);

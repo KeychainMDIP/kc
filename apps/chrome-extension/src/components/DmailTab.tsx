@@ -766,7 +766,7 @@ const DmailTab: React.FC = () => {
             }
             try {
                 let docs = await keymaster.resolveDID(selected.did);
-                const max = docs.didDocumentMetadata?.version ?? 1;
+                const max = parseInt(docs.didDocumentMetadata?.version ?? "1", 10);
                 const adjustedMax = max > 1 ? max - 1 : 1;
 
                 setDocVersion(adjustedMax);
