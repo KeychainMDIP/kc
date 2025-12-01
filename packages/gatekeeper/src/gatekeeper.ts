@@ -232,7 +232,9 @@ export default class Gatekeeper implements GatekeeperInterface {
                 const version = doc.didDocumentMetadata?.version;
                 if (version != null) {
                     const versionNum = parseInt(version, 10);
-                    byVersion[versionNum] = (byVersion[versionNum] || 0) + 1;
+                    if (!isNaN(versionNum)) {
+                        byVersion[versionNum] = (byVersion[versionNum] || 0) + 1;
+                    }
                 }
             }
             catch (error) {
