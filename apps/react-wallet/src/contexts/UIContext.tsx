@@ -510,14 +510,15 @@ export function UIProvider(
         if (!keymaster) {
             return;
         }
+
         try {
             const regs = await keymaster.listRegistries();
-            if (Array.isArray(regs)) {
-                setRegistries(regs);
-            } else {
-                setRegistries((regs as { registries: string[] }).registries);
-            }
+            setRegistries(regs);
+        } catch (error: any) {
+            setError(error);
+        }
 
+        try {
             await refreshCurrentID();
         } catch (error: any) {
             setError(error);

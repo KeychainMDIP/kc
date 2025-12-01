@@ -31,6 +31,7 @@ interface WalletContextValue {
     setPendingMnemonic: Dispatch<SetStateAction<string>>;
     pendingWallet: unknown;
     setPendingWallet: Dispatch<SetStateAction<unknown>>;
+    initialiseServices: () => Promise<void>;
     initialiseWallet: () => Promise<void>;
     handleWalletUploadFile: (uploaded: unknown) => Promise<void>;
     isBrowser: boolean;
@@ -334,6 +335,7 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
         setPendingMnemonic,
         pendingWallet,
         setPendingWallet,
+        initialiseServices,
         initialiseWallet,
         handleWalletUploadFile,
         reloadBrowserWallet,

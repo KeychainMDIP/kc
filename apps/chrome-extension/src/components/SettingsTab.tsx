@@ -1,10 +1,17 @@
 import React, { useState, useEffect } from "react";
 import { Box, Button, TextField } from "@mui/material";
 import SaveIcon from "@mui/icons-material/Save";
+import { useWalletContext } from "../contexts/WalletProvider";
+import { useSnackbar } from "../contexts/SnackbarProvider";
 
 const SettingsTab = () => {
     const [gatekeeperUrl, setGatekeeperUrl] = useState<string>("");
     const [searchServerUrl, setSearchServerUrl] = useState<string>("");
+    const {
+        initialiseServices,
+        initialiseWallet
+    } = useWalletContext();
+    const { setSuccess } = useSnackbar();
 
     useEffect(() => {
         const init = async () => {
@@ -22,6 +29,9 @@ const SettingsTab = () => {
     const handleSave = async () => {
         try {
             await chrome.storage.sync.set({ gatekeeperUrl, searchServerUrl });
+            await initialiseServices();
+            await initialiseWallet();
+            setSuccess("Services updated");
         } catch (error: any) {
             console.error("Error saving URLs:", error);
         }
