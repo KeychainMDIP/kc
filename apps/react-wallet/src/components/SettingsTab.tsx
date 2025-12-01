@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import {Box, Button, Switch, TextField, Typography} from "@mui/material";
 import { DarkMode, LightMode, Save } from "@mui/icons-material";
 import { useThemeContext } from "../contexts/ContextProviders";
+import { useWalletContext } from "../contexts/WalletProvider";
+import { useSnackbar } from "../contexts/SnackbarProvider";
 import {
     DEFAULT_GATEKEEPER_URL,
     DEFAULT_SEARCH_SERVER_URL,
@@ -16,6 +18,11 @@ const SettingsTab = () => {
         darkMode,
         handleDarkModeToggle,
     } = useThemeContext();
+    const {
+        initialiseServices,
+        initialiseWallet
+    } = useWalletContext();
+    const { setSuccess } = useSnackbar();
 
     useEffect(() => {
         const init = async () => {
@@ -39,6 +46,9 @@ const SettingsTab = () => {
         try {
             localStorage.setItem(GATEKEEPER_KEY, gatekeeperUrl);
             localStorage.setItem(SEARCH_SERVER_KEY, searchServerUrl);
+            await initialiseServices();
+            await initialiseWallet();
+            setSuccess("Services updated");
         } catch (error: any) {
             console.error("Error saving URLs:", error);
         }
