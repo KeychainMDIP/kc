@@ -17,21 +17,26 @@ import {
     Token,
 } from '@mui/icons-material';
 import { useWalletContext } from "./WalletProvider";
-import { useVariablesContext } from "./VariablesProvider";
 import { useSnackbar } from "./SnackbarProvider";
-import WalletWeb from "@mdip/keymaster/wallet/web";
+import { useAuthContext } from "./AuthContext";
+import { useVariablesContext } from "./VariablesProvider";
+import { useThemeContext } from "./ContextProviders";
+import WalletChrome from "@mdip/keymaster/wallet/chrome";
+
+export enum RefreshMode {
+    NONE = 'NONE',
+    WALLET = 'WALLET',
+    THEME = 'THEME',
+}
 
 interface UIContextValue {
     selectedTab: string;
-    setSelectedTab: Dispatch<SetStateAction<string>>;
-    pendingChallenge: string | null;
-    setPendingChallenge: Dispatch<SetStateAction<string | null>>;
-    pendingSubTab: string | null;
-    setPendingSubTab: Dispatch<SetStateAction<string | null>>;
-    pendingHeldDID: string | null;
-    setPendingHeldDID: Dispatch<SetStateAction<string | null>>;
+    setSelectedTab: (value: string) => Promise<void>;
+    selectedMessageTab: string;
+    setSelectedMessageTab: (value: string) => Promise<void>;
     openBrowser: openBrowserValues | undefined;
-    setOpenBrowser: Dispatch<SetStateAction<openBrowserValues | undefined>>;
+    setOpenBrowser: Dispatch<SetStateAction<openBrowserValues | undefined>> | undefined;
+    openBrowserWindow: (options: openBrowserValues) => void;
     handleCopyDID: (did: string) => void;
     getVaultItemIcon: (name: string, item: any) => React.ReactNode;
     updateManifest: () => Promise<void>;
@@ -43,6 +48,7 @@ interface UIContextValue {
 }
 
 export interface openBrowserValues {
+    title?: string;
     did?: string;
     tab?: string;
     subTab?: string;
@@ -54,22 +60,42 @@ const UIContext = createContext<UIContextValue | null>(null);
 
 export function UIProvider(
     {
-        children
+        children,
+        pendingAuth,
+        pendingCredential,
+        openBrowser,
+        setOpenBrowser,
+        browserRefresh,
+        setBrowserRefresh,
     }: {
-        children: ReactNode
+        children: ReactNode,
+        pendingAuth?: string,
+        pendingCredential?: string,
+        openBrowser?: openBrowserValues,
+        setOpenBrowser?: Dispatch<SetStateAction<openBrowserValues | undefined>>,
+        browserRefresh?: RefreshMode,
+        setBrowserRefresh?: Dispatch<SetStateAction<RefreshMode>>,
     }) {
     const [pendingTab, setPendingTab] = useState<string | null>(null);
-    const [pendingChallenge, setPendingChallenge] = useState<string | null>(null);
-    const [pendingSubTab, setPendingSubTab] = useState<string | null>(null);
-    const [pendingHeldDID, setPendingHeldDID] = useState<string | null>(null);
-    const [selectedTab, setSelectedTab] = useState<string>("identities");
-    const [openBrowser, setOpenBrowser] = useState<openBrowserValues | undefined>(undefined);
+    const [pendingMessageTab, setPendingMessageTab] = useState<string | null>(null);
+    const [selectedTab, setSelectedTabState] = useState<string>("identities");
+    const [selectedMessageTab, setSelectedMessageTabState] = useState<string>("receive");
+    const [pendingUsed, setPendingUsed] = useState<boolean>(false);
 
     const {
+        isBrowser,
         keymaster,
         refreshFlag,
+        reloadBrowserWallet,
     } = useWalletContext();
     const { setError } = useSnackbar();
+    const {
+        setResponse,
+        setCallback,
+        setChallenge,
+        setDisableSendResponse,
+        refreshAuthStored,
+    } = useAuthContext();
     const {
         currentId,
         setCurrentId,
@@ -77,11 +103,15 @@ export function UIProvider(
         setValidId,
         setIdList,
         setUnresolvedIdList,
+        storeState,
+        setManifest,
         setRegistries,
+        refreshRegistryStored,
         credentialSchema,
         setCredentialSchema,
         setCredentialString,
         setCredentialDID,
+        setHeldDID,
         setHeldList,
         setIssuedList,
         setIssuedString,
@@ -100,44 +130,17 @@ export function UIProvider(
         setDocumentList,
         setIssuedStringOriginal,
         setIssuedEdit,
-        setAliasName,
+        resetCredentialState,
+        refreshCredentialsStored,
         setDmailList,
-        setAliasDID,
-        setManifest,
     } = useVariablesContext();
+    const { updateThemeFromStorage } = useThemeContext();
 
-    const walletWeb = new WalletWeb();
-
-    useEffect(() => {
-        const refresh = async () => {
-            await refreshAll();
-        };
-        refresh();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-
-    useEffect(() => {
-        if (!refreshFlag) {
-            return;
-        }
-        const refresh = async () => {
-            await refreshAll();
-        };
-        refresh();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [refreshFlag]);
+    const walletChrome = new WalletChrome();
 
     function arraysEqual(a: string[], b: string[]): boolean {
         return a.length === b.length && a.every((v, i) => v === b[i]);
     }
-
-    useEffect(() => {
-        const refresh = async () => {
-            await refreshAll();
-        };
-        refresh();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
 
     const refreshInbox = useCallback( async() => {
         if (!keymaster) {
@@ -204,7 +207,7 @@ export function UIProvider(
         }
 
         const refresh = async () => {
-            const data = await walletWeb.loadWallet();
+            const data = await walletChrome.loadWallet();
             if (!data) {
                 return;
             }
@@ -251,44 +254,104 @@ export function UIProvider(
     }
 
     useEffect(() => {
-        const onOpenAuth = (e: Event) => {
-            const ce = e as CustomEvent<{ did?: string }>;
-            const did = ce.detail?.did;
-            setPendingTab('auth');
-            if (typeof did === 'string' && did.startsWith('did:')) {
-                setPendingChallenge(did);
-            }
+        const refresh = async () => {
+            await refreshAll();
         };
-        window.addEventListener('mdip:openAuth', onOpenAuth as EventListener);
-        return () => window.removeEventListener('mdip:openAuth', onOpenAuth as EventListener);
+        refresh();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     useEffect(() => {
-        const onOpenAccept = (e: Event) => {
-            const ce = e as CustomEvent<{ did?: string }>;
-            const did = ce.detail?.did;
-            setPendingTab('credentials');
-            setPendingSubTab('held');
-            if (typeof did === 'string' && did.startsWith('did:')) {
-                setPendingHeldDID(did);
-            }
+        if (!refreshFlag) {
+            return;
+        }
+        const refresh = async () => {
+            await refreshAll();
         };
-        window.addEventListener('mdip:openAccept', onOpenAccept as EventListener);
-        return () => window.removeEventListener('mdip:openAccept', onOpenAccept as EventListener);
-    }, []);
+        refresh();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [refreshFlag]);
+
+    useEffect(() => {
+        if (!setBrowserRefresh || browserRefresh === RefreshMode.NONE) {
+            return;
+        }
+
+        const refresh = async () => {
+            if (browserRefresh === RefreshMode.WALLET) {
+                await reloadBrowserWallet();
+            } else if (browserRefresh === RefreshMode.THEME) {
+                updateThemeFromStorage();
+            }
+            setBrowserRefresh(RefreshMode.NONE);
+        };
+        refresh();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [browserRefresh]);
 
     useEffect(() => {
         if (!currentId) {
             return;
         }
-        if (pendingTab) {
+        if (pendingAuth && !pendingUsed) {
+            (async () => {
+                await setSelectedTab("auth");
+                await setChallenge(pendingAuth);
+                await setResponse("");
+                await setCallback("");
+                await setDisableSendResponse(true);
+            })();
+
+            // Prevent challenge repopulating after clear on ID change
+            setPendingUsed(true);
+        } else if (pendingCredential && !pendingUsed) {
+            (async () => {
+                await setSelectedTab("credentials");
+                await setHeldDID(pendingCredential);
+            })();
+
+            // Prevent credential repopulating after clear on ID change
+            setPendingUsed(true);
+        } else if (pendingTab) {
             (async () => {
                 await setSelectedTab(pendingTab);
                 setPendingTab(null);
             })();
         }
+        if (pendingMessageTab) {
+            (async () => {
+                await setSelectedMessageTab(pendingMessageTab);
+                setPendingMessageTab(null);
+            })();
+        }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentId, pendingTab]);
+    }, [currentId, pendingAuth, pendingCredential, pendingTab, pendingMessageTab]);
+
+    function openBrowserWindow(options: openBrowserValues) {
+        const tab = options.tab ?? "viewer";
+
+        const payload = {
+            ...options,
+            tab
+        };
+
+        if (isBrowser && setOpenBrowser) {
+            setOpenBrowser(payload);
+            return;
+        }
+
+        chrome.runtime.sendMessage({type: "OPEN_BROWSER_WINDOW", options});
+    }
+
+    async function setSelectedTab(value: string) {
+        setSelectedTabState(value);
+        await storeState("selectedTab", value);
+    }
+
+    async function setSelectedMessageTab(value: string) {
+        setSelectedMessageTabState(value);
+        await storeState("selectedMessageTab", value);
+    }
 
     async function refreshHeld() {
         if (!keymaster) {
@@ -422,9 +485,15 @@ export function UIProvider(
     }
 
     async function resetCurrentID() {
-        setOpenBrowser({
-            clearState: true
+        await chrome.runtime.sendMessage({
+            action: "CLEAR_STATE",
+            key: "currentId",
         });
+        if (setOpenBrowser) {
+            setOpenBrowser({
+                clearState: true
+            });
+        }
         await refreshCurrentID();
     }
 
@@ -459,7 +528,7 @@ export function UIProvider(
     }
 
     function wipeUserState() {
-        setCurrentId("");
+        resetCredentialState();
         setCurrentDID("");
         setManifest({});
         setNameList({});
@@ -470,8 +539,6 @@ export function UIProvider(
         setIssuedString("");
         setVaultList([]);
         setPollList([]);
-        setAliasName("");
-        setAliasDID("");
     }
 
     function wipeState() {
@@ -506,6 +573,61 @@ export function UIProvider(
         return true;
     }
 
+    async function refreshStored() {
+        if (isBrowser || !keymaster) {
+            return;
+        }
+
+        const { extensionState } = await chrome.runtime.sendMessage({
+            action: "GET_ALL_STATE",
+        });
+
+        // Tab always present if store used
+        if (!extensionState.selectedTab) {
+            return false;
+        }
+
+        if (extensionState.currentId) {
+            // If ID not in wallet assume new wallet created externally
+            const wallet = await keymaster.loadWallet();
+            if (!Object.keys(wallet.ids).includes(extensionState.currentId)) {
+                await chrome.runtime.sendMessage({ action: "CLEAR_ALL_STATE" });
+                return false;
+            }
+            await refreshCurrentIDInternal(extensionState.currentId);
+        } else {
+            // We switched user in the browser so no currentId stored
+            const cid = await keymaster.getCurrentId();
+            if (cid) {
+                await refreshCurrentIDInternal(cid);
+            }
+        }
+
+        return true;
+    }
+
+    useEffect(() => {
+        (async () => {
+            try {
+                const { extensionState } = await chrome.runtime.sendMessage({
+                    action: "GET_ALL_STATE",
+                });
+
+                if (extensionState?.selectedTab) {
+                    setPendingTab(extensionState.selectedTab);
+                }
+                if (extensionState?.selectedMessageTab) {
+                    setPendingMessageTab(extensionState.selectedMessageTab);
+                }
+
+                await refreshAuthStored(extensionState);
+                await refreshRegistryStored(extensionState);
+                await refreshCredentialsStored(extensionState);
+            } catch {}
+        })();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     async function refreshAll() {
         if (!keymaster) {
             return;
@@ -519,7 +641,10 @@ export function UIProvider(
         }
 
         try {
-            await refreshCurrentID();
+            const usedStored = await refreshStored();
+            if (!usedStored) {
+                await refreshCurrentID();
+            }
         } catch (error: any) {
             setError(error);
         }
@@ -579,12 +704,9 @@ export function UIProvider(
     const value: UIContextValue = {
         selectedTab,
         setSelectedTab,
-        pendingChallenge,
-        setPendingChallenge,
-        pendingSubTab,
-        setPendingSubTab,
-        pendingHeldDID,
-        setPendingHeldDID,
+        selectedMessageTab,
+        setSelectedMessageTab,
+        openBrowserWindow,
         openBrowser,
         setOpenBrowser,
         handleCopyDID,
