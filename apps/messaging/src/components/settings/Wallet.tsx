@@ -1,23 +1,24 @@
 import { useState } from "react";
-import {Box, HStack, Text, Button, Flex, IconButton, Heading} from "@chakra-ui/react";
-import { ColorModeButton, useColorMode } from "../contexts/ColorModeProvider";
-import WarningModal from "../modals/WarningModal";
-import MnemonicModal from "../modals/MnemonicModal";
-import { useWalletContext } from "../contexts/WalletProvider";
-import { useSnackbar } from "../contexts/SnackbarProvider";
-import {LuArrowLeft} from "react-icons/lu";
+import { Box, Button, Flex, Heading, IconButton } from "@chakra-ui/react";
+import { LuArrowLeft } from "react-icons/lu";
+import { useColorMode } from "../../contexts/ColorModeProvider";
+import WarningModal from "../../modals/WarningModal";
+import MnemonicModal from "../../modals/MnemonicModal";
+import { useWalletContext } from "../../contexts/WalletProvider";
+import { useSnackbar } from "../../contexts/SnackbarProvider";
 
-export interface SettingsProps {
+export interface WalletSettingsProps {
     isOpen: boolean;
     onClose: () => void;
 }
 
-export default function Settings({ isOpen, onClose }: SettingsProps) {
-    const { keymaster, wipeWallet } = useWalletContext();
-    const { setError } = useSnackbar();
+export default function Wallet({ isOpen, onClose }: WalletSettingsProps) {
     const { colorMode } = useColorMode();
+    const { keymaster, wipeWallet } = useWalletContext();
+    const { setError, setSuccess } = useSnackbar();
 
     const [resetOpen, setResetOpen] = useState(false);
+    const [backupOpen, setBackupOpen] = useState(false);
     const [mnemonicOpen, setMnemonicOpen] = useState(false);
     const [mnemonic, setMnemonic] = useState<string>("");
 
@@ -36,16 +37,38 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
             return;
         }
         try {
-            const mnemonic = await keymaster.decryptMnemonic();
-            setMnemonic(mnemonic);
+            const m = await keymaster.decryptMnemonic();
+            setMnemonic(m);
             setMnemonicOpen(true);
         } catch (e: any) {
             setError(e);
         }
     };
 
+    async function handleConfirmBackup() {
+        if (!keymaster) return;
+        try {
+            await keymaster.backupWallet();
+            setSuccess("Wallet backup created");
+        } catch (error: any) {
+            setError(error);
+        } finally {
+            setBackupOpen(false);
+        }
+    }
+
     return (
         <>
+            <WarningModal
+                isOpen={backupOpen}
+                title="Backup Wallet"
+                warningText={
+                    "This will create an encrypted backup of your wallet. If you later restore your wallet from your mnemonic this backup will automatically be restored."
+                }
+                onSubmit={handleConfirmBackup}
+                onClose={() => setBackupOpen(false)}
+            />
+
             <WarningModal
                 isOpen={resetOpen}
                 title="Reset Wallet"
@@ -70,7 +93,7 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
                 left="0"
                 right="0"
                 bottom="46px"
-                zIndex={1200}
+                zIndex={1300}
                 bg={colorMode === "dark" ? "gray.900" : "white"}
                 display="flex"
                 flexDirection="column"
@@ -79,16 +102,15 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
                     <IconButton variant="ghost" onClick={onClose}>
                         <LuArrowLeft />
                     </IconButton>
-                    <Heading size="sm">Settings</Heading>
+                    <Heading size="sm">Wallet</Heading>
                 </Flex>
 
                 <Box as="main" flex="1" overflowY="auto" px={4}>
-                    <HStack justify="space-between" py={3}>
-                        <HStack gap={3}>
-                            <Text>Dark Mode</Text>
-                        </HStack>
-                        <ColorModeButton />
-                    </HStack>
+                    <Box py={3}>
+                        <Button width="100%" onClick={() => setBackupOpen(true)}>
+                            Backup
+                        </Button>
+                    </Box>
 
                     <Box py={3}>
                         <Button width="100%" onClick={handleRevealMnemonic}>
@@ -97,12 +119,7 @@ export default function Settings({ isOpen, onClose }: SettingsProps) {
                     </Box>
 
                     <Box py={3}>
-                        <Button
-                            width="100%"
-                            colorScheme="red"
-                            color="white"
-                            onClick={() => setResetOpen(true)}
-                        >
+                        <Button width="100%" onClick={() => setResetOpen(true)}>
                             Wipe Wallet
                         </Button>
                     </Box>

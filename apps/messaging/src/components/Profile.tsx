@@ -9,7 +9,7 @@ import QRCodeModal from "../modals/QRCodeModal";
 import { useWalletContext } from "../contexts/WalletProvider";
 import { useSnackbar } from "../contexts/SnackbarProvider";
 import { useVariablesContext } from "../contexts/VariablesProvider";
-import Settings from "./Settings";
+import SettingsMenu from "./settings/SettingsMenu";
 
 export interface ProfileProps {
     isOpen: boolean;
@@ -66,7 +66,7 @@ export default function Profile({ isOpen }: ProfileProps) {
                 userAvatar={userAvatar}
             />
 
-            <Settings
+            <SettingsMenu
                 isOpen={isSettingsOpen}
                 onClose={() => setIsSettingsOpen(false)}
             />

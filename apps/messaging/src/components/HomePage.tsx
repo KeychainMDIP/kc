@@ -25,10 +25,11 @@ export default function HomePage() {
         keymaster,
     } = useWalletContext();
 
-    const { setError, setSuccess } = useSnackbar();
+    const { setSuccess } = useSnackbar();
 
     const [isAddOpen, setIsAddOpen] = useState(false);
     const [isProfileOpen, setIsProfileOpen] = useState(false);
+    const [addUserError, setAddUserError] = useState("");
 
     const handleAddUser = async (did: string, name: string) => {
         if (!keymaster) {
@@ -38,13 +39,20 @@ export default function HomePage() {
         const aliasDID = did.trim();
         const aliasName = name.trim();
         if (!aliasDID || !aliasName) {
+            setAddUserError("Invalid DID or name");
+            return;
+        }
+
+        if (Object.values(nameList).includes(aliasDID)) {
+            const key = Object.keys(nameList).find(key => nameList[key] === aliasDID);
+            setAddUserError(`User already added as ${key}`);
             return;
         }
 
         try {
             await keymaster.addName(aliasName, aliasDID);
         } catch (error: any) {
-            setError(error);
+            setAddUserError(error);
             return;
         }
 
@@ -87,6 +95,7 @@ export default function HomePage() {
             <AddUserModal
                 isOpen={isAddOpen}
                 onClose={() => setIsAddOpen(false)}
+                errorText={addUserError}
                 onSubmit={handleAddUser}
             />
 

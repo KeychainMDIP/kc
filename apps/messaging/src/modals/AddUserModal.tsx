@@ -7,18 +7,20 @@ interface AddUserModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSubmit: (did: string, name: string) => void;
+    errorText: string,
 }
 
-const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onSubmit }) => {
+const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onSubmit, errorText }) => {
     const [did, setDid] = useState("");
     const [name, setName] = useState("");
-    const [error, setError] = useState("");
+    const [localError, setLocalError] = useState("");
+    const combinedError = localError || errorText || "";
 
     useEffect(() => {
         if (!isOpen) {
             setDid("");
             setName("");
-            setError("");
+            setLocalError("");
         }
     }, [isOpen]);
 
@@ -27,24 +29,16 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onSubmit }
         const d = did.trim();
         const n = name.trim();
         if (!d || !n) {
-            setError("Both DID and Name are required");
+            setLocalError("Both DID and Name are required");
             return;
         }
         onSubmit(d, n);
-        handleClose();
-    }
-
-    function handleClose() {
-        setDid("");
-        setName("");
-        setError("");
-        onClose();
     }
 
     async function scanQR() {
         const qr = await scanQrCode();
         if (!qr) {
-            setError("Failed to scan QR code");
+            setLocalError("Failed to scan QR code");
             return;
         }
 
@@ -67,7 +61,11 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onSubmit }
                     <Dialog.CloseTrigger />
                 </Dialog.Header>
                 <Dialog.Body>
-                    {error && <Text color="red.500" mb={2}>{error}</Text>}
+                    {combinedError && (
+                        <Text color="red.500" mb={2}>
+                            {combinedError}
+                        </Text>)
+                    }
                     <form id="add-user-form" onSubmit={handleConfirm}>
                         <Field.Root>
                             <Field.Label htmlFor="add-user-name">Name</Field.Label>
@@ -98,7 +96,7 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onSubmit }
                     </form>
                 </Dialog.Body>
                 <Dialog.Footer>
-                    <Button variant="outline" onClick={handleClose}>Cancel</Button>
+                    <Button variant="outline" onClick={onClose}>Cancel</Button>
                     <Button colorScheme="blue" type="submit" form="add-user-form">Add</Button>
                 </Dialog.Footer>
             </Dialog.Content>

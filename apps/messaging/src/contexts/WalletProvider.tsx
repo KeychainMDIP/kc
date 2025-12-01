@@ -42,6 +42,7 @@ interface WalletContextValue {
     wipeWallet: () => void;
     restoreMnemonic: (mnemonic: string) => Promise<void>;
     initialiseWallet: () => Promise<void>;
+    initialiseServices: () => Promise<void>;
     keymaster: Keymaster | null;
 }
 
@@ -243,6 +244,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         restoreMnemonic,
         wipeWallet,
         initialiseWallet,
+        initialiseServices,
         keymaster: keymasterRef.current,
     };
 
