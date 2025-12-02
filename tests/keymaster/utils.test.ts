@@ -274,7 +274,7 @@ describe('revokeDID', () => {
         const doc = await keymaster.resolveDID(dataDid);
 
         expect(ok).toBe(true);
-        expect(doc.didDocument).toStrictEqual({});
+        expect(doc.didDocument).toStrictEqual({ id: dataDid });
         expect(doc.didDocumentData).toStrictEqual({});
         expect(doc.didDocumentMetadata!.deactivated).toBe(true);
     });
@@ -294,7 +294,7 @@ describe('revokeDID', () => {
         const doc = await keymaster.resolveDID(dataDid);
 
         expect(ok).toBe(true);
-        expect(doc.didDocument).toStrictEqual({});
+        expect(doc.didDocument).toStrictEqual({ id: dataDid });
         expect(doc.didDocumentData).toStrictEqual({});
         expect(doc.didDocumentMetadata!.deactivated).toBe(true);
     });

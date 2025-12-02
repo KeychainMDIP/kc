@@ -730,7 +730,7 @@ export default class Gatekeeper implements GatekeeperInterface {
             if (operation.type === 'delete') {
                 versionNum += 1;
 
-                doc.didDocument = {};
+                doc.didDocument = { id: did };
                 doc.didDocumentData = {};
                 doc.didDocumentMetadata = {
                     deactivated: true,

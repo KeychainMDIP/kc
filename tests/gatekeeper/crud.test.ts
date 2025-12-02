@@ -839,3 +839,20 @@ describe('updateDID', () => {
         }
     });
 });
+
+describe('deleteDID', () => {
+    it('should delete a valid DID', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await helper.createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const deleteOp = await helper.createDeleteOp(keypair, did);
+        const ok = await gatekeeper.deleteDID(deleteOp);
+        const doc = await gatekeeper.resolveDID(did);
+
+        expect(ok).toBe(true);
+        expect(doc).toBeDefined();
+        expect(doc.didDocument).toStrictEqual({ id: did });
+        expect(doc.didDocumentMetadata!.deactivated).toBe(true);
+        expect(doc.didDocumentMetadata!.version).toBe("2");
+    });
+});

@@ -538,7 +538,7 @@ describe('revokeCredential', () => {
         expect(ok).toBe(true);
 
         const revoked = await keymaster.resolveDID(did);
-        expect(revoked.didDocument).toStrictEqual({});
+        expect(revoked.didDocument).toStrictEqual({ id: did });
         expect(revoked.didDocumentMetadata!.deactivated).toBe(true);
     });
 
@@ -552,7 +552,7 @@ describe('revokeCredential', () => {
         expect(ok1).toBe(true);
 
         const revoked = await keymaster.resolveDID(did);
-        expect(revoked.didDocument).toStrictEqual({});
+        expect(revoked.didDocument).toStrictEqual({ id: did });
         expect(revoked.didDocumentMetadata!.deactivated).toBe(true);
 
         try {
