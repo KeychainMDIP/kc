@@ -382,7 +382,7 @@ def test_revoke_did():
     assert_equal(ok, True)
 
     doc = keymaster.resolve_did(did)
-    assert doc["didDocument"] == {}, "didDocument should be empty after revocation"
+    assert doc["didDocument"] == {"id": did}, "didDocument should include only the id after revocation"
     assert doc["didDocumentMetadata"].get("deactivated") is True, "DID not marked deactivated"
 
 
