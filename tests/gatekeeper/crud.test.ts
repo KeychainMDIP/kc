@@ -287,7 +287,7 @@ describe('resolveDID', () => {
             didDocumentData: {},
             didDocumentMetadata: {
                 created: expect.any(String),
-                version: 1,
+                version: "1",
                 confirmed: true,
                 versionId: opid
             },
@@ -331,7 +331,7 @@ describe('resolveDID', () => {
             didDocumentMetadata: {
                 created: expect.any(String),
                 updated: expect.any(String),
-                version: 2,
+                version: "2",
                 confirmed: true,
                 versionId: opid
             },
@@ -395,7 +395,7 @@ describe('resolveDID', () => {
             didDocumentMetadata: {
                 created: expect.any(String),
                 updated: expect.any(String),
-                version: 2,
+                version: "2",
                 confirmed: true,
                 versionId: opid
             },
@@ -440,7 +440,7 @@ describe('resolveDID', () => {
             didDocumentMetadata: {
                 created: expect.any(String),
                 updated: expect.any(String),
-                version: 2,
+                version: "2",
                 confirmed: false,
                 versionId: opid
             },
@@ -497,7 +497,8 @@ describe('resolveDID', () => {
             await gatekeeper.updateDID(updateOp);
         }
 
-        const doc = await gatekeeper.resolveDID(did, { atVersion: expected!.didDocumentMetadata!.version });
+        const atVersion = parseInt(expected!.didDocumentMetadata!.version!, 10);
+        const doc = await gatekeeper.resolveDID(did, { atVersion });
         expect(doc).toStrictEqual(expected);
     });
 
@@ -517,7 +518,8 @@ describe('resolveDID', () => {
 
         for (let i = 0; i < 10; i++) {
             const doc = await gatekeeper.resolveDID(did, { atVersion: i + 1 });
-            expect(doc.didDocumentMetadata!.version).toBe(i + 1);
+            const version = (i + 1).toString();
+            expect(doc.didDocumentMetadata!.version).toBe(version);
         }
     });
 
@@ -542,7 +544,7 @@ describe('resolveDID', () => {
             didDocumentData: assetOp.data,
             didDocumentMetadata: {
                 created: expect.any(String),
-                version: 1,
+                version: "1",
                 confirmed: true,
                 versionId: opid
             },
@@ -722,7 +724,7 @@ describe('updateDID', () => {
         const ok = await gatekeeper.updateDID(updateOp);
         const updatedDoc = await gatekeeper.resolveDID(did);
         doc.didDocumentMetadata!.updated = expect.any(String);
-        doc.didDocumentMetadata!.version = 2;
+        doc.didDocumentMetadata!.version = "2";
         doc.didDocumentMetadata!.versionId = opid;
 
         expect(ok).toBe(true);
@@ -742,7 +744,8 @@ describe('updateDID', () => {
             const updatedDoc = await gatekeeper.resolveDID(did);
 
             expect(ok).toBe(true);
-            expect(updatedDoc.didDocumentMetadata!.version).toBe(i + 2);
+            const version = (i + 2).toString();
+            expect(updatedDoc.didDocumentMetadata!.version).toBe(version);
         }
     });
 
@@ -812,7 +815,7 @@ describe('updateDID', () => {
         }
 
         const doc2 = await gatekeeper.resolveDID(did, { verify: true });
-        expect(doc2.didDocumentMetadata!.version).toBe(11);
+        expect(doc2.didDocumentMetadata!.version).toBe("11");
     });
 
     it('should throw exception when registry queue exceeds limit', async () => {

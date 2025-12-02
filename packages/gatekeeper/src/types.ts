@@ -177,7 +177,7 @@ export interface DocumentMetadata {
     updated?: string;
     canonicalId?: string;
     versionId?: string;
-    version?: number;
+    version?: string;
     confirmed?: boolean;
     deactivated?: boolean;
     deleted?: string;

@@ -231,7 +231,10 @@ export default class Gatekeeper implements GatekeeperInterface {
 
                 const version = doc.didDocumentMetadata?.version;
                 if (version != null) {
-                    byVersion[version] = (byVersion[version] || 0) + 1;
+                    const versionNum = parseInt(version, 10);
+                    if (!isNaN(versionNum)) {
+                        byVersion[versionNum] = (byVersion[versionNum] || 0) + 1;
+                    }
                 }
             }
             catch (error) {
@@ -609,7 +612,7 @@ export default class Gatekeeper implements GatekeeperInterface {
 
         const created = doc.didDocumentMetadata?.created;
         const canonicalId = doc.didDocumentMetadata?.canonicalId;
-        let version = 1; // initial version is version 1 by definition
+        let versionNum = 1; // initial version is version 1 by definition
         let confirmed = true; // create event is always confirmed by definition
 
         for (const { time, operation, registry, blockchain } of events) {
@@ -674,7 +677,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                     created,
                     canonicalId,
                     versionId,
-                    version,
+                    version: versionNum.toString(),
                     confirmed,
                     timestamp,
                 }
@@ -685,7 +688,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                 break;
             }
 
-            if (atVersion && version === atVersion) {
+            if (atVersion && versionNum === atVersion) {
                 break;
             }
 
@@ -709,7 +712,7 @@ export default class Gatekeeper implements GatekeeperInterface {
             }
 
             if (operation.type === 'update') {
-                version += 1;
+                versionNum += 1;
 
                 doc = operation.doc || {};
                 doc.didDocumentMetadata = {
@@ -717,7 +720,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                     updated,
                     canonicalId,
                     versionId,
-                    version,
+                    version: versionNum.toString(),
                     confirmed,
                     timestamp,
                 }
@@ -725,7 +728,7 @@ export default class Gatekeeper implements GatekeeperInterface {
             }
 
             if (operation.type === 'delete') {
-                version += 1;
+                versionNum += 1;
 
                 doc.didDocument = {};
                 doc.didDocumentData = {};
@@ -735,7 +738,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                     deleted: updated,
                     canonicalId,
                     versionId,
-                    version,
+                    version: versionNum.toString(),
                     confirmed,
                     timestamp,
                 }

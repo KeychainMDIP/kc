@@ -674,7 +674,7 @@ describe('processEvents', () => {
 
         const doc2 = await gatekeeper.resolveDID(did);
 
-        expect(doc2.didDocumentMetadata!.version).toBe(2);
+        expect(doc2.didDocumentMetadata!.version).toBe("2");
         expect(doc2.didDocumentMetadata!.confirmed).toBe(true);
     });
 
@@ -1023,7 +1023,7 @@ describe('processEvents', () => {
         expect(response1.added).toBe(events.length);
 
         const assetDoc2 = await gatekeeper.resolveDID(assetDID);
-        expect(assetDoc2.didDocumentMetadata!.version).toBe(3);
+        expect(assetDoc2.didDocumentMetadata!.version).toBe("3");
         expect(assetDoc2.didDocumentMetadata!.confirmed).toBe(false);
 
         for (const event of events) {
@@ -1036,7 +1036,7 @@ describe('processEvents', () => {
         expect(response2.added).toBe(events.length);
 
         const assetDoc3 = await gatekeeper.resolveDID(assetDID);
-        expect(assetDoc3.didDocumentMetadata!.version).toBe(3);
+        expect(assetDoc3.didDocumentMetadata!.version).toBe("3");
         expect(assetDoc3.didDocumentMetadata!.confirmed).toBe(true);
     });
 
