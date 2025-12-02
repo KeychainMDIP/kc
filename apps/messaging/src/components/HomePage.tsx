@@ -56,6 +56,7 @@ export default function HomePage() {
             return;
         }
 
+        setIsAddOpen(false);
         await refreshNames();
         setSuccess(`User ${aliasName} added`);
     };

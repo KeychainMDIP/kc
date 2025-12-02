@@ -46,14 +46,7 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onSubmit, 
     }
 
     return (
-        <Dialog.Root
-            open={isOpen}
-            onOpenChange={(e: { open: boolean }) => {
-                if (!e.open) {
-                    onClose();
-                }
-            }}
-        >
+        <Dialog.Root open={isOpen}>
             <Dialog.Backdrop />
             <Dialog.Content>
                 <Dialog.Header>

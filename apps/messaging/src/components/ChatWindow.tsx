@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from "react"
+import React, { useMemo, useState, useEffect, useRef } from "react"
 import {
     ChatContainer,
     ConversationHeader,
@@ -20,11 +20,13 @@ import { LuEllipsisVertical, LuQrCode, LuPencil, LuTrash2 } from "react-icons/lu
 import { useSnackbar } from "../contexts/SnackbarProvider";
 import { useVariablesContext } from "../contexts/VariablesProvider";
 import { useWalletContext } from "../contexts/WalletProvider";
-import { avatarDataUrl, formatTime } from "../utils/utils";
+import { avatarDataUrl, formatTime, truncateMiddle } from "../utils/utils";
 import { CHAT_SUBJECT } from "../constants";
 import TextInputModal from "../modals/TextInputModal";
 import WarningModal from "../modals/WarningModal";
 import QRCodeModal from "../modals/QRCodeModal";
+import { Buffer } from "buffer";
+import { CloseButton, Box } from "@chakra-ui/react";
 
 type MessageModel = {
     message: string
@@ -32,9 +34,11 @@ type MessageModel = {
     direction: "incoming" | "outgoing"
     sentTime?: string
     position: "single" | "first" | "normal" | "last"
+    type?: "text" | "custom"
 }
 
 const UNREAD = "unread"
+const IMAGE_PLACEHOLDER = "[image]"
 
 const ChatWindow: React.FC = () => {
     const {
@@ -58,6 +62,11 @@ const ChatWindow: React.FC = () => {
     const [renameOldName, setRenameOldName] = useState<string>("");
     const [removeOpen, setRemoveOpen] = useState<boolean>(false);
     const [qrOpen, setQrOpen] = useState(false);
+    const [uploadingImage, setUploadingImage] = useState<boolean>(false);
+    const [imageViewerSrc, setImageViewerSrc] = useState<string>("");
+    const [imageViewerOpen, setImageViewerOpen] = useState<boolean>(false);
+    const fileInputRef = useRef<HTMLInputElement | null>(null);
+    const [imageAttachments, setImageAttachments] = useState<Record<string, { name: string; url: string; mime: string }[]>>({});
 
     const { setError } = useSnackbar();
 
@@ -163,7 +172,7 @@ const ChatWindow: React.FC = () => {
 
     const handleSend = async (text: string) => {
         const body = (text ?? pendingText).trim();
-        if (!body || !keymaster || !currentId || !activePeer) {
+        if (!body || !keymaster || !activePeer) {
             return;
         }
 
@@ -188,6 +197,137 @@ const ChatWindow: React.FC = () => {
             setSending(false)
         }
     }
+
+    const openFilePicker = () => {
+        if (!activePeer || !keymaster || uploadingImage) {
+            return;
+        }
+
+        const temp = document.createElement("input");
+        temp.type = "file";
+        temp.accept = "image/*";
+        temp.hidden = true;
+        const onTempChange = (e: Event) => {
+            uploadImageAttachment(e as unknown as React.ChangeEvent<HTMLInputElement>);
+            temp.removeEventListener("change", onTempChange);
+            if (temp.parentNode) {
+                temp.parentNode.removeChild(temp);
+            }
+        };
+        temp.addEventListener("change", onTempChange, { once: true });
+        document.body.appendChild(temp);
+        temp.click();
+    }
+
+    const isImageName = (name: string) => /\.(png|jpg|jpeg|gif|webp|bmp|svg)$/i.test(name);
+
+    const guessMime = (name: string) => {
+        const ext = name.split(".").pop()?.toLowerCase();
+        switch (ext) {
+        case "png": return "image/png";
+        case "jpg":
+        case "jpeg": return "image/jpeg";
+        case "gif": return "image/gif";
+        case "webp": return "image/webp";
+        case "bmp": return "image/bmp";
+        case "svg": return "image/svg+xml";
+        default: return "application/octet-stream";
+        }
+    }
+
+    const uploadImageAttachment = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        if (!keymaster || !activePeer) {
+            return;
+        }
+
+        try {
+            const fileInput = event.target;
+            if (!fileInput.files || fileInput.files.length === 0) {
+                return;
+            }
+
+            const file = fileInput.files[0];
+            fileInput.value = "";
+
+            if (!isImageName(file.name)) {
+                setError("Please select an image file");
+                return;
+            }
+
+            setUploadingImage(true);
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                try {
+                    if (!e.target || !e.target.result) {
+                        setError("Unexpected file reader result");
+                        setUploadingImage(false);
+                        return;
+                    }
+                    const arrayBuffer = e.target.result;
+                    let buffer: Buffer;
+                    if (arrayBuffer instanceof ArrayBuffer) {
+                        buffer = Buffer.from(arrayBuffer);
+                    } else {
+                        setError("Unexpected file reader result type");
+                        setUploadingImage(false);
+                        return;
+                    }
+
+                    const recipientDid = nameList[activePeer];
+                    if (!recipientDid) {
+                        setError("Unknown recipient");
+                        setUploadingImage(false);
+                        return;
+                    }
+
+                    const dmail = {
+                        to: [recipientDid],
+                        cc: [],
+                        subject: CHAT_SUBJECT,
+                        body: IMAGE_PLACEHOLDER,
+                    };
+
+                    const did = await keymaster.createDmail(dmail);
+
+                    const ok = await keymaster.addDmailAttachment(did, file.name, buffer);
+                    if (!ok) {
+                        setError(`Error uploading file: ${file.name}`);
+                        setUploadingImage(false);
+                        return;
+                    }
+
+                    await keymaster.sendDmail(did);
+                    await refreshInbox();
+                } catch (err: any) {
+                    setError(err);
+                } finally {
+                    setUploadingImage(false);
+                }
+            };
+
+            reader.onerror = (err) => {
+                setError(`Error uploading file: ${err}`);
+                setUploadingImage(false);
+            };
+
+            reader.readAsArrayBuffer(file);
+        } catch (err: any) {
+            setError(err);
+            setUploadingImage(false);
+        }
+    };
+
+
+    const openImageViewer = (src: string) => {
+        setImageViewerSrc(src);
+        setImageViewerOpen(true);
+    };
+
+    const closeImageViewer = () => {
+        setImageViewerOpen(false);
+        setImageViewerSrc("");
+    };
 
     const conversation = useMemo(() => {
         if (!activePeer || !currentId) {
@@ -234,6 +374,61 @@ const ChatWindow: React.FC = () => {
         return convo;
     }, [activePeer, currentId, dmailList])
 
+    useEffect(() => {
+        let mounted = true;
+        const urlsToRevoke: string[] = [];
+
+        const load = async () => {
+            if (!keymaster) return;
+            const out: Record<string, { name: string; url: string; mime: string }[]> = {};
+            try {
+                for (const item of conversation) {
+                    const did = item.did;
+                    let list: Record<string, any> = {};
+                    try {
+                        list = await keymaster.listDmailAttachments(did);
+                    } catch {
+                        list = {};
+                    }
+                    const names = Object.keys(list || {}).filter(isImageName);
+                    if (names.length === 0) continue;
+
+                    const imgs: { name: string; url: string; mime: string }[] = [];
+                    for (const name of names) {
+                        try {
+                            const buf = await keymaster.getDmailAttachment(did, name);
+                            if (!buf) {
+                                continue;
+                            }
+                            const mime = guessMime(name);
+                            const view = buf instanceof Uint8Array ? buf : new Uint8Array(buf as any);
+                            const arrayBuffer = view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength);
+                            const blob = new Blob([arrayBuffer], { type: mime });
+                            const url = URL.createObjectURL(blob);
+                            urlsToRevoke.push(url);
+                            imgs.push({ name, url, mime });
+                        } catch {}
+                    }
+                    if (imgs.length > 0) {
+                        out[did] = imgs;
+                    }
+                }
+                if (mounted) {
+                    setImageAttachments(out);
+                } else {
+                    urlsToRevoke.forEach(u => URL.revokeObjectURL(u));
+                }
+            } catch {}
+        };
+
+        load();
+
+        return () => {
+            mounted = false;
+            urlsToRevoke.forEach(u => URL.revokeObjectURL(u));
+        };
+    }, [conversation, keymaster]);
+
 
     if (!activePeer) {
         return;
@@ -273,7 +468,7 @@ const ChatWindow: React.FC = () => {
                 <ConversationHeader>
                     <ConversationHeader.Back onClick={onBack} />
                     <Avatar src={peerAvatar} name={activePeer} />
-                    <ConversationHeader.Content userName={activePeer} info={nameList[activePeer]}/>
+                    <ConversationHeader.Content userName={activePeer} info={truncateMiddle(nameList[activePeer], 25)}/>
                     <ConversationHeader.Actions>
                         <MenuRoot closeOnSelect>
                             <MenuTrigger asChild>
@@ -309,11 +504,39 @@ const ChatWindow: React.FC = () => {
                 </ConversationHeader>
 
                 <MessageList autoScrollToBottom autoScrollToBottomOnMount>
-                    {conversation.map((m) => (
-                        <Message key={m.did} model={m.model}>
-                            <Message.Header sentTime={m.model!.sentTime} />
-                        </Message>
-                    ))}
+                    {conversation.map((m) => {
+                        const hasImages = !!(imageAttachments[m.did] && imageAttachments[m.did].length > 0);
+                        const displayMessage = hasImages && m.model.message === IMAGE_PLACEHOLDER ? "" : m.model.message;
+                        return (
+                            <Message
+                                key={m.did}
+                                model={{
+                                    ...m.model,
+                                    message: displayMessage,
+                                    type: hasImages && displayMessage === "" ? "custom" : undefined,
+                                }}
+                            >
+                                <Message.Header sentTime={m.model!.sentTime} />
+                                {hasImages && (
+                                    <Message.CustomContent>
+                                        <div>
+                                            {imageAttachments[m.did].map(img => (
+                                                <img
+                                                    key={img.name}
+                                                    src={img.url}
+                                                    alt={img.name}
+                                                    style={{
+                                                        maxWidth: 240,
+                                                        maxHeight: 240,
+                                                    }}
+                                                    onClick={() => openImageViewer(img.url)}
+                                                />
+                                            ))}
+                                        </div>
+                                    </Message.CustomContent>
+                                )}
+                            </Message>
+                        )})}
                 </MessageList>
 
                 <MessageInput
@@ -321,11 +544,28 @@ const ChatWindow: React.FC = () => {
                     value={pendingText}
                     onChange={setPendingText}
                     onSend={handleSend}
-                    disabled={sending}
-                    attachButton={false}
+                    disabled={sending || uploadingImage}
+                    attachButton={true}
                     sendButton={true}
+                    onAttachClick={openFilePicker}
+                />
+
+                <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    hidden
+                    onChange={uploadImageAttachment}
                 />
             </ChatContainer>
+
+            {imageViewerOpen && (
+                <Box position="fixed" inset={0} bg="blackAlpha.900" zIndex={1000} display="flex" alignItems="center" justifyContent="center">
+                    <CloseButton position="absolute" top={4} right={4} size="lg" color="white" onClick={closeImageViewer} />
+                    {/* eslint-disable-next-line jsx-a11y/alt-text */}
+                    <img src={imageViewerSrc} style={{ maxWidth: "100%", maxHeight: "100%" }} />
+                </Box>
+            )}
         </>
     )
 }
