@@ -1173,18 +1173,36 @@ describe('getDids', () => {
 
     it('should return all DIDs after specified time', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await helper.createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair, { registry: 'TFTC' });
         const agentDID = await gatekeeper.createDID(agentOp);
         const dids = [];
+        const batch = [];
 
         for (let i = 0; i < 10; i++) {
-            const assetOp = await helper.createAssetOp(agentDID, keypair);
+            const assetOp = await helper.createAssetOp(agentDID, keypair, { registry: 'TFTC' });
             const assetDID = await gatekeeper.createDID(assetOp);
+            const update = await gatekeeper.resolveDID(assetDID);
+            update.didDocumentData = { mock: i + 1 };
+            const updateOp = await helper.createUpdateOp(keypair, assetDID, update);
+            await gatekeeper.updateDID(updateOp);
             dids.push(assetDID);
+            const ops = await gatekeeper.exportDID(assetDID);
+            batch.push(...ops);
         }
 
+        let timestamp = Date.now();
+
+        for (const op of batch) {
+            op.registry = 'TFTC';
+            timestamp += 3600000; // add 1 hour to timestamp for each op
+            op.time = new Date(timestamp).toISOString();
+        }
+
+        await gatekeeper.importBatch(batch);
+        await gatekeeper.processEvents();
+
         const doc = await gatekeeper.resolveDID(dids[4]);
-        const recentDIDs = await gatekeeper.getDIDs({ updatedAfter: doc.didDocumentMetadata!.created });
+        const recentDIDs = await gatekeeper.getDIDs({ updatedAfter: doc.didDocumentMetadata!.updated });
 
         expect(recentDIDs.length).toBe(5);
         expect(recentDIDs.includes(dids[5])).toBe(true);
@@ -1196,18 +1214,35 @@ describe('getDids', () => {
 
     it('should return all DIDs before specified time', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await helper.createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair, { registry: 'TFTC' });
         const agentDID = await gatekeeper.createDID(agentOp);
         const dids = [];
+        const batch = [];
 
         for (let i = 0; i < 10; i++) {
-            const assetOp = await helper.createAssetOp(agentDID, keypair);
+            const assetOp = await helper.createAssetOp(agentDID, keypair, { registry: 'TFTC' });
             const assetDID = await gatekeeper.createDID(assetOp);
+            const update = await gatekeeper.resolveDID(assetDID);
+            update.didDocumentData = { mock: i + 1 };
+            const updateOp = await helper.createUpdateOp(keypair, assetDID, update);
+            await gatekeeper.updateDID(updateOp);
             dids.push(assetDID);
+            const ops = await gatekeeper.exportDID(assetDID);
+            batch.push(...ops);
         }
 
+        let timestamp = Date.now();
+
+        for (const op of batch) {
+            op.registry = 'TFTC';
+            timestamp += 3600000; // add 1 hour to timestamp for each op
+            op.time = new Date(timestamp).toISOString();
+        }
+
+        await gatekeeper.importBatch(batch);
+        await gatekeeper.processEvents();
         const doc = await gatekeeper.resolveDID(dids[5]);
-        const recentDIDs = await gatekeeper.getDIDs({ updatedBefore: doc.didDocumentMetadata!.created });
+        const recentDIDs = await gatekeeper.getDIDs({ updatedBefore: doc.didDocumentMetadata!.updated });
 
         expect(recentDIDs.length).toBe(6);
         expect(recentDIDs.includes(agentDID)).toBe(true);
@@ -1220,21 +1255,38 @@ describe('getDids', () => {
 
     it('should return all DIDs between specified times', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await helper.createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair, { registry: 'TFTC' });
         const agentDID = await gatekeeper.createDID(agentOp);
         const dids = [];
+        const batch = [];
 
         for (let i = 0; i < 10; i++) {
-            const assetOp = await helper.createAssetOp(agentDID, keypair);
+            const assetOp = await helper.createAssetOp(agentDID, keypair, { registry: 'TFTC' });
             const assetDID = await gatekeeper.createDID(assetOp);
+            const update = await gatekeeper.resolveDID(assetDID);
+            update.didDocumentData = { mock: i + 1 };
+            const updateOp = await helper.createUpdateOp(keypair, assetDID, update);
+            await gatekeeper.updateDID(updateOp);
             dids.push(assetDID);
+            const ops = await gatekeeper.exportDID(assetDID);
+            batch.push(...ops);
         }
 
+        let timestamp = Date.now();
+
+        for (const op of batch) {
+            op.registry = 'TFTC';
+            timestamp += 3600000; // add 1 hour to timestamp for each op
+            op.time = new Date(timestamp).toISOString();
+        }
+
+        await gatekeeper.importBatch(batch);
+        await gatekeeper.processEvents();
         const doc3 = await gatekeeper.resolveDID(dids[3]);
         const doc8 = await gatekeeper.resolveDID(dids[8]);
         const recentDIDs = await gatekeeper.getDIDs({
-            updatedAfter: doc3.didDocumentMetadata!.created,
-            updatedBefore: doc8.didDocumentMetadata!.created
+            updatedAfter: doc3.didDocumentMetadata!.updated,
+            updatedBefore: doc8.didDocumentMetadata!.updated
         });
 
         expect(recentDIDs.length).toBe(4);

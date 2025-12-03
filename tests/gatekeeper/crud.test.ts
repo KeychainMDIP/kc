@@ -452,29 +452,38 @@ describe('resolveDID', () => {
     });
 
     it('should resolve version at specified time', async () => {
-
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await helper.createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair, { version: 1, registry: 'TFTC' });
         const did = await gatekeeper.createDID(agentOp);
 
-        let expected;
-
-        // Add 10 versions, save one from the middle
+        // Add 10 versions
         for (let i = 0; i < 10; i++) {
             const update = await gatekeeper.resolveDID(did);
-
-            if (i === 5) {
-                expected = update;
-            }
-
-            update.didDocumentData = { mock: 1 };
+            update.didDocumentData = { mock: i + 1 };
             const updateOp = await helper.createUpdateOp(keypair, did, update);
             await gatekeeper.updateDID(updateOp);
         }
 
-        const doc = await gatekeeper.resolveDID(did, { atTime: expected!.didDocumentMetadata!.updated });
-        expect(doc).toStrictEqual(expected);
+        const ops = await gatekeeper.exportDID(did);
+        let timestamp = Date.now();
+
+        for (const op of ops) {
+            op.registry = 'TFTC';
+            timestamp += 3600000; // add 1 hour to timestamp for each op
+            op.time = new Date(timestamp).toISOString();
+        }
+
+        await gatekeeper.importBatch(ops);
+        await gatekeeper.processEvents();
+
+        // Pick a time out of the middle of the updates
+        const doc = await gatekeeper.resolveDID(did, { atTime: ops[5].time });
+
+        expect(doc.didDocumentMetadata!.version).toBe("6");
+        expect(doc.didDocumentMetadata!.confirmed).toBe(true);
+        expect(doc.didDocumentData).toStrictEqual({ mock: 5 });
     });
+
 
     it('should resolve specified version', async () => {
 
