@@ -1083,7 +1083,15 @@ export default class Keymaster implements KeymasterInterface {
             doc,
         };
 
-        const controller = current.didDocument?.controller || current.didDocument?.id;
+        let controller;
+
+        if (current.mdip?.type === 'agent') {
+            controller = current.didDocument?.id;
+        }
+        else if (current.mdip?.type === 'asset') {
+            controller = current.didDocument?.controller;
+        }
+
         const signed = await this.addSignature(operation, controller);
         return this.gatekeeper.updateDID(signed);
     }
@@ -1102,7 +1110,15 @@ export default class Keymaster implements KeymasterInterface {
             blockid
         };
 
-        const controller = current.didDocument?.controller || current.didDocument?.id;
+        let controller;
+
+        if (current.mdip?.type === 'agent') {
+            controller = current.didDocument?.id;
+        }
+        else if (current.mdip?.type === 'asset') {
+            controller = current.didDocument?.controller;
+        }
+
         const signed = await this.addSignature(operation, controller);
 
         const ok = await this.gatekeeper.deleteDID(signed);
