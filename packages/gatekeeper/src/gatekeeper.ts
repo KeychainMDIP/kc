@@ -88,7 +88,7 @@ export default class Gatekeeper implements GatekeeperInterface {
 
     private async withDidLock<T>(did: string, fn: () => Promise<T>): Promise<T> {
         const prev = this.didLocks.get(did) ?? Promise.resolve();
-        let release: () => void = () => {};
+        let release: () => void = () => { };
         const gate = new Promise<void>(r => (release = r));
 
         this.didLocks.set(did, prev.then(() => gate, () => gate));
@@ -610,14 +610,20 @@ export default class Gatekeeper implements GatekeeperInterface {
             // TBD What to return if DID was created after specified time?
         }
 
-        const created = doc.didDocumentMetadata?.created;
+        function generateStandardDatetime(time: any): string {
+            const date = new Date(time);
+            // Remove milliseconds for standardization
+            return date.toISOString().replace(/\.\d{3}Z$/, 'Z');
+        }
+
+        const created = generateStandardDatetime(doc.didDocumentMetadata?.created);
         const canonicalId = doc.didDocumentMetadata?.canonicalId;
         let versionNum = 1; // initial version is version 1 by definition
         let confirmed = true; // create event is always confirmed by definition
 
         for (const { time, operation, registry, blockchain } of events) {
             const versionId = await this.generateCID(operation);
-            const updated = time;
+            const updated = generateStandardDatetime(time);
             let timestamp;
 
             if (doc.mdip?.registry) {
