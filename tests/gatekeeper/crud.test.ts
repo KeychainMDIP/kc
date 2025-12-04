@@ -357,6 +357,8 @@ describe('resolveDID', () => {
         const ok = await gatekeeper.updateDID(updateOp);
         const confirmedDoc = await gatekeeper.resolveDID(did, { confirm: true });
 
+        // Update expected to match the new retrieved timestamp
+        expected!.didResolutionMetadata!.retrieved = expect.any(String);
 
         expect(ok).toBe(true);
         expect(confirmedDoc).toStrictEqual(expected);
@@ -515,6 +517,10 @@ describe('resolveDID', () => {
 
         const atVersion = parseInt(expected!.didDocumentMetadata!.version!, 10);
         const doc = await gatekeeper.resolveDID(did, { atVersion });
+
+        // Update expected to match the new retrieved timestamp
+        expected!.didResolutionMetadata!.retrieved = expect.any(String);
+
         expect(doc).toStrictEqual(expected);
     });
 
@@ -741,9 +747,12 @@ describe('updateDID', () => {
         const opid = await gatekeeper.generateCID(updateOp);
         const ok = await gatekeeper.updateDID(updateOp);
         const updatedDoc = await gatekeeper.resolveDID(did);
+
+        // Update doc to match expected
         doc.didDocumentMetadata!.updated = expect.any(String);
         doc.didDocumentMetadata!.version = "2";
         doc.didDocumentMetadata!.versionId = opid;
+        doc.didResolutionMetadata!.retrieved = expect.any(String);
 
         expect(ok).toBe(true);
         expect(updatedDoc).toStrictEqual(doc);
