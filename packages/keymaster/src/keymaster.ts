@@ -796,8 +796,18 @@ export default class Keymaster implements KeymasterInterface {
 
     async getImage(id: string): Promise<ImageAsset | null> {
         const asset = await this.resolveAsset(id) as { image?: ImageAsset };
+        const image = asset.image;
 
-        return asset.image ?? null;
+        if (!image || !image.cid) {
+            return null;
+        }
+
+        const buffer = await this.gatekeeper.getData(image.cid);
+        if (buffer) {
+            image.data = buffer;
+        }
+
+        return image;
     }
 
     async testImage(id: string): Promise<boolean> {

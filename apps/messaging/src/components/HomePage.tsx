@@ -20,10 +20,9 @@ export default function HomePage() {
         dmailList,
         setActivePeer,
         refreshNames,
+        avatarList,
     } = useVariablesContext();
-    const {
-        keymaster,
-    } = useWalletContext();
+    const { keymaster } = useWalletContext();
 
     const { setSuccess } = useSnackbar();
 
@@ -46,6 +45,17 @@ export default function HomePage() {
         if (Object.values(nameList).includes(aliasDID)) {
             const key = Object.keys(nameList).find(key => nameList[key] === aliasDID);
             setAddUserError(`User already added as ${key}`);
+            return;
+        }
+
+        try {
+            const newDID = await keymaster.resolveDID(aliasDID);
+            if (newDID.mdip?.type !== "agent") {
+                setAddUserError("DID is not an agent");
+                return;
+            }
+        } catch {
+            setAddUserError("DID not found");
             return;
         }
 
@@ -125,7 +135,10 @@ export default function HomePage() {
                             if (did === currentDID) {
                                 return null;
                             }
-                            const src = avatarDataUrl(did, 64);
+
+                            const customAvatarUrl = avatarList[name];
+                            const src = customAvatarUrl ? customAvatarUrl : avatarDataUrl(did, 64);
+
                             const selected = activePeer === name;
                             const unreadCnt = unreadBySender.get(name) ?? 0;
 

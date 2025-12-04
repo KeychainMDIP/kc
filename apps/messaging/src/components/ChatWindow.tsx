@@ -49,6 +49,7 @@ const ChatWindow: React.FC = () => {
         refreshInbox,
         setActivePeer,
         refreshNames,
+        avatarList,
     } = useVariablesContext();
     const {
         keymaster,
@@ -434,7 +435,8 @@ const ChatWindow: React.FC = () => {
         return;
     }
 
-    const peerAvatar = avatarDataUrl(nameList[activePeer], 64);
+    const customAvatarUrl = avatarList[activePeer];
+    const peerAvatar = customAvatarUrl ? customAvatarUrl : avatarDataUrl(nameList[activePeer], 64);
 
     return (
         <>
@@ -560,7 +562,7 @@ const ChatWindow: React.FC = () => {
             </ChatContainer>
 
             {imageViewerOpen && (
-                <Box position="fixed" inset={0} bg="blackAlpha.900" zIndex={1000} display="flex" alignItems="center" justifyContent="center">
+                <Box position="fixed" inset={0} zIndex={1000} display="flex" alignItems="center" justifyContent="center">
                     <CloseButton position="absolute" top={4} right={4} size="lg" color="white" onClick={closeImageViewer} />
                     {/* eslint-disable-next-line jsx-a11y/alt-text */}
                     <img src={imageViewerSrc} style={{ maxWidth: "100%", maxHeight: "100%" }} />

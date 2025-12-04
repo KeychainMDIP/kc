@@ -192,6 +192,7 @@ export interface BinaryAsset {
     cid: string;
     type: string;
     bytes: number;
+    data?: Buffer;
 }
 
 export interface ImageAsset extends BinaryAsset {

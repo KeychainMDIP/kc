@@ -14,3 +14,17 @@ export const SEARCH_SERVER_KEY = 'mdip-messaging-search-server-url';
 
 export const CHAT_SUBJECT = "mdip-messaging";
 export const WALLET_NAME = "mdip-messaging-wallet";
+
+export const PROFILE_SCHEMA_ID = "mdip-messaging-profile";
+export const PROFILE_VC_ALIAS = "mdip-messaging-profile-vc";
+export const PROFILE_SCHEMA = {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+        [PROFILE_SCHEMA_ID]: {
+            "type": "string",
+            "description": "IPFS Link to profile picture"
+        }
+    },
+    "required": [PROFILE_SCHEMA_ID]
+};

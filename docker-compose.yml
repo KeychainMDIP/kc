@@ -294,7 +294,7 @@ services:
     environment:
       - SEARCH_SERVER_PORT=4002
       - SEARCH_SERVER_GATEKEEPER_URL=http://gatekeeper:4224
-      - SEARCH_SERVER_REFRESH_INTERVAL_MS=60000
+      - SEARCH_SERVER_REFRESH_INTERVAL_MS=5000
       - SEARCH_SERVER_DB=sqlite
     volumes:
       - ./data:/app/search-server/data

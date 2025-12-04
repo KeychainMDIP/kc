@@ -13,7 +13,7 @@ async function main() {
     const {
         SEARCH_SERVER_PORT = 4002,
         SEARCH_SERVER_GATEKEEPER_URL = 'http://localhost:4224',
-        SEARCH_SERVER_REFRESH_INTERVAL_MS = 60000,
+        SEARCH_SERVER_REFRESH_INTERVAL_MS = 5000,
         SEARCH_SERVER_DB = 'sqlite',
     } = process.env;
 

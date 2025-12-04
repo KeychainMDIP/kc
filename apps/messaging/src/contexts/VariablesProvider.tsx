@@ -1,7 +1,8 @@
-import { createContext, Dispatch, ReactNode, SetStateAction, useContext, useState, useEffect, useCallback } from "react";
+import { createContext, Dispatch, ReactNode, SetStateAction, useContext, useState, useRef, useEffect, useCallback } from "react";
 import { DmailItem } from "@mdip/keymaster/types";
 import { useWalletContext } from "./WalletProvider";
 import { useSnackbar } from "./SnackbarProvider";
+import { PROFILE_SCHEMA_ID } from "../constants";
 
 const REFRESH_INTERVAL = 5_000;
 
@@ -16,8 +17,6 @@ interface VariablesContextValue {
     setRegistries: Dispatch<SetStateAction<string[]>>;
     idList: string[];
     setIdList: Dispatch<SetStateAction<string[]>>;
-    unresolvedIdList: string[];
-    setUnresolvedIdList: Dispatch<SetStateAction<string[]>>;
     heldList: string[];
     setHeldList: Dispatch<SetStateAction<string[]>>;
     credentialDID: string;
@@ -62,6 +61,8 @@ interface VariablesContextValue {
     setUnresolvedList: Dispatch<SetStateAction<Record<string, string>>>;
     agentList: string[];
     setAgentList: Dispatch<SetStateAction<string[]>>;
+    avatarList: Record<string, string>;
+    setAvatarList: Dispatch<SetStateAction<Record<string, string>>>;
     pollList: string[];
     setPollList: Dispatch<SetStateAction<string[]>>;
     activePeer: string;
@@ -80,13 +81,13 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
     const [validId, setValidId] = useState<boolean>(false);
     const [currentDID, setCurrentDID] = useState<string>("");
     const [idList, setIdList] = useState<string[]>([]);
-    const [unresolvedIdList, setUnresolvedIdList] = useState<string[]>([]);
     const [registries, setRegistries] = useState<string[]>([]);
     const [heldList, setHeldList] = useState<string[]>([]);
     const [nameList, setNameList] = useState<Record<string, string>>({});
     const [nameRegistry, setNameRegistry] = useState<Record<string, string>>({});
     const [unresolvedList, setUnresolvedList] = useState<Record<string, string>>({});
     const [agentList, setAgentList] = useState<string[]>([]);
+    const [avatarList, setAvatarList] = useState<Record<string, string>>({});
     const [pollList, setPollList] = useState<string[]>([]);
     const [groupList, setGroupList] = useState<string[]>([]);
     const [imageList, setImageList] = useState<string[]>([]);
@@ -111,6 +112,8 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         setManifest,
     } = useWalletContext();
     const { setError } = useSnackbar();
+
+    const avatarCache = useRef<Map<string, string>>(new Map());
 
     useEffect(() => {
         const refresh = async () => {
@@ -162,27 +165,6 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [keymaster]);
 
-    async function getValidIds() {
-        const valid: string[] = [];
-        const invalid: string[] = [];
-
-        if (!keymaster) {
-            return {valid, invalid};
-        }
-
-        const allIds = await keymaster.listIds();
-        for (const alias of allIds) {
-            try {
-                await keymaster.resolveDID(alias);
-                valid.push(alias);
-            } catch {
-                invalid.push(alias);
-            }
-        }
-
-        return {valid, invalid};
-    }
-
     async function refreshHeld() {
         if (!keymaster) {
             return;
@@ -208,6 +190,47 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         }
     }
 
+    async function resolveAvatar(assetDid: string): Promise<string | null> {
+        if (!assetDid || !keymaster) {
+            return null;
+        }
+
+        if (avatarCache.current.has(assetDid)) {
+            return avatarCache.current.get(assetDid)!;
+        }
+
+        try {
+            const imageAsset = await keymaster.getImage(assetDid);
+
+            if (!imageAsset || !imageAsset.data) {
+                return null;
+            }
+
+            const mimeType = imageAsset.type || 'image/png';
+            const blob = new Blob([imageAsset.data], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+
+            avatarCache.current.set(assetDid, url);
+            return url;
+        } catch {
+            return null;
+        }
+    }
+
+    async function populateAgentAvatar(name: string, manifest: Record<string, any>, avatarList: Record<string, string>): Promise<void> {
+        for (const key of Object.keys(manifest)) {
+            const vc = manifest[key];
+            const profileAssetDid = vc?.credential?.[PROFILE_SCHEMA_ID];
+            if (profileAssetDid) {
+                const blobUrl = await resolveAvatar(profileAssetDid);
+                if (blobUrl) {
+                    avatarList[name] = blobUrl;
+                    break;
+                }
+            }
+        }
+    }
+
     async function refreshNames(cid?: string) {
         if (!keymaster) {
             return;
@@ -216,16 +239,27 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         let nameList : Record<string, string> = {};
         let unresolvedList : Record<string, string> = {};
         const registryMap: Record<string, string> = {};
+        const avatarList: Record<string, string> = {};
 
         const allNames = await keymaster.listNames();
         const allNamesSorted = Object.fromEntries(
             Object.entries(allNames).sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
         );
 
-        const { valid: agentList, invalid } = await getValidIds();
+        const agentList = await keymaster.listIds();
+
+        for (const idName of agentList) {
+            try {
+                const doc = await keymaster.resolveDID(idName);
+                const data = doc.didDocumentData as Record<string, unknown>;
+
+                if (data && data.manifest && typeof data.manifest === 'object') {
+                    await populateAgentAvatar(idName, data.manifest, avatarList);
+                }
+            } catch {}
+        }
 
         setIdList([...agentList]);
-        setUnresolvedIdList(invalid);
         setValidId(agentList.includes(cid ?? currentId));
 
         const schemaList = [];
@@ -249,6 +283,11 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
 
                 if (doc.mdip?.type === 'agent') {
                     agentList.push(name);
+
+                    if (data && data.manifest && typeof data.manifest === 'object') {
+                        await populateAgentAvatar(name, data.manifest, avatarList);
+                    }
+
                     continue;
                 }
 
@@ -290,6 +329,7 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         setNameList(nameList);
         setUnresolvedList(unresolvedList);
         setNameRegistry(registryMap);
+        setAvatarList(avatarList);
 
         const uniqueSortedAgents = [...new Set(agentList)]
             .sort((a, b) => a.localeCompare(b));
@@ -423,8 +463,6 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         setRegistries,
         idList,
         setIdList,
-        unresolvedIdList,
-        setUnresolvedIdList,
         heldList,
         setHeldList,
         groupList,
@@ -467,6 +505,8 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         setUnresolvedList,
         agentList,
         setAgentList,
+        avatarList,
+        setAvatarList,
         pollList,
         setPollList,
         dmailList,
