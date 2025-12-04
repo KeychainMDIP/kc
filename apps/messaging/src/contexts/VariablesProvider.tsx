@@ -207,7 +207,9 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
             }
 
             const mimeType = imageAsset.type || 'image/png';
-            const blob = new Blob([imageAsset.data], { type: mimeType });
+            const raw: any = imageAsset.data as any;
+            const dataPart: BlobPart = raw?.buffer ? new Uint8Array(raw.buffer, raw.byteOffset ?? 0, raw.byteLength ?? raw.length) : new Uint8Array(raw as ArrayBufferLike);
+            const blob = new Blob([dataPart], { type: mimeType });
             const url = URL.createObjectURL(blob);
 
             avatarCache.current.set(assetDid, url);

@@ -137,7 +137,7 @@ export default function HomePage() {
                             }
 
                             const customAvatarUrl = avatarList[name];
-                            const src = customAvatarUrl ? customAvatarUrl : avatarDataUrl(did, 64);
+                            const src = customAvatarUrl ? customAvatarUrl : avatarDataUrl(did);
 
                             const selected = activePeer === name;
                             const unreadCnt = unreadBySender.get(name) ?? 0;

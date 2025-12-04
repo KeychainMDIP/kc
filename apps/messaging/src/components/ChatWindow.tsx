@@ -334,7 +334,7 @@ const ChatWindow: React.FC = () => {
         if (!activePeer || !currentId) {
             return [] as { did: string; model: MessageModel }[]
         }
-
+        
         const convo = Object.entries(dmailList || {})
             .filter(([, itm]: any) => {
                 const to = [...(itm.to || [])];
@@ -436,7 +436,7 @@ const ChatWindow: React.FC = () => {
     }
 
     const customAvatarUrl = avatarList[activePeer];
-    const peerAvatar = customAvatarUrl ? customAvatarUrl : avatarDataUrl(nameList[activePeer], 64);
+    const peerAvatar = customAvatarUrl ? customAvatarUrl : avatarDataUrl(nameList[activePeer]);
 
     return (
         <>

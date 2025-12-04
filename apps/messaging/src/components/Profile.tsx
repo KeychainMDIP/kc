@@ -1,16 +1,14 @@
-import React, { useState, useRef } from "react";
+import { useState } from "react";
 import { Box, Flex, Text, IconButton, Button, HStack, Input, Spinner } from "@chakra-ui/react";
 import { useColorMode } from "../contexts/ColorModeProvider";
 import { Avatar } from "@chatscope/chat-ui-kit-react";
-import { avatarDataUrl, truncateMiddle } from "../utils/utils";
-import { LuPencil, LuQrCode, LuSettings, LuChevronRight, LuCamera } from "react-icons/lu";
-import TextInputModal from "../modals/TextInputModal";
+import { truncateMiddle } from "../utils/utils";
+import { LuQrCode, LuSettings, LuChevronRight, LuCamera } from "react-icons/lu";
+import EditProfileModal from "../modals/EditProfileModal";
 import QRCodeModal from "../modals/QRCodeModal";
-import { useWalletContext } from "../contexts/WalletProvider";
-import { useSnackbar } from "../contexts/SnackbarProvider";
 import { useVariablesContext } from "../contexts/VariablesProvider";
 import SettingsMenu from "./settings/SettingsMenu";
-import { PROFILE_SCHEMA, PROFILE_SCHEMA_ID, PROFILE_VC_ALIAS } from "../constants";
+import useAvatarUploader from "../hooks/useAvatarUploader";
 
 export interface ProfileProps {
     isOpen: boolean;
@@ -19,128 +17,23 @@ export interface ProfileProps {
 
 export default function Profile({ isOpen }: ProfileProps) {
     const {
-        avatarList,
         currentId,
         currentDID,
-        nameList,
-        refreshCurrentID,
-        refreshNames,
     } = useVariablesContext();
-    const { keymaster } = useWalletContext();
-    const { setError, setSuccess, setWarning } = useSnackbar();
     const { colorMode } = useColorMode();
 
-    const [renameOpen, setRenameOpen] = useState(false);
+    const [editOpen, setEditOpen] = useState(false);
     const [qrOpen, setQrOpen] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-    const [isUploading, setIsUploading] = useState(false);
-
-    const fileInputRef = useRef<HTMLInputElement>(null);
+    const { isUploading, fileInputRef, handleAvatarClick, handleFileChange, userAvatar } = useAvatarUploader();
 
     if (!isOpen) {
         return;
     }
 
-    const handleRenameSubmit = async (newName: string) => {
-        const trimmed = newName.trim();
-        setRenameOpen(false);
-        if (!keymaster || !trimmed || trimmed === currentId) {
-            return;
-        }
-        try {
-            await keymaster.renameId(currentId, trimmed);
-            await refreshCurrentID();
-        } catch (e: any) {
-            setError(e);
-        }
-    };
-
-    const handleAvatarClick = () => {
-        if (!isUploading && fileInputRef.current) {
-            fileInputRef.current.click();
-        }
-    };
-
-    const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (!file || !keymaster) {
-            return;
-        }
-
-        try {
-            setIsUploading(true);
-
-            const arrayBuffer = await file.arrayBuffer();
-            const buffer = Buffer.from(arrayBuffer);
-
-            const assetDid = await keymaster.createImage(buffer);
-
-            const existingVcDid = nameList[PROFILE_VC_ALIAS];
-
-            if (existingVcDid) {
-                try {
-                    const vc = await keymaster.getCredential(existingVcDid);
-
-                    if (vc && vc.credential) {
-                        vc.credential[PROFILE_SCHEMA_ID] = assetDid;
-
-                        await keymaster.updateCredential(existingVcDid, vc);
-                        await keymaster.publishCredential(existingVcDid, { reveal: true });
-
-                        setSuccess("Profile picture updated!");
-                        await refreshNames();
-                        return;
-                    }
-                } catch {
-                    setWarning("Failed to update, creating new");
-                }
-            }
-
-            let schemaDid;
-            if (nameList[PROFILE_SCHEMA_ID] === undefined) {
-                schemaDid = await keymaster.createSchema(PROFILE_SCHEMA);
-                await keymaster.addName(PROFILE_SCHEMA_ID, schemaDid);
-            } else {
-                schemaDid = nameList[PROFILE_SCHEMA_ID];
-            }
-
-            const boundCredential = await keymaster.bindCredential(
-                schemaDid,
-                currentDID,
-                { credential: { [PROFILE_SCHEMA_ID]: assetDid } }
-            );
-
-            const vcDid = await keymaster.issueCredential(boundCredential);
-            await keymaster.acceptCredential(vcDid);
-            await keymaster.publishCredential(vcDid, { reveal: true });
-            await keymaster.addName(PROFILE_VC_ALIAS, vcDid);
-
-            setSuccess("Profile picture set!");
-            await refreshNames();
-        } catch (e: any) {
-            setError(e);
-        } finally {
-            setIsUploading(false);
-            if (fileInputRef.current) {
-                fileInputRef.current.value = "";
-            }
-        }
-    };
-
-    const customAvatarUrl = avatarList[currentId];
-    const userAvatar = customAvatarUrl ? customAvatarUrl : avatarDataUrl(currentDID, 64);
-
     return (
         <>
-            <TextInputModal
-                isOpen={renameOpen}
-                title="Rename"
-                description="Enter a new name"
-                confirmText="Rename"
-                defaultValue={currentId}
-                onSubmit={handleRenameSubmit}
-                onClose={() => setRenameOpen(false)}
-            />
+            <EditProfileModal isOpen={editOpen} onClose={() => setEditOpen(false)} />
 
             <QRCodeModal
                 isOpen={qrOpen}
@@ -193,6 +86,7 @@ export default function Profile({ isOpen }: ProfileProps) {
                         role="group"
                     >
                         <Avatar
+                            size="lg"
                             src={userAvatar}
                             style={{ opacity: isUploading ? 0.5 : 1 }}
                         />
@@ -224,7 +118,7 @@ export default function Profile({ isOpen }: ProfileProps) {
                         right="8px"
                         variant="ghost"
                         size="sm"
-                        onClick={() => setRenameOpen(true)}
+                        onClick={() => setEditOpen(true)}
                     >
                         Edit
                     </IconButton>
