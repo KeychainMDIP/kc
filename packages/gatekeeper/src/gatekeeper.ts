@@ -608,8 +608,8 @@ export default class Gatekeeper implements GatekeeperInterface {
             // TBD What to return if DID was created after specified time?
         }
 
-        function generateStandardDatetime(time?: any): string {
-            const date = time ? new Date(time) : new Date();
+        function generateStandardDatetime(time: any): string {
+            const date = new Date(time);
             // Remove milliseconds for standardization
             return date.toISOString().replace(/\.\d{3}Z$/, 'Z');
         }
