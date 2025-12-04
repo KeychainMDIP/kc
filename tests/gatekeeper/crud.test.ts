@@ -290,8 +290,6 @@ describe('resolveDID', () => {
                 versionId: opid
             },
             didResolutionMetadata: {
-                // eslint-disable-next-line
-                contentType: "application/did+ld+json",
                 retrieved: expect.any(String),
             },
             mdip: agentOp.mdip
@@ -338,7 +336,6 @@ describe('resolveDID', () => {
                 versionId: opid
             },
             didResolutionMetadata: {
-                contentType: "application/did+ld+json",
                 retrieved: expect.any(String),
             },
             mdip: agentOp.mdip
@@ -379,10 +376,6 @@ describe('resolveDID', () => {
         const verifiedDoc = await gatekeeper.resolveDID(did, { verify: true });
 
         const expected = {
-            didResolutionMetadata: {
-                contentType: "application/did+ld+json",
-                retrieved: expect.any(String),
-            },
             didDocument: {
                 "@context": [
                     "https://www.w3.org/ns/did/v1",
@@ -407,6 +400,9 @@ describe('resolveDID', () => {
                 version: "2",
                 confirmed: true,
                 versionId: opid
+            },
+            didResolutionMetadata: {
+                retrieved: expect.any(String),
             },
             mdip: agentOp.mdip
         };
@@ -453,7 +449,6 @@ describe('resolveDID', () => {
                 versionId: opid
             },
             didResolutionMetadata: {
-                contentType: "application/did+ld+json",
                 retrieved: expect.any(String),
             },
             mdip: agentOp.mdip
@@ -569,7 +564,6 @@ describe('resolveDID', () => {
                 versionId: opid
             },
             didResolutionMetadata: {
-                contentType: "application/did+ld+json",
                 retrieved: expect.any(String),
             },
             mdip: assetOp.mdip

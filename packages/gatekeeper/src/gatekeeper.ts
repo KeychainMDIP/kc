@@ -750,7 +750,6 @@ export default class Gatekeeper implements GatekeeperInterface {
         }
 
         doc.didResolutionMetadata = {
-            contentType: 'application/did+ld+json',
             retrieved: generateStandardDatetime(),
         };
 
