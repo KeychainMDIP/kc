@@ -536,7 +536,6 @@ export default class Gatekeeper implements GatekeeperInterface {
             if (anchor.mdip.type === 'agent') {
                 // TBD support different key types?
                 doc = {
-                    "@context": "https://w3id.org/did-resolution/v1",
                     "didDocument": {
                         "@context": ["https://www.w3.org/ns/did/v1"],
                         "id": did,
@@ -562,7 +561,6 @@ export default class Gatekeeper implements GatekeeperInterface {
 
             if (anchor.mdip.type === 'asset') {
                 doc = {
-                    "@context": "https://w3id.org/did-resolution/v1",
                     "didDocument": {
                         "@context": ["https://www.w3.org/ns/did/v1"],
                         "id": did,
@@ -610,8 +608,8 @@ export default class Gatekeeper implements GatekeeperInterface {
             // TBD What to return if DID was created after specified time?
         }
 
-        function generateStandardDatetime(time: any): string {
-            const date = new Date(time);
+        function generateStandardDatetime(time?: any): string {
+            const date = time ? new Date(time) : new Date();
             // Remove milliseconds for standardization
             return date.toISOString().replace(/\.\d{3}Z$/, 'Z');
         }
@@ -756,6 +754,11 @@ export default class Gatekeeper implements GatekeeperInterface {
             delete doc.mdip.opid // Replaced by didDocumentMetadata.versionId
             delete doc.mdip.registration // Replaced by didDocumentMetadata.timestamp
         }
+
+        doc.didResolutionMetadata = {
+            contentType: 'application/did+ld+json',
+            retrieved: generateStandardDatetime(),
+        };
 
         return copyJSON(doc);
     }

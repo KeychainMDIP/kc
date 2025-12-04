@@ -264,8 +264,6 @@ describe('resolveDID', () => {
         const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
         const expected = {
-            // eslint-disable-next-line
-            "@context": "https://w3id.org/did-resolution/v1",
             didDocument: {
                 "@context": [
                     // eslint-disable-next-line
@@ -291,6 +289,11 @@ describe('resolveDID', () => {
                 confirmed: true,
                 versionId: opid
             },
+            didResolutionMetadata: {
+                // eslint-disable-next-line
+                contentType: "application/did+ld+json",
+                retrieved: expect.any(String),
+            },
             mdip: agentOp.mdip
         };
 
@@ -309,7 +312,6 @@ describe('resolveDID', () => {
         const ok = await gatekeeper.updateDID(updateOp);
         const updatedDoc = await gatekeeper.resolveDID(did);
         const expected = {
-            "@context": "https://w3id.org/did-resolution/v1",
             didDocument: {
                 "@context": [
                     "https://www.w3.org/ns/did/v1",
@@ -334,6 +336,10 @@ describe('resolveDID', () => {
                 version: "2",
                 confirmed: true,
                 versionId: opid
+            },
+            didResolutionMetadata: {
+                contentType: "application/did+ld+json",
+                retrieved: expect.any(String),
             },
             mdip: agentOp.mdip
         };
@@ -373,7 +379,10 @@ describe('resolveDID', () => {
         const verifiedDoc = await gatekeeper.resolveDID(did, { verify: true });
 
         const expected = {
-            "@context": "https://w3id.org/did-resolution/v1",
+            didResolutionMetadata: {
+                contentType: "application/did+ld+json",
+                retrieved: expect.any(String),
+            },
             didDocument: {
                 "@context": [
                     "https://www.w3.org/ns/did/v1",
@@ -418,7 +427,6 @@ describe('resolveDID', () => {
         const ok = await gatekeeper.updateDID(updateOp);
         const updatedDoc = await gatekeeper.resolveDID(did, { confirm: false });
         const expected = {
-            "@context": "https://w3id.org/did-resolution/v1",
             didDocument: {
                 "@context": [
                     "https://www.w3.org/ns/did/v1",
@@ -443,6 +451,10 @@ describe('resolveDID', () => {
                 version: "2",
                 confirmed: false,
                 versionId: opid
+            },
+            didResolutionMetadata: {
+                contentType: "application/did+ld+json",
+                retrieved: expect.any(String),
             },
             mdip: agentOp.mdip
         };
@@ -542,7 +554,6 @@ describe('resolveDID', () => {
         const did = await gatekeeper.createDID(assetOp);
         const doc = await gatekeeper.resolveDID(did);
         const expected = {
-            "@context": "https://w3id.org/did-resolution/v1",
             didDocument: {
                 "@context": [
                     "https://www.w3.org/ns/did/v1",
@@ -556,6 +567,10 @@ describe('resolveDID', () => {
                 version: "1",
                 confirmed: true,
                 versionId: opid
+            },
+            didResolutionMetadata: {
+                contentType: "application/did+ld+json",
+                retrieved: expect.any(String),
             },
             mdip: assetOp.mdip
         };

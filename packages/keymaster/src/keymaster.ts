@@ -1060,8 +1060,11 @@ export default class Keymaster implements KeymasterInterface {
         const previd = current.didDocumentMetadata?.versionId;
 
         // Compare the hashes of the current and updated documents without the metadata
-        current.didDocumentMetadata = {};
-        doc.didDocumentMetadata = {};
+        delete current.didDocumentMetadata;
+        delete current.didResolutionMetadata;
+
+        delete doc.didDocumentMetadata;
+        delete doc.didResolutionMetadata;
 
         const currentHash = this.cipher.hashJSON(current);
         const updateHash = this.cipher.hashJSON(doc);
