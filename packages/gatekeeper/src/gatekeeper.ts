@@ -749,16 +749,18 @@ export default class Gatekeeper implements GatekeeperInterface {
             }
         }
 
-        if (doc.mdip) {
-            // Remove deprecated fields
-            delete doc.mdip.opid // Replaced by didDocumentMetadata.versionId
-            delete doc.mdip.registration // Replaced by didDocumentMetadata.timestamp
-        }
-
         doc.didResolutionMetadata = {
             contentType: 'application/did+ld+json',
             retrieved: generateStandardDatetime(),
         };
+
+        // Remove deprecated fields
+        delete (doc as any)['@context'];
+
+        if (doc.mdip) {
+            delete doc.mdip.opid // Replaced by didDocumentMetadata.versionId
+            delete doc.mdip.registration // Replaced by didDocumentMetadata.timestamp
+        }
 
         return copyJSON(doc);
     }
