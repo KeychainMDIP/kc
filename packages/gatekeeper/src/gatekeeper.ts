@@ -750,7 +750,8 @@ export default class Gatekeeper implements GatekeeperInterface {
         }
 
         doc.didResolutionMetadata = {
-            retrieved: generateStandardDatetime(),
+            // We'll deliberately use millisecond precision here to avoid intermittent unit test failures
+            retrieved: new Date().toISOString(),
         };
 
         // Remove deprecated fields
