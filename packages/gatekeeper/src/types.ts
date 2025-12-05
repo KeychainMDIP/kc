@@ -185,7 +185,6 @@ export interface DocumentMetadata {
 }
 
 export interface MdipDocument {
-    '@context'?: string | string[];
     didDocument?: {
         '@context'?: string[];
         id?: string;
@@ -199,6 +198,11 @@ export interface MdipDocument {
         authentication?: string[],
     },
     didDocumentMetadata?: DocumentMetadata,
+    didResolutionMetadata?: {
+        contentType?: string;
+        retrieved?: string;
+        error?: string;
+    },
     didDocumentData?: unknown,
     mdip?: Mdip,
 }

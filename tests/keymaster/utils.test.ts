@@ -158,6 +158,9 @@ describe('resolveDID', () => {
         const doc1 = await keymaster.resolveDID(dataDid);
         const doc2 = await keymaster.resolveDID('mock');
 
+        // Update the retrieved timestamp to match any value
+        doc2.didResolutionMetadata!.retrieved = expect.any(String);
+
         expect(doc1).toStrictEqual(doc2);
     });
 

@@ -524,6 +524,9 @@ describe('resolveSeedBank', () => {
         const bank1 = await keymaster.resolveSeedBank();
         const bank2 = await keymaster.resolveSeedBank();
 
+        // Update the retrieved timestamp to match any value
+        bank1.didResolutionMetadata!.retrieved = expect.any(String);
+
         expect(bank1).toStrictEqual(bank2);
     });
 });

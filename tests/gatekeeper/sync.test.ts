@@ -1121,6 +1121,10 @@ describe('getDids', () => {
 
         const allDocs = await gatekeeper.getDIDs({ resolve: true });
 
+        // Update the retrieved timestamps to match any value
+        agentDoc.didResolutionMetadata!.retrieved = expect.any(String);
+        assetDoc.didResolutionMetadata!.retrieved = expect.any(String);
+
         expect(allDocs.length).toBe(2);
         expect(allDocs[0]).toStrictEqual(agentDoc);
         expect(allDocs[1]).toStrictEqual(assetDoc);
@@ -1142,6 +1146,10 @@ describe('getDids', () => {
         const assetDoc = await gatekeeper.resolveDID(assetDID);
 
         const allDocs = await gatekeeper.getDIDs({ confirm: true, resolve: true });
+
+        // Update the retrieved timestamps to match any value
+        agentDoc.didResolutionMetadata!.retrieved = expect.any(String);
+        assetDoc.didResolutionMetadata!.retrieved = expect.any(String);
 
         expect(allDocs.length).toBe(2);
         expect(allDocs[0]).toStrictEqual(agentDoc); // version 1
@@ -1165,6 +1173,10 @@ describe('getDids', () => {
         const assetDoc = await gatekeeper.resolveDID(assetDID);
 
         const allDocs = await gatekeeper.getDIDs({ confirm: false, resolve: true });
+
+        // Update the retrieved timestamps to match any value
+        agentDocv2.didResolutionMetadata!.retrieved = expect.any(String);
+        assetDoc.didResolutionMetadata!.retrieved = expect.any(String);
 
         expect(allDocs.length).toBe(2);
         expect(allDocs[0]).toStrictEqual(agentDocv2);
@@ -1307,7 +1319,10 @@ describe('getDids', () => {
             const assetOp = await helper.createAssetOp(agentDID, keypair);
             const assetDID = await gatekeeper.createDID(assetOp);
             dids.push(assetDID);
-            expected.push(await gatekeeper.resolveDID(assetDID));
+
+            const doc = await gatekeeper.resolveDID(assetDID);
+            doc.didResolutionMetadata!.retrieved = expect.any(String);
+            expected.push(doc);
         }
 
         const resolvedDIDs = await gatekeeper.getDIDs({

@@ -536,7 +536,6 @@ export default class Gatekeeper implements GatekeeperInterface {
             if (anchor.mdip.type === 'agent') {
                 // TBD support different key types?
                 doc = {
-                    "@context": "https://w3id.org/did-resolution/v1",
                     "didDocument": {
                         "@context": ["https://www.w3.org/ns/did/v1"],
                         "id": did,
@@ -562,7 +561,6 @@ export default class Gatekeeper implements GatekeeperInterface {
 
             if (anchor.mdip.type === 'asset') {
                 doc = {
-                    "@context": "https://w3id.org/did-resolution/v1",
                     "didDocument": {
                         "@context": ["https://www.w3.org/ns/did/v1"],
                         "id": did,
@@ -751,8 +749,15 @@ export default class Gatekeeper implements GatekeeperInterface {
             }
         }
 
+        doc.didResolutionMetadata = {
+            // We'll deliberately use millisecond precision here to avoid intermittent unit test failures
+            retrieved: new Date().toISOString(),
+        };
+
+        // Remove deprecated fields
+        delete (doc as any)['@context'];
+
         if (doc.mdip) {
-            // Remove deprecated fields
             delete doc.mdip.opid // Replaced by didDocumentMetadata.versionId
             delete doc.mdip.registration // Replaced by didDocumentMetadata.timestamp
         }
