@@ -338,9 +338,8 @@ export default class Keymaster implements KeymasterInterface {
                 try {
                     const doc = await this.resolveDID(wallet.ids[name].did);
 
-                    if (doc.didResolutionMetadata?.error) {
-                        remove = true;
-                    } else if (doc.didDocumentMetadata?.deactivated) {
+                    if (doc.didResolutionMetadata?.error ||
+                        doc.didDocumentMetadata?.deactivated) {
                         remove = true;
                     }
                 } catch {
@@ -360,9 +359,8 @@ export default class Keymaster implements KeymasterInterface {
                         try {
                             const doc = await this.resolveDID(id.owned[i]);
 
-                            if (doc.didResolutionMetadata?.error) {
-                                remove = true;
-                            } else if (doc.didDocumentMetadata?.deactivated) {
+                            if (doc.didResolutionMetadata?.error ||
+                                doc.didDocumentMetadata?.deactivated) {
                                 remove = true;
                             }
                         } catch {
@@ -383,9 +381,8 @@ export default class Keymaster implements KeymasterInterface {
                         try {
                             const doc = await this.resolveDID(id.held[i]);
 
-                            if (doc.didResolutionMetadata?.error) {
-                                remove = true;
-                            } else if (doc.didDocumentMetadata?.deactivated) {
+                            if (doc.didResolutionMetadata?.error ||
+                                doc.didDocumentMetadata?.deactivated) {
                                 remove = true;
                             }
                         } catch {
@@ -407,9 +404,8 @@ export default class Keymaster implements KeymasterInterface {
                     try {
                         const doc = await this.resolveDID(wallet.names[name]);
 
-                        if (doc.didResolutionMetadata?.error) {
-                            remove = true;
-                        } else if (doc.didDocumentMetadata?.deactivated) {
+                        if (doc.didResolutionMetadata?.error ||
+                            doc.didDocumentMetadata?.deactivated) {
                             remove = true;
                         }
                     } catch {

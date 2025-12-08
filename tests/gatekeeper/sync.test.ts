@@ -2,7 +2,7 @@ import CipherNode from '@mdip/cipher/node';
 import Gatekeeper from '@mdip/gatekeeper';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory.ts';
 import { copyJSON } from '@mdip/common/utils';
-import { InvalidDIDError, ExpectedExceptionError } from '@mdip/common/errors';
+import { ExpectedExceptionError } from '@mdip/common/errors';
 import HeliaClient from '@mdip/ipfs/helia';
 import TestHelper from './helper.ts';
 
