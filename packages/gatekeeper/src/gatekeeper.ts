@@ -598,7 +598,13 @@ export default class Gatekeeper implements GatekeeperInterface {
         const events = await this.db.getEvents(did);
 
         if (events.length === 0) {
-            throw new InvalidDIDError('unknown');
+            return {
+                didResolutionMetadata: {
+                    error: "notFound"
+                },
+                didDocument: {},
+                didDocumentMetadata: {}
+            };
         }
 
         const anchor = events[0];
@@ -980,7 +986,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                 return ImportStatus.REJECTED;
             });
         } catch (error: any) {
-            if (error.message === 'Invalid DID: unknown') {
+            if (error.type === 'Invalid operation') {
                 // Could be an event with a controller DID that hasn't been imported yet
                 return ImportStatus.DEFERRED;
             }

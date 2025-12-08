@@ -660,13 +660,9 @@ describe('resolveDID', () => {
             expect(error.detail).toBe(BadFormat);
         }
 
-        try {
-            await gatekeeper.resolveDID('did:test:z3v8Auah2NPDigFc3qKx183QKL6vY8fJYQk6NeLz7KF2RFtC9c8');
-            throw new ExpectedExceptionError();
-        } catch (error: any) {
-            expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.detail).toBe('unknown');
-        }
+        const { didResolutionMetadata } = await gatekeeper.resolveDID('did:test:z3v8Auah2NPDigFc3qKx183QKL6vY8fJYQk6NeLz7KF2RFtC9c8');
+        expect(didResolutionMetadata).toBeDefined();
+        expect(didResolutionMetadata!.error).toBe('notFound');
     });
 
     it('should throw an exception on invalid signature in create op', async () => {
