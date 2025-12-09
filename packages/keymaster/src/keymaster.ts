@@ -1401,16 +1401,12 @@ export default class Keymaster implements KeymasterInterface {
 
         const wallet = await this.loadWallet();
 
-        if (!wallet.seed || !wallet.seed.hdkey) {
-            throw new KeymasterError('wallet seed missing');
-        }
-
         name = this.validateName(name, wallet);
 
         const account = wallet.counter;
         const index = 0;
 
-        const hdkey = this.cipher.generateHDKeyJSON(wallet.seed!.hdkey);
+        const hdkey = await this.getHDKeyFromCacheOrMnemonic(wallet);
         const path = `m/44'/0'/${account}'/0/${index}`;
         const didkey = hdkey.derive(path);
         const keypair = this.cipher.generateJwk(didkey.privateKey!);
