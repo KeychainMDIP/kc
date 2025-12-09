@@ -1393,13 +1393,17 @@ export default class Keymaster implements KeymasterInterface {
         return createdDid;
     }
 
-    async createIdTxn(
+    async createIdOperation(
         name: string,
         options: { registry?: string } = {}
     ): Promise<Operation> {
         const { registry = this.defaultRegistry } = options;
 
         const wallet = await this.loadWallet();
+
+        if (!wallet.seed || !wallet.seed.hdkey) {
+            throw new KeymasterError('wallet seed missing');
+        }
 
         name = this.validateName(name, wallet);
 
@@ -1411,13 +1415,9 @@ export default class Keymaster implements KeymasterInterface {
         const didkey = hdkey.derive(path);
         const keypair = this.cipher.generateJwk(didkey.privateKey!);
 
-        const block = await this.gatekeeper.getBlock(registry);
-        const blockid = block?.hash;
-
         const operation: Operation = {
             type: 'create',
             created: new Date().toISOString(),
-            blockid,
             mdip: {
                 version: 1,
                 type: 'agent',
