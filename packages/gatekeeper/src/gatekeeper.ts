@@ -246,10 +246,6 @@ export default class Gatekeeper implements GatekeeperInterface {
                 }
             }
             catch (error) {
-                invalid += 1;
-                if (chatty) {
-                    console.log(`can't resolve ${n}/${total} ${did} ${error}`);
-                }
             }
         }
 
