@@ -1393,6 +1393,53 @@ export default class Keymaster implements KeymasterInterface {
         return createdDid;
     }
 
+    async createIdTxn(
+        name: string,
+        options: { registry?: string } = {}
+    ): Promise<Operation> {
+        const { registry = this.defaultRegistry } = options;
+
+        const wallet = await this.loadWallet();
+
+        name = this.validateName(name, wallet);
+
+        const account = wallet.counter;
+        const index = 0;
+
+        const hdkey = this.cipher.generateHDKeyJSON(wallet.seed!.hdkey);
+        const path = `m/44'/0'/${account}'/0/${index}`;
+        const didkey = hdkey.derive(path);
+        const keypair = this.cipher.generateJwk(didkey.privateKey!);
+
+        const block = await this.gatekeeper.getBlock(registry);
+        const blockid = block?.hash;
+
+        const operation: Operation = {
+            type: 'create',
+            created: new Date().toISOString(),
+            blockid,
+            mdip: {
+                version: 1,
+                type: 'agent',
+                registry
+            },
+            publicJwk: keypair.publicJwk,
+        };
+
+        const msgHash = this.cipher.hashJSON(operation);
+        const signature = this.cipher.signHash(msgHash, keypair.privateJwk);
+        const signed: Operation = {
+            ...operation,
+            signature: {
+                signed: new Date().toISOString(),
+                hash: msgHash,
+                value: signature
+            },
+        };
+
+        return signed;
+    }
+
     async removeId(name: string): Promise<boolean> {
         await this.mutateWallet((wallet) => {
             if (!(name in wallet.ids)) {
