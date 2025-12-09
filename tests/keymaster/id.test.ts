@@ -164,6 +164,143 @@ describe('createId', () => {
     });
 });
 
+describe('createIdOperation', () => {
+    it('should create a valid operation for new ID', async () => {
+        const name = 'Bob';
+        const operation = await keymaster.createIdOperation(name);
+        
+        expect(operation.type).toBe('create');
+        expect(operation.created).toBeDefined();
+        expect(operation.mdip).toBeDefined();
+        expect(operation.mdip!.version).toBe(1);
+        expect(operation.mdip!.type).toBe('agent');
+        expect(operation.mdip!.registry).toBe('hyperswarm'); // Default registry
+        expect(operation.publicJwk).toBeDefined();
+        expect(operation.signature).toBeDefined();
+        expect(operation.signature!.signed).toBeDefined();
+        expect(operation.signature!.hash).toBeDefined();
+        expect(operation.signature!.value).toBeDefined();
+    });
+
+    it('should create operation with custom registry', async () => {
+        const name = 'Alice';
+        const registry = 'TFTC';
+        const operation = await keymaster.createIdOperation(name, { registry });
+        
+        expect(operation.mdip!.registry).toBe(registry);
+        expect(operation.type).toBe('create');
+        expect(operation.publicJwk).toBeDefined();
+        expect(operation.signature).toBeDefined();
+    });
+
+    it('should create operation with local registry', async () => {
+        const name = 'Charlie';
+        const registry = 'local';
+        const operation = await keymaster.createIdOperation(name, { registry });
+        
+        expect(operation.mdip!.registry).toBe(registry);
+        expect(operation.type).toBe('create');
+        expect(operation.publicJwk).toBeDefined();
+        expect(operation.signature).toBeDefined();
+    });
+
+    it('should create operation without modifying wallet', async () => {
+        const name = 'Dave';
+        const walletBefore = await keymaster.loadWallet();
+        const counterBefore = walletBefore.counter;
+        
+        await keymaster.createIdOperation(name);
+        
+        const walletAfter = await keymaster.loadWallet();
+        expect(walletAfter.counter).toBe(counterBefore);
+        expect(walletAfter.ids[name]).toBeUndefined();
+        expect(walletAfter.current).toBe(walletBefore.current);
+    });
+
+    it('should throw error for duplicate name', async () => {
+        const name = 'Eve';
+        await keymaster.createId(name);
+        
+        try {
+            await keymaster.createIdOperation(name);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: name already used');
+        }
+    });
+
+    it('should throw error for empty name', async () => {
+        try {
+            await keymaster.createIdOperation('');
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: name must be a non-empty string');
+        }
+    });
+
+    it('should throw error for whitespace-only name', async () => {
+        try {
+            await keymaster.createIdOperation('   ');
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: name must be a non-empty string');
+        }
+    });
+
+    it('should create valid signature that can be verified', async () => {
+        const name = 'Frank';
+        const operation = await keymaster.createIdOperation(name);
+        
+        // Verify that the signature matches the operation
+        const msgHash = cipher.hashJSON({
+            type: operation.type,
+            created: operation.created,
+            mdip: operation.mdip,
+            publicJwk: operation.publicJwk
+        });
+        
+        expect(operation.signature!.hash).toBe(msgHash);
+        
+        // Verify signature can be validated
+        const publicKey = operation.publicJwk!;
+        const isValid = cipher.verifySig(msgHash, operation.signature!.value, publicKey);
+        expect(isValid).toBe(true);
+    });
+
+    it('should create operation that can be used to create actual DID', async () => {
+        const name = 'Grace';
+        const operation = await keymaster.createIdOperation(name);
+        
+        // Use the operation to create an actual DID
+        const did = await gatekeeper.createDID(operation);
+        
+        expect(did).toBeDefined();
+        expect(did.startsWith('did:test:')).toBe(true);
+        
+        // Verify the created DID resolves correctly
+        const doc = await keymaster.resolveDID(did);
+        expect(doc.didDocument!.id).toBe(did);
+        expect(doc.mdip!.type).toBe('agent');
+        expect(doc.mdip!.registry).toBe('hyperswarm');
+    });
+
+    it('should use customized default registry when none specified', async () => {
+        const defaultRegistry = 'local';
+        const customKeymaster = new Keymaster({ 
+            gatekeeper, 
+            wallet, 
+            cipher, 
+            defaultRegistry, 
+            passphrase: 'passphrase' 
+        });
+
+        const name = 'Henry';
+        const operation = await customKeymaster.createIdOperation(name);
+
+        expect(operation.mdip!.registry).toBe(defaultRegistry);
+    });
+});
+
 describe('removeId', () => {
     it('should remove an existing ID', async () => {
         const name = 'Bob';
