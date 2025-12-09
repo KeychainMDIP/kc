@@ -1,7 +1,7 @@
 import CipherNode from '@mdip/cipher/node';
 import Gatekeeper from '@mdip/gatekeeper';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory.ts';
-import { InvalidDIDError, ExpectedExceptionError } from '@mdip/common/errors';
+import { ExpectedExceptionError } from '@mdip/common/errors';
 import HeliaClient from '@mdip/ipfs/helia';
 import TestHelper from './helper.ts';
 
@@ -589,77 +589,24 @@ describe('resolveDID', () => {
         expect(doc!.didDocument!.id).toStrictEqual(altDID);
     });
 
-    it('should not resolve an invalid DID', async () => {
-        const BadFormat = 'bad format';
-
-        try {
-            await gatekeeper.resolveDID();
-            throw new ExpectedExceptionError();
-        } catch (error: any) {
-            expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.detail).toBe(BadFormat);
+    it('should return invalidDid error for invalid DIDs', async () => {
+        async function checkForInvalidDidError(did?: any) {
+            const { didResolutionMetadata } = await gatekeeper.resolveDID(did);
+            expect(didResolutionMetadata).toBeDefined();
+            expect(didResolutionMetadata!.error).toBe('invalidDid');
         }
 
-        try {
-            await gatekeeper.resolveDID('');
-            throw new ExpectedExceptionError();
-        } catch (error: any) {
-            expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.detail).toBe(BadFormat);
-        }
+        await checkForInvalidDidError();
+        await checkForInvalidDidError('');
+        await checkForInvalidDidError('mock');
+        await checkForInvalidDidError([]);
+        await checkForInvalidDidError([1, 2, 3]);
+        await checkForInvalidDidError({});
+        await checkForInvalidDidError({ mock: 1 });
+        await checkForInvalidDidError('did:test:xxx');
+    });
 
-        try {
-            await gatekeeper.resolveDID('mock');
-            throw new ExpectedExceptionError();
-        } catch (error: any) {
-            expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.detail).toBe(BadFormat);
-        }
-
-        try {
-            // @ts-expect-error Testing invalid usage
-            await gatekeeper.resolveDID([]);
-            throw new ExpectedExceptionError();
-        } catch (error: any) {
-            expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.detail).toBe(BadFormat);
-        }
-
-        try {
-            // @ts-expect-error Testing invalid usage
-            await gatekeeper.resolveDID([1, 2, 3]);
-            throw new ExpectedExceptionError();
-        } catch (error: any) {
-            expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.detail).toBe(BadFormat);
-        }
-
-        try {
-            // @ts-expect-error Testing invalid usage
-            await gatekeeper.resolveDID({});
-            throw new ExpectedExceptionError();
-        } catch (error: any) {
-            expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.detail).toBe(BadFormat);
-        }
-
-        try {
-            // @ts-expect-error Testing invalid usage
-            await gatekeeper.resolveDID({ mock: 1 });
-            throw new ExpectedExceptionError();
-        } catch (error: any) {
-            expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.detail).toBe(BadFormat);
-        }
-
-        try {
-            await gatekeeper.resolveDID('did:test:xxx');
-            throw new ExpectedExceptionError();
-        } catch (error: any) {
-            expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.detail).toBe(BadFormat);
-        }
-
+    it('should return notFound error for missing DID', async () => {
         const { didResolutionMetadata } = await gatekeeper.resolveDID('did:test:z3v8Auah2NPDigFc3qKx183QKL6vY8fJYQk6NeLz7KF2RFtC9c8');
         expect(didResolutionMetadata).toBeDefined();
         expect(didResolutionMetadata!.error).toBe('notFound');

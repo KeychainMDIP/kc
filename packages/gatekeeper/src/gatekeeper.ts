@@ -2,7 +2,6 @@ import CipherNode from '@mdip/cipher/node';
 import { copyJSON, compareOrdinals } from '@mdip/common/utils';
 import { isValidDID, generateCID } from '@mdip/ipfs/utils';
 import {
-    InvalidDIDError,
     InvalidParameterError,
     InvalidOperationError
 } from '@mdip/common/errors';
@@ -201,6 +200,15 @@ export default class Gatekeeper implements GatekeeperInterface {
             n += 1;
             try {
                 const doc = await this.resolveDID(did);
+
+                if (doc.didResolutionMetadata?.error) {
+                    invalid += 1;
+                    if (chatty) {
+                        console.log(`can't resolve ${n}/${total} ${did} ${doc.didResolutionMetadata.error}`);
+                    }
+                    continue;
+                }
+
                 if (chatty) {
                     console.log(`resolved ${n}/${total} ${did} OK`);
                 }
@@ -592,7 +600,13 @@ export default class Gatekeeper implements GatekeeperInterface {
         const { atTime, atVersion, confirm = false, verify = false } = options || {};
 
         if (!did || !isValidDID(did)) {
-            throw new InvalidDIDError('bad format')
+            return {
+                didResolutionMetadata: {
+                    error: "invalidDid"
+                },
+                didDocument: {},
+                didDocumentMetadata: {}
+            };
         }
 
         const events = await this.db.getEvents(did);

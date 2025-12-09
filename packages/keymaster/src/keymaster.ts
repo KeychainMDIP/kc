@@ -248,10 +248,7 @@ export default class Keymaster implements KeymasterInterface {
             try {
                 const doc = await this.resolveDID(wallet.ids[name].did);
 
-                if (doc.didResolutionMetadata?.error) {
-                    invalid += 1;
-                }
-                else if (doc.didDocumentMetadata?.deactivated) {
+                if (doc.didDocumentMetadata?.deactivated) {
                     deleted += 1;
                 }
             }
@@ -268,10 +265,7 @@ export default class Keymaster implements KeymasterInterface {
                     try {
                         const doc = await this.resolveDID(did);
 
-                        if (doc.didResolutionMetadata?.error) {
-                            invalid += 1;
-                        }
-                        else if (doc.didDocumentMetadata?.deactivated) {
+                        if (doc.didDocumentMetadata?.deactivated) {
                             deleted += 1;
                         }
                     }
@@ -288,9 +282,7 @@ export default class Keymaster implements KeymasterInterface {
                     try {
                         const doc = await this.resolveDID(did);
 
-                        if (doc.didResolutionMetadata?.error) {
-                            invalid += 1;
-                        } else if (doc.didDocumentMetadata?.deactivated) {
+                        if (doc.didDocumentMetadata?.deactivated) {
                             deleted += 1;
                         }
                     }
@@ -308,9 +300,7 @@ export default class Keymaster implements KeymasterInterface {
                 try {
                     const doc = await this.resolveDID(wallet.names[name]);
 
-                    if (doc.didResolutionMetadata?.error) {
-                        invalid += 1;
-                    } else if (doc.didDocumentMetadata?.deactivated) {
+                    if (doc.didDocumentMetadata?.deactivated) {
                         deleted += 1;
                     }
                 }
@@ -338,8 +328,7 @@ export default class Keymaster implements KeymasterInterface {
                 try {
                     const doc = await this.resolveDID(wallet.ids[name].did);
 
-                    if (doc.didResolutionMetadata?.error ||
-                        doc.didDocumentMetadata?.deactivated) {
+                    if (doc.didDocumentMetadata?.deactivated) {
                         remove = true;
                     }
                 } catch {
@@ -359,8 +348,7 @@ export default class Keymaster implements KeymasterInterface {
                         try {
                             const doc = await this.resolveDID(id.owned[i]);
 
-                            if (doc.didResolutionMetadata?.error ||
-                                doc.didDocumentMetadata?.deactivated) {
+                            if (doc.didDocumentMetadata?.deactivated) {
                                 remove = true;
                             }
                         } catch {
@@ -381,8 +369,7 @@ export default class Keymaster implements KeymasterInterface {
                         try {
                             const doc = await this.resolveDID(id.held[i]);
 
-                            if (doc.didResolutionMetadata?.error ||
-                                doc.didDocumentMetadata?.deactivated) {
+                            if (doc.didDocumentMetadata?.deactivated) {
                                 remove = true;
                             }
                         } catch {
@@ -404,8 +391,7 @@ export default class Keymaster implements KeymasterInterface {
                     try {
                         const doc = await this.resolveDID(wallet.names[name]);
 
-                        if (doc.didResolutionMetadata?.error ||
-                            doc.didDocumentMetadata?.deactivated) {
+                        if (doc.didDocumentMetadata?.deactivated) {
                             remove = true;
                         }
                     } catch {
@@ -1232,6 +1218,17 @@ export default class Keymaster implements KeymasterInterface {
     ): Promise<MdipDocument> {
         const actualDid = await this.lookupDID(did);
         const docs = await this.gatekeeper.resolveDID(actualDid, options);
+
+        if (docs.didResolutionMetadata?.error) {
+            if (docs.didResolutionMetadata.error === 'notFound') {
+                throw new InvalidDIDError('unknown');
+            }
+
+            if (docs.didResolutionMetadata.error === 'invalidDid') {
+                throw new InvalidDIDError('bad format');
+            }
+        }
+
         const controller = docs.didDocument?.controller || docs.didDocument?.id;
         const isOwned = await this.idInWallet(controller);
 
