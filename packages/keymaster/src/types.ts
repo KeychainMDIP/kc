@@ -2,7 +2,6 @@ import { Cipher, EcdsaJwkPublic } from '@mdip/cipher/types';
 import {
     GatekeeperInterface,
     MdipDocument,
-    Operation,
     ResolveDIDOptions,
 } from '@mdip/gatekeeper/types';
 
@@ -324,7 +323,6 @@ export interface KeymasterInterface {
     getCurrentId(): Promise<string | undefined>;
     setCurrentId(name: string): Promise<boolean>;
     createId(name: string, options?: { registry?: string }): Promise<string>;
-    createIdOperation(name: string, options?: { registry?: string }): Promise<Operation>;
     removeId(id: string): Promise<boolean>;
     renameId(id: string, newName: string): Promise<boolean>;
     backupId(id?: string): Promise<boolean>;
