@@ -83,7 +83,7 @@ const VerifyMnemonicModal: React.FC<VerifyMnemonicModalProps> = ({ isOpen, mnemo
                 </Dialog.Body>
                 <Dialog.Footer>
                     <Button variant="outline" onClick={onBack}>Back</Button>
-                    <Button colorScheme="blue" onClick={onSuccess} disabled={!isMatch}>Verify</Button>
+                    <Button colorPalette="blue" onClick={onSuccess} disabled={!isMatch}>Verify</Button>
                 </Dialog.Footer>
             </Dialog.Content>
         </Dialog.Root>

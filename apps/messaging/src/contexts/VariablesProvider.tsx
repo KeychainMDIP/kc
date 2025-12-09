@@ -3,6 +3,7 @@ import { DmailItem } from "@mdip/keymaster/types";
 import { useWalletContext } from "./WalletProvider";
 import { useSnackbar } from "./SnackbarProvider";
 import { PROFILE_SCHEMA_ID } from "../constants";
+import { arraysMatchMembers } from "../utils/utils";
 
 const REFRESH_INTERVAL = 5_000;
 
@@ -107,6 +108,8 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
     const [aliasDID, setAliasDID] = useState<string>("");
     const [dmailList, setDmailList] = useState<Record<string, DmailItem>>({});
     const [activePeer, setActivePeer] = useState<string>("");
+    const [namesReady, setNamesReady] = useState<boolean>(false);
+    const inboxRefreshingRef = useRef(false);
     const {
         keymaster,
         setManifest,
@@ -119,28 +122,230 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         const refresh = async () => {
             await refreshAll();
         };
-        refresh();
+        void refresh();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+
+    const refreshNames = useCallback(
+        async (cid?: string) => {
+            if (!keymaster) {
+                return;
+            }
+
+            let nameList : Record<string, string> = {};
+            let unresolvedList : Record<string, string> = {};
+            const registryMap: Record<string, string> = {};
+            const avatarList: Record<string, string> = {};
+
+            const allNames = await keymaster.listNames();
+            const allNamesSorted = Object.fromEntries(
+                Object.entries(allNames).sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
+            );
+
+            const agentList = await keymaster.listIds();
+
+            for (const idName of agentList) {
+                try {
+                    const doc = await keymaster.resolveDID(idName);
+                    const data = doc.didDocumentData as Record<string, unknown>;
+
+                    if (data && data.manifest && typeof data.manifest === 'object') {
+                        await populateAgentAvatar(idName, data.manifest, avatarList);
+                    }
+                } catch {}
+            }
+
+            setIdList([...agentList]);
+            setValidId(agentList.includes(cid ?? currentId));
+
+            const schemaList = [];
+            const imageList = [];
+            const groupList = [];
+            const vaultList = [];
+            const pollList = [];
+            const documentList = [];
+
+            for (const [name, did] of Object.entries(allNamesSorted)) {
+                try {
+                    const doc = await keymaster.resolveDID(name);
+                    nameList[name] = did;
+
+                    const reg = doc.mdip?.registry;
+                    if (reg) {
+                        registryMap[name] = reg;
+                    }
+
+                    const data = doc.didDocumentData as Record<string, unknown>;
+
+                    if (doc.mdip?.type === 'agent') {
+                        agentList.push(name);
+
+                        if (data && data.manifest && typeof data.manifest === 'object') {
+                            await populateAgentAvatar(name, data.manifest, avatarList);
+                        }
+
+                        continue;
+                    }
+
+                    if (data.group) {
+                        groupList.push(name);
+                        continue;
+                    }
+
+                    if (data.schema) {
+                        schemaList.push(name);
+                        continue;
+                    }
+
+                    if (data.image) {
+                        imageList.push(name);
+                        continue;
+                    }
+
+                    if (data.document) {
+                        documentList.push(name);
+                        continue;
+                    }
+
+                    if (data.groupVault) {
+                        vaultList.push(name);
+                        continue;
+                    }
+
+                    if (data.poll) {
+                        pollList.push(name);
+                        continue;
+                    }
+                }
+                catch {
+                    unresolvedList[name] = did;
+                }
+            }
+
+            setNameList(nameList);
+            setUnresolvedList(unresolvedList);
+            setNameRegistry(registryMap);
+            setAvatarList(avatarList);
+
+            const uniqueSortedAgents = [...new Set(agentList)]
+                .sort((a, b) => a.localeCompare(b));
+            setAgentList(uniqueSortedAgents);
+
+            if (!agentList.includes(credentialSubject)) {
+                setCredentialSubject("");
+                setCredentialString("");
+            }
+
+            setGroupList(groupList);
+            setSchemaList(schemaList);
+
+            if (!schemaList.includes(credentialSchema)) {
+                setCredentialSchema("");
+                setCredentialString("");
+            }
+
+            setImageList(imageList);
+            setDocumentList(documentList);
+            setVaultList(vaultList);
+            setPollList(pollList);
+            setNamesReady(true);
+        },
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [keymaster, currentId, credentialSubject, credentialSchema]
+    );
+
     const refreshInbox = useCallback( async() => {
-        if (!keymaster) {
+        if (!keymaster || !namesReady || !currentId) {
             return;
         }
+
+        if (inboxRefreshingRef.current) {
+            return;
+        }
+
+        inboxRefreshingRef.current = true;
+
         try {
             const msgs = await keymaster.listDmail();
+
+            let needsRefresh = false;
+
+            const existingGroupMembers: string[][] = [];
+            for (const groupName of groupList) {
+                try {
+                    const group = await keymaster.getGroup(groupName);
+                    if (group?.members) {
+                        const groupMembers: string[] = [];
+                        for (let member of group.members) {
+                            const name = Object.entries(nameList).find(([_, value]) => value === member)?.[0];
+                            if (name) {
+                                groupMembers.push(name);
+                            } else {
+                                groupMembers.push(member);
+                            }
+                        }
+                        existingGroupMembers.push(groupMembers);
+                    }
+                } catch {}
+            }
+
+            for (const [, item] of Object.entries(msgs)) {
+                const { sender, to } = item;
+
+                if (sender === currentId) {
+                    continue;
+                }
+
+                if (to.length === 1) {
+                    const senderExists = Object.keys(nameList).includes(sender);
+
+                    if (!senderExists) {
+                        try {
+                            const name = sender.slice(-20);
+                            await keymaster.addName(name, sender);
+                            needsRefresh = true;
+                        } catch {}
+                    }
+                } else if (to.length > 1) {
+                    const groupExists = existingGroupMembers.some(members => arraysMatchMembers(members, to));
+
+                    if (!groupExists) {
+                        try {
+                            const groupDID = await keymaster.createGroup("");
+
+                            const groupName = groupDID.slice(-20);
+                            await keymaster.addName(groupName, groupDID);
+
+                            for (const memberDID of to) {
+                                try {
+                                    await keymaster.addGroupMember(groupName, memberDID);
+                                } catch {}
+                            }
+
+                            existingGroupMembers.push(to);
+                            needsRefresh = true;
+                        } catch {}
+                    }
+                }
+            }
+
             setDmailList(prev =>
                 JSON.stringify(prev) === JSON.stringify(msgs) ? prev : msgs
             );
+
+            if (needsRefresh) {
+                await refreshNames();
+            }
         } catch (err: any) {
             setError(err);
+        } finally {
+            inboxRefreshingRef.current = false;
         }
-
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [keymaster]);
+    }, [keymaster, currentId, namesReady, nameList, groupList, refreshNames, setError]);
 
     useEffect(() => {
-        if (!keymaster) {
+        if (!keymaster || !namesReady) {
             return;
         }
 
@@ -151,19 +356,17 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
             } catch {}
         }
 
-        refresh();
+        void refresh();
 
-        const interval = setInterval(async () => {
+        const interval = setInterval(() => {
             if (!keymaster) {
                 return;
             }
-            await refresh();
+            void refresh();
         }, REFRESH_INTERVAL);
 
         return () => clearInterval(interval);
-
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [keymaster]);
+    }, [keymaster, namesReady, refreshInbox]);
 
     async function refreshHeld() {
         if (!keymaster) {
@@ -233,129 +436,6 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         }
     }
 
-    async function refreshNames(cid?: string) {
-        if (!keymaster) {
-            return;
-        }
-
-        let nameList : Record<string, string> = {};
-        let unresolvedList : Record<string, string> = {};
-        const registryMap: Record<string, string> = {};
-        const avatarList: Record<string, string> = {};
-
-        const allNames = await keymaster.listNames();
-        const allNamesSorted = Object.fromEntries(
-            Object.entries(allNames).sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
-        );
-
-        const agentList = await keymaster.listIds();
-
-        for (const idName of agentList) {
-            try {
-                const doc = await keymaster.resolveDID(idName);
-                const data = doc.didDocumentData as Record<string, unknown>;
-
-                if (data && data.manifest && typeof data.manifest === 'object') {
-                    await populateAgentAvatar(idName, data.manifest, avatarList);
-                }
-            } catch {}
-        }
-
-        setIdList([...agentList]);
-        setValidId(agentList.includes(cid ?? currentId));
-
-        const schemaList = [];
-        const imageList = [];
-        const groupList = [];
-        const vaultList = [];
-        const pollList = [];
-        const documentList = [];
-
-        for (const [name, did] of Object.entries(allNamesSorted)) {
-            try {
-                const doc = await keymaster.resolveDID(name);
-                nameList[name] = did;
-
-                const reg = doc.mdip?.registry;
-                if (reg) {
-                    registryMap[name] = reg;
-                }
-
-                const data = doc.didDocumentData as Record<string, unknown>;
-
-                if (doc.mdip?.type === 'agent') {
-                    agentList.push(name);
-
-                    if (data && data.manifest && typeof data.manifest === 'object') {
-                        await populateAgentAvatar(name, data.manifest, avatarList);
-                    }
-
-                    continue;
-                }
-
-                if (data.group) {
-                    groupList.push(name);
-                    continue;
-                }
-
-                if (data.schema) {
-                    schemaList.push(name);
-                    continue;
-                }
-
-                if (data.image) {
-                    imageList.push(name);
-                    continue;
-                }
-
-                if (data.document) {
-                    documentList.push(name);
-                    continue;
-                }
-
-                if (data.groupVault) {
-                    vaultList.push(name);
-                    continue;
-                }
-
-                if (data.poll) {
-                    pollList.push(name);
-                    continue;
-                }
-            }
-            catch {
-                unresolvedList[name] = did;
-            }
-        }
-
-        setNameList(nameList);
-        setUnresolvedList(unresolvedList);
-        setNameRegistry(registryMap);
-        setAvatarList(avatarList);
-
-        const uniqueSortedAgents = [...new Set(agentList)]
-            .sort((a, b) => a.localeCompare(b));
-        setAgentList(uniqueSortedAgents);
-
-        if (!agentList.includes(credentialSubject)) {
-            setCredentialSubject("");
-            setCredentialString("");
-        }
-
-        setGroupList(groupList);
-        setSchemaList(schemaList);
-
-        if (!schemaList.includes(credentialSchema)) {
-            setCredentialSchema("");
-            setCredentialString("");
-        }
-
-        setImageList(imageList);
-        setDocumentList(documentList);
-        setVaultList(vaultList);
-        setPollList(pollList);
-    }
-
     async function refreshCurrentDID(cid: string) {
         if (!keymaster) {
             return;
@@ -379,7 +459,7 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         if (!keymaster) {
             return;
         }
-        await setCurrentId(cid);
+        setCurrentId(cid);
         await refreshHeld();
         await refreshCurrentDID(cid);
         await refreshNames(cid);
@@ -400,6 +480,7 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         setPollList([]);
         setAliasName("");
         setAliasDID("");
+        setNamesReady(false);
     }
 
     function wipeState() {

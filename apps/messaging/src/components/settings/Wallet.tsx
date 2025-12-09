@@ -119,7 +119,7 @@ export default function Wallet({ isOpen, onClose }: WalletSettingsProps) {
                     </Box>
 
                     <Box py={3}>
-                        <Button width="100%" onClick={() => setResetOpen(true)}>
+                        <Button colorPalette="red"  width="100%" onClick={() => setResetOpen(true)}>
                             Wipe Wallet
                         </Button>
                     </Box>

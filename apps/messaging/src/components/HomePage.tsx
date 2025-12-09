@@ -4,7 +4,8 @@ import { Avatar, Conversation, ConversationList } from "@chatscope/chat-ui-kit-r
 import { avatarDataUrl } from "../utils/utils";
 import { CHAT_SUBJECT } from "../constants";
 import AddUserModal from "../modals/AddUserModal";
-import { LuUser, LuUserPlus, LuMessagesSquare } from "react-icons/lu";
+import CreateGroupModal from "../modals/CreateGroupModal";
+import { LuUser, LuUserPlus, LuMessagesSquare, LuUsers } from "react-icons/lu";
 import { IconButton, Box, Flex, Text } from "@chakra-ui/react";
 import { useWalletContext } from "../contexts/WalletProvider";
 import { useSnackbar } from "../contexts/SnackbarProvider";
@@ -21,12 +22,14 @@ export default function HomePage() {
         setActivePeer,
         refreshNames,
         avatarList,
+        groupList,
     } = useVariablesContext();
     const { keymaster } = useWalletContext();
 
     const { setSuccess } = useSnackbar();
 
     const [isAddOpen, setIsAddOpen] = useState(false);
+    const [isAddGroupOpen, setIsAddGroupOpen] = useState(false);
     const [isProfileOpen, setIsProfileOpen] = useState(false);
     const [addUserError, setAddUserError] = useState("");
 
@@ -78,6 +81,10 @@ export default function HomePage() {
         }
 
         for (const [, itm] of Object.entries(dmailList)) {
+            if (itm.to.length > 1) {
+                continue;
+            }
+
             if (itm.message?.subject !== CHAT_SUBJECT) {
                 continue;
             }
@@ -110,13 +117,25 @@ export default function HomePage() {
                 onSubmit={handleAddUser}
             />
 
+            <CreateGroupModal
+                isOpen={isAddGroupOpen}
+                onClose={() => setIsAddGroupOpen(false)}
+            />
+
             <Profile
                 isOpen={isProfileOpen}
                 onClose={() => setIsProfileOpen(false)}
             />
 
             <Box position="sticky" top="0" zIndex={100} borderBottomWidth="1px">
-                <Flex h="35px" align="center" px={2} justify="flex-end">
+                <Flex h="35px" align="center" px={2} justify="flex-end" gap={2}>
+                    <IconButton
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setIsAddGroupOpen(true)}
+                    >
+                        <LuUsers />
+                    </IconButton>
                     <IconButton
                         variant="ghost"
                         size="sm"
@@ -129,6 +148,28 @@ export default function HomePage() {
 
             <Box flex="1" overflowY="auto">
                 <ConversationList>
+                    {groupList.map((groupName) => {
+                        const groupDID = nameList[groupName];
+                        if (!groupDID) {
+                            return null;
+                        }
+
+                        const src = avatarDataUrl(groupDID);
+                        const selected = activePeer === groupName;
+                        const unreadCnt = 0; // TODO: Calculate unread count for groups
+
+                        return (
+                            <Conversation
+                                key={groupDID}
+                                name={groupName}
+                                unreadCnt={unreadCnt > 0 ? unreadCnt : undefined}
+                                onClick={() => setActivePeer(groupName)}
+                                active={selected}
+                            >
+                                <Avatar src={src} />
+                            </Conversation>
+                        );
+                    })}
                     {Object.entries(nameList)
                         .filter(([name]) => agentList.includes(name) && currentId !== name)
                         .map(([name, did]) => {
@@ -163,7 +204,7 @@ export default function HomePage() {
                 zIndex={2000}
                 borderTopWidth="1px"
             >
-                <Flex h="44px" align="center">
+                <Flex h="46px" align="center">
                     <Box flex="1" display="flex" justifyContent="center">
                         <Flex direction="column" align="center">
                             <IconButton

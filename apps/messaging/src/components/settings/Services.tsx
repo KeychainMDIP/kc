@@ -105,7 +105,7 @@ export default function Services({ isOpen, onClose }: ServicesSettingsProps) {
                 </Field.Root>
 
                 <Box py={3}>
-                    <Button width="100%" colorScheme="blue" onClick={handleSave}>
+                    <Button width="100%" colorPalette="blue" onClick={handleSave}>
                         Save
                     </Button>
                 </Box>

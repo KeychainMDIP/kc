@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Button, Input, Text, Field, Dialog } from "@chakra-ui/react";
+import { Button, Input, Text, Field, Dialog, Portal } from "@chakra-ui/react";
 
 interface TextInputModalProps {
     isOpen: boolean;
@@ -37,35 +37,39 @@ const TextInputModal: React.FC<TextInputModalProps> = (
 
     return (
         <Dialog.Root open={isOpen}>
-            <Dialog.Backdrop />
-            <Dialog.Content>
-                <Dialog.Header>
-                    <Dialog.Title textAlign="center" flex="1">{title}</Dialog.Title>
-                    <Dialog.CloseTrigger />
-                </Dialog.Header>
-                <Dialog.Body>
-                    <form id="text-input-form" onSubmit={handleConfirm}>
-                        {description && (
-                            <Text mb={2} textAlign="center" opacity={0.9}>{description}</Text>
-                        )}
-                        <Field.Root>
-                            <Input
-                                id="text-input-field"
-                                ref={inputRef}
-                                type="text"
-                                value={value}
-                                onChange={(e) => setValue(e.target.value)}
-                            />
-                        </Field.Root>
-                    </form>
-                </Dialog.Body>
-                <Dialog.Footer>
-                    {onClose && (
-                        <Button variant="outline" onClick={onClose}>Cancel</Button>
-                    )}
-                    <Button colorScheme="blue" type="submit" form="text-input-form">{confirmText}</Button>
-                </Dialog.Footer>
-            </Dialog.Content>
+            <Portal>
+                <Dialog.Backdrop />
+                <Dialog.Positioner>
+                    <Dialog.Content>
+                        <Dialog.Header>
+                            <Dialog.Title textAlign="center" flex="1">{title}</Dialog.Title>
+                            <Dialog.CloseTrigger />
+                        </Dialog.Header>
+                        <Dialog.Body>
+                            <form id="text-input-form" onSubmit={handleConfirm}>
+                                {description && (
+                                    <Text mb={2} textAlign="center" opacity={0.9}>{description}</Text>
+                                )}
+                                <Field.Root>
+                                    <Input
+                                        id="text-input-field"
+                                        ref={inputRef}
+                                        type="text"
+                                        value={value}
+                                        onChange={(e) => setValue(e.target.value)}
+                                    />
+                                </Field.Root>
+                            </form>
+                        </Dialog.Body>
+                        <Dialog.Footer>
+                            {onClose && (
+                                <Button variant="outline" onClick={onClose}>Cancel</Button>
+                            )}
+                            <Button colorPalette="blue" type="submit" form="text-input-form">{confirmText}</Button>
+                        </Dialog.Footer>
+                    </Dialog.Content>
+                </Dialog.Positioner>
+            </Portal>
         </Dialog.Root>
     );
 };

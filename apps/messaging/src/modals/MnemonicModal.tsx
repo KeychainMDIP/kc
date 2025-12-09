@@ -165,7 +165,7 @@ const MnemonicModal: React.FC<MnemonicModalProps> = ({ isOpen, onSubmit, onClose
                             <Button variant="outline" onClick={onClose}>
                                 Cancel
                             </Button>
-                            <Button onClick={handleSubmit} colorScheme="blue" disabled={!canConfirm}>
+                            <Button onClick={handleSubmit} colorPalette="blue" disabled={!canConfirm}>
                                 Confirm
                             </Button>
                         </>

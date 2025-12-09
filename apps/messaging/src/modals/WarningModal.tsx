@@ -1,5 +1,5 @@
 import React from "react";
-import { Button, Text, Dialog } from "@chakra-ui/react";
+import { Button, Text, Dialog, Portal } from "@chakra-ui/react";
 
 interface WarningModalProps {
     isOpen: boolean;
@@ -18,20 +18,24 @@ const WarningModal: React.FC<WarningModalProps> = ({ isOpen, title, warningText,
 
     return (
         <Dialog.Root open={isOpen} onOpenChange={handleOpenChange}>
-            <Dialog.Backdrop />
-            <Dialog.Content>
-                <Dialog.Header>
-                    <Dialog.Title textAlign="center" flex="1">{title}</Dialog.Title>
-                    <Dialog.CloseTrigger />
-                </Dialog.Header>
-                <Dialog.Body>
-                    <Text textAlign="center" opacity={0.9}>{warningText}</Text>
-                </Dialog.Body>
-                <Dialog.Footer>
-                    <Button variant="outline" onClick={onClose}>Cancel</Button>
-                    <Button colorScheme="blue" onClick={onSubmit}>Confirm</Button>
-                </Dialog.Footer>
-            </Dialog.Content>
+            <Portal>
+                <Dialog.Backdrop />
+                <Dialog.Positioner>
+                    <Dialog.Content>
+                        <Dialog.Header>
+                            <Dialog.Title textAlign="center" flex="1">{title}</Dialog.Title>
+                            <Dialog.CloseTrigger />
+                        </Dialog.Header>
+                        <Dialog.Body>
+                            <Text textAlign="center" opacity={0.9}>{warningText}</Text>
+                        </Dialog.Body>
+                        <Dialog.Footer>
+                            <Button variant="outline" onClick={onClose}>Cancel</Button>
+                            <Button colorPalette="blue" onClick={onSubmit}>Confirm</Button>
+                        </Dialog.Footer>
+                    </Dialog.Content>
+                </Dialog.Positioner>
+            </Portal>
         </Dialog.Root>
     );
 };

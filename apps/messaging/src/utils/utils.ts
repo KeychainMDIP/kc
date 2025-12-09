@@ -130,3 +130,12 @@ export function truncateMiddle(str: string, max = 34) {
     const half = Math.floor((max - 3) / 2);
     return `${str.slice(0, half)}...${str.slice(-half)}`;
 }
+
+export function arraysMatchMembers(arr1: string[], arr2: string[]) {
+    if (arr1.length !== arr2.length) {
+        return false;
+    }
+    const sorted1 = [...arr1].sort();
+    const sorted2 = [...arr2].sort();
+    return sorted1.every((val, idx) => val === sorted2[idx]);
+}

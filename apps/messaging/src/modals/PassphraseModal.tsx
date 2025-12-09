@@ -147,7 +147,7 @@ const PassphraseModal: React.FC<PassphraseModalProps> = (
                 </Dialog.Body>
                 <Dialog.Footer>
                     <Button
-                        colorScheme="blue"
+                        colorPalette="blue"
                         type="submit"
                         form="passphrase-form"
                         disabled={isSubmitDisabled()}

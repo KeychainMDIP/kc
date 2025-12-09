@@ -20,7 +20,7 @@ import { LuEllipsisVertical, LuQrCode, LuPencil, LuTrash2 } from "react-icons/lu
 import { useSnackbar } from "../contexts/SnackbarProvider";
 import { useVariablesContext } from "../contexts/VariablesProvider";
 import { useWalletContext } from "../contexts/WalletProvider";
-import { avatarDataUrl, formatTime, truncateMiddle } from "../utils/utils";
+import { avatarDataUrl, formatTime, truncateMiddle, arraysMatchMembers } from "../utils/utils";
 import { CHAT_SUBJECT } from "../constants";
 import TextInputModal from "../modals/TextInputModal";
 import WarningModal from "../modals/WarningModal";
@@ -39,6 +39,7 @@ type MessageModel = {
 
 const UNREAD = "unread"
 const IMAGE_PLACEHOLDER = "[image]"
+const GROUP_NOT_FOUND = "Group not found";
 
 const ChatWindow: React.FC = () => {
     const {
@@ -50,6 +51,7 @@ const ChatWindow: React.FC = () => {
         setActivePeer,
         refreshNames,
         avatarList,
+        groupList,
     } = useVariablesContext();
     const {
         keymaster,
@@ -68,6 +70,7 @@ const ChatWindow: React.FC = () => {
     const [imageViewerOpen, setImageViewerOpen] = useState<boolean>(false);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const [imageAttachments, setImageAttachments] = useState<Record<string, { name: string; url: string; mime: string }[]>>({});
+    const [currentGroupMembers, setCurrentGroupMembers] = useState<string[]>([]);
 
     const { setError } = useSnackbar();
 
@@ -129,6 +132,42 @@ const ChatWindow: React.FC = () => {
             return;
         }
 
+        const isGroup = groupList.includes(activePeer);
+        if (isGroup) {
+            (async () => {
+                try {
+                    const group = await keymaster.getGroup(activePeer);
+                    if (!group) {
+                        setError(GROUP_NOT_FOUND);
+                        return;
+                    }
+                    const groupMembers: string[] = [];
+                    if (group?.members) {
+                        for (let member of group.members) {
+                            const name = Object.entries(nameList).find(([_, value]) => value === member)?.[0];
+                            if (name) {
+                                groupMembers.push(name);
+                            } else {
+                                groupMembers.push(member);
+                            }
+                        }
+                    }
+                    setCurrentGroupMembers(groupMembers);
+                } catch (err: any) {
+                    setError(err);
+                }
+            })();
+        } else {
+            setCurrentGroupMembers([]);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activePeer, groupList, keymaster]);
+
+    useEffect(() => {
+        if (!activePeer || !keymaster) {
+            return;
+        }
+
         const updates: Array<{ did: string; newTags: string[] }> = []
 
         for (const [did, itm] of Object.entries(dmailList || {})) {
@@ -180,8 +219,26 @@ const ChatWindow: React.FC = () => {
         try {
             setSending(true)
 
+            const isGroup = groupList.includes(activePeer);
+            let recipients: string[] = [];
+
+            if (isGroup) {
+                try {
+                    const group = await keymaster.getGroup(activePeer);
+                    if (!group) {
+                        setError(GROUP_NOT_FOUND);
+                        return;
+                    }
+                    recipients = group.members;
+                } catch (error: any) {
+                    setError(error);
+                }
+            } else {
+                recipients = [activePeer];
+            }
+
             const dmail = {
-                to: [activePeer],
+                to: recipients,
                 cc: [],
                 subject: CHAT_SUBJECT,
                 body,
@@ -208,8 +265,8 @@ const ChatWindow: React.FC = () => {
         temp.type = "file";
         temp.accept = "image/*";
         temp.hidden = true;
-        const onTempChange = (e: Event) => {
-            uploadImageAttachment(e as unknown as React.ChangeEvent<HTMLInputElement>);
+        const onTempChange = async (e: Event) => {
+            await uploadImageAttachment(e as unknown as React.ChangeEvent<HTMLInputElement>);
             temp.removeEventListener("change", onTempChange);
             if (temp.parentNode) {
                 temp.parentNode.removeChild(temp);
@@ -275,15 +332,32 @@ const ChatWindow: React.FC = () => {
                         return;
                     }
 
-                    const recipientDid = nameList[activePeer];
-                    if (!recipientDid) {
-                        setError("Unknown recipient");
-                        setUploadingImage(false);
-                        return;
+                    const isGroup = groupList.includes(activePeer);
+                    let recipients: string[] = [];
+
+                    if (isGroup) {
+                        try {
+                            const group = await keymaster.getGroup(activePeer);
+                            if (!group) {
+                                setError(GROUP_NOT_FOUND);
+                                return;
+                            }
+                            recipients = group.members;
+                        } catch (error: any) {
+                            setError(error);
+                        }
+                    } else {
+                        const recipientDid = nameList[activePeer];
+                        if (!recipientDid) {
+                            setError("Unknown recipient");
+                            setUploadingImage(false);
+                            return;
+                        }
+                        recipients = [recipientDid];
                     }
 
                     const dmail = {
-                        to: [recipientDid],
+                        to: recipients,
                         cc: [],
                         subject: CHAT_SUBJECT,
                         body: IMAGE_PLACEHOLDER,
@@ -331,18 +405,38 @@ const ChatWindow: React.FC = () => {
     };
 
     const conversation = useMemo(() => {
-        if (!activePeer || !currentId) {
+        if (!activePeer || !currentId || !keymaster) {
             return [] as { did: string; model: MessageModel }[]
         }
-        
+
+        const isGroup = groupList.includes(activePeer);
+
         const convo = Object.entries(dmailList || {})
             .filter(([, itm]: any) => {
                 const to = [...(itm.to || [])];
-                const incoming = itm.sender === activePeer && to.includes(currentId);
-                const outgoing = itm.sender === currentId && to.includes(activePeer);
                 const notDeleted = !itm.tags?.includes("deleted");
                 const isChat = itm.message?.subject === CHAT_SUBJECT;
-                return (incoming || outgoing) && notDeleted && isChat;
+
+                if (!isChat || !notDeleted) {
+                    return false;
+                }
+
+                if (isGroup) {
+                    if (!arraysMatchMembers(to, currentGroupMembers)) {
+                        return false;
+                    }
+
+                    const outgoing = itm.sender === currentId;
+                    const incoming = itm.sender !== currentId && to.includes(currentId);
+                    return outgoing || incoming;
+                } else {
+                    if (to.length > 1) {
+                        return false;
+                    }
+                    const incoming = itm.sender === activePeer && to.includes(currentId);
+                    const outgoing = itm.sender === currentId && to.includes(activePeer);
+                    return incoming || outgoing;
+                }
             })
             .sort(([, a]: any, [, b]: any) => new Date(a.date).getTime() - new Date(b.date).getTime())
             .map(([did, itm]: any) => {
@@ -373,7 +467,7 @@ const ChatWindow: React.FC = () => {
         }
 
         return convo;
-    }, [activePeer, currentId, dmailList])
+    }, [activePeer, currentId, dmailList, groupList, keymaster, currentGroupMembers])
 
     useEffect(() => {
         let mounted = true;
@@ -470,7 +564,11 @@ const ChatWindow: React.FC = () => {
                 <ConversationHeader>
                     <ConversationHeader.Back onClick={onBack} />
                     <Avatar src={peerAvatar} name={activePeer} />
-                    <ConversationHeader.Content userName={activePeer} info={truncateMiddle(nameList[activePeer], 25)}/>
+                    <ConversationHeader.Content userName={activePeer} info={(
+                        currentGroupMembers.length
+                            ? `${currentGroupMembers.length} members`
+                            : truncateMiddle(nameList[activePeer], 25)
+                    )}/>
                     <ConversationHeader.Actions>
                         <MenuRoot closeOnSelect>
                             <MenuTrigger asChild>
@@ -490,10 +588,12 @@ const ChatWindow: React.FC = () => {
                                             <LuPencil style={{ marginRight: 8 }} />
                                             Rename
                                         </MenuItem>
-                                        <MenuItem value="export" onSelect={() => setQrOpen(true)}>
-                                            <LuQrCode style={{ marginRight: 8 }} />
-                                            Export
-                                        </MenuItem>
+                                        {currentGroupMembers.length === 0 && (
+                                            <MenuItem value="export" onSelect={() => setQrOpen(true)}>
+                                                <LuQrCode style={{ marginRight: 8 }} />
+                                                Export
+                                            </MenuItem>
+                                        )}
                                         <MenuItem value="delete" onSelect={onRemove}>
                                             <LuTrash2 style={{ marginRight: 8 }} />
                                             Delete
