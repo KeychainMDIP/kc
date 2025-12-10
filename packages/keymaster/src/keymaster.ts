@@ -327,6 +327,7 @@ export default class Keymaster implements KeymasterInterface {
                 let remove = false;
                 try {
                     const doc = await this.resolveDID(wallet.ids[name].did);
+
                     if (doc.didDocumentMetadata?.deactivated) {
                         remove = true;
                     }
@@ -346,6 +347,7 @@ export default class Keymaster implements KeymasterInterface {
                         let remove = false;
                         try {
                             const doc = await this.resolveDID(id.owned[i]);
+
                             if (doc.didDocumentMetadata?.deactivated) {
                                 remove = true;
                             }
@@ -366,6 +368,7 @@ export default class Keymaster implements KeymasterInterface {
                         let remove = false;
                         try {
                             const doc = await this.resolveDID(id.held[i]);
+
                             if (doc.didDocumentMetadata?.deactivated) {
                                 remove = true;
                             }
@@ -387,6 +390,7 @@ export default class Keymaster implements KeymasterInterface {
                     let remove = false;
                     try {
                         const doc = await this.resolveDID(wallet.names[name]);
+
                         if (doc.didDocumentMetadata?.deactivated) {
                             remove = true;
                         }
@@ -1214,6 +1218,17 @@ export default class Keymaster implements KeymasterInterface {
     ): Promise<MdipDocument> {
         const actualDid = await this.lookupDID(did);
         const docs = await this.gatekeeper.resolveDID(actualDid, options);
+
+        if (docs.didResolutionMetadata?.error) {
+            if (docs.didResolutionMetadata.error === 'notFound') {
+                throw new InvalidDIDError('unknown');
+            }
+
+            if (docs.didResolutionMetadata.error === 'invalidDid') {
+                throw new InvalidDIDError('bad format');
+            }
+        }
+
         const controller = docs.didDocument?.controller || docs.didDocument?.id;
         const isOwned = await this.idInWallet(controller);
 
