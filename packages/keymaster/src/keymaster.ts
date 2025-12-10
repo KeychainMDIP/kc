@@ -1357,55 +1357,64 @@ export default class Keymaster implements KeymasterInterface {
         name: string,
         options: { registry?: string } = {}
     ): Promise<string> {
-        const { registry = this.defaultRegistry } = options;
-
-        let createdDid = '';
+        let did = '';
         await this.mutateWallet(async (wallet) => {
-            name = this.validateName(name, wallet);
-
             const account = wallet.counter;
             const index = 0;
-
-            const hdkey = await this.getHDKeyFromCacheOrMnemonic(wallet);
-            const path = `m/44'/0'/${account}'/0/${index}`;
-            const didkey = hdkey.derive(path);
-            const keypair = this.cipher.generateJwk(didkey.privateKey!);
-
-            const block = await this.gatekeeper.getBlock(registry);
-            const blockid = block?.hash;
-
-            const operation: Operation = {
-                type: 'create',
-                created: new Date().toISOString(),
-                blockid,
-                mdip: {
-                    version: 1,
-                    type: 'agent',
-                    registry
-                },
-                publicJwk: keypair.publicJwk,
-            };
-
-            const msgHash = this.cipher.hashJSON(operation);
-            const signature = this.cipher.signHash(msgHash, keypair.privateJwk);
-            const signed: Operation = {
-                ...operation,
-                signature: {
-                    signed: new Date().toISOString(),
-                    hash: msgHash,
-                    value: signature
-                },
-            };
-
-            const did = await this.gatekeeper.createDID(signed);
-            createdDid = did;
+            const signed = await this.createIdOperation(name, account, options);
+            
+            did = await this.gatekeeper.createDID(signed);
 
             wallet.ids[name] = { did, account, index };
             wallet.counter += 1;
             wallet.current = name;
         });
 
-        return createdDid;
+        return did;
+    }
+
+    async createIdOperation(
+        name: string,
+        account: number = 0,
+        options: { registry?: string } = {}
+    ): Promise<Operation> {
+        const { registry = this.defaultRegistry } = options;
+        const wallet = await this.loadWallet();
+
+        name = this.validateName(name, wallet);
+
+        const hdkey = await this.getHDKeyFromCacheOrMnemonic(wallet);
+        const path = `m/44'/0'/${account}'/0/0`;
+        const didkey = hdkey.derive(path);
+        const keypair = this.cipher.generateJwk(didkey.privateKey!);
+
+        const block = await this.gatekeeper.getBlock(registry);
+        const blockid = block?.hash;
+
+        const operation: Operation = {
+            type: 'create',
+            created: new Date().toISOString(),
+            blockid,
+            mdip: {
+                version: 1,
+                type: 'agent',
+                registry
+            },
+            publicJwk: keypair.publicJwk,
+        };
+
+        const msgHash = this.cipher.hashJSON(operation);
+        const signature = this.cipher.signHash(msgHash, keypair.privateJwk);
+        const signed: Operation = {
+            ...operation,
+            signature: {
+                signed: new Date().toISOString(),
+                hash: msgHash,
+                value: signature
+            },
+        };
+
+        return signed;
     }
 
     async removeId(name: string): Promise<boolean> {
