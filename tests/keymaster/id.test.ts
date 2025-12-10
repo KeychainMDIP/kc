@@ -168,7 +168,7 @@ describe('createIdOperation', () => {
     it('should create a valid operation for new ID', async () => {
         const name = 'Bob';
         const operation = await keymaster.createIdOperation(name);
-        
+
         expect(operation.type).toBe('create');
         expect(operation.created).toBeDefined();
         expect(operation.mdip).toBeDefined();
@@ -185,8 +185,8 @@ describe('createIdOperation', () => {
     it('should create operation with custom registry', async () => {
         const name = 'Alice';
         const registry = 'TFTC';
-        const operation = await keymaster.createIdOperation(name, { registry });
-        
+        const operation = await keymaster.createIdOperation(name, 0, { registry });
+
         expect(operation.mdip!.registry).toBe(registry);
         expect(operation.type).toBe('create');
         expect(operation.publicJwk).toBeDefined();
@@ -196,8 +196,8 @@ describe('createIdOperation', () => {
     it('should create operation with local registry', async () => {
         const name = 'Charlie';
         const registry = 'local';
-        const operation = await keymaster.createIdOperation(name, { registry });
-        
+        const operation = await keymaster.createIdOperation(name, 0, { registry });
+
         expect(operation.mdip!.registry).toBe(registry);
         expect(operation.type).toBe('create');
         expect(operation.publicJwk).toBeDefined();
@@ -208,9 +208,9 @@ describe('createIdOperation', () => {
         const name = 'Dave';
         const walletBefore = await keymaster.loadWallet();
         const counterBefore = walletBefore.counter;
-        
+
         await keymaster.createIdOperation(name);
-        
+
         const walletAfter = await keymaster.loadWallet();
         expect(walletAfter.counter).toBe(counterBefore);
         expect(walletAfter.ids[name]).toBeUndefined();
@@ -220,7 +220,7 @@ describe('createIdOperation', () => {
     it('should throw error for duplicate name', async () => {
         const name = 'Eve';
         await keymaster.createId(name);
-        
+
         try {
             await keymaster.createIdOperation(name);
             throw new ExpectedExceptionError();
@@ -250,7 +250,7 @@ describe('createIdOperation', () => {
     it('should create valid signature that can be verified', async () => {
         const name = 'Frank';
         const operation = await keymaster.createIdOperation(name);
-        
+
         // Verify that the signature matches the operation
         const msgHash = cipher.hashJSON({
             type: operation.type,
@@ -258,9 +258,9 @@ describe('createIdOperation', () => {
             mdip: operation.mdip,
             publicJwk: operation.publicJwk
         });
-        
+
         expect(operation.signature!.hash).toBe(msgHash);
-        
+
         // Verify signature can be validated
         const publicKey = operation.publicJwk!;
         const isValid = cipher.verifySig(msgHash, operation.signature!.value, publicKey);
@@ -270,13 +270,13 @@ describe('createIdOperation', () => {
     it('should create operation that can be used to create actual DID', async () => {
         const name = 'Grace';
         const operation = await keymaster.createIdOperation(name);
-        
+
         // Use the operation to create an actual DID
         const did = await gatekeeper.createDID(operation);
-        
+
         expect(did).toBeDefined();
         expect(did.startsWith('did:test:')).toBe(true);
-        
+
         // Verify the created DID resolves correctly
         const doc = await keymaster.resolveDID(did);
         expect(doc.didDocument!.id).toBe(did);
@@ -286,12 +286,12 @@ describe('createIdOperation', () => {
 
     it('should use customized default registry when none specified', async () => {
         const defaultRegistry = 'local';
-        const customKeymaster = new Keymaster({ 
-            gatekeeper, 
-            wallet, 
-            cipher, 
-            defaultRegistry, 
-            passphrase: 'passphrase' 
+        const customKeymaster = new Keymaster({
+            gatekeeper,
+            wallet,
+            cipher,
+            defaultRegistry,
+            passphrase: 'passphrase'
         });
 
         const name = 'Henry';
