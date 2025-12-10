@@ -742,7 +742,11 @@ async function main() {
 
     if (config.reimport) {
         const db = await loadDb();
-        db.discovered = [];
+        for (const item of db.discovered) {
+            delete item.imported;
+            delete item.processed;
+            delete item.error;
+        }
         await jsonPersister.saveDb(db);
     }
 
