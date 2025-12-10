@@ -164,7 +164,16 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
                     const data = doc.didDocumentData as Record<string, unknown>;
 
                     if (doc.mdip?.type === 'agent') {
-                        const profileName = getProfileName(name, data);
+                        const baseProfileName = getProfileName(name, data);
+
+                        let profileName = baseProfileName;
+                        if (nameList[profileName]) {
+                            let suffix = 2;
+                            while (nameList[`${baseProfileName} #${suffix}`]) {
+                                suffix++;
+                            }
+                            profileName = `${baseProfileName} #${suffix}`;
+                        }
 
                         nameList[profileName] = did;
                         agentAliasList.push(profileName);

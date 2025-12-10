@@ -61,7 +61,7 @@ export default function HomePage() {
             const data: Record<string, any> = doc.didDocumentData ?? {};
             const existingProfile: Record<string, any> = data[MESSAGING_PROFILE] ?? {};
 
-            if (!existingProfile.name || existingProfile.name !== String || !existingProfile.name.trim()) {
+            if (!existingProfile.name || typeof existingProfile.name !== "string" || !existingProfile.name.trim()) {
                 setAddUserError("This is not a valid messaging user");
                 return;
             }
