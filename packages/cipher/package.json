@@ -9,6 +9,9 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "@mdip:registry": "https://registry.npmjs.org"
+  },
   "exports": {
     ".": {
       "browser": {

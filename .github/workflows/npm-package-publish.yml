@@ -1,0 +1,105 @@
+name: Publish to NPM
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'Package to publish'
+        required: true
+        type: choice
+        options:
+          - 'all'
+          - '@mdip/cipher'
+          - '@mdip/common'
+          - '@mdip/gatekeeper'
+          - '@mdip/inscription'
+          - '@mdip/ipfs'
+          - '@mdip/keymaster'
+      version:
+        description: 'Version bump type'
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - prepatch
+          - preminor
+          - premajor
+          - prerelease
+      preid:
+        description: 'Pre-release identifier'
+        required: false
+        default: 'beta'
+        type: choice
+        options:
+          - beta
+          - alpha
+          - rc
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.0'
+          registry-url: 'https://registry.npmjs.org'
+      
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+      
+      - name: Install dependencies
+        run: npm ci
+      
+# (Removed deprecated 'Bootstrap Lerna' step)
+      
+      - name: Run tests
+        run: |
+          if [ "${{ github.event.inputs.package }}" = "all" ]; then
+            npx lerna run test --sort --concurrency=1
+          else
+            npx lerna run test --scope "${{ github.event.inputs.package }}" --include-dependencies --sort --concurrency=1
+          fi
+    
+      - name: Build packages
+        run: |
+          if [ "${{ github.event.inputs.package }}" = "all" ]; then
+            npx lerna run build --sort --concurrency=1
+          else
+            npx lerna run build --scope "${{ github.event.inputs.package }}" --include-dependencies --sort --concurrency=1
+          fi
+        continue-on-error: false 
+
+      - name: Version packages
+        run: |
+          SCOPE_FLAG=""
+          if [ "${{ github.event.inputs.package }}" != "all" ]; then
+            SCOPE_FLAG="--scope ${{ github.event.inputs.package }}"
+          fi
+          
+          if [[ "${{ github.event.inputs.version }}" == pre* ]]; then
+            npx lerna version ${{ github.event.inputs.version }} --preid ${{ github.event.inputs.preid }} --yes --no-private $SCOPE_FLAG
+          else
+            npx lerna version ${{ github.event.inputs.version }} --yes --no-private $SCOPE_FLAG
+          fi
+      
+      - name: Publish to NPM
+        run: |
+          if [[ "${{ github.event.inputs.version }}" == pre* ]]; then
+            npx lerna publish from-git --dist-tag ${{ github.event.inputs.preid }} --yes --provenance
+          else
+            npx lerna publish from-git --yes --provenance
+          fi
