@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useVariablesContext } from "../contexts/VariablesProvider";
 import { Avatar, Conversation, ConversationList } from "@chatscope/chat-ui-kit-react";
-import { avatarDataUrl } from "../utils/utils";
+import {avatarDataUrl, arraysMatchMembers, convertNamesToDIDs} from "../utils/utils";
 import { CHAT_SUBJECT } from "../constants";
 import AddUserModal from "../modals/AddUserModal";
 import CreateGroupModal from "../modals/CreateGroupModal";
@@ -81,8 +81,9 @@ export default function HomePage() {
         }
 
         for (const [, itm] of Object.entries(dmailList)) {
+            let group = false;
             if (itm.to.length > 1) {
-                continue;
+                group = true;
             }
 
             if (itm.message?.subject !== CHAT_SUBJECT) {
@@ -98,12 +99,20 @@ export default function HomePage() {
                 continue;
             }
 
-            const incoming = itm.sender !== currentId && (itm.to ?? []).includes(currentId)
-            if (!incoming) {
-                continue
+            if (group) {
+                for (const [name, members] of Object.entries(groupList)) {
+                    if (arraysMatchMembers(convertNamesToDIDs(itm.to, nameList), convertNamesToDIDs(members, nameList))) {
+                        map.set(name, (map.get(name) ?? 0) + 1);
+                        break;
+                    }
+                }
+            } else {
+                const incoming = itm.sender !== currentId && (itm.to ?? []).includes(currentId)
+                if (!incoming) {
+                    continue
+                }
+                map.set(itm.sender, (map.get(itm.sender) ?? 0) + 1);
             }
-
-            map.set(itm.sender, (map.get(itm.sender) ?? 0) + 1)
         }
         return map
     }, [dmailList, currentId])
@@ -148,7 +157,7 @@ export default function HomePage() {
 
             <Box flex="1" overflowY="auto">
                 <ConversationList>
-                    {groupList.map((groupName) => {
+                    {Object.keys(groupList).map((groupName) => {
                         const groupDID = nameList[groupName];
                         if (!groupDID) {
                             return null;
@@ -156,7 +165,7 @@ export default function HomePage() {
 
                         const src = avatarDataUrl(groupDID);
                         const selected = activePeer === groupName;
-                        const unreadCnt = 0; // TODO: Calculate unread count for groups
+                        const unreadCnt = unreadBySender.get(groupName) ?? 0;
 
                         return (
                             <Conversation

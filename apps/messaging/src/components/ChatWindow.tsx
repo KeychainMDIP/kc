@@ -20,13 +20,19 @@ import { LuEllipsisVertical, LuQrCode, LuPencil, LuTrash2 } from "react-icons/lu
 import { useSnackbar } from "../contexts/SnackbarProvider";
 import { useVariablesContext } from "../contexts/VariablesProvider";
 import { useWalletContext } from "../contexts/WalletProvider";
-import { avatarDataUrl, formatTime, truncateMiddle, arraysMatchMembers } from "../utils/utils";
 import { CHAT_SUBJECT } from "../constants";
 import TextInputModal from "../modals/TextInputModal";
 import WarningModal from "../modals/WarningModal";
 import QRCodeModal from "../modals/QRCodeModal";
 import { Buffer } from "buffer";
 import { CloseButton, Box } from "@chakra-ui/react";
+import {
+    avatarDataUrl,
+    formatTime,
+    truncateMiddle,
+    arraysMatchMembers,
+    convertNamesToDIDs
+} from "../utils/utils";
 
 type MessageModel = {
     message: string
@@ -132,7 +138,7 @@ const ChatWindow: React.FC = () => {
             return;
         }
 
-        const isGroup = groupList.includes(activePeer);
+        const isGroup = Object.keys(groupList).includes(activePeer);
         if (isGroup) {
             (async () => {
                 try {
@@ -141,18 +147,10 @@ const ChatWindow: React.FC = () => {
                         setError(GROUP_NOT_FOUND);
                         return;
                     }
-                    const groupMembers: string[] = [];
                     if (group?.members) {
-                        for (let member of group.members) {
-                            const name = Object.entries(nameList).find(([_, value]) => value === member)?.[0];
-                            if (name) {
-                                groupMembers.push(name);
-                            } else {
-                                groupMembers.push(member);
-                            }
-                        }
+                        setCurrentGroupMembers(group.members);
                     }
-                    setCurrentGroupMembers(groupMembers);
+
                 } catch (err: any) {
                     setError(err);
                 }
@@ -171,6 +169,8 @@ const ChatWindow: React.FC = () => {
         const updates: Array<{ did: string; newTags: string[] }> = []
 
         for (const [did, itm] of Object.entries(dmailList || {})) {
+            const group = groupList[activePeer] !== undefined;
+
             if (itm.message?.subject !== CHAT_SUBJECT) {
                 continue;
             }
@@ -184,10 +184,15 @@ const ChatWindow: React.FC = () => {
                 continue;
             }
 
-            const to = [...(itm.to || [])]
-            const incoming = itm.sender === activePeer && to.includes(currentId);
-            if (!incoming) {
-                continue;
+            if (group) {
+                if (!arraysMatchMembers(convertNamesToDIDs(itm.to, nameList), convertNamesToDIDs(groupList[activePeer], nameList))) {
+                    continue;
+                }
+            } else {
+                const incoming = itm.sender === activePeer && (itm.to ?? []).includes(currentId);
+                if (!incoming) {
+                    continue;
+                }
             }
 
             updates.push({ did, newTags: tags.filter(t => t !== UNREAD) });
@@ -219,7 +224,7 @@ const ChatWindow: React.FC = () => {
         try {
             setSending(true)
 
-            const isGroup = groupList.includes(activePeer);
+            const isGroup = Object.keys(groupList).includes(activePeer);
             let recipients: string[] = [];
 
             if (isGroup) {
@@ -332,7 +337,7 @@ const ChatWindow: React.FC = () => {
                         return;
                     }
 
-                    const isGroup = groupList.includes(activePeer);
+                    const isGroup = Object.keys(groupList).includes(activePeer);
                     let recipients: string[] = [];
 
                     if (isGroup) {
@@ -409,7 +414,7 @@ const ChatWindow: React.FC = () => {
             return [] as { did: string; model: MessageModel }[]
         }
 
-        const isGroup = groupList.includes(activePeer);
+        const isGroup = Object.keys(groupList).includes(activePeer);
 
         const convo = Object.entries(dmailList || {})
             .filter(([, itm]: any) => {
@@ -422,7 +427,7 @@ const ChatWindow: React.FC = () => {
                 }
 
                 if (isGroup) {
-                    if (!arraysMatchMembers(to, currentGroupMembers)) {
+                    if (!arraysMatchMembers(convertNamesToDIDs(to, nameList), currentGroupMembers)) {
                         return false;
                     }
 
@@ -467,7 +472,7 @@ const ChatWindow: React.FC = () => {
         }
 
         return convo;
-    }, [activePeer, currentId, dmailList, groupList, keymaster, currentGroupMembers])
+    }, [activePeer, currentId, dmailList, groupList, nameList, keymaster, currentGroupMembers])
 
     useEffect(() => {
         let mounted = true;

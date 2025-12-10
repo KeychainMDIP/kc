@@ -11,7 +11,7 @@ interface CreateGroupModalProps {
 }
 
 const CreateGroupModal: React.FC<CreateGroupModalProps> = ({ isOpen, onClose }) => {
-    const { agentList, nameList, refreshNames, groupList } = useVariablesContext();
+    const { agentList, currentId, currentDID, nameList, refreshNames, groupList } = useVariablesContext();
     const { keymaster } = useWalletContext();
     const { setError, setSuccess } = useSnackbar();
 
@@ -68,7 +68,7 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({ isOpen, onClose }) 
             return;
         }
 
-        if (groupList.includes(trimmed) || Object.keys(nameList).includes(trimmed)) {
+        if (Object.keys(groupList).includes(trimmed) || Object.keys(nameList).includes(trimmed)) {
             setError("Group name already exists");
             return;
         }
@@ -76,12 +76,13 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({ isOpen, onClose }) 
         try {
             const groupDID = await keymaster.createGroup(trimmed);
             await keymaster.addName(trimmed, groupDID);
+            await keymaster.addGroupMember(trimmed, currentDID);
 
             for (const member of selectedMembers) {
-                const memberDID = nameList[member];
-                if (memberDID) {
-                    await keymaster.addGroupMember(trimmed, memberDID);
+                if (member === currentId) {
+                    continue;
                 }
+                await keymaster.addGroupMember(trimmed, member);
             }
 
             await refreshNames();

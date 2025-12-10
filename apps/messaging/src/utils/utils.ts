@@ -131,6 +131,14 @@ export function truncateMiddle(str: string, max = 34) {
     return `${str.slice(0, half)}...${str.slice(-half)}`;
 }
 
+export function convertNamesToDIDs(names: string[], nameList: Record<string, string>) {
+    let converted: string[] = [];
+    for (let did of names) {
+        converted.push(nameList[did] ?? did);
+    }
+    return converted;
+}
+
 export function arraysMatchMembers(arr1: string[], arr2: string[]) {
     if (arr1.length !== arr2.length) {
         return false;

@@ -3,7 +3,7 @@ import { DmailItem } from "@mdip/keymaster/types";
 import { useWalletContext } from "./WalletProvider";
 import { useSnackbar } from "./SnackbarProvider";
 import { PROFILE_SCHEMA_ID } from "../constants";
-import { arraysMatchMembers } from "../utils/utils";
+import { arraysMatchMembers, convertNamesToDIDs } from "../utils/utils";
 
 const REFRESH_INTERVAL = 5_000;
 
@@ -32,8 +32,8 @@ interface VariablesContextValue {
     setSchemaList: Dispatch<SetStateAction<string[]>>;
     vaultList: string[];
     setVaultList: Dispatch<SetStateAction<string[]>>;
-    groupList: string[];
-    setGroupList: Dispatch<SetStateAction<string[]>>;
+    groupList: Record<string, string[]>;
+    setGroupList: Dispatch<SetStateAction<Record<string, string[]>>>;
     imageList: string[];
     setImageList: Dispatch<SetStateAction<string[]>>;
     documentList: string[];
@@ -90,7 +90,7 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
     const [agentList, setAgentList] = useState<string[]>([]);
     const [avatarList, setAvatarList] = useState<Record<string, string>>({});
     const [pollList, setPollList] = useState<string[]>([]);
-    const [groupList, setGroupList] = useState<string[]>([]);
+    const [groupList, setGroupList] = useState<Record<string, string[]>>({});
     const [imageList, setImageList] = useState<string[]>([]);
     const [documentList, setDocumentList] = useState<string[]>([]);
     const [schemaList, setSchemaList] = useState<string[]>([]);
@@ -161,7 +161,7 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
 
             const schemaList = [];
             const imageList = [];
-            const groupList = [];
+            const groupList: Record<string, string[]> = {};
             const vaultList = [];
             const pollList = [];
             const documentList = [];
@@ -189,7 +189,10 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
                     }
 
                     if (data.group) {
-                        groupList.push(name);
+                        const group = await keymaster.getGroup(name);
+                        if (group?.members) {
+                            groupList[name] = group?.members;
+                        }
                         continue;
                     }
 
@@ -265,30 +268,12 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         }
 
         inboxRefreshingRef.current = true;
+        let needsRefresh = false;
 
         try {
             const msgs = await keymaster.listDmail();
 
-            let needsRefresh = false;
-
-            const existingGroupMembers: string[][] = [];
-            for (const groupName of groupList) {
-                try {
-                    const group = await keymaster.getGroup(groupName);
-                    if (group?.members) {
-                        const groupMembers: string[] = [];
-                        for (let member of group.members) {
-                            const name = Object.entries(nameList).find(([_, value]) => value === member)?.[0];
-                            if (name) {
-                                groupMembers.push(name);
-                            } else {
-                                groupMembers.push(member);
-                            }
-                        }
-                        existingGroupMembers.push(groupMembers);
-                    }
-                } catch {}
-            }
+            let existingGroupMembers = Object.values(groupList);
 
             for (const [, item] of Object.entries(msgs)) {
                 const { sender, to } = item;
@@ -308,7 +293,12 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
                         } catch {}
                     }
                 } else if (to.length > 1) {
-                    const groupExists = existingGroupMembers.some(members => arraysMatchMembers(members, to));
+                    let groupExists = false;
+                    for (const members of existingGroupMembers) {
+                        if (arraysMatchMembers(convertNamesToDIDs(members, nameList), convertNamesToDIDs(to, nameList))) {
+                            groupExists = true;
+                        }
+                    }
 
                     if (!groupExists) {
                         try {
