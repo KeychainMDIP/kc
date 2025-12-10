@@ -10,7 +10,7 @@
     "dist"
   ],
   "publishConfig": {
-    "@mdip:registry": "https://registry.npmjs.org"
+    "registry": "https://registry.npmjs.org"
   },
   "exports": {
     ".": {
