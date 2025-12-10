@@ -2,7 +2,7 @@ import { createContext, Dispatch, ReactNode, SetStateAction, useContext, useStat
 import { DmailItem } from "@mdip/keymaster/types";
 import { useWalletContext } from "./WalletProvider";
 import { useSnackbar } from "./SnackbarProvider";
-import { PROFILE_SCHEMA_ID } from "../constants";
+import { MESSAGING_PROFILE } from "../constants";
 import { arraysMatchMembers, convertNamesToDIDs } from "../utils/utils";
 
 const REFRESH_INTERVAL = 5_000;
@@ -148,10 +148,8 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
             for (const idName of agentList) {
                 try {
                     const doc = await keymaster.resolveDID(idName);
-                    const data = doc.didDocumentData as Record<string, unknown>;
-
-                    if (data && data.manifest && typeof data.manifest === 'object') {
-                        await populateAgentAvatar(idName, data.manifest, avatarList);
+                    if (doc.didDocumentData) {
+                        await populateAgentAvatar(idName, doc.didDocumentData, avatarList);
                     }
                 } catch {}
             }
@@ -181,9 +179,7 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
                     if (doc.mdip?.type === 'agent') {
                         agentList.push(name);
 
-                        if (data && data.manifest && typeof data.manifest === 'object') {
-                            await populateAgentAvatar(name, data.manifest, avatarList);
-                        }
+                        await populateAgentAvatar(name, data, avatarList);
 
                         continue;
                     }
@@ -412,17 +408,17 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         }
     }
 
-    async function populateAgentAvatar(name: string, manifest: Record<string, any>, avatarList: Record<string, string>): Promise<void> {
-        for (const key of Object.keys(manifest)) {
-            const vc = manifest[key];
-            const profileAssetDid = vc?.credential?.[PROFILE_SCHEMA_ID];
-            if (profileAssetDid) {
-                const blobUrl = await resolveAvatar(profileAssetDid);
-                if (blobUrl) {
-                    avatarList[name] = blobUrl;
-                    break;
-                }
-            }
+    async function populateAgentAvatar(name: string, didDocumentData: Record<string, any>, avatarList: Record<string, string>): Promise<void> {
+        const profile = didDocumentData[MESSAGING_PROFILE];
+        const profileAssetDid = profile?.avatar;
+
+        if (!profileAssetDid) {
+            return;
+        }
+
+        const blobUrl = await resolveAvatar(profileAssetDid);
+        if (blobUrl) {
+            avatarList[name] = blobUrl;
         }
     }
 
