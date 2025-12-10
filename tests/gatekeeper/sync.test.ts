@@ -2,7 +2,7 @@ import CipherNode from '@mdip/cipher/node';
 import Gatekeeper from '@mdip/gatekeeper';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory.ts';
 import { copyJSON } from '@mdip/common/utils';
-import { InvalidDIDError, ExpectedExceptionError } from '@mdip/common/errors';
+import { ExpectedExceptionError } from '@mdip/common/errors';
 import HeliaClient from '@mdip/ipfs/helia';
 import TestHelper from './helper.ts';
 
@@ -155,16 +155,12 @@ describe('removeDIDs', () => {
         const did = await gatekeeper.createDID(agentOp);
 
         const ok = await gatekeeper.removeDIDs([did]);
-
         expect(ok).toBe(true);
 
-        try {
-            await gatekeeper.resolveDID(did);
-            throw new ExpectedExceptionError();
-        } catch (error: any) {
-            expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.detail).toBe('unknown');
-        }
+        const { didResolutionMetadata } = await gatekeeper.resolveDID(did);
+
+        expect(didResolutionMetadata).toBeDefined();
+        expect(didResolutionMetadata!.error).toBe('notFound');
     });
 
     it('should throw an exception if no array specified', async () => {
