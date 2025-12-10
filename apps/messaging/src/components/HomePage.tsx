@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useVariablesContext } from "../contexts/VariablesProvider";
 import { Avatar, Conversation, ConversationList } from "@chatscope/chat-ui-kit-react";
 import {avatarDataUrl, arraysMatchMembers, convertNamesToDIDs} from "../utils/utils";
-import { CHAT_SUBJECT } from "../constants";
+import {CHAT_SUBJECT, MESSAGING_PROFILE} from "../constants";
 import AddUserModal from "../modals/AddUserModal";
 import CreateGroupModal from "../modals/CreateGroupModal";
 import { LuUser, LuUserPlus, LuMessagesSquare, LuUsers } from "react-icons/lu";
@@ -21,7 +21,7 @@ export default function HomePage() {
         dmailList,
         setActivePeer,
         refreshNames,
-        avatarList,
+        profileList,
         groupList,
     } = useVariablesContext();
     const { keymaster } = useWalletContext();
@@ -33,15 +33,14 @@ export default function HomePage() {
     const [isProfileOpen, setIsProfileOpen] = useState(false);
     const [addUserError, setAddUserError] = useState("");
 
-    const handleAddUser = async (did: string, name: string) => {
+    const handleAddUser = async (did: string) => {
         if (!keymaster) {
             return;
         }
 
         const aliasDID = did.trim();
-        const aliasName = name.trim();
-        if (!aliasDID || !aliasName) {
-            setAddUserError("Invalid DID or name");
+        if (!aliasDID) {
+            setAddUserError("Invalid DID");
             return;
         }
 
@@ -51,12 +50,23 @@ export default function HomePage() {
             return;
         }
 
+        let aliasName = "";
         try {
-            const newDID = await keymaster.resolveDID(aliasDID);
-            if (newDID.mdip?.type !== "agent") {
+            const doc = await keymaster.resolveDID(aliasDID);
+            if (doc.mdip?.type !== "agent") {
                 setAddUserError("DID is not an agent");
                 return;
             }
+
+            const data: Record<string, any> = doc.didDocumentData ?? {};
+            const existingProfile: Record<string, any> = data[MESSAGING_PROFILE] ?? {};
+
+            if (!existingProfile.name || existingProfile.name !== String || !existingProfile.name.trim()) {
+                setAddUserError("This is not a valid messaging user");
+                return;
+            }
+
+            aliasName = existingProfile.name;
         } catch {
             setAddUserError("DID not found");
             return;
@@ -115,7 +125,7 @@ export default function HomePage() {
             }
         }
         return map
-    }, [dmailList, currentId])
+    }, [dmailList, currentId, nameList, groupList])
 
     return (
         <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
@@ -148,7 +158,10 @@ export default function HomePage() {
                     <IconButton
                         variant="ghost"
                         size="sm"
-                        onClick={() => setIsAddOpen(true)}
+                        onClick={() => {
+                            setAddUserError("");
+                            setIsAddOpen(true);
+                        }}
                     >
                         <LuUserPlus />
                     </IconButton>
@@ -186,7 +199,8 @@ export default function HomePage() {
                                 return null;
                             }
 
-                            const customAvatarUrl = avatarList[name];
+                            const profile = profileList[name];
+                            const customAvatarUrl = profile?.avatar;
                             const src = customAvatarUrl ? customAvatarUrl : avatarDataUrl(did);
 
                             const selected = activePeer === name;

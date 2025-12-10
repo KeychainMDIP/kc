@@ -5,6 +5,7 @@ import useAvatarUploader from "../hooks/useAvatarUploader";
 import { useVariablesContext } from "../contexts/VariablesProvider";
 import { useWalletContext } from "../contexts/WalletProvider";
 import { useSnackbar } from "../contexts/SnackbarProvider";
+import {MESSAGING_PROFILE} from "../constants";
 
 interface EditProfileModalProps {
     isOpen: boolean;
@@ -33,6 +34,18 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose }) 
         }
         try {
             await keymaster.renameId(currentId, trimmed);
+            const doc = await keymaster.resolveDID(trimmed);
+            const data: Record<string, any> = doc.didDocumentData ?? {};
+            const existingProfile: Record<string, any> = data[MESSAGING_PROFILE] ?? {};
+
+            data[MESSAGING_PROFILE] = {
+                ...existingProfile,
+                name: trimmed,
+            };
+
+            doc.didDocumentData = data;
+            await keymaster.updateDID(doc);
+
             await refreshAll();
         } catch (e: any) {
             setError(e);

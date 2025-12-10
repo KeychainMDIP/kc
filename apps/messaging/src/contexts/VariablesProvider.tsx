@@ -20,14 +20,6 @@ interface VariablesContextValue {
     setIdList: Dispatch<SetStateAction<string[]>>;
     heldList: string[];
     setHeldList: Dispatch<SetStateAction<string[]>>;
-    credentialDID: string;
-    setCredentialDID: Dispatch<SetStateAction<string>>;
-    credentialSubject: string;
-    setCredentialSubject: Dispatch<SetStateAction<string>>;
-    credentialSchema: string;
-    setCredentialSchema: Dispatch<SetStateAction<string>>;
-    credentialString: string;
-    setCredentialString: Dispatch<SetStateAction<string>>;
     schemaList: string[];
     setSchemaList: Dispatch<SetStateAction<string[]>>;
     vaultList: string[];
@@ -40,14 +32,6 @@ interface VariablesContextValue {
     setDocumentList: Dispatch<SetStateAction<string[]>>;
     issuedList: string[];
     setIssuedList: Dispatch<SetStateAction<string[]>>;
-    issuedString: string;
-    setIssuedString: Dispatch<SetStateAction<string>>;
-    issuedStringOriginal: string;
-    setIssuedStringOriginal: Dispatch<SetStateAction<string>>;
-    issuedEdit: boolean;
-    setIssuedEdit: Dispatch<SetStateAction<boolean>>;
-    selectedIssued: string;
-    setSelectedIssued: Dispatch<SetStateAction<string>>;
     dmailList: Record<string, DmailItem>;
     setDmailList: Dispatch<SetStateAction<Record<string, DmailItem>>>;
     aliasName: string;
@@ -58,12 +42,10 @@ interface VariablesContextValue {
     setNameList: Dispatch<SetStateAction<Record<string, string>>>;
     nameRegistry: Record<string, string>;
     setNameRegistry: Dispatch<SetStateAction<Record<string, string>>>;
-    unresolvedList: Record<string, string>;
-    setUnresolvedList: Dispatch<SetStateAction<Record<string, string>>>;
     agentList: string[];
     setAgentList: Dispatch<SetStateAction<string[]>>;
-    avatarList: Record<string, string>;
-    setAvatarList: Dispatch<SetStateAction<Record<string, string>>>;
+    profileList: Record<string, { avatar?: string; name?: string }>;
+    setProfileList: Dispatch<SetStateAction<Record<string, { avatar?: string; name?: string }>>>;
     pollList: string[];
     setPollList: Dispatch<SetStateAction<string[]>>;
     activePeer: string;
@@ -86,9 +68,8 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
     const [heldList, setHeldList] = useState<string[]>([]);
     const [nameList, setNameList] = useState<Record<string, string>>({});
     const [nameRegistry, setNameRegistry] = useState<Record<string, string>>({});
-    const [unresolvedList, setUnresolvedList] = useState<Record<string, string>>({});
     const [agentList, setAgentList] = useState<string[]>([]);
-    const [avatarList, setAvatarList] = useState<Record<string, string>>({});
+    const [profileList, setProfileList] = useState<Record<string, { avatar?: string; name?: string }>>({});
     const [pollList, setPollList] = useState<string[]>([]);
     const [groupList, setGroupList] = useState<Record<string, string[]>>({});
     const [imageList, setImageList] = useState<string[]>([]);
@@ -96,14 +77,6 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
     const [schemaList, setSchemaList] = useState<string[]>([]);
     const [vaultList, setVaultList] = useState<string[]>([]);
     const [issuedList, setIssuedList] = useState<string[]>([]);
-    const [issuedString, setIssuedString] = useState<string>("");
-    const [issuedEdit, setIssuedEdit] = useState<boolean>(false);
-    const [issuedStringOriginal, setIssuedStringOriginal] = useState<string>("");
-    const [selectedIssued, setSelectedIssued] = useState<string>("");
-    const [credentialDID, setCredentialDID] = useState<string>("");
-    const [credentialSubject, setCredentialSubject] = useState<string>("");
-    const [credentialSchema, setCredentialSchema] = useState<string>("");
-    const [credentialString, setCredentialString] = useState<string>("");
     const [aliasName, setAliasName] = useState<string>("");
     const [aliasDID, setAliasDID] = useState<string>("");
     const [dmailList, setDmailList] = useState<Record<string, DmailItem>>({});
@@ -126,6 +99,19 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    function getProfileName(
+        storedAlias: string,
+        didDocumentData: Record<string, any>
+    ): string {
+        const profile = didDocumentData[MESSAGING_PROFILE] as { name?: unknown } | undefined;
+
+        if (!profile || typeof profile.name !== "string") {
+            return storedAlias;
+        }
+
+        const trimmed = profile.name.trim();
+        return trimmed || storedAlias;
+    }
 
     const refreshNames = useCallback(
         async (cid?: string) => {
@@ -134,28 +120,30 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
             }
 
             let nameList : Record<string, string> = {};
-            let unresolvedList : Record<string, string> = {};
             const registryMap: Record<string, string> = {};
-            const avatarList: Record<string, string> = {};
+            const profileList: Record<string, { avatar?: string; name?: string }> = {};
 
             const allNames = await keymaster.listNames();
             const allNamesSorted = Object.fromEntries(
                 Object.entries(allNames).sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
             );
 
-            const agentList = await keymaster.listIds();
+            const idNames = await keymaster.listIds();
+            const agentAliasList: string[] = [];
 
-            for (const idName of agentList) {
+            for (const idName of idNames) {
                 try {
                     const doc = await keymaster.resolveDID(idName);
                     if (doc.didDocumentData) {
-                        await populateAgentAvatar(idName, doc.didDocumentData, avatarList);
+                        const profileName = getProfileName(idName, doc.didDocumentData);
+                        agentAliasList.push(profileName);
+                        await populateAgentProfile(idName, doc.didDocumentData, profileList);
                     }
                 } catch {}
             }
 
-            setIdList([...agentList]);
-            setValidId(agentList.includes(cid ?? currentId));
+            setIdList([...idNames]);
+            setValidId(idNames.includes(cid ?? currentId));
 
             const schemaList = [];
             const imageList = [];
@@ -167,7 +155,6 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
             for (const [name, did] of Object.entries(allNamesSorted)) {
                 try {
                     const doc = await keymaster.resolveDID(name);
-                    nameList[name] = did;
 
                     const reg = doc.mdip?.registry;
                     if (reg) {
@@ -177,12 +164,18 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
                     const data = doc.didDocumentData as Record<string, unknown>;
 
                     if (doc.mdip?.type === 'agent') {
-                        agentList.push(name);
+                        const profileName = getProfileName(name, data);
 
-                        await populateAgentAvatar(name, data, avatarList);
+                        nameList[profileName] = did;
+                        agentAliasList.push(profileName);
+
+                        await populateAgentProfile(profileName, data, profileList);
 
                         continue;
                     }
+
+                    // Set after agent to make sure we use the profile name
+                    nameList[name] = did;
 
                     if (data.group) {
                         const group = await keymaster.getGroup(name);
@@ -217,33 +210,19 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
                         continue;
                     }
                 }
-                catch {
-                    unresolvedList[name] = did;
-                }
+                catch {}
             }
 
             setNameList(nameList);
-            setUnresolvedList(unresolvedList);
             setNameRegistry(registryMap);
-            setAvatarList(avatarList);
+            setProfileList(profileList);
 
-            const uniqueSortedAgents = [...new Set(agentList)]
+            const uniqueSortedAgents = [...new Set(agentAliasList)]
                 .sort((a, b) => a.localeCompare(b));
             setAgentList(uniqueSortedAgents);
 
-            if (!agentList.includes(credentialSubject)) {
-                setCredentialSubject("");
-                setCredentialString("");
-            }
-
             setGroupList(groupList);
             setSchemaList(schemaList);
-
-            if (!schemaList.includes(credentialSchema)) {
-                setCredentialSchema("");
-                setCredentialString("");
-            }
-
             setImageList(imageList);
             setDocumentList(documentList);
             setVaultList(vaultList);
@@ -251,7 +230,7 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
             setNamesReady(true);
         },
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [keymaster, currentId, credentialSubject, credentialSchema]
+        [keymaster, currentId]
     );
 
     const refreshInbox = useCallback( async() => {
@@ -373,7 +352,6 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         try {
             const issuedList = await keymaster.listIssued();
             setIssuedList(issuedList);
-            setIssuedString("");
         } catch (error: any) {
             setError(error);
         }
@@ -408,17 +386,33 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         }
     }
 
-    async function populateAgentAvatar(name: string, didDocumentData: Record<string, any>, avatarList: Record<string, string>): Promise<void> {
-        const profile = didDocumentData[MESSAGING_PROFILE];
-        const profileAssetDid = profile?.avatar;
-
-        if (!profileAssetDid) {
+    async function populateAgentProfile(
+        name: string,
+        didDocumentData: Record<string, any>,
+        profileList: Record<string, { avatar?: string; name?: string }>
+    ): Promise<void> {
+        const profile = didDocumentData[MESSAGING_PROFILE] as { avatar?: string; name?: string } | undefined;
+        if (!profile) {
             return;
         }
 
-        const blobUrl = await resolveAvatar(profileAssetDid);
-        if (blobUrl) {
-            avatarList[name] = blobUrl;
+        const entry: { avatar?: string; name?: string } = {
+            ...(profileList[name] ?? {}),
+        };
+
+        if (profile.name) {
+            entry.name = profile.name;
+        }
+
+        if (profile.avatar) {
+            const blobUrl = await resolveAvatar(profile.avatar);
+            if (blobUrl) {
+                entry.avatar = blobUrl;
+            }
+        }
+
+        if (entry.name || entry.avatar) {
+            profileList[name] = entry;
         }
     }
 
@@ -459,25 +453,13 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         setNameList({});
         setSchemaList([]);
         setAgentList([]);
+        setProfileList({});
         setHeldList([]);
-        setIssuedList([]);
-        setIssuedString("");
         setVaultList([]);
         setPollList([]);
         setAliasName("");
         setAliasDID("");
         setNamesReady(false);
-    }
-
-    function wipeState() {
-        setCredentialDID("");
-        setCredentialString("");
-        setCredentialSubject("");
-        setCredentialSchema("");
-        setIssuedString("");
-        setSelectedIssued("");
-        setIssuedStringOriginal("");
-        setIssuedEdit(false);
     }
 
     async function refreshCurrentID() {
@@ -491,8 +473,6 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
             } else {
                 wipeUserState();
             }
-
-            wipeState()
         } catch (error: any) {
             setError(error);
             return false;
@@ -546,22 +526,6 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         setVaultList,
         issuedList,
         setIssuedList,
-        issuedString,
-        setIssuedString,
-        issuedStringOriginal,
-        setIssuedStringOriginal,
-        issuedEdit,
-        setIssuedEdit,
-        selectedIssued,
-        setSelectedIssued,
-        credentialDID,
-        setCredentialDID,
-        credentialSubject,
-        setCredentialSubject,
-        credentialSchema,
-        setCredentialSchema,
-        credentialString,
-        setCredentialString,
         aliasName,
         setAliasName,
         aliasDID,
@@ -570,12 +534,10 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         setNameList,
         nameRegistry,
         setNameRegistry,
-        unresolvedList,
-        setUnresolvedList,
         agentList,
         setAgentList,
-        avatarList,
-        setAvatarList,
+        profileList,
+        setProfileList,
         pollList,
         setPollList,
         dmailList,

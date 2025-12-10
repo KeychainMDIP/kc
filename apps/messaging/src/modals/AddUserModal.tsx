@@ -6,20 +6,18 @@ import { scanQrCode } from "../utils/utils";
 interface AddUserModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onSubmit: (did: string, name: string) => void;
+    onSubmit: (did: string) => void;
     errorText: string;
 }
 
 const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onSubmit, errorText }) => {
     const [did, setDid] = useState("");
-    const [name, setName] = useState("");
     const [localError, setLocalError] = useState("");
     const combinedError = localError || errorText || "";
 
     useEffect(() => {
         if (!isOpen) {
             setDid("");
-            setName("");
             setLocalError("");
         }
     }, [isOpen]);
@@ -27,12 +25,11 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onSubmit, 
     function handleConfirm(e: React.FormEvent) {
         e.preventDefault();
         const d = did.trim();
-        const n = name.trim();
-        if (!d || !n) {
-            setLocalError("Both DID and Name are required");
+        if (!d) {
+            setLocalError("DID is required");
             return;
         }
-        onSubmit(d, n);
+        onSubmit(d);
     }
 
     async function scanQR() {
@@ -62,17 +59,6 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onSubmit, 
                                 </Text>
                             )}
                             <form id="add-user-form" onSubmit={handleConfirm}>
-                                <Field.Root>
-                                    <Field.Label htmlFor="add-user-name">Name</Field.Label>
-                                    <Input
-                                        id="add-user-name"
-                                        type="text"
-                                        value={name}
-                                        onChange={(e) => setName(e.target.value)}
-                                        placeholder="Display name"
-                                    />
-                                </Field.Root>
-
                                 <Field.Root mt={3}>
                                     <Field.Label htmlFor="add-user-did">DID</Field.Label>
                                     <Group attached width="100%">

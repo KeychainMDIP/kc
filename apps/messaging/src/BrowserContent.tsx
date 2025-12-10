@@ -6,6 +6,7 @@ import HomePage from "./components/HomePage";
 import ChatWindow from "./components/ChatWindow";
 import { useSnackbar } from "./contexts/SnackbarProvider";
 import { useSafeArea } from "./contexts/SafeAreaContext";
+import {MESSAGING_PROFILE} from "./constants";
 
 function BrowserContent() {
     const [isWelcomeOpen, setIsWelcomeOpen] = useState(false);
@@ -55,7 +56,12 @@ function BrowserContent() {
             return;
         }
         try {
-            await keymaster.createId(trimmed, { registry });
+            const did = await keymaster.createId(trimmed, { registry });
+            const doc = await keymaster.resolveDID(did);
+            (doc.didDocumentData as Record<string, any>) = {[MESSAGING_PROFILE]: { name: trimmed }};
+
+            await keymaster.updateDID(doc);
+
             await refreshCurrentID();
             setIsWelcomeOpen(false);
             setSuccess(`Welcome, ${trimmed}!`);

@@ -56,7 +56,7 @@ const ChatWindow: React.FC = () => {
         refreshInbox,
         setActivePeer,
         refreshNames,
-        avatarList,
+        profileList,
         groupList,
     } = useVariablesContext();
     const {
@@ -534,7 +534,8 @@ const ChatWindow: React.FC = () => {
         return;
     }
 
-    const customAvatarUrl = avatarList[activePeer];
+    const profile = profileList[activePeer];
+    const customAvatarUrl = profile?.avatar;
     const peerAvatar = customAvatarUrl ? customAvatarUrl : avatarDataUrl(nameList[activePeer]);
 
     return (

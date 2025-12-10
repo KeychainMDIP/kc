@@ -8,7 +8,7 @@ import { avatarDataUrl } from "../utils/utils";
 export function useAvatarUploader() {
     const { keymaster } = useWalletContext();
     const { setError, setSuccess } = useSnackbar();
-    const { currentDID, currentId, refreshNames, avatarList } = useVariablesContext();
+    const { currentDID, currentId, refreshNames, profileList } = useVariablesContext();
 
     const [isUploading, setIsUploading] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -60,9 +60,10 @@ export function useAvatarUploader() {
     };
 
     const userAvatar = useMemo(() => {
-        const custom = avatarList[currentId];
+        const profile = profileList[currentId];
+        const custom = profile?.avatar;
         return custom ? custom : avatarDataUrl(currentDID);
-    }, [avatarList, currentId, currentDID]);
+    }, [profileList, currentId, currentDID]);
 
     return {
         isUploading,
