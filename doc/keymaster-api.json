@@ -765,7 +765,7 @@
           },
           {
             "in": "query",
-            "name": "atVersion",
+            "name": "versionSequence",
             "required": false,
             "schema": {
               "type": "integer"
@@ -1959,7 +1959,7 @@
                         "format": "date-time",
                         "description": "If provided, attempts to resolve the response DID as of a specific point in time."
                       },
-                      "atVersion": {
+                      "versionSequence": {
                         "type": "integer",
                         "description": "If provided, attempts to resolve the response DID at a specific version."
                       },

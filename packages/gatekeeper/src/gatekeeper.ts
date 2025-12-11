@@ -593,7 +593,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         did?: string,
         options?: ResolveDIDOptions
     ): Promise<MdipDocument> {
-        const { versionTime, atVersion, confirm = false, verify = false } = options || {};
+        const { versionTime, versionSequence, confirm = false, verify = false } = options || {};
 
         if (!did || !isValidDID(did)) {
             return {
@@ -708,7 +708,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                 break;
             }
 
-            if (atVersion && versionNum === atVersion) {
+            if (versionSequence && versionNum === versionSequence) {
                 break;
             }
 

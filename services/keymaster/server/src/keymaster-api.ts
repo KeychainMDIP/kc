@@ -649,7 +649,7 @@ v1router.get('/export/wallet/encrypted', async (req, res) => {
  *         description: >
  *           Timestamp to return the state of the DID as of this specific time (RFC3339/ISO8601 format).
  *       - in: query
- *         name: atVersion
+ *         name: versionSequence
  *         required: false
  *         schema:
  *           type: integer
@@ -1636,7 +1636,7 @@ v1router.post('/response', async (req, res) => {
  *                     type: string
  *                     format: date-time
  *                     description: If provided, attempts to resolve the response DID as of a specific point in time.
- *                   atVersion:
+ *                   versionSequence:
  *                     type: integer
  *                     description: If provided, attempts to resolve the response DID at a specific version.
  *                   confirm:

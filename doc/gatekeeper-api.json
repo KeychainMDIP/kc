@@ -421,7 +421,7 @@
           },
           {
             "in": "query",
-            "name": "atVersion",
+            "name": "versionSequence",
             "required": false,
             "schema": {
               "type": "integer"

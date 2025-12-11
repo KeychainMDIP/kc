@@ -1,4 +1,4 @@
-import React, {ChangeEvent, useEffect, useState} from "react";
+import React, { ChangeEvent, useEffect, useState } from "react";
 import {
     Autocomplete,
     Box,
@@ -37,7 +37,7 @@ import {
     Link,
     ArrowBack,
 } from "@mui/icons-material";
-import {DmailItem, DmailMessage} from '@mdip/keymaster/types';
+import { DmailItem, DmailMessage } from '@mdip/keymaster/types';
 import { useWalletContext } from "../contexts/WalletProvider";
 import { useVariablesContext } from "../contexts/VariablesProvider";
 import { useUIContext } from "../contexts/UIContext";
@@ -70,7 +70,7 @@ const DmailTab: React.FC = () => {
     const [dmailAttachments, setDmailAttachments] = useState<Record<string, any>>({});
     const [revokeOpen, setRevokeOpen] = useState<boolean>(false);
     const [searchQuery, setSearchQuery] = useState<string>("");
-    const [advancedOpen,  setAdvancedOpen]  = useState<boolean>(false);
+    const [advancedOpen, setAdvancedOpen] = useState<boolean>(false);
     const [advParams, setAdvParams] = useState<AdvancedSearchParams | null>(null);
     const [forwardSourceDid, setForwardSourceDid] = useState<string | null>(null);
     const [ephemeral, setEphemeral] = useState<boolean>(false);
@@ -102,11 +102,11 @@ const DmailTab: React.FC = () => {
 
     const [activeTab, setActiveTab] = useState<Folder>("inbox");
 
-    async function fileTags(did:string,newTags:string[]) {
+    async function fileTags(did: string, newTags: string[]) {
         if (!keymaster) {
             return;
         }
-        await keymaster.fileDmail(did,newTags);
+        await keymaster.fileDmail(did, newTags);
         await refreshInbox();
     }
 
@@ -395,37 +395,37 @@ const DmailTab: React.FC = () => {
         } else {
             const outBase: Record<string, DmailItem> = {};
             for (const [did, itm] of Object.entries(dmailList)) {
-                const has = (t:string)=>itm.tags?.includes(t);
-                const not = (t:string)=>!itm.tags?.includes(t);
+                const has = (t: string) => itm.tags?.includes(t);
+                const not = (t: string) => !itm.tags?.includes(t);
                 switch (activeTab) {
-                case "inbox":
-                    if (has(TAG.inbox)  && not(TAG.archived) && not(TAG.deleted)) {
-                        outBase[did] = itm;
-                    }
-                    break;
-                case "outbox":
-                    {
-                        const isSelfAddressed = !!currentId && itm.sender === currentId && (itm.to?.includes(currentId) || itm.cc?.includes(currentId));
-                        if ((has(TAG.sent) || isSelfAddressed) && not(TAG.archived) && not(TAG.deleted) && not(TAG.draft)) {
+                    case "inbox":
+                        if (has(TAG.inbox) && not(TAG.archived) && not(TAG.deleted)) {
                             outBase[did] = itm;
                         }
-                    }
-                    break;
-                case "drafts":
-                    if (has(TAG.draft) && not(TAG.archived) && not(TAG.deleted)) {
-                        outBase[did] = itm;
-                    }
-                    break;
-                case "archive":
-                    if (has(TAG.archived) && not(TAG.deleted)) {
-                        outBase[did] = itm;
-                    }
-                    break;
-                case "trash":
-                    if (has(TAG.deleted)) {
-                        outBase[did] = itm;
-                    }
-                    break;
+                        break;
+                    case "outbox":
+                        {
+                            const isSelfAddressed = !!currentId && itm.sender === currentId && (itm.to?.includes(currentId) || itm.cc?.includes(currentId));
+                            if ((has(TAG.sent) || isSelfAddressed) && not(TAG.archived) && not(TAG.deleted) && not(TAG.draft)) {
+                                outBase[did] = itm;
+                            }
+                        }
+                        break;
+                    case "drafts":
+                        if (has(TAG.draft) && not(TAG.archived) && not(TAG.deleted)) {
+                            outBase[did] = itm;
+                        }
+                        break;
+                    case "archive":
+                        if (has(TAG.archived) && not(TAG.deleted)) {
+                            outBase[did] = itm;
+                        }
+                        break;
+                    case "trash":
+                        if (has(TAG.deleted)) {
+                            outBase[did] = itm;
+                        }
+                        break;
                 }
             }
             base = outBase;
@@ -702,7 +702,7 @@ const DmailTab: React.FC = () => {
                 }
 
                 if (max > 1) {
-                    docs = await keymaster.resolveDID(selected.did, { atVersion: 2 });
+                    docs = await keymaster.resolveDID(selected.did, { versionSequence: 2 });
                 }
 
                 const created =
@@ -730,12 +730,12 @@ const DmailTab: React.FC = () => {
         try {
             const apiVersion = v + 1;
 
-            const docs = await keymaster.resolveDID(selected.did, { atVersion: apiVersion });
+            const docs = await keymaster.resolveDID(selected.did, { versionSequence: apiVersion });
             setDocAtVersion(docs);
 
             const [msg, atts] = await Promise.all([
-                keymaster.getDmailMessage(selected.did, { atVersion: apiVersion }),
-                keymaster.listDmailAttachments(selected.did, { atVersion: apiVersion }),
+                keymaster.getDmailMessage(selected.did, { versionSequence: apiVersion }),
+                keymaster.listDmailAttachments(selected.did, { versionSequence: apiVersion }),
             ]);
 
             if (msg) {
@@ -764,13 +764,13 @@ const DmailTab: React.FC = () => {
             .sort(([, a], [, b]) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
         const emptyText: Record<Folder, string> = {
-            inbox:   "Your inbox is empty.",
-            outbox:  "No sent mail yet.",
-            drafts:  "No drafts saved.",
+            inbox: "Your inbox is empty.",
+            outbox: "No sent mail yet.",
+            drafts: "No drafts saved.",
             archive: "No archived mail.",
-            trash:   "Trash is empty.",
-            all:     "No messages to show.",
-            send:    "",
+            trash: "Trash is empty.",
+            all: "No messages to show.",
+            send: "",
         };
 
         if (entries.length === 0) {
@@ -856,29 +856,29 @@ const DmailTab: React.FC = () => {
                 <Box flex={1}>
                     {selected && (
                         <Box>
-                            <Box sx={{display: "flex", alignItems: "center", justifyContent: "space-between"}}>
+                            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                                 <Box>
                                     <Tooltip title="Back">
-                                        <IconButton onClick={() => { setSelected(null); setSelectedView(null); }}><ArrowBack/></IconButton>
+                                        <IconButton onClick={() => { setSelected(null); setSelectedView(null); }}><ArrowBack /></IconButton>
                                     </Tooltip>
                                 </Box>
-                                <Box sx={{gap: 0.5, display: "flex", flexDirection: "row"}}>
+                                <Box sx={{ gap: 0.5, display: "flex", flexDirection: "row" }}>
                                     {cat === "inbox" && (
                                         <Box>
                                             <Tooltip title="Forward">
-                                                <IconButton onClick={handleForward}><Forward/></IconButton>
+                                                <IconButton onClick={handleForward}><Forward /></IconButton>
                                             </Tooltip>
                                             <Tooltip title="Reply">
-                                                <IconButton onClick={() => handleReply(false)}><Reply/></IconButton>
+                                                <IconButton onClick={() => handleReply(false)}><Reply /></IconButton>
                                             </Tooltip>
                                             <Tooltip title="Reply all">
-                                                <IconButton onClick={() => handleReply(true)}><ReplyAll/></IconButton>
+                                                <IconButton onClick={() => handleReply(true)}><ReplyAll /></IconButton>
                                             </Tooltip>
                                             <Tooltip title="Archive">
-                                                <IconButton onClick={archive}><Archive/></IconButton>
+                                                <IconButton onClick={archive}><Archive /></IconButton>
                                             </Tooltip>
                                             <Tooltip title="Delete">
-                                                <IconButton onClick={del}><Delete/></IconButton>
+                                                <IconButton onClick={del}><Delete /></IconButton>
                                             </Tooltip>
                                         </Box>
                                     )}
@@ -886,13 +886,13 @@ const DmailTab: React.FC = () => {
                                     {(cat === "outbox" || cat === "drafts") && (
                                         <Box>
                                             <Tooltip title="Edit">
-                                                <IconButton onClick={() => editDmail(selected)}><Edit/></IconButton>
+                                                <IconButton onClick={() => editDmail(selected)}><Edit /></IconButton>
                                             </Tooltip>
                                             <Tooltip title="Archive">
-                                                <IconButton onClick={archive}><Archive/></IconButton>
+                                                <IconButton onClick={archive}><Archive /></IconButton>
                                             </Tooltip>
                                             <Tooltip title="Delete">
-                                                <IconButton onClick={del}><Delete/></IconButton>
+                                                <IconButton onClick={del}><Delete /></IconButton>
                                             </Tooltip>
                                         </Box>
                                     )}
@@ -900,10 +900,10 @@ const DmailTab: React.FC = () => {
                                     {cat === "archive" && (
                                         <Box>
                                             <Tooltip title="Unarchive">
-                                                <IconButton onClick={unarchive}><Unarchive/></IconButton>
+                                                <IconButton onClick={unarchive}><Unarchive /></IconButton>
                                             </Tooltip>
                                             <Tooltip title="Delete">
-                                                <IconButton onClick={del}><Delete/></IconButton>
+                                                <IconButton onClick={del}><Delete /></IconButton>
                                             </Tooltip>
                                         </Box>
                                     )}
@@ -911,7 +911,7 @@ const DmailTab: React.FC = () => {
                                     {cat === "trash" && (
                                         <Box>
                                             <Tooltip title="Restore">
-                                                <IconButton onClick={undelete}><RestoreFromTrash/></IconButton>
+                                                <IconButton onClick={undelete}><RestoreFromTrash /></IconButton>
                                             </Tooltip>
                                         </Box>
                                     )}
@@ -931,48 +931,48 @@ const DmailTab: React.FC = () => {
                             )}
 
                             <Box display="flex" alignItems="center" mb={1}>
-                                <Typography variant="subtitle2" sx={{mr: 1}}>
+                                <Typography variant="subtitle2" sx={{ mr: 1 }}>
                                     To:
                                 </Typography>
-                                <Typography variant="body2" sx={{wordBreak: "break-all"}}>
+                                <Typography variant="body2" sx={{ wordBreak: "break-all" }}>
                                     {messageTo?.join(", ")}
                                 </Typography>
                             </Box>
 
                             <Box display="flex" alignItems="center" mb={1}>
-                                <Typography variant="subtitle2" sx={{mr: 1}}>
+                                <Typography variant="subtitle2" sx={{ mr: 1 }}>
                                     Cc:
                                 </Typography>
-                                <Typography variant="body2" sx={{wordBreak: "break-all"}}>
+                                <Typography variant="body2" sx={{ wordBreak: "break-all" }}>
                                     {messageCC?.join(", ")}
                                 </Typography>
                             </Box>
 
                             <Box display="flex" alignItems="center" mb={1}>
-                                <Typography variant="subtitle2" sx={{mr: 1}}>
+                                <Typography variant="subtitle2" sx={{ mr: 1 }}>
                                     From:
                                 </Typography>
-                                <Typography variant="body2" sx={{wordBreak: "break-all"}}>
+                                <Typography variant="body2" sx={{ wordBreak: "break-all" }}>
                                     {selected.sender}
                                 </Typography>
                                 {selected.sender.startsWith('did:') && (
                                     <Tooltip title="Add contact">
                                         <IconButton
                                             size="small"
-                                            sx={{ml: 1}}
+                                            sx={{ ml: 1 }}
                                             onClick={() => addDmailContact(selected.sender)}
                                         >
-                                            <PersonAdd/>
+                                            <PersonAdd />
                                         </IconButton>
                                     </Tooltip>
                                 )}
                             </Box>
 
                             <Box display="flex" alignItems="center" mb={1}>
-                                <Typography variant="subtitle2" sx={{mr: 1}}>
+                                <Typography variant="subtitle2" sx={{ mr: 1 }}>
                                     Created:
                                 </Typography>
-                                <Typography variant="body2" sx={{wordBreak: "break-all"}}>
+                                <Typography variant="body2" sx={{ wordBreak: "break-all" }}>
                                     {createdAt ? new Date(createdAt).toLocaleString() : ""}
                                 </Typography>
                             </Box>
@@ -989,29 +989,29 @@ const DmailTab: React.FC = () => {
                             )}
 
                             <Box display="flex" alignItems="center" mb={1}>
-                                <Typography variant="subtitle2" sx={{mr: 1}}>
+                                <Typography variant="subtitle2" sx={{ mr: 1 }}>
                                     Subject:
                                 </Typography>
-                                <Typography variant="body2" sx={{wordBreak: "break-all"}}>
+                                <Typography variant="body2" sx={{ wordBreak: "break-all" }}>
                                     {messageSubject}
                                 </Typography>
                             </Box>
 
                             {messageReference && (
                                 <Box display="flex" alignItems="center" mb={1}>
-                                    <Typography variant="subtitle2" sx={{mr: 1}}>
+                                    <Typography variant="subtitle2" sx={{ mr: 1 }}>
                                         Reference:
                                     </Typography>
                                     <Typography variant="body2">
                                         {messageReference}
                                     </Typography>
-                                    <CopyResolveDID did={messageReference}/>
+                                    <CopyResolveDID did={messageReference} />
                                     <Tooltip title="Open referenced message">
                                         <IconButton
                                             size="small"
                                             onClick={() => openReferencedMessage(messageReference)}
                                         >
-                                            <Link/>
+                                            <Link />
                                         </IconButton>
                                     </Tooltip>
                                 </Box>
@@ -1363,13 +1363,13 @@ const DmailTab: React.FC = () => {
                     variant="scrollable"
                     scrollButtons="auto"
                 >
-                    <Tab label="Compose" value="send"    icon={<Create />} />
-                    <Tab label="Inbox"   value="inbox"   icon={<Inbox />} />
-                    <Tab label="Sent"    value="outbox"  icon={<Outbox />} />
-                    <Tab label="Drafts"  value="drafts"  icon={<Drafts />} />
+                    <Tab label="Compose" value="send" icon={<Create />} />
+                    <Tab label="Inbox" value="inbox" icon={<Inbox />} />
+                    <Tab label="Sent" value="outbox" icon={<Outbox />} />
+                    <Tab label="Drafts" value="drafts" icon={<Drafts />} />
                     <Tab label="Archive" value="archive" icon={<Archive />} />
-                    <Tab label="Trash"   value="trash"   icon={<Delete />} />
-                    <Tab label="All"     value="all"     icon={<AllInbox />} />
+                    <Tab label="Trash" value="trash" icon={<Delete />} />
+                    <Tab label="All" value="all" icon={<AllInbox />} />
                 </Tabs>
             </Box>
 

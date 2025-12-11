@@ -1,9 +1,9 @@
-import {ChangeEvent, useEffect, useState} from "react";
-import {Box, Button, FormControl, IconButton, MenuItem, Select, Tooltip} from "@mui/material";
-import {Edit} from "@mui/icons-material";
-import {useWalletContext} from "../contexts/WalletProvider";
-import {useUIContext} from "../contexts/UIContext";
-import {useVariablesContext} from "../contexts/VariablesProvider";
+import { ChangeEvent, useEffect, useState } from "react";
+import { Box, Button, FormControl, IconButton, MenuItem, Select, Tooltip } from "@mui/material";
+import { Edit } from "@mui/icons-material";
+import { useWalletContext } from "../contexts/WalletProvider";
+import { useUIContext } from "../contexts/UIContext";
+import { useVariablesContext } from "../contexts/VariablesProvider";
 import { useSnackbar } from "../contexts/SnackbarProvider";
 import { ImageAsset } from "@mdip/keymaster/types";
 import { MdipDocument } from "@mdip/gatekeeper/types";
@@ -61,7 +61,7 @@ const ImageTab = () => {
             return;
         }
         try {
-            const docs = await keymaster.resolveDID(name, version ? { atVersion: version } : {});
+            const docs = await keymaster.resolveDID(name, version ? { versionSequence: version } : {});
             setSelectedImageDocs(docs);
 
             const currentVersion = parseInt(docs.didDocumentMetadata?.version ?? "1", 10);
@@ -70,7 +70,7 @@ const ImageTab = () => {
                 setImageVersionMax(currentVersion);
             }
 
-            const docAsset = docs.didDocumentData as { image? :ImageAsset };
+            const docAsset = docs.didDocumentData as { image?: ImageAsset };
             if (!docAsset.image || !docAsset.image.cid) {
                 setError(`No image data found in version ${currentVersion}`);
                 return;

@@ -389,7 +389,7 @@ v1router.post('/did', async (req, res) => {
  *         description: >
  *           Timestamp to return the state of the DID as of this specific time.
  *       - in: query
- *         name: atVersion
+ *         name: versionSequence
  *         required: false
  *         schema:
  *           type: integer
@@ -531,16 +531,16 @@ v1router.post('/did', async (req, res) => {
 v1router.get('/did/:did', async (req, res) => {
     try {
         const options: ResolveDIDOptions = {};
-        const { versionTime, atVersion, confirm, verify } = req.query;
+        const { versionTime, versionSequence, confirm, verify } = req.query;
 
         if (typeof versionTime === 'string') {
             options.versionTime = versionTime;
         }
 
-        if (typeof atVersion === 'string') {
-            const parsed = parseInt(atVersion, 10);
+        if (typeof versionSequence === 'string') {
+            const parsed = parseInt(versionSequence, 10);
             if (!isNaN(parsed)) {
-                options.atVersion = parsed;
+                options.versionSequence = parsed;
             }
         }
 

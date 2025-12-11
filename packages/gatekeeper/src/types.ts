@@ -32,7 +32,7 @@ export interface VerifyDbResult {
 
 export interface ResolveDIDOptions {
     versionTime?: string;
-    atVersion?: number;
+    versionSequence?: number;
     confirm?: boolean;
     verify?: boolean;
 }
