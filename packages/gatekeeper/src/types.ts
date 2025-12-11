@@ -1,5 +1,5 @@
 import { EcdsaJwkPublic } from '@mdip/cipher/types';
-import {IPFSClient} from "@mdip/ipfs/types";
+import { IPFSClient } from "@mdip/ipfs/types";
 
 export interface JsonDbFile {
     dids: Record<string, GatekeeperEvent[]>
@@ -31,7 +31,7 @@ export interface VerifyDbResult {
 }
 
 export interface ResolveDIDOptions {
-    atTime?: string;
+    versionTime?: string;
     atVersion?: number;
     confirm?: boolean;
     verify?: boolean;

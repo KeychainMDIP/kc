@@ -411,7 +411,7 @@
           },
           {
             "in": "query",
-            "name": "atTime",
+            "name": "versionTime",
             "required": false,
             "schema": {
               "type": "string",

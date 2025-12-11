@@ -486,7 +486,7 @@ describe('resolveDID', () => {
         await gatekeeper.processEvents();
 
         // Pick a time out of the middle of the updates
-        const doc = await gatekeeper.resolveDID(did, { atTime: ops[5].time });
+        const doc = await gatekeeper.resolveDID(did, { versionTime: ops[5].time });
 
         expect(doc.didDocumentMetadata!.version).toBe("6");
         expect(doc.didDocumentMetadata!.confirmed).toBe(true);

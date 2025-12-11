@@ -641,7 +641,7 @@ v1router.get('/export/wallet/encrypted', async (req, res) => {
  *           type: string
  *         description: The DID or name to resolve.
  *       - in: query
- *         name: atTime
+ *         name: versionTime
  *         required: false
  *         schema:
  *           type: string
@@ -1632,7 +1632,7 @@ v1router.post('/response', async (req, res) => {
  *                     type: integer
  *                     description: How many milliseconds to wait between resolution retries.
  *                     default: 1000
- *                   atTime:
+ *                   versionTime:
  *                     type: string
  *                     format: date-time
  *                     description: If provided, attempts to resolve the response DID as of a specific point in time.

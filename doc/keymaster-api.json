@@ -755,7 +755,7 @@
           },
           {
             "in": "query",
-            "name": "atTime",
+            "name": "versionTime",
             "required": false,
             "schema": {
               "type": "string",
@@ -1954,7 +1954,7 @@
                         "description": "How many milliseconds to wait between resolution retries.",
                         "default": 1000
                       },
-                      "atTime": {
+                      "versionTime": {
                         "type": "string",
                         "format": "date-time",
                         "description": "If provided, attempts to resolve the response DID as of a specific point in time."

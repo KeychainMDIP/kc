@@ -962,7 +962,7 @@ export default class Keymaster implements KeymasterInterface {
 
         const crypt = (castAsset.encrypted ? castAsset.encrypted : castAsset) as EncryptedMessage;
 
-        const doc = await this.resolveDID(crypt.sender, { confirm: true, atTime: crypt.created });
+        const doc = await this.resolveDID(crypt.sender, { confirm: true, versionTime: crypt.created });
         const senderPublicJwk = this.getPublicKeyJwk(doc);
 
         const ciphertext = (crypt.sender === id.did && crypt.cipher_sender) ? crypt.cipher_sender : crypt.cipher_receiver;
@@ -1042,7 +1042,7 @@ export default class Keymaster implements KeymasterInterface {
             return false;
         }
 
-        const doc = await this.resolveDID(signature.signer, { atTime: signature.signed });
+        const doc = await this.resolveDID(signature.signer, { versionTime: signature.signed });
         const publicJwk = this.getPublicKeyJwk(doc);
 
         try {
@@ -1362,7 +1362,7 @@ export default class Keymaster implements KeymasterInterface {
             const account = wallet.counter;
             const index = 0;
             const signed = await this.createIdOperation(name, account, options);
-            
+
             did = await this.gatekeeper.createDID(signed);
 
             wallet.ids[name] = { did, account, index };
