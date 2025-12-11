@@ -44,7 +44,7 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({ isOpen, onClose, did, name, u
                             </Flex>
 
                             <Box as="main" flex={1} overflowY="auto" px={4} py={6} display="flex" flexDir="column" alignItems="center" gap={6}>
-                                <Box position="relative" bg="white" color="gray.900" borderRadius="lg" px={6} pt={9} pb={6} w="full" maxW="360px" boxShadow="sm">
+                                <Box position="relative" borderRadius="lg" px={6} pt={9} pb={6} w="full" maxW="360px" boxShadow="sm" bg={{ base: "white", _dark: "gray.800" }}>
                                     <Flex direction="column" align="center" gap={3}>
                                         <Flex direction="column" align="center">
                                             <Avatar size="lg" src={userAvatar} />

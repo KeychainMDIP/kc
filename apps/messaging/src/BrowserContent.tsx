@@ -12,7 +12,6 @@ function BrowserContent() {
     const [isWelcomeOpen, setIsWelcomeOpen] = useState(false);
     const { setError, setSuccess } = useSnackbar();
     const {
-        activePeer,
         currentId,
         refreshInbox,
         refreshCurrentID,
@@ -91,15 +90,10 @@ function BrowserContent() {
 
             {currentId && (
                 <>
-                    {!activePeer ? (
-                        <div style={{ height: "100%" }}>
-                            <HomePage />
-                        </div>
-                    ) : (
-                        <div style={{ height: "100%" }}>
-                            <ChatWindow />
-                        </div>
-                    )}
+                    <div style={{ height: "100%" }}>
+                        <HomePage />
+                    </div>
+                    <ChatWindow />
                 </>
             )}
         </div>

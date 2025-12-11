@@ -26,6 +26,8 @@ import WarningModal from "../modals/WarningModal";
 import QRCodeModal from "../modals/QRCodeModal";
 import { Buffer } from "buffer";
 import { CloseButton, Box } from "@chakra-ui/react";
+import SlideInRight from "./transitions/SlideInRight";
+import { useColorMode } from "../contexts/ColorModeProvider";
 import {
     avatarDataUrl,
     formatTime,
@@ -79,6 +81,16 @@ const ChatWindow: React.FC = () => {
     const [currentGroupMembers, setCurrentGroupMembers] = useState<string[]>([]);
 
     const { setError } = useSnackbar();
+    const { colorMode } = useColorMode();
+
+    const lastPeerRef = useRef<string>("");
+    useEffect(() => {
+        if (activePeer) {
+            lastPeerRef.current = activePeer;
+        }
+    }, [activePeer]);
+
+    const uiPeer = activePeer || lastPeerRef.current;
 
     const onRename = () => {
         if (!activePeer) {
@@ -528,15 +540,9 @@ const ChatWindow: React.FC = () => {
             urlsToRevoke.forEach(u => URL.revokeObjectURL(u));
         };
     }, [conversation, keymaster]);
-
-
-    if (!activePeer) {
-        return;
-    }
-
-    const profile = profileList[activePeer];
+    const profile = uiPeer ? profileList[uiPeer] : undefined;
     const customAvatarUrl = profile?.avatar;
-    const peerAvatar = customAvatarUrl ? customAvatarUrl : avatarDataUrl(nameList[activePeer]);
+    const peerAvatar = uiPeer ? (customAvatarUrl ? customAvatarUrl : avatarDataUrl(nameList[uiPeer])) : "";
 
     return (
         <>
@@ -561,111 +567,115 @@ const ChatWindow: React.FC = () => {
             <QRCodeModal
                 isOpen={qrOpen}
                 onClose={() => setQrOpen(false)}
-                did={nameList[activePeer]}
-                name={activePeer}
+                did={uiPeer ? nameList[uiPeer] : ""}
+                name={uiPeer}
                 userAvatar={peerAvatar}
             />
 
-            <ChatContainer style={{ height: "100%" }}>
-                <ConversationHeader>
-                    <ConversationHeader.Back onClick={onBack} />
-                    <Avatar src={peerAvatar} name={activePeer} />
-                    <ConversationHeader.Content userName={activePeer} info={(
-                        currentGroupMembers.length
-                            ? `${currentGroupMembers.length} members`
-                            : truncateMiddle(nameList[activePeer], 25)
-                    )}/>
-                    <ConversationHeader.Actions>
-                        <MenuRoot closeOnSelect>
-                            <MenuTrigger asChild>
-                                <IconButton
-                                    size="sm"
-                                    variant="ghost"
-                                    _icon={{ w: "5", h: "5" }}
-                                >
-                                    <LuEllipsisVertical />
-                                </IconButton>
-                            </MenuTrigger>
+            <SlideInRight isOpen={!!activePeer} bg={colorMode === "dark" ? "gray.900" : "white"} bottomOffset={0} zIndex={2200}>
+                {uiPeer && (
+                    <ChatContainer style={{ height: "100%" }}>
+                        <ConversationHeader>
+                            <ConversationHeader.Back onClick={onBack} />
+                            <Avatar src={peerAvatar} name={uiPeer} />
+                            <ConversationHeader.Content userName={uiPeer} info={(
+                                currentGroupMembers.length
+                                    ? `${currentGroupMembers.length} members`
+                                    : truncateMiddle(nameList[uiPeer], 25)
+                            )}/>
+                            <ConversationHeader.Actions>
+                                <MenuRoot closeOnSelect>
+                                    <MenuTrigger asChild>
+                                        <IconButton
+                                            size="sm"
+                                            variant="ghost"
+                                            _icon={{ w: "5", h: "5" }}
+                                        >
+                                            <LuEllipsisVertical />
+                                        </IconButton>
+                                    </MenuTrigger>
 
-                            <Portal>
-                                <MenuPositioner>
-                                    <MenuContent>
-                                        <MenuItem value="rename" onSelect={onRename}>
-                                            <LuPencil style={{ marginRight: 8 }} />
-                                            Rename
-                                        </MenuItem>
-                                        {currentGroupMembers.length === 0 && (
-                                            <MenuItem value="export" onSelect={() => setQrOpen(true)}>
-                                                <LuQrCode style={{ marginRight: 8 }} />
-                                                Export
-                                            </MenuItem>
+                                    <Portal>
+                                        <MenuPositioner>
+                                            <MenuContent>
+                                                <MenuItem value="rename" onSelect={onRename}>
+                                                    <LuPencil style={{ marginRight: 8 }} />
+                                                    Rename
+                                                </MenuItem>
+                                                {currentGroupMembers.length === 0 && (
+                                                    <MenuItem value="export" onSelect={() => setQrOpen(true)}>
+                                                        <LuQrCode style={{ marginRight: 8 }} />
+                                                        Export
+                                                    </MenuItem>
+                                                )}
+                                                <MenuItem value="delete" onSelect={onRemove}>
+                                                    <LuTrash2 style={{ marginRight: 8 }} />
+                                                    Delete
+                                                </MenuItem>
+                                            </MenuContent>
+                                        </MenuPositioner>
+                                    </Portal>
+                                </MenuRoot>
+                            </ConversationHeader.Actions>
+                        </ConversationHeader>
+
+                        <MessageList autoScrollToBottom autoScrollToBottomOnMount>
+                            {conversation.map((m) => {
+                                const hasImages = !!(imageAttachments[m.did] && imageAttachments[m.did].length > 0);
+                                const displayMessage = hasImages && m.model.message === IMAGE_PLACEHOLDER ? "" : m.model.message;
+                                return (
+                                    <Message
+                                        key={m.did}
+                                        model={{
+                                            ...m.model,
+                                            message: displayMessage,
+                                            type: hasImages && displayMessage === "" ? "custom" : undefined,
+                                        }}
+                                    >
+                                        <Message.Header sentTime={m.model!.sentTime} />
+                                        {hasImages && (
+                                            <Message.CustomContent>
+                                                <div>
+                                                    {imageAttachments[m.did].map(img => (
+                                                        <img
+                                                            key={img.name}
+                                                            src={img.url}
+                                                            alt={img.name}
+                                                            style={{
+                                                                maxWidth: 240,
+                                                                maxHeight: 240,
+                                                            }}
+                                                            onClick={() => openImageViewer(img.url)}
+                                                        />
+                                                    ))}
+                                                </div>
+                                            </Message.CustomContent>
                                         )}
-                                        <MenuItem value="delete" onSelect={onRemove}>
-                                            <LuTrash2 style={{ marginRight: 8 }} />
-                                            Delete
-                                        </MenuItem>
-                                    </MenuContent>
-                                </MenuPositioner>
-                            </Portal>
-                        </MenuRoot>
-                    </ConversationHeader.Actions>
-                </ConversationHeader>
+                                    </Message>
+                                )})}
+                        </MessageList>
 
-                <MessageList autoScrollToBottom autoScrollToBottomOnMount>
-                    {conversation.map((m) => {
-                        const hasImages = !!(imageAttachments[m.did] && imageAttachments[m.did].length > 0);
-                        const displayMessage = hasImages && m.model.message === IMAGE_PLACEHOLDER ? "" : m.model.message;
-                        return (
-                            <Message
-                                key={m.did}
-                                model={{
-                                    ...m.model,
-                                    message: displayMessage,
-                                    type: hasImages && displayMessage === "" ? "custom" : undefined,
-                                }}
-                            >
-                                <Message.Header sentTime={m.model!.sentTime} />
-                                {hasImages && (
-                                    <Message.CustomContent>
-                                        <div>
-                                            {imageAttachments[m.did].map(img => (
-                                                <img
-                                                    key={img.name}
-                                                    src={img.url}
-                                                    alt={img.name}
-                                                    style={{
-                                                        maxWidth: 240,
-                                                        maxHeight: 240,
-                                                    }}
-                                                    onClick={() => openImageViewer(img.url)}
-                                                />
-                                            ))}
-                                        </div>
-                                    </Message.CustomContent>
-                                )}
-                            </Message>
-                        )})}
-                </MessageList>
+                        <MessageInput
+                            placeholder={`Message ${uiPeer}`}
+                            value={pendingText}
+                            onChange={setPendingText}
+                            onSend={handleSend}
+                            disabled={sending || uploadingImage}
+                            attachButton={true}
+                            sendButton={true}
+                            onAttachClick={openFilePicker}
+                        />
 
-                <MessageInput
-                    placeholder={`Message ${activePeer}`}
-                    value={pendingText}
-                    onChange={setPendingText}
-                    onSend={handleSend}
-                    disabled={sending || uploadingImage}
-                    attachButton={true}
-                    sendButton={true}
-                    onAttachClick={openFilePicker}
-                />
-
-                <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    hidden
-                    onChange={uploadImageAttachment}
-                />
-            </ChatContainer>
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept="image/*"
+                            hidden
+                            onChange={uploadImageAttachment}
+                        />
+                    </ChatContainer>
+                )}
+            </SlideInRight>
 
             {imageViewerOpen && (
                 <Box position="fixed" inset={0} zIndex={1000} display="flex" alignItems="center" justifyContent="center">

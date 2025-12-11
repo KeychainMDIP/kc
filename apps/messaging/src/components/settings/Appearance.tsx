@@ -1,6 +1,7 @@
 import { Box, Flex, Heading, IconButton, HStack, Text } from "@chakra-ui/react";
 import { LuArrowLeft } from "react-icons/lu";
 import { ColorModeButton, useColorMode } from "../../contexts/ColorModeProvider";
+import SlideInRight from "../transitions/SlideInRight";
 
 export interface AppearanceProps {
     isOpen: boolean;
@@ -10,22 +11,8 @@ export interface AppearanceProps {
 export default function Appearance({ isOpen, onClose }: AppearanceProps) {
     const { colorMode } = useColorMode();
 
-    if (!isOpen) {
-        return;
-    }
-
     return (
-        <Box
-            position="absolute"
-            top="0"
-            left="0"
-            right="0"
-            bottom="46px"
-            zIndex={1300}
-            bg={colorMode === "dark" ? "gray.900" : "white"}
-            display="flex"
-            flexDirection="column"
-        >
+        <SlideInRight isOpen={isOpen} bg={colorMode === "dark" ? "gray.900" : "white"} zIndex={1300}>
             <Flex as="header" align="center" gap={3} px={2}>
                 <IconButton variant="ghost" onClick={onClose}>
                     <LuArrowLeft />
@@ -41,6 +28,6 @@ export default function Appearance({ isOpen, onClose }: AppearanceProps) {
                     <ColorModeButton />
                 </HStack>
             </Box>
-        </Box>
+        </SlideInRight>
     );
 }

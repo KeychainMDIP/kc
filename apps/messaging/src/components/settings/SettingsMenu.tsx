@@ -5,6 +5,7 @@ import { LuArrowLeft, LuChevronRight, LuWallet, LuServer, LuPalette } from "reac
 import Wallet from "./Wallet";
 import Services from "./Services";
 import Appearance from "./Appearance";
+import SlideInRight from "../transitions/SlideInRight";
 
 export interface SettingsProps {
     isOpen: boolean;
@@ -17,10 +18,6 @@ export default function SettingsMenu({ isOpen, onClose }: SettingsProps) {
     const [isWalletOpen, setIsWalletOpen] = useState(false);
     const [isServicesOpen, setIsServicesOpen] = useState(false);
     const [isAppearanceOpen, setIsAppearanceOpen] = useState(false);
-
-    if (!isOpen) {
-        return;
-    }
 
     return (
         <>
@@ -39,17 +36,7 @@ export default function SettingsMenu({ isOpen, onClose }: SettingsProps) {
                 onClose={() => setIsAppearanceOpen(false)}
             />
 
-            <Box
-                position="absolute"
-                top="0"
-                left="0"
-                right="0"
-                bottom="46px"
-                zIndex={1200}
-                bg={colorMode === "dark" ? "gray.900" : "white"}
-                display="flex"
-                flexDirection="column"
-            >
+            <SlideInRight isOpen={isOpen} bg={colorMode === "dark" ? "gray.900" : "white"} zIndex={1200}>
                 <Flex as="header" align="center" gap={3} px={2}>
                     <IconButton variant="ghost" onClick={onClose}>
                         <LuArrowLeft />
@@ -104,7 +91,7 @@ export default function SettingsMenu({ isOpen, onClose }: SettingsProps) {
                         </Button>
                     </Box>
                 </Box>
-            </Box>
+            </SlideInRight>
         </>
     );
 }

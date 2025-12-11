@@ -6,6 +6,7 @@ import WarningModal from "../../modals/WarningModal";
 import MnemonicModal from "../../modals/MnemonicModal";
 import { useWalletContext } from "../../contexts/WalletProvider";
 import { useSnackbar } from "../../contexts/SnackbarProvider";
+import SlideInRight from "../transitions/SlideInRight";
 
 export interface WalletSettingsProps {
     isOpen: boolean;
@@ -21,10 +22,6 @@ export default function Wallet({ isOpen, onClose }: WalletSettingsProps) {
     const [backupOpen, setBackupOpen] = useState(false);
     const [mnemonicOpen, setMnemonicOpen] = useState(false);
     const [mnemonic, setMnemonic] = useState<string>("");
-
-    if (!isOpen) {
-        return;
-    }
 
     const handleConfirmReset = async () => {
         onClose();
@@ -87,17 +84,7 @@ export default function Wallet({ isOpen, onClose }: WalletSettingsProps) {
                 mnemonic={mnemonic}
             />
 
-            <Box
-                position="absolute"
-                top="0"
-                left="0"
-                right="0"
-                bottom="46px"
-                zIndex={1300}
-                bg={colorMode === "dark" ? "gray.900" : "white"}
-                display="flex"
-                flexDirection="column"
-            >
+            <SlideInRight isOpen={isOpen} bg={colorMode === "dark" ? "gray.900" : "white"} zIndex={1300}>
                 <Flex as="header" align="center" gap={3} px={2}>
                     <IconButton variant="ghost" onClick={onClose}>
                         <LuArrowLeft />
@@ -124,7 +111,7 @@ export default function Wallet({ isOpen, onClose }: WalletSettingsProps) {
                         </Button>
                     </Box>
                 </Box>
-            </Box>
+            </SlideInRight>
         </>
     );
 }

@@ -11,6 +11,7 @@ import {
     SEARCH_SERVER_KEY,
 } from "../../constants";
 import {useVariablesContext} from "../../contexts/VariablesProvider";
+import SlideInRight from "../transitions/SlideInRight";
 
 export interface ServicesSettingsProps {
     isOpen: boolean;
@@ -38,10 +39,6 @@ export default function Services({ isOpen, onClose }: ServicesSettingsProps) {
         } catch {}
     }, [isOpen]);
 
-    if (!isOpen) {
-        return;
-    }
-
     async function handleSave() {
         const gatekeeper = gatekeeperUrl.trim();
         const search = searchServerUrl.trim();
@@ -63,17 +60,7 @@ export default function Services({ isOpen, onClose }: ServicesSettingsProps) {
     }
 
     return (
-        <Box
-            position="absolute"
-            top="0"
-            left="0"
-            right="0"
-            bottom="46px"
-            zIndex={1300}
-            bg={colorMode === "dark" ? "gray.900" : "white"}
-            display="flex"
-            flexDirection="column"
-        >
+        <SlideInRight isOpen={isOpen} bg={colorMode === "dark" ? "gray.900" : "white"} zIndex={1300}>
             <Flex as="header" align="center" gap={3} px={2}>
                 <IconButton variant="ghost" onClick={onClose}>
                     <LuArrowLeft />
@@ -110,6 +97,6 @@ export default function Services({ isOpen, onClose }: ServicesSettingsProps) {
                     </Button>
                 </Box>
             </Box>
-        </Box>
+        </SlideInRight>
     );
 }

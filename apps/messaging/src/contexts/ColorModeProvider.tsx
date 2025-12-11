@@ -16,7 +16,7 @@ export function ColorModeProvider({ children, ...themeProps }: ColorModeProvider
     return (
         <ThemeProvider
             attribute="class"
-            defaultTheme="light"
+            defaultTheme="dark"
             value={{ light: "light", dark: "dark" }}
             themes={["light", "dark"]}
             enableSystem

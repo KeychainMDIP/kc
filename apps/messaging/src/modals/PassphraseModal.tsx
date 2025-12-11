@@ -146,14 +146,6 @@ const PassphraseModal: React.FC<PassphraseModalProps> = (
                     </form>
                 </Dialog.Body>
                 <Dialog.Footer>
-                    <Button
-                        colorPalette="blue"
-                        type="submit"
-                        form="passphrase-form"
-                        disabled={isSubmitDisabled()}
-                    >
-                        Submit
-                    </Button>
                     {encrypt && (
                         <Button
                             variant="outline"
@@ -163,6 +155,14 @@ const PassphraseModal: React.FC<PassphraseModalProps> = (
                             Cancel
                         </Button>
                     )}
+                    <Button
+                        colorPalette="blue"
+                        type="submit"
+                        form="passphrase-form"
+                        disabled={isSubmitDisabled()}
+                    >
+                        Submit
+                    </Button>
                 </Dialog.Footer>
             </Dialog.Content>
         </Dialog.Root>
