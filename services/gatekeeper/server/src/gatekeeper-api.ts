@@ -19,12 +19,12 @@ EventEmitter.defaultMaxListeners = 100;
 const dbName = 'mdip';
 const db = (() => {
     switch (config.db) {
-        case 'sqlite': return new DbSqlite(dbName);
-        case 'mongodb': return new DbMongo(dbName);
-        case 'redis': return new DbRedis(dbName);
-        case 'json':
-        case 'json-cache': return new DbJsonCache(dbName);
-        default: return null;
+    case 'sqlite': return new DbSqlite(dbName);
+    case 'mongodb': return new DbMongo(dbName);
+    case 'redis': return new DbRedis(dbName);
+    case 'json':
+    case 'json-cache': return new DbJsonCache(dbName);
+    default: return null;
     }
 })();
 

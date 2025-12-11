@@ -398,34 +398,34 @@ const DmailTab: React.FC = () => {
                 const has = (t: string) => itm.tags?.includes(t);
                 const not = (t: string) => !itm.tags?.includes(t);
                 switch (activeTab) {
-                    case "inbox":
-                        if (has(TAG.inbox) && not(TAG.archived) && not(TAG.deleted)) {
+                case "inbox":
+                    if (has(TAG.inbox) && not(TAG.archived) && not(TAG.deleted)) {
+                        outBase[did] = itm;
+                    }
+                    break;
+                case "outbox":
+                    {
+                        const isSelfAddressed = !!currentId && itm.sender === currentId && (itm.to?.includes(currentId) || itm.cc?.includes(currentId));
+                        if ((has(TAG.sent) || isSelfAddressed) && not(TAG.archived) && not(TAG.deleted) && not(TAG.draft)) {
                             outBase[did] = itm;
                         }
-                        break;
-                    case "outbox":
-                        {
-                            const isSelfAddressed = !!currentId && itm.sender === currentId && (itm.to?.includes(currentId) || itm.cc?.includes(currentId));
-                            if ((has(TAG.sent) || isSelfAddressed) && not(TAG.archived) && not(TAG.deleted) && not(TAG.draft)) {
-                                outBase[did] = itm;
-                            }
-                        }
-                        break;
-                    case "drafts":
-                        if (has(TAG.draft) && not(TAG.archived) && not(TAG.deleted)) {
-                            outBase[did] = itm;
-                        }
-                        break;
-                    case "archive":
-                        if (has(TAG.archived) && not(TAG.deleted)) {
-                            outBase[did] = itm;
-                        }
-                        break;
-                    case "trash":
-                        if (has(TAG.deleted)) {
-                            outBase[did] = itm;
-                        }
-                        break;
+                    }
+                    break;
+                case "drafts":
+                    if (has(TAG.draft) && not(TAG.archived) && not(TAG.deleted)) {
+                        outBase[did] = itm;
+                    }
+                    break;
+                case "archive":
+                    if (has(TAG.archived) && not(TAG.deleted)) {
+                        outBase[did] = itm;
+                    }
+                    break;
+                case "trash":
+                    if (has(TAG.deleted)) {
+                        outBase[did] = itm;
+                    }
+                    break;
                 }
             }
             base = outBase;
