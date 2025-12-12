@@ -95,12 +95,15 @@ export default function HomePage() {
             return map;
         }
 
-        for (const [, itm] of Object.entries(dmailList)) {
-            let group = false;
-            if (itm.to.length > 1) {
-                group = true;
+        const getToDids = (itm: any): string[] => {
+            const msgTo = itm.message?.to;
+            if (Array.isArray(msgTo) && msgTo.length) {
+                return msgTo;
             }
+            return convertNamesToDIDs(itm.to ?? [], nameList);
+        };
 
+        for (const [, itm] of Object.entries(dmailList)) {
             if (itm.message?.subject !== CHAT_SUBJECT) {
                 continue;
             }
@@ -114,16 +117,23 @@ export default function HomePage() {
                 continue;
             }
 
-            if (group) {
+            const senderDid = itm.docs?.didDocument?.controller;
+            if (!senderDid) {
+                continue;
+            }
+
+            const toDids = getToDids(itm);
+            const isGroup = toDids.length > 1;
+
+            if (isGroup) {
                 for (const [name, members] of Object.entries(groupList)) {
-                    if (arraysMatchMembers(convertNamesToDIDs(itm.to, nameList), convertNamesToDIDs(members, nameList))) {
+                    const memberDids = convertNamesToDIDs(members, nameList);
+                    if (arraysMatchMembers(toDids, memberDids)) {
                         map.set(name, (map.get(name) ?? 0) + 1);
                         break;
                     }
                 }
             } else {
-                const senderDid = itm.docs?.didDocument?.controller;
-                const toDids = itm.message?.to ?? convertNamesToDIDs(itm.to ?? [], nameList);
                 const incoming = senderDid !== currentDID && toDids.includes(currentDID);
                 if (incoming) {
                     map.set(senderDid, (map.get(senderDid) ?? 0) + 1);
