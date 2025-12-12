@@ -1,6 +1,6 @@
 {
   "name": "@mdip/common",
-  "version": "1.4.0-beta.0",
+  "version": "1.4.0-beta.1",
   "description": "MDIP common",
   "type": "module",
   "main": "./dist/cjs/index.cjs",
@@ -9,7 +9,7 @@
   "files": [
     "dist"
   ],
-    "publishConfig": {
+  "publishConfig": {
     "registry": "https://registry.npmjs.org"
   },
   "exports": {
@@ -53,7 +53,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/KeychainMDIP/kc.git"
+    "url": "git+https://github.com/KeychainMDIP/kc.git"
   },
   "devDependencies": {
     "@rollup/plugin-commonjs": "^28.0.3",
