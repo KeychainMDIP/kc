@@ -1,6 +1,6 @@
 {
   "name": "@mdip/keymaster",
-  "version": "1.4.0-beta.0",
+  "version": "1.4.0-beta.1",
   "description": "MDIP Keymaster",
   "type": "module",
   "module": "./dist/esm/index.js",
@@ -9,7 +9,7 @@
   "files": [
     "dist"
   ],
-    "publishConfig": {
+  "publishConfig": {
     "registry": "https://registry.npmjs.org"
   },
   "exports": {
