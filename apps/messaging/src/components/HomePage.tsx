@@ -1,15 +1,16 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useVariablesContext } from "../contexts/VariablesProvider";
 import { Avatar, Conversation, ConversationList } from "@chatscope/chat-ui-kit-react";
-import {avatarDataUrl, arraysMatchMembers, convertNamesToDIDs} from "../utils/utils";
+import {avatarDataUrl, arraysMatchMembers, convertNamesToDIDs, truncateMiddle} from "../utils/utils";
 import {CHAT_SUBJECT, MESSAGING_PROFILE} from "../constants";
 import AddUserModal from "../modals/AddUserModal";
 import CreateGroupModal from "../modals/CreateGroupModal";
 import { LuUser, LuUserPlus, LuMessagesSquare, LuUsers } from "react-icons/lu";
-import { IconButton, Box, Flex, Text } from "@chakra-ui/react";
+import { IconButton, Box, Flex, Text, Input, Spinner } from "@chakra-ui/react";
 import { useWalletContext } from "../contexts/WalletProvider";
 import { useSnackbar } from "../contexts/SnackbarProvider";
 import Profile from "./Profile";
+import WarningModal from "../modals/WarningModal";
 
 export default function HomePage() {
     const {
@@ -18,20 +19,24 @@ export default function HomePage() {
         currentId,
         currentDID,
         nameList,
+        displayNameList,
         dmailList,
         setActivePeer,
         refreshNames,
         profileList,
         groupList,
+        resolveAvatar,
     } = useVariablesContext();
-    const { keymaster } = useWalletContext();
-
-    const { setSuccess } = useSnackbar();
-
+    const { keymaster, search } = useWalletContext();
+    const { setSuccess, setError } = useSnackbar();
     const [isAddOpen, setIsAddOpen] = useState(false);
     const [isAddGroupOpen, setIsAddGroupOpen] = useState(false);
     const [isProfileOpen, setIsProfileOpen] = useState(false);
     const [addUserError, setAddUserError] = useState("");
+    const [searchText, setSearchText] = useState("");
+    const [globalLoading, setGlobalLoading] = useState(false);
+    const [globalResults, setGlobalResults] = useState<Array<{ did: string; name: string; avatar?: string }>>([]);
+    const [confirmAdd, setConfirmAdd] = useState<{ open: boolean; did?: string; name?: string }>({ open: false });
 
     const handleAddUser = async (did: string) => {
         if (!keymaster) {
@@ -117,15 +122,120 @@ export default function HomePage() {
                     }
                 }
             } else {
-                const incoming = itm.sender !== currentId && (itm.to ?? []).includes(currentId)
-                if (!incoming) {
-                    continue
+                const senderDid = itm.docs?.didDocument?.controller;
+                const toDids = itm.message?.to ?? convertNamesToDIDs(itm.to ?? [], nameList);
+                const incoming = senderDid !== currentDID && toDids.includes(currentDID);
+                if (incoming) {
+                    map.set(senderDid, (map.get(senderDid) ?? 0) + 1);
                 }
-                map.set(itm.sender, (map.get(itm.sender) ?? 0) + 1);
             }
         }
-        return map
+        return map;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [dmailList, currentId, nameList, groupList])
+
+    const startsWithCi = (full: string, prefix: string) => full.toLocaleLowerCase().startsWith(prefix.toLocaleLowerCase());
+
+    const filteredGroupNames = useMemo(() => {
+        const groups = Object.keys(groupList);
+        if (!searchText.trim()) {
+            return groups;
+        }
+        return groups.filter(name => startsWithCi(name, searchText.trim()));
+    }, [groupList, searchText]);
+
+    const filteredAgentEntries = useMemo(() => {
+        const entries = Object.entries(displayNameList).filter(([name]) => agentList.includes(name));
+        if (!searchText.trim()) {
+            return entries;
+        }
+        return entries.filter(([name]) => startsWithCi(name, searchText.trim()));
+    }, [agentList, searchText, displayNameList]);
+
+    useEffect(() => {
+        let cancelled = false;
+        const q = searchText.trim();
+        if (!q) {
+            setGlobalResults([]);
+            setGlobalLoading(false);
+            return;
+        }
+
+        const run = async () => {
+            if (!search || !keymaster) {
+                setGlobalResults([]);
+                return;
+            }
+            setGlobalLoading(true);
+            try {
+                const where = { "didDocumentData.*": { $in: [MESSAGING_PROFILE] } };
+                const dids = await search.search({ where });
+                const out: Array<{ did: string; name: string; avatar?: string }> = [];
+
+                for (const did of dids) {
+                    if (did === currentDID) {
+                        continue;
+                    }
+                    if (Object.values(nameList).includes(did)) {
+                        continue;
+                    }
+                    try {
+                        const doc = await keymaster.resolveDID(did);
+                        if (doc.mdip?.type !== "agent") {
+                            continue;
+                        }
+                        const data: Record<string, any> = doc.didDocumentData ?? {};
+                        const profile: Record<string, any> | undefined = data[MESSAGING_PROFILE];
+                        if (!profile || typeof profile !== 'object') {
+                            continue;
+                        }
+                        const name = typeof profile.name === 'string' ? profile.name : undefined;
+                        if (!name || !startsWithCi(name, q)) {
+                            continue;
+                        }
+                        const avatarDid = typeof profile.avatar === 'string' ? profile.avatar : undefined;
+
+                        let avatar: string | null = "";
+                        if (avatarDid) {
+                            avatar = await resolveAvatar(avatarDid);
+                        }
+                        const avatarUrl = avatar ? avatar : avatarDataUrl(did);
+                        out.push({ did, name, avatar: avatarUrl });
+                    } catch {}
+                }
+
+                if (!cancelled) {
+                    setGlobalResults(out);
+                }
+            } catch {
+                if (!cancelled) {
+                    setGlobalResults([]);
+                }
+            } finally {
+                if (!cancelled) {
+                    setGlobalLoading(false);
+                }
+            }
+        };
+
+        const handle = setTimeout(run, 250);
+        return () => { cancelled = true; clearTimeout(handle); };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchText, search, keymaster, nameList, currentDID]);
+
+    const handleSearchAddUser = async () => {
+        const did = confirmAdd.did;
+        setConfirmAdd({ open: false });
+        if (!did) {
+            return;
+        }
+        const existing = Object.entries(nameList).find(([, v]) => v === did);
+        if (existing) {
+            setError(`User already added as ${existing[0]}`);
+            return;
+        }
+        await handleAddUser(did);
+    }
 
     return (
         <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
@@ -144,6 +254,15 @@ export default function HomePage() {
             <Profile
                 isOpen={isProfileOpen}
                 onClose={() => setIsProfileOpen(false)}
+            />
+
+
+            <WarningModal
+                isOpen={confirmAdd.open}
+                title={confirmAdd.name ? `Add ${confirmAdd.name}?` : "Add user?"}
+                warningText={confirmAdd.name ? `Do you want to add ${confirmAdd.name} to your contacts?` : "Do you want to add this user to your contacts?"}
+                onSubmit={handleSearchAddUser}
+                onClose={() => setConfirmAdd({ open: false })}
             />
 
             <Box position="sticky" top="0" zIndex={100} borderBottomWidth="1px">
@@ -166,11 +285,19 @@ export default function HomePage() {
                         <LuUserPlus />
                     </IconButton>
                 </Flex>
+                <Box px={2} pb={2}>
+                    <Input
+                        size="sm"
+                        value={searchText}
+                        onChange={(e) => setSearchText(e.target.value)}
+                        placeholder="Search by name…"
+                    />
+                </Box>
             </Box>
 
             <Box flex="1" overflowY="auto">
-                <ConversationList>
-                    {Object.keys(groupList).map((groupName) => {
+                <ConversationList style={{ height: "auto", overflow: "visible" }}>
+                    {filteredGroupNames.map((groupName) => {
                         const groupDID = nameList[groupName];
                         if (!groupDID) {
                             return null;
@@ -192,8 +319,7 @@ export default function HomePage() {
                             </Conversation>
                         );
                     })}
-                    {Object.entries(nameList)
-                        .filter(([name]) => agentList.includes(name) && currentId !== name)
+                    {filteredAgentEntries
                         .map(([name, did]) => {
                             if (did === currentDID) {
                                 return null;
@@ -204,7 +330,7 @@ export default function HomePage() {
                             const src = customAvatarUrl ? customAvatarUrl : avatarDataUrl(did);
 
                             const selected = activePeer === name;
-                            const unreadCnt = unreadBySender.get(name) ?? 0;
+                            const unreadCnt = unreadBySender.get(did) ?? 0;
 
                             return (
                                 <Conversation
@@ -219,6 +345,32 @@ export default function HomePage() {
                             )
                         })}
                 </ConversationList>
+
+                {searchText.trim() && (
+                    <>
+                        <Box px={3} py={2}>
+                            <Flex align="center" gap={2}>
+                                <Text fontSize="xs" opacity={0.7}>Global results</Text>
+                                {globalLoading && <Spinner size="xs" />}
+                            </Flex>
+                        </Box>
+                        <ConversationList style={{ height: "auto", overflow: "visible" }}>
+                            {globalResults.map(({ did, name, avatar }) => {
+                                const src = avatar ? avatar : avatarDataUrl(did);
+                                return (
+                                    <Conversation
+                                        key={`global-${did}`}
+                                        name={name}
+                                        info={truncateMiddle(did)}
+                                        onClick={() => setConfirmAdd({ open: true, did, name })}
+                                    >
+                                        <Avatar src={src} />
+                                    </Conversation>
+                                );
+                            })}
+                        </ConversationList>
+                    </>
+                )}
             </Box>
 
             <Box

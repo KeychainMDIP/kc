@@ -6,12 +6,13 @@ export interface SlideInRightProps {
     zIndex?: number;
     bottomOffset?: string | number;
     bg?: string;
+    position?: "absolute" | "fixed";
 }
 
-export default function SlideInRight({ isOpen, zIndex = 1200, bottomOffset = "46px", bg = "white", children }: PropsWithChildren<SlideInRightProps>) {
+export default function SlideInRight({ isOpen, zIndex = 1200, bottomOffset = "46px", bg = "white", position = "absolute", children }: PropsWithChildren<SlideInRightProps>) {
     return (
         <Box
-            position="absolute"
+            position={position}
             top={0}
             left={0}
             right={0}

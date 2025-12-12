@@ -10,8 +10,6 @@ const REFRESH_INTERVAL = 5_000;
 interface VariablesContextValue {
     currentId: string;
     setCurrentId: Dispatch<SetStateAction<string>>;
-    validId: boolean;
-    setValidId: Dispatch<SetStateAction<boolean>>;
     currentDID: string;
     setCurrentDID: Dispatch<SetStateAction<string>>;
     registries: string[];
@@ -40,6 +38,8 @@ interface VariablesContextValue {
     setAliasDID: Dispatch<SetStateAction<string>>;
     nameList: Record<string, string>;
     setNameList: Dispatch<SetStateAction<Record<string, string>>>;
+    displayNameList: Record<string, string>;
+    setDisplayNameList: Dispatch<SetStateAction<Record<string, string>>>;
     nameRegistry: Record<string, string>;
     setNameRegistry: Dispatch<SetStateAction<Record<string, string>>>;
     agentList: string[];
@@ -50,6 +50,7 @@ interface VariablesContextValue {
     setPollList: Dispatch<SetStateAction<string[]>>;
     activePeer: string;
     setActivePeer: Dispatch<SetStateAction<string>>;
+    resolveAvatar: (assetDid: string) => Promise<string | null>,
     refreshAll: () => Promise<void>;
     refreshHeld: () => Promise<void>;
     refreshNames: () => Promise<void>;
@@ -61,12 +62,12 @@ const VariablesContext = createContext<VariablesContextValue | null>(null);
 
 export function VariablesProvider({ children }: { children: ReactNode }) {
     const [currentId, setCurrentId] = useState<string>("");
-    const [validId, setValidId] = useState<boolean>(false);
     const [currentDID, setCurrentDID] = useState<string>("");
     const [idList, setIdList] = useState<string[]>([]);
     const [registries, setRegistries] = useState<string[]>([]);
     const [heldList, setHeldList] = useState<string[]>([]);
     const [nameList, setNameList] = useState<Record<string, string>>({});
+    const [displayNameList, setDisplayNameList] = useState<Record<string, string>>({});
     const [nameRegistry, setNameRegistry] = useState<Record<string, string>>({});
     const [agentList, setAgentList] = useState<string[]>([]);
     const [profileList, setProfileList] = useState<Record<string, { avatar?: string; name?: string }>>({});
@@ -114,123 +115,142 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
     }
 
     const refreshNames = useCallback(
-        async (cid?: string) => {
+        async () => {
             if (!keymaster) {
                 return;
             }
 
-            let nameList : Record<string, string> = {};
-            const registryMap: Record<string, string> = {};
-            const profileList: Record<string, { avatar?: string; name?: string }> = {};
+            const canonical = await keymaster.listNames({ includeIDs: true });
+            const canonicalSorted = Object.fromEntries(
+                Object.entries(canonical).sort(([a], [b]) => a.localeCompare(b))
+            ) as Record<string, string>;
 
-            const allNames = await keymaster.listNames();
-            const allNamesSorted = Object.fromEntries(
-                Object.entries(allNames).sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
-            );
+            const registryMap: Record<string, string> = {};
+            const profileListLocal: Record<string, { avatar?: string; name?: string }> = {};
+            const canonicalAliasToDid: Record<string, string> = { ...canonicalSorted };
+
+            const displayNameToDid: Record<string, string> = {};
+            const didToDisplay: Record<string, string> = {};
+            const agentDisplayNames: string[] = [];
 
             const idNames = await keymaster.listIds();
-            const agentAliasList: string[] = [];
-
-            for (const idName of idNames) {
-                try {
-                    const doc = await keymaster.resolveDID(idName);
-                    if (doc.didDocumentData) {
-                        const profileName = getProfileName(idName, doc.didDocumentData);
-                        agentAliasList.push(profileName);
-                        await populateAgentProfile(idName, doc.didDocumentData, profileList);
-                    }
-                } catch {}
-            }
-
             setIdList([...idNames]);
-            setValidId(idNames.includes(cid ?? currentId));
 
             const schemaList = [];
             const imageList = [];
-            const groupList: Record<string, string[]> = {};
+            const groupListLocal: Record<string, string[]> = {};
             const vaultList = [];
             const pollList = [];
             const documentList = [];
 
-            for (const [name, did] of Object.entries(allNamesSorted)) {
+            const allocDisplayName = (baseName: string, did: string) => {
+                let display = baseName;
+
+                if (displayNameToDid[display] && displayNameToDid[display] !== did) {
+                    let suffix = 2;
+                    while (displayNameToDid[`${baseName} #${suffix}`] && displayNameToDid[`${baseName} #${suffix}`] !== did) {
+                        suffix++;
+                    }
+                    display = `${baseName} #${suffix}`;
+                }
+
+                displayNameToDid[display] = did;
+                didToDisplay[did] = display;
+                agentDisplayNames.push(display);
+                return display;
+            };
+
+            for (const idName of idNames) {
                 try {
-                    const doc = await keymaster.resolveDID(name);
+                    const doc = await keymaster.resolveDID(idName);
+                    if (doc.mdip?.type !== "agent") {
+                        continue;
+                    }
+
+                    const did = doc.didDocument?.id;
+                    if (!did) {
+                        continue;
+                    }
+
+                    if (doc.didDocumentData) {
+                        const base = getProfileName(idName, doc.didDocumentData);
+                        const display = didToDisplay[did] ?? allocDisplayName(base, did);
+                        canonicalAliasToDid[idName] = did;
+                        await populateAgentProfile(display, doc.didDocumentData, profileListLocal);
+                    }
+                } catch {}
+            }
+
+            for (const [alias, did] of Object.entries(canonicalSorted)) {
+                try {
+                    const doc = await keymaster.resolveDID(alias);
 
                     const reg = doc.mdip?.registry;
                     if (reg) {
-                        registryMap[name] = reg;
+                        registryMap[alias] = reg;
                     }
 
                     const data = doc.didDocumentData as Record<string, unknown>;
 
-                    if (doc.mdip?.type === 'agent') {
-                        const baseProfileName = getProfileName(name, data);
+                    if (doc.mdip?.type === "agent") {
+                        const base = getProfileName(alias, data);
 
-                        let profileName = baseProfileName;
-                        if (nameList[profileName]) {
-                            let suffix = 2;
-                            while (nameList[`${baseProfileName} #${suffix}`]) {
-                                suffix++;
-                            }
-                            profileName = `${baseProfileName} #${suffix}`;
-                        }
+                        const display = didToDisplay[did] ?? allocDisplayName(base, did);
+                        canonicalAliasToDid[alias] = did;
 
-                        nameList[profileName] = did;
-                        agentAliasList.push(profileName);
-
-                        await populateAgentProfile(profileName, data, profileList);
-
+                        await populateAgentProfile(display, data, profileListLocal);
                         continue;
                     }
 
-                    // Set after agent to make sure we use the profile name
-                    nameList[name] = did;
+                    displayNameToDid[alias] = did;
+                    canonicalAliasToDid[alias] = did;
 
                     if (data.group) {
-                        const group = await keymaster.getGroup(name);
+                        const group = await keymaster.getGroup(alias);
                         if (group?.members) {
-                            groupList[name] = group?.members;
+                            groupListLocal[alias] = group?.members;
                         }
                         continue;
                     }
 
                     if (data.schema) {
-                        schemaList.push(name);
+                        schemaList.push(alias);
                         continue;
                     }
 
                     if (data.image) {
-                        imageList.push(name);
+                        imageList.push(alias);
                         continue;
                     }
 
                     if (data.document) {
-                        documentList.push(name);
+                        documentList.push(alias);
                         continue;
                     }
 
                     if (data.groupVault) {
-                        vaultList.push(name);
+                        vaultList.push(alias);
                         continue;
                     }
 
                     if (data.poll) {
-                        pollList.push(name);
+                        pollList.push(alias);
                         continue;
                     }
                 }
                 catch {}
             }
 
-            setNameList(nameList);
+            setNameList(canonicalAliasToDid);
+            setDisplayNameList(displayNameToDid);
             setNameRegistry(registryMap);
-            setProfileList(profileList);
+            setProfileList(profileListLocal);
 
-            const uniqueSortedAgents = [...new Set(agentAliasList)]
+            const uniqueSortedAgents = [...new Set(agentDisplayNames)]
                 .sort((a, b) => a.localeCompare(b));
             setAgentList(uniqueSortedAgents);
 
-            setGroupList(groupList);
+            setGroupList(groupListLocal);
             setSchemaList(schemaList);
             setImageList(imageList);
             setDocumentList(documentList);
@@ -266,17 +286,21 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
                     continue;
                 }
 
-                if (to.length === 1) {
-                    const senderExists = Object.keys(nameList).includes(sender);
+                if (item.message?.to?.length === 1) {
+                    const senderDid = item.docs?.didDocument?.controller;
+                    if (!senderDid) {
+                        continue;
+                    }
 
-                    if (!senderExists) {
+                    const alreadyKnown = Object.values(nameList).includes(senderDid);
+                    if (!alreadyKnown) {
                         try {
-                            const name = sender.slice(-20);
-                            await keymaster.addName(name, sender);
+                            const name = senderDid.slice(-20);
+                            await keymaster.addName(name, senderDid);
                             needsRefresh = true;
                         } catch {}
                     }
-                } else if (to.length > 1) {
+                } else if (item.message?.to?.length > 1) {
                     let groupExists = false;
                     for (const members of existingGroupMembers) {
                         if (arraysMatchMembers(convertNamesToDIDs(members, nameList), convertNamesToDIDs(to, nameList))) {
@@ -451,7 +475,7 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         setCurrentId(cid);
         await refreshHeld();
         await refreshCurrentDID(cid);
-        await refreshNames(cid);
+        await refreshNames();
         await refreshIssued();
     }
 
@@ -513,8 +537,6 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
     const value: VariablesContextValue = {
         currentId,
         setCurrentId,
-        validId,
-        setValidId,
         currentDID,
         setCurrentDID,
         registries,
@@ -541,6 +563,8 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         setAliasDID,
         nameList,
         setNameList,
+        displayNameList,
+        setDisplayNameList,
         nameRegistry,
         setNameRegistry,
         agentList,
@@ -553,6 +577,7 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         setDmailList,
         activePeer,
         setActivePeer,
+        resolveAvatar,
         refreshAll,
         refreshHeld,
         refreshNames,

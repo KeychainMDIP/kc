@@ -22,7 +22,7 @@ async function main() {
 
     const corsOptions = {
         origin: '*', // Origin needs to be specified with credentials true
-        methods: ['GET'],  // Specify which methods are allowed (e.g., GET, POST)
+        methods: ['GET', 'POST', 'OPTIONS'],  // Specify which methods are allowed (e.g., GET, POST)
         optionsSuccessStatus: 200  // Some legacy browsers choke on 204
     };
 

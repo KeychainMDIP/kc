@@ -28,7 +28,7 @@ export default function Profile({ isOpen }: ProfileProps) {
     const { isUploading, fileInputRef, handleAvatarClick, handleFileChange, userAvatar } = useAvatarUploader();
 
     if (!isOpen) {
-        return;
+        return null;
     }
 
     return (

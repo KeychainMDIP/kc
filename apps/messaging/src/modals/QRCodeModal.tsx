@@ -32,9 +32,10 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({ isOpen, onClose, did, name, u
     return (
         <Dialog.Root open={isOpen} onOpenChange={handleOpenChange}>
             <Portal>
-                <Dialog.Backdrop />
-                <Dialog.Positioner>
-                    <Dialog.Content>
+                {/* Ensure this modal appears above ChatWindow (zIndex 2200) and menus (2300) */}
+                <Dialog.Backdrop zIndex={2340} bg="blackAlpha.600" />
+                <Dialog.Positioner zIndex={2350}>
+                    <Dialog.Content zIndex={2350} bg={{ base: "white", _dark: "gray.800" }}>
                         <Box display="flex" flexDir="column" minH="100%">
                             <Flex as="header" align="center" gap={3} px={2} py={3}>
                                 <IconButton variant="ghost" onClick={onClose}>

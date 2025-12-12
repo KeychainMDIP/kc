@@ -44,6 +44,7 @@ interface WalletContextValue {
     initialiseWallet: () => Promise<void>;
     initialiseServices: () => Promise<void>;
     keymaster: Keymaster | null;
+    search?: SearchClient;
 }
 
 const WalletContext = createContext<WalletContextValue | null>(null);
@@ -246,6 +247,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         initialiseWallet,
         initialiseServices,
         keymaster: keymasterRef.current,
+        search,
     };
 
     return (

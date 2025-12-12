@@ -16,12 +16,11 @@ import {
     MenuPositioner,
     MenuItem,
 } from "@chakra-ui/react";
-import { LuEllipsisVertical, LuQrCode, LuPencil, LuTrash2 } from "react-icons/lu";
+import { LuEllipsisVertical, LuQrCode, LuTrash2 } from "react-icons/lu";
 import { useSnackbar } from "../contexts/SnackbarProvider";
 import { useVariablesContext } from "../contexts/VariablesProvider";
 import { useWalletContext } from "../contexts/WalletProvider";
 import { CHAT_SUBJECT } from "../constants";
-import TextInputModal from "../modals/TextInputModal";
 import WarningModal from "../modals/WarningModal";
 import QRCodeModal from "../modals/QRCodeModal";
 import { Buffer } from "buffer";
@@ -33,7 +32,6 @@ import {
     formatTime,
     truncateMiddle,
     arraysMatchMembers,
-    convertNamesToDIDs
 } from "../utils/utils";
 
 type MessageModel = {
@@ -53,8 +51,10 @@ const ChatWindow: React.FC = () => {
     const {
         activePeer,
         currentId,
+        currentDID,
         dmailList,
         nameList,
+        displayNameList,
         refreshInbox,
         setActivePeer,
         refreshNames,
@@ -68,9 +68,6 @@ const ChatWindow: React.FC = () => {
 
     const [pendingText, setPendingText] = useState<string>("");
     const [sending, setSending] = useState<boolean>(false);
-    const [renameOpen, setRenameOpen] = useState<boolean>(false);
-    const [renameDID, setRenameDID] = useState<string>("");
-    const [renameOldName, setRenameOldName] = useState<string>("");
     const [removeOpen, setRemoveOpen] = useState<boolean>(false);
     const [qrOpen, setQrOpen] = useState(false);
     const [uploadingImage, setUploadingImage] = useState<boolean>(false);
@@ -91,15 +88,11 @@ const ChatWindow: React.FC = () => {
     }, [activePeer]);
 
     const uiPeer = activePeer || lastPeerRef.current;
-
-    const onRename = () => {
-        if (!activePeer) {
-            return;
-        }
-        setRenameOldName(activePeer);
-        setRenameDID(nameList[activePeer] ?? "");
-        setRenameOpen(true);
-    };
+    const peerDid = uiPeer ? (displayNameList[uiPeer] ?? nameList[uiPeer] ?? "") : "";
+    const canonicalPeerAlias =
+        uiPeer && peerDid
+            ? (Object.entries(nameList).find(([, d]) => d === peerDid)?.[0] ?? uiPeer)
+            : uiPeer;
 
     const onRemove = () => {
         if (!activePeer) {
@@ -113,31 +106,13 @@ const ChatWindow: React.FC = () => {
             return;
         }
         try {
-            await keymaster.removeName(activePeer);
+            await keymaster.removeName(canonicalPeerAlias);
             setActivePeer("");
             await refreshNames();
         } catch (error: any) {
             setError(error);
         } finally {
             setRemoveOpen(false);
-        }
-    };
-
-    const handleRenameSubmit = async (newName: string) => {
-        const trimmed = newName.trim();
-        setRenameOpen(false);
-        if (!trimmed || trimmed === renameOldName || !keymaster) {
-            return;
-        }
-        try {
-            await keymaster.addName(newName, renameDID);
-            await keymaster.removeName(renameOldName);
-            await refreshNames();
-            if (activePeer === renameOldName) {
-                setActivePeer(newName);
-            }
-        } catch (error: any) {
-            setError(error);
         }
     };
 
@@ -174,20 +149,20 @@ const ChatWindow: React.FC = () => {
     }, [activePeer, groupList, keymaster]);
 
     useEffect(() => {
-        if (!activePeer || !keymaster) {
+        if (!activePeer || !keymaster || !peerDid || !currentDID) {
             return;
         }
 
-        const updates: Array<{ did: string; newTags: string[] }> = []
+        const updates: Array<{ did: string; newTags: string[] }> = [];
 
         for (const [did, itm] of Object.entries(dmailList || {})) {
-            const group = groupList[activePeer] !== undefined;
+            const isGroup = groupList[activePeer] !== undefined;
 
             if (itm.message?.subject !== CHAT_SUBJECT) {
                 continue;
             }
 
-            const tags = itm.tags ?? []
+            const tags = itm.tags ?? [];
             if (tags.includes("deleted") || tags.includes("archived")) {
                 continue;
             }
@@ -196,12 +171,20 @@ const ChatWindow: React.FC = () => {
                 continue;
             }
 
-            if (group) {
-                if (!arraysMatchMembers(convertNamesToDIDs(itm.to, nameList), convertNamesToDIDs(groupList[activePeer], nameList))) {
+            const senderDid = itm.docs?.didDocument?.controller;
+            const toDids = itm.message?.to ?? [];
+
+            if (isGroup) {
+                if (!arraysMatchMembers(toDids, currentGroupMembers)) {
+                    continue;
+                }
+                const incoming = senderDid && senderDid !== currentDID && toDids.includes(currentDID);
+                const outgoing = senderDid === currentDID;
+                if (!incoming && !outgoing) {
                     continue;
                 }
             } else {
-                const incoming = itm.sender === activePeer && (itm.to ?? []).includes(currentId);
+                const incoming = senderDid === peerDid && toDids.includes(currentDID);
                 if (!incoming) {
                     continue;
                 }
@@ -210,22 +193,20 @@ const ChatWindow: React.FC = () => {
             updates.push({ did, newTags: tags.filter(t => t !== UNREAD) });
         }
 
-        if (updates.length === 0) {
+        if (!updates.length) {
             return;
         }
 
         (async () => {
             try {
-                await Promise.all(
-                    updates.map(({ did, newTags }) => keymaster.fileDmail(did, newTags))
-                )
-                await refreshInbox()
-            } catch (err: any) {
-                setError(err)
+                await Promise.all(updates.map(({ did, newTags }) => keymaster.fileDmail(did, newTags)));
+                await refreshInbox();
+            } catch (error: any) {
+                setError(error);
             }
         })();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activePeer])
+    }, [activePeer, peerDid, currentDID, currentGroupMembers]);
 
     const handleSend = async (text: string) => {
         const body = (text ?? pendingText).trim();
@@ -251,7 +232,7 @@ const ChatWindow: React.FC = () => {
                     setError(error);
                 }
             } else {
-                recipients = [activePeer];
+                recipients = [peerDid];
             }
 
             const dmail = {
@@ -364,13 +345,7 @@ const ChatWindow: React.FC = () => {
                             setError(error);
                         }
                     } else {
-                        const recipientDid = nameList[activePeer];
-                        if (!recipientDid) {
-                            setError("Unknown recipient");
-                            setUploadingImage(false);
-                            return;
-                        }
-                        recipients = [recipientDid];
+                        recipients = [peerDid];
                     }
 
                     const dmail = {
@@ -438,20 +413,23 @@ const ChatWindow: React.FC = () => {
                     return false;
                 }
 
+                const senderDid = itm.docs?.didDocument?.controller;
+                const toDids = itm.message?.to ?? [];
+
                 if (isGroup) {
-                    if (!arraysMatchMembers(convertNamesToDIDs(to, nameList), currentGroupMembers)) {
+                    if (!arraysMatchMembers(toDids, currentGroupMembers)) {
                         return false;
                     }
 
-                    const outgoing = itm.sender === currentId;
-                    const incoming = itm.sender !== currentId && to.includes(currentId);
+                    const outgoing = senderDid === currentId;
+                    const incoming = senderDid !== currentId && toDids.includes(currentDID);
                     return outgoing || incoming;
                 } else {
                     if (to.length > 1) {
                         return false;
                     }
-                    const incoming = itm.sender === activePeer && to.includes(currentId);
-                    const outgoing = itm.sender === currentId && to.includes(activePeer);
+                    const incoming = senderDid === peerDid && toDids.includes(currentDID);
+                    const outgoing = senderDid === currentDID && toDids.includes(peerDid);
                     return incoming || outgoing;
                 }
             })
@@ -484,7 +462,7 @@ const ChatWindow: React.FC = () => {
         }
 
         return convo;
-    }, [activePeer, currentId, dmailList, groupList, nameList, keymaster, currentGroupMembers])
+    }, [activePeer, currentDID, peerDid, currentId, dmailList, groupList, nameList, keymaster, currentGroupMembers])
 
     useEffect(() => {
         let mounted = true;
@@ -542,20 +520,10 @@ const ChatWindow: React.FC = () => {
     }, [conversation, keymaster]);
     const profile = uiPeer ? profileList[uiPeer] : undefined;
     const customAvatarUrl = profile?.avatar;
-    const peerAvatar = uiPeer ? (customAvatarUrl ? customAvatarUrl : avatarDataUrl(nameList[uiPeer])) : "";
+    const peerAvatar = uiPeer ? (customAvatarUrl ?? avatarDataUrl(peerDid || uiPeer)) : "";
 
     return (
         <>
-            <TextInputModal
-                isOpen={renameOpen}
-                title="Rename"
-                description="Enter a new name"
-                confirmText="Rename"
-                defaultValue={renameOldName}
-                onSubmit={handleRenameSubmit}
-                onClose={() => setRenameOpen(false)}
-            />
-
             <WarningModal
                 isOpen={removeOpen}
                 title="Remove user?"
@@ -567,22 +535,25 @@ const ChatWindow: React.FC = () => {
             <QRCodeModal
                 isOpen={qrOpen}
                 onClose={() => setQrOpen(false)}
-                did={uiPeer ? nameList[uiPeer] : ""}
+                did={peerDid}
                 name={uiPeer}
                 userAvatar={peerAvatar}
             />
 
-            <SlideInRight isOpen={!!activePeer} bg={colorMode === "dark" ? "gray.900" : "white"} bottomOffset={0} zIndex={2200}>
+            <SlideInRight isOpen={!!activePeer} bg={colorMode === "dark" ? "gray.900" : "white"} bottomOffset={0} zIndex={2200} position="fixed">
                 {uiPeer && (
                     <ChatContainer style={{ height: "100%" }}>
                         <ConversationHeader>
                             <ConversationHeader.Back onClick={onBack} />
                             <Avatar src={peerAvatar} name={uiPeer} />
-                            <ConversationHeader.Content userName={uiPeer} info={(
-                                currentGroupMembers.length
-                                    ? `${currentGroupMembers.length} members`
-                                    : truncateMiddle(nameList[uiPeer], 25)
-                            )}/>
+                            <ConversationHeader.Content
+                                userName={uiPeer}
+                                info={(
+                                    currentGroupMembers.length
+                                        ? `${currentGroupMembers.length} members`
+                                        : truncateMiddle(peerDid, 25)
+                                )}
+                            />
                             <ConversationHeader.Actions>
                                 <MenuRoot closeOnSelect>
                                     <MenuTrigger asChild>
@@ -596,12 +567,8 @@ const ChatWindow: React.FC = () => {
                                     </MenuTrigger>
 
                                     <Portal>
-                                        <MenuPositioner>
-                                            <MenuContent>
-                                                <MenuItem value="rename" onSelect={onRename}>
-                                                    <LuPencil style={{ marginRight: 8 }} />
-                                                    Rename
-                                                </MenuItem>
+                                        <MenuPositioner zIndex={2300}>
+                                            <MenuContent zIndex={2300}>
                                                 {currentGroupMembers.length === 0 && (
                                                     <MenuItem value="export" onSelect={() => setQrOpen(true)}>
                                                         <LuQrCode style={{ marginRight: 8 }} />
@@ -678,7 +645,7 @@ const ChatWindow: React.FC = () => {
             </SlideInRight>
 
             {imageViewerOpen && (
-                <Box position="fixed" inset={0} zIndex={1000} display="flex" alignItems="center" justifyContent="center">
+                <Box position="fixed" inset={0} zIndex={2400} display="flex" alignItems="center" justifyContent="center">
                     <CloseButton position="absolute" top={4} right={4} size="lg" color="white" onClick={closeImageViewer} />
                     {/* eslint-disable-next-line jsx-a11y/alt-text */}
                     <img src={imageViewerSrc} style={{ maxWidth: "100%", maxHeight: "100%" }} />

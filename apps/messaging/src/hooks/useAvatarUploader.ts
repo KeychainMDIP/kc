@@ -1,4 +1,5 @@
 import React, { useRef, useState, useMemo } from "react";
+import { Buffer } from "buffer";
 import { useWalletContext } from "../contexts/WalletProvider";
 import { useSnackbar } from "../contexts/SnackbarProvider";
 import { useVariablesContext } from "../contexts/VariablesProvider";
@@ -8,20 +9,33 @@ import { avatarDataUrl } from "../utils/utils";
 export function useAvatarUploader() {
     const { keymaster } = useWalletContext();
     const { setError, setSuccess } = useSnackbar();
-    const { currentDID, currentId, refreshNames, profileList } = useVariablesContext();
+    const {
+        currentDID,
+        currentId,
+        refreshNames,
+        profileList,
+        displayNameList,
+    } = useVariablesContext();
 
     const [isUploading, setIsUploading] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const handleAvatarClick = () => {
-        if (!isUploading && fileInputRef.current) {
-            fileInputRef.current.click();
+    const currentDisplayName = useMemo(() => {
+        if (!currentDID) {
+            return currentId;
         }
+
+        const hit = Object.entries(displayNameList).find(([, did]) => did === currentDID);
+        return hit?.[0] ?? currentId;
+    }, [displayNameList, currentDID, currentId]);
+
+    const handleAvatarClick = () => {
+        if (!isUploading && fileInputRef.current) fileInputRef.current.click();
     };
 
     const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
-        if (!file || !keymaster) {
+        if (!file || !keymaster || !currentDID) {
             return;
         }
 
@@ -34,12 +48,10 @@ export function useAvatarUploader() {
             const assetDid = await keymaster.createImage(buffer);
 
             const doc = await keymaster.resolveDID(currentDID);
-
             const data: Record<string, any> = doc.didDocumentData ?? {};
-            const profileKey = MESSAGING_PROFILE;
 
-            const existingProfile: Record<string, any> = data[profileKey] ?? {};
-            data[profileKey] = {
+            const existingProfile: Record<string, any> = data[MESSAGING_PROFILE] ?? {};
+            data[MESSAGING_PROFILE] = {
                 ...existingProfile,
                 avatar: assetDid,
             };
@@ -60,10 +72,14 @@ export function useAvatarUploader() {
     };
 
     const userAvatar = useMemo(() => {
-        const profile = profileList[currentId];
+        const profile =
+            profileList[currentDisplayName] ??
+            profileList[currentId];
+
         const custom = profile?.avatar;
-        return custom ? custom : avatarDataUrl(currentDID);
-    }, [profileList, currentId, currentDID]);
+
+        return custom ? custom : (currentDID ? avatarDataUrl(currentDID) : "");
+    }, [profileList, currentDisplayName, currentId, currentDID]);
 
     return {
         isUploading,
