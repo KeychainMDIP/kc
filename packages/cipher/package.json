@@ -78,6 +78,6 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/KeychainMDIP/kc.git"
+    "url": "git+https://github.com/KeychainMDIP/kc.git"
   }
 }

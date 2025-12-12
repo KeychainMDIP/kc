@@ -43,7 +43,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/KeychainMDIP/kc.git"
+    "url": "git+https://github.com/KeychainMDIP/kc.git"
   },
   "devDependencies": {
     "@rollup/plugin-commonjs": "^28.0.3",
