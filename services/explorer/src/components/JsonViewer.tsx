@@ -119,7 +119,7 @@ function JsonViewer(
         try {
             setAliasDocsVersion(version);
             const docs = await gatekeeper.resolveDID(currentDid, {
-                atVersion: version,
+                versionSequence: version,
             });
             setAliasDocs(docs);
         } catch (error: any) {

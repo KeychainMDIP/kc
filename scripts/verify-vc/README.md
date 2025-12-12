@@ -50,7 +50,7 @@ delete vc.signature;
 
 // 3. Get issuer's public key (at time of signing)
 const doc = await gatekeeper.resolveDID(signature.signer, {
-    atTime: signature.signed
+    versionTime: signature.signed
 });
 const publicKeyJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
 
@@ -70,4 +70,4 @@ const isValid = validSig && hashMatches;
 - **Signature**: Proves the credential was issued by the claimed issuer
 - **Hash**: Ensures the credential content hasn't changed since signing
 - **DID Resolution**: Retrieves the issuer's public key from their DID document
-- **Time-based Resolution**: Uses `atTime` to get the key that was valid when signed
+- **Time-based Resolution**: Uses `versionTime` to get the key that was valid when signed

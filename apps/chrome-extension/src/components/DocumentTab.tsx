@@ -1,5 +1,5 @@
 import React, { ChangeEvent, useEffect, useState } from "react";
-import {Box, Button, IconButton, MenuItem, Select, Tooltip} from "@mui/material";
+import { Box, Button, IconButton, MenuItem, Select, Tooltip } from "@mui/material";
 import { Edit } from "@mui/icons-material";
 import { useWalletContext } from "../contexts/WalletProvider";
 import { useUIContext } from "../contexts/UIContext";
@@ -54,7 +54,7 @@ const DocumentTab = () => {
             return;
         }
         try {
-            const docs = await keymaster.resolveDID(documentName, version ? { atVersion: version } : {});
+            const docs = await keymaster.resolveDID(documentName, version ? { versionSequence: version } : {});
             setSelectedDocumentDocs(docs);
 
             const currentVersion = parseInt(docs.didDocumentMetadata?.version ?? "1", 10);
@@ -63,7 +63,7 @@ const DocumentTab = () => {
                 setDocVersionMax(currentVersion);
             }
 
-            const docAsset = docs.didDocumentData as { document? : FileAsset};
+            const docAsset = docs.didDocumentData as { document?: FileAsset };
             if (!docAsset.document || !docAsset.document.cid) {
                 setError(`No document data found in version ${currentVersion}`);
                 return;

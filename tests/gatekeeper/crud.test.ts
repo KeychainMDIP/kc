@@ -486,7 +486,7 @@ describe('resolveDID', () => {
         await gatekeeper.processEvents();
 
         // Pick a time out of the middle of the updates
-        const doc = await gatekeeper.resolveDID(did, { atTime: ops[5].time });
+        const doc = await gatekeeper.resolveDID(did, { versionTime: ops[5].time });
 
         expect(doc.didDocumentMetadata!.version).toBe("6");
         expect(doc.didDocumentMetadata!.confirmed).toBe(true);
@@ -515,8 +515,8 @@ describe('resolveDID', () => {
             await gatekeeper.updateDID(updateOp);
         }
 
-        const atVersion = parseInt(expected!.didDocumentMetadata!.version!, 10);
-        const doc = await gatekeeper.resolveDID(did, { atVersion });
+        const versionSequence = parseInt(expected!.didDocumentMetadata!.version!, 10);
+        const doc = await gatekeeper.resolveDID(did, { versionSequence });
 
         // Update expected to match the new retrieved timestamp
         expected!.didResolutionMetadata!.retrieved = expect.any(String);
@@ -539,7 +539,7 @@ describe('resolveDID', () => {
         }
 
         for (let i = 0; i < 10; i++) {
-            const doc = await gatekeeper.resolveDID(did, { atVersion: i + 1 });
+            const doc = await gatekeeper.resolveDID(did, { versionSequence: i + 1 });
             const version = (i + 1).toString();
             expect(doc.didDocumentMetadata!.version).toBe(version);
         }

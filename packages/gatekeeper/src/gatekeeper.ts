@@ -392,7 +392,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                 throw new InvalidOperationError('signer is not controller');
             }
 
-            const doc = await this.resolveDID(operation.signature!.signer, { confirm: true, atTime: operation.signature!.signed });
+            const doc = await this.resolveDID(operation.signature!.signer, { confirm: true, versionTime: operation.signature!.signed });
 
             if (doc.mdip && doc.mdip.registry === 'local' && operation.mdip.registry !== 'local') {
                 throw new InvalidOperationError(`non-local registry=${operation.mdip.registry}`);
@@ -434,7 +434,7 @@ export default class Gatekeeper implements GatekeeperInterface {
 
         if (doc.didDocument.controller) {
             // This DID is an asset, verify with controller's keys
-            const controllerDoc = await this.resolveDID(doc.didDocument.controller, { confirm: true, atTime: operation.signature!.signed });
+            const controllerDoc = await this.resolveDID(doc.didDocument.controller, { confirm: true, versionTime: operation.signature!.signed });
             return this.verifyUpdateOperation(operation, controllerDoc);
         }
 
@@ -593,7 +593,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         did?: string,
         options?: ResolveDIDOptions
     ): Promise<MdipDocument> {
-        const { atTime, atVersion, confirm = false, verify = false } = options || {};
+        const { versionTime, versionSequence, confirm = false, verify = false } = options || {};
 
         if (!did || !isValidDID(did)) {
             return {
@@ -620,7 +620,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         const anchor = events[0];
         let doc = await this.generateDoc(anchor.operation, did);
 
-        if (atTime && doc.mdip?.created && new Date(doc.mdip.created) > new Date(atTime)) {
+        if (versionTime && doc.mdip?.created && new Date(doc.mdip.created) > new Date(versionTime)) {
             // TBD What to return if DID was created after specified time?
         }
 
@@ -704,11 +704,11 @@ export default class Gatekeeper implements GatekeeperInterface {
                 continue;
             }
 
-            if (atTime && new Date(time) > new Date(atTime)) {
+            if (versionTime && new Date(time) > new Date(versionTime)) {
                 break;
             }
 
-            if (atVersion && versionNum === atVersion) {
+            if (versionSequence && versionNum === versionSequence) {
                 break;
             }
 

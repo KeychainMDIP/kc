@@ -31,7 +31,7 @@ async function main() {
     delete vc.signature;
 
     // Get public key of VC issuer by resolving their DID
-    const doc = await gatekeeper.resolveDID(signature.signer, { atTime: signature.signed });
+    const doc = await gatekeeper.resolveDID(signature.signer, { versionTime: signature.signed });
     const verificationMethods = doc.didDocument.verificationMethod;
     const publicKeyJwk = verificationMethods[0].publicKeyJwk;
 

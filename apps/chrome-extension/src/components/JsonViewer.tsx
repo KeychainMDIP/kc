@@ -20,10 +20,10 @@ import {
 import { useWalletContext } from "../contexts/WalletProvider";
 import { useUIContext } from "../contexts/UIContext";
 import { useSnackbar } from "../contexts/SnackbarProvider";
-import {MdipDocument} from "@mdip/gatekeeper/types";
+import { MdipDocument } from "@mdip/gatekeeper/types";
 import VersionNavigator from "./VersionNavigator";
 
-function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {browserTab: string, browserSubTab?: string, showResolveField?: boolean}) {
+function JsonViewer({ browserTab, browserSubTab, showResolveField = false }: { browserTab: string, browserSubTab?: string, showResolveField?: boolean }) {
     const subTabKey = browserSubTab ?? 'noSubTab';
     const storageKey = `jsonViewerState-${browserTab}-${subTabKey}`;
 
@@ -36,8 +36,8 @@ function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {brow
     const { keymaster } = useWalletContext();
     const { setError } = useSnackbar();
     const { openBrowser, setOpenBrowser } = useUIContext();
-    const [canDecrypt,     setCanDecrypt]     = useState(false);
-    const [decryptedCache, setDecryptedCache] = useState<Record<string, unknown>|null>(null);
+    const [canDecrypt, setCanDecrypt] = useState(false);
+    const [decryptedCache, setDecryptedCache] = useState<Record<string, unknown> | null>(null);
 
     const isEncrypted = Boolean(
         (aliasDocs as any)?.didDocumentData?.encrypted,
@@ -60,7 +60,7 @@ function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {brow
                     setCanDecrypt(true);
                     setDecryptedCache(decrypted as Record<string, unknown>);
                 }
-            } catch {}
+            } catch { }
         }
         checkDecryptability();
     }, [aliasDocs, keymaster, isEncrypted]);
@@ -83,7 +83,7 @@ function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {brow
                 setFormDid(parsed.formDid ?? "");
                 setCurrentDid(parsed.currentDid ?? "");
                 setCurrentTitle(parsed.currentTitle ?? "");
-            } catch (e) {}
+            } catch (e) { }
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -116,7 +116,7 @@ function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {brow
             return;
         }
 
-        const {title, did, tab, subTab, contents, clearState} = openBrowser;
+        const { title, did, tab, subTab, contents, clearState } = openBrowser;
 
         if (clearState) {
             setAliasDocs(undefined);
@@ -204,7 +204,7 @@ function JsonViewer({browserTab, browserSubTab, showResolveField = false}: {brow
         try {
             setAliasDocsVersion(version);
             const docs = await keymaster.resolveDID(currentDid, {
-                atVersion: version,
+                versionSequence: version,
             });
             setAliasDocs(docs as Record<string, unknown>);
         } catch (error: any) {
