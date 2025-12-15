@@ -406,7 +406,7 @@ async function checkPendingTransactions(): Promise<boolean> {
 
     const isMined = async (txid: string) => {
         const tx = await btcClient.getTransaction(txid).catch(() => undefined);
-        return !!(tx && (tx.blockhash || (tx.confirmations && tx.confirmations > 0)));
+        return !!(tx && tx.blockhash);
     };
 
     const checkPendingTxs = async (txids: string[]) => {

@@ -72,7 +72,9 @@ async function fetchBlock(height: number, blockCount: number): Promise<void> {
                         db.discovered.push({ height, index: i, time: timestamp, txid, did: textString });
                     });
                 }
-            } catch {}
+            } catch (error: any) {
+                console.error('Error decoding OP_RETURN or updating DB:', error);
+            }
         }
 
         await jsonPersister.updateDb((db) => {
@@ -233,7 +235,7 @@ export async function createOpReturnTxn(opReturnData: string): Promise<string | 
 async function checkPendingTransactions(txids: string[]): Promise<boolean> {
     const isMined = async (txid: string) => {
         const tx = await btcClient.getTransaction(txid).catch(() => undefined);
-        return !!(tx && (tx.blockhash || (tx.confirmations && tx.confirmations > 0)));
+        return !!(tx && tx.blockhash);
     };
 
     const checkPendingTxs = async (txids: string[]): Promise<number> => {
