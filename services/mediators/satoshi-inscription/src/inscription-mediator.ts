@@ -1,4 +1,4 @@
-import BtcClient, { RawTransactionVerbose } from 'bitcoin-core';
+import BtcClient, {BlockVerbose, BlockTxVerbose} from 'bitcoin-core';
 import * as bitcoin from 'bitcoinjs-lib';
 import * as ecc from 'tiny-secp256k1';
 import { gunzipSync } from 'zlib';
@@ -19,6 +19,7 @@ import {
     DiscoveredInscribedItem,
     FundInput,
     InscribedKey,
+    BlockVerbosity,
 } from './types.js';
 
 const REGISTRY = config.chain + "-Inscription";
@@ -60,15 +61,9 @@ async function loadDb(): Promise<MediatorDb> {
     return db || newDb;
 }
 
-async function fetchTransaction(height: number, index: number, timestamp: string, txid: string): Promise<void> {
+async function extractOperations(txn: BlockTxVerbose, height: number, index: number, timestamp: string): Promise<void> {
     try {
-        const txn = await btcClient.getTransactionByHash(txid);
-        const asm = txn.vout[0].scriptPubKey.asm;
-
-        if (!asm.startsWith('OP_RETURN 4d44495001')) { // MDIP 0x01
-            return;
-        }
-
+        const txid = txn.txid;
         const slices: Buffer[] = [];
 
         txn.vin.forEach((vin, vinIdx) => {
@@ -158,20 +153,27 @@ async function fetchTransaction(height: number, index: number, timestamp: string
 async function fetchBlock(height: number, blockCount: number): Promise<void> {
     try {
         const blockHash = await btcClient.getBlockHash(height);
-        const block = await btcClient.getBlock(blockHash);
+        const block = await btcClient.getBlock(blockHash, BlockVerbosity.JSON_TX_DATA) as BlockVerbose;
         const timestamp = new Date(block.time * 1000).toISOString();
 
-        for (let i = 0; i < block.nTx; i++) {
-            const txid = block.tx[i];
-            console.log(height, String(i).padStart(4), txid);
-            await fetchTransaction(height, i, timestamp, txid);
+        for (let i = 0; i < block.tx.length; i++) {
+            const tx = block.tx[i];
+
+            console.log(height, String(i).padStart(4), tx.txid);
+
+            const asm: string | undefined = tx.vout?.[0]?.scriptPubKey?.asm;
+            if (!asm || !asm.startsWith('OP_RETURN 4d44495001')) {
+                continue;
+            }
+
+            await extractOperations(tx, height, i, timestamp);
         }
 
         await jsonPersister.updateDb((db) => {
             db.height = height;
             db.time = timestamp;
             db.blocksScanned = height - config.startBlock + 1;
-            db.txnsScanned += block.nTx;
+            db.txnsScanned += block.tx.length;
             db.blockCount = blockCount;
             db.blocksPending = blockCount - height;
         });
@@ -293,6 +295,11 @@ async function extractCommitHex(revealHex: string) {
         throw new Error('no Taproot-inscription inputs found in reveal tx');
     }
 
+    const wtx = await btcClient.getTransaction(commitTxid).catch(() => undefined);
+    if (wtx?.hex) {
+        return wtx.hex;
+    }
+
     return await btcClient.getRawTransaction(commitTxid, 0) as string;
 }
 
@@ -398,8 +405,8 @@ async function checkPendingTransactions(): Promise<boolean> {
     }
 
     const isMined = async (txid: string) => {
-        const tx = await btcClient.getRawTransaction(txid, 1).catch(() => undefined) as RawTransactionVerbose | undefined;
-        return !!(tx && tx.blockhash);
+        const tx = await btcClient.getTransaction(txid).catch(() => undefined);
+        return !!(tx && (tx.blockhash || (tx.confirmations && tx.confirmations > 0)));
     };
 
     const checkPendingTxs = async (txids: string[]) => {
