@@ -28,8 +28,22 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const DIDNotFound = { error: 'DID not found' };
 
-// Serve the React frontend
-app.use(express.static(path.join(__dirname, '../../client/build')));
+const serveClient = (process.env.KC_KEYMASTER_SERVE_CLIENT ?? 'true').toLowerCase() === 'true';
+
+if (serveClient) {
+    const clientBuildDir = path.join(__dirname, '../../client/build');
+
+    // Serve the React frontend
+    app.use(express.static(clientBuildDir));
+
+    app.use((req, res, next) => {
+        if (!req.path.startsWith('/api')) {
+            res.sendFile(path.join(clientBuildDir, 'index.html'));
+        } else {
+            next();
+        }
+    });
+}
 
 let gatekeeper: GatekeeperClient;
 let keymaster: Keymaster;
@@ -6051,13 +6065,9 @@ v1router.post('/notices/refresh', async (req, res) => {
 
 app.use('/api/v1', v1router);
 
-app.use((req, res) => {
-    if (!req.path.startsWith('/api')) {
-        res.sendFile(path.join(__dirname, '../../client/build', 'index.html'));
-    } else {
-        console.warn(`Warning: Unhandled API endpoint - ${req.method} ${req.originalUrl}`);
-        res.status(404).json({ message: 'Endpoint not found' });
-    }
+app.use('/api', (req, res) => {
+    console.warn(`Warning: Unhandled API endpoint - ${req.method} ${req.originalUrl}`);
+    res.status(404).json({ message: 'Endpoint not found' });
 });
 
 process.on('uncaughtException', (error) => {
