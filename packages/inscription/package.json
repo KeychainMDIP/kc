@@ -1,6 +1,6 @@
 {
   "name": "@mdip/inscription",
-  "version": "1.4.0-beta.1",
+  "version": "1.4.0-beta.2",
   "description": "MDIP Inscription",
   "type": "module",
   "main": "./dist/cjs/index.cjs",
