@@ -105,13 +105,25 @@ async function extractOperations(txn: BlockTxVerbose, height: number, index: num
         }
 
         const payload = Buffer.concat(orderedSlices);
-        if (payload[0] !== 0x01) {
+        if (!payload.length) {
             return;
         }
 
         let ops: unknown;
         try {
-            const raw = gunzipSync(payload.subarray(1));
+            const marker = payload[0];
+            let raw: Buffer;
+
+            if (marker === 0x01) {
+                // gzip(JSON)
+                raw = gunzipSync(payload.subarray(1));
+            } else if (marker === 0x00) {
+                // plain JSON (utf8)
+                raw = payload.subarray(1);
+            } else {
+                return;
+            }
+
             ops = JSON.parse(raw.toString('utf8'));
         } catch (e) {
             console.warn(`bad payload at ${txid}:${index} – ${e}`);

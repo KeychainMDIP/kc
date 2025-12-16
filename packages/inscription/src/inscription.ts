@@ -11,6 +11,7 @@ import {
     InscriptionOptions,
     NetworkName,
     SupportedTypes,
+    OperationPayloadEncoding,
 } from './types.js';
 
 bitcoin.initEccLib(ecc);
@@ -46,7 +47,8 @@ export default class Inscription {
         hdkeypath: string,
         utxos: FundInput[],
         estSatPerVByte: number,
-        keys: AccountKeys
+        keys: AccountKeys,
+        payloadEncoding: OperationPayloadEncoding = 'gzip'
     ) {
 
         const ops = this.tryParseOperationArray(payload);
@@ -58,13 +60,13 @@ export default class Inscription {
         if (ops) {
             includeMdipTag = true;
             for (const op of ops) {
-                const candidate = this.encodePayload([...batch, op]);
+                const candidate = this.encodePayload([...batch, op], payloadEncoding);
                 if (candidate.length > HARD_LIMIT) {
                     break;
                 }
                 batch.push(op);
             }
-            payloadBuf = this.encodePayload(batch);
+            payloadBuf = this.encodePayload(batch, payloadEncoding);
         } else {
             payloadBuf = payload;
             if (payloadBuf.length > HARD_LIMIT) {
@@ -542,8 +544,17 @@ export default class Inscription {
         return tapScripts;
     }
 
-    private encodePayload(batch: Operation[]): Buffer {
+    // Operation payload encoding:
+    // 0x00 = plain JSON
+    // 0x01 = gzip compressed JSON
+    private encodePayload(
+        batch: Operation[],
+        encoding: OperationPayloadEncoding
+    ): Buffer {
         const raw = Buffer.from(JSON.stringify(batch), 'utf8');
+        if (encoding === 'plain') {
+            return Buffer.concat([Buffer.from([0x00]), raw]);
+        }
         const gz = gzipSync(raw);
         return Buffer.concat([Buffer.from([0x01]), gz]);
     }
