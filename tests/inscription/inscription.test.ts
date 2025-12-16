@@ -26,6 +26,7 @@ interface AccountKeys {
 
 const NETWORK: 'testnet' = 'testnet';
 const net = bitcoin.networks[NETWORK];
+const PROTOCOL_TAG = Buffer.from('MDIP', 'ascii');
 
 function seedNode(): BIP32Interface {
     const seed = Buffer.from(
@@ -531,6 +532,62 @@ describe('Inscription createTransactions', () => {
 
         const ascii = Buffer.from(revealHex, 'hex').toString('utf8');
         expect(ascii).toContain(JSON.stringify(json));
+    });
+
+    it('create reveal transaction with plaintext object', async () => {
+        const keys: AccountKeys = acctXprvs();
+        const lib = new Inscription({ feeMax: 0.01, network: NETWORK });
+
+        const utxos: FundInput[] = [
+            { type: 'p2tr', txid: makeTxid(1), vout: 0, amount: 1000000, hdkeypath: hdp(86, 0, 3) },
+        ];
+
+        const { revealHex } = await lib.createTransactions(
+            smallOps(),
+            hdp(86, 0, 0),
+            utxos,
+            3,
+            keys,
+            "plain"
+        );
+
+        const reveal = bitcoin.Transaction.fromHex(revealHex);
+
+        const witnessHex = reveal.ins
+            .flatMap((i) => (i.witness ?? []).map((w) => w.toString("hex")))
+            .join("");
+
+        expect(witnessHex).toContain(PROTOCOL_TAG.toString("hex"));
+
+        const mdipInput = reveal.ins.find((i) => {
+            const w = i.witness;
+            if (!w || w.length < 3) return false;
+            return w[w.length - 2].includes(PROTOCOL_TAG);
+        });
+
+        expect(mdipInput).toBeTruthy();
+
+        const tapScript = mdipInput!.witness![mdipInput!.witness!.length - 2];
+        const decomp = bitcoin.script.decompile(tapScript) ?? [];
+
+        const tagIdx = decomp.findIndex(
+            (el) => Buffer.isBuffer(el) && (el as Buffer).equals(PROTOCOL_TAG),
+        );
+        expect(tagIdx).toBeGreaterThanOrEqual(0);
+
+        const chunks: Buffer[] = [];
+        for (let i = tagIdx + 1; i < decomp.length; i++) {
+            const el = decomp[i];
+            if (typeof el === "number") break;
+            chunks.push(el as Buffer);
+        }
+
+        const payload = Buffer.concat(chunks);
+
+        expect(payload[0]).toBe(0x00);
+
+        const raw = payload.subarray(1);
+        expect(raw.toString("utf8").trim()[0]).toBe("[");
     });
 });
 

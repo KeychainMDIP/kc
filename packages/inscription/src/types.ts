@@ -1,5 +1,6 @@
 export type NetworkName = 'bitcoin' | 'testnet' | 'regtest';
 export type SupportedTypes = 'p2wpkh' | 'p2tr';
+export type OperationPayloadEncoding = 'gzip' | 'plain';
 
 export interface InscriptionOptions {
     feeMax: number;
