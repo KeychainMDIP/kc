@@ -30,6 +30,7 @@
       "@mdip/keymaster": ["packages/keymaster/src/keymaster.ts"],
       "@mdip/keymaster/client": ["packages/keymaster/src/keymaster-client.ts"],
       "@mdip/keymaster/types": ["packages/keymaster/src/types.ts"],
+      "@mdip/keymaster/encryption": ["packages/keymaster/src/encryption.ts"],
       "@mdip/keymaster/search": ["packages/keymaster/src/search-client.ts"],
       "@mdip/keymaster/wallet/*": ["packages/keymaster/src/db/*"]
     }

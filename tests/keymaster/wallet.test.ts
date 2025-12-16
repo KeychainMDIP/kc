@@ -868,14 +868,6 @@ describe('no WebCrypto subtle', () => {
         restore();
     });
 
-    beforeEach(() => {
-        const db = new DbJsonMemory('test');
-        gatekeeper = new Gatekeeper({ db, ipfs, registries: ['local', 'hyperswarm', 'TFTC'] });
-        wallet = new WalletJsonMemory();
-        cipher = new CipherNode();
-        keymaster = new Keymaster({ gatekeeper, wallet, cipher, passphrase: PASSPHRASE });
-    });
-
     it('encMnemonic will throw without crypto subtle', async () => {
         try {
             await encMnemonic("", PASSPHRASE);
