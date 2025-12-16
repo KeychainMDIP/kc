@@ -7,12 +7,12 @@ const IV_LEN = 12;
 const SALT_LEN = 16;
 
 export async function encMnemonic(mnemonic: string, pass: string) {
-    const salt = await randBytes(SALT_LEN);
-    const iv = await randBytes(IV_LEN);
-
     if (!hasSubtle()) {
         throw new Error('Web Cryptography API not available');
     }
+
+    const salt = await randBytes(SALT_LEN);
+    const iv = await randBytes(IV_LEN);
 
     const key = await deriveKey(pass, salt);
     const ct = await crypto.subtle.encrypt({ name: ENC_ALG, iv }, key, new TextEncoder().encode(mnemonic));
@@ -20,13 +20,13 @@ export async function encMnemonic(mnemonic: string, pass: string) {
 }
 
 export async function decMnemonic(blob: { salt: string; iv: string; data: string }, pass: string) {
-    const salt = ub64(blob.salt);
-    const iv = ub64(blob.iv);
-    const data = ub64(blob.data);
-
     if (!hasSubtle()) {
         throw new Error('Web Cryptography API not available');
     }
+
+    const salt = ub64(blob.salt);
+    const iv = ub64(blob.iv);
+    const data = ub64(blob.data);
 
     const key = await deriveKey(pass, salt);
     const pt = await crypto.subtle.decrypt({ name: ENC_ALG, iv }, key, data);

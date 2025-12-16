@@ -14,7 +14,8 @@ import { ExpectedExceptionError } from '@mdip/common/errors';
 import HeliaClient from '@mdip/ipfs/helia';
 import { MdipDocument } from "@mdip/gatekeeper/types";
 import { TestHelper } from './helper.ts';
-import { disableSubtle, restoreNodeWebcrypto } from './testUtils.ts';
+import { disableSubtle } from './testUtils.ts';
+import { encMnemonic, decMnemonic } from '@mdip/keymaster/encryption';
 
 let ipfs: HeliaClient;
 let gatekeeper: Gatekeeper;
@@ -852,6 +853,44 @@ describe('updateWallet', () => {
             throw new ExpectedExceptionError();
         } catch (error: any) {
             expect(error.message).toBe('updateWallet: no wallet found to update');
+        }
+    });
+});
+
+describe('no WebCrypto subtle', () => {
+    let restore: () => void;
+
+    beforeAll(async () => {
+        restore = disableSubtle();
+    });
+
+    afterAll(async () => {
+        restore();
+    });
+
+    beforeEach(() => {
+        const db = new DbJsonMemory('test');
+        gatekeeper = new Gatekeeper({ db, ipfs, registries: ['local', 'hyperswarm', 'TFTC'] });
+        wallet = new WalletJsonMemory();
+        cipher = new CipherNode();
+        keymaster = new Keymaster({ gatekeeper, wallet, cipher, passphrase: PASSPHRASE });
+    });
+
+    it('encMnemonic will throw without crypto subtle', async () => {
+        try {
+            await encMnemonic("", PASSPHRASE);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.message).toBe('Web Cryptography API not available');
+        }
+    });
+
+    it('decMnemonic will throw without crypto subtle', async () => {
+        try {
+            await decMnemonic(MOCK_WALLET_V0_ENCRYPTED, PASSPHRASE);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.message).toBe('Web Cryptography API not available');
         }
     });
 });
