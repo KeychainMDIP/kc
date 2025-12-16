@@ -25,29 +25,6 @@ function hasSubtle(): boolean {
         !!(globalThis.crypto && globalThis.crypto.subtle);
 }
 
-function u8ToStr(u8: Uint8Array): string {
-    let s = '';
-    for (let i = 0; i < u8.length; i++) {
-        s += String.fromCharCode(u8[i]);
-    }
-    return s;
-}
-
-function strToU8(s: string): Uint8Array {
-    const u8 = new Uint8Array(s.length);
-    for (let i = 0; i < s.length; i++) {
-        u8[i] = s.charCodeAt(i) & 0xff;
-    }
-    return u8;
-}
-
-async function deriveKeyRaw(pass: string, salt: Uint8Array): Promise<Uint8Array> {
-    const mod = await import('node-forge');
-    const forge = (mod as any).default ?? mod;
-    const raw = forge.pkcs5.pbkdf2(pass, u8ToStr(salt), iterations, 32, 'sha512');
-    return strToU8(raw);
-}
-
 async function deriveKey(pass: string, salt: Uint8Array): Promise<CryptoKey> {
     const passKey = await crypto.subtle.importKey(
         "raw",
@@ -104,40 +81,22 @@ export default class WalletWebEncrypted extends AbstractBase {
         const iv = new Uint8Array(base64ToBuffer(encryptedData.iv));
         const dataU8 = new Uint8Array(base64ToBuffer(encryptedData.data));
 
-        if (hasSubtle()) {
-            const key = await deriveKey(this.passphrase, salt);
-            try {
-                const decrypted = await crypto.subtle.decrypt(
-                    { name: algorithm, iv },
-                    key,
-                    dataU8
-                );
-
-                const decryptedJson = textDecoder.decode(new Uint8Array(decrypted));
-                return JSON.parse(decryptedJson);
-            } catch (err) {
-                throw new Error('Incorrect passphrase.');
-            }
+        if (!hasSubtle()) {
+            throw new Error('Web Cryptography API not available');
         }
 
-        const mod = await import('node-forge');
-        const forge = (mod as any).default ?? mod;
+        const key = await deriveKey(this.passphrase, salt);
+        try {
+            const decrypted = await crypto.subtle.decrypt(
+                { name: algorithm, iv },
+                key,
+                dataU8
+            );
 
-        const keyRaw = await deriveKeyRaw(this.passphrase, salt); // 32 bytes
-        const keyStr = u8ToStr(keyRaw);
-        const ivStr  = u8ToStr(iv);
-
-        const TAG_LEN = 16;
-        const ct  = dataU8.subarray(0, dataU8.length - TAG_LEN);
-        const tag = dataU8.subarray(dataU8.length - TAG_LEN);
-
-        const decipher = forge.cipher.createDecipher('AES-GCM', keyStr);
-        decipher.start({ iv: ivStr, tagLength: 128, tag: u8ToStr(tag) });
-        decipher.update(forge.util.createBuffer(u8ToStr(ct)));
-        decipher.finish();
-
-        const bytes = strToU8(decipher.output.getBytes());
-        const json = textDecoder.decode(bytes);
-        return JSON.parse(json);
+            const decryptedJson = textDecoder.decode(new Uint8Array(decrypted));
+            return JSON.parse(decryptedJson);
+        } catch (err) {
+            throw new Error('Incorrect passphrase.');
+        }
     }
 }
