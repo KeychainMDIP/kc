@@ -11,17 +11,3 @@ export function disableSubtle(): () => void {
         Object.defineProperty(globalThis, 'crypto', originalDesc!);
     };
 }
-
-export async function restoreNodeWebcrypto(): Promise<() => void> {
-    const nodeWebcrypto = (await import('node:crypto')).webcrypto as Crypto;
-
-    const origDesc = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
-    Object.defineProperty(globalThis, 'crypto', {
-        value: nodeWebcrypto,
-        configurable: true,
-    });
-
-    return () => {
-        Object.defineProperty(globalThis, 'crypto', origDesc!);
-    };
-}
