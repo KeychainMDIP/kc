@@ -26,6 +26,7 @@ const config = {
         '^@mdip/keymaster$': '<rootDir>/packages/keymaster/src/keymaster.ts',
         '^@mdip/keymaster/client$': '<rootDir>/packages/keymaster/src/keymaster-client.ts',
         '^@mdip/keymaster/wallet/(.*)$': '<rootDir>/packages/keymaster/src/db/$1',
+        '^@mdip/keymaster/encryption': '<rootDir>/packages/keymaster/src/encryption.ts',
         '^@mdip/inscription': '<rootDir>/packages/inscription/src/inscription.ts',
         '^\\.\\/typeGuards\\.js$': '<rootDir>/packages/keymaster/src/db/typeGuards.ts',
         '^\\.\\/db\\/typeGuards\\.js$': '<rootDir>/packages/keymaster/src/db/typeGuards.ts',
