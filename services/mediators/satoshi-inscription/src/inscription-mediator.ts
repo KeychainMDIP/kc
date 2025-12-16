@@ -26,12 +26,14 @@ const REGISTRY = config.chain + "-Inscription";
 const PROTOCOL_TAG = Buffer.from('MDIP', 'ascii');
 const SMART_FEE_MODE = "CONSERVATIVE";
 
+const READ_ONLY = config.exportInterval === 0;
+
 const gatekeeper = new GatekeeperClient();
 const btcClient = new BtcClient({
     username: config.user,
     password: config.pass,
     host: `http://${config.host}:${config.port}`,
-    wallet: config.wallet,
+    ...(READ_ONLY ? {} : { wallet: config.wallet }),
 });
 const inscription = new Inscription({
     feeMax: config.feeMax,
@@ -659,6 +661,10 @@ async function waitForChain() {
         }
     }
 
+    if (READ_ONLY) {
+        return true;
+    }
+
     try {
         await btcClient.createWallet(config.wallet!);
         console.log(`Wallet '${config.wallet}' created successfully.`);
@@ -714,7 +720,7 @@ async function syncBlocks(): Promise<void> {
 }
 
 async function main() {
-    if (!config.nodeID) {
+    if (!READ_ONLY && !config.nodeID) {
         console.log('inscription-mediator must have a KC_NODE_ID configured');
         return;
     }
@@ -777,7 +783,7 @@ async function main() {
         setTimeout(importLoop, config.importInterval * 60 * 1000);
     }
 
-    if (config.exportInterval > 0) {
+    if (!READ_ONLY) {
         console.log(`Exporting operations every ${config.exportInterval} minute(s)`);
         console.log(`Txn fees (${REGISTRY}): conf target: ${config.feeConf}, maximum: ${config.feeMax}, fallback Sat/Byte: ${config.feeFallback}`);
         setTimeout(exportLoop, config.exportInterval * 60 * 1000);
