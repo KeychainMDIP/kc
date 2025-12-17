@@ -29,16 +29,16 @@ export default class Sqlite implements DIDsDb {
         });
 
         await this.db.exec(`
-      CREATE TABLE IF NOT EXISTS did_docs (
-        did TEXT PRIMARY KEY,
-        doc TEXT NOT NULL
-      );
-      
-      CREATE TABLE IF NOT EXISTS config (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL
-      );
-    `);
+            CREATE TABLE IF NOT EXISTS did_docs (
+                                                    did TEXT PRIMARY KEY,
+                                                    doc TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS config (
+                                                  key TEXT PRIMARY KEY,
+                                                  value TEXT NOT NULL
+            );
+        `);
     }
 
     async disconnect(): Promise<void> {
@@ -65,9 +65,9 @@ export default class Sqlite implements DIDsDb {
             throw new Error('DB not connected');
         }
         await this.db.run(`
-      INSERT INTO config (key, value) VALUES ('updated_after', ?)
-      ON CONFLICT(key) DO UPDATE SET value=excluded.value
-    `, [timestamp]);
+            INSERT INTO config (key, value) VALUES ('updated_after', ?)
+                ON CONFLICT(key) DO UPDATE SET value=excluded.value
+        `, [timestamp]);
     }
 
     async storeDID(did: string, doc: object): Promise<void> {
@@ -76,9 +76,9 @@ export default class Sqlite implements DIDsDb {
         }
         const docString = JSON.stringify(doc);
         await this.db.run(`
-      INSERT INTO did_docs (did, doc) VALUES (?, ?)
-      ON CONFLICT(did) DO UPDATE SET doc=excluded.doc
-    `, [did, docString]);
+            INSERT INTO did_docs (did, doc) VALUES (?, ?)
+                ON CONFLICT(did) DO UPDATE SET doc=excluded.doc
+        `, [did, docString]);
     }
 
     async getDID(did: string): Promise<object | null> {
@@ -123,53 +123,64 @@ export default class Sqlite implements DIDsDb {
         let sql: string;
         let params: unknown[];
 
+        const toJsonPath = (p: string) =>
+            p.startsWith("$.") ? p : p.startsWith("$") ? `$${p.slice(1)}` : `$.${p}`;
+
         if (isArrayTail) {
-            const basePath = '$.' + rawPath.replace(Sqlite.ARRAY_WILDCARD_END, '');
+            const basePath = toJsonPath(rawPath.replace(Sqlite.ARRAY_WILDCARD_END, ""));
             sql = `
-                SELECT did
-                FROM   did_docs,
-                       json_each(json_extract(doc, ?)) AS elem
-                WHERE  elem.value IN (${list.map(() => '?').join(',')})
+                SELECT DISTINCT did
+                FROM did_docs,
+                     json_each(did_docs.doc, ?) AS elem
+                WHERE json_valid(did_docs.doc) = 1
+                  AND elem.value IN (${list.map(() => "?").join(",")})
             `;
             params = [basePath, ...list];
+
         } else if (isArrayMid) {
-            const [prefix, suffix] = rawPath.split('[*].');
-            const basePath = '$.' + prefix;
+            const [prefix, suffix] = rawPath.split("[*].");
+            const basePath = toJsonPath(prefix);
             sql = `
-                SELECT did
-                FROM   did_docs,
-                       json_each(json_extract(doc, ?)) AS elem
-                WHERE  json_extract(elem.value, ?) IN (${list.map(() => '?').join(',')})
+                SELECT DISTINCT did
+                FROM did_docs,
+                     json_each(did_docs.doc, ?) AS elem
+                WHERE json_valid(did_docs.doc) = 1
+                  AND json_extract(elem.value, ?) IN (${list.map(() => "?").join(",")})
             `;
-            params = [basePath, '$.' + suffix, ...list];
+            params = [basePath, toJsonPath(suffix), ...list];
+
         } else if (isKeyWildcard) {
-            const basePath = '$.' + rawPath.slice(0, -2);
+            const basePath = toJsonPath(rawPath.slice(0, -2)); // strip .*
             sql = `
-                SELECT did
-                FROM   did_docs,
-                       json_each(json_extract(doc, ?)) AS m
-                WHERE  m.key IN (${list.map(() => '?').join(',')})
+                SELECT DISTINCT did
+                FROM did_docs,
+                     json_each(did_docs.doc, ?) AS m
+                WHERE json_valid(did_docs.doc) = 1
+                  AND m.key IN (${list.map(() => "?").join(",")})
             `;
             params = [basePath, ...list];
 
         } else if (isValueWildcard) {
-            const [prefix, suffix] = rawPath.split('.*.');
-            const basePath = '$.' + prefix;
+            const [prefix, suffix] = rawPath.split(".*.");
+            const basePath = toJsonPath(prefix);
             sql = `
-                  SELECT did
-                  FROM   did_docs,
-                         json_each(json_extract(doc, ?)) AS m
-                  WHERE  json_extract(m.value, ?) IN (${list.map(() => '?').join(',')})
-                `;
-            params = [basePath, '$.' + suffix, ...list];
+                SELECT DISTINCT did
+                FROM did_docs,
+                     json_each(did_docs.doc, ?) AS m
+                WHERE json_valid(did_docs.doc) = 1
+                  AND json_extract(m.value, ?) IN (${list.map(() => "?").join(",")})
+            `;
+            params = [basePath, toJsonPath(suffix), ...list];
 
         } else {
+            const path = toJsonPath(rawPath);
             sql = `
-                  SELECT did
-                  FROM   did_docs
-                  WHERE  json_extract(doc, ?) IN (${list.map(() => '?').join(',')})
-                `;
-            params = ['$.'.concat(rawPath), ...list];
+                SELECT DISTINCT did
+                FROM did_docs
+                WHERE json_valid(doc) = 1
+                  AND json_extract(doc, ?) IN (${list.map(() => "?").join(",")})
+            `;
+            params = [path, ...list];
         }
 
         const rows = await this.db.all<{ did: string }[]>(sql, params);
@@ -181,8 +192,8 @@ export default class Sqlite implements DIDsDb {
             throw new Error('DB not connected');
         }
         await this.db.exec(`
-      DELETE FROM did_docs;
-      DELETE FROM config;
-    `);
+            DELETE FROM did_docs;
+            DELETE FROM config;
+        `);
     }
 }

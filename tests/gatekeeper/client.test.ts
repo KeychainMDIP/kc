@@ -1,6 +1,7 @@
 import nock from 'nock';
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import { ExpectedExceptionError } from '@mdip/common/errors';
+import {Operation} from "@mdip/gatekeeper/types";
 
 const GatekeeperURL = 'http://gatekeeper.org';
 const ServerError = { message: 'Server error' };
@@ -10,6 +11,7 @@ const Endpoints = {
     version: '/api/v1/version',
     status: '/api/v1/status',
     did: '/api/v1/did',
+    didGenerate: '/api/v1/did/generate',
     db: {
         reset: '/api/v1/db/reset',
         verify: '/api/v1/db/verify',
@@ -962,5 +964,39 @@ describe('removeCustomHeader', () => {
 
         await gatekeeper.listRegistries();
         expect(scope.isDone()).toBe(true);
+    });
+});
+
+describe('generateDID', () => {
+    const op: any = {
+        type: 'create',
+        created: new Date().toISOString(),
+        mdip: { version: 1, type: 'agent', registry: 'local' },
+    };
+
+    it('should return a generated DID', async () => {
+        nock(GatekeeperURL)
+            .post(Endpoints.didGenerate, op)
+            .reply(200, `"${MockDID}"`, { 'Content-Type': 'application/json' });
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        const did = await gatekeeper.generateDID(op);
+
+        expect(did).toBe(MockDID);
+    });
+
+    it('should throw exception on generateDID server error', async () => {
+        nock(GatekeeperURL)
+            .post(Endpoints.didGenerate)
+            .reply(400, ServerError);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+
+        try {
+            await gatekeeper.generateDID(op);
+            throw new ExpectedExceptionError();
+        } catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
     });
 });

@@ -1,4 +1,4 @@
-import BtcClient, {BlockVerbose, FundRawTransactionOptions, MempoolEntry} from 'bitcoin-core';
+import BtcClient, {Block, BlockVerbose, FundRawTransactionOptions, MempoolEntry} from 'bitcoin-core';
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import KeymasterClient from '@mdip/keymaster/client';
 import JsonFile from './db/jsonfile.js';
@@ -511,7 +511,7 @@ async function syncBlocks(): Promise<void> {
 
         for (let height = currentMax; height <= blockCount; height++) {
             const blockHash = await btcClient.getBlockHash(height);
-            const block = await btcClient.getBlock(blockHash);
+            const block = await btcClient.getBlock(blockHash) as Block;
             console.log(`${height}/${blockCount} blocks (${(100 * height / blockCount).toFixed(2)}%)`);
             await addBlock(height, blockHash, block.time);
         }

@@ -400,4 +400,13 @@ export default class GatekeeperClient implements GatekeeperInterface {
             throwError(error);
         }
     }
+
+    async generateDID(operation: Operation): Promise<string> {
+        try {
+            const response = await this.axios.post(`${this.API}/did/generate`, operation);
+            return response.data;
+        } catch (error) {
+            throwError(error);
+        }
+    }
 }
