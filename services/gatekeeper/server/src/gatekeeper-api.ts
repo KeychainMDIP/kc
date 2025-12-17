@@ -10,7 +10,7 @@ import DbJsonCache from '@mdip/gatekeeper/db/json-cache';
 import DbRedis from '@mdip/gatekeeper/db/redis';
 import DbSqlite from '@mdip/gatekeeper/db/sqlite';
 import DbMongo from '@mdip/gatekeeper/db/mongo';
-import {CheckDIDsResult, ResolveDIDOptions} from '@mdip/gatekeeper/types';
+import { CheckDIDsResult, ResolveDIDOptions } from '@mdip/gatekeeper/types';
 import KuboClient from '@mdip/ipfs/kubo';
 import config from './config.js';
 
@@ -19,12 +19,12 @@ EventEmitter.defaultMaxListeners = 100;
 const dbName = 'mdip';
 const db = (() => {
     switch (config.db) {
-    case 'sqlite':     return new DbSqlite(dbName);
-    case 'mongodb':    return new DbMongo(dbName);
-    case 'redis':      return new DbRedis(dbName);
+    case 'sqlite': return new DbSqlite(dbName);
+    case 'mongodb': return new DbMongo(dbName);
+    case 'redis': return new DbRedis(dbName);
     case 'json':
     case 'json-cache': return new DbJsonCache(dbName);
-    default:           return null;
+    default: return null;
     }
 })();
 
@@ -60,8 +60,22 @@ app.use(express.json({ limit: '4mb' })); // Sets the JSON payload limit to 4MB
 // Define __dirname in ES module scope
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Serve the React frontend
-app.use(express.static(path.join(__dirname, '../../client/build')));
+const serveClient = (process.env.KC_GATEKEEPER_SERVE_CLIENT ?? 'true').toLowerCase() === 'true';
+
+if (serveClient) {
+    const clientBuildDir = path.join(__dirname, '../../client/build');
+
+    // Serve the React frontend
+    app.use(express.static(clientBuildDir));
+
+    app.use((req, res, next) => {
+        if (!req.path.startsWith('/api')) {
+            res.sendFile(path.join(clientBuildDir, 'index.html'));
+        } else {
+            next();
+        }
+    });
+}
 
 let serverReady = false;
 
@@ -381,7 +395,7 @@ v1router.post('/did', async (req, res) => {
  *           type: string
  *         description: The DID to resolve.
  *       - in: query
- *         name: atTime
+ *         name: versionTime
  *         required: false
  *         schema:
  *           type: string
@@ -389,7 +403,7 @@ v1router.post('/did', async (req, res) => {
  *         description: >
  *           Timestamp to return the state of the DID as of this specific time.
  *       - in: query
- *         name: atVersion
+ *         name: versionSequence
  *         required: false
  *         schema:
  *           type: integer
@@ -531,16 +545,16 @@ v1router.post('/did', async (req, res) => {
 v1router.get('/did/:did', async (req, res) => {
     try {
         const options: ResolveDIDOptions = {};
-        const { atTime, atVersion, confirm, verify } = req.query;
+        const { versionTime, versionSequence, confirm, verify } = req.query;
 
-        if (typeof atTime === 'string') {
-            options.atTime = atTime;
+        if (typeof versionTime === 'string') {
+            options.versionTime = versionTime;
         }
 
-        if (typeof atVersion === 'string') {
-            const parsed = parseInt(atVersion, 10);
+        if (typeof versionSequence === 'string') {
+            const parsed = parseInt(versionSequence, 10);
             if (!isNaN(parsed)) {
-                options.atVersion = parsed;
+                options.versionSequence = parsed;
             }
         }
 
@@ -1883,13 +1897,9 @@ v1router.post('/block/:registry', async (req, res) => {
 
 app.use('/api/v1', v1router);
 
-app.use((req, res) => {
-    if (!req.path.startsWith('/api')) {
-        res.sendFile(path.join(__dirname, '../../client/build', 'index.html'));
-    } else {
-        console.warn(`Warning: Unhandled API endpoint - ${req.method} ${req.originalUrl}`);
-        res.status(404).json({ message: 'Endpoint not found' });
-    }
+app.use('/api', (req, res) => {
+    console.warn(`Warning: Unhandled API endpoint - ${req.method} ${req.originalUrl}`);
+    res.status(404).json({ message: 'Endpoint not found' });
 });
 
 async function gcLoop() {

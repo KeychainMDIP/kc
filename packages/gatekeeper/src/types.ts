@@ -1,5 +1,5 @@
 import { EcdsaJwkPublic } from '@mdip/cipher/types';
-import {IPFSClient} from "@mdip/ipfs/types";
+import { IPFSClient } from "@mdip/ipfs/types";
 
 export interface JsonDbFile {
     dids: Record<string, GatekeeperEvent[]>
@@ -31,8 +31,8 @@ export interface VerifyDbResult {
 }
 
 export interface ResolveDIDOptions {
-    atTime?: string;
-    atVersion?: number;
+    versionTime?: string;
+    versionSequence?: number;
     confirm?: boolean;
     verify?: boolean;
 }
@@ -177,7 +177,7 @@ export interface DocumentMetadata {
     updated?: string;
     canonicalId?: string;
     versionId?: string;
-    version?: number;
+    version?: string;
     confirmed?: boolean;
     deactivated?: boolean;
     deleted?: string;
@@ -185,7 +185,6 @@ export interface DocumentMetadata {
 }
 
 export interface MdipDocument {
-    '@context'?: string | string[];
     didDocument?: {
         '@context'?: string[];
         id?: string;
@@ -199,6 +198,11 @@ export interface MdipDocument {
         authentication?: string[],
     },
     didDocumentMetadata?: DocumentMetadata,
+    didResolutionMetadata?: {
+        contentType?: string;
+        retrieved?: string;
+        error?: string;
+    },
     didDocumentData?: unknown,
     mdip?: Mdip,
 }

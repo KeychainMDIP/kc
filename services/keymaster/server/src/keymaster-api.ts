@@ -28,8 +28,22 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const DIDNotFound = { error: 'DID not found' };
 
-// Serve the React frontend
-app.use(express.static(path.join(__dirname, '../../client/build')));
+const serveClient = (process.env.KC_KEYMASTER_SERVE_CLIENT ?? 'true').toLowerCase() === 'true';
+
+if (serveClient) {
+    const clientBuildDir = path.join(__dirname, '../../client/build');
+
+    // Serve the React frontend
+    app.use(express.static(clientBuildDir));
+
+    app.use((req, res, next) => {
+        if (!req.path.startsWith('/api')) {
+            res.sendFile(path.join(clientBuildDir, 'index.html'));
+        } else {
+            next();
+        }
+    });
+}
 
 let gatekeeper: GatekeeperClient;
 let keymaster: Keymaster;
@@ -641,7 +655,7 @@ v1router.get('/export/wallet/encrypted', async (req, res) => {
  *           type: string
  *         description: The DID or name to resolve.
  *       - in: query
- *         name: atTime
+ *         name: versionTime
  *         required: false
  *         schema:
  *           type: string
@@ -649,7 +663,7 @@ v1router.get('/export/wallet/encrypted', async (req, res) => {
  *         description: >
  *           Timestamp to return the state of the DID as of this specific time (RFC3339/ISO8601 format).
  *       - in: query
- *         name: atVersion
+ *         name: versionSequence
  *         required: false
  *         schema:
  *           type: integer
@@ -1632,11 +1646,11 @@ v1router.post('/response', async (req, res) => {
  *                     type: integer
  *                     description: How many milliseconds to wait between resolution retries.
  *                     default: 1000
- *                   atTime:
+ *                   versionTime:
  *                     type: string
  *                     format: date-time
  *                     description: If provided, attempts to resolve the response DID as of a specific point in time.
- *                   atVersion:
+ *                   versionSequence:
  *                     type: integer
  *                     description: If provided, attempts to resolve the response DID at a specific version.
  *                   confirm:
@@ -6051,13 +6065,9 @@ v1router.post('/notices/refresh', async (req, res) => {
 
 app.use('/api/v1', v1router);
 
-app.use((req, res) => {
-    if (!req.path.startsWith('/api')) {
-        res.sendFile(path.join(__dirname, '../../client/build', 'index.html'));
-    } else {
-        console.warn(`Warning: Unhandled API endpoint - ${req.method} ${req.originalUrl}`);
-        res.status(404).json({ message: 'Endpoint not found' });
-    }
+app.use('/api', (req, res) => {
+    console.warn(`Warning: Unhandled API endpoint - ${req.method} ${req.originalUrl}`);
+    res.status(404).json({ message: 'Endpoint not found' });
 });
 
 process.on('uncaughtException', (error) => {

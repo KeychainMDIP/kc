@@ -1,6 +1,6 @@
 {
   "name": "@mdip/inscription",
-  "version": "1.4.0-beta.0",
+  "version": "1.4.0-beta.2",
   "description": "MDIP Inscription",
   "type": "module",
   "main": "./dist/cjs/index.cjs",
@@ -9,6 +9,9 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org"
+  },
   "exports": {
     ".": {
       "import": "./dist/esm/index.js",
@@ -40,7 +43,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/KeychainMDIP/kc.git"
+    "url": "git+https://github.com/KeychainMDIP/kc.git"
   },
   "devDependencies": {
     "@rollup/plugin-commonjs": "^28.0.3",

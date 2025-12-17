@@ -1,4 +1,4 @@
-import BtcClient, {FundRawTransactionOptions, MempoolEntry, RawTransactionVerbose} from 'bitcoin-core';
+import BtcClient, {BlockVerbose, FundRawTransactionOptions, MempoolEntry} from 'bitcoin-core';
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import KeymasterClient from '@mdip/keymaster/client';
 import JsonFile from './db/jsonfile.js';
@@ -7,11 +7,13 @@ import JsonMongo from './db/mongo.js';
 import JsonSQLite from './db/sqlite.js';
 import config from './config.js';
 import { isValidDID } from '@mdip/ipfs/utils';
-import { MediatorDb, MediatorDbInterface, DiscoveredItem } from './types.js';
+import { MediatorDb, MediatorDbInterface, DiscoveredItem, BlockVerbosity } from './types.js';
 import { GatekeeperEvent, Operation } from '@mdip/gatekeeper/types';
 
 const REGISTRY = config.chain;
 const SMART_FEE_MODE = "CONSERVATIVE";
+
+const READ_ONLY = config.exportInterval === 0;
 
 const gatekeeper = new GatekeeperClient();
 const keymaster = new KeymasterClient();
@@ -19,7 +21,7 @@ const btcClient = new BtcClient({
     username: config.user,
     password: config.pass,
     host: `http://${config.host}:${config.port}`,
-    wallet: config.wallet,
+    ...(READ_ONLY ? {} : { wallet: config.wallet }),
 });
 
 let jsonPersister: MediatorDbInterface;
@@ -43,44 +45,45 @@ async function loadDb(): Promise<MediatorDb> {
     return db || newDb;
 }
 
-async function fetchTransaction(height: number, index: number, timestamp: string, txid: string): Promise<void> {
-    try {
-        const txn = await btcClient.getTransactionByHash(txid);
-        const asm = txn.vout[0].scriptPubKey.asm;
-
-        if (asm.startsWith('OP_RETURN')) {
-            const hexString = asm.slice(10);
-            const textString = Buffer.from(hexString, 'hex').toString('utf8');
-
-            if (isValidDID(textString)) {
-                await jsonPersister.updateDb((db) => {
-                    db.discovered.push({ height, index, time: timestamp, txid, did: textString });
-                });
-            }
-        }
-    }
-    catch (error) {
-        console.error(`Error fetching txn: ${error}`);
-    }
-}
-
 async function fetchBlock(height: number, blockCount: number): Promise<void> {
     try {
         const blockHash = await btcClient.getBlockHash(height);
-        const block = await btcClient.getBlock(blockHash);
+        const block = await btcClient.getBlock(blockHash, BlockVerbosity.JSON_TX_DATA) as BlockVerbose;
         const timestamp = new Date(block.time * 1000).toISOString();
 
-        for (let i = 0; i < block.nTx; i++) {
-            const txid = block.tx[i];
+        for (let i = 0; i < block.tx.length; i++) {
+            const tx = block.tx[i];
+            const txid = tx.txid;
+
             console.log(height, String(i).padStart(4), txid);
-            await fetchTransaction(height, i, timestamp, txid);
+
+            const asm = tx.vout?.[0]?.scriptPubKey?.asm;
+            if (!asm) {
+                continue;
+            }
+
+            const parts = asm.split(' ');
+            if (parts[0] !== 'OP_RETURN' || !parts[1]) {
+                continue;
+            }
+
+            try {
+                const textString = Buffer.from(parts[1], 'hex').toString('utf8');
+                if (isValidDID(textString)) {
+                    await jsonPersister.updateDb((db) => {
+                        db.discovered.push({ height, index: i, time: timestamp, txid, did: textString });
+                    });
+                }
+            } catch (error: any) {
+                console.error('Error decoding OP_RETURN or updating DB:', error);
+            }
         }
 
         await jsonPersister.updateDb((db) => {
             db.height = height;
             db.time = timestamp;
             db.blocksScanned = height - config.startBlock + 1;
-            db.txnsScanned += block.nTx;
+            db.txnsScanned += block.tx.length;
             db.blockCount = blockCount;
             db.blocksPending = blockCount - height;
         });
@@ -233,7 +236,7 @@ export async function createOpReturnTxn(opReturnData: string): Promise<string | 
 
 async function checkPendingTransactions(txids: string[]): Promise<boolean> {
     const isMined = async (txid: string) => {
-        const tx = await btcClient.getRawTransaction(txid, 1).catch(() => undefined) as RawTransactionVerbose | undefined;
+        const tx = await btcClient.getTransaction(txid).catch(() => undefined);
         return !!(tx && tx.blockhash);
     };
 
@@ -458,6 +461,10 @@ async function waitForChain() {
         }
     }
 
+    if (READ_ONLY) {
+        return true;
+    }
+
     try {
         await btcClient.createWallet(config.wallet!);
         console.log(`Wallet '${config.wallet}' created successfully.`);
@@ -514,7 +521,7 @@ async function syncBlocks(): Promise<void> {
 }
 
 async function main() {
-    if (!config.nodeID) {
+    if (!READ_ONLY && !config.nodeID) {
         console.log('satoshi-mediator must have a KC_NODE_ID configured');
         return;
     }
@@ -549,7 +556,11 @@ async function main() {
 
     if (config.reimport) {
         const db = await loadDb();
-        db.discovered = [];
+        for (const item of db.discovered) {
+            delete item.imported;
+            delete item.processed;
+            delete item.error;
+        }
         await jsonPersister.saveDb(db);
     }
 
@@ -580,7 +591,7 @@ async function main() {
         setTimeout(importLoop, config.importInterval * 60 * 1000);
     }
 
-    if (config.exportInterval > 0) {
+    if (!READ_ONLY) {
         console.log(`Exporting operations every ${config.exportInterval} minute(s)`);
         console.log(`Txn fees (${config.chain}): conf target: ${config.feeConf}, maximum: ${config.feeMax}, fallback Sat/Byte: ${config.feeFallback}`);
         setTimeout(exportLoop, config.exportInterval * 60 * 1000);

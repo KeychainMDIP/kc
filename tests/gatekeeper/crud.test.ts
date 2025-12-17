@@ -1,7 +1,7 @@
 import CipherNode from '@mdip/cipher/node';
 import Gatekeeper from '@mdip/gatekeeper';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory.ts';
-import { InvalidDIDError, ExpectedExceptionError } from '@mdip/common/errors';
+import { ExpectedExceptionError } from '@mdip/common/errors';
 import HeliaClient from '@mdip/ipfs/helia';
 import TestHelper from './helper.ts';
 
@@ -264,8 +264,6 @@ describe('resolveDID', () => {
         const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
         const expected = {
-            // eslint-disable-next-line
-            "@context": "https://w3id.org/did-resolution/v1",
             didDocument: {
                 "@context": [
                     // eslint-disable-next-line
@@ -287,9 +285,12 @@ describe('resolveDID', () => {
             didDocumentData: {},
             didDocumentMetadata: {
                 created: expect.any(String),
-                version: 1,
+                version: "1",
                 confirmed: true,
                 versionId: opid
+            },
+            didResolutionMetadata: {
+                retrieved: expect.any(String),
             },
             mdip: agentOp.mdip
         };
@@ -309,7 +310,6 @@ describe('resolveDID', () => {
         const ok = await gatekeeper.updateDID(updateOp);
         const updatedDoc = await gatekeeper.resolveDID(did);
         const expected = {
-            "@context": "https://w3id.org/did-resolution/v1",
             didDocument: {
                 "@context": [
                     "https://www.w3.org/ns/did/v1",
@@ -331,9 +331,12 @@ describe('resolveDID', () => {
             didDocumentMetadata: {
                 created: expect.any(String),
                 updated: expect.any(String),
-                version: 2,
+                version: "2",
                 confirmed: true,
                 versionId: opid
+            },
+            didResolutionMetadata: {
+                retrieved: expect.any(String),
             },
             mdip: agentOp.mdip
         };
@@ -354,6 +357,8 @@ describe('resolveDID', () => {
         const ok = await gatekeeper.updateDID(updateOp);
         const confirmedDoc = await gatekeeper.resolveDID(did, { confirm: true });
 
+        // Update expected to match the new retrieved timestamp
+        expected!.didResolutionMetadata!.retrieved = expect.any(String);
 
         expect(ok).toBe(true);
         expect(confirmedDoc).toStrictEqual(expected);
@@ -373,7 +378,6 @@ describe('resolveDID', () => {
         const verifiedDoc = await gatekeeper.resolveDID(did, { verify: true });
 
         const expected = {
-            "@context": "https://w3id.org/did-resolution/v1",
             didDocument: {
                 "@context": [
                     "https://www.w3.org/ns/did/v1",
@@ -395,9 +399,12 @@ describe('resolveDID', () => {
             didDocumentMetadata: {
                 created: expect.any(String),
                 updated: expect.any(String),
-                version: 2,
+                version: "2",
                 confirmed: true,
                 versionId: opid
+            },
+            didResolutionMetadata: {
+                retrieved: expect.any(String),
             },
             mdip: agentOp.mdip
         };
@@ -418,7 +425,6 @@ describe('resolveDID', () => {
         const ok = await gatekeeper.updateDID(updateOp);
         const updatedDoc = await gatekeeper.resolveDID(did, { confirm: false });
         const expected = {
-            "@context": "https://w3id.org/did-resolution/v1",
             didDocument: {
                 "@context": [
                     "https://www.w3.org/ns/did/v1",
@@ -440,9 +446,12 @@ describe('resolveDID', () => {
             didDocumentMetadata: {
                 created: expect.any(String),
                 updated: expect.any(String),
-                version: 2,
+                version: "2",
                 confirmed: false,
                 versionId: opid
+            },
+            didResolutionMetadata: {
+                retrieved: expect.any(String),
             },
             mdip: agentOp.mdip
         };
@@ -452,29 +461,38 @@ describe('resolveDID', () => {
     });
 
     it('should resolve version at specified time', async () => {
-
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await helper.createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair, { version: 1, registry: 'TFTC' });
         const did = await gatekeeper.createDID(agentOp);
 
-        let expected;
-
-        // Add 10 versions, save one from the middle
+        // Add 10 versions
         for (let i = 0; i < 10; i++) {
             const update = await gatekeeper.resolveDID(did);
-
-            if (i === 5) {
-                expected = update;
-            }
-
-            update.didDocumentData = { mock: 1 };
+            update.didDocumentData = { mock: i + 1 };
             const updateOp = await helper.createUpdateOp(keypair, did, update);
             await gatekeeper.updateDID(updateOp);
         }
 
-        const doc = await gatekeeper.resolveDID(did, { atTime: expected!.didDocumentMetadata!.updated });
-        expect(doc).toStrictEqual(expected);
+        const ops = await gatekeeper.exportDID(did);
+        let timestamp = Date.now();
+
+        for (const op of ops) {
+            op.registry = 'TFTC';
+            timestamp += 3600000; // add 1 hour to timestamp for each op
+            op.time = new Date(timestamp).toISOString();
+        }
+
+        await gatekeeper.importBatch(ops);
+        await gatekeeper.processEvents();
+
+        // Pick a time out of the middle of the updates
+        const doc = await gatekeeper.resolveDID(did, { versionTime: ops[5].time });
+
+        expect(doc.didDocumentMetadata!.version).toBe("6");
+        expect(doc.didDocumentMetadata!.confirmed).toBe(true);
+        expect(doc.didDocumentData).toStrictEqual({ mock: 5 });
     });
+
 
     it('should resolve specified version', async () => {
 
@@ -497,7 +515,12 @@ describe('resolveDID', () => {
             await gatekeeper.updateDID(updateOp);
         }
 
-        const doc = await gatekeeper.resolveDID(did, { atVersion: expected!.didDocumentMetadata!.version });
+        const versionSequence = parseInt(expected!.didDocumentMetadata!.version!, 10);
+        const doc = await gatekeeper.resolveDID(did, { versionSequence });
+
+        // Update expected to match the new retrieved timestamp
+        expected!.didResolutionMetadata!.retrieved = expect.any(String);
+
         expect(doc).toStrictEqual(expected);
     });
 
@@ -516,8 +539,9 @@ describe('resolveDID', () => {
         }
 
         for (let i = 0; i < 10; i++) {
-            const doc = await gatekeeper.resolveDID(did, { atVersion: i + 1 });
-            expect(doc.didDocumentMetadata!.version).toBe(i + 1);
+            const doc = await gatekeeper.resolveDID(did, { versionSequence: i + 1 });
+            const version = (i + 1).toString();
+            expect(doc.didDocumentMetadata!.version).toBe(version);
         }
     });
 
@@ -531,7 +555,6 @@ describe('resolveDID', () => {
         const did = await gatekeeper.createDID(assetOp);
         const doc = await gatekeeper.resolveDID(did);
         const expected = {
-            "@context": "https://w3id.org/did-resolution/v1",
             didDocument: {
                 "@context": [
                     "https://www.w3.org/ns/did/v1",
@@ -542,9 +565,12 @@ describe('resolveDID', () => {
             didDocumentData: assetOp.data,
             didDocumentMetadata: {
                 created: expect.any(String),
-                version: 1,
+                version: "1",
                 confirmed: true,
                 versionId: opid
+            },
+            didResolutionMetadata: {
+                retrieved: expect.any(String),
             },
             mdip: assetOp.mdip
         };
@@ -563,84 +589,27 @@ describe('resolveDID', () => {
         expect(doc!.didDocument!.id).toStrictEqual(altDID);
     });
 
-    it('should not resolve an invalid DID', async () => {
-        const BadFormat = 'bad format';
-
-        try {
-            await gatekeeper.resolveDID();
-            throw new ExpectedExceptionError();
-        } catch (error: any) {
-            expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.detail).toBe(BadFormat);
+    it('should return invalidDid error for invalid DIDs', async () => {
+        async function checkForInvalidDidError(did?: any) {
+            const { didResolutionMetadata } = await gatekeeper.resolveDID(did);
+            expect(didResolutionMetadata).toBeDefined();
+            expect(didResolutionMetadata!.error).toBe('invalidDid');
         }
 
-        try {
-            await gatekeeper.resolveDID('');
-            throw new ExpectedExceptionError();
-        } catch (error: any) {
-            expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.detail).toBe(BadFormat);
-        }
+        await checkForInvalidDidError();
+        await checkForInvalidDidError('');
+        await checkForInvalidDidError('mock');
+        await checkForInvalidDidError([]);
+        await checkForInvalidDidError([1, 2, 3]);
+        await checkForInvalidDidError({});
+        await checkForInvalidDidError({ mock: 1 });
+        await checkForInvalidDidError('did:test:xxx');
+    });
 
-        try {
-            await gatekeeper.resolveDID('mock');
-            throw new ExpectedExceptionError();
-        } catch (error: any) {
-            expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.detail).toBe(BadFormat);
-        }
-
-        try {
-            // @ts-expect-error Testing invalid usage
-            await gatekeeper.resolveDID([]);
-            throw new ExpectedExceptionError();
-        } catch (error: any) {
-            expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.detail).toBe(BadFormat);
-        }
-
-        try {
-            // @ts-expect-error Testing invalid usage
-            await gatekeeper.resolveDID([1, 2, 3]);
-            throw new ExpectedExceptionError();
-        } catch (error: any) {
-            expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.detail).toBe(BadFormat);
-        }
-
-        try {
-            // @ts-expect-error Testing invalid usage
-            await gatekeeper.resolveDID({});
-            throw new ExpectedExceptionError();
-        } catch (error: any) {
-            expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.detail).toBe(BadFormat);
-        }
-
-        try {
-            // @ts-expect-error Testing invalid usage
-            await gatekeeper.resolveDID({ mock: 1 });
-            throw new ExpectedExceptionError();
-        } catch (error: any) {
-            expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.detail).toBe(BadFormat);
-        }
-
-        try {
-            await gatekeeper.resolveDID('did:test:xxx');
-            throw new ExpectedExceptionError();
-        } catch (error: any) {
-            expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.detail).toBe(BadFormat);
-        }
-
-        try {
-            await gatekeeper.resolveDID('did:test:z3v8Auah2NPDigFc3qKx183QKL6vY8fJYQk6NeLz7KF2RFtC9c8');
-            throw new ExpectedExceptionError();
-        } catch (error: any) {
-            expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.detail).toBe('unknown');
-        }
+    it('should return notFound error for missing DID', async () => {
+        const { didResolutionMetadata } = await gatekeeper.resolveDID('did:test:z3v8Auah2NPDigFc3qKx183QKL6vY8fJYQk6NeLz7KF2RFtC9c8');
+        expect(didResolutionMetadata).toBeDefined();
+        expect(didResolutionMetadata!.error).toBe('notFound');
     });
 
     it('should throw an exception on invalid signature in create op', async () => {
@@ -721,9 +690,12 @@ describe('updateDID', () => {
         const opid = await gatekeeper.generateCID(updateOp);
         const ok = await gatekeeper.updateDID(updateOp);
         const updatedDoc = await gatekeeper.resolveDID(did);
+
+        // Update doc to match expected
         doc.didDocumentMetadata!.updated = expect.any(String);
-        doc.didDocumentMetadata!.version = 2;
+        doc.didDocumentMetadata!.version = "2";
         doc.didDocumentMetadata!.versionId = opid;
+        doc.didResolutionMetadata!.retrieved = expect.any(String);
 
         expect(ok).toBe(true);
         expect(updatedDoc).toStrictEqual(doc);
@@ -742,7 +714,8 @@ describe('updateDID', () => {
             const updatedDoc = await gatekeeper.resolveDID(did);
 
             expect(ok).toBe(true);
-            expect(updatedDoc.didDocumentMetadata!.version).toBe(i + 2);
+            const version = (i + 2).toString();
+            expect(updatedDoc.didDocumentMetadata!.version).toBe(version);
         }
     });
 
@@ -812,7 +785,7 @@ describe('updateDID', () => {
         }
 
         const doc2 = await gatekeeper.resolveDID(did, { verify: true });
-        expect(doc2.didDocumentMetadata!.version).toBe(11);
+        expect(doc2.didDocumentMetadata!.version).toBe("11");
     });
 
     it('should throw exception when registry queue exceeds limit', async () => {
@@ -834,5 +807,22 @@ describe('updateDID', () => {
         } catch (error: any) {
             expect(error.message).toBe('Invalid operation: registry TFTC not supported');
         }
+    });
+});
+
+describe('deleteDID', () => {
+    it('should delete a valid DID', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await helper.createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const deleteOp = await helper.createDeleteOp(keypair, did);
+        const ok = await gatekeeper.deleteDID(deleteOp);
+        const doc = await gatekeeper.resolveDID(did);
+
+        expect(ok).toBe(true);
+        expect(doc).toBeDefined();
+        expect(doc.didDocument).toStrictEqual({ id: did });
+        expect(doc.didDocumentMetadata!.deactivated).toBe(true);
+        expect(doc.didDocumentMetadata!.version).toBe("2");
     });
 });

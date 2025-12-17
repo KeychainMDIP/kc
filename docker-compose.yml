@@ -37,6 +37,7 @@ services:
       - KC_GATEKEEPER_REGISTRIES=${KC_GATEKEEPER_REGISTRIES}
       - KC_GATEKEEPER_GC_INTERVAL=${KC_GATEKEEPER_GC_INTERVAL}
       - KC_GATEKEEPER_STATUS_INTERVAL=${KC_GATEKEEPER_STATUS_INTERVAL}
+      - KC_GATEKEEPER_SERVE_CLIENT=${KC_GATEKEEPER_SERVE_CLIENT}
       - KC_MONGODB_URL=mongodb://mongodb:27017
       - KC_REDIS_URL=redis://redis:6379
       - KC_IPFS_URL=http://ipfs:5001/api/v0
@@ -65,6 +66,7 @@ services:
       - KC_ENCRYPTED_PASSPHRASE=${KC_ENCRYPTED_PASSPHRASE}
       - KC_WALLET_CACHE=${KC_WALLET_CACHE}
       - KC_DEFAULT_REGISTRY=${KC_DEFAULT_REGISTRY}
+      - KC_KEYMASTER_SERVE_CLIENT=${KC_KEYMASTER_SERVE_CLIENT}
       - KC_MONGODB_URL=mongodb://mongodb:27017
       - KC_REDIS_URL=redis://redis:6379
     volumes:
@@ -134,6 +136,48 @@ services:
     user: "${KC_UID}:${KC_GID}"
     depends_on:
       - tftc-node
+      - gatekeeper
+      - keymaster
+
+  btc-node:
+    image: keychainmdip/bitcoin-core:v28.0-multiarch
+    volumes:
+      - ./data/btc:/root/.bitcoin
+    ports:
+      - 8332:8332
+
+  btc-mediator:
+    build:
+      context: .
+      dockerfile: Dockerfile.satoshi-inscription
+    image: keychainmdip/inscription-mediator
+    environment:
+      - KC_GATEKEEPER_URL=http://gatekeeper:4224
+      - KC_KEYMASTER_URL=http://keymaster:4226
+      - KC_MONGODB_URL=mongodb://mongodb:27017
+      - KC_REDIS_URL=redis://redis:6379
+      - KC_NODE_ID=${KC_NODE_ID}
+      - KC_SAT_CHAIN=BTC
+      - KC_SAT_NETWORK=bitcoin
+      - KC_SAT_HOST=btc-node
+      - KC_SAT_PORT=8332
+      - KC_SAT_START_BLOCK=${KC_BTC_START_BLOCK}
+      - KC_SAT_USER=${KC_BTC_USER}
+      - KC_SAT_PASS=${KC_BTC_PASS}
+      - KC_SAT_WALLET=${KC_BTC_WALLET}
+      - KC_SAT_IMPORT_INTERVAL=${KC_BTC_IMPORT_INTERVAL}
+      - KC_SAT_EXPORT_INTERVAL=${KC_BTC_EXPORT_INTERVAL}
+      - KC_SAT_FEE_BLOCK_TARGET=${KC_BTC_FEE_BLOCK_TARGET}
+      - KC_SAT_FEE_FALLBACK_SAT_BYTE=${KC_BTC_FEE_FALLBACK_SAT_BYTE}
+      - KC_SAT_FEE_MAX=${KC_BTC_FEE_MAX}
+      - KC_SAT_RBF_ENABLED=${KC_BTC_RBF_ENABLED}
+      - KC_SAT_REIMPORT=${KC_BTC_REIMPORT}
+      - KC_SAT_DB=${KC_BTC_DB}
+    volumes:
+      - ./data:/app/satoshi/data
+    user: "${KC_UID}:${KC_GID}"
+    depends_on:
+      - btc-node
       - gatekeeper
       - keymaster
 

@@ -248,7 +248,7 @@ describe('transferAsset', () => {
 
         expect(ok).toBe(true);
         expect(doc.didDocument!.controller).toBe(bob);
-        expect(doc.didDocumentMetadata!.version).toBe(1);
+        expect(doc.didDocumentMetadata!.version).toBe("1");
     });
 
     it('should throw an exception on invalid did', async () => {

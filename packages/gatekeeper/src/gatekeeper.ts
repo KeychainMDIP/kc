@@ -2,7 +2,6 @@ import CipherNode from '@mdip/cipher/node';
 import { copyJSON, compareOrdinals } from '@mdip/common/utils';
 import { isValidDID, generateCID } from '@mdip/ipfs/utils';
 import {
-    InvalidDIDError,
     InvalidParameterError,
     InvalidOperationError
 } from '@mdip/common/errors';
@@ -30,7 +29,16 @@ import {
 const ValidVersions = [1];
 const ValidTypes = ['agent', 'asset'];
 // Registries that are considered valid when importing DIDs from the network
-const ValidRegistries = ['local', 'hyperswarm', 'TESS', 'TBTC', 'TFTC', 'Signet', 'Signet-Inscription'];
+const ValidRegistries = [
+    'local',
+    'hyperswarm',
+    'TESS',
+    'TBTC',
+    'TFTC',
+    'Signet',
+    'Signet-Inscription',
+    'BTC-Inscription'
+];
 
 enum ImportStatus {
     ADDED = 'added',
@@ -88,7 +96,7 @@ export default class Gatekeeper implements GatekeeperInterface {
 
     private async withDidLock<T>(did: string, fn: () => Promise<T>): Promise<T> {
         const prev = this.didLocks.get(did) ?? Promise.resolve();
-        let release: () => void = () => {};
+        let release: () => void = () => { };
         const gate = new Promise<void>(r => (release = r));
 
         this.didLocks.set(did, prev.then(() => gate, () => gate));
@@ -201,6 +209,15 @@ export default class Gatekeeper implements GatekeeperInterface {
             n += 1;
             try {
                 const doc = await this.resolveDID(did);
+
+                if (doc.didResolutionMetadata?.error) {
+                    invalid += 1;
+                    if (chatty) {
+                        console.log(`can't resolve ${n}/${total} ${did} ${doc.didResolutionMetadata.error}`);
+                    }
+                    continue;
+                }
+
                 if (chatty) {
                     console.log(`resolved ${n}/${total} ${did} OK`);
                 }
@@ -231,14 +248,13 @@ export default class Gatekeeper implements GatekeeperInterface {
 
                 const version = doc.didDocumentMetadata?.version;
                 if (version != null) {
-                    byVersion[version] = (byVersion[version] || 0) + 1;
+                    const versionNum = parseInt(version, 10);
+                    if (!isNaN(versionNum)) {
+                        byVersion[versionNum] = (byVersion[versionNum] || 0) + 1;
+                    }
                 }
             }
             catch (error) {
-                invalid += 1;
-                if (chatty) {
-                    console.log(`can't resolve ${n}/${total} ${did} ${error}`);
-                }
             }
         }
 
@@ -385,7 +401,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                 throw new InvalidOperationError('signer is not controller');
             }
 
-            const doc = await this.resolveDID(operation.signature!.signer, { confirm: true, atTime: operation.signature!.signed });
+            const doc = await this.resolveDID(operation.signature!.signer, { confirm: true, versionTime: operation.signature!.signed });
 
             if (doc.mdip && doc.mdip.registry === 'local' && operation.mdip.registry !== 'local') {
                 throw new InvalidOperationError(`non-local registry=${operation.mdip.registry}`);
@@ -427,7 +443,7 @@ export default class Gatekeeper implements GatekeeperInterface {
 
         if (doc.didDocument.controller) {
             // This DID is an asset, verify with controller's keys
-            const controllerDoc = await this.resolveDID(doc.didDocument.controller, { confirm: true, atTime: operation.signature!.signed });
+            const controllerDoc = await this.resolveDID(doc.didDocument.controller, { confirm: true, versionTime: operation.signature!.signed });
             return this.verifyUpdateOperation(operation, controllerDoc);
         }
 
@@ -533,7 +549,6 @@ export default class Gatekeeper implements GatekeeperInterface {
             if (anchor.mdip.type === 'agent') {
                 // TBD support different key types?
                 doc = {
-                    "@context": "https://w3id.org/did-resolution/v1",
                     "didDocument": {
                         "@context": ["https://www.w3.org/ns/did/v1"],
                         "id": did,
@@ -559,7 +574,6 @@ export default class Gatekeeper implements GatekeeperInterface {
 
             if (anchor.mdip.type === 'asset') {
                 doc = {
-                    "@context": "https://w3id.org/did-resolution/v1",
                     "didDocument": {
                         "@context": ["https://www.w3.org/ns/did/v1"],
                         "id": did,
@@ -588,33 +602,51 @@ export default class Gatekeeper implements GatekeeperInterface {
         did?: string,
         options?: ResolveDIDOptions
     ): Promise<MdipDocument> {
-        const { atTime, atVersion, confirm = false, verify = false } = options || {};
+        const { versionTime, versionSequence, confirm = false, verify = false } = options || {};
 
         if (!did || !isValidDID(did)) {
-            throw new InvalidDIDError('bad format')
+            return {
+                didResolutionMetadata: {
+                    error: "invalidDid"
+                },
+                didDocument: {},
+                didDocumentMetadata: {}
+            };
         }
 
         const events = await this.db.getEvents(did);
 
         if (events.length === 0) {
-            throw new InvalidDIDError('unknown');
+            return {
+                didResolutionMetadata: {
+                    error: "notFound"
+                },
+                didDocument: {},
+                didDocumentMetadata: {}
+            };
         }
 
         const anchor = events[0];
         let doc = await this.generateDoc(anchor.operation, did);
 
-        if (atTime && doc.mdip?.created && new Date(doc.mdip.created) > new Date(atTime)) {
+        if (versionTime && doc.mdip?.created && new Date(doc.mdip.created) > new Date(versionTime)) {
             // TBD What to return if DID was created after specified time?
         }
 
-        const created = doc.didDocumentMetadata?.created;
+        function generateStandardDatetime(time: any): string {
+            const date = new Date(time);
+            // Remove milliseconds for standardization
+            return date.toISOString().replace(/\.\d{3}Z$/, 'Z');
+        }
+
+        const created = generateStandardDatetime(doc.didDocumentMetadata?.created);
         const canonicalId = doc.didDocumentMetadata?.canonicalId;
-        let version = 1; // initial version is version 1 by definition
+        let versionNum = 1; // initial version is version 1 by definition
         let confirmed = true; // create event is always confirmed by definition
 
         for (const { time, operation, registry, blockchain } of events) {
             const versionId = await this.generateCID(operation);
-            const updated = time;
+            const updated = generateStandardDatetime(time);
             let timestamp;
 
             if (doc.mdip?.registry) {
@@ -674,18 +706,18 @@ export default class Gatekeeper implements GatekeeperInterface {
                     created,
                     canonicalId,
                     versionId,
-                    version,
+                    version: versionNum.toString(),
                     confirmed,
                     timestamp,
                 }
                 continue;
             }
 
-            if (atTime && new Date(time) > new Date(atTime)) {
+            if (versionTime && new Date(time) > new Date(versionTime)) {
                 break;
             }
 
-            if (atVersion && version === atVersion) {
+            if (versionSequence && versionNum === versionSequence) {
                 break;
             }
 
@@ -709,7 +741,7 @@ export default class Gatekeeper implements GatekeeperInterface {
             }
 
             if (operation.type === 'update') {
-                version += 1;
+                versionNum += 1;
 
                 doc = operation.doc || {};
                 doc.didDocumentMetadata = {
@@ -717,7 +749,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                     updated,
                     canonicalId,
                     versionId,
-                    version,
+                    version: versionNum.toString(),
                     confirmed,
                     timestamp,
                 }
@@ -725,9 +757,9 @@ export default class Gatekeeper implements GatekeeperInterface {
             }
 
             if (operation.type === 'delete') {
-                version += 1;
+                versionNum += 1;
 
-                doc.didDocument = {};
+                doc.didDocument = { id: did };
                 doc.didDocumentData = {};
                 doc.didDocumentMetadata = {
                     deactivated: true,
@@ -735,15 +767,22 @@ export default class Gatekeeper implements GatekeeperInterface {
                     deleted: updated,
                     canonicalId,
                     versionId,
-                    version,
+                    version: versionNum.toString(),
                     confirmed,
                     timestamp,
                 }
             }
         }
 
+        doc.didResolutionMetadata = {
+            // We'll deliberately use millisecond precision here to avoid intermittent unit test failures
+            retrieved: new Date().toISOString(),
+        };
+
+        // Remove deprecated fields
+        delete (doc as any)['@context'];
+
         if (doc.mdip) {
-            // Remove deprecated fields
             delete doc.mdip.opid // Replaced by didDocumentMetadata.versionId
             delete doc.mdip.registration // Replaced by didDocumentMetadata.timestamp
         }
@@ -966,7 +1005,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                 return ImportStatus.REJECTED;
             });
         } catch (error: any) {
-            if (error.message === 'Invalid DID: unknown') {
+            if (error.type === 'Invalid operation') {
                 // Could be an event with a controller DID that hasn't been imported yet
                 return ImportStatus.DEFERRED;
             }

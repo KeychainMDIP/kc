@@ -153,7 +153,7 @@ describe('updateDocument', () => {
 
         expect(ok).toBe(true);
         expect(doc.didDocumentData).toStrictEqual(expected);
-        expect(doc.didDocumentMetadata!.version).toBe(2);
+        expect(doc.didDocumentMetadata!.version).toBe("2");
     });
 
     it('should handle case where no filename is provided', async () => {
@@ -178,7 +178,7 @@ describe('updateDocument', () => {
 
         expect(ok).toBe(true);
         expect(doc.didDocumentData).toStrictEqual(expected);
-        expect(doc.didDocumentMetadata!.version).toBe(2);
+        expect(doc.didDocumentMetadata!.version).toBe("2");
     });
 
     it('should handle case where filename has no extension', async () => {
@@ -204,7 +204,7 @@ describe('updateDocument', () => {
 
         expect(ok).toBe(true);
         expect(doc.didDocumentData).toStrictEqual(expected);
-        expect(doc.didDocumentMetadata!.version).toBe(2);
+        expect(doc.didDocumentMetadata!.version).toBe("2");
     });
 });
 

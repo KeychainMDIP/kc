@@ -15,6 +15,7 @@ export interface Vin {
     vout: number;
     scriptSig: ScriptSig;
     sequence: number;
+    coinbase?: string;
     txinwitness?: string[];
 }
 
@@ -24,6 +25,7 @@ export interface ScriptPubKey {
     reqSigs?: number;
     type: string;
     addresses?: string[];
+    desc?: string;
 }
 
 export interface Vout {
@@ -69,6 +71,58 @@ export interface Block {
     nTx: number;
     time: number;
     tx: string[];
+}
+
+export interface BlockTxVerbose {
+    txid: string;
+    vin: Vin[];
+    vout: Vout[];
+}
+
+export interface BlockVerbose {
+    nTx: number;
+    time: number;
+    tx: BlockTxVerbose[];
+}
+
+export type Bip125Replaceable = 'yes' | 'no' | 'unknown';
+
+export interface GetTransactionDetails {
+    involvesWatchonly?: boolean;
+    address?: string;
+    category: 'send' | 'receive' | 'generate' | 'immature' | 'orphan';
+    amount: number;
+    label?: string;
+    vout: number;
+    fee?: number;
+    abandoned?: boolean;
+    parent_descs?: string[];
+}
+
+export interface GetTransactionResult {
+    amount: number;
+    fee?: number;
+    confirmations: number;
+    generated?: boolean;
+    trusted?: boolean;
+    blockhash?: string;
+    blockheight?: number;
+    blockindex?: number;
+    blocktime?: number;
+    txid: string;
+    wtxid: string;
+    walletconflicts: string[];
+    replaced_by_txid?: string;
+    replaces_txid?: string;
+    to?: string;
+    time: number;
+    timereceived: number;
+    comment?: string;
+    "bip125-replaceable": Bip125Replaceable;
+    parent_descs?: string[];
+    details: GetTransactionDetails[];
+    hex: string;
+    decoded?: DecodedRawTransaction;
 }
 
 export interface WalletInfo {
@@ -226,35 +280,6 @@ export interface DecodedRawTransaction {
     vout: Vout[];
 }
 
-export interface Vin {
-    txid?: string;
-    vout?: number;
-    scriptSig?: ScriptSig;
-    sequence: number;
-    coinbase?: string;
-    txinwitness?: string[];
-}
-
-export interface ScriptSig {
-    asm: string;
-    hex: string;
-}
-
-export interface Vout {
-    value: number;
-    n: number;
-    scriptPubKey: ScriptPubKey;
-}
-
-export interface ScriptPubKey {
-    asm: string;
-    hex: string;
-    reqSigs?: number;
-    type: string;
-    addresses?: string[];
-    desc?: string;
-}
-
 export interface ListUnspentQueryOptions {
     minimumAmount?: number | string;
     maximumAmount?: number | string;
@@ -320,11 +345,32 @@ export interface WalletCreateFundedPsbtResult {
     changepos: number;
 }
 
+export interface FundRawTransactionOptions {
+    changeAddress?: string;
+    changePosition?: number;
+    change_type?: 'legacy' | 'p2sh-segwit' | 'bech32' | 'bech32m';
+    includeWatching?: boolean;
+    lockUnspents?: boolean;
+    fee_rate?: number | string;
+    feeRate?: number | string;
+    subtractFeeFromOutputs?: number[];
+    replaceable?: boolean;
+    conf_target?: number;
+    estimate_mode?: EconomyModes;
+}
+
+export interface FundRawTransactionResult {
+    hex: string;
+    fee: number;
+    changepos: number;
+}
+
 export default class BtcClient {
     constructor(options: BtcClientOptions);
     getTransactionByHash(txid: string): Promise<TransactionByHash>;
+    getTransaction(txid: string, include_watchonly?: boolean, verbose?: boolean): Promise<GetTransactionResult>;
     getBlockHash(height: number): Promise<string>;
-    getBlock(blockHash: string): Promise<Block>;
+    getBlock(blockHash: string, verbosity?: number): Promise<Block | BlockVerbose>;
     getBlockCount(): Promise<number>;
     createWallet(walletName: string): Promise<any>;
     getWalletInfo(): Promise<WalletInfo>;
@@ -343,7 +389,7 @@ export default class BtcClient {
     }>;
     signRawTransaction(rawtx: string): Promise<{ hex: string }>;
     sendRawTransaction(rawtx: string): Promise<string>;
-    getRawTransaction(txid: string, verbose?: number): Promise<RawTransactionResult>;
+    getRawTransaction(txid: string, verbose?: number, blockhash?: string): Promise<RawTransactionResult>;
     getMempoolEntry(txid: string): Promise<MempoolEntry>;
     getBlockchainInfo(): Promise<unknown>;
     getAddressInfo(address: string): Promise<AddressInfo>;
@@ -381,4 +427,9 @@ export default class BtcClient {
     listDescriptors(private: boolean): Promise<ListDescriptorsResult>;
     decodeRawTransaction(hexstring: string, iswitness?: boolean): Promise<DecodedRawTransaction>;
     getMempoolDescendants(txid: string, verbose?: boolean): Promise<MempoolDescendantsResult>;
+    fundRawTransaction(
+        hexstring: string,
+        options?: FundRawTransactionOptions,
+        iswitness?: boolean
+    ): Promise<FundRawTransactionResult>;
 }

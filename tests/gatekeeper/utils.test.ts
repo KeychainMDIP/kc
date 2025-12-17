@@ -129,8 +129,6 @@ describe('generateDoc', () => {
         const did = await gatekeeper.generateDID(agentOp);
         const doc = await gatekeeper.generateDoc(agentOp);
         const expected = {
-            // eslint-disable-next-line
-            "@context": "https://w3id.org/did-resolution/v1",
             didDocument: {
                 "@context": [
                     // eslint-disable-next-line
@@ -165,8 +163,6 @@ describe('generateDoc', () => {
         const did = await gatekeeper.generateDID(agentOp);
         const doc = await gatekeeper.generateDoc(agentOp);
         const expected = {
-            // eslint-disable-next-line
-            "@context": "https://w3id.org/did-resolution/v1",
             didDocument: {
                 "@context": [
                     // eslint-disable-next-line
@@ -204,8 +200,6 @@ describe('generateDoc', () => {
         const did = await gatekeeper.generateDID(assetOp);
         const doc = await gatekeeper.generateDoc(assetOp);
         const expected = {
-            // eslint-disable-next-line
-            "@context": "https://w3id.org/did-resolution/v1",
             didDocument: {
                 "@context": [
                     // eslint-disable-next-line

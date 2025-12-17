@@ -318,7 +318,7 @@ program
     .description('Return specified version of document associated with DID')
     .action(async (did, version) => {
         try {
-            const doc = await keymaster.resolveDID(did, { atVersion: version });
+            const doc = await keymaster.resolveDID(did, { versionSequence: version });
             console.log(JSON.stringify(doc, null, 4));
         }
         catch (error) {

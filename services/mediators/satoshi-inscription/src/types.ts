@@ -66,3 +66,11 @@ export interface MediatorDbInterface {
     saveDb(data: MediatorDb): Promise<boolean>;
     updateDb(mutator: (db: MediatorDb) => void | Promise<void>): Promise<void>;
 }
+
+export const BlockVerbosity = {
+    HEX: 0,
+    JSON: 1,
+    JSON_TX_DATA: 2,
+};
+
+export type BlockVerbosity = typeof BlockVerbosity[keyof typeof BlockVerbosity];

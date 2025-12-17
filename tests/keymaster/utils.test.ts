@@ -158,6 +158,9 @@ describe('resolveDID', () => {
         const doc1 = await keymaster.resolveDID(dataDid);
         const doc2 = await keymaster.resolveDID('mock');
 
+        // Update the retrieved timestamp to match any value
+        doc2.didResolutionMetadata!.retrieved = expect.any(String);
+
         expect(doc1).toStrictEqual(doc2);
     });
 
@@ -197,7 +200,7 @@ describe('updateDID', () => {
 
         expect(ok).toBe(true);
         expect(doc2.didDocumentData).toStrictEqual(dataUpdated);
-        expect(doc2.didDocumentMetadata!.version).toBe(2);
+        expect(doc2.didDocumentMetadata!.version).toBe("2");
     });
 
     it('should not update an asset DID if no changes', async () => {
@@ -213,7 +216,7 @@ describe('updateDID', () => {
 
         expect(ok).toBe(true);
         expect(doc2.didDocumentData).toStrictEqual(mockAnchor);
-        expect(doc2.didDocumentMetadata!.version).toBe(1);
+        expect(doc2.didDocumentMetadata!.version).toBe("1");
     });
 
     it('should update an asset DID when owner ID is in the wallet', async () => {
@@ -237,7 +240,7 @@ describe('updateDID', () => {
         expect(ok).toBe(true);
         expect(doc2.didDocument!.controller).toBe(bob);
         expect(doc2.didDocumentData).toStrictEqual(dataUpdated);
-        expect(doc2.didDocumentMetadata!.version).toBe(2);
+        expect(doc2.didDocumentMetadata!.version).toBe("2");
     });
 
     it('should not update an asset DID when owner ID is not in the wallet', async () => {
@@ -274,7 +277,7 @@ describe('revokeDID', () => {
         const doc = await keymaster.resolveDID(dataDid);
 
         expect(ok).toBe(true);
-        expect(doc.didDocument).toStrictEqual({});
+        expect(doc.didDocument).toStrictEqual({ id: dataDid });
         expect(doc.didDocumentData).toStrictEqual({});
         expect(doc.didDocumentMetadata!.deactivated).toBe(true);
     });
@@ -294,7 +297,7 @@ describe('revokeDID', () => {
         const doc = await keymaster.resolveDID(dataDid);
 
         expect(ok).toBe(true);
-        expect(doc.didDocument).toStrictEqual({});
+        expect(doc.didDocument).toStrictEqual({ id: dataDid });
         expect(doc.didDocumentData).toStrictEqual({});
         expect(doc.didDocumentMetadata!.deactivated).toBe(true);
     });

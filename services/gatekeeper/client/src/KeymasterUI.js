@@ -307,7 +307,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
                 setManifest(docs.didDocumentData.manifest);
                 setDocsString(JSON.stringify(docs, null, 4));
 
-                const versions = docs.didDocumentMetadata.version;
+                const versions = parseInt(docs.didDocumentMetadata.version ?? "1", 10);
                 setDocsVersion(versions);
                 setDocsVersionMax(versions);
 
@@ -365,7 +365,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
     async function selectDocsVersion(version) {
         try {
             setDocsVersion(version);
-            const docs = await keymaster.resolveDID(currentId, { atVersion: version });
+            const docs = await keymaster.resolveDID(currentId, { versionSequence: version });
             setDocsString(JSON.stringify(docs, null, 4));
         } catch (error) {
             showError(error);
@@ -398,7 +398,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
             setManifest(docs.didDocumentData.manifest);
             setDocsString(JSON.stringify(docs, null, 4));
 
-            const versions = docs.didDocumentMetadata.version;
+            const versions = parseInt(docs.didDocumentMetadata.version ?? "1", 10);
             setDocsVersion(versions);
             setDocsVersionMax(versions);
         } catch (error) {
@@ -738,7 +738,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
             const docs = await keymaster.resolveDID(trimmedName);
             setSelectedName(trimmedName);
             setAliasDocs(JSON.stringify(docs, null, 4));
-            const versions = docs.didDocumentMetadata.version;
+            const versions = parseInt(docs.didDocumentMetadata.version ?? "1", 10);
             setAliasDocsVersion(versions);
             setAliasDocsVersionMax(versions);
         } catch (error) {
@@ -812,7 +812,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
     async function selectAliasDocsVersion(version) {
         try {
             setAliasDocsVersion(version);
-            const docs = await keymaster.resolveDID(selectedName, { atVersion: version });
+            const docs = await keymaster.resolveDID(selectedName, { versionSequence: version });
             setAliasDocs(JSON.stringify(docs, null, 4));
         } catch (error) {
             showError(error);
@@ -1745,7 +1745,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
                 } catch (e) {
                     try {
                         await keymaster.saveWallet(backupWallet, true);
-                    } catch {}
+                    } catch { }
                     window.alert('Upload rejected: the server could not decrypt the wallet with its configured passphrase.');
                 }
             };
@@ -1867,7 +1867,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
             setSelectedImageURL('');
 
             const docs = await keymaster.resolveDID(imageName);
-            const versions = docs.didDocumentMetadata.version;
+            const versions = parseInt(docs.didDocumentMetadata.version ?? "1", 10);
             const image = docs.didDocumentData.image;
 
             setSelectedImageName(imageName);
@@ -1886,7 +1886,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
         try {
             setSelectedImageURL('');
 
-            const docs = await keymaster.resolveDID(selectedImageName, { atVersion: version });
+            const docs = await keymaster.resolveDID(selectedImageName, { versionSequence: version });
             const image = docs.didDocumentData.image;
 
             setSelectedImageDocs(docs);
@@ -1983,7 +1983,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
     async function selectDocument(documentName) {
         try {
             const docs = await keymaster.resolveDID(documentName);
-            const versions = docs.didDocumentMetadata.version;
+            const versions = parseInt(docs.didDocumentMetadata.version ?? "1", 10);
             const document = docs.didDocumentData.document;
 
             setSelectedDocumentName(documentName);
@@ -2000,7 +2000,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
 
     async function selectDocumentVersion(version) {
         try {
-            const docs = await keymaster.resolveDID(selectedDocumentName, { atVersion: version });
+            const docs = await keymaster.resolveDID(selectedDocumentName, { versionSequence: version });
             const document = docs.didDocumentData.document;
 
             setSelectedDocumentDocs(docs);

@@ -327,6 +327,7 @@ export default class Keymaster implements KeymasterInterface {
                 let remove = false;
                 try {
                     const doc = await this.resolveDID(wallet.ids[name].did);
+
                     if (doc.didDocumentMetadata?.deactivated) {
                         remove = true;
                     }
@@ -346,6 +347,7 @@ export default class Keymaster implements KeymasterInterface {
                         let remove = false;
                         try {
                             const doc = await this.resolveDID(id.owned[i]);
+
                             if (doc.didDocumentMetadata?.deactivated) {
                                 remove = true;
                             }
@@ -366,6 +368,7 @@ export default class Keymaster implements KeymasterInterface {
                         let remove = false;
                         try {
                             const doc = await this.resolveDID(id.held[i]);
+
                             if (doc.didDocumentMetadata?.deactivated) {
                                 remove = true;
                             }
@@ -387,6 +390,7 @@ export default class Keymaster implements KeymasterInterface {
                     let remove = false;
                     try {
                         const doc = await this.resolveDID(wallet.names[name]);
+
                         if (doc.didDocumentMetadata?.deactivated) {
                             remove = true;
                         }
@@ -968,7 +972,7 @@ export default class Keymaster implements KeymasterInterface {
 
         const crypt = (castAsset.encrypted ? castAsset.encrypted : castAsset) as EncryptedMessage;
 
-        const doc = await this.resolveDID(crypt.sender, { confirm: true, atTime: crypt.created });
+        const doc = await this.resolveDID(crypt.sender, { confirm: true, versionTime: crypt.created });
         const senderPublicJwk = this.getPublicKeyJwk(doc);
 
         const ciphertext = (crypt.sender === id.did && crypt.cipher_sender) ? crypt.cipher_sender : crypt.cipher_receiver;
@@ -1048,7 +1052,7 @@ export default class Keymaster implements KeymasterInterface {
             return false;
         }
 
-        const doc = await this.resolveDID(signature.signer, { atTime: signature.signed });
+        const doc = await this.resolveDID(signature.signer, { versionTime: signature.signed });
         const publicJwk = this.getPublicKeyJwk(doc);
 
         try {
@@ -1070,8 +1074,11 @@ export default class Keymaster implements KeymasterInterface {
         const previd = current.didDocumentMetadata?.versionId;
 
         // Compare the hashes of the current and updated documents without the metadata
-        current.didDocumentMetadata = {};
-        doc.didDocumentMetadata = {};
+        delete current.didDocumentMetadata;
+        delete current.didResolutionMetadata;
+
+        delete doc.didDocumentMetadata;
+        delete doc.didResolutionMetadata;
 
         const currentHash = this.cipher.hashJSON(current);
         const updateHash = this.cipher.hashJSON(doc);
@@ -1093,7 +1100,15 @@ export default class Keymaster implements KeymasterInterface {
             doc,
         };
 
-        const controller = current.didDocument?.controller || current.didDocument?.id;
+        let controller;
+
+        if (current.mdip?.type === 'agent') {
+            controller = current.didDocument?.id;
+        }
+        else if (current.mdip?.type === 'asset') {
+            controller = current.didDocument?.controller;
+        }
+
         const signed = await this.addSignature(operation, controller);
         return this.gatekeeper.updateDID(signed);
     }
@@ -1112,7 +1127,15 @@ export default class Keymaster implements KeymasterInterface {
             blockid
         };
 
-        const controller = current.didDocument?.controller || current.didDocument?.id;
+        let controller;
+
+        if (current.mdip?.type === 'agent') {
+            controller = current.didDocument?.id;
+        }
+        else if (current.mdip?.type === 'asset') {
+            controller = current.didDocument?.controller;
+        }
+
         const signed = await this.addSignature(operation, controller);
 
         const ok = await this.gatekeeper.deleteDID(signed);
@@ -1205,6 +1228,17 @@ export default class Keymaster implements KeymasterInterface {
     ): Promise<MdipDocument> {
         const actualDid = await this.lookupDID(did);
         const docs = await this.gatekeeper.resolveDID(actualDid, options);
+
+        if (docs.didResolutionMetadata?.error) {
+            if (docs.didResolutionMetadata.error === 'notFound') {
+                throw new InvalidDIDError('unknown');
+            }
+
+            if (docs.didResolutionMetadata.error === 'invalidDid') {
+                throw new InvalidDIDError('bad format');
+            }
+        }
+
         const controller = docs.didDocument?.controller || docs.didDocument?.id;
         const isOwned = await this.idInWallet(controller);
 
@@ -1333,55 +1367,64 @@ export default class Keymaster implements KeymasterInterface {
         name: string,
         options: { registry?: string } = {}
     ): Promise<string> {
-        const { registry = this.defaultRegistry } = options;
-
-        let createdDid = '';
+        let did = '';
         await this.mutateWallet(async (wallet) => {
-            name = this.validateName(name, wallet);
-
             const account = wallet.counter;
             const index = 0;
+            const signed = await this.createIdOperation(name, account, options);
 
-            const hdkey = await this.getHDKeyFromCacheOrMnemonic(wallet);
-            const path = `m/44'/0'/${account}'/0/${index}`;
-            const didkey = hdkey.derive(path);
-            const keypair = this.cipher.generateJwk(didkey.privateKey!);
-
-            const block = await this.gatekeeper.getBlock(registry);
-            const blockid = block?.hash;
-
-            const operation: Operation = {
-                type: 'create',
-                created: new Date().toISOString(),
-                blockid,
-                mdip: {
-                    version: 1,
-                    type: 'agent',
-                    registry
-                },
-                publicJwk: keypair.publicJwk,
-            };
-
-            const msgHash = this.cipher.hashJSON(operation);
-            const signature = this.cipher.signHash(msgHash, keypair.privateJwk);
-            const signed: Operation = {
-                ...operation,
-                signature: {
-                    signed: new Date().toISOString(),
-                    hash: msgHash,
-                    value: signature
-                },
-            };
-
-            const did = await this.gatekeeper.createDID(signed);
-            createdDid = did;
+            did = await this.gatekeeper.createDID(signed);
 
             wallet.ids[name] = { did, account, index };
             wallet.counter += 1;
             wallet.current = name;
         });
 
-        return createdDid;
+        return did;
+    }
+
+    async createIdOperation(
+        name: string,
+        account: number = 0,
+        options: { registry?: string } = {}
+    ): Promise<Operation> {
+        const { registry = this.defaultRegistry } = options;
+        const wallet = await this.loadWallet();
+
+        name = this.validateName(name, wallet);
+
+        const hdkey = await this.getHDKeyFromCacheOrMnemonic(wallet);
+        const path = `m/44'/0'/${account}'/0/0`;
+        const didkey = hdkey.derive(path);
+        const keypair = this.cipher.generateJwk(didkey.privateKey!);
+
+        const block = await this.gatekeeper.getBlock(registry);
+        const blockid = block?.hash;
+
+        const operation: Operation = {
+            type: 'create',
+            created: new Date().toISOString(),
+            blockid,
+            mdip: {
+                version: 1,
+                type: 'agent',
+                registry
+            },
+            publicJwk: keypair.publicJwk,
+        };
+
+        const msgHash = this.cipher.hashJSON(operation);
+        const signature = this.cipher.signHash(msgHash, keypair.privateJwk);
+        const signed: Operation = {
+            ...operation,
+            signature: {
+                signed: new Date().toISOString(),
+                hash: msgHash,
+                value: signature
+            },
+        };
+
+        return signed;
     }
 
     async removeId(name: string): Promise<boolean> {

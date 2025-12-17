@@ -2,7 +2,7 @@ import CipherNode from '@mdip/cipher/node';
 import Gatekeeper from '@mdip/gatekeeper';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory.ts';
 import { copyJSON } from '@mdip/common/utils';
-import { InvalidDIDError, ExpectedExceptionError } from '@mdip/common/errors';
+import { ExpectedExceptionError } from '@mdip/common/errors';
 import HeliaClient from '@mdip/ipfs/helia';
 import TestHelper from './helper.ts';
 
@@ -155,16 +155,12 @@ describe('removeDIDs', () => {
         const did = await gatekeeper.createDID(agentOp);
 
         const ok = await gatekeeper.removeDIDs([did]);
-
         expect(ok).toBe(true);
 
-        try {
-            await gatekeeper.resolveDID(did);
-            throw new ExpectedExceptionError();
-        } catch (error: any) {
-            expect(error.type).toBe(InvalidDIDError.type);
-            expect(error.detail).toBe('unknown');
-        }
+        const { didResolutionMetadata } = await gatekeeper.resolveDID(did);
+
+        expect(didResolutionMetadata).toBeDefined();
+        expect(didResolutionMetadata!.error).toBe('notFound');
     });
 
     it('should throw an exception if no array specified', async () => {
@@ -674,7 +670,7 @@ describe('processEvents', () => {
 
         const doc2 = await gatekeeper.resolveDID(did);
 
-        expect(doc2.didDocumentMetadata!.version).toBe(2);
+        expect(doc2.didDocumentMetadata!.version).toBe("2");
         expect(doc2.didDocumentMetadata!.confirmed).toBe(true);
     });
 
@@ -1023,7 +1019,7 @@ describe('processEvents', () => {
         expect(response1.added).toBe(events.length);
 
         const assetDoc2 = await gatekeeper.resolveDID(assetDID);
-        expect(assetDoc2.didDocumentMetadata!.version).toBe(3);
+        expect(assetDoc2.didDocumentMetadata!.version).toBe("3");
         expect(assetDoc2.didDocumentMetadata!.confirmed).toBe(false);
 
         for (const event of events) {
@@ -1036,7 +1032,7 @@ describe('processEvents', () => {
         expect(response2.added).toBe(events.length);
 
         const assetDoc3 = await gatekeeper.resolveDID(assetDID);
-        expect(assetDoc3.didDocumentMetadata!.version).toBe(3);
+        expect(assetDoc3.didDocumentMetadata!.version).toBe("3");
         expect(assetDoc3.didDocumentMetadata!.confirmed).toBe(true);
     });
 
@@ -1121,6 +1117,10 @@ describe('getDids', () => {
 
         const allDocs = await gatekeeper.getDIDs({ resolve: true });
 
+        // Update the retrieved timestamps to match any value
+        agentDoc.didResolutionMetadata!.retrieved = expect.any(String);
+        assetDoc.didResolutionMetadata!.retrieved = expect.any(String);
+
         expect(allDocs.length).toBe(2);
         expect(allDocs[0]).toStrictEqual(agentDoc);
         expect(allDocs[1]).toStrictEqual(assetDoc);
@@ -1142,6 +1142,10 @@ describe('getDids', () => {
         const assetDoc = await gatekeeper.resolveDID(assetDID);
 
         const allDocs = await gatekeeper.getDIDs({ confirm: true, resolve: true });
+
+        // Update the retrieved timestamps to match any value
+        agentDoc.didResolutionMetadata!.retrieved = expect.any(String);
+        assetDoc.didResolutionMetadata!.retrieved = expect.any(String);
 
         expect(allDocs.length).toBe(2);
         expect(allDocs[0]).toStrictEqual(agentDoc); // version 1
@@ -1166,6 +1170,10 @@ describe('getDids', () => {
 
         const allDocs = await gatekeeper.getDIDs({ confirm: false, resolve: true });
 
+        // Update the retrieved timestamps to match any value
+        agentDocv2.didResolutionMetadata!.retrieved = expect.any(String);
+        assetDoc.didResolutionMetadata!.retrieved = expect.any(String);
+
         expect(allDocs.length).toBe(2);
         expect(allDocs[0]).toStrictEqual(agentDocv2);
         expect(allDocs[1]).toStrictEqual(assetDoc);
@@ -1173,18 +1181,36 @@ describe('getDids', () => {
 
     it('should return all DIDs after specified time', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await helper.createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair, { registry: 'TFTC' });
         const agentDID = await gatekeeper.createDID(agentOp);
         const dids = [];
+        const batch = [];
 
         for (let i = 0; i < 10; i++) {
-            const assetOp = await helper.createAssetOp(agentDID, keypair);
+            const assetOp = await helper.createAssetOp(agentDID, keypair, { registry: 'TFTC' });
             const assetDID = await gatekeeper.createDID(assetOp);
+            const update = await gatekeeper.resolveDID(assetDID);
+            update.didDocumentData = { mock: i + 1 };
+            const updateOp = await helper.createUpdateOp(keypair, assetDID, update);
+            await gatekeeper.updateDID(updateOp);
             dids.push(assetDID);
+            const ops = await gatekeeper.exportDID(assetDID);
+            batch.push(...ops);
         }
 
+        let timestamp = Date.now();
+
+        for (const op of batch) {
+            op.registry = 'TFTC';
+            timestamp += 3600000; // add 1 hour to timestamp for each op
+            op.time = new Date(timestamp).toISOString();
+        }
+
+        await gatekeeper.importBatch(batch);
+        await gatekeeper.processEvents();
+
         const doc = await gatekeeper.resolveDID(dids[4]);
-        const recentDIDs = await gatekeeper.getDIDs({ updatedAfter: doc.didDocumentMetadata!.created });
+        const recentDIDs = await gatekeeper.getDIDs({ updatedAfter: doc.didDocumentMetadata!.updated });
 
         expect(recentDIDs.length).toBe(5);
         expect(recentDIDs.includes(dids[5])).toBe(true);
@@ -1196,18 +1222,35 @@ describe('getDids', () => {
 
     it('should return all DIDs before specified time', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await helper.createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair, { registry: 'TFTC' });
         const agentDID = await gatekeeper.createDID(agentOp);
         const dids = [];
+        const batch = [];
 
         for (let i = 0; i < 10; i++) {
-            const assetOp = await helper.createAssetOp(agentDID, keypair);
+            const assetOp = await helper.createAssetOp(agentDID, keypair, { registry: 'TFTC' });
             const assetDID = await gatekeeper.createDID(assetOp);
+            const update = await gatekeeper.resolveDID(assetDID);
+            update.didDocumentData = { mock: i + 1 };
+            const updateOp = await helper.createUpdateOp(keypair, assetDID, update);
+            await gatekeeper.updateDID(updateOp);
             dids.push(assetDID);
+            const ops = await gatekeeper.exportDID(assetDID);
+            batch.push(...ops);
         }
 
+        let timestamp = Date.now();
+
+        for (const op of batch) {
+            op.registry = 'TFTC';
+            timestamp += 3600000; // add 1 hour to timestamp for each op
+            op.time = new Date(timestamp).toISOString();
+        }
+
+        await gatekeeper.importBatch(batch);
+        await gatekeeper.processEvents();
         const doc = await gatekeeper.resolveDID(dids[5]);
-        const recentDIDs = await gatekeeper.getDIDs({ updatedBefore: doc.didDocumentMetadata!.created });
+        const recentDIDs = await gatekeeper.getDIDs({ updatedBefore: doc.didDocumentMetadata!.updated });
 
         expect(recentDIDs.length).toBe(6);
         expect(recentDIDs.includes(agentDID)).toBe(true);
@@ -1220,21 +1263,38 @@ describe('getDids', () => {
 
     it('should return all DIDs between specified times', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await helper.createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair, { registry: 'TFTC' });
         const agentDID = await gatekeeper.createDID(agentOp);
         const dids = [];
+        const batch = [];
 
         for (let i = 0; i < 10; i++) {
-            const assetOp = await helper.createAssetOp(agentDID, keypair);
+            const assetOp = await helper.createAssetOp(agentDID, keypair, { registry: 'TFTC' });
             const assetDID = await gatekeeper.createDID(assetOp);
+            const update = await gatekeeper.resolveDID(assetDID);
+            update.didDocumentData = { mock: i + 1 };
+            const updateOp = await helper.createUpdateOp(keypair, assetDID, update);
+            await gatekeeper.updateDID(updateOp);
             dids.push(assetDID);
+            const ops = await gatekeeper.exportDID(assetDID);
+            batch.push(...ops);
         }
 
+        let timestamp = Date.now();
+
+        for (const op of batch) {
+            op.registry = 'TFTC';
+            timestamp += 3600000; // add 1 hour to timestamp for each op
+            op.time = new Date(timestamp).toISOString();
+        }
+
+        await gatekeeper.importBatch(batch);
+        await gatekeeper.processEvents();
         const doc3 = await gatekeeper.resolveDID(dids[3]);
         const doc8 = await gatekeeper.resolveDID(dids[8]);
         const recentDIDs = await gatekeeper.getDIDs({
-            updatedAfter: doc3.didDocumentMetadata!.created,
-            updatedBefore: doc8.didDocumentMetadata!.created
+            updatedAfter: doc3.didDocumentMetadata!.updated,
+            updatedBefore: doc8.didDocumentMetadata!.updated
         });
 
         expect(recentDIDs.length).toBe(4);
@@ -1255,7 +1315,10 @@ describe('getDids', () => {
             const assetOp = await helper.createAssetOp(agentDID, keypair);
             const assetDID = await gatekeeper.createDID(assetOp);
             dids.push(assetDID);
-            expected.push(await gatekeeper.resolveDID(assetDID));
+
+            const doc = await gatekeeper.resolveDID(assetDID);
+            doc.didResolutionMetadata!.retrieved = expect.any(String);
+            expected.push(doc);
         }
 
         const resolvedDIDs = await gatekeeper.getDIDs({

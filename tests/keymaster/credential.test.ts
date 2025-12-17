@@ -440,7 +440,7 @@ describe('updateCredential', () => {
         expect(updated.validUntil).toBe(vc.validUntil);
 
         const doc = await keymaster.resolveDID(did);
-        expect(doc.didDocumentMetadata!.version).toBe(2);
+        expect(doc.didDocumentMetadata!.version).toBe("2");
     });
 
     it('should throw exception on invalid parameters', async () => {
@@ -538,7 +538,7 @@ describe('revokeCredential', () => {
         expect(ok).toBe(true);
 
         const revoked = await keymaster.resolveDID(did);
-        expect(revoked.didDocument).toStrictEqual({});
+        expect(revoked.didDocument).toStrictEqual({ id: did });
         expect(revoked.didDocumentMetadata!.deactivated).toBe(true);
     });
 
@@ -552,7 +552,7 @@ describe('revokeCredential', () => {
         expect(ok1).toBe(true);
 
         const revoked = await keymaster.resolveDID(did);
-        expect(revoked.didDocument).toStrictEqual({});
+        expect(revoked.didDocument).toStrictEqual({ id: did });
         expect(revoked.didDocumentMetadata!.deactivated).toBe(true);
 
         try {

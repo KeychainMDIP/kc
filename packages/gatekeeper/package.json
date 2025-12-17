@@ -1,6 +1,6 @@
 {
   "name": "@mdip/gatekeeper",
-  "version": "1.4.0-beta.0",
+  "version": "1.4.0-beta.2",
   "description": "MDIP Gatekeeper",
   "type": "module",
   "module": "./dist/esm/index.js",
@@ -9,6 +9,9 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org"
+  },
   "exports": {
     ".": {
       "browser": {
@@ -115,7 +118,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/KeychainMDIP/kc.git"
+    "url": "git+https://github.com/KeychainMDIP/kc.git"
   },
   "devDependencies": {
     "@rollup/plugin-json": "^6.1.0"

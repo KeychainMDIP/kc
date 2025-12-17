@@ -74,7 +74,7 @@ function JsonViewer(
             }
             setAliasDocs(docs);
 
-            const versions = docs.didDocumentMetadata.version;
+            const versions = parseInt(docs.didDocumentMetadata.version ?? "1", 10);
             if (versions) {
                 setAliasDocsVersion(versions);
                 setAliasDocsVersionMax(versions);
@@ -119,7 +119,7 @@ function JsonViewer(
         try {
             setAliasDocsVersion(version);
             const docs = await gatekeeper.resolveDID(currentDid, {
-                atVersion: version,
+                versionSequence: version,
             });
             setAliasDocs(docs);
         } catch (error: any) {
