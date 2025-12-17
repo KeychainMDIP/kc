@@ -63,6 +63,15 @@ jobs:
           storeFile=debug.keystore
           EOF
 
+      - name: Set version code and name
+        env:
+          VERSION_NAME: "1.0.${{ github.run_number }}"
+          VERSION_CODE: ${{ github.run_number }}
+        run: |
+          sed -i "s/versionCode [0-9]*/versionCode $VERSION_CODE/" android/app/build.gradle
+          sed -i "s/versionName \"[^\"]*\"/versionName \"$VERSION_NAME\"/" android/app/build.gradle
+          echo "Building version $VERSION_NAME (code: $VERSION_CODE)"
+
 
       - name: Build Android debug APK
         working-directory: ./apps/react-wallet
@@ -70,11 +79,16 @@ jobs:
           CI: true
         run: npm run android:build
 
-      - name: Upload debug APK artifact
+      - name: Rename APK with version
+        run: |
+          mv android/app/build/outputs/apk/release/app-release.apk \
+            android/app/build/outputs/apk/release/app-release-1.0.${{ github.run_number }}.apk
+    
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug-artifact
-          path: apps/react-wallet/android/app/build/outputs/apk/debug/app-debug.apk
+          name: app-release-${{ github.run_number }}
+          path: android/app/build/outputs/apk/release/app-release-1.0.${{ github.run_number }}.apk
           if-no-files-found: error
        
   create-release:
