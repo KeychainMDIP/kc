@@ -51,7 +51,7 @@ jobs:
       - name: Decode Keystore
         working-directory: ./apps/react-wallet
         run: |
-          echo "${{ secrets.KEYSTORE_FILE }}" | base64 --decode > android/debug.keystore
+          echo "${{ secrets.KEYSTORE_FILE }}" | base64 --decode > android/app/debug.keystore
 
       - name: Create key.properties
         working-directory: ./apps/react-wallet
