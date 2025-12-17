@@ -80,6 +80,7 @@ jobs:
         run: npm run android:build
 
       - name: Rename APK with version
+        working-directory: ./apps/react-wallet
         run: |
           mv android/app/build/outputs/apk/release/app-release.apk \
             android/app/build/outputs/apk/release/app-release-1.0.${{ github.run_number }}.apk

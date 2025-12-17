@@ -60,6 +60,7 @@ jobs:
           EOF
 
       - name: Set version code and name
+        working-directory: ./apps/react-wallet
         env:
           VERSION_NAME: "1.0.${{ github.run_number }}"
           VERSION_CODE: ${{ github.run_number }}
