@@ -1,4 +1,4 @@
-import BtcClient, {BlockVerbose, BlockTxVerbose} from 'bitcoin-core';
+import BtcClient, {Block, BlockVerbose, BlockTxVerbose} from 'bitcoin-core';
 import * as bitcoin from 'bitcoinjs-lib';
 import * as ecc from 'tiny-secp256k1';
 import { gunzipSync } from 'zlib';
@@ -722,7 +722,7 @@ async function syncBlocks(): Promise<void> {
 
         for (let height = currentMax; height <= blockCount; height++) {
             const blockHash = await btcClient.getBlockHash(height);
-            const block = await btcClient.getBlock(blockHash);
+            const block = await btcClient.getBlock(blockHash) as Block;
             console.log(`${height}/${blockCount} blocks (${(100 * height / blockCount).toFixed(2)}%)`);
             await addBlock(height, blockHash, block.time);
         }
