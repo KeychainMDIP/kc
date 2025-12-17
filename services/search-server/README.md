@@ -29,7 +29,7 @@ SEARCH_SERVER_PORT=4002
 SEARCH_SERVER_GATEKEEPER_URL=http://localhost:4224
 
 # How often (in ms) to poll Gatekeeper for new or updated DIDs.
-SEARCH_SERVER_REFRESH_INTERVAL_MS=60000
+SEARCH_SERVER_REFRESH_INTERVAL_MS=5000
 ```
 
 ### Endpoints
