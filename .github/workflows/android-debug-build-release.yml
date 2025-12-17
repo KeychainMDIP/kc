@@ -41,6 +41,28 @@ jobs:
         with:
           api-level: 35
           build-tools: '35.0.0'
+    
+      - name: Build & Sync Capacitor
+        working-directory: ./apps/react-wallet
+        run: |
+         npm run build
+         npx cap sync android
+        
+      - name: Decode Keystore
+        working-directory: ./apps/react-wallet
+        run: |
+          echo "${{ secrets.KEYSTORE_FILE }}" | base64 --decode > android/my-release-key.keystore
+
+      - name: Create key.properties
+        working-directory: ./apps/react-wallet
+        run: |
+          cat > android/key.properties << EOF
+          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+          keyPassword=${{ secrets.KEY_PASSWORD }}
+          keyAlias=${{ secrets.KEY_ALIAS }}
+          storeFile=my-release-key.keystore
+          EOF
+
 
       - name: Build Android debug APK
         working-directory: ./apps/react-wallet

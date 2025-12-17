@@ -1,2 +1,13 @@
 /build/*
 !/build/.npmkeep
+
+# Keystore files
+*.keystore
+*.jks
+
+# Key properties
+android/key.properties
+key.properties
+
+# Base64 encoded keystore
+keystore-base64.txt
