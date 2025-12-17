@@ -150,7 +150,8 @@ export interface GatekeeperInterface {
     addText(text: string): Promise<string>;
     getText(cid: string): Promise<string | null>;
     getBlock(registry: string, block?: BlockId): Promise<BlockInfo | null>;
-    addBlock(registry: string, block: BlockInfo): Promise<boolean>
+    addBlock(registry: string, block: BlockInfo): Promise<boolean>;
+    generateDID(operation: Operation): Promise<string>;
 }
 
 export interface MdipRegistration {
