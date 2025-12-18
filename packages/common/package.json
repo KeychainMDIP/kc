@@ -49,7 +49,6 @@
   "author": "David McFadzean <davidmc@gmail.com>",
   "license": "MIT",
   "dependencies": {
-    "@mdip/ipfs": "*"
   },
   "repository": {
     "type": "git",
