@@ -1,6 +1,6 @@
 {
   "name": "search-server",
-  "version": "1.4.0-beta.2",
+  "version": "1.4.0-beta.4",
   "type": "module",
   "scripts": {
     "build": "tsc",
