@@ -167,7 +167,7 @@ describe('createId', () => {
 describe('createIdOperation', () => {
     it('should create a valid operation for new ID', async () => {
         const name = 'Bob';
-        const operation = await keymaster.createIdOperation(name);
+        const {signed: operation} = await keymaster.createIdOperation(name);
 
         expect(operation.type).toBe('create');
         expect(operation.created).toBeDefined();
@@ -185,7 +185,7 @@ describe('createIdOperation', () => {
     it('should create operation with custom registry', async () => {
         const name = 'Alice';
         const registry = 'TFTC';
-        const operation = await keymaster.createIdOperation(name, 0, { registry });
+        const {signed: operation} = await keymaster.createIdOperation(name, 0, { registry });
 
         expect(operation.mdip!.registry).toBe(registry);
         expect(operation.type).toBe('create');
@@ -196,7 +196,7 @@ describe('createIdOperation', () => {
     it('should create operation with local registry', async () => {
         const name = 'Charlie';
         const registry = 'local';
-        const operation = await keymaster.createIdOperation(name, 0, { registry });
+        const {signed: operation} = await keymaster.createIdOperation(name, 0, { registry });
 
         expect(operation.mdip!.registry).toBe(registry);
         expect(operation.type).toBe('create');
@@ -249,7 +249,7 @@ describe('createIdOperation', () => {
 
     it('should create valid signature that can be verified', async () => {
         const name = 'Frank';
-        const operation = await keymaster.createIdOperation(name);
+        const {signed: operation} = await keymaster.createIdOperation(name);
 
         // Verify that the signature matches the operation
         const msgHash = cipher.hashJSON({
@@ -269,7 +269,7 @@ describe('createIdOperation', () => {
 
     it('should create operation that can be used to create actual DID', async () => {
         const name = 'Grace';
-        const operation = await keymaster.createIdOperation(name);
+        const {signed: operation} = await keymaster.createIdOperation(name);
 
         // Use the operation to create an actual DID
         const did = await gatekeeper.createDID(operation);
@@ -295,7 +295,7 @@ describe('createIdOperation', () => {
         });
 
         const name = 'Henry';
-        const operation = await customKeymaster.createIdOperation(name);
+        const {signed: operation} = await customKeymaster.createIdOperation(name);
 
         expect(operation.mdip!.registry).toBe(defaultRegistry);
     });
