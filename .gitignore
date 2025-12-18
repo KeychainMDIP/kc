@@ -11,3 +11,5 @@ dist/
 dids.db-journal
 .venv
 
+
+**/.npmrc

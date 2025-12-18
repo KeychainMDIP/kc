@@ -1,6 +1,6 @@
 {
   "name": "gatekeeper-server",
-  "version": "1.4.0-beta.2",
+  "version": "1.4.0-beta.3",
   "type": "module",
   "description": "MDIP Gatekeeper REST API server",
   "main": "src/index.js",

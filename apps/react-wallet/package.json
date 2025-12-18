@@ -1,6 +1,6 @@
 {
   "name": "@mdip/react-wallet",
-  "version": "1.4.0-beta.2",
+  "version": "1.4.0-beta.3",
   "description": "MDIP Android Demo",
   "scripts": {
     "dev": "vite",
