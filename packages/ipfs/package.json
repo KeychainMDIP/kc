@@ -1,6 +1,6 @@
 {
   "name": "@mdip/ipfs",
-  "version": "1.4.0-beta.2",
+  "version": "1.4.0-beta.3",
   "description": "MDIP IPFS lib",
   "type": "module",
   "module": "./dist/esm/index.js",
@@ -75,12 +75,12 @@
   "dependencies": {
     "@helia/json": "^4.0.3",
     "@helia/unixfs": "^5.0.0",
+    "@mdip/common": "*",
     "axios": "^1.7.7",
     "blockstore-fs": "^2.0.2",
     "helia": "^5.3.0",
     "ip": "^2.0.1",
     "kubo-rpc-client": "^5.1.0",
-    "@mdip/common": "*",
     "multiformats": "^13.3.3"
   },
   "repository": {
