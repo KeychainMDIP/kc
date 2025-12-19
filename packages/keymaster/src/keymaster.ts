@@ -1371,7 +1371,7 @@ export default class Keymaster implements KeymasterInterface {
         await this.mutateWallet(async (wallet) => {
             const account = wallet.counter;
             const index = 0;
-            const {signed} = await this.createIdOperation(name, account, options);
+            const signed = await this.createIdOperation(name, account, options);
 
             did = await this.gatekeeper.createDID(signed);
 
@@ -1387,7 +1387,7 @@ export default class Keymaster implements KeymasterInterface {
         name: string,
         account: number = 0,
         options: { registry?: string } = {}
-    ): Promise<{ pendingDID: string; signed: Operation }> {
+    ): Promise<Operation> {
         const { registry = this.defaultRegistry } = options;
         const wallet = await this.loadWallet();
 
@@ -1423,10 +1423,7 @@ export default class Keymaster implements KeymasterInterface {
                 value: signature
             },
         };
-
-        const pendingDID = await this.gatekeeper.generateDID(signed);
-
-        return {pendingDID, signed};
+        return signed;
     }
 
     async removeId(name: string): Promise<boolean> {
