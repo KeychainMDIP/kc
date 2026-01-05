@@ -75,6 +75,15 @@ export interface Block {
 
 export type BlockHex = string;
 
+export interface BlockHeader {
+    hash?: string;
+    confirmations?: number;
+    height?: number;
+    time?: number;
+    nTx?: number;
+    previousblockhash?: string;
+}
+
 export interface BlockTxVerbose {
     txid: string;
     vin: Vin[];
@@ -373,6 +382,7 @@ export default class BtcClient {
     getTransaction(txid: string, include_watchonly?: boolean, verbose?: boolean): Promise<GetTransactionResult>;
     getBlockHash(height: number): Promise<string>;
     getBlock(blockHash: string, verbosity?: number): Promise<BlockHex | Block | BlockVerbose>;
+    getBlockHeader(blockHash: string, verbose?: boolean): Promise<BlockHeader>;
     getBlockCount(): Promise<number>;
     createWallet(walletName: string): Promise<any>;
     getWalletInfo(): Promise<WalletInfo>;
