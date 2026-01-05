@@ -18,6 +18,7 @@ export interface RegisteredItem {
 
 export interface MediatorDb {
     height: number;
+    hash?: string;
     time: string;
     blockCount: number;
     blocksScanned: number;
