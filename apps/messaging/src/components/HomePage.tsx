@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useVariablesContext } from "../contexts/VariablesProvider";
 import { Avatar, Conversation, ConversationList } from "@chatscope/chat-ui-kit-react";
-import {avatarDataUrl, arraysMatchMembers, convertNamesToDIDs, truncateMiddle} from "../utils/utils";
+import { avatarDataUrl, parseChatPayload, truncateMiddle } from "../utils/utils";
 import {CHAT_SUBJECT, MESSAGING_PROFILE} from "../constants";
 import AddUserModal from "../modals/AddUserModal";
 import CreateGroupModal from "../modals/CreateGroupModal";
@@ -95,14 +95,6 @@ export default function HomePage() {
             return map;
         }
 
-        const getToDids = (itm: any): string[] => {
-            const msgTo = itm.message?.to;
-            if (Array.isArray(msgTo) && msgTo.length) {
-                return msgTo;
-            }
-            return convertNamesToDIDs(itm.to ?? [], nameList);
-        };
-
         for (const [, itm] of Object.entries(dmailList)) {
             if (itm.message?.subject !== CHAT_SUBJECT) {
                 continue;
@@ -122,17 +114,21 @@ export default function HomePage() {
                 continue;
             }
 
-            const toDids = getToDids(itm);
-            const isGroup = toDids.length > 1;
+            const payload = parseChatPayload(itm.message?.body ?? "");
+            if (!payload) {
+                continue;
+            }
 
-            if (isGroup) {
-                for (const [name, members] of Object.entries(groupList)) {
-                    const memberDids = convertNamesToDIDs(members, nameList);
-                    if (arraysMatchMembers(toDids, memberDids)) {
-                        map.set(name, (map.get(name) ?? 0) + 1);
-                        break;
-                    }
-                }
+            const messageText = typeof payload.message === "string" ? payload.message.trim() : "";
+            if (!messageText) {
+                continue;
+            }
+
+            const groupId = typeof payload.groupId === "string" ? payload.groupId.trim() : "";
+            const toDids = itm.message?.to ?? [];
+
+            if (groupId) {
+                map.set(groupId, (map.get(groupId) ?? 0) + 1);
             } else {
                 const incoming = senderDid !== currentDID && toDids.includes(currentDID);
                 if (incoming) {
@@ -142,16 +138,16 @@ export default function HomePage() {
         }
         return map;
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [dmailList, currentId, nameList, groupList])
+    }, [dmailList, currentId, currentDID])
 
     const startsWithCi = (full: string, prefix: string) => full.toLocaleLowerCase().startsWith(prefix.toLocaleLowerCase());
 
-    const filteredGroupNames = useMemo(() => {
-        const groups = Object.keys(groupList);
+    const filteredGroupEntries = useMemo(() => {
+        const entries = Object.entries(groupList);
         if (!searchText.trim()) {
-            return groups;
+            return entries;
         }
-        return groups.filter(name => startsWithCi(name, searchText.trim()));
+        return entries.filter(([, group]) => startsWithCi(group.name, searchText.trim()));
     }, [groupList, searchText]);
 
     const filteredAgentEntries = useMemo(() => {
@@ -307,22 +303,18 @@ export default function HomePage() {
 
             <Box flex="1" overflowY="auto">
                 <ConversationList style={{ height: "auto", overflow: "visible" }}>
-                    {filteredGroupNames.map((groupName) => {
-                        const groupDID = nameList[groupName];
-                        if (!groupDID) {
-                            return null;
-                        }
-
-                        const src = avatarDataUrl(groupDID);
-                        const selected = activePeer === groupName;
-                        const unreadCnt = unreadBySender.get(groupName) ?? 0;
+                    {filteredGroupEntries.map(([groupId, group]) => {
+                        const groupName = group.name || groupId;
+                        const src = avatarDataUrl(groupId);
+                        const selected = activePeer === groupId;
+                        const unreadCnt = unreadBySender.get(groupId) ?? 0;
 
                         return (
                             <Conversation
-                                key={groupDID}
+                                key={groupId}
                                 name={groupName}
                                 unreadCnt={unreadCnt > 0 ? unreadCnt : undefined}
-                                onClick={() => setActivePeer(groupName)}
+                                onClick={() => setActivePeer(groupId)}
                                 active={selected}
                             >
                                 <Avatar src={src} />

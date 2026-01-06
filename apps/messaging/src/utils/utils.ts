@@ -147,3 +147,49 @@ export function arraysMatchMembers(arr1: string[], arr2: string[]) {
     const sorted2 = [...arr2].sort();
     return sorted1.every((val, idx) => val === sorted2[idx]);
 }
+
+export type ChatPayload = {
+    type?: string;
+    message?: string;
+    groupId?: string;
+    groupName?: string;
+    [key: string]: unknown;
+};
+
+export function parseChatPayload(body: string): ChatPayload | null {
+    if (typeof body !== "string") {
+        return null;
+    }
+
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(body);
+    } catch {
+        return null;
+    }
+
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return null;
+    }
+
+    const payload = parsed as Record<string, unknown>;
+
+    if ("type" in payload && typeof payload.type !== "string") {
+        return null;
+    }
+    if ("message" in payload && typeof payload.message !== "string") {
+        return null;
+    }
+    if ("groupId" in payload && typeof payload.groupId !== "string") {
+        return null;
+    }
+    if ("groupName" in payload && typeof payload.groupName !== "string") {
+        return null;
+    }
+
+    return payload as ChatPayload;
+}
+
+export function stringifyChatPayload(payload: ChatPayload): string {
+    return JSON.stringify(payload);
+}

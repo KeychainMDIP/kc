@@ -4,6 +4,8 @@ import { useVariablesContext } from "../contexts/VariablesProvider";
 import { useWalletContext } from "../contexts/WalletProvider";
 import { useSnackbar } from "../contexts/SnackbarProvider";
 import { LuX } from "react-icons/lu";
+import { CHAT_SUBJECT } from "../constants";
+import { stringifyChatPayload } from "../utils/utils";
 
 interface CreateGroupModalProps {
     isOpen: boolean;
@@ -11,8 +13,15 @@ interface CreateGroupModalProps {
 }
 
 const CreateGroupModal: React.FC<CreateGroupModalProps> = ({ isOpen, onClose }) => {
-    const { agentList, currentId, currentDID, nameList, refreshNames, groupList } = useVariablesContext();
-    const { keymaster } = useWalletContext();
+    const {
+        agentList,
+        currentId,
+        currentDID,
+        nameList,
+        displayNameList,
+        refreshNames,
+    } = useVariablesContext();
+    const { keymaster, registry } = useWalletContext();
     const { setError, setSuccess } = useSnackbar();
 
     const [groupName, setGroupName] = useState<string>("");
@@ -68,22 +77,30 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({ isOpen, onClose }) 
             return;
         }
 
-        if (Object.keys(groupList).includes(trimmed) || Object.keys(nameList).includes(trimmed)) {
-            setError("Group name already exists");
-            return;
-        }
-
         try {
-            const groupDID = await keymaster.createGroup(trimmed);
-            await keymaster.addName(trimmed, groupDID);
-            await keymaster.addGroupMember(trimmed, currentDID);
+            const groupId = await keymaster.createGroup(trimmed);
+            const memberDids = selectedMembers
+                .filter(member => member !== currentId)
+                .map(member => displayNameList[member] ?? nameList[member] ?? member)
+                .filter(member => !!member);
+            const recipients = Array.from(new Set([currentDID, ...memberDids]));
 
-            for (const member of selectedMembers) {
-                if (member === currentId) {
-                    continue;
-                }
-                await keymaster.addGroupMember(trimmed, member);
+            for (const memberDid of recipients) {
+                await keymaster.addGroupMember(groupId, memberDid);
             }
+
+            const body = stringifyChatPayload({
+                groupId,
+                groupName: trimmed,
+            });
+            const dmail = {
+                to: recipients,
+                cc: [],
+                subject: CHAT_SUBJECT,
+                body,
+            };
+            const did = await keymaster.createDmail(dmail, { registry });
+            await keymaster.sendDmail(did);
 
             await refreshNames();
             setSuccess(`Group "${trimmed}" created`);

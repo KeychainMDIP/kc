@@ -20,7 +20,7 @@ const WarningModal: React.FC<WarningModalProps> = ({ isOpen, title, warningText,
         <Dialog.Root open={isOpen} onOpenChange={handleOpenChange}>
             <Portal>
                 {/* Ensure backdrop overlays any sticky footer (e.g., zIndex 2000 in HomePage) */}
-                <Dialog.Backdrop zIndex={2200} bg="blackAlpha.600" />
+                <Dialog.Backdrop zIndex={2300} bg="blackAlpha.600" />
                 <Dialog.Content
                     position="fixed"
                     left={0}

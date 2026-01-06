@@ -31,7 +31,9 @@ import {
     avatarDataUrl,
     formatTime,
     truncateMiddle,
-    arraysMatchMembers,
+    parseChatPayload,
+    stringifyChatPayload,
+    ChatPayload,
 } from "../utils/utils";
 
 type MessageModel = {
@@ -44,7 +46,6 @@ type MessageModel = {
 }
 
 const UNREAD = "unread"
-const IMAGE_PLACEHOLDER = "[image]"
 const GROUP_NOT_FOUND = "Group not found";
 
 const ChatWindow: React.FC = () => {
@@ -88,9 +89,14 @@ const ChatWindow: React.FC = () => {
     }, [activePeer]);
 
     const uiPeer = activePeer || lastPeerRef.current;
-    const peerDid = uiPeer ? (displayNameList[uiPeer] ?? nameList[uiPeer] ?? "") : "";
+    const groupEntry = uiPeer ? groupList[uiPeer] : undefined;
+    const isGroup = !!groupEntry;
+    const peerDid = uiPeer
+        ? (isGroup ? uiPeer : (displayNameList[uiPeer] ?? nameList[uiPeer] ?? ""))
+        : "";
+    const peerDisplayName = isGroup ? (groupEntry?.name ?? uiPeer) : uiPeer;
     const canonicalPeerAlias =
-        uiPeer && peerDid
+        peerDid
             ? (Object.entries(nameList).find(([, d]) => d === peerDid)?.[0] ?? uiPeer)
             : uiPeer;
 
@@ -125,8 +131,9 @@ const ChatWindow: React.FC = () => {
             return;
         }
 
-        const isGroup = Object.keys(groupList).includes(activePeer);
-        if (isGroup) {
+        const selectedGroup = groupList[activePeer];
+        if (selectedGroup) {
+            setCurrentGroupMembers(selectedGroup.members);
             (async () => {
                 try {
                     const group = await keymaster.getGroup(activePeer);
@@ -162,6 +169,17 @@ const ChatWindow: React.FC = () => {
                 continue;
             }
 
+            const payload = parseChatPayload(itm.message?.body ?? "");
+            if (!payload) {
+                continue;
+            }
+
+            const messageText = typeof payload.message === "string" ? payload.message.trim() : "";
+            if (!messageText) {
+                continue;
+            }
+            const payloadGroupId = typeof payload.groupId === "string" ? payload.groupId.trim() : "";
+
             const tags = itm.tags ?? [];
             if (tags.includes("deleted") || tags.includes("archived")) {
                 continue;
@@ -175,7 +193,7 @@ const ChatWindow: React.FC = () => {
             const toDids = itm.message?.to ?? [];
 
             if (isGroup) {
-                if (!arraysMatchMembers(toDids, currentGroupMembers)) {
+                if (!payloadGroupId || payloadGroupId !== activePeer) {
                     continue;
                 }
                 const incoming = senderDid && senderDid !== currentDID && toDids.includes(currentDID);
@@ -184,6 +202,9 @@ const ChatWindow: React.FC = () => {
                     continue;
                 }
             } else {
+                if (payloadGroupId) {
+                    continue;
+                }
                 const incoming = senderDid === peerDid && toDids.includes(currentDID);
                 if (!incoming) {
                     continue;
@@ -209,15 +230,15 @@ const ChatWindow: React.FC = () => {
     }, [activePeer, peerDid, currentDID, currentGroupMembers]);
 
     const handleSend = async (text: string) => {
-        const body = (text ?? pendingText).trim();
-        if (!body || !keymaster || !activePeer) {
+        const messageText = (text ?? pendingText).trim();
+        if (!messageText || !keymaster || !activePeer) {
             return;
         }
 
         try {
             setSending(true)
 
-            const isGroup = Object.keys(groupList).includes(activePeer);
+            const isGroup = groupList[activePeer] !== undefined;
             let recipients: string[] = [];
 
             if (isGroup) {
@@ -235,11 +256,18 @@ const ChatWindow: React.FC = () => {
                 recipients = [peerDid];
             }
 
+            const payload: ChatPayload = {
+                message: messageText,
+            };
+            if (isGroup) {
+                payload.groupId = activePeer;
+            }
+
             const dmail = {
                 to: recipients,
                 cc: [],
                 subject: CHAT_SUBJECT,
-                body,
+                body: stringifyChatPayload(payload),
             }
 
             const did = await keymaster.createDmail(dmail, { registry })
@@ -330,7 +358,7 @@ const ChatWindow: React.FC = () => {
                         return;
                     }
 
-                    const isGroup = Object.keys(groupList).includes(activePeer);
+                    const isGroup = groupList[activePeer] !== undefined;
                     let recipients: string[] = [];
 
                     if (isGroup) {
@@ -348,11 +376,18 @@ const ChatWindow: React.FC = () => {
                         recipients = [peerDid];
                     }
 
+                    const payload: ChatPayload = {
+                        type: "image",
+                    };
+                    if (isGroup) {
+                        payload.groupId = activePeer;
+                    }
+
                     const dmail = {
                         to: recipients,
                         cc: [],
                         subject: CHAT_SUBJECT,
-                        body: IMAGE_PLACEHOLDER,
+                        body: stringifyChatPayload(payload),
                     };
 
                     const did = await keymaster.createDmail(dmail);
@@ -398,52 +433,70 @@ const ChatWindow: React.FC = () => {
 
     const conversation = useMemo(() => {
         if (!activePeer || !currentId || !keymaster) {
-            return [] as { did: string; model: MessageModel }[]
+            return [] as { did: string; model: MessageModel; date: string }[]
         }
 
-        const isGroup = Object.keys(groupList).includes(activePeer);
+        const isGroup = groupList[activePeer] !== undefined;
 
         const convo = Object.entries(dmailList || {})
-            .filter(([, itm]: any) => {
-                const to = [...(itm.to || [])];
+            .reduce((acc, [did, itm]: any) => {
                 const notDeleted = !itm.tags?.includes("deleted");
                 const isChat = itm.message?.subject === CHAT_SUBJECT;
 
                 if (!isChat || !notDeleted) {
-                    return false;
+                    return acc;
+                }
+
+                const payload = parseChatPayload(itm.message?.body ?? "");
+                if (!payload) {
+                    return acc;
+                }
+
+                const messageText = typeof payload.message === "string" ? payload.message.trim() : "";
+                if (!messageText) {
+                    return acc;
                 }
 
                 const senderDid = itm.docs?.didDocument?.controller;
                 const toDids = itm.message?.to ?? [];
 
                 if (isGroup) {
-                    if (!arraysMatchMembers(toDids, currentGroupMembers)) {
-                        return false;
+                    const payloadGroupId = typeof payload.groupId === "string" ? payload.groupId.trim() : "";
+                    if (!payloadGroupId || payloadGroupId !== activePeer) {
+                        return acc;
                     }
 
-                    const outgoing = senderDid === currentId;
-                    const incoming = senderDid !== currentId && toDids.includes(currentDID);
-                    return outgoing || incoming;
+                    const outgoing = senderDid === currentDID;
+                    const incoming = senderDid !== currentDID && toDids.includes(currentDID);
+                    if (!outgoing && !incoming) {
+                        return acc;
+                    }
                 } else {
-                    if (to.length > 1) {
-                        return false;
+                    const payloadGroupId = typeof payload.groupId === "string" ? payload.groupId.trim() : "";
+                    if (payloadGroupId) {
+                        return acc;
+                    }
+                    if (toDids.length > 1) {
+                        return acc;
                     }
                     const incoming = senderDid === peerDid && toDids.includes(currentDID);
                     const outgoing = senderDid === currentDID && toDids.includes(peerDid);
-                    return incoming || outgoing;
+                    if (!incoming && !outgoing) {
+                        return acc;
+                    }
                 }
-            })
-            .sort(([, a]: any, [, b]: any) => new Date(a.date).getTime() - new Date(b.date).getTime())
-            .map(([did, itm]: any) => {
+
                 const model: MessageModel = {
-                    message: itm.message.body ?? "",
+                    message: messageText,
                     sender: itm.sender,
                     direction: itm.sender === currentId ? "outgoing" : "incoming",
                     sentTime: formatTime(itm.date),
                     position: "single",
                 }
-                return { did, model }
-            })
+                acc.push({ did, model, date: itm.date });
+                return acc;
+            }, [] as { did: string; model: MessageModel; date: string }[])
+            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
         for (let i = 0; i < convo.length; i++) {
             const prevDir = convo[i - 1]?.model.direction;
@@ -520,14 +573,14 @@ const ChatWindow: React.FC = () => {
     }, [conversation, keymaster]);
     const profile = uiPeer ? profileList[uiPeer] : undefined;
     const customAvatarUrl = profile?.avatar;
-    const peerAvatar = uiPeer ? (customAvatarUrl ?? avatarDataUrl(peerDid || uiPeer)) : "";
+    const peerAvatar = uiPeer ? (customAvatarUrl ?? avatarDataUrl(peerDid || peerDisplayName)) : "";
 
     return (
         <>
             <WarningModal
                 isOpen={removeOpen}
                 title="Remove user?"
-                warningText={`This will remove "${activePeer}" from your contacts.`}
+                warningText={`This will remove "${peerDisplayName}" from your contacts.`}
                 onSubmit={confirmRemove}
                 onClose={() => setRemoveOpen(false)}
             />
@@ -536,7 +589,7 @@ const ChatWindow: React.FC = () => {
                 isOpen={qrOpen}
                 onClose={() => setQrOpen(false)}
                 did={peerDid}
-                name={uiPeer}
+                name={peerDisplayName}
                 userAvatar={peerAvatar}
             />
 
@@ -547,7 +600,7 @@ const ChatWindow: React.FC = () => {
                             <ConversationHeader.Back onClick={onBack} />
                             <Avatar src={peerAvatar} name={uiPeer} />
                             <ConversationHeader.Content
-                                userName={uiPeer}
+                                userName={peerDisplayName}
                                 info={(
                                     currentGroupMembers.length
                                         ? `${currentGroupMembers.length} members`
@@ -589,7 +642,7 @@ const ChatWindow: React.FC = () => {
                         <MessageList autoScrollToBottom autoScrollToBottomOnMount>
                             {conversation.map((m) => {
                                 const hasImages = !!(imageAttachments[m.did] && imageAttachments[m.did].length > 0);
-                                const displayMessage = hasImages && m.model.message === IMAGE_PLACEHOLDER ? "" : m.model.message;
+                                const displayMessage = m.model.message;
                                 return (
                                     <Message
                                         key={m.did}
@@ -623,7 +676,7 @@ const ChatWindow: React.FC = () => {
                         </MessageList>
 
                         <MessageInput
-                            placeholder={`Message ${uiPeer}`}
+                            placeholder={`Message ${peerDisplayName}`}
                             value={pendingText}
                             onChange={setPendingText}
                             onSend={handleSend}

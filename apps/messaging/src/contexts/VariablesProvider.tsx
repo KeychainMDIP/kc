@@ -2,10 +2,11 @@ import { createContext, Dispatch, ReactNode, SetStateAction, useContext, useStat
 import { DmailItem } from "@mdip/keymaster/types";
 import { useWalletContext } from "./WalletProvider";
 import { useSnackbar } from "./SnackbarProvider";
-import { MESSAGING_PROFILE } from "../constants";
-import { arraysMatchMembers, convertNamesToDIDs } from "../utils/utils";
+import { CHAT_SUBJECT, MESSAGING_PROFILE } from "../constants";
+import { parseChatPayload } from "../utils/utils";
 
 const REFRESH_INTERVAL = 5_000;
+const UNREAD = "unread";
 
 interface VariablesContextValue {
     currentId: string;
@@ -22,8 +23,8 @@ interface VariablesContextValue {
     setSchemaList: Dispatch<SetStateAction<string[]>>;
     vaultList: string[];
     setVaultList: Dispatch<SetStateAction<string[]>>;
-    groupList: Record<string, string[]>;
-    setGroupList: Dispatch<SetStateAction<Record<string, string[]>>>;
+    groupList: Record<string, GroupInfo>;
+    setGroupList: Dispatch<SetStateAction<Record<string, GroupInfo>>>;
     imageList: string[];
     setImageList: Dispatch<SetStateAction<string[]>>;
     documentList: string[];
@@ -60,6 +61,11 @@ interface VariablesContextValue {
 
 const VariablesContext = createContext<VariablesContextValue | null>(null);
 
+type GroupInfo = {
+    name: string;
+    members: string[];
+};
+
 export function VariablesProvider({ children }: { children: ReactNode }) {
     const [currentId, setCurrentId] = useState<string>("");
     const [currentDID, setCurrentDID] = useState<string>("");
@@ -72,7 +78,7 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
     const [agentList, setAgentList] = useState<string[]>([]);
     const [profileList, setProfileList] = useState<Record<string, { avatar?: string; name?: string }>>({});
     const [pollList, setPollList] = useState<string[]>([]);
-    const [groupList, setGroupList] = useState<Record<string, string[]>>({});
+    const [groupList, setGroupList] = useState<Record<string, GroupInfo>>({});
     const [imageList, setImageList] = useState<string[]>([]);
     const [documentList, setDocumentList] = useState<string[]>([]);
     const [schemaList, setSchemaList] = useState<string[]>([]);
@@ -138,7 +144,7 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
 
             const schemaList = [];
             const imageList = [];
-            const groupListLocal: Record<string, string[]> = {};
+            const groupListLocal: Record<string, GroupInfo> = {};
             const vaultList = [];
             const pollList = [];
             const documentList = [];
@@ -208,7 +214,10 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
                     if (data.group) {
                         const group = await keymaster.getGroup(alias);
                         if (group?.members) {
-                            groupListLocal[alias] = group?.members;
+                            const name = typeof group.name === "string" && group.name.trim()
+                                ? group.name.trim()
+                                : alias;
+                            groupListLocal[did] = { name, members: group.members };
                         }
                         continue;
                     }
@@ -241,6 +250,23 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
                 catch {}
             }
 
+            try {
+                const ownedGroups = await keymaster.listGroups();
+                for (const groupDid of ownedGroups) {
+                    if (groupListLocal[groupDid]) {
+                        continue;
+                    }
+                    const group = await keymaster.getGroup(groupDid);
+                    if (!group?.members) {
+                        continue;
+                    }
+                    const name = typeof group.name === "string" && group.name.trim()
+                        ? group.name.trim()
+                        : groupDid;
+                    groupListLocal[groupDid] = { name, members: group.members };
+                }
+            } catch {}
+
             setNameList(canonicalAliasToDid);
             setDisplayNameList(displayNameToDid);
             setNameRegistry(registryMap);
@@ -250,7 +276,13 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
                 .sort((a, b) => a.localeCompare(b));
             setAgentList(uniqueSortedAgents);
 
-            setGroupList(groupListLocal);
+            const mergedGroupList: Record<string, GroupInfo> = { ...groupListLocal };
+            for (const [groupId, info] of Object.entries(groupList)) {
+                if (!mergedGroupList[groupId]) {
+                    mergedGroupList[groupId] = info;
+                }
+            }
+            setGroupList(mergedGroupList);
             setSchemaList(schemaList);
             setImageList(imageList);
             setDocumentList(documentList);
@@ -259,7 +291,7 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
             setNamesReady(true);
         },
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [keymaster, currentId]
+        [keymaster, currentId, groupList]
     );
 
     const refreshInbox = useCallback( async() => {
@@ -276,61 +308,120 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
 
         try {
             const msgs = await keymaster.listDmail();
+            const filtered: Record<string, DmailItem> = {};
+            const updates: Array<{ did: string; tags: string[] }> = [];
+            const groupUpdates: Record<string, GroupInfo> = {};
+            const knownGroups = new Map(Object.entries(groupList));
 
-            let existingGroupMembers = Object.values(groupList);
-
-            for (const [, item] of Object.entries(msgs)) {
-                const { sender, to } = item;
-
-                if (sender === currentId) {
+            for (const [did, item] of Object.entries(msgs)) {
+                if (item.message?.subject !== CHAT_SUBJECT) {
                     continue;
                 }
 
-                if (item.message?.to?.length === 1) {
-                    const senderDid = item.docs?.didDocument?.controller;
-                    if (!senderDid) {
+                const tags = item.tags ?? [];
+                const payload = parseChatPayload(item.message?.body ?? "");
+
+                if (!payload) {
+                    if (tags.includes(UNREAD)) {
+                        updates.push({ did, tags: tags.filter(tag => tag !== UNREAD) });
+                    }
+                    continue;
+                }
+
+                const messageText = typeof payload.message === "string" ? payload.message.trim() : "";
+                const groupId = typeof payload.groupId === "string" ? payload.groupId.trim() : "";
+                const groupName = typeof payload.groupName === "string" ? payload.groupName.trim() : "";
+                const toDids = item.message?.to ?? [];
+                const isGroupDelivery = toDids.length > 1;
+
+                if (isGroupDelivery) {
+                    if (!groupId) {
+                        if (tags.includes(UNREAD)) {
+                            updates.push({ did, tags: tags.filter(tag => tag !== UNREAD) });
+                        }
                         continue;
                     }
 
-                    const alreadyKnown = Object.values(nameList).includes(senderDid);
-                    if (!alreadyKnown) {
+                    let groupInfo = groupUpdates[groupId] ?? knownGroups.get(groupId);
+                    if (!groupInfo) {
                         try {
-                            const name = senderDid.slice(-20);
-                            await keymaster.addName(name, senderDid);
-                            needsRefresh = true;
-                        } catch {}
-                    }
-                } else if (item.message?.to?.length > 1) {
-                    let groupExists = false;
-                    for (const members of existingGroupMembers) {
-                        if (arraysMatchMembers(convertNamesToDIDs(members, nameList), convertNamesToDIDs(to, nameList))) {
-                            groupExists = true;
-                        }
-                    }
-
-                    if (!groupExists) {
-                        try {
-                            const groupDID = await keymaster.createGroup("");
-
-                            const groupName = groupDID.slice(-20);
-                            await keymaster.addName(groupName, groupDID);
-
-                            for (const memberDID of to) {
-                                try {
-                                    await keymaster.addGroupMember(groupName, memberDID);
-                                } catch {}
+                            const group = await keymaster.getGroup(groupId);
+                            if (group?.members) {
+                                groupInfo = {
+                                    name: groupName || groupId,
+                                    members: group.members,
+                                };
                             }
-
-                            existingGroupMembers.push(to);
-                            needsRefresh = true;
                         } catch {}
+                    }
+
+                    if (!groupInfo) {
+                        groupInfo = { name: groupName || groupId, members: [] };
+                    } else if (groupName && groupInfo.name !== groupName) {
+                        groupInfo = { ...groupInfo, name: groupName };
+                    }
+
+                    groupUpdates[groupId] = groupInfo;
+                    if (!messageText) {
+                        if (tags.includes(UNREAD)) {
+                            updates.push({ did, tags: tags.filter(tag => tag !== UNREAD) });
+                        }
+                        continue;
+                    }
+                } else if (!messageText) {
+                    if (tags.includes(UNREAD)) {
+                        updates.push({ did, tags: tags.filter(tag => tag !== UNREAD) });
+                    }
+                    continue;
+                }
+
+                filtered[did] = item;
+
+                if (!isGroupDelivery) {
+                    const senderDid = item.docs?.didDocument?.controller;
+                    if (senderDid && senderDid !== currentDID) {
+                        const alreadyKnown = Object.values(nameList).includes(senderDid);
+                        if (!alreadyKnown) {
+                            try {
+                                const name = senderDid.slice(-20);
+                                await keymaster.addName(name, senderDid);
+                                needsRefresh = true;
+                            } catch {}
+                        }
                     }
                 }
             }
 
+            if (Object.keys(groupUpdates).length > 0) {
+                setGroupList(prev => {
+                    let changed = false;
+                    const merged = { ...prev };
+                    for (const [groupId, info] of Object.entries(groupUpdates)) {
+                        const existing = merged[groupId];
+                        let membersChanged = false;
+                        if (!existing) {
+                            membersChanged = true;
+                        } else {
+                            membersChanged = existing.members.length !== info.members.length
+                                || existing.members.some((member, idx) => member !== info.members[idx]);
+                        }
+
+                        if (!existing || existing.name !== info.name || membersChanged) {
+                            merged[groupId] = info;
+                            changed = true;
+                        }
+                    }
+                    return changed ? merged : prev;
+                });
+            }
+
             setDmailList(prev =>
-                JSON.stringify(prev) === JSON.stringify(msgs) ? prev : msgs
+                JSON.stringify(prev) === JSON.stringify(filtered) ? prev : filtered
             );
+
+            if (updates.length > 0) {
+                await Promise.all(updates.map(({ did, tags }) => keymaster.fileDmail(did, tags)));
+            }
 
             if (needsRefresh) {
                 await refreshNames();
@@ -340,7 +431,7 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         } finally {
             inboxRefreshingRef.current = false;
         }
-    }, [keymaster, currentId, namesReady, nameList, groupList, refreshNames, setError]);
+    }, [keymaster, currentId, currentDID, namesReady, nameList, groupList, refreshNames, setError]);
 
     useEffect(() => {
         if (!keymaster || !namesReady) {
@@ -490,6 +581,7 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         setHeldList([]);
         setVaultList([]);
         setPollList([]);
+        setGroupList({});
         setAliasName("");
         setAliasDID("");
         setNamesReady(false);
