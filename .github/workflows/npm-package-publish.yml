@@ -99,7 +99,7 @@ jobs:
       - name: Publish to NPM
         run: |
           if [[ "${{ github.event.inputs.version }}" == pre* ]]; then
-            npx lerna publish from-git --dist-tag ${{ github.event.inputs.preid }} --yes --provenance
+            npx lerna publish from-git --dist-tag ${{ github.event.inputs.preid }} --yes -- --provenance
           else
-            npx lerna publish from-git --yes --provenance
+            npx lerna publish from-git --yes -- --provenance
           fi

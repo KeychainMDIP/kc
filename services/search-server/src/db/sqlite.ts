@@ -29,16 +29,16 @@ export default class Sqlite implements DIDsDb {
         });
 
         await this.db.exec(`
-      CREATE TABLE IF NOT EXISTS did_docs (
-        did TEXT PRIMARY KEY,
-        doc TEXT NOT NULL
-      );
-      
-      CREATE TABLE IF NOT EXISTS config (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL
-      );
-    `);
+            CREATE TABLE IF NOT EXISTS did_docs (
+                                                    did TEXT PRIMARY KEY,
+                                                    doc TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS config (
+                                                  key TEXT PRIMARY KEY,
+                                                  value TEXT NOT NULL
+            );
+        `);
     }
 
     async disconnect(): Promise<void> {
@@ -65,9 +65,9 @@ export default class Sqlite implements DIDsDb {
             throw new Error('DB not connected');
         }
         await this.db.run(`
-      INSERT INTO config (key, value) VALUES ('updated_after', ?)
-      ON CONFLICT(key) DO UPDATE SET value=excluded.value
-    `, [timestamp]);
+            INSERT INTO config (key, value) VALUES ('updated_after', ?)
+                ON CONFLICT(key) DO UPDATE SET value=excluded.value
+        `, [timestamp]);
     }
 
     async storeDID(did: string, doc: object): Promise<void> {
@@ -76,9 +76,9 @@ export default class Sqlite implements DIDsDb {
         }
         const docString = JSON.stringify(doc);
         await this.db.run(`
-      INSERT INTO did_docs (did, doc) VALUES (?, ?)
-      ON CONFLICT(did) DO UPDATE SET doc=excluded.doc
-    `, [did, docString]);
+            INSERT INTO did_docs (did, doc) VALUES (?, ?)
+                ON CONFLICT(did) DO UPDATE SET doc=excluded.doc
+        `, [did, docString]);
     }
 
     async getDID(did: string): Promise<object | null> {
@@ -192,8 +192,8 @@ export default class Sqlite implements DIDsDb {
             throw new Error('DB not connected');
         }
         await this.db.exec(`
-      DELETE FROM did_docs;
-      DELETE FROM config;
-    `);
+            DELETE FROM did_docs;
+            DELETE FROM config;
+        `);
     }
 }

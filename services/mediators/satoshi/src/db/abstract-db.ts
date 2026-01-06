@@ -20,6 +20,7 @@ export default abstract class AbstractDB implements MediatorDbInterface {
     protected defaultDb(): MediatorDb {
         return {
             height: 0,
+            hash: '',
             time: '',
             blockCount: 0,
             blocksScanned: 0,

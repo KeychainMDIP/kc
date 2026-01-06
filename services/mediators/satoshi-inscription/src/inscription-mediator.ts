@@ -1,4 +1,4 @@
-import BtcClient, {BlockVerbose, BlockTxVerbose} from 'bitcoin-core';
+import BtcClient, {Block, BlockVerbose, BlockHeader, BlockTxVerbose} from 'bitcoin-core';
 import * as bitcoin from 'bitcoinjs-lib';
 import * as ecc from 'tiny-secp256k1';
 import { gunzipSync } from 'zlib';
@@ -61,6 +61,102 @@ async function loadDb(): Promise<MediatorDb> {
     const db = await jsonPersister.loadDb();
 
     return db || newDb;
+}
+
+async function getBlockTxCount(hash: string, header?: BlockHeader): Promise<number> {
+    if (typeof header?.nTx === 'number') {
+        return header.nTx;
+    }
+
+    const block = await btcClient.getBlock(hash, BlockVerbosity.JSON) as Block;
+    return Array.isArray(block.tx) ? block.tx.length : 0;
+}
+
+async function resolveScanStart(blockCount: number): Promise<number> {
+    const db = await loadDb();
+
+    if (!db.hash) {
+        return db.height ? db.height + 1 : config.startBlock;
+    }
+
+    let header: BlockHeader | undefined;
+    try {
+        header = await btcClient.getBlockHeader(db.hash) as BlockHeader;
+    } catch {
+        header = undefined;
+    }
+
+    if ((header?.confirmations ?? 0) > 0) {
+        return db.height + 1;
+    }
+
+    console.log(`Reorg detected at height ${db.height}, rewinding to a confirmed block...`);
+
+    let height = db.height;
+    let hash = db.hash;
+    let txnsToSubtract = 0;
+
+    while (hash && height >= config.startBlock) {
+        let currentHeader: BlockHeader;
+        try {
+            currentHeader = await btcClient.getBlockHeader(hash) as BlockHeader;
+        } catch {
+            break;
+        }
+
+        if ((currentHeader.confirmations ?? 0) > 0) {
+            const resolvedHeight = currentHeader.height ?? height;
+            const resolvedTime = currentHeader.time ? new Date(currentHeader.time * 1000).toISOString() : '';
+            const resolvedHash = hash;
+            const resolvedBlocksPending = blockCount - resolvedHeight;
+            const resolvedTxnsToSubtract = txnsToSubtract;
+            await jsonPersister.updateDb((data) => {
+                data.height = resolvedHeight;
+                data.hash = resolvedHash;
+                data.time = resolvedTime;
+                data.blocksScanned = Math.max(0, resolvedHeight - config.startBlock + 1);
+                data.txnsScanned = Math.max(0, data.txnsScanned - resolvedTxnsToSubtract);
+                data.blockCount = blockCount;
+                data.blocksPending = resolvedBlocksPending;
+            });
+            return resolvedHeight + 1;
+        }
+
+        txnsToSubtract += await getBlockTxCount(hash, currentHeader);
+
+        if (!currentHeader.previousblockhash) {
+            break;
+        }
+
+        hash = currentHeader.previousblockhash;
+        height = (currentHeader.height ?? height) - 1;
+    }
+
+    const fallbackHeight = config.startBlock;
+    let fallbackHash = '';
+    let fallbackTime = '';
+
+    try {
+        fallbackHash = await btcClient.getBlockHash(fallbackHeight);
+        const fallbackHeader = await btcClient.getBlockHeader(fallbackHash) as BlockHeader;
+        fallbackTime = fallbackHeader.time ? new Date(fallbackHeader.time * 1000).toISOString() : '';
+    } catch {
+        fallbackHash = '';
+    }
+
+    await jsonPersister.updateDb((data) => {
+        data.height = fallbackHeight;
+        if (fallbackHash) {
+            data.hash = fallbackHash;
+        }
+        data.time = fallbackTime;
+        data.blocksScanned = 0;
+        data.txnsScanned = 0;
+        data.blockCount = blockCount;
+        data.blocksPending = blockCount - fallbackHeight;
+    });
+
+    return fallbackHeight + 1;
 }
 
 async function extractOperations(txn: BlockTxVerbose, height: number, index: number, timestamp: string): Promise<void> {
@@ -185,6 +281,7 @@ async function fetchBlock(height: number, blockCount: number): Promise<void> {
 
         await jsonPersister.updateDb((db) => {
             db.height = height;
+            db.hash = blockHash;
             db.time = timestamp;
             db.blocksScanned = height - config.startBlock + 1;
             db.txnsScanned += block.tx.length;
@@ -199,16 +296,11 @@ async function fetchBlock(height: number, blockCount: number): Promise<void> {
 }
 
 async function scanBlocks(): Promise<void> {
-    let start = config.startBlock;
     let blockCount = await btcClient.getBlockCount();
 
     console.log(`current block height: ${blockCount}`);
 
-    const db = await loadDb();
-
-    if (db.height) {
-        start = db.height + 1;
-    }
+    let start = await resolveScanStart(blockCount);
 
     for (let height = start; height <= blockCount; height++) {
         console.log(`${height}/${blockCount} blocks (${(100 * height / blockCount).toFixed(2)}%)`);
@@ -722,7 +814,7 @@ async function syncBlocks(): Promise<void> {
 
         for (let height = currentMax; height <= blockCount; height++) {
             const blockHash = await btcClient.getBlockHash(height);
-            const block = await btcClient.getBlock(blockHash);
+            const block = await btcClient.getBlock(blockHash) as Block;
             console.log(`${height}/${blockCount} blocks (${(100 * height / blockCount).toFixed(2)}%)`);
             await addBlock(height, blockHash, block.time);
         }

@@ -10,7 +10,7 @@ import DbJsonCache from '@mdip/gatekeeper/db/json-cache';
 import DbRedis from '@mdip/gatekeeper/db/redis';
 import DbSqlite from '@mdip/gatekeeper/db/sqlite';
 import DbMongo from '@mdip/gatekeeper/db/mongo';
-import { CheckDIDsResult, ResolveDIDOptions } from '@mdip/gatekeeper/types';
+import { CheckDIDsResult, ResolveDIDOptions, Operation } from '@mdip/gatekeeper/types';
 import KuboClient from '@mdip/ipfs/kubo';
 import config from './config.js';
 
@@ -378,6 +378,101 @@ v1router.post('/did', async (req, res) => {
     } catch (error: any) {
         console.error(error);
         res.status(500).send(error.toString());
+    }
+});
+
+/**
+ * @swagger
+ * /did/generate:
+ *   post:
+ *     summary: Generate a DID from an operation (no persistence)
+ *
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             description: An MDIP Operation object.
+ *             required: [ type, mdip ]
+ *             properties:
+ *               type:
+ *                 type: string
+ *                 description: The operation type. Typically "create" when generating a DID.
+ *               created:
+ *                 type: string
+ *                 format: date-time
+ *                 description: Optional creation timestamp (used by create operations elsewhere).
+ *               did:
+ *                 type: string
+ *                 description: Optional DID (usually absent for create when generating).
+ *               mdip:
+ *                 type: object
+ *                 description: MDIP metadata for the operation.
+ *                 required: [ version, type, registry ]
+ *                 properties:
+ *                   version:
+ *                     type: integer
+ *                     example: 1
+ *                   type:
+ *                     type: string
+ *                     enum: [ agent, asset ]
+ *                     example: agent
+ *                   registry:
+ *                     type: string
+ *                     description: Registry name.
+ *                     example: local
+ *                   prefix:
+ *                     type: string
+ *                     description: Optional DID prefix override. If omitted, server default is used.
+ *                     example: did:test
+ *                   validUntil:
+ *                     type: string
+ *                     format: date-time
+ *                     description: Optional expiry timestamp for ephemeral DIDs.
+ *               publicJwk:
+ *                 type: object
+ *                 description: Public key JWK (typically required for agent creates).
+ *               controller:
+ *                 type: string
+ *                 description: Controller DID (typically required for asset creates).
+ *               data:
+ *                 type: object
+ *                 description: Optional arbitrary DID document data (often used for assets).
+ *               signature:
+ *                 type: object
+ *                 description: Optional signature object (not required for mere DID generation).
+ *
+ *     responses:
+ *       200:
+ *         description: The generated DID string.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: string
+ *       400:
+ *         description: Bad Request (missing or invalid operation).
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+v1router.post("/did/generate", async (req, res) => {
+    try {
+        const operation = req.body as Operation;
+
+        if (!operation) {
+            res.status(400).json({ error: "missing operation" })
+            return;
+        }
+
+        const did = await gatekeeper.generateDID(operation);
+        res.json(did);
+    } catch (err: any) {
+        res.status(400).json(err?.response?.data ?? err);
     }
 });
 

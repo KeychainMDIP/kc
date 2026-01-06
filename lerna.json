@@ -1,0 +1,23 @@
+{
+  "command": {
+    "run": {
+      "stream": true,
+      "sort": true
+    },
+    "publish": {
+      "registry": "https://npm.pkg.github.com"
+    },
+    "version": {
+      "allowBranch": [
+        "main", "*-beta", "*-release", "beta-*", "release-*", "release/*", "hotfix/*" 
+      ],
+      "conventionalCommits": true
+    }
+  },
+  "$schema": "node_modules/lerna/schemas/lerna-schema.json",
+  "version": "independent",
+  "packages": [
+    "packages/*"
+  ],
+  "npmClient": "npm"
+}

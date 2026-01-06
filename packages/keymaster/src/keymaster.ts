@@ -1423,7 +1423,6 @@ export default class Keymaster implements KeymasterInterface {
                 value: signature
             },
         };
-
         return signed;
     }
 
