@@ -55,7 +55,7 @@ app.use(cors());
 app.options('*', cors());
 
 app.use(morgan('dev'));
-app.use(express.json({ limit: '4mb' })); // Sets the JSON payload limit to 4MB
+app.use(express.json({ limit: config.jsonLimit }));
 
 // Define __dirname in ES module scope
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
