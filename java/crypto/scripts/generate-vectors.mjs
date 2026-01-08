@@ -57,6 +57,91 @@ const walletPlain = {
 const masterJwk = cipher.generateJwk(hdkey.privateKey);
 const walletEnc = cipher.encryptMessage(masterJwk.publicJwk, masterJwk.privateJwk, JSON.stringify(walletPlain));
 
+const blockid = '0000000000000000000000000000000000000000000000000000000000000001';
+const createCreated = '2024-01-02T03:04:05.000Z';
+const createSigned = '2024-01-02T03:04:06.000Z';
+const updateSigned = '2024-01-02T03:04:07.000Z';
+
+const createOperation = {
+    type: 'create',
+    created: createCreated,
+    blockid,
+    mdip: {
+        version: 1,
+        type: 'agent',
+        registry: 'Signet',
+    },
+    publicJwk: jwkPair.publicJwk,
+};
+const createHash = cipher.hashJSON(createOperation);
+const createSig = cipher.signHash(createHash, jwkPair.privateJwk);
+const createSignedOperation = {
+    ...createOperation,
+    signature: {
+        signed: createSigned,
+        hash: createHash,
+        value: createSig,
+    },
+};
+
+const updateDoc = {
+    didDocument: {
+        id: 'did:test:alice',
+        controller: 'did:test:alice',
+        verificationMethod: [
+            {
+                id: '#key-1',
+                controller: 'did:test:alice',
+                type: 'EcdsaSecp256k1',
+                publicKeyJwk: jwkPair.publicJwk,
+            },
+        ],
+        authentication: ['#key-1'],
+    },
+    didDocumentMetadata: {
+        created: '2024-01-01T00:00:00.000Z',
+        updated: '2024-01-02T00:00:00.000Z',
+        versionId: 'v1',
+        confirmed: true,
+    },
+    didResolutionMetadata: {
+        contentType: 'application/did+ld+json',
+    },
+    didDocumentData: {
+        foo: 'bar',
+    },
+    mdip: {
+        version: 1,
+        type: 'agent',
+        registry: 'Signet',
+    },
+};
+
+const updateDocStripped = {
+    didDocument: updateDoc.didDocument,
+    didDocumentData: updateDoc.didDocumentData,
+    mdip: updateDoc.mdip,
+};
+
+const updateOperation = {
+    type: 'update',
+    did: updateDoc.didDocument.id,
+    previd: 'prev123',
+    blockid,
+    doc: updateDocStripped,
+};
+const updateHash = cipher.hashJSON(updateOperation);
+const updateSig = cipher.signHash(updateHash, jwkPair.privateJwk);
+const updateSignedOperation = {
+    ...updateOperation,
+    signature: {
+        signer: updateDoc.didDocument.id,
+        signed: updateSigned,
+        hash: updateHash,
+        value: updateSig,
+    },
+};
+
 const vectors = {
     description: 'Keymaster crypto compatibility vectors (generated from JS reference)',
     version: 1,
@@ -115,6 +200,27 @@ const vectors = {
             wallet: walletPlain,
         },
     },
+    operations: {
+        createId: {
+            registry: 'Signet',
+            blockid,
+            created: createCreated,
+            signed: createSigned,
+            publicJwk: jwkPair.publicJwk,
+            privateJwk: jwkPair.privateJwk,
+            signedOperation: createSignedOperation,
+        },
+        updateDID: {
+            did: updateDoc.didDocument.id,
+            previd: 'prev123',
+            blockid,
+            signerDid: updateDoc.didDocument.id,
+            signed: updateSigned,
+            doc: updateDoc,
+            privateJwk: jwkPair.privateJwk,
+            signedOperation: updateSignedOperation,
+        },
+    },
 };
 
 const outputPath = path.join(__dirname, '..', 'src', 'test', 'resources', 'vectors', 'crypto-v1.json');
@@ -125,6 +231,11 @@ const walletPath = path.join(__dirname, '..', '..', 'keymaster', 'src', 'test', 
 await fs.mkdir(path.dirname(walletPath), { recursive: true });
 await fs.writeFile(walletPath, JSON.stringify(vectors.vectors.walletEnc, null, 2));
 console.log(`Wrote ${walletPath}`);
+
+const operationsPath = path.join(__dirname, '..', '..', 'keymaster', 'src', 'test', 'resources', 'vectors', 'operations-v1.json');
+await fs.mkdir(path.dirname(operationsPath), { recursive: true });
+await fs.writeFile(operationsPath, JSON.stringify(vectors.operations, null, 2));
+console.log(`Wrote ${operationsPath}`);
 
 async function deriveKey(pass, saltBytes) {
     const passKey = await crypto.subtle.importKey(
