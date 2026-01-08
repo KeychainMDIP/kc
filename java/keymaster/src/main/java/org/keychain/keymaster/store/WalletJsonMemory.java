@@ -2,7 +2,6 @@ package org.keychain.keymaster.store;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.util.concurrent.Callable;
 
 public class WalletJsonMemory<T> implements WalletStore<T> {
     private final ObjectMapper mapper;
@@ -41,12 +40,4 @@ public class WalletJsonMemory<T> implements WalletStore<T> {
         }
     }
 
-    @Override
-    public void updateWallet(Callable<Void> mutator) {
-        try {
-            mutator.call();
-        } catch (Exception e) {
-            throw new IllegalStateException("Wallet mutation failed", e);
-        }
-    }
 }

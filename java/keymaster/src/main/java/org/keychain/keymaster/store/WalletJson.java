@@ -7,7 +7,6 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.concurrent.Callable;
 
 public class WalletJson<T> implements WalletStore<T> {
     private final ObjectMapper mapper;
@@ -61,12 +60,4 @@ public class WalletJson<T> implements WalletStore<T> {
         }
     }
 
-    @Override
-    public void updateWallet(Callable<Void> mutator) {
-        try {
-            mutator.call();
-        } catch (Exception e) {
-            throw new IllegalStateException("Wallet mutation failed", e);
-        }
-    }
 }

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import org.bitcoinj.crypto.DeterministicKey;
 import org.keychain.crypto.HdKeyUtil;
@@ -20,6 +21,7 @@ public class KeymasterWalletManager {
     private final KeymasterCrypto crypto;
     private final ObjectMapper mapper;
     private final String passphrase;
+    private final ReentrantLock writeLock = new ReentrantLock();
     private WalletFile walletCache;
     private DeterministicKey hdkeyCache;
 
@@ -58,21 +60,30 @@ public class KeymasterWalletManager {
     }
 
     public boolean mutateWallet(Consumer<WalletFile> mutator) {
-        WalletFile wallet = loadWallet();
-        if (wallet == null) {
-            throw new IllegalStateException("No wallet loaded");
+        writeLock.lock();
+        try {
+            WalletFile wallet = loadWallet();
+            if (wallet == null) {
+                throw new IllegalStateException("No wallet loaded");
+            }
+
+            WalletFile working = deepCopyWallet(wallet);
+            String before = toJson(mapper, walletToMap(working));
+            mutator.accept(working);
+            String after = toJson(mapper, walletToMap(working));
+
+            if (Objects.equals(before, after)) {
+                return false;
+            }
+
+            boolean ok = saveWallet(working, true);
+            if (ok) {
+                walletCache = working;
+            }
+            return ok;
+        } finally {
+            writeLock.unlock();
         }
-
-        String before = toJson(mapper, walletToMap(wallet));
-        mutator.accept(wallet);
-        String after = toJson(mapper, walletToMap(wallet));
-
-        if (Objects.equals(before, after)) {
-            return false;
-        }
-
-        saveWallet(wallet, true);
-        return true;
     }
 
     DeterministicKey getHdkeyCache() {
@@ -154,6 +165,15 @@ public class KeymasterWalletManager {
             return mapper.readValue(data, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
             throw new IllegalStateException("Failed to parse wallet", e);
+        }
+    }
+
+    private WalletFile deepCopyWallet(WalletFile wallet) {
+        try {
+            String json = mapper.writeValueAsString(wallet);
+            return mapper.readValue(json, WalletFile.class);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to clone wallet", e);
         }
     }
 }
