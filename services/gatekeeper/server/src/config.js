@@ -9,6 +9,7 @@ const config = {
     didPrefix: process.env.KC_GATEKEEPER_DID_PREFIX || 'did:test',
     registries: process.env.KC_GATEKEEPER_REGISTRIES ? process.env.KC_GATEKEEPER_REGISTRIES.split(',') : undefined,
     jsonLimit: process.env.KC_GATEKEEPER_JSON_LIMIT || '4mb',
+    maxOpBytes: process.env.KC_GATEKEEPER_MAX_OP_BYTES ? parseInt(process.env.KC_GATEKEEPER_MAX_OP_BYTES) : undefined,
     gcInterval: process.env.KC_GATEKEEPER_GC_INTERVAL ? parseInt(process.env.KC_GATEKEEPER_GC_INTERVAL) : 15,
     statusInterval: process.env.KC_GATEKEEPER_STATUS_INTERVAL ? parseInt(process.env.KC_GATEKEEPER_STATUS_INTERVAL) : 5,
 };
