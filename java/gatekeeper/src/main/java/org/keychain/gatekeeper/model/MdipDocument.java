@@ -1,18 +1,19 @@
 package org.keychain.gatekeeper.model;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
-import java.util.Map;
 
 public class MdipDocument {
     public DidDocument didDocument;
-    public Object didDocumentData;
     public DocumentMetadata didDocumentMetadata;
-    public ResolveMetadata didResolutionMetadata;
+    public DidResolutionMetadata didResolutionMetadata;
+    public Object didDocumentData;
     public Mdip mdip;
 
     public MdipDocument() {}
 
     public static class DidDocument {
+        @JsonProperty("@context")
         public List<String> context;
         public String id;
         public String controller;
@@ -26,15 +27,16 @@ public class MdipDocument {
         public String id;
         public String controller;
         public String type;
-        public Map<String, Object> publicKeyJwk;
+        public EcdsaJwkPublic publicKeyJwk;
 
         public VerificationMethod() {}
     }
 
-    public static class ResolveMetadata {
+    public static class DidResolutionMetadata {
+        public String contentType;
+        public String retrieved;
         public String error;
-        public String errorMessage;
 
-        public ResolveMetadata() {}
+        public DidResolutionMetadata() {}
     }
 }

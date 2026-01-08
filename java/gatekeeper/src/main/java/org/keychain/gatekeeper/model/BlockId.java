@@ -1,8 +1,14 @@
 package org.keychain.gatekeeper.model;
 
+import com.fasterxml.jackson.annotation.JsonValue;
+
 public class BlockId {
-    public String hash;
-    public String registry;
+    @JsonValue
+    public Object value;
 
     public BlockId() {}
+
+    public BlockId(Object value) {
+        this.value = value;
+    }
 }

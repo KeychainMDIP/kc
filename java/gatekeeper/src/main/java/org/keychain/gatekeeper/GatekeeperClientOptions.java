@@ -4,6 +4,13 @@ import java.time.Duration;
 
 public class GatekeeperClientOptions {
     public String baseUrl;
+    public String url;
+    public Object console;
+    public Boolean waitUntilReady;
+    public Integer intervalSeconds;
+    public Boolean chatty;
+    public Integer becomeChattyAfter;
+    public Integer maxRetries;
     public Duration connectTimeout;
     public Duration readTimeout;
     public String headerName;

@@ -28,7 +28,7 @@ public class GatekeeperHttpClient implements GatekeeperClient {
     public GatekeeperHttpClient(GatekeeperClientOptions options) {
         Objects.requireNonNull(options, "options is required");
         this.mapper = new ObjectMapper();
-        String base = options.baseUrl;
+        String base = options.url != null ? options.url : options.baseUrl;
         if (base.endsWith("/api/v1")) {
             base = base.substring(0, base.length() - "/api/v1".length());
         } else if (base.endsWith("/api/v1/")) {
