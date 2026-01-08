@@ -1,0 +1,5 @@
+rootProject.name = 'kc-java'
+
+include 'crypto'
+include 'gatekeeper'
+include 'keymaster'
