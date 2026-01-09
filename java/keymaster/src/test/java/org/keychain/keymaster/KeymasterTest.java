@@ -314,6 +314,70 @@ class KeymasterTest {
     }
 
     @Test
+    void createSchemaUsesAssetPayload() {
+        WalletEncFile stored = buildStoredWallet();
+        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        store.saveWallet(stored, true);
+
+        RecordingGatekeeper gatekeeper = new RecordingGatekeeper();
+        gatekeeper.blockResponse = new BlockInfo();
+        gatekeeper.blockResponse.hash = "blockhash";
+        gatekeeper.createResponse = "did:test:schema";
+        gatekeeper.resolveResponse = buildAgentDocWithKey("did:test:alice", deriveKeypair());
+
+        Keymaster keymaster = new Keymaster(store, gatekeeper, "passphrase");
+        String did = keymaster.createSchema("Signet");
+        assertEquals("did:test:schema", did);
+
+        Operation op = gatekeeper.lastCreate;
+        assertNotNull(op);
+        assertNotNull(op.data);
+        assertEquals("create", op.type);
+        assertEquals("asset", op.mdip.type);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) op.data;
+        assertTrue(data.containsKey("schema"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> schema = (Map<String, Object>) data.get("schema");
+        assertEquals("object", schema.get("type"));
+        assertTrue(schema.containsKey("properties"));
+    }
+
+    @Test
+    void getSetTestSchemaRoundTrip() {
+        WalletEncFile stored = buildStoredWallet();
+        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        store.saveWallet(stored, true);
+
+        RecordingGatekeeper gatekeeper = new RecordingGatekeeper();
+        gatekeeper.blockResponse = new BlockInfo();
+        gatekeeper.blockResponse.hash = "blockhash";
+        gatekeeper.resolveResponse = buildAgentDocWithKey("did:test:alice", deriveKeypair());
+
+        Keymaster keymaster = new Keymaster(store, gatekeeper, "passphrase");
+
+        Map<String, Object> schema = new HashMap<>();
+        schema.put("$schema", "http://json-schema.org/draft-07/schema#");
+        schema.put("type", "object");
+        Map<String, Object> props = new HashMap<>();
+        props.put("name", Map.of("type", "string"));
+        schema.put("properties", props);
+
+        assertTrue(keymaster.setSchema("did:test:schema", schema));
+        assertNotNull(gatekeeper.lastUpdate);
+
+        MdipDocument asset = buildCurrentDocFor("did:test:schema", "Signet", "v2");
+        asset.mdip.type = "asset";
+        asset.didDocumentData = Map.of("schema", schema);
+        gatekeeper.resolveResponse = asset;
+
+        Object fetched = keymaster.getSchema("did:test:schema");
+        assertNotNull(fetched);
+        assertTrue(keymaster.testSchema("did:test:schema"));
+    }
+
+    @Test
     void getBlockDelegatesToGatekeeper() {
         WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
         RecordingGatekeeper gatekeeper = new RecordingGatekeeper();
@@ -430,6 +494,18 @@ class KeymasterTest {
         metadata.versionId = versionId;
         current.didDocumentMetadata = metadata;
         return current;
+    }
+
+    private static MdipDocument buildAgentDocWithKey(String did, JwkPair keypair) {
+        MdipDocument doc = buildCurrentDocFor(did, "Signet", "v1");
+        MdipDocument.VerificationMethod method = new MdipDocument.VerificationMethod();
+        method.id = "#key-1";
+        method.controller = did;
+        method.type = "EcdsaSecp256k1";
+        method.publicKeyJwk = JwkConverter.toEcdsaJwkPublic(keypair.publicJwk);
+        doc.didDocument.verificationMethod = java.util.List.of(method);
+        doc.didDocument.authentication = java.util.List.of("#key-1");
+        return doc;
     }
 
     private static Operation unsignedUpdate(Operation op) {

@@ -216,6 +216,68 @@ public class Keymaster {
         return did;
     }
 
+    public String createSchema(String registry) {
+        return createSchema(null, registry);
+    }
+
+    public String createSchema(Object schema, String registry) {
+        if (schema == null) {
+            schema = defaultSchema();
+        }
+        if (!validateSchema(schema)) {
+            throw new IllegalArgumentException("schema is invalid");
+        }
+        java.util.Map<String, Object> data = new java.util.HashMap<>();
+        data.put("schema", schema);
+        return createAsset(data, registry);
+    }
+
+    public Object getSchema(String did) {
+        MdipDocument doc = resolveAsset(did);
+        if (doc == null) {
+            return null;
+        }
+        Object data = doc.didDocumentData;
+        if (data instanceof java.util.Map<?, ?>) {
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Object> map = (java.util.Map<String, Object>) data;
+            if (map.containsKey("schema")) {
+                return map.get("schema");
+            }
+            // legacy schemas stored directly
+            if (map.containsKey("properties")) {
+                return map;
+            }
+        }
+        return null;
+    }
+
+    public boolean setSchema(String did, Object schema) {
+        if (!validateSchema(schema)) {
+            throw new IllegalArgumentException("schema is invalid");
+        }
+        java.util.Map<String, Object> data = new java.util.HashMap<>();
+        data.put("schema", schema);
+        return updateAsset(did, data);
+    }
+
+    public boolean testSchema(String did) {
+        try {
+            Object schema = getSchema(did);
+            if (!(schema instanceof java.util.Map<?, ?>)) {
+                return false;
+            }
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Object> map = (java.util.Map<String, Object>) schema;
+            if (map.isEmpty()) {
+                return false;
+            }
+            return validateSchema(schema);
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
+
     public MdipDocument resolveDID(String did) {
         if (gatekeeper == null) {
             throw new IllegalStateException("gatekeeper not configured");
@@ -301,6 +363,56 @@ public class Keymaster {
     public java.util.List<String> listAssets(String ownerDid) {
         IDInfo idInfo = fetchIdInfo(ownerDid);
         return idInfo.owned != null ? idInfo.owned : java.util.Collections.emptyList();
+    }
+
+    private static boolean validateSchema(Object schema) {
+        try {
+            generateSchema(schema);
+            return true;
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    private static java.util.Map<String, Object> generateSchema(Object schema) {
+        if (!(schema instanceof java.util.Map<?, ?>)) {
+            throw new IllegalArgumentException("schema");
+        }
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> schemaMap = (java.util.Map<String, Object>) schema;
+        Object propsObj = schemaMap.get("properties");
+        if (schemaMap.get("$schema") == null || propsObj == null) {
+            throw new IllegalArgumentException("schema");
+        }
+        if (!(propsObj instanceof java.util.Map<?, ?>)) {
+            throw new IllegalArgumentException("schema");
+        }
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> props = (java.util.Map<String, Object>) propsObj;
+        java.util.Map<String, Object> template = new java.util.LinkedHashMap<>();
+        for (String key : props.keySet()) {
+            template.put(key, "TBD");
+        }
+        return template;
+    }
+
+    private static java.util.Map<String, Object> defaultSchema() {
+        java.util.Map<String, Object> root = new java.util.LinkedHashMap<>();
+        root.put("$schema", "http://json-schema.org/draft-07/schema#");
+        root.put("type", "object");
+
+        java.util.Map<String, Object> properties = new java.util.LinkedHashMap<>();
+        java.util.Map<String, Object> propertyName = new java.util.LinkedHashMap<>();
+        propertyName.put("type", "string");
+        properties.put("propertyName", propertyName);
+        root.put("properties", properties);
+
+        java.util.List<String> required = new java.util.ArrayList<>();
+        required.add("propertyName");
+        root.put("required", required);
+        return root;
     }
 
     public boolean addToOwned(String did, String ownerDid) {
