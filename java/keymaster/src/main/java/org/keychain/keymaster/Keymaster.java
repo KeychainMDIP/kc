@@ -19,12 +19,17 @@ import java.util.ArrayList;
 import java.util.List;
 import org.keychain.gatekeeper.GatekeeperClient;
 import org.keychain.gatekeeper.model.BlockInfo;
+import org.keychain.gatekeeper.model.DocumentMetadata;
 import org.keychain.gatekeeper.model.EcdsaJwkPublic;
+import org.keychain.gatekeeper.model.Mdip;
 import org.keychain.gatekeeper.model.MdipDocument;
 import org.keychain.gatekeeper.model.Operation;
 import org.keychain.gatekeeper.model.ResolveDIDOptions;
+import org.keychain.gatekeeper.model.Signature;
 import org.keychain.keymaster.model.Seed;
 import org.keychain.keymaster.model.IDInfo;
+import org.keychain.keymaster.model.CheckWalletResult;
+import org.keychain.keymaster.model.FixWalletResult;
 import org.keychain.keymaster.model.WalletEncFile;
 import org.keychain.keymaster.model.WalletFile;
 import org.keychain.keymaster.store.WalletStore;
@@ -34,6 +39,8 @@ public class Keymaster {
     private static final DateTimeFormatter ISO_MILLIS =
         DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC);
     private static final String DEFAULT_REGISTRY = "hyperswarm";
+    private static final String EPOCH_ISO = ISO_MILLIS.format(Instant.EPOCH);
+    private static final int MAX_NAME_LENGTH = 32;
     private final KeymasterWalletManager walletManager;
     private final KeymasterCrypto crypto;
     private final String passphrase;
@@ -89,15 +96,89 @@ public class Keymaster {
     }
 
     public WalletFile loadWallet() {
-        return walletManager.loadWallet();
+        WalletFile wallet = walletManager.loadWallet();
+        if (wallet == null) {
+            return newWallet(null, false);
+        }
+        return wallet;
     }
 
     public boolean saveWallet(WalletFile wallet, boolean overwrite) {
         return walletManager.saveWallet(wallet, overwrite);
     }
 
+    public boolean saveWallet(WalletEncFile wallet, boolean overwrite) {
+        if (wallet == null) {
+            throw new IllegalArgumentException("wallet is required");
+        }
+        if (wallet.salt != null || wallet.iv != null || wallet.data != null) {
+            throw new IllegalStateException("Keymaster: Unsupported wallet version.");
+        }
+        if (wallet.version != 1 || wallet.seed == null || wallet.seed.mnemonicEnc == null || wallet.enc == null) {
+            throw new IllegalStateException("Keymaster: Unsupported wallet version.");
+        }
+
+        try {
+            walletManager.decryptStoredWallet(wallet);
+        } catch (IllegalStateException e) {
+            throw new IllegalStateException("Keymaster: Incorrect passphrase.");
+        }
+
+        try {
+            return walletManager.saveStoredWallet(wallet, overwrite);
+        } catch (IllegalStateException e) {
+            throw new IllegalStateException("Keymaster: Incorrect passphrase.");
+        }
+    }
+
     public boolean mutateWallet(Consumer<WalletFile> mutator) {
         return walletManager.mutateWallet(mutator);
+    }
+
+    public java.util.Map<String, String> listNames(boolean includeIds) {
+        WalletFile wallet = loadWallet();
+        java.util.Map<String, String> names = new java.util.HashMap<>();
+        if (wallet.names != null) {
+            names.putAll(wallet.names);
+        }
+        if (includeIds && wallet.ids != null) {
+            for (java.util.Map.Entry<String, IDInfo> entry : wallet.ids.entrySet()) {
+                names.put(entry.getKey(), entry.getValue().did);
+            }
+        }
+        return names;
+    }
+
+    public boolean addName(String name, String did) {
+        if (did == null || did.isBlank()) {
+            throw new IllegalArgumentException("did is required");
+        }
+        mutateWallet(wallet -> {
+            if (wallet.names == null) {
+                wallet.names = new java.util.HashMap<>();
+            }
+            String valid = validateName(name, wallet);
+            wallet.names.put(valid, did);
+        });
+        return true;
+    }
+
+    public String getName(String name) {
+        WalletFile wallet = loadWallet();
+        if (wallet.names != null && wallet.names.containsKey(name)) {
+            return wallet.names.get(name);
+        }
+        return null;
+    }
+
+    public boolean removeName(String name) {
+        mutateWallet(wallet -> {
+            if (wallet.names == null || !wallet.names.containsKey(name)) {
+                return;
+            }
+            wallet.names.remove(name);
+        });
+        return true;
     }
 
     public WalletFile newWallet(String mnemonic, boolean overwrite) {
@@ -126,6 +207,288 @@ public class Keymaster {
             throw new IllegalStateException("wallet mnemonic not available");
         }
         return MnemonicEncryption.decrypt(wallet.seed.mnemonicEnc, passphrase);
+    }
+
+    public WalletEncFile exportEncryptedWallet() {
+        WalletFile wallet = loadWallet();
+        WalletCrypto walletCrypto = new WalletCrypto(crypto, passphrase);
+        return walletCrypto.encryptForStorage(wallet);
+    }
+
+    public CheckWalletResult checkWallet() {
+        if (gatekeeper == null) {
+            throw new IllegalStateException("gatekeeper not configured");
+        }
+
+        WalletFile wallet = loadWallet();
+        resolveSeedBank();
+
+        CheckWalletResult result = new CheckWalletResult();
+
+        if (wallet.ids != null) {
+            for (IDInfo id : wallet.ids.values()) {
+                tallyDid(id.did, result);
+            }
+
+            for (IDInfo id : wallet.ids.values()) {
+                if (id.owned != null) {
+                    for (String did : id.owned) {
+                        tallyDid(did, result);
+                    }
+                }
+                if (id.held != null) {
+                    for (String did : id.held) {
+                        tallyDid(did, result);
+                    }
+                }
+            }
+        }
+
+        if (wallet.names != null) {
+            for (String did : wallet.names.values()) {
+                tallyDid(did, result);
+            }
+        }
+
+        return result;
+    }
+
+    public FixWalletResult fixWallet() {
+        if (gatekeeper == null) {
+            throw new IllegalStateException("gatekeeper not configured");
+        }
+
+        FixWalletResult result = new FixWalletResult();
+        mutateWallet(wallet -> {
+            if (wallet.ids != null) {
+                java.util.Iterator<java.util.Map.Entry<String, IDInfo>> iterator = wallet.ids.entrySet().iterator();
+                while (iterator.hasNext()) {
+                    java.util.Map.Entry<String, IDInfo> entry = iterator.next();
+                    if (shouldRemoveDid(entry.getValue().did)) {
+                        iterator.remove();
+                        result.idsRemoved += 1;
+                    }
+                }
+
+                for (IDInfo id : wallet.ids.values()) {
+                    if (id.owned != null) {
+                        for (int i = 0; i < id.owned.size(); i += 1) {
+                            if (shouldRemoveDid(id.owned.get(i))) {
+                                id.owned.remove(i);
+                                i -= 1;
+                                result.ownedRemoved += 1;
+                            }
+                        }
+                    }
+                    if (id.held != null) {
+                        for (int i = 0; i < id.held.size(); i += 1) {
+                            if (shouldRemoveDid(id.held.get(i))) {
+                                id.held.remove(i);
+                                i -= 1;
+                                result.heldRemoved += 1;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (wallet.names != null) {
+                java.util.Iterator<java.util.Map.Entry<String, String>> iterator = wallet.names.entrySet().iterator();
+                while (iterator.hasNext()) {
+                    java.util.Map.Entry<String, String> entry = iterator.next();
+                    if (shouldRemoveDid(entry.getValue())) {
+                        iterator.remove();
+                        result.namesRemoved += 1;
+                    }
+                }
+            }
+        });
+
+        return result;
+    }
+
+    public MdipDocument resolveSeedBank() {
+        if (gatekeeper == null) {
+            throw new IllegalStateException("gatekeeper not configured");
+        }
+
+        JwkPair keypair = hdKeyPair();
+        Operation operation = new Operation();
+        operation.type = "create";
+        operation.created = EPOCH_ISO;
+
+        Mdip mdip = new Mdip();
+        mdip.version = 1;
+        mdip.type = "agent";
+        mdip.registry = DEFAULT_REGISTRY;
+        operation.mdip = mdip;
+        operation.publicJwk = JwkConverter.toEcdsaJwkPublic(keypair.publicJwk);
+
+        String msgHash = crypto.hashJson(operation);
+        Signature signature = new Signature();
+        signature.signed = EPOCH_ISO;
+        signature.hash = msgHash;
+        signature.value = crypto.signHash(msgHash, keypair.privateJwk);
+        operation.signature = signature;
+
+        String did = gatekeeper.createDID(operation);
+        return gatekeeper.resolveDID(did, null);
+    }
+
+    public boolean updateSeedBank(MdipDocument doc) {
+        if (gatekeeper == null) {
+            throw new IllegalStateException("gatekeeper not configured");
+        }
+        if (doc == null || doc.didDocument == null || doc.didDocument.id == null || doc.didDocument.id.isBlank()) {
+            throw new IllegalArgumentException("Invalid parameter: seed bank missing DID");
+        }
+
+        JwkPair keypair = hdKeyPair();
+        String did = doc.didDocument.id;
+        MdipDocument current = gatekeeper.resolveDID(did, null);
+        String previd = current != null && current.didDocumentMetadata != null ? current.didDocumentMetadata.versionId : null;
+
+        Operation operation = new Operation();
+        operation.type = "update";
+        operation.did = did;
+        operation.previd = previd;
+        operation.doc = doc;
+
+        String msgHash = crypto.hashJson(operation);
+        Signature signature = new Signature();
+        signature.signer = did;
+        signature.signed = nowIso();
+        signature.hash = msgHash;
+        signature.value = crypto.signHash(msgHash, keypair.privateJwk);
+        operation.signature = signature;
+
+        return gatekeeper.updateDID(operation);
+    }
+
+    public String backupWallet() {
+        return backupWallet(DEFAULT_REGISTRY, null);
+    }
+
+    public String backupWallet(String registry) {
+        return backupWallet(registry, null);
+    }
+
+    public String backupWallet(String registry, WalletFile wallet) {
+        if (gatekeeper == null) {
+            throw new IllegalStateException("gatekeeper not configured");
+        }
+        if (registry == null || registry.isBlank()) {
+            registry = DEFAULT_REGISTRY;
+        }
+        if (wallet == null) {
+            wallet = loadWallet();
+        }
+
+        JwkPair keypair = hdKeyPair();
+        MdipDocument seedBank = resolveSeedBank();
+        String msg;
+        try {
+            msg = WalletJsonMapper.mapper().writeValueAsString(wallet);
+        } catch (Exception e) {
+            throw new IllegalStateException("backup wallet failed", e);
+        }
+
+        String backup = crypto.encryptMessage(keypair.publicJwk, keypair.privateJwk, msg);
+
+        Operation operation = new Operation();
+        operation.type = "create";
+        operation.created = nowIso();
+
+        Mdip mdip = new Mdip();
+        mdip.version = 1;
+        mdip.type = "asset";
+        mdip.registry = registry;
+        operation.mdip = mdip;
+        operation.controller = seedBank.didDocument != null ? seedBank.didDocument.id : null;
+        java.util.Map<String, Object> data = new java.util.LinkedHashMap<>();
+        data.put("backup", backup);
+        operation.data = data;
+
+        String msgHash = crypto.hashJson(operation);
+        Signature signature = new Signature();
+        signature.signer = operation.controller;
+        signature.signed = nowIso();
+        signature.hash = msgHash;
+        signature.value = crypto.signHash(msgHash, keypair.privateJwk);
+        operation.signature = signature;
+
+        String backupDid = gatekeeper.createDID(operation);
+
+        if (seedBank.didDocumentData instanceof java.util.Map<?, ?>) {
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Object> seedData = (java.util.Map<String, Object>) seedBank.didDocumentData;
+            seedData.put("wallet", backupDid);
+            seedBank.didDocumentData = seedData;
+            updateSeedBank(seedBank);
+        }
+
+        return backupDid;
+    }
+
+    public WalletFile recoverWallet() {
+        return recoverWallet(null);
+    }
+
+    public WalletFile recoverWallet(String did) {
+        try {
+            if (gatekeeper == null) {
+                throw new IllegalStateException("gatekeeper not configured");
+            }
+
+            if (did == null || did.isBlank()) {
+                MdipDocument seedBank = resolveSeedBank();
+                if (seedBank.didDocumentData instanceof java.util.Map<?, ?>) {
+                    @SuppressWarnings("unchecked")
+                    java.util.Map<String, Object> data = (java.util.Map<String, Object>) seedBank.didDocumentData;
+                    Object walletDid = data.get("wallet");
+                    if (walletDid instanceof String) {
+                        did = (String) walletDid;
+                    }
+                }
+                if (did == null || did.isBlank()) {
+                    throw new IllegalArgumentException("No backup DID found");
+                }
+            }
+
+            JwkPair keypair = hdKeyPair();
+            MdipDocument asset = resolveAsset(did);
+            if (asset == null || asset.didDocumentData == null) {
+                throw new IllegalArgumentException("No asset data found");
+            }
+
+            java.util.Map<String, Object> data;
+            if (asset.didDocumentData instanceof java.util.Map<?, ?>) {
+                @SuppressWarnings("unchecked")
+                java.util.Map<String, Object> map = (java.util.Map<String, Object>) asset.didDocumentData;
+                data = map;
+            } else {
+                throw new IllegalArgumentException("No asset data found");
+            }
+
+            Object backupObj = data.get("backup");
+            if (!(backupObj instanceof String)) {
+                throw new IllegalArgumentException("Asset \"backup\" is missing or not a string");
+            }
+
+            String backup = crypto.decryptMessage(keypair.publicJwk, keypair.privateJwk, (String) backupObj);
+            WalletFile recovered = WalletJsonMapper.mapper().readValue(backup, WalletFile.class);
+
+            WalletFile upgraded = walletManager.upgradeWallet(recovered);
+            if (upgraded.version != null && upgraded.version == 1 && upgraded.seed != null && upgraded.seed.mnemonicEnc != null) {
+                String mnemonic = decryptMnemonic();
+                upgraded.seed.mnemonicEnc = MnemonicEncryption.encrypt(mnemonic, passphrase);
+            }
+
+            walletManager.mutateWallet(current -> replaceWallet(current, upgraded));
+            return loadWallet();
+        } catch (Exception e) {
+            return loadWallet();
+        }
     }
 
     public String createId(String name, String registry) {
@@ -955,6 +1318,65 @@ public class Keymaster {
         return signed;
     }
 
+    private static String validateName(String name, WalletFile wallet) {
+        if (name == null || name.trim().isEmpty()) {
+            throw new IllegalArgumentException("name must be a non-empty string");
+        }
+        String trimmed = name.trim();
+        if (trimmed.length() > MAX_NAME_LENGTH) {
+            throw new IllegalArgumentException("name too long");
+        }
+        for (int i = 0; i < trimmed.length(); i += 1) {
+            if (Character.isISOControl(trimmed.charAt(i))) {
+                throw new IllegalArgumentException("name contains unprintable characters");
+            }
+        }
+        if (wallet != null) {
+            if (wallet.names != null && wallet.names.containsKey(trimmed)) {
+                throw new IllegalArgumentException("name already used");
+            }
+            if (wallet.ids != null && wallet.ids.containsKey(trimmed)) {
+                throw new IllegalArgumentException("name already used");
+            }
+        }
+        return trimmed;
+    }
+
+    private void tallyDid(String did, CheckWalletResult result) {
+        result.checked += 1;
+        if (did == null || !isValidDID(did)) {
+            result.invalid += 1;
+            return;
+        }
+        try {
+            MdipDocument doc = resolveDID(did);
+            if (doc == null) {
+                result.invalid += 1;
+                return;
+            }
+            if (doc.didDocumentMetadata != null && Boolean.TRUE.equals(doc.didDocumentMetadata.deactivated)) {
+                result.deleted += 1;
+            }
+        } catch (Exception e) {
+            result.invalid += 1;
+        }
+    }
+
+    private boolean shouldRemoveDid(String did) {
+        if (did == null || !isValidDID(did)) {
+            return true;
+        }
+        try {
+            MdipDocument doc = resolveDID(did);
+            if (doc == null) {
+                return true;
+            }
+            return doc.didDocumentMetadata != null && Boolean.TRUE.equals(doc.didDocumentMetadata.deactivated);
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
     private String encryptJsonInternal(Object json, String receiverDid, boolean includeHash) {
         String plaintext;
         try {
@@ -1358,6 +1780,22 @@ public class Keymaster {
         DeterministicKey master = walletManager.getHdKeyFromCacheOrMnemonic(wallet);
         DeterministicKey derived = HdKeyUtil.derivePath(master, account, index);
         return crypto.generateJwk(HdKeyUtil.privateKeyBytes(derived));
+    }
+
+    private JwkPair hdKeyPair() {
+        WalletFile wallet = loadWallet();
+        DeterministicKey master = walletManager.getHdKeyFromCacheOrMnemonic(wallet);
+        return crypto.generateJwk(HdKeyUtil.privateKeyBytes(master));
+    }
+
+    private static void replaceWallet(WalletFile target, WalletFile source) {
+        target.version = source.version;
+        target.seed = source.seed;
+        target.counter = source.counter;
+        target.ids = source.ids;
+        target.current = source.current;
+        target.names = source.names;
+        target.extras = source.extras;
     }
 
     private static boolean didMatch(String did1, String did2) {

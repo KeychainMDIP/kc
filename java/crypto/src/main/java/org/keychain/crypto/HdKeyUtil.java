@@ -17,6 +17,13 @@ public final class HdKeyUtil {
         return HDKeyDerivation.createMasterPrivateKey(seed);
     }
 
+    public static DeterministicKey fromXpriv(String xpriv) {
+        if (xpriv == null || xpriv.isBlank()) {
+            throw new IllegalArgumentException("xpriv is required");
+        }
+        return DeterministicKey.deserializeB58(xpriv, MainNetParams.get());
+    }
+
     public static DeterministicKey derivePath(DeterministicKey master, int account, int index) {
         if (account < 0 || index < 0) {
             throw new IllegalArgumentException("account and index must be >= 0");
