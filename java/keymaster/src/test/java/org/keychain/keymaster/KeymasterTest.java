@@ -211,6 +211,109 @@ class KeymasterTest {
     }
 
     @Test
+    void updateAssetMergesData() {
+        WalletEncFile stored = buildStoredWallet();
+        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        store.saveWallet(stored, true);
+
+        RecordingGatekeeper gatekeeper = new RecordingGatekeeper();
+        gatekeeper.blockResponse = new BlockInfo();
+        gatekeeper.blockResponse.hash = "blockhash";
+
+        MdipDocument current = buildCurrentDocFor("did:test:asset", "Signet", "v1");
+        current.mdip.type = "asset";
+        current.didDocumentData = new HashMap<>();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> currentData = (Map<String, Object>) current.didDocumentData;
+        currentData.put("a", 1);
+        gatekeeper.resolveResponse = current;
+
+        KeymasterCryptoImpl crypto = new KeymasterCryptoImpl();
+        Keymaster keymaster = new Keymaster(store, gatekeeper, crypto, "passphrase");
+
+        Map<String, Object> update = new HashMap<>();
+        update.put("b", 2);
+        assertTrue(keymaster.updateAsset("did:test:asset", update));
+
+        Operation op = gatekeeper.lastUpdate;
+        assertNotNull(op);
+        assertNotNull(op.doc);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> merged = (Map<String, Object>) op.doc.didDocumentData;
+        assertEquals(1, merged.get("a"));
+        assertEquals(2, merged.get("b"));
+    }
+
+    @Test
+    void listAssetsReturnsOwned() {
+        HashMap<String, IDInfo> ids = new HashMap<>();
+        IDInfo alice = new IDInfo();
+        alice.did = "did:test:alice";
+        alice.account = 0;
+        alice.index = 0;
+        alice.owned = new java.util.ArrayList<>();
+        alice.owned.add("did:test:asset1");
+        ids.put("Alice", alice);
+
+        WalletEncFile stored = buildStoredWalletWithCounter(0, ids, "Alice");
+        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        store.saveWallet(stored, true);
+
+        Keymaster keymaster = new Keymaster(store, "passphrase");
+        java.util.List<String> assets = keymaster.listAssets("Alice");
+        assertEquals(1, assets.size());
+        assertEquals("did:test:asset1", assets.get(0));
+    }
+
+    @Test
+    void transferAssetUpdatesControllerAndOwned() {
+        HashMap<String, IDInfo> ids = new HashMap<>();
+        IDInfo alice = new IDInfo();
+        alice.did = "did:test:alice";
+        alice.account = 0;
+        alice.index = 0;
+        alice.owned = new java.util.ArrayList<>();
+        alice.owned.add("did:test:asset1");
+        ids.put("Alice", alice);
+
+        IDInfo bob = new IDInfo();
+        bob.did = "did:test:bob";
+        bob.account = 1;
+        bob.index = 0;
+        bob.owned = new java.util.ArrayList<>();
+        ids.put("Bob", bob);
+
+        WalletEncFile stored = buildStoredWalletWithCounter(2, ids, "Alice");
+        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        store.saveWallet(stored, true);
+
+        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        gatekeeper.blockResponse = new BlockInfo();
+        gatekeeper.blockResponse.hash = "blockhash";
+
+        MdipDocument assetDoc = buildCurrentDocFor("did:test:asset1", "Signet", "v1");
+        assetDoc.mdip.type = "asset";
+        assetDoc.didDocument.controller = "did:test:alice";
+        gatekeeper.docs.put("did:test:asset1", assetDoc);
+
+        MdipDocument bobDoc = buildCurrentDocFor("did:test:bob", "Signet", "v1");
+        gatekeeper.docs.put("did:test:bob", bobDoc);
+
+        Keymaster keymaster = new Keymaster(store, gatekeeper, "passphrase");
+        assertTrue(keymaster.transferAsset("did:test:asset1", "did:test:bob"));
+
+        Operation op = gatekeeper.lastUpdate;
+        assertNotNull(op);
+        assertNotNull(op.doc);
+        assertEquals("did:test:bob", op.doc.didDocument.controller);
+
+        WalletFile wallet = keymaster.loadWallet();
+        assertTrue(wallet.ids.get("Alice").owned.isEmpty());
+        assertEquals(1, wallet.ids.get("Bob").owned.size());
+        assertEquals("did:test:asset1", wallet.ids.get("Bob").owned.get(0));
+    }
+
+    @Test
     void getBlockDelegatesToGatekeeper() {
         WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
         RecordingGatekeeper gatekeeper = new RecordingGatekeeper();

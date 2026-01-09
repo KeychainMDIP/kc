@@ -30,6 +30,19 @@ public class OperationFactory {
         return signer.signCreate(operation, privateJwk);
     }
 
+    public Operation createSignedCreateAssetOperation(
+        String registry,
+        String controller,
+        Object data,
+        String blockid,
+        String validUntil,
+        JwkPrivate privateJwk,
+        String signerDid
+    ) {
+        Operation operation = builder.createAssetOperation(registry, controller, data, blockid, validUntil);
+        return signer.sign(operation, privateJwk, signerDid);
+    }
+
     public Operation createSignedUpdateDidOperation(
         String did,
         String previd,

@@ -45,6 +45,39 @@ public class OperationBuilder {
         return operation;
     }
 
+    public Operation createAssetOperation(
+        String registry,
+        String controller,
+        Object data,
+        String blockid,
+        String validUntil
+    ) {
+        if (registry == null || registry.isBlank()) {
+            throw new IllegalArgumentException("registry is required");
+        }
+        if (controller == null || controller.isBlank()) {
+            throw new IllegalArgumentException("controller is required");
+        }
+        if (data == null) {
+            throw new IllegalArgumentException("data is required");
+        }
+
+        Mdip mdip = new Mdip();
+        mdip.version = 1;
+        mdip.type = "asset";
+        mdip.registry = registry;
+        mdip.validUntil = validUntil;
+
+        Operation operation = new Operation();
+        operation.type = "create";
+        operation.created = nowIso();
+        operation.blockid = blockid;
+        operation.mdip = mdip;
+        operation.controller = controller;
+        operation.data = data;
+        return operation;
+    }
+
     public Operation updateDidOperation(String did, String previd, String blockid, MdipDocument doc) {
         if (did == null || did.isBlank()) {
             throw new IllegalArgumentException("did is required");
