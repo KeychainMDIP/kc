@@ -1041,7 +1041,18 @@ class KeymasterTest {
 
     @Test
     void sendCredentialCreatesNoticeAsset() {
-        WalletEncFile stored = buildStoredWallet();
+        String aliceDid = "did:test:QmYwAPJzv5CZsnAzt8auV2V4ZZFZ5JYh5rS4Qh1zS4x2o7";
+        String bobDid = "did:test:bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi";
+        String credentialDid = "did:test:bafybeihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku";
+
+        HashMap<String, IDInfo> ids = new HashMap<>();
+        IDInfo alice = new IDInfo();
+        alice.did = aliceDid;
+        alice.account = 0;
+        alice.index = 0;
+        ids.put("Alice", alice);
+
+        WalletEncFile stored = buildStoredWalletWithCounter(1, ids, "Alice");
         WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
         store.saveWallet(stored, true);
 
@@ -1049,8 +1060,8 @@ class KeymasterTest {
         JwkPair bobKeypair = deriveKeypair(1, 0);
 
         StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
-        gatekeeper.docs.put("did:test:alice", buildAgentDocWithKey("did:test:alice", aliceKeypair));
-        gatekeeper.docs.put("did:test:bob", buildAgentDocWithKey("did:test:bob", bobKeypair));
+        gatekeeper.docs.put(aliceDid, buildAgentDocWithKey(aliceDid, aliceKeypair));
+        gatekeeper.docs.put(bobDid, buildAgentDocWithKey(bobDid, bobKeypair));
         gatekeeper.blockResponse = new BlockInfo();
         gatekeeper.blockResponse.hash = "blockhash";
 
@@ -1059,16 +1070,16 @@ class KeymasterTest {
         Map<String, Object> vc = new HashMap<>();
         vc.put("@context", List.of("https://www.w3.org/ns/credentials/v2"));
         vc.put("type", List.of("VerifiableCredential", "did:test:schema"));
-        vc.put("issuer", "did:test:alice");
-        vc.put("credentialSubject", Map.of("id", "did:test:bob"));
+        vc.put("issuer", aliceDid);
+        vc.put("credentialSubject", Map.of("id", bobDid));
         vc.put("credential", Map.of("email", "bob@example.com"));
 
-        gatekeeper.createResponse = "did:test:cred";
-        String credDid = keymaster.encryptJSON(vc, "did:test:bob");
+        gatekeeper.createResponse = credentialDid;
+        String encryptedDid = keymaster.encryptJSON(vc, bobDid);
 
-        gatekeeper.createResponse = "did:test:notice";
-        String noticeDid = keymaster.sendCredential(credDid);
-        assertEquals("did:test:notice", noticeDid);
+        gatekeeper.createResponse = bobDid;
+        String noticeDid = keymaster.sendCredential(encryptedDid);
+        assertEquals(bobDid, noticeDid);
 
         Operation op = gatekeeper.lastCreate;
         assertNotNull(op);
@@ -1076,8 +1087,8 @@ class KeymasterTest {
         Map<String, Object> data = (Map<String, Object>) op.data;
         @SuppressWarnings("unchecked")
         Map<String, Object> notice = (Map<String, Object>) data.get("notice");
-        assertEquals(List.of("did:test:bob"), notice.get("to"));
-        assertEquals(List.of(credDid), notice.get("dids"));
+        assertEquals(List.of(bobDid), notice.get("to"));
+        assertEquals(List.of(encryptedDid), notice.get("dids"));
     }
 
     @Test
@@ -1086,12 +1097,15 @@ class KeymasterTest {
         WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
         store.saveWallet(stored, true);
 
+        String bobDid = "did:test:bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi";
+        String credDid = "did:test:bafybeihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku";
+
         JwkPair aliceKeypair = deriveKeypair(0, 0);
         JwkPair bobKeypair = deriveKeypair(1, 0);
 
         StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
         gatekeeper.docs.put("did:test:alice", buildAgentDocWithKey("did:test:alice", aliceKeypair));
-        gatekeeper.docs.put("did:test:bob", buildAgentDocWithKey("did:test:bob", bobKeypair));
+        gatekeeper.docs.put(bobDid, buildAgentDocWithKey(bobDid, bobKeypair));
         gatekeeper.blockResponse = new BlockInfo();
         gatekeeper.blockResponse.hash = "blockhash";
         gatekeeper.createResponse = "did:test:notice";
@@ -1099,8 +1113,8 @@ class KeymasterTest {
         Keymaster keymaster = new Keymaster(store, gatekeeper, "passphrase");
 
         Map<String, Object> message = new HashMap<>();
-        message.put("to", List.of("did:test:bob"));
-        message.put("dids", List.of("did:test:cred"));
+        message.put("to", List.of(bobDid));
+        message.put("dids", List.of(credDid));
 
         String did = keymaster.createNotice(message);
         assertEquals("did:test:notice", did);
@@ -1111,8 +1125,8 @@ class KeymasterTest {
         Map<String, Object> data = (Map<String, Object>) op.data;
         @SuppressWarnings("unchecked")
         Map<String, Object> notice = (Map<String, Object>) data.get("notice");
-        assertEquals(List.of("did:test:bob"), notice.get("to"));
-        assertEquals(List.of("did:test:cred"), notice.get("dids"));
+        assertEquals(List.of(bobDid), notice.get("to"));
+        assertEquals(List.of(credDid), notice.get("dids"));
     }
 
     @Test
@@ -1121,12 +1135,15 @@ class KeymasterTest {
         WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
         store.saveWallet(stored, true);
 
+        String bobDid = "did:test:bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi";
+        String credDid = "did:test:bafybeihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku";
+
         JwkPair aliceKeypair = deriveKeypair(0, 0);
         JwkPair bobKeypair = deriveKeypair(1, 0);
 
         StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
         gatekeeper.docs.put("did:test:alice", buildAgentDocWithKey("did:test:alice", aliceKeypair));
-        gatekeeper.docs.put("did:test:bob", buildAgentDocWithKey("did:test:bob", bobKeypair));
+        gatekeeper.docs.put(bobDid, buildAgentDocWithKey(bobDid, bobKeypair));
         gatekeeper.blockResponse = new BlockInfo();
         gatekeeper.blockResponse.hash = "blockhash";
 
@@ -1138,8 +1155,8 @@ class KeymasterTest {
         Keymaster keymaster = new Keymaster(store, gatekeeper, "passphrase");
 
         Map<String, Object> message = new HashMap<>();
-        message.put("to", List.of("did:test:bob"));
-        message.put("dids", List.of("did:test:cred"));
+        message.put("to", List.of(bobDid));
+        message.put("dids", List.of(credDid));
 
         assertTrue(keymaster.updateNotice("did:test:notice", message));
 
@@ -1149,8 +1166,8 @@ class KeymasterTest {
         Map<String, Object> data = (Map<String, Object>) op.doc.didDocumentData;
         @SuppressWarnings("unchecked")
         Map<String, Object> notice = (Map<String, Object>) data.get("notice");
-        assertEquals(List.of("did:test:bob"), notice.get("to"));
-        assertEquals(List.of("did:test:cred"), notice.get("dids"));
+        assertEquals(List.of(bobDid), notice.get("to"));
+        assertEquals(List.of(credDid), notice.get("dids"));
     }
 
     @Test

@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import org.bitcoinj.crypto.DeterministicKey;
+import org.keychain.cid.Cid;
 import org.keychain.crypto.HdKeyUtil;
 import org.keychain.crypto.JwkPair;
 import org.keychain.crypto.KeymasterCrypto;
@@ -1377,7 +1378,10 @@ public class Keymaster {
             return false;
         }
         String suffix = parts[parts.length - 1];
-        return suffix != null && !suffix.isBlank();
+        if (suffix == null || suffix.isBlank()) {
+            return false;
+        }
+        return Cid.isValid(suffix);
     }
 
     private static EcdsaJwkPublic getPublicKeyJwk(MdipDocument doc) {
