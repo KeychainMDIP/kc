@@ -132,6 +132,7 @@ public class Keymaster {
     }
 
     public boolean mutateWallet(Consumer<WalletFile> mutator) {
+        loadWallet();
         return walletManager.mutateWallet(mutator);
     }
 
@@ -484,7 +485,7 @@ public class Keymaster {
                 upgraded.seed.mnemonicEnc = MnemonicEncryption.encrypt(mnemonic, passphrase);
             }
 
-            walletManager.mutateWallet(current -> replaceWallet(current, upgraded));
+            mutateWallet(current -> replaceWallet(current, upgraded));
             return loadWallet();
         } catch (Exception e) {
             return loadWallet();
@@ -503,7 +504,7 @@ public class Keymaster {
         }
 
         final String[] createdDid = new String[1];
-        walletManager.mutateWallet(wallet -> {
+        mutateWallet(wallet -> {
             if (wallet.ids != null && wallet.ids.containsKey(name)) {
                 throw new IllegalArgumentException("name already exists");
             }
@@ -576,7 +577,7 @@ public class Keymaster {
         String did = gatekeeper.createDID(signed);
         if (validUntil == null) {
             String createdDid = did;
-            walletManager.mutateWallet(updated -> {
+            mutateWallet(updated -> {
                 IDInfo current = getCurrentIdInfo(updated);
                 if (current.owned == null) {
                     current.owned = new ArrayList<>();
@@ -1541,7 +1542,7 @@ public class Keymaster {
         if (did == null || did.isBlank()) {
             throw new IllegalArgumentException("did is required");
         }
-        walletManager.mutateWallet(wallet -> {
+        mutateWallet(wallet -> {
             IDInfo idInfo = fetchIdInfo(ownerDid, wallet);
             if (idInfo.owned == null) {
                 idInfo.owned = new java.util.ArrayList<>();
@@ -1557,7 +1558,7 @@ public class Keymaster {
         if (did == null || did.isBlank()) {
             throw new IllegalArgumentException("did is required");
         }
-        walletManager.mutateWallet(wallet -> {
+        mutateWallet(wallet -> {
             IDInfo idInfo = getCurrentIdInfo(wallet);
             if (idInfo.held == null) {
                 idInfo.held = new java.util.ArrayList<>();
@@ -1574,7 +1575,7 @@ public class Keymaster {
             throw new IllegalArgumentException("did is required");
         }
         final boolean[] changed = {false};
-        walletManager.mutateWallet(wallet -> {
+        mutateWallet(wallet -> {
             IDInfo idInfo = getCurrentIdInfo(wallet);
             if (idInfo.held == null) {
                 return;
@@ -1591,7 +1592,7 @@ public class Keymaster {
             throw new IllegalArgumentException("did is required");
         }
         final boolean[] ownerFound = {false};
-        walletManager.mutateWallet(wallet -> {
+        mutateWallet(wallet -> {
             try {
                 IDInfo idInfo = fetchIdInfo(ownerDid, wallet);
                 ownerFound[0] = true;

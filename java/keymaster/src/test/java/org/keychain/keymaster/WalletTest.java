@@ -230,16 +230,14 @@ class WalletTest {
     }
 
     @Test
-    void mutateWalletThrowsWhenNoWalletExists() {
+    void mutateWalletCreatesWalletIfMissing() {
         WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
         Keymaster keymaster = new Keymaster(store, PASSPHRASE);
 
-        try {
-            keymaster.mutateWallet(wallet -> wallet.counter = 1);
-            throw new IllegalStateException("expected exception");
-        } catch (IllegalStateException e) {
-            assertEquals("No wallet loaded", e.getMessage());
-        }
+        keymaster.mutateWallet(wallet -> wallet.counter = 1);
+
+        WalletFile wallet = keymaster.loadWallet();
+        assertEquals(1, wallet.counter);
     }
 
     @Test
