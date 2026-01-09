@@ -603,6 +603,557 @@ class KeymasterTest {
     }
 
     @Test
+    void encryptDecryptJsonRoundTrip() {
+        HashMap<String, IDInfo> ids = new HashMap<>();
+        IDInfo alice = new IDInfo();
+        alice.did = "did:test:alice";
+        alice.account = 0;
+        alice.index = 0;
+        ids.put("Alice", alice);
+
+        IDInfo bob = new IDInfo();
+        bob.did = "did:test:bob";
+        bob.account = 1;
+        bob.index = 0;
+        ids.put("Bob", bob);
+
+        WalletEncFile stored = buildStoredWalletWithCounter(2, ids, "Alice");
+        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        store.saveWallet(stored, true);
+
+        JwkPair aliceKeypair = deriveKeypair(0, 0);
+        JwkPair bobKeypair = deriveKeypair(1, 0);
+
+        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        gatekeeper.docs.put("did:test:alice", buildAgentDocWithKey("did:test:alice", aliceKeypair));
+        gatekeeper.docs.put("did:test:bob", buildAgentDocWithKey("did:test:bob", bobKeypair));
+        gatekeeper.createResponse = "did:test:encrypted";
+
+        Keymaster keymaster = new Keymaster(store, gatekeeper, "passphrase");
+        Map<String, Object> payload = Map.of("foo", "bar");
+        String did = keymaster.encryptJSON(payload, "did:test:bob");
+
+        keymaster.mutateWallet(wallet -> wallet.current = "Bob");
+        Object decrypted = keymaster.decryptJSON(did);
+        assertTrue(decrypted instanceof Map<?, ?>);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> decryptedMap = (Map<String, Object>) decrypted;
+        assertEquals("bar", decryptedMap.get("foo"));
+    }
+
+    @Test
+    void getCredentialReturnsVerifiableCredential() {
+        WalletEncFile stored = buildStoredWallet();
+        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        store.saveWallet(stored, true);
+
+        JwkPair aliceKeypair = deriveKeypair();
+        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        gatekeeper.docs.put("did:test:alice", buildAgentDocWithKey("did:test:alice", aliceKeypair));
+        gatekeeper.createResponse = "did:test:vc";
+
+        Keymaster keymaster = new Keymaster(store, gatekeeper, "passphrase");
+
+        Map<String, Object> vc = new HashMap<>();
+        vc.put("@context", List.of("https://www.w3.org/ns/credentials/v2"));
+        vc.put("type", List.of("VerifiableCredential", "did:test:schema"));
+        vc.put("issuer", "did:test:alice");
+        vc.put("credentialSubject", Map.of("id", "did:test:alice"));
+        vc.put("credential", Map.of("email", "alice@example.com"));
+
+        String did = keymaster.encryptJSON(vc, "did:test:alice");
+        Map<String, Object> fetched = keymaster.getCredential(did);
+        assertNotNull(fetched);
+        assertEquals("did:test:alice", fetched.get("issuer"));
+    }
+
+    @Test
+    void getCredentialReturnsNullForNonCredential() {
+        WalletEncFile stored = buildStoredWallet();
+        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        store.saveWallet(stored, true);
+
+        JwkPair aliceKeypair = deriveKeypair();
+        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        gatekeeper.docs.put("did:test:alice", buildAgentDocWithKey("did:test:alice", aliceKeypair));
+        gatekeeper.createResponse = "did:test:blob";
+
+        Keymaster keymaster = new Keymaster(store, gatekeeper, "passphrase");
+
+        String did = keymaster.encryptJSON(Map.of("foo", "bar"), "did:test:alice");
+        Map<String, Object> fetched = keymaster.getCredential(did);
+        assertEquals(null, fetched);
+    }
+
+    @Test
+    void acceptCredentialAddsToHeld() {
+        HashMap<String, IDInfo> ids = new HashMap<>();
+        IDInfo alice = new IDInfo();
+        alice.did = "did:test:alice";
+        alice.account = 0;
+        alice.index = 0;
+        ids.put("Alice", alice);
+
+        IDInfo bob = new IDInfo();
+        bob.did = "did:test:bob";
+        bob.account = 1;
+        bob.index = 0;
+        ids.put("Bob", bob);
+
+        WalletEncFile stored = buildStoredWalletWithCounter(2, ids, "Alice");
+        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        store.saveWallet(stored, true);
+
+        JwkPair aliceKeypair = deriveKeypair(0, 0);
+        JwkPair bobKeypair = deriveKeypair(1, 0);
+
+        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        gatekeeper.docs.put("did:test:alice", buildAgentDocWithKey("did:test:alice", aliceKeypair));
+        gatekeeper.docs.put("did:test:bob", buildAgentDocWithKey("did:test:bob", bobKeypair));
+        gatekeeper.createResponse = "did:test:cred";
+
+        Keymaster keymaster = new Keymaster(store, gatekeeper, "passphrase");
+
+        Map<String, Object> vc = new HashMap<>();
+        vc.put("@context", List.of("https://www.w3.org/ns/credentials/v2"));
+        vc.put("type", List.of("VerifiableCredential", "did:test:schema"));
+        vc.put("issuer", "did:test:alice");
+        vc.put("credentialSubject", Map.of("id", "did:test:bob"));
+        vc.put("credential", Map.of("email", "bob@example.com"));
+
+        String did = keymaster.encryptJSON(vc, "did:test:bob");
+
+        keymaster.mutateWallet(wallet -> wallet.current = "Bob");
+        assertTrue(keymaster.acceptCredential(did));
+
+        WalletFile wallet = keymaster.loadWallet();
+        assertNotNull(wallet.ids.get("Bob").held);
+        assertEquals(1, wallet.ids.get("Bob").held.size());
+        assertEquals(did, wallet.ids.get("Bob").held.get(0));
+    }
+
+    @Test
+    void acceptCredentialRejectsWrongSubject() {
+        HashMap<String, IDInfo> ids = new HashMap<>();
+        IDInfo alice = new IDInfo();
+        alice.did = "did:test:alice";
+        alice.account = 0;
+        alice.index = 0;
+        ids.put("Alice", alice);
+
+        IDInfo bob = new IDInfo();
+        bob.did = "did:test:bob";
+        bob.account = 1;
+        bob.index = 0;
+        ids.put("Bob", bob);
+
+        WalletEncFile stored = buildStoredWalletWithCounter(2, ids, "Alice");
+        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        store.saveWallet(stored, true);
+
+        JwkPair aliceKeypair = deriveKeypair(0, 0);
+        JwkPair bobKeypair = deriveKeypair(1, 0);
+
+        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        gatekeeper.docs.put("did:test:alice", buildAgentDocWithKey("did:test:alice", aliceKeypair));
+        gatekeeper.docs.put("did:test:bob", buildAgentDocWithKey("did:test:bob", bobKeypair));
+        gatekeeper.createResponse = "did:test:cred";
+
+        Keymaster keymaster = new Keymaster(store, gatekeeper, "passphrase");
+
+        Map<String, Object> vc = new HashMap<>();
+        vc.put("@context", List.of("https://www.w3.org/ns/credentials/v2"));
+        vc.put("type", List.of("VerifiableCredential", "did:test:schema"));
+        vc.put("issuer", "did:test:alice");
+        vc.put("credentialSubject", Map.of("id", "did:test:bob"));
+        vc.put("credential", Map.of("email", "bob@example.com"));
+
+        String did = keymaster.encryptJSON(vc, "did:test:bob");
+
+        // Alice is current ID and is not the subject
+        assertEquals("Alice", keymaster.loadWallet().current);
+        assertEquals(false, keymaster.acceptCredential(did));
+    }
+
+    @Test
+    void listCredentialsReturnsHeld() {
+        HashMap<String, IDInfo> ids = new HashMap<>();
+        IDInfo alice = new IDInfo();
+        alice.did = "did:test:alice";
+        alice.account = 0;
+        alice.index = 0;
+        ids.put("Alice", alice);
+
+        WalletEncFile stored = buildStoredWalletWithCounter(1, ids, "Alice");
+        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        store.saveWallet(stored, true);
+
+        Keymaster keymaster = new Keymaster(store, "passphrase");
+        keymaster.addToHeld("did:test:cred1");
+        keymaster.addToHeld("did:test:cred2");
+
+        List<String> held = keymaster.listCredentials(null);
+        assertEquals(2, held.size());
+        assertEquals(true, held.contains("did:test:cred1"));
+        assertEquals(true, held.contains("did:test:cred2"));
+    }
+
+    @Test
+    void removeCredentialRemovesHeldEntry() {
+        HashMap<String, IDInfo> ids = new HashMap<>();
+        IDInfo alice = new IDInfo();
+        alice.did = "did:test:alice";
+        alice.account = 0;
+        alice.index = 0;
+        ids.put("Alice", alice);
+
+        WalletEncFile stored = buildStoredWalletWithCounter(1, ids, "Alice");
+        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        store.saveWallet(stored, true);
+
+        Keymaster keymaster = new Keymaster(store, "passphrase");
+        keymaster.addToHeld("did:test:cred1");
+        assertEquals(true, keymaster.removeCredential("did:test:cred1"));
+        assertEquals(0, keymaster.listCredentials(null).size());
+    }
+
+    @Test
+    void listIssuedFiltersByIssuer() {
+        WalletEncFile stored = buildStoredWallet();
+        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        store.saveWallet(stored, true);
+
+        JwkPair aliceKeypair = deriveKeypair(0, 0);
+        JwkPair bobKeypair = deriveKeypair(1, 0);
+
+        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        gatekeeper.docs.put("did:test:alice", buildAgentDocWithKey("did:test:alice", aliceKeypair));
+        gatekeeper.docs.put("did:test:bob", buildAgentDocWithKey("did:test:bob", bobKeypair));
+        gatekeeper.blockResponse = new BlockInfo();
+        gatekeeper.blockResponse.hash = "blockhash";
+
+        Keymaster keymaster = new Keymaster(store, gatekeeper, "passphrase");
+
+        Map<String, Object> vc1 = new HashMap<>();
+        vc1.put("@context", List.of("https://www.w3.org/ns/credentials/v2"));
+        vc1.put("type", List.of("VerifiableCredential", "did:test:schema"));
+        vc1.put("issuer", "did:test:alice");
+        vc1.put("credentialSubject", Map.of("id", "did:test:bob"));
+        vc1.put("credential", Map.of("email", "bob@example.com"));
+        gatekeeper.createResponse = "did:test:cred1";
+        String did1 = keymaster.encryptJSON(vc1, "did:test:bob");
+
+        Map<String, Object> vc2 = new HashMap<>();
+        vc2.put("@context", List.of("https://www.w3.org/ns/credentials/v2"));
+        vc2.put("type", List.of("VerifiableCredential", "did:test:schema"));
+        vc2.put("issuer", "did:test:bob");
+        vc2.put("credentialSubject", Map.of("id", "did:test:bob"));
+        vc2.put("credential", Map.of("email", "bob2@example.com"));
+        gatekeeper.createResponse = "did:test:cred2";
+        String did2 = keymaster.encryptJSON(vc2, "did:test:bob");
+
+        List<String> issued = keymaster.listIssued(null);
+        assertEquals(1, issued.size());
+        assertEquals(true, issued.contains(did1));
+        assertEquals(false, issued.contains(did2));
+    }
+
+    @Test
+    void updateCredentialReencryptsPayload() {
+        WalletEncFile stored = buildStoredWallet();
+        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        store.saveWallet(stored, true);
+
+        JwkPair aliceKeypair = deriveKeypair(0, 0);
+        JwkPair bobKeypair = deriveKeypair(1, 0);
+
+        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        gatekeeper.docs.put("did:test:alice", buildAgentDocWithKey("did:test:alice", aliceKeypair));
+        gatekeeper.docs.put("did:test:bob", buildAgentDocWithKey("did:test:bob", bobKeypair));
+        gatekeeper.blockResponse = new BlockInfo();
+        gatekeeper.blockResponse.hash = "blockhash";
+        gatekeeper.createResponse = "did:test:cred";
+
+        Keymaster keymaster = new Keymaster(store, gatekeeper, "passphrase");
+
+        Map<String, Object> vc = new HashMap<>();
+        vc.put("@context", List.of("https://www.w3.org/ns/credentials/v2"));
+        vc.put("type", List.of("VerifiableCredential", "did:test:schema"));
+        vc.put("issuer", "did:test:alice");
+        vc.put("credentialSubject", Map.of("id", "did:test:bob"));
+        vc.put("credential", Map.of("email", "bob@example.com"));
+
+        String did = keymaster.encryptJSON(vc, "did:test:bob");
+
+        Map<String, Object> updated = new HashMap<>(vc);
+        updated.put("credential", Map.of("email", "bob-updated@example.com"));
+        assertTrue(keymaster.updateCredential(did, updated));
+
+        Operation op = gatekeeper.lastUpdate;
+        assertNotNull(op);
+        assertNotNull(op.doc);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) op.doc.didDocumentData;
+        @SuppressWarnings("unchecked")
+        Map<String, Object> encrypted = (Map<String, Object>) data.get("encrypted");
+        assertEquals("did:test:alice", encrypted.get("sender"));
+        assertNotNull(encrypted.get("cipher_sender"));
+        assertNotNull(encrypted.get("cipher_receiver"));
+        assertNotNull(encrypted.get("cipher_hash"));
+    }
+
+    @Test
+    void publishCredentialAddsManifestEntry() {
+        HashMap<String, IDInfo> ids = new HashMap<>();
+        IDInfo alice = new IDInfo();
+        alice.did = "did:test:alice";
+        alice.account = 0;
+        alice.index = 0;
+        ids.put("Alice", alice);
+
+        IDInfo bob = new IDInfo();
+        bob.did = "did:test:bob";
+        bob.account = 1;
+        bob.index = 0;
+        ids.put("Bob", bob);
+
+        WalletEncFile stored = buildStoredWalletWithCounter(2, ids, "Alice");
+        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        store.saveWallet(stored, true);
+
+        JwkPair aliceKeypair = deriveKeypair(0, 0);
+        JwkPair bobKeypair = deriveKeypair(1, 0);
+
+        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        gatekeeper.docs.put("did:test:alice", buildAgentDocWithKey("did:test:alice", aliceKeypair));
+        gatekeeper.docs.put("did:test:bob", buildAgentDocWithKey("did:test:bob", bobKeypair));
+        gatekeeper.blockResponse = new BlockInfo();
+        gatekeeper.blockResponse.hash = "blockhash";
+        gatekeeper.createResponse = "did:test:cred";
+
+        Keymaster keymaster = new Keymaster(store, gatekeeper, "passphrase");
+
+        Map<String, Object> vc = new HashMap<>();
+        vc.put("@context", List.of("https://www.w3.org/ns/credentials/v2"));
+        vc.put("type", List.of("VerifiableCredential", "did:test:schema"));
+        vc.put("issuer", "did:test:alice");
+        vc.put("credentialSubject", Map.of("id", "did:test:bob"));
+        vc.put("credential", Map.of("email", "bob@example.com"));
+
+        String did = keymaster.encryptJSON(vc, "did:test:bob");
+
+        keymaster.mutateWallet(wallet -> wallet.current = "Bob");
+        Map<String, Object> published = keymaster.publishCredential(did, false);
+        assertNotNull(published);
+        assertEquals(null, published.get("credential"));
+
+        Operation op = gatekeeper.lastUpdate;
+        assertNotNull(op);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) op.doc.didDocumentData;
+        @SuppressWarnings("unchecked")
+        Map<String, Object> manifest = (Map<String, Object>) data.get("manifest");
+        assertNotNull(manifest.get(did));
+    }
+
+    @Test
+    void unpublishCredentialRemovesManifestEntry() {
+        HashMap<String, IDInfo> ids = new HashMap<>();
+        IDInfo alice = new IDInfo();
+        alice.did = "did:test:alice";
+        alice.account = 0;
+        alice.index = 0;
+        ids.put("Alice", alice);
+
+        IDInfo bob = new IDInfo();
+        bob.did = "did:test:bob";
+        bob.account = 1;
+        bob.index = 0;
+        ids.put("Bob", bob);
+
+        WalletEncFile stored = buildStoredWalletWithCounter(2, ids, "Bob");
+        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        store.saveWallet(stored, true);
+
+        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        gatekeeper.blockResponse = new BlockInfo();
+        gatekeeper.blockResponse.hash = "blockhash";
+
+        MdipDocument bobDoc = buildCurrentDocFor("did:test:bob", "Signet", "v1");
+        Map<String, Object> manifest = new HashMap<>();
+        manifest.put("did:test:cred", Map.of("issuer", "did:test:alice"));
+        bobDoc.didDocumentData = new HashMap<>();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) bobDoc.didDocumentData;
+        data.put("manifest", manifest);
+        gatekeeper.docs.put("did:test:bob", bobDoc);
+
+        Keymaster keymaster = new Keymaster(store, gatekeeper, "passphrase");
+
+        String message = keymaster.unpublishCredential("did:test:cred");
+        assertEquals("OK credential did:test:cred removed from manifest", message);
+
+        Operation op = gatekeeper.lastUpdate;
+        assertNotNull(op);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> updatedData = (Map<String, Object>) op.doc.didDocumentData;
+        @SuppressWarnings("unchecked")
+        Map<String, Object> updatedManifest = (Map<String, Object>) updatedData.get("manifest");
+        assertEquals(false, updatedManifest.containsKey("did:test:cred"));
+    }
+
+    @Test
+    void revokeCredentialRemovesOwnedEntry() {
+        WalletEncFile stored = buildStoredWallet();
+        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        store.saveWallet(stored, true);
+
+        JwkPair aliceKeypair = deriveKeypair(0, 0);
+        JwkPair bobKeypair = deriveKeypair(1, 0);
+
+        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        gatekeeper.docs.put("did:test:alice", buildAgentDocWithKey("did:test:alice", aliceKeypair));
+        gatekeeper.docs.put("did:test:bob", buildAgentDocWithKey("did:test:bob", bobKeypair));
+        gatekeeper.blockResponse = new BlockInfo();
+        gatekeeper.blockResponse.hash = "blockhash";
+        gatekeeper.createResponse = "did:test:cred";
+
+        Keymaster keymaster = new Keymaster(store, gatekeeper, "passphrase");
+
+        Map<String, Object> vc = new HashMap<>();
+        vc.put("@context", List.of("https://www.w3.org/ns/credentials/v2"));
+        vc.put("type", List.of("VerifiableCredential", "did:test:schema"));
+        vc.put("issuer", "did:test:alice");
+        vc.put("credentialSubject", Map.of("id", "did:test:bob"));
+        vc.put("credential", Map.of("email", "bob@example.com"));
+
+        String did = keymaster.encryptJSON(vc, "did:test:bob");
+        WalletFile wallet = keymaster.loadWallet();
+        assertEquals(true, wallet.ids.get("Alice").owned.contains(did));
+
+        assertTrue(keymaster.revokeCredential(did));
+        assertNotNull(gatekeeper.lastDelete);
+        assertEquals(did, gatekeeper.lastDelete.did);
+
+        WalletFile updated = keymaster.loadWallet();
+        assertEquals(false, updated.ids.get("Alice").owned.contains(did));
+    }
+
+    @Test
+    void sendCredentialCreatesNoticeAsset() {
+        WalletEncFile stored = buildStoredWallet();
+        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        store.saveWallet(stored, true);
+
+        JwkPair aliceKeypair = deriveKeypair(0, 0);
+        JwkPair bobKeypair = deriveKeypair(1, 0);
+
+        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        gatekeeper.docs.put("did:test:alice", buildAgentDocWithKey("did:test:alice", aliceKeypair));
+        gatekeeper.docs.put("did:test:bob", buildAgentDocWithKey("did:test:bob", bobKeypair));
+        gatekeeper.blockResponse = new BlockInfo();
+        gatekeeper.blockResponse.hash = "blockhash";
+
+        Keymaster keymaster = new Keymaster(store, gatekeeper, "passphrase");
+
+        Map<String, Object> vc = new HashMap<>();
+        vc.put("@context", List.of("https://www.w3.org/ns/credentials/v2"));
+        vc.put("type", List.of("VerifiableCredential", "did:test:schema"));
+        vc.put("issuer", "did:test:alice");
+        vc.put("credentialSubject", Map.of("id", "did:test:bob"));
+        vc.put("credential", Map.of("email", "bob@example.com"));
+
+        gatekeeper.createResponse = "did:test:cred";
+        String credDid = keymaster.encryptJSON(vc, "did:test:bob");
+
+        gatekeeper.createResponse = "did:test:notice";
+        String noticeDid = keymaster.sendCredential(credDid);
+        assertEquals("did:test:notice", noticeDid);
+
+        Operation op = gatekeeper.lastCreate;
+        assertNotNull(op);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) op.data;
+        @SuppressWarnings("unchecked")
+        Map<String, Object> notice = (Map<String, Object>) data.get("notice");
+        assertEquals(List.of("did:test:bob"), notice.get("to"));
+        assertEquals(List.of(credDid), notice.get("dids"));
+    }
+
+    @Test
+    void createNoticeBuildsNoticeAsset() {
+        WalletEncFile stored = buildStoredWallet();
+        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        store.saveWallet(stored, true);
+
+        JwkPair aliceKeypair = deriveKeypair(0, 0);
+        JwkPair bobKeypair = deriveKeypair(1, 0);
+
+        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        gatekeeper.docs.put("did:test:alice", buildAgentDocWithKey("did:test:alice", aliceKeypair));
+        gatekeeper.docs.put("did:test:bob", buildAgentDocWithKey("did:test:bob", bobKeypair));
+        gatekeeper.blockResponse = new BlockInfo();
+        gatekeeper.blockResponse.hash = "blockhash";
+        gatekeeper.createResponse = "did:test:notice";
+
+        Keymaster keymaster = new Keymaster(store, gatekeeper, "passphrase");
+
+        Map<String, Object> message = new HashMap<>();
+        message.put("to", List.of("did:test:bob"));
+        message.put("dids", List.of("did:test:cred"));
+
+        String did = keymaster.createNotice(message);
+        assertEquals("did:test:notice", did);
+
+        Operation op = gatekeeper.lastCreate;
+        assertNotNull(op);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) op.data;
+        @SuppressWarnings("unchecked")
+        Map<String, Object> notice = (Map<String, Object>) data.get("notice");
+        assertEquals(List.of("did:test:bob"), notice.get("to"));
+        assertEquals(List.of("did:test:cred"), notice.get("dids"));
+    }
+
+    @Test
+    void updateNoticeUpdatesAsset() {
+        WalletEncFile stored = buildStoredWallet();
+        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        store.saveWallet(stored, true);
+
+        JwkPair aliceKeypair = deriveKeypair(0, 0);
+        JwkPair bobKeypair = deriveKeypair(1, 0);
+
+        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        gatekeeper.docs.put("did:test:alice", buildAgentDocWithKey("did:test:alice", aliceKeypair));
+        gatekeeper.docs.put("did:test:bob", buildAgentDocWithKey("did:test:bob", bobKeypair));
+        gatekeeper.blockResponse = new BlockInfo();
+        gatekeeper.blockResponse.hash = "blockhash";
+
+        MdipDocument noticeDoc = buildCurrentDocFor("did:test:notice", "Signet", "v1");
+        noticeDoc.mdip.type = "asset";
+        noticeDoc.didDocumentData = Map.of("notice", Map.of("to", List.of("did:test:alice"), "dids", List.of("did:test:old")));
+        gatekeeper.docs.put("did:test:notice", noticeDoc);
+
+        Keymaster keymaster = new Keymaster(store, gatekeeper, "passphrase");
+
+        Map<String, Object> message = new HashMap<>();
+        message.put("to", List.of("did:test:bob"));
+        message.put("dids", List.of("did:test:cred"));
+
+        assertTrue(keymaster.updateNotice("did:test:notice", message));
+
+        Operation op = gatekeeper.lastUpdate;
+        assertNotNull(op);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) op.doc.didDocumentData;
+        @SuppressWarnings("unchecked")
+        Map<String, Object> notice = (Map<String, Object>) data.get("notice");
+        assertEquals(List.of("did:test:bob"), notice.get("to"));
+        assertEquals(List.of("did:test:cred"), notice.get("dids"));
+    }
+
+    @Test
     void getBlockDelegatesToGatekeeper() {
         WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
         RecordingGatekeeper gatekeeper = new RecordingGatekeeper();
@@ -697,8 +1248,12 @@ class KeymasterTest {
     }
 
     private static JwkPair deriveKeypair() {
+        return deriveKeypair(0, 0);
+    }
+
+    private static JwkPair deriveKeypair(int account, int index) {
         var master = HdKeyUtil.masterFromMnemonic(MNEMONIC);
-        var derived = HdKeyUtil.derivePath(master, 0, 0);
+        var derived = HdKeyUtil.derivePath(master, account, index);
         KeymasterCryptoImpl crypto = new KeymasterCryptoImpl();
         return crypto.generateJwk(HdKeyUtil.privateKeyBytes(derived));
     }
@@ -827,7 +1382,17 @@ class KeymasterTest {
         @Override
         public String createDID(Operation operation) {
             lastCreate = operation;
-            return createResponse;
+            String did = createResponse != null ? createResponse : "did:test:created";
+            if (operation != null && !docs.containsKey(did)) {
+                MdipDocument doc = new MdipDocument();
+                doc.didDocument = new MdipDocument.DidDocument();
+                doc.didDocument.id = did;
+                doc.didDocument.controller = operation.controller;
+                doc.didDocumentData = operation.data;
+                doc.mdip = operation.mdip;
+                docs.put(did, doc);
+            }
+            return did;
         }
 
         @Override
