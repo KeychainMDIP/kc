@@ -2,12 +2,31 @@ package org.keychain.keymaster;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.InputStream;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.HashMap;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.keychain.crypto.HdKeyUtil;
+import org.keychain.crypto.JwkPair;
 import org.keychain.crypto.KeymasterCryptoImpl;
 import org.keychain.crypto.MnemonicEncryption;
+import org.keychain.gatekeeper.GatekeeperClient;
+import org.keychain.gatekeeper.model.BlockInfo;
+import org.keychain.gatekeeper.model.DocumentMetadata;
+import org.keychain.gatekeeper.model.Mdip;
+import org.keychain.gatekeeper.model.MdipDocument;
+import org.keychain.gatekeeper.model.Operation;
+import org.keychain.gatekeeper.model.ResolveDIDOptions;
 import org.keychain.keymaster.model.IDInfo;
 import org.keychain.keymaster.model.Seed;
 import org.keychain.keymaster.model.WalletEncFile;
@@ -15,6 +34,9 @@ import org.keychain.keymaster.model.WalletFile;
 import org.keychain.keymaster.store.WalletJsonMemory;
 
 class KeymasterTest {
+    private static final String MNEMONIC =
+        "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+
     @Test
     void loadWalletUsesManagerCache() {
         WalletEncFile stored = buildStoredWallet();
@@ -37,41 +59,306 @@ class KeymasterTest {
         Keymaster keymaster = new Keymaster(store, "passphrase");
 
         WalletFile wallet = keymaster.newWallet(
-            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+            MNEMONIC,
             true
         );
 
         assertNotNull(wallet);
         assertNotNull(keymaster.loadWallet());
         assertEquals(
-            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+            MNEMONIC,
             keymaster.decryptMnemonic()
         );
     }
 
-    private static WalletEncFile buildStoredWallet() {
-        WalletFile wallet = new WalletFile();
-        wallet.version = 1;
-        wallet.counter = 0;
-        wallet.ids = new HashMap<>();
-        wallet.names = new HashMap<>();
-        wallet.current = "Alice";
+    @Test
+    void createIdBuildsSignedOperationAndUpdatesWallet() throws Exception {
+        ObjectMapper mapper = mapper();
+        JsonNode vectors = loadOperations(mapper);
+        JsonNode createNode = vectors.get("createId");
 
+        WalletEncFile stored = buildStoredWalletWithCounter(0, new HashMap<>(), null);
+        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        store.saveWallet(stored, true);
+
+        RecordingGatekeeper gatekeeper = new RecordingGatekeeper();
+        gatekeeper.createResponse = "did:test:created";
+        gatekeeper.blockResponse = new BlockInfo();
+        gatekeeper.blockResponse.hash = createNode.get("blockid").asText();
+
+        KeymasterCryptoImpl crypto = new KeymasterCryptoImpl();
+        OperationBuilder builder = new OperationBuilder(
+            Clock.fixed(Instant.parse(createNode.get("created").asText()), ZoneOffset.UTC)
+        );
+        OperationSignerImpl signer = new OperationSignerImpl(
+            crypto,
+            Clock.fixed(Instant.parse(createNode.get("signed").asText()), ZoneOffset.UTC)
+        );
+        OperationFactory factory = new OperationFactory(builder, signer);
+        Keymaster keymaster = new Keymaster(store, gatekeeper, crypto, factory, "passphrase");
+
+        String did = keymaster.createId("Alice", createNode.get("registry").asText());
+        assertEquals("did:test:created", did);
+
+        JsonNode expected = createNode.get("signedOperation");
+        assertEquals(expected, mapper.valueToTree(gatekeeper.lastCreate));
+
+        WalletFile wallet = keymaster.loadWallet();
+        assertEquals(1, wallet.counter);
+        assertEquals("Alice", wallet.current);
+        assertEquals("did:test:created", wallet.ids.get("Alice").did);
+        assertEquals(0, wallet.ids.get("Alice").account);
+        assertEquals(0, wallet.ids.get("Alice").index);
+    }
+
+    @Test
+    void resolveDidDelegatesToGatekeeper() {
+        WalletEncFile stored = buildStoredWallet();
+        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        store.saveWallet(stored, true);
+
+        RecordingGatekeeper gatekeeper = new RecordingGatekeeper();
+        gatekeeper.resolveResponse = new MdipDocument();
+
+        Keymaster keymaster = new Keymaster(store, gatekeeper, "passphrase");
+        MdipDocument resolved = keymaster.resolveDID("did:test:alice");
+        assertSame(gatekeeper.resolveResponse, resolved);
+        assertEquals("did:test:alice", gatekeeper.lastResolveDid);
+    }
+
+    @Test
+    void updateDidBuildsSignedOperation() {
+        WalletEncFile stored = buildStoredWallet();
+        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        store.saveWallet(stored, true);
+
+        RecordingGatekeeper gatekeeper = new RecordingGatekeeper();
+        gatekeeper.blockResponse = new BlockInfo();
+        gatekeeper.blockResponse.hash = "blockhash";
+        gatekeeper.resolveResponse = buildCurrentDocFor("did:test:alice", "Signet", "v1");
+
+        KeymasterCryptoImpl crypto = new KeymasterCryptoImpl();
+        Keymaster keymaster = new Keymaster(store, gatekeeper, crypto, "passphrase");
+
+        MdipDocument update = new MdipDocument();
+        update.didDocument = new MdipDocument.DidDocument();
+        update.didDocument.id = "did:test:alice";
+        update.didDocument.controller = "did:test:alice";
+        update.didDocumentData = Map.of("foo", "bar");
+        update.mdip = gatekeeper.resolveResponse.mdip;
+        update.didDocumentMetadata = new DocumentMetadata();
+        update.didDocumentMetadata.updated = "2024-01-01T00:00:00.000Z";
+        update.didResolutionMetadata = new MdipDocument.DidResolutionMetadata();
+
+        assertTrue(keymaster.updateDID(update));
+
+        Operation op = gatekeeper.lastUpdate;
+        assertNotNull(op);
+        assertEquals("update", op.type);
+        assertEquals("did:test:alice", op.did);
+        assertEquals("v1", op.previd);
+        assertEquals("blockhash", op.blockid);
+        assertNotNull(op.doc);
+        assertNull(op.doc.didDocumentMetadata);
+        assertNull(op.doc.didResolutionMetadata);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> docData = (Map<String, Object>) op.doc.didDocumentData;
+        assertEquals("bar", docData.get("foo"));
+
+        String expectedHash = crypto.hashJson(unsignedUpdate(op));
+        assertEquals(expectedHash, op.signature.hash);
+
+        JwkPair keypair = deriveKeypair();
+        String expectedSig = crypto.signHash(expectedHash, keypair.privateJwk);
+        assertEquals(expectedSig, op.signature.value);
+        assertEquals("did:test:alice", op.signature.signer);
+        assertNotNull(op.signature.signed);
+    }
+
+    @Test
+    void deleteDidBuildsSignedOperation() {
+        WalletEncFile stored = buildStoredWallet();
+        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        store.saveWallet(stored, true);
+
+        RecordingGatekeeper gatekeeper = new RecordingGatekeeper();
+        gatekeeper.blockResponse = new BlockInfo();
+        gatekeeper.blockResponse.hash = "blockhash";
+        gatekeeper.resolveResponse = buildCurrentDocFor("did:test:alice", "Signet", "v1");
+
+        KeymasterCryptoImpl crypto = new KeymasterCryptoImpl();
+        Keymaster keymaster = new Keymaster(store, gatekeeper, crypto, "passphrase");
+
+        assertTrue(keymaster.deleteDID("did:test:alice"));
+
+        Operation op = gatekeeper.lastDelete;
+        assertNotNull(op);
+        assertEquals("delete", op.type);
+        assertEquals("did:test:alice", op.did);
+        assertEquals("v1", op.previd);
+        assertEquals("blockhash", op.blockid);
+        assertNull(op.doc);
+
+        String expectedHash = crypto.hashJson(unsignedDelete(op));
+        assertEquals(expectedHash, op.signature.hash);
+
+        JwkPair keypair = deriveKeypair();
+        String expectedSig = crypto.signHash(expectedHash, keypair.privateJwk);
+        assertEquals(expectedSig, op.signature.value);
+        assertEquals("did:test:alice", op.signature.signer);
+        assertNotNull(op.signature.signed);
+    }
+
+    @Test
+    void getBlockDelegatesToGatekeeper() {
+        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        RecordingGatekeeper gatekeeper = new RecordingGatekeeper();
+        BlockInfo block = new BlockInfo();
+        block.hash = "hash";
+        gatekeeper.blockResponse = block;
+
+        Keymaster keymaster = new Keymaster(store, gatekeeper, "passphrase");
+        BlockInfo resolved = keymaster.getBlock("Signet");
+        assertSame(block, resolved);
+        assertEquals("Signet", gatekeeper.lastBlockRegistry);
+    }
+
+    @Test
+    void roundTripCreateResolveUpdate() {
+        WalletEncFile stored = buildStoredWalletWithCounter(0, new HashMap<>(), null);
+        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        store.saveWallet(stored, true);
+
+        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        gatekeeper.blockResponse = new BlockInfo();
+        gatekeeper.blockResponse.hash = "blockhash";
+        gatekeeper.createResponse = "did:test:roundtrip";
+        gatekeeper.docs.put(
+            "did:test:roundtrip",
+            buildCurrentDocFor("did:test:roundtrip", "Signet", "v1")
+        );
+
+        KeymasterCryptoImpl crypto = new KeymasterCryptoImpl();
+        Keymaster keymaster = new Keymaster(store, gatekeeper, crypto, "passphrase");
+
+        String did = keymaster.createId("Alice", "Signet");
+        assertEquals("did:test:roundtrip", did);
+        assertNotNull(gatekeeper.lastCreate);
+
+        MdipDocument resolved = keymaster.resolveDID(did);
+        assertSame(gatekeeper.docs.get(did), resolved);
+
+        MdipDocument update = new MdipDocument();
+        update.didDocument = new MdipDocument.DidDocument();
+        update.didDocument.id = did;
+        update.didDocument.controller = did;
+        update.didDocumentData = Map.of("hello", "world");
+        update.mdip = gatekeeper.docs.get(did).mdip;
+
+        assertTrue(keymaster.updateDID(update));
+
+        Operation op = gatekeeper.lastUpdate;
+        assertNotNull(op);
+        assertEquals("update", op.type);
+        assertEquals(did, op.did);
+        assertEquals("v1", op.previd);
+        assertEquals("blockhash", op.blockid);
+
+        String expectedHash = crypto.hashJson(unsignedUpdate(op));
+        assertEquals(expectedHash, op.signature.hash);
+
+        JwkPair keypair = deriveKeypair();
+        String expectedSig = crypto.signHash(expectedHash, keypair.privateJwk);
+        assertEquals(expectedSig, op.signature.value);
+        assertEquals(did, op.signature.signer);
+    }
+
+    private static WalletEncFile buildStoredWallet() {
+        HashMap<String, IDInfo> ids = new HashMap<>();
         IDInfo id = new IDInfo();
         id.did = "did:test:alice";
         id.account = 0;
         id.index = 0;
-        wallet.ids.put("Alice", id);
+        ids.put("Alice", id);
+        return buildStoredWalletWithCounter(0, ids, "Alice");
+    }
+
+    private static WalletEncFile buildStoredWalletWithCounter(
+        int counter,
+        HashMap<String, IDInfo> ids,
+        String current
+    ) {
+        WalletFile wallet = new WalletFile();
+        wallet.version = 1;
+        wallet.counter = counter;
+        wallet.ids = ids;
+        wallet.names = new HashMap<>();
+        wallet.current = current;
 
         Seed seed = new Seed();
-        seed.mnemonicEnc = MnemonicEncryption.encrypt(
-            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
-            "passphrase"
-        );
+        seed.mnemonicEnc = MnemonicEncryption.encrypt(MNEMONIC, "passphrase");
         wallet.seed = seed;
 
         WalletCrypto walletCrypto = new WalletCrypto("passphrase");
         return walletCrypto.encryptForStorage(wallet);
+    }
+
+    private static JwkPair deriveKeypair() {
+        var master = HdKeyUtil.masterFromMnemonic(MNEMONIC);
+        var derived = HdKeyUtil.derivePath(master, 0, 0);
+        KeymasterCryptoImpl crypto = new KeymasterCryptoImpl();
+        return crypto.generateJwk(HdKeyUtil.privateKeyBytes(derived));
+    }
+
+    private static MdipDocument buildCurrentDocFor(String did, String registry, String versionId) {
+        MdipDocument current = new MdipDocument();
+        current.didDocument = new MdipDocument.DidDocument();
+        current.didDocument.id = did;
+        current.didDocument.controller = did;
+
+        Mdip mdip = new Mdip();
+        mdip.registry = registry;
+        mdip.type = "agent";
+        mdip.version = 1;
+        current.mdip = mdip;
+
+        DocumentMetadata metadata = new DocumentMetadata();
+        metadata.versionId = versionId;
+        current.didDocumentMetadata = metadata;
+        return current;
+    }
+
+    private static Operation unsignedUpdate(Operation op) {
+        Operation unsigned = new Operation();
+        unsigned.type = op.type;
+        unsigned.did = op.did;
+        unsigned.previd = op.previd;
+        unsigned.blockid = op.blockid;
+        unsigned.doc = op.doc;
+        return unsigned;
+    }
+
+    private static Operation unsignedDelete(Operation op) {
+        Operation unsigned = new Operation();
+        unsigned.type = op.type;
+        unsigned.did = op.did;
+        unsigned.previd = op.previd;
+        unsigned.blockid = op.blockid;
+        return unsigned;
+    }
+
+    private static ObjectMapper mapper() {
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.setSerializationInclusion(JsonInclude.Include.NON_NULL);
+        return mapper;
+    }
+
+    private static JsonNode loadOperations(ObjectMapper mapper) throws Exception {
+        try (InputStream input = KeymasterTest.class.getResourceAsStream("/vectors/operations-v1.json")) {
+            assertNotNull(input, "operations-v1.json should be present in test resources");
+            return mapper.readTree(input);
+        }
     }
 
     private static class CountingCrypto extends KeymasterCryptoImpl {
@@ -81,6 +368,84 @@ class KeymasterTest {
         public String decryptMessage(org.keychain.crypto.JwkPublic pubKey, org.keychain.crypto.JwkPrivate privKey, String ciphertextB64Url) {
             decryptCount += 1;
             return super.decryptMessage(pubKey, privKey, ciphertextB64Url);
+        }
+    }
+
+    private static class RecordingGatekeeper implements GatekeeperClient {
+        Operation lastCreate;
+        Operation lastUpdate;
+        Operation lastDelete;
+        String lastResolveDid;
+        String lastBlockRegistry;
+        String createResponse = "did:test:created";
+        MdipDocument resolveResponse;
+        BlockInfo blockResponse;
+
+        @Override
+        public String createDID(Operation operation) {
+            lastCreate = operation;
+            return createResponse;
+        }
+
+        @Override
+        public MdipDocument resolveDID(String did, ResolveDIDOptions options) {
+            lastResolveDid = did;
+            return resolveResponse;
+        }
+
+        @Override
+        public boolean updateDID(Operation operation) {
+            lastUpdate = operation;
+            return true;
+        }
+
+        @Override
+        public boolean deleteDID(Operation operation) {
+            lastDelete = operation;
+            return true;
+        }
+
+        @Override
+        public BlockInfo getBlock(String registry) {
+            lastBlockRegistry = registry;
+            return blockResponse;
+        }
+    }
+
+    private static class StatefulGatekeeper implements GatekeeperClient {
+        final Map<String, MdipDocument> docs = new HashMap<>();
+        Operation lastCreate;
+        Operation lastUpdate;
+        Operation lastDelete;
+        String createResponse;
+        BlockInfo blockResponse;
+
+        @Override
+        public String createDID(Operation operation) {
+            lastCreate = operation;
+            return createResponse;
+        }
+
+        @Override
+        public MdipDocument resolveDID(String did, ResolveDIDOptions options) {
+            return docs.get(did);
+        }
+
+        @Override
+        public boolean updateDID(Operation operation) {
+            lastUpdate = operation;
+            return true;
+        }
+
+        @Override
+        public boolean deleteDID(Operation operation) {
+            lastDelete = operation;
+            return true;
+        }
+
+        @Override
+        public BlockInfo getBlock(String registry) {
+            return blockResponse;
         }
     }
 }

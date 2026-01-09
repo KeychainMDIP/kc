@@ -1,5 +1,6 @@
 package org.keychain.gatekeeper;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.time.Duration;
@@ -27,7 +28,8 @@ public class GatekeeperHttpClient implements GatekeeperClient {
 
     public GatekeeperHttpClient(GatekeeperClientOptions options) {
         Objects.requireNonNull(options, "options is required");
-        this.mapper = new ObjectMapper();
+        this.mapper = new ObjectMapper()
+            .setSerializationInclusion(JsonInclude.Include.NON_NULL);
         String base = options.url != null ? options.url : options.baseUrl;
         if (base.endsWith("/api/v1")) {
             base = base.substring(0, base.length() - "/api/v1".length());

@@ -94,7 +94,7 @@ public class KeymasterWalletManager {
         return walletCache;
     }
 
-    private DeterministicKey getHdKeyFromCacheOrMnemonic(WalletFile wallet) {
+    DeterministicKey getHdKeyFromCacheOrMnemonic(WalletFile wallet) {
         if (hdkeyCache != null) {
             return hdkeyCache;
         }
