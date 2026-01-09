@@ -1,7 +1,13 @@
 package org.keychain.keymaster;
 
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.function.Consumer;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import org.bitcoinj.crypto.DeterministicKey;
 import org.keychain.crypto.HdKeyUtil;
 import org.keychain.crypto.JwkPair;
@@ -21,8 +27,12 @@ import org.keychain.keymaster.model.IDInfo;
 import org.keychain.keymaster.model.WalletEncFile;
 import org.keychain.keymaster.model.WalletFile;
 import org.keychain.keymaster.store.WalletStore;
+import org.keychain.keymaster.store.WalletJsonMapper;
 
 public class Keymaster {
+    private static final DateTimeFormatter ISO_MILLIS =
+        DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC);
+    private static final String DEFAULT_REGISTRY = "hyperswarm";
     private final KeymasterWalletManager walletManager;
     private final KeymasterCrypto crypto;
     private final String passphrase;
@@ -278,6 +288,123 @@ public class Keymaster {
         }
     }
 
+    public java.util.Map<String, Object> createTemplate(String schemaId) {
+        if (!testSchema(schemaId)) {
+            throw new IllegalArgumentException("schemaId");
+        }
+        Object schema = getSchema(schemaId);
+        java.util.Map<String, Object> template = generateSchema(schema);
+        template.put("$schema", schemaId);
+        return template;
+    }
+
+    public java.util.List<String> listSchemas(String ownerDid) {
+        java.util.List<String> assets = listAssets(ownerDid);
+        java.util.List<String> schemas = new java.util.ArrayList<>();
+        for (String did : assets) {
+            if (testSchema(did)) {
+                schemas.add(did);
+            }
+        }
+        return schemas;
+    }
+
+    public java.util.Map<String, Object> bindCredential(String schemaId, String subjectId) {
+        return bindCredential(schemaId, subjectId, null, null, null);
+    }
+
+    public java.util.Map<String, Object> bindCredential(
+        String schemaId,
+        String subjectId,
+        String validFrom,
+        String validUntil,
+        java.util.Map<String, Object> credential
+    ) {
+        if (schemaId == null || schemaId.isBlank()) {
+            throw new IllegalArgumentException("schemaId");
+        }
+        if (subjectId == null || subjectId.isBlank()) {
+            throw new IllegalArgumentException("subjectId");
+        }
+
+        String from = validFrom != null ? validFrom : nowIso();
+        String type = lookupDID(schemaId);
+        String subjectDid = lookupDID(subjectId);
+        IDInfo issuer = fetchIdInfo(null);
+
+        java.util.Map<String, Object> boundCredential = credential;
+        if (boundCredential == null) {
+            Object schema = getSchema(type);
+            boundCredential = generateSchema(schema);
+        }
+
+        java.util.Map<String, Object> subject = new java.util.LinkedHashMap<>();
+        subject.put("id", subjectDid);
+
+        java.util.List<String> types = new java.util.ArrayList<>();
+        types.add("VerifiableCredential");
+        types.add(type);
+
+        java.util.List<String> context = new java.util.ArrayList<>();
+        context.add("https://www.w3.org/ns/credentials/v2");
+        context.add("https://www.w3.org/ns/credentials/examples/v2");
+
+        java.util.Map<String, Object> vc = new java.util.LinkedHashMap<>();
+        vc.put("@context", context);
+        vc.put("type", types);
+        vc.put("issuer", issuer.did);
+        vc.put("validFrom", from);
+        if (validUntil != null) {
+            vc.put("validUntil", validUntil);
+        }
+        vc.put("credentialSubject", subject);
+        vc.put("credential", boundCredential);
+
+        return vc;
+    }
+
+    public String issueCredential(java.util.Map<String, Object> credential) {
+        return issueCredential(credential, null);
+    }
+
+    public String issueCredential(java.util.Map<String, Object> credential, IssueCredentialOptions options) {
+        if (credential == null) {
+            throw new IllegalArgumentException("credential is required");
+        }
+
+        java.util.Map<String, Object> bound = credential;
+        if (options != null && options.schema != null && options.subject != null) {
+            bound = bindCredential(
+                options.schema,
+                options.subject,
+                options.validFrom,
+                options.validUntil,
+                credential
+            );
+        }
+
+        Object issuer = bound.get("issuer");
+        IDInfo current = fetchIdInfo(null);
+        if (issuer == null || !issuer.equals(current.did)) {
+            throw new IllegalArgumentException("credential.issuer");
+        }
+
+        java.util.Map<String, Object> signed = addSignature(bound, null);
+        Object subjectObj = signed.get("credentialSubject");
+        if (!(subjectObj instanceof java.util.Map<?, ?>)) {
+            throw new IllegalArgumentException("credential.credentialSubject.id");
+        }
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> subject = (java.util.Map<String, Object>) subjectObj;
+        Object subjectId = subject.get("id");
+        if (!(subjectId instanceof String) || ((String) subjectId).isBlank()) {
+            throw new IllegalArgumentException("credential.credentialSubject.id");
+        }
+
+        return encryptJSON(signed, (String) subjectId, true);
+    }
+
     public MdipDocument resolveDID(String did) {
         if (gatekeeper == null) {
             throw new IllegalStateException("gatekeeper not configured");
@@ -286,6 +413,25 @@ public class Keymaster {
             throw new IllegalArgumentException("did is required");
         }
         return gatekeeper.resolveDID(did, null);
+    }
+
+    public String lookupDID(String nameOrDid) {
+        if (nameOrDid == null || nameOrDid.isBlank()) {
+            throw new IllegalArgumentException("name or did is required");
+        }
+        if (nameOrDid.startsWith("did:")) {
+            return nameOrDid;
+        }
+
+        WalletFile wallet = loadWallet();
+        if (wallet != null && wallet.names != null && wallet.names.containsKey(nameOrDid)) {
+            return wallet.names.get(nameOrDid);
+        }
+        if (wallet != null && wallet.ids != null && wallet.ids.containsKey(nameOrDid)) {
+            return wallet.ids.get(nameOrDid).did;
+        }
+
+        throw new IllegalArgumentException("unknown id");
     }
 
     public MdipDocument resolveAsset(String did) {
@@ -413,6 +559,90 @@ public class Keymaster {
         required.add("propertyName");
         root.put("required", required);
         return root;
+    }
+
+    private static String nowIso() {
+        return ISO_MILLIS.format(Instant.now());
+    }
+
+    private java.util.Map<String, Object> addSignature(
+        java.util.Map<String, Object> obj,
+        String controllerDid
+    ) {
+        if (obj == null) {
+            throw new IllegalArgumentException("obj");
+        }
+
+        IDInfo id = fetchIdInfo(controllerDid);
+        JwkPair keypair = fetchKeyPair(controllerDid);
+        if (keypair == null) {
+            throw new IllegalArgumentException("addSignature: no keypair");
+        }
+
+        java.util.Map<String, Object> unsigned = new java.util.LinkedHashMap<>(obj);
+        unsigned.remove("signature");
+
+        String msgHash = crypto.hashJson(unsigned);
+        String signatureValue = crypto.signHash(msgHash, keypair.privateJwk);
+
+        java.util.Map<String, Object> signature = new java.util.LinkedHashMap<>();
+        signature.put("signer", id.did);
+        signature.put("signed", nowIso());
+        signature.put("hash", msgHash);
+        signature.put("value", signatureValue);
+
+        java.util.Map<String, Object> signed = new java.util.LinkedHashMap<>(unsigned);
+        signed.put("signature", signature);
+        return signed;
+    }
+
+    private String encryptJSON(Object json, String receiverDid, boolean includeHash) {
+        String plaintext;
+        try {
+            plaintext = WalletJsonMapper.mapper().writeValueAsString(json);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("json");
+        }
+        return encryptMessage(plaintext, receiverDid, includeHash);
+    }
+
+    private String encryptMessage(String msg, String receiverDid, boolean includeHash) {
+        if (receiverDid == null || receiverDid.isBlank()) {
+            throw new IllegalArgumentException("receiver did is required");
+        }
+        IDInfo sender = fetchIdInfo(null);
+        JwkPair senderKeypair = fetchKeyPair(null);
+        if (senderKeypair == null) {
+            throw new IllegalArgumentException("no valid sender keypair");
+        }
+
+        ResolveDIDOptions options = new ResolveDIDOptions();
+        options.confirm = true;
+        MdipDocument doc = gatekeeper.resolveDID(receiverDid, options);
+        EcdsaJwkPublic receiverJwk = getPublicKeyJwk(doc);
+        org.keychain.crypto.JwkPublic receiverCrypto = new org.keychain.crypto.JwkPublic(
+            receiverJwk.kty,
+            receiverJwk.crv,
+            receiverJwk.x,
+            receiverJwk.y
+        );
+
+        String cipherSender = crypto.encryptMessage(senderKeypair.publicJwk, senderKeypair.privateJwk, msg);
+        String cipherReceiver = crypto.encryptMessage(receiverCrypto, senderKeypair.privateJwk, msg);
+        String cipherHash = includeHash ? crypto.hashMessage(msg) : null;
+
+        java.util.Map<String, Object> encrypted = new java.util.LinkedHashMap<>();
+        encrypted.put("sender", sender.did);
+        encrypted.put("created", nowIso());
+        if (cipherHash != null) {
+            encrypted.put("cipher_hash", cipherHash);
+        }
+        encrypted.put("cipher_sender", cipherSender);
+        encrypted.put("cipher_receiver", cipherReceiver);
+
+        java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("encrypted", encrypted);
+        return createAsset(payload, DEFAULT_REGISTRY);
     }
 
     public boolean addToOwned(String did, String ownerDid) {

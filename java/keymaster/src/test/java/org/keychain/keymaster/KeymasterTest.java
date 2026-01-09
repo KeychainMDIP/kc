@@ -14,6 +14,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.keychain.crypto.HdKeyUtil;
@@ -375,6 +376,230 @@ class KeymasterTest {
         Object fetched = keymaster.getSchema("did:test:schema");
         assertNotNull(fetched);
         assertTrue(keymaster.testSchema("did:test:schema"));
+    }
+
+    @Test
+    void createTemplateFromSchema() {
+        WalletEncFile stored = buildStoredWallet();
+        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        store.saveWallet(stored, true);
+
+        RecordingGatekeeper gatekeeper = new RecordingGatekeeper();
+        gatekeeper.resolveResponse = buildAgentDocWithKey("did:test:alice", deriveKeypair());
+
+        Keymaster keymaster = new Keymaster(store, gatekeeper, "passphrase");
+
+        Map<String, Object> schema = new HashMap<>();
+        schema.put("$schema", "http://json-schema.org/draft-07/schema#");
+        schema.put("type", "object");
+        Map<String, Object> props = new HashMap<>();
+        props.put("firstName", Map.of("type", "string"));
+        props.put("lastName", Map.of("type", "string"));
+        schema.put("properties", props);
+
+        MdipDocument asset = buildCurrentDocFor("did:test:schema", "Signet", "v1");
+        asset.mdip.type = "asset";
+        asset.didDocumentData = Map.of("schema", schema);
+        gatekeeper.resolveResponse = asset;
+
+        Map<String, Object> template = keymaster.createTemplate("did:test:schema");
+        assertEquals("did:test:schema", template.get("$schema"));
+        assertEquals("TBD", template.get("firstName"));
+        assertEquals("TBD", template.get("lastName"));
+    }
+
+    @Test
+    void listSchemasFiltersAssets() {
+        HashMap<String, IDInfo> ids = new HashMap<>();
+        IDInfo alice = new IDInfo();
+        alice.did = "did:test:alice";
+        alice.account = 0;
+        alice.index = 0;
+        alice.owned = new java.util.ArrayList<>();
+        alice.owned.add("did:test:schema");
+        alice.owned.add("did:test:asset");
+        ids.put("Alice", alice);
+
+        WalletEncFile stored = buildStoredWalletWithCounter(0, ids, "Alice");
+        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        store.saveWallet(stored, true);
+
+        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        MdipDocument schemaDoc = buildCurrentDocFor("did:test:schema", "Signet", "v1");
+        schemaDoc.mdip.type = "asset";
+        schemaDoc.didDocumentData = Map.of(
+            "schema",
+            Map.of(
+                "$schema", "http://json-schema.org/draft-07/schema#",
+                "type", "object",
+                "properties", Map.of("email", Map.of("type", "string"))
+            )
+        );
+        gatekeeper.docs.put("did:test:schema", schemaDoc);
+
+        MdipDocument assetDoc = buildCurrentDocFor("did:test:asset", "Signet", "v1");
+        assetDoc.mdip.type = "asset";
+        assetDoc.didDocumentData = Map.of("foo", "bar");
+        gatekeeper.docs.put("did:test:asset", assetDoc);
+
+        Keymaster keymaster = new Keymaster(store, gatekeeper, "passphrase");
+        java.util.List<String> schemas = keymaster.listSchemas("Alice");
+        assertEquals(1, schemas.size());
+        assertEquals("did:test:schema", schemas.get(0));
+    }
+
+    @Test
+    void bindCredentialBuildsVerifiableCredential() {
+        WalletEncFile stored = buildStoredWallet();
+        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        store.saveWallet(stored, true);
+
+        RecordingGatekeeper gatekeeper = new RecordingGatekeeper();
+        gatekeeper.resolveResponse = buildAgentDocWithKey("did:test:alice", deriveKeypair());
+
+        Map<String, Object> schema = new HashMap<>();
+        schema.put("$schema", "http://json-schema.org/draft-07/schema#");
+        schema.put("type", "object");
+        Map<String, Object> props = new HashMap<>();
+        props.put("givenName", Map.of("type", "string"));
+        schema.put("properties", props);
+
+        MdipDocument asset = buildCurrentDocFor("did:test:schema", "Signet", "v1");
+        asset.mdip.type = "asset";
+        asset.didDocumentData = Map.of("schema", schema);
+        gatekeeper.resolveResponse = asset;
+
+        Keymaster keymaster = new Keymaster(store, gatekeeper, "passphrase");
+        Map<String, Object> vc = keymaster.bindCredential("did:test:schema", "did:test:subject");
+
+        assertEquals("did:test:alice", vc.get("issuer"));
+        @SuppressWarnings("unchecked")
+        List<String> types = (List<String>) vc.get("type");
+        assertEquals("VerifiableCredential", types.get(0));
+        assertEquals("did:test:schema", types.get(1));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> subject = (Map<String, Object>) vc.get("credentialSubject");
+        assertEquals("did:test:subject", subject.get("id"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> credential = (Map<String, Object>) vc.get("credential");
+        assertEquals("TBD", credential.get("givenName"));
+    }
+
+    @Test
+    void issueCredentialEncryptsAndSigns() {
+        WalletEncFile stored = buildStoredWallet();
+        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        store.saveWallet(stored, true);
+
+        JwkPair aliceKeypair = deriveKeypair();
+        MdipDocument aliceDoc = buildAgentDocWithKey("did:test:alice", aliceKeypair);
+
+        JwkPair bobKeypair = deriveKeypair();
+        MdipDocument bobDoc = buildAgentDocWithKey("did:test:bob", bobKeypair);
+
+        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        gatekeeper.docs.put("did:test:alice", aliceDoc);
+        gatekeeper.docs.put("did:test:bob", bobDoc);
+        gatekeeper.blockResponse = new BlockInfo();
+        gatekeeper.blockResponse.hash = "blockhash";
+        gatekeeper.createResponse = "did:test:encrypted";
+
+        Keymaster keymaster = new Keymaster(store, gatekeeper, "passphrase");
+
+        Map<String, Object> credential = new HashMap<>();
+        credential.put("issuer", "did:test:alice");
+        credential.put("credentialSubject", Map.of("id", "did:test:bob"));
+        credential.put("credential", Map.of("email", "bob@example.com"));
+
+        String did = keymaster.issueCredential(credential);
+        assertEquals("did:test:encrypted", did);
+
+        Operation op = gatekeeper.lastCreate;
+        assertNotNull(op);
+        assertNotNull(op.data);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) op.data;
+        @SuppressWarnings("unchecked")
+        Map<String, Object> encrypted = (Map<String, Object>) data.get("encrypted");
+        assertEquals("did:test:alice", encrypted.get("sender"));
+        assertNotNull(encrypted.get("cipher_sender"));
+        assertNotNull(encrypted.get("cipher_receiver"));
+        assertNotNull(encrypted.get("cipher_hash"));
+    }
+
+    @Test
+    void issueCredentialBindsWithOptions() {
+        WalletEncFile stored = buildStoredWallet();
+        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        store.saveWallet(stored, true);
+
+        JwkPair aliceKeypair = deriveKeypair();
+        MdipDocument aliceDoc = buildAgentDocWithKey("did:test:alice", aliceKeypair);
+
+        JwkPair bobKeypair = deriveKeypair();
+        MdipDocument bobDoc = buildAgentDocWithKey("did:test:bob", bobKeypair);
+
+        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        gatekeeper.docs.put("did:test:alice", aliceDoc);
+        gatekeeper.docs.put("did:test:bob", bobDoc);
+        gatekeeper.blockResponse = new BlockInfo();
+        gatekeeper.blockResponse.hash = "blockhash";
+        gatekeeper.createResponse = "did:test:encrypted";
+
+        Map<String, Object> schema = new HashMap<>();
+        schema.put("$schema", "http://json-schema.org/draft-07/schema#");
+        schema.put("type", "object");
+        Map<String, Object> props = new HashMap<>();
+        props.put("email", Map.of("type", "string"));
+        schema.put("properties", props);
+
+        MdipDocument schemaDoc = buildCurrentDocFor("did:test:schema", "Signet", "v1");
+        schemaDoc.mdip.type = "asset";
+        schemaDoc.didDocumentData = Map.of("schema", schema);
+        gatekeeper.docs.put("did:test:schema", schemaDoc);
+
+        Keymaster keymaster = new Keymaster(store, gatekeeper, "passphrase");
+        IssueCredentialOptions options = new IssueCredentialOptions();
+        options.schema = "did:test:schema";
+        options.subject = "did:test:bob";
+        options.validFrom = "2024-01-01T00:00:00.000Z";
+        options.validUntil = "2025-01-01T00:00:00.000Z";
+
+        Map<String, Object> unbound = keymaster.createTemplate("did:test:schema");
+        String did = keymaster.issueCredential(unbound, options);
+        assertEquals("did:test:encrypted", did);
+
+        Operation op = gatekeeper.lastCreate;
+        assertNotNull(op);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> encrypted = (Map<String, Object>) ((Map<String, Object>) op.data).get("encrypted");
+        assertNotNull(encrypted);
+    }
+
+    @Test
+    void issueCredentialRejectsWrongIssuer() {
+        WalletEncFile stored = buildStoredWallet();
+        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        store.saveWallet(stored, true);
+
+        RecordingGatekeeper gatekeeper = new RecordingGatekeeper();
+        gatekeeper.resolveResponse = buildAgentDocWithKey("did:test:alice", deriveKeypair());
+
+        Keymaster keymaster = new Keymaster(store, gatekeeper, "passphrase");
+        Map<String, Object> credential = new HashMap<>();
+        credential.put("issuer", "did:test:other");
+        credential.put("credentialSubject", Map.of("id", "did:test:alice"));
+        credential.put("credential", Map.of("email", "a@example.com"));
+
+        try {
+            keymaster.issueCredential(credential);
+            throw new IllegalStateException("expected exception");
+        } catch (IllegalArgumentException e) {
+            assertEquals("credential.issuer", e.getMessage());
+        }
     }
 
     @Test
