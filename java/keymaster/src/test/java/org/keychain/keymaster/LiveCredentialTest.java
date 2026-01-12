@@ -47,7 +47,7 @@ class LiveCredentialTest {
         Keymaster keymaster = liveKeymaster();
         keymaster.createId("Alice");
 
-        String schemaDid = keymaster.createSchema(TestFixtures.mockSchema(), registry());
+        String schemaDid = keymaster.createSchema(TestFixtures.mockSchema());
         java.util.Map<String, Object> template = keymaster.createTemplate(schemaDid);
 
         org.junit.jupiter.api.Assertions.assertNotNull(schemaDid);
@@ -60,7 +60,7 @@ class LiveCredentialTest {
     void bindAndIssueCredential() {
         Keymaster keymaster = liveKeymaster();
         String subjectDid = keymaster.createId("Alice");
-        String schemaDid = keymaster.createSchema(TestFixtures.mockSchema(), registry());
+        String schemaDid = keymaster.createSchema(TestFixtures.mockSchema());
 
         java.util.Map<String, Object> bound = keymaster.bindCredential(schemaDid, subjectDid);
         String credentialDid = keymaster.issueCredential(bound);
@@ -77,10 +77,53 @@ class LiveCredentialTest {
 
     @Test
     @Tag("live")
+    void bindCredentialWithDefaults() {
+        Keymaster keymaster = liveKeymaster();
+        String subjectDid = keymaster.createId("Alice");
+        String schemaDid = keymaster.createSchema(TestFixtures.mockSchema());
+        Map<String, Object> custom = new java.util.LinkedHashMap<>();
+        custom.put("email", "alice@example.com");
+
+        Map<String, Object> vc = keymaster.bindCredential(schemaDid, subjectDid, null, null, custom);
+
+        org.junit.jupiter.api.Assertions.assertEquals(subjectDid, vc.get("issuer"));
+        Object subjectObj = vc.get("credentialSubject");
+        org.junit.jupiter.api.Assertions.assertTrue(subjectObj instanceof Map<?, ?>);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> subject = (Map<String, Object>) subjectObj;
+        org.junit.jupiter.api.Assertions.assertEquals(subjectDid, subject.get("id"));
+        Object credObj = vc.get("credential");
+        org.junit.jupiter.api.Assertions.assertTrue(credObj instanceof Map<?, ?>);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> cred = (Map<String, Object>) credObj;
+        org.junit.jupiter.api.Assertions.assertEquals("alice@example.com", cred.get("email"));
+    }
+
+    @Test
+    @Tag("live")
+    void bindCredentialForDifferentUser() {
+        Keymaster keymaster = liveKeymaster();
+        String issuerDid = keymaster.createId("Alice");
+        String subjectDid = keymaster.createId("Bob");
+        String schemaDid = keymaster.createSchema(TestFixtures.mockSchema());
+
+        keymaster.setCurrentId("Alice");
+        Map<String, Object> vc = keymaster.bindCredential(schemaDid, subjectDid);
+
+        org.junit.jupiter.api.Assertions.assertEquals(issuerDid, vc.get("issuer"));
+        Object subjectObj = vc.get("credentialSubject");
+        org.junit.jupiter.api.Assertions.assertTrue(subjectObj instanceof Map<?, ?>);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> subject = (Map<String, Object>) subjectObj;
+        org.junit.jupiter.api.Assertions.assertEquals(subjectDid, subject.get("id"));
+    }
+
+    @Test
+    @Tag("live")
     void publishCredentialReveal() {
         Keymaster keymaster = liveKeymaster();
         String subjectDid = keymaster.createId("Alice");
-        String schemaDid = keymaster.createSchema(TestFixtures.mockSchema(), registry());
+        String schemaDid = keymaster.createSchema(TestFixtures.mockSchema());
         java.util.Map<String, Object> bound = keymaster.bindCredential(schemaDid, subjectDid);
         String credentialDid = keymaster.issueCredential(bound);
 
@@ -100,7 +143,7 @@ class LiveCredentialTest {
     void publishCredentialNoReveal() {
         Keymaster keymaster = liveKeymaster();
         String subjectDid = keymaster.createId("Alice");
-        String schemaDid = keymaster.createSchema(TestFixtures.mockSchema(), registry());
+        String schemaDid = keymaster.createSchema(TestFixtures.mockSchema());
         java.util.Map<String, Object> bound = keymaster.bindCredential(schemaDid, subjectDid);
         String credentialDid = keymaster.issueCredential(bound);
 
@@ -121,7 +164,7 @@ class LiveCredentialTest {
     void unpublishCredential() {
         Keymaster keymaster = liveKeymaster();
         String subjectDid = keymaster.createId("Alice");
-        String schemaDid = keymaster.createSchema(TestFixtures.mockSchema(), registry());
+        String schemaDid = keymaster.createSchema(TestFixtures.mockSchema());
         java.util.Map<String, Object> bound = keymaster.bindCredential(schemaDid, subjectDid);
         String credentialDid = keymaster.issueCredential(bound);
         keymaster.publishCredential(credentialDid, true);
@@ -156,6 +199,16 @@ class LiveCredentialTest {
 
         List<String> issued = keymaster.listIssued("Alice");
         org.junit.jupiter.api.Assertions.assertTrue(issued.contains(credentialDid));
+    }
+
+    @Test
+    @Tag("live")
+    void listIssuedEmpty() {
+        Keymaster keymaster = liveKeymaster();
+        keymaster.createId("Bob");
+
+        List<String> issued = keymaster.listIssued("Bob");
+        org.junit.jupiter.api.Assertions.assertTrue(issued.isEmpty());
     }
 
     @Test
@@ -209,6 +262,68 @@ class LiveCredentialTest {
 
     @Test
     @Tag("live")
+    void acceptCredentialCannotDecrypt() {
+        Keymaster keymaster = liveKeymaster();
+        keymaster.createId("Alice");
+        keymaster.createId("Bob");
+        keymaster.createId("Carol");
+
+        keymaster.setCurrentId("Alice");
+        String schemaDid = keymaster.createSchema(TestFixtures.mockSchema());
+        Map<String, Object> bound = keymaster.bindCredential(schemaDid, keymaster.fetchIdInfo("Bob").did);
+        String credentialDid = keymaster.issueCredential(bound);
+
+        keymaster.setCurrentId("Carol");
+        boolean ok = keymaster.acceptCredential(credentialDid);
+        org.junit.jupiter.api.Assertions.assertFalse(ok);
+    }
+
+    @Test
+    @Tag("live")
+    void acceptCredentialWrongSubject() {
+        Keymaster keymaster = liveKeymaster();
+        keymaster.createId("Alice");
+        keymaster.createId("Bob");
+        keymaster.createId("Carol");
+
+        keymaster.setCurrentId("Alice");
+        String schemaDid = keymaster.createSchema(TestFixtures.mockSchema());
+        Map<String, Object> bound = keymaster.bindCredential(schemaDid, keymaster.fetchIdInfo("Bob").did);
+        String credentialDid = keymaster.issueCredential(bound);
+        Map<String, Object> vc = keymaster.getCredential(credentialDid);
+        String wrappedForCarol = keymaster.encryptJSON(vc, "Carol");
+
+        keymaster.setCurrentId("Carol");
+        boolean ok = keymaster.acceptCredential(wrappedForCarol);
+        org.junit.jupiter.api.Assertions.assertFalse(ok);
+    }
+
+    @Test
+    @Tag("live")
+    void acceptCredentialInvalidDid() {
+        Keymaster keymaster = liveKeymaster();
+        keymaster.createId("Alice");
+        keymaster.createId("Bob");
+
+        keymaster.setCurrentId("Bob");
+        String schemaDid = keymaster.createSchema(TestFixtures.mockSchema());
+
+        boolean ok = keymaster.acceptCredential(schemaDid);
+        org.junit.jupiter.api.Assertions.assertFalse(ok);
+    }
+
+    @Test
+    @Tag("live")
+    void removeCredentialReturnsFalseWhenNotHeld() {
+        Keymaster keymaster = liveKeymaster();
+        String agentDid = keymaster.createId("Alice");
+
+        boolean ok = keymaster.removeCredential(agentDid);
+        org.junit.jupiter.api.Assertions.assertFalse(ok);
+    }
+
+    @Test
+    @Tag("live")
     void getCredentialReturnsNullForNonCredential() {
         Keymaster keymaster = liveKeymaster();
         String bobDid = keymaster.createId("Bob");
@@ -238,6 +353,54 @@ class LiveCredentialTest {
         Map<String, Object> notice = (Map<String, Object>) noticeObj;
         org.junit.jupiter.api.Assertions.assertEquals(List.of(keymaster.fetchIdInfo("Alice").did), notice.get("to"));
         org.junit.jupiter.api.Assertions.assertEquals(List.of(credentialDid), notice.get("dids"));
+    }
+
+    @Test
+    @Tag("live")
+    void issueCredentialFromTemplate() {
+        Keymaster keymaster = liveKeymaster();
+        String subjectDid = keymaster.createId("Alice");
+        String schemaDid = keymaster.createSchema(TestFixtures.mockSchema());
+        Map<String, Object> template = keymaster.createTemplate(schemaDid);
+
+        java.time.Instant now = java.time.Instant.now();
+        String validFrom = now.toString();
+        String validUntil = now.plusSeconds(3600).toString();
+
+        IssueCredentialOptions options = new IssueCredentialOptions();
+        options.subject = subjectDid;
+        options.schema = schemaDid;
+        options.validFrom = validFrom;
+        options.validUntil = validUntil;
+
+        String did = keymaster.issueCredential(template, options);
+        Map<String, Object> vc = keymaster.getCredential(did);
+
+        org.junit.jupiter.api.Assertions.assertEquals(validFrom, vc.get("validFrom"));
+        org.junit.jupiter.api.Assertions.assertEquals(validUntil, vc.get("validUntil"));
+    }
+
+    @Test
+    @Tag("live")
+    void publishCredentialRejectsNonCredential() {
+        Keymaster keymaster = liveKeymaster();
+        String bobDid = keymaster.createId("Bob");
+        String did = keymaster.encryptJSON(TestFixtures.mockJson(), bobDid);
+
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> {
+            keymaster.publishCredential(did, false);
+        });
+    }
+
+    @Test
+    @Tag("live")
+    void sendCredentialRejectsNonCredential() {
+        Keymaster keymaster = liveKeymaster();
+        String bobDid = keymaster.createId("Bob");
+
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> {
+            keymaster.sendCredential(bobDid);
+        });
     }
 
     @Test
@@ -299,7 +462,7 @@ class LiveCredentialTest {
             keymaster.setCurrentId(issuerName);
         }
 
-        String schemaDid = keymaster.createSchema(TestFixtures.mockSchema(), registry());
+        String schemaDid = keymaster.createSchema(TestFixtures.mockSchema());
         Map<String, Object> bound = keymaster.bindCredential(schemaDid, subjectDid);
         return keymaster.issueCredential(bound);
     }

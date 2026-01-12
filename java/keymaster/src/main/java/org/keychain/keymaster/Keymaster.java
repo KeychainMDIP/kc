@@ -639,6 +639,10 @@ public class Keymaster {
         return createAsset(data, registry);
     }
 
+    public String createSchema(Object schema) {
+        return createSchema(schema, DEFAULT_REGISTRY);
+    }
+
     public Object getSchema(String did) {
         MdipDocument doc = resolveAsset(did);
         if (doc == null) {
@@ -1428,10 +1432,15 @@ public class Keymaster {
         return encryptMessage(plaintext, receiverDid, includeHash);
     }
 
-    private String encryptMessage(String msg, String receiverDid, boolean includeHash) {
+    public String encryptMessage(String msg, String receiverDid) {
+        return encryptMessage(msg, receiverDid, false);
+    }
+
+    public String encryptMessage(String msg, String receiverDid, boolean includeHash) {
         if (receiverDid == null || receiverDid.isBlank()) {
             throw new IllegalArgumentException("receiver did is required");
         }
+        String resolvedReceiver = lookupDID(receiverDid);
         IDInfo sender = fetchIdInfo(null);
         JwkPair senderKeypair = fetchKeyPair(null);
         if (senderKeypair == null) {
@@ -1440,7 +1449,7 @@ public class Keymaster {
 
         ResolveDIDOptions options = new ResolveDIDOptions();
         options.confirm = true;
-        MdipDocument doc = gatekeeper.resolveDID(receiverDid, options);
+        MdipDocument doc = gatekeeper.resolveDID(resolvedReceiver, options);
         EcdsaJwkPublic receiverJwk = getPublicKeyJwk(doc);
         org.keychain.crypto.JwkPublic receiverCrypto = new org.keychain.crypto.JwkPublic(
             receiverJwk.kty,
