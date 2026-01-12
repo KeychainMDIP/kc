@@ -4,9 +4,11 @@ import java.nio.charset.StandardCharsets;
 import com.google.crypto.tink.aead.internal.InsecureNonceXChaCha20Poly1305;
 import org.keychain.crypto.util.Base64Url;
 import org.keychain.crypto.util.Bytes;
+import java.util.function.Supplier;
 
 public final class XChaCha20Util {
     private static final int NONCE_LENGTH = 24;
+    private static Supplier<byte[]> NONCE_SUPPLIER = () -> Bytes.random(NONCE_LENGTH);
 
     private XChaCha20Util() {}
 
@@ -16,7 +18,7 @@ public final class XChaCha20Util {
         }
 
         try {
-            byte[] nonce = Bytes.random(NONCE_LENGTH);
+            byte[] nonce = NONCE_SUPPLIER.get();
             InsecureNonceXChaCha20Poly1305 cipher = new InsecureNonceXChaCha20Poly1305(key32);
             byte[] ciphertext = cipher.encrypt(nonce, plaintext, new byte[0]);
 
@@ -56,5 +58,13 @@ public final class XChaCha20Util {
 
     public static String decryptToString(byte[] key32, String nonceCiphertextB64Url) {
         return new String(decrypt(key32, nonceCiphertextB64Url), StandardCharsets.UTF_8);
+    }
+
+    static void setNonceSupplier(Supplier<byte[]> supplier) {
+        NONCE_SUPPLIER = supplier != null ? supplier : () -> Bytes.random(NONCE_LENGTH);
+    }
+
+    static void resetNonceSupplier() {
+        NONCE_SUPPLIER = () -> Bytes.random(NONCE_LENGTH);
     }
 }

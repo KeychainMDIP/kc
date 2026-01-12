@@ -5,6 +5,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -41,6 +42,7 @@ public class Keymaster {
     private static final String DEFAULT_REGISTRY = "hyperswarm";
     private static final String EPOCH_ISO = ISO_MILLIS.format(Instant.EPOCH);
     private static final int MAX_NAME_LENGTH = 32;
+    private static Supplier<Instant> NOW_SUPPLIER = Instant::now;
     private final KeymasterWalletManager walletManager;
     private final KeymasterCrypto crypto;
     private final String passphrase;
@@ -1285,7 +1287,15 @@ public class Keymaster {
     }
 
     private static String nowIso() {
-        return ISO_MILLIS.format(Instant.now());
+        return ISO_MILLIS.format(NOW_SUPPLIER.get());
+    }
+
+    static void setNowSupplier(Supplier<Instant> supplier) {
+        NOW_SUPPLIER = supplier != null ? supplier : Instant::now;
+    }
+
+    static void resetNowSupplier() {
+        NOW_SUPPLIER = Instant::now;
     }
 
     private java.util.Map<String, Object> addSignature(
