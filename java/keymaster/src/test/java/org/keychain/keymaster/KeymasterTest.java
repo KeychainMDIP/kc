@@ -33,6 +33,8 @@ import org.keychain.keymaster.model.Seed;
 import org.keychain.keymaster.model.WalletEncFile;
 import org.keychain.keymaster.model.WalletFile;
 import org.keychain.keymaster.store.WalletJsonMemory;
+import org.keychain.keymaster.testutil.GatekeeperRecorder;
+import org.keychain.keymaster.testutil.GatekeeperStateful;
 
 class KeymasterTest {
     private static final String MNEMONIC =
@@ -82,7 +84,7 @@ class KeymasterTest {
         WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
         store.saveWallet(stored, true);
 
-        RecordingGatekeeper gatekeeper = new RecordingGatekeeper();
+        GatekeeperRecorder gatekeeper = new GatekeeperRecorder();
         gatekeeper.createResponse = "did:test:created";
         gatekeeper.blockResponse = new BlockInfo();
         gatekeeper.blockResponse.hash = createNode.get("blockid").asText();
@@ -118,7 +120,7 @@ class KeymasterTest {
         WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
         store.saveWallet(stored, true);
 
-        RecordingGatekeeper gatekeeper = new RecordingGatekeeper();
+        GatekeeperRecorder gatekeeper = new GatekeeperRecorder();
         gatekeeper.resolveResponse = new MdipDocument();
 
         Keymaster keymaster = new Keymaster(store, gatekeeper, "passphrase");
@@ -133,7 +135,7 @@ class KeymasterTest {
         WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
         store.saveWallet(stored, true);
 
-        RecordingGatekeeper gatekeeper = new RecordingGatekeeper();
+        GatekeeperRecorder gatekeeper = new GatekeeperRecorder();
         gatekeeper.blockResponse = new BlockInfo();
         gatekeeper.blockResponse.hash = "blockhash";
         gatekeeper.resolveResponse = buildCurrentDocFor("did:test:alice", "Signet", "v1");
@@ -183,7 +185,7 @@ class KeymasterTest {
         WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
         store.saveWallet(stored, true);
 
-        RecordingGatekeeper gatekeeper = new RecordingGatekeeper();
+        GatekeeperRecorder gatekeeper = new GatekeeperRecorder();
         gatekeeper.blockResponse = new BlockInfo();
         gatekeeper.blockResponse.hash = "blockhash";
         gatekeeper.resolveResponse = buildCurrentDocFor("did:test:alice", "Signet", "v1");
@@ -217,7 +219,7 @@ class KeymasterTest {
         WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
         store.saveWallet(stored, true);
 
-        RecordingGatekeeper gatekeeper = new RecordingGatekeeper();
+        GatekeeperRecorder gatekeeper = new GatekeeperRecorder();
         gatekeeper.blockResponse = new BlockInfo();
         gatekeeper.blockResponse.hash = "blockhash";
 
@@ -288,7 +290,7 @@ class KeymasterTest {
         WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
         store.saveWallet(stored, true);
 
-        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        GatekeeperStateful gatekeeper = new GatekeeperStateful();
         gatekeeper.blockResponse = new BlockInfo();
         gatekeeper.blockResponse.hash = "blockhash";
 
@@ -320,7 +322,7 @@ class KeymasterTest {
         WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
         store.saveWallet(stored, true);
 
-        RecordingGatekeeper gatekeeper = new RecordingGatekeeper();
+        GatekeeperRecorder gatekeeper = new GatekeeperRecorder();
         gatekeeper.blockResponse = new BlockInfo();
         gatekeeper.blockResponse.hash = "blockhash";
         gatekeeper.createResponse = "did:test:schema";
@@ -351,7 +353,7 @@ class KeymasterTest {
         WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
         store.saveWallet(stored, true);
 
-        RecordingGatekeeper gatekeeper = new RecordingGatekeeper();
+        GatekeeperRecorder gatekeeper = new GatekeeperRecorder();
         gatekeeper.blockResponse = new BlockInfo();
         gatekeeper.blockResponse.hash = "blockhash";
         gatekeeper.resolveResponse = buildAgentDocWithKey("did:test:alice", deriveKeypair());
@@ -384,7 +386,7 @@ class KeymasterTest {
         WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
         store.saveWallet(stored, true);
 
-        RecordingGatekeeper gatekeeper = new RecordingGatekeeper();
+        GatekeeperRecorder gatekeeper = new GatekeeperRecorder();
         gatekeeper.resolveResponse = buildAgentDocWithKey("did:test:alice", deriveKeypair());
 
         Keymaster keymaster = new Keymaster(store, gatekeeper, "passphrase");
@@ -424,7 +426,7 @@ class KeymasterTest {
         WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
         store.saveWallet(stored, true);
 
-        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        GatekeeperStateful gatekeeper = new GatekeeperStateful();
         MdipDocument schemaDoc = buildCurrentDocFor("did:test:schema", "Signet", "v1");
         schemaDoc.mdip.type = "asset";
         schemaDoc.didDocumentData = Map.of(
@@ -454,7 +456,7 @@ class KeymasterTest {
         WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
         store.saveWallet(stored, true);
 
-        RecordingGatekeeper gatekeeper = new RecordingGatekeeper();
+        GatekeeperRecorder gatekeeper = new GatekeeperRecorder();
         gatekeeper.resolveResponse = buildAgentDocWithKey("did:test:alice", deriveKeypair());
 
         Map<String, Object> schema = new HashMap<>();
@@ -499,7 +501,7 @@ class KeymasterTest {
         JwkPair bobKeypair = deriveKeypair();
         MdipDocument bobDoc = buildAgentDocWithKey("did:test:bob", bobKeypair);
 
-        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        GatekeeperStateful gatekeeper = new GatekeeperStateful();
         gatekeeper.docs.put("did:test:alice", aliceDoc);
         gatekeeper.docs.put("did:test:bob", bobDoc);
         gatekeeper.blockResponse = new BlockInfo();
@@ -542,7 +544,7 @@ class KeymasterTest {
         JwkPair bobKeypair = deriveKeypair();
         MdipDocument bobDoc = buildAgentDocWithKey("did:test:bob", bobKeypair);
 
-        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        GatekeeperStateful gatekeeper = new GatekeeperStateful();
         gatekeeper.docs.put("did:test:alice", aliceDoc);
         gatekeeper.docs.put("did:test:bob", bobDoc);
         gatekeeper.blockResponse = new BlockInfo();
@@ -585,7 +587,7 @@ class KeymasterTest {
         WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
         store.saveWallet(stored, true);
 
-        RecordingGatekeeper gatekeeper = new RecordingGatekeeper();
+        GatekeeperRecorder gatekeeper = new GatekeeperRecorder();
         gatekeeper.resolveResponse = buildAgentDocWithKey("did:test:alice", deriveKeypair());
 
         Keymaster keymaster = new Keymaster(store, gatekeeper, "passphrase");
@@ -624,7 +626,7 @@ class KeymasterTest {
         JwkPair aliceKeypair = deriveKeypair(0, 0);
         JwkPair bobKeypair = deriveKeypair(1, 0);
 
-        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        GatekeeperStateful gatekeeper = new GatekeeperStateful();
         gatekeeper.docs.put("did:test:alice", buildAgentDocWithKey("did:test:alice", aliceKeypair));
         gatekeeper.docs.put("did:test:bob", buildAgentDocWithKey("did:test:bob", bobKeypair));
         gatekeeper.createResponse = "did:test:encrypted";
@@ -648,7 +650,7 @@ class KeymasterTest {
         store.saveWallet(stored, true);
 
         JwkPair aliceKeypair = deriveKeypair();
-        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        GatekeeperStateful gatekeeper = new GatekeeperStateful();
         gatekeeper.docs.put("did:test:alice", buildAgentDocWithKey("did:test:alice", aliceKeypair));
         gatekeeper.createResponse = "did:test:vc";
 
@@ -674,7 +676,7 @@ class KeymasterTest {
         store.saveWallet(stored, true);
 
         JwkPair aliceKeypair = deriveKeypair();
-        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        GatekeeperStateful gatekeeper = new GatekeeperStateful();
         gatekeeper.docs.put("did:test:alice", buildAgentDocWithKey("did:test:alice", aliceKeypair));
         gatekeeper.createResponse = "did:test:blob";
 
@@ -707,7 +709,7 @@ class KeymasterTest {
         JwkPair aliceKeypair = deriveKeypair(0, 0);
         JwkPair bobKeypair = deriveKeypair(1, 0);
 
-        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        GatekeeperStateful gatekeeper = new GatekeeperStateful();
         gatekeeper.docs.put("did:test:alice", buildAgentDocWithKey("did:test:alice", aliceKeypair));
         gatekeeper.docs.put("did:test:bob", buildAgentDocWithKey("did:test:bob", bobKeypair));
         gatekeeper.createResponse = "did:test:cred";
@@ -754,7 +756,7 @@ class KeymasterTest {
         JwkPair aliceKeypair = deriveKeypair(0, 0);
         JwkPair bobKeypair = deriveKeypair(1, 0);
 
-        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        GatekeeperStateful gatekeeper = new GatekeeperStateful();
         gatekeeper.docs.put("did:test:alice", buildAgentDocWithKey("did:test:alice", aliceKeypair));
         gatekeeper.docs.put("did:test:bob", buildAgentDocWithKey("did:test:bob", bobKeypair));
         gatekeeper.createResponse = "did:test:cred";
@@ -826,7 +828,7 @@ class KeymasterTest {
         JwkPair aliceKeypair = deriveKeypair(0, 0);
         JwkPair bobKeypair = deriveKeypair(1, 0);
 
-        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        GatekeeperStateful gatekeeper = new GatekeeperStateful();
         gatekeeper.docs.put("did:test:alice", buildAgentDocWithKey("did:test:alice", aliceKeypair));
         gatekeeper.docs.put("did:test:bob", buildAgentDocWithKey("did:test:bob", bobKeypair));
         gatekeeper.blockResponse = new BlockInfo();
@@ -867,7 +869,7 @@ class KeymasterTest {
         JwkPair aliceKeypair = deriveKeypair(0, 0);
         JwkPair bobKeypair = deriveKeypair(1, 0);
 
-        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        GatekeeperStateful gatekeeper = new GatekeeperStateful();
         gatekeeper.docs.put("did:test:alice", buildAgentDocWithKey("did:test:alice", aliceKeypair));
         gatekeeper.docs.put("did:test:bob", buildAgentDocWithKey("did:test:bob", bobKeypair));
         gatekeeper.blockResponse = new BlockInfo();
@@ -924,7 +926,7 @@ class KeymasterTest {
         JwkPair aliceKeypair = deriveKeypair(0, 0);
         JwkPair bobKeypair = deriveKeypair(1, 0);
 
-        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        GatekeeperStateful gatekeeper = new GatekeeperStateful();
         gatekeeper.docs.put("did:test:alice", buildAgentDocWithKey("did:test:alice", aliceKeypair));
         gatekeeper.docs.put("did:test:bob", buildAgentDocWithKey("did:test:bob", bobKeypair));
         gatekeeper.blockResponse = new BlockInfo();
@@ -975,7 +977,7 @@ class KeymasterTest {
         WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
         store.saveWallet(stored, true);
 
-        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        GatekeeperStateful gatekeeper = new GatekeeperStateful();
         gatekeeper.blockResponse = new BlockInfo();
         gatekeeper.blockResponse.hash = "blockhash";
 
@@ -1011,7 +1013,7 @@ class KeymasterTest {
         JwkPair aliceKeypair = deriveKeypair(0, 0);
         JwkPair bobKeypair = deriveKeypair(1, 0);
 
-        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        GatekeeperStateful gatekeeper = new GatekeeperStateful();
         gatekeeper.docs.put("did:test:alice", buildAgentDocWithKey("did:test:alice", aliceKeypair));
         gatekeeper.docs.put("did:test:bob", buildAgentDocWithKey("did:test:bob", bobKeypair));
         gatekeeper.blockResponse = new BlockInfo();
@@ -1059,7 +1061,7 @@ class KeymasterTest {
         JwkPair aliceKeypair = deriveKeypair(0, 0);
         JwkPair bobKeypair = deriveKeypair(1, 0);
 
-        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        GatekeeperStateful gatekeeper = new GatekeeperStateful();
         gatekeeper.docs.put(aliceDid, buildAgentDocWithKey(aliceDid, aliceKeypair));
         gatekeeper.docs.put(bobDid, buildAgentDocWithKey(bobDid, bobKeypair));
         gatekeeper.blockResponse = new BlockInfo();
@@ -1103,7 +1105,7 @@ class KeymasterTest {
         JwkPair aliceKeypair = deriveKeypair(0, 0);
         JwkPair bobKeypair = deriveKeypair(1, 0);
 
-        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        GatekeeperStateful gatekeeper = new GatekeeperStateful();
         gatekeeper.docs.put("did:test:alice", buildAgentDocWithKey("did:test:alice", aliceKeypair));
         gatekeeper.docs.put(bobDid, buildAgentDocWithKey(bobDid, bobKeypair));
         gatekeeper.blockResponse = new BlockInfo();
@@ -1141,7 +1143,7 @@ class KeymasterTest {
         JwkPair aliceKeypair = deriveKeypair(0, 0);
         JwkPair bobKeypair = deriveKeypair(1, 0);
 
-        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        GatekeeperStateful gatekeeper = new GatekeeperStateful();
         gatekeeper.docs.put("did:test:alice", buildAgentDocWithKey("did:test:alice", aliceKeypair));
         gatekeeper.docs.put(bobDid, buildAgentDocWithKey(bobDid, bobKeypair));
         gatekeeper.blockResponse = new BlockInfo();
@@ -1173,7 +1175,7 @@ class KeymasterTest {
     @Test
     void getBlockDelegatesToGatekeeper() {
         WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
-        RecordingGatekeeper gatekeeper = new RecordingGatekeeper();
+        GatekeeperRecorder gatekeeper = new GatekeeperRecorder();
         BlockInfo block = new BlockInfo();
         block.hash = "hash";
         gatekeeper.blockResponse = block;
@@ -1190,7 +1192,7 @@ class KeymasterTest {
         WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
         store.saveWallet(stored, true);
 
-        StatefulGatekeeper gatekeeper = new StatefulGatekeeper();
+        GatekeeperStateful gatekeeper = new GatekeeperStateful();
         gatekeeper.blockResponse = new BlockInfo();
         gatekeeper.blockResponse.hash = "blockhash";
         gatekeeper.createResponse = "did:test:roundtrip";
@@ -1347,91 +1349,4 @@ class KeymasterTest {
         }
     }
 
-    private static class RecordingGatekeeper implements GatekeeperClient {
-        Operation lastCreate;
-        Operation lastUpdate;
-        Operation lastDelete;
-        String lastResolveDid;
-        String lastBlockRegistry;
-        String createResponse = "did:test:created";
-        MdipDocument resolveResponse;
-        BlockInfo blockResponse;
-
-        @Override
-        public String createDID(Operation operation) {
-            lastCreate = operation;
-            return createResponse;
-        }
-
-        @Override
-        public MdipDocument resolveDID(String did, ResolveDIDOptions options) {
-            lastResolveDid = did;
-            return resolveResponse;
-        }
-
-        @Override
-        public boolean updateDID(Operation operation) {
-            lastUpdate = operation;
-            return true;
-        }
-
-        @Override
-        public boolean deleteDID(Operation operation) {
-            lastDelete = operation;
-            return true;
-        }
-
-        @Override
-        public BlockInfo getBlock(String registry) {
-            lastBlockRegistry = registry;
-            return blockResponse;
-        }
-    }
-
-    private static class StatefulGatekeeper implements GatekeeperClient {
-        final Map<String, MdipDocument> docs = new HashMap<>();
-        Operation lastCreate;
-        Operation lastUpdate;
-        Operation lastDelete;
-        String createResponse;
-        BlockInfo blockResponse;
-
-        @Override
-        public String createDID(Operation operation) {
-            lastCreate = operation;
-            String did = createResponse != null ? createResponse : "did:test:created";
-            if (operation != null && !docs.containsKey(did)) {
-                MdipDocument doc = new MdipDocument();
-                doc.didDocument = new MdipDocument.DidDocument();
-                doc.didDocument.id = did;
-                doc.didDocument.controller = operation.controller;
-                doc.didDocumentData = operation.data;
-                doc.mdip = operation.mdip;
-                docs.put(did, doc);
-            }
-            return did;
-        }
-
-        @Override
-        public MdipDocument resolveDID(String did, ResolveDIDOptions options) {
-            return docs.get(did);
-        }
-
-        @Override
-        public boolean updateDID(Operation operation) {
-            lastUpdate = operation;
-            return true;
-        }
-
-        @Override
-        public boolean deleteDID(Operation operation) {
-            lastDelete = operation;
-            return true;
-        }
-
-        @Override
-        public BlockInfo getBlock(String registry) {
-            return blockResponse;
-        }
-    }
 }

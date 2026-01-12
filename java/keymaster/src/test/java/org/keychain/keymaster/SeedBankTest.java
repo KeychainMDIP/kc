@@ -12,19 +12,15 @@ import org.junit.jupiter.api.Test;
 import org.keychain.crypto.HdKeyUtil;
 import org.keychain.crypto.JwkPair;
 import org.keychain.crypto.KeymasterCryptoImpl;
-import org.keychain.gatekeeper.GatekeeperClient;
-import org.keychain.gatekeeper.model.BlockInfo;
-import org.keychain.gatekeeper.model.DocumentMetadata;
 import org.keychain.gatekeeper.model.Mdip;
 import org.keychain.gatekeeper.model.MdipDocument;
-import org.keychain.gatekeeper.model.Operation;
-import org.keychain.gatekeeper.model.ResolveDIDOptions;
 import org.keychain.keymaster.model.HdKey;
 import org.keychain.keymaster.model.IDInfo;
 import org.keychain.keymaster.model.Seed;
 import org.keychain.keymaster.model.WalletEncFile;
 import org.keychain.keymaster.model.WalletFile;
 import org.keychain.keymaster.store.WalletJsonMemory;
+import org.keychain.keymaster.testutil.GatekeeperStub;
 
 class SeedBankTest {
     private static final String PASSPHRASE = "passphrase";
@@ -38,7 +34,7 @@ class SeedBankTest {
     @Test
     void resolveSeedBankIsDeterministic() {
         WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
-        SeedBankGatekeeper gatekeeper = new SeedBankGatekeeper();
+        GatekeeperStub gatekeeper = new GatekeeperStub(SEED_BANK_DID, ASSET_DID);
         Keymaster keymaster = new Keymaster(store, gatekeeper, PASSPHRASE);
 
         MdipDocument bank1 = keymaster.resolveSeedBank();
@@ -52,7 +48,7 @@ class SeedBankTest {
     @Test
     void updateSeedBankThrowsOnMissingDid() {
         WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
-        SeedBankGatekeeper gatekeeper = new SeedBankGatekeeper();
+        GatekeeperStub gatekeeper = new GatekeeperStub(SEED_BANK_DID, ASSET_DID);
         Keymaster keymaster = new Keymaster(store, gatekeeper, PASSPHRASE);
 
         try {
@@ -66,7 +62,7 @@ class SeedBankTest {
     @Test
     void backupWalletStoresDidInSeedBank() {
         WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
-        SeedBankGatekeeper gatekeeper = new SeedBankGatekeeper();
+        GatekeeperStub gatekeeper = new GatekeeperStub(SEED_BANK_DID, ASSET_DID);
         Keymaster keymaster = new Keymaster(store, gatekeeper, PASSPHRASE);
 
         WalletFile wallet = createWalletWithId(keymaster, "Bob", ASSET_DID);
@@ -82,7 +78,7 @@ class SeedBankTest {
     @Test
     void recoverWalletFromSeedBank() {
         WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
-        SeedBankGatekeeper gatekeeper = new SeedBankGatekeeper();
+        GatekeeperStub gatekeeper = new GatekeeperStub(SEED_BANK_DID, ASSET_DID);
         Keymaster keymaster = new Keymaster(store, gatekeeper, PASSPHRASE);
 
         WalletFile wallet = createWalletWithId(keymaster, "Bob", ASSET_DID);
@@ -100,7 +96,7 @@ class SeedBankTest {
     @Test
     void recoverOverExistingWallet() {
         WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
-        SeedBankGatekeeper gatekeeper = new SeedBankGatekeeper();
+        GatekeeperStub gatekeeper = new GatekeeperStub(SEED_BANK_DID, ASSET_DID);
         Keymaster keymaster = new Keymaster(store, gatekeeper, PASSPHRASE);
 
         WalletFile wallet = createWalletWithId(keymaster, "Bob", ASSET_DID);
@@ -124,7 +120,7 @@ class SeedBankTest {
     @Test
     void recoverAugmentedWallet() {
         WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
-        SeedBankGatekeeper gatekeeper = new SeedBankGatekeeper();
+        GatekeeperStub gatekeeper = new GatekeeperStub(SEED_BANK_DID, ASSET_DID);
         Keymaster keymaster = new Keymaster(store, gatekeeper, PASSPHRASE);
 
         WalletFile wallet = createWalletWithId(keymaster, "Bob", ASSET_DID);
@@ -144,7 +140,7 @@ class SeedBankTest {
     @Test
     void recoverV0WalletFromSeedBank() {
         WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
-        SeedBankGatekeeper gatekeeper = new SeedBankGatekeeper();
+        GatekeeperStub gatekeeper = new GatekeeperStub(SEED_BANK_DID, ASSET_DID);
         Keymaster keymaster = new Keymaster(store, gatekeeper, PASSPHRASE);
 
         WalletFile legacy = buildLegacyV0Wallet();
@@ -158,7 +154,7 @@ class SeedBankTest {
     @Test
     void recoverWalletFromBackupDid() {
         WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
-        SeedBankGatekeeper gatekeeper = new SeedBankGatekeeper();
+        GatekeeperStub gatekeeper = new GatekeeperStub(SEED_BANK_DID, ASSET_DID);
         Keymaster keymaster = new Keymaster(store, gatekeeper, PASSPHRASE);
 
         WalletFile wallet = createWalletWithId(keymaster, "Bob", ASSET_DID);
@@ -173,7 +169,7 @@ class SeedBankTest {
     @Test
     void recoverDoesNothingWhenNoBackup() {
         WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
-        SeedBankGatekeeper gatekeeper = new SeedBankGatekeeper();
+        GatekeeperStub gatekeeper = new GatekeeperStub(SEED_BANK_DID, ASSET_DID);
         Keymaster keymaster = new Keymaster(store, gatekeeper, PASSPHRASE);
 
         keymaster.newWallet(MNEMONIC, true);
@@ -185,11 +181,11 @@ class SeedBankTest {
     @Test
     void recoverDoesNothingWhenBackupDidInvalid() {
         WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
-        SeedBankGatekeeper gatekeeper = new SeedBankGatekeeper();
+        GatekeeperStub gatekeeper = new GatekeeperStub(SEED_BANK_DID, ASSET_DID);
         Keymaster keymaster = new Keymaster(store, gatekeeper, PASSPHRASE);
 
         MdipDocument agent = buildAgentDoc("did:test:bafybeihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku");
-        gatekeeper.docs.put(agent.didDocument.id, agent);
+        gatekeeper.putDoc(agent);
 
         keymaster.newWallet(MNEMONIC, true);
         WalletFile recovered = keymaster.recoverWallet(agent.didDocument.id);
@@ -255,65 +251,4 @@ class SeedBankTest {
         return doc;
     }
 
-    private static class SeedBankGatekeeper implements GatekeeperClient {
-        final Map<String, MdipDocument> docs = new HashMap<>();
-        int assetCounter = 0;
-
-        @Override
-        public String createDID(Operation operation) {
-            String did = SEED_BANK_DID;
-            if (operation == null || operation.mdip == null || !"agent".equals(operation.mdip.type) ||
-                !"1970-01-01T00:00:00.000Z".equals(operation.created)) {
-                did = ASSET_DID + "-" + assetCounter;
-                assetCounter += 1;
-            }
-
-            if (docs.containsKey(did)) {
-                return did;
-            }
-
-            MdipDocument doc = new MdipDocument();
-            doc.didDocument = new MdipDocument.DidDocument();
-            doc.didDocument.id = did;
-            doc.didDocument.controller = operation != null ? operation.controller : null;
-            doc.didDocumentData = operation != null && operation.data != null
-                ? operation.data
-                : new HashMap<>();
-            doc.mdip = operation != null ? operation.mdip : null;
-            doc.didDocumentMetadata = new DocumentMetadata();
-            doc.didDocumentMetadata.versionId = "v1";
-            docs.put(did, doc);
-            return did;
-        }
-
-        @Override
-        public MdipDocument resolveDID(String did, ResolveDIDOptions options) {
-            return docs.get(did);
-        }
-
-        @Override
-        public boolean updateDID(Operation operation) {
-            if (operation != null && operation.doc != null) {
-                if (operation.doc.didDocumentMetadata == null) {
-                    operation.doc.didDocumentMetadata = new DocumentMetadata();
-                }
-                operation.doc.didDocumentMetadata.versionId = "v2";
-                docs.put(operation.did, operation.doc);
-            }
-            return true;
-        }
-
-        @Override
-        public boolean deleteDID(Operation operation) {
-            if (operation != null) {
-                docs.remove(operation.did);
-            }
-            return true;
-        }
-
-        @Override
-        public BlockInfo getBlock(String registry) {
-            return null;
-        }
-    }
 }
