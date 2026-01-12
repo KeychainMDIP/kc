@@ -56,6 +56,14 @@ public class GatekeeperHttpClient implements GatekeeperClient {
     }
 
     @Override
+    public java.util.List<String> listRegistries() {
+        HttpUrl url = baseUrl.newBuilder()
+            .addPathSegment("registries")
+            .build();
+        return getJson(url, java.util.List.class);
+    }
+
+    @Override
     public String createDID(Operation operation) {
         return postJson("/did", operation, String.class);
     }

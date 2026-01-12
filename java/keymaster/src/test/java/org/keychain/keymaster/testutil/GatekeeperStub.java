@@ -61,6 +61,11 @@ public class GatekeeperStub implements GatekeeperClient {
     }
 
     @Override
+    public List<String> listRegistries() {
+        return List.of("local", "hyperswarm", "TFTC");
+    }
+
+    @Override
     public String createDID(Operation operation) {
         boolean isSeedBank = operation != null
             && operation.mdip != null
@@ -80,6 +85,15 @@ public class GatekeeperStub implements GatekeeperClient {
             ? operation.data
             : new HashMap<>();
         doc.mdip = operation != null ? operation.mdip : null;
+        if (operation != null && operation.publicJwk != null) {
+            MdipDocument.VerificationMethod method = new MdipDocument.VerificationMethod();
+            method.id = "#key-1";
+            method.controller = did;
+            method.type = "EcdsaSecp256k1";
+            method.publicKeyJwk = operation.publicJwk;
+            doc.didDocument.verificationMethod = List.of(method);
+            doc.didDocument.authentication = List.of("#key-1");
+        }
         doc.didDocumentMetadata = new DocumentMetadata();
         doc.didDocumentMetadata.versionId = "v1";
         docs.put(did, doc);

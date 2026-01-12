@@ -109,6 +109,8 @@ class CredentialTest {
         assertEquals("TBD", credential.get("email"));
         AssertUtils.assertCredentialShape(vc);
 
+        assertTrue(keymaster.verifySignature(vc));
+
         WalletFile wallet = keymaster.loadWallet();
         assertTrue(wallet.ids.get("Bob").owned.contains(credentialDid));
     }

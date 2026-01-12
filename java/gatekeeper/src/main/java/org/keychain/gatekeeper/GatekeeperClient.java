@@ -6,6 +6,7 @@ import org.keychain.gatekeeper.model.Operation;
 import org.keychain.gatekeeper.model.ResolveDIDOptions;
 
 public interface GatekeeperClient {
+    java.util.List<String> listRegistries();
     String createDID(Operation operation);
     MdipDocument resolveDID(String did, ResolveDIDOptions options);
     boolean updateDID(Operation operation);

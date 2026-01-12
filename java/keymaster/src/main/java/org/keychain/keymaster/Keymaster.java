@@ -303,10 +303,24 @@ public class Keymaster {
         return MnemonicEncryption.decrypt(wallet.seed.mnemonicEnc, passphrase);
     }
 
+    public String getMnemonicForDerivation(WalletFile wallet) {
+        if (wallet == null || wallet.seed == null || wallet.seed.mnemonicEnc == null) {
+            throw new IllegalStateException("wallet mnemonic not available");
+        }
+        return MnemonicEncryption.decrypt(wallet.seed.mnemonicEnc, passphrase);
+    }
+
     public WalletEncFile exportEncryptedWallet() {
         WalletFile wallet = loadWallet();
         WalletCrypto walletCrypto = new WalletCrypto(crypto, passphrase);
         return walletCrypto.encryptForStorage(wallet);
+    }
+
+    public java.util.List<String> listRegistries() {
+        if (gatekeeper == null) {
+            throw new IllegalStateException("gatekeeper not configured");
+        }
+        return gatekeeper.listRegistries();
     }
 
     public CheckWalletResult checkWallet() {
@@ -1368,6 +1382,10 @@ public class Keymaster {
     }
 
     public MdipDocument resolveDID(String did) {
+        return resolveDID(did, null);
+    }
+
+    public MdipDocument resolveDID(String did, ResolveDIDOptions options) {
         if (gatekeeper == null) {
             throw new IllegalStateException("gatekeeper not configured");
         }
@@ -1375,7 +1393,11 @@ public class Keymaster {
             throw new IllegalArgumentException("did is required");
         }
         String actualDid = lookupDID(did);
-        MdipDocument doc = gatekeeper.resolveDID(actualDid, null);
+        MdipDocument doc = gatekeeper.resolveDID(actualDid, options);
+        return augmentDidMetadata(doc);
+    }
+
+    private MdipDocument augmentDidMetadata(MdipDocument doc) {
         if (doc != null) {
             String controller = null;
             if (doc.didDocument != null) {
@@ -1391,6 +1413,52 @@ public class Keymaster {
     public boolean testAgent(String id) {
         MdipDocument doc = resolveDID(id);
         return doc != null && doc.mdip != null && "agent".equals(doc.mdip.type);
+    }
+
+    public boolean verifySignature(java.util.Map<String, Object> obj) {
+        if (obj == null) {
+            return false;
+        }
+        Object signatureObj = obj.get("signature");
+        if (!(signatureObj instanceof java.util.Map<?, ?>)) {
+            return false;
+        }
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> signature = (java.util.Map<String, Object>) signatureObj;
+        Object signerObj = signature.get("signer");
+        if (!(signerObj instanceof String) || ((String) signerObj).isBlank()) {
+            return false;
+        }
+
+        java.util.Map<String, Object> copy = new java.util.LinkedHashMap<>(obj);
+        copy.remove("signature");
+        String msgHash = crypto.hashJson(copy);
+
+        Object hashObj = signature.get("hash");
+        if (hashObj instanceof String && !msgHash.equals(hashObj)) {
+            return false;
+        }
+
+        Object signedObj = signature.get("signed");
+        ResolveDIDOptions options = null;
+        if (signedObj instanceof String) {
+            options = new ResolveDIDOptions();
+            options.versionTime = (String) signedObj;
+        }
+        MdipDocument doc = resolveDID((String) signerObj, options);
+        EcdsaJwkPublic publicJwk = getPublicKeyJwk(doc);
+        org.keychain.crypto.JwkPublic cryptoJwk = new org.keychain.crypto.JwkPublic(
+            publicJwk.kty,
+            publicJwk.crv,
+            publicJwk.x,
+            publicJwk.y
+        );
+
+        try {
+            return crypto.verifySig(msgHash, (String) signature.get("value"), cryptoJwk);
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     public String lookupDID(String nameOrDid) {
@@ -1899,14 +1967,6 @@ public class Keymaster {
         }
     }
 
-    public String hashJson(Object obj) {
-        return crypto.hashJson(obj);
-    }
-
-    public boolean verifySig(String msgHashHex, String sigCompactHex, org.keychain.crypto.JwkPublic publicJwk) {
-        return crypto.verifySig(msgHashHex, sigCompactHex, publicJwk);
-    }
-
     public IDInfo fetchIdInfo(String nameOrDid, WalletFile wallet) {
         WalletFile currentWallet = wallet != null ? wallet : loadWallet();
         if (currentWallet == null) {
@@ -2079,7 +2139,7 @@ public class Keymaster {
         return crypto.generateJwk(HdKeyUtil.privateKeyBytes(derived));
     }
 
-    private JwkPair hdKeyPair() {
+    public JwkPair hdKeyPair() {
         WalletFile wallet = loadWallet();
         DeterministicKey master = walletManager.getHdKeyFromCacheOrMnemonic(wallet);
         return crypto.generateJwk(HdKeyUtil.privateKeyBytes(master));
@@ -2119,7 +2179,7 @@ public class Keymaster {
         return Cid.isValid(suffix);
     }
 
-    private static EcdsaJwkPublic getPublicKeyJwk(MdipDocument doc) {
+    public EcdsaJwkPublic getPublicKeyJwk(MdipDocument doc) {
         if (doc == null || doc.didDocument == null || doc.didDocument.verificationMethod == null) {
             throw new IllegalArgumentException("didDocument missing verificationMethod");
         }

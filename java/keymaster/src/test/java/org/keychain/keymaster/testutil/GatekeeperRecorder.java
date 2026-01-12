@@ -15,6 +15,12 @@ public class GatekeeperRecorder implements GatekeeperClient {
     public String createResponse = "did:test:created";
     public MdipDocument resolveResponse;
     public BlockInfo blockResponse;
+    public java.util.List<String> registries = java.util.List.of("local", "hyperswarm", "TFTC");
+
+    @Override
+    public java.util.List<String> listRegistries() {
+        return registries;
+    }
 
     @Override
     public String createDID(Operation operation) {

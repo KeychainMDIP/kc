@@ -16,6 +16,12 @@ public class GatekeeperStateful implements GatekeeperClient {
     public Operation lastDelete;
     public String createResponse;
     public BlockInfo blockResponse;
+    public java.util.List<String> registries = java.util.List.of("local", "hyperswarm", "TFTC");
+
+    @Override
+    public java.util.List<String> listRegistries() {
+        return registries;
+    }
 
     @Override
     public String createDID(Operation operation) {

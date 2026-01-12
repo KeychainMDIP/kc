@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.keychain.gatekeeper.GatekeeperClient;
 import org.keychain.gatekeeper.GatekeeperClientOptions;
 import org.keychain.gatekeeper.GatekeeperHttpClient;
+import org.keychain.crypto.KeymasterCryptoImpl;
 import org.keychain.gatekeeper.model.MdipDocument;
 import org.keychain.gatekeeper.model.Operation;
 import org.keychain.keymaster.model.WalletEncFile;
@@ -86,7 +87,7 @@ class LiveIdTest {
         unsigned.put("mdip", op.mdip);
         unsigned.put("publicJwk", op.publicJwk);
 
-        String msgHash = keymaster.hashJson(unsigned);
+        String msgHash = new KeymasterCryptoImpl().hashJson(unsigned);
         org.junit.jupiter.api.Assertions.assertEquals(msgHash, op.signature.hash);
 
         org.keychain.crypto.JwkPublic pub = new org.keychain.crypto.JwkPublic(
@@ -95,7 +96,7 @@ class LiveIdTest {
             op.publicJwk.x,
             op.publicJwk.y
         );
-        boolean isValid = keymaster.verifySig(msgHash, op.signature.value, pub);
+        boolean isValid = new KeymasterCryptoImpl().verifySig(msgHash, op.signature.value, pub);
         org.junit.jupiter.api.Assertions.assertTrue(isValid);
     }
 

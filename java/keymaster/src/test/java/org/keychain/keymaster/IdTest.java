@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.keychain.crypto.JwkPublic;
+import org.keychain.crypto.KeymasterCryptoImpl;
 import org.keychain.gatekeeper.model.MdipDocument;
 import org.keychain.gatekeeper.model.Operation;
 import org.keychain.keymaster.model.WalletEncFile;
@@ -120,7 +121,7 @@ class IdTest {
         unsigned.put("mdip", op.mdip);
         unsigned.put("publicJwk", op.publicJwk);
 
-        String msgHash = keymaster.hashJson(unsigned);
+        String msgHash = new KeymasterCryptoImpl().hashJson(unsigned);
         org.junit.jupiter.api.Assertions.assertEquals(msgHash, op.signature.hash);
 
         JwkPublic publicJwk = new JwkPublic(
@@ -129,7 +130,7 @@ class IdTest {
             op.publicJwk.x,
             op.publicJwk.y
         );
-        boolean isValid = keymaster.verifySig(msgHash, op.signature.value, publicJwk);
+        boolean isValid = new KeymasterCryptoImpl().verifySig(msgHash, op.signature.value, publicJwk);
         org.junit.jupiter.api.Assertions.assertTrue(isValid);
     }
 
