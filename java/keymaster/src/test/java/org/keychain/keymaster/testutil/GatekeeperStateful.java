@@ -7,6 +7,7 @@ import org.keychain.gatekeeper.model.BlockInfo;
 import org.keychain.gatekeeper.model.MdipDocument;
 import org.keychain.gatekeeper.model.Operation;
 import org.keychain.gatekeeper.model.ResolveDIDOptions;
+import org.keychain.keymaster.store.WalletJsonMapper;
 
 public class GatekeeperStateful implements GatekeeperClient {
     public final Map<String, MdipDocument> docs = new HashMap<>();
@@ -27,6 +28,15 @@ public class GatekeeperStateful implements GatekeeperClient {
             doc.didDocument.controller = operation.controller;
             doc.didDocumentData = operation.data;
             doc.mdip = operation.mdip;
+            if (operation.publicJwk != null) {
+                MdipDocument.VerificationMethod method = new MdipDocument.VerificationMethod();
+                method.id = "#key-1";
+                method.controller = did;
+                method.type = "EcdsaSecp256k1";
+                method.publicKeyJwk = operation.publicJwk;
+                doc.didDocument.verificationMethod = java.util.List.of(method);
+                doc.didDocument.authentication = java.util.List.of("#key-1");
+            }
             docs.put(did, doc);
         }
         return did;
@@ -40,7 +50,27 @@ public class GatekeeperStateful implements GatekeeperClient {
     @Override
     public boolean updateDID(Operation operation) {
         lastUpdate = operation;
+        if (operation != null && operation.doc != null) {
+            MdipDocument stored = copyDoc(operation.doc);
+            if (stored.didDocumentMetadata == null) {
+                stored.didDocumentMetadata = new org.keychain.gatekeeper.model.DocumentMetadata();
+            }
+            if (stored.didDocumentMetadata.version == null) {
+                stored.didDocumentMetadata.version = "2";
+            }
+            docs.put(operation.did, stored);
+        }
         return true;
+    }
+
+    private static MdipDocument copyDoc(MdipDocument doc) {
+        try {
+            var mapper = WalletJsonMapper.mapper();
+            String json = mapper.writeValueAsString(doc);
+            return mapper.readValue(json, MdipDocument.class);
+        } catch (Exception e) {
+            return doc;
+        }
     }
 
     @Override
