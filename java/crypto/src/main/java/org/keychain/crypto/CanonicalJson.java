@@ -6,7 +6,9 @@ import org.erdtman.jcs.JsonCanonicalizer;
 
 public final class CanonicalJson {
     private static final ObjectMapper MAPPER = new ObjectMapper()
-        .setSerializationInclusion(JsonInclude.Include.NON_NULL);
+        .setDefaultPropertyInclusion(
+            JsonInclude.Value.construct(JsonInclude.Include.NON_NULL, JsonInclude.Include.ALWAYS)
+        );
 
     private CanonicalJson() {}
 

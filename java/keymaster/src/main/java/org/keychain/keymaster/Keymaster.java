@@ -152,6 +152,32 @@ public class Keymaster {
         return names;
     }
 
+    public java.util.List<String> listIds() {
+        WalletFile wallet = loadWallet();
+        if (wallet.ids == null) {
+            return new java.util.ArrayList<>();
+        }
+        return new java.util.ArrayList<>(wallet.ids.keySet());
+    }
+
+    public String getCurrentId() {
+        WalletFile wallet = loadWallet();
+        return wallet.current;
+    }
+
+    public boolean setCurrentId(String name) {
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("name is required");
+        }
+        mutateWallet(wallet -> {
+            if (wallet.ids == null || !wallet.ids.containsKey(name)) {
+                throw new IllegalArgumentException("unknown id");
+            }
+            wallet.current = name;
+        });
+        return true;
+    }
+
     public boolean addName(String name, String did) {
         if (did == null || did.isBlank()) {
             throw new IllegalArgumentException("did is required");
@@ -539,6 +565,10 @@ public class Keymaster {
         });
 
         return createdDid[0];
+    }
+
+    public String createId(String name) {
+        return createId(name, DEFAULT_REGISTRY);
     }
 
     public String createAsset(Object data, String registry) {
