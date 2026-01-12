@@ -13,12 +13,13 @@ import org.keychain.keymaster.model.Seed;
 import org.keychain.keymaster.model.WalletEncFile;
 import org.keychain.keymaster.model.WalletFile;
 import org.keychain.keymaster.store.WalletJsonMemory;
+import org.keychain.keymaster.testutil.KeymasterTestSupport;
 
 class KeymasterWalletManagerTest {
     @Test
     void loadWalletUsesCache() {
         WalletEncFile stored = buildStoredWallet();
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         store.saveWallet(stored, true);
 
         CountingCrypto crypto = new CountingCrypto();
@@ -35,7 +36,7 @@ class KeymasterWalletManagerTest {
     @Test
     void mutateWalletDoesNotReDecrypt() {
         WalletEncFile stored = buildStoredWallet();
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         store.saveWallet(stored, true);
 
         CountingCrypto crypto = new CountingCrypto();
@@ -52,7 +53,7 @@ class KeymasterWalletManagerTest {
 
     @Test
     void saveWalletUpdatesCache() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         CountingCrypto crypto = new CountingCrypto();
         KeymasterWalletManager manager = new KeymasterWalletManager(store, crypto, "passphrase");
 

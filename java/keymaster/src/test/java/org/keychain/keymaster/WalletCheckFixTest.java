@@ -9,12 +9,11 @@ import org.junit.jupiter.api.Test;
 import org.keychain.keymaster.model.CheckWalletResult;
 import org.keychain.keymaster.model.FixWalletResult;
 import org.keychain.keymaster.model.IDInfo;
-import org.keychain.keymaster.model.WalletEncFile;
-import org.keychain.keymaster.store.WalletJsonMemory;
 import org.keychain.keymaster.testutil.GatekeeperStub;
+import org.keychain.keymaster.testutil.KeymasterTestSupport;
 
 class WalletCheckFixTest {
-    private static final String PASSPHRASE = "passphrase";
+    private static final String PASSPHRASE = KeymasterTestSupport.DEFAULT_PASSPHRASE;
     private static final String MNEMONIC =
         "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
     private static final String DID_SEED =
@@ -27,7 +26,7 @@ class WalletCheckFixTest {
     @Test
     void checkWalletEmpty() {
         GatekeeperStub gatekeeper = new GatekeeperStub(DID_SEED);
-        Keymaster keymaster = new Keymaster(new WalletJsonMemory<>(WalletEncFile.class), gatekeeper, PASSPHRASE);
+        Keymaster keymaster = KeymasterTestSupport.keymaster(gatekeeper);
         keymaster.newWallet(MNEMONIC, true);
 
         CheckWalletResult result = keymaster.checkWallet();
@@ -39,7 +38,7 @@ class WalletCheckFixTest {
     @Test
     void checkWalletSingleId() {
         GatekeeperStub gatekeeper = new GatekeeperStub(DID_SEED);
-        Keymaster keymaster = new Keymaster(new WalletJsonMemory<>(WalletEncFile.class), gatekeeper, PASSPHRASE);
+        Keymaster keymaster = KeymasterTestSupport.keymaster(gatekeeper);
         keymaster.newWallet(MNEMONIC, true);
 
         addId(keymaster, "Alice", DID_ACTIVE);
@@ -54,7 +53,7 @@ class WalletCheckFixTest {
     @Test
     void checkWalletDetectsRevokedId() {
         GatekeeperStub gatekeeper = new GatekeeperStub(DID_SEED);
-        Keymaster keymaster = new Keymaster(new WalletJsonMemory<>(WalletEncFile.class), gatekeeper, PASSPHRASE);
+        Keymaster keymaster = KeymasterTestSupport.keymaster(gatekeeper);
         keymaster.newWallet(MNEMONIC, true);
 
         addId(keymaster, "Alice", DID_ACTIVE);
@@ -70,7 +69,7 @@ class WalletCheckFixTest {
     @Test
     void checkWalletDetectsRemovedDids() {
         GatekeeperStub gatekeeper = new GatekeeperStub(DID_SEED);
-        Keymaster keymaster = new Keymaster(new WalletJsonMemory<>(WalletEncFile.class), gatekeeper, PASSPHRASE);
+        Keymaster keymaster = KeymasterTestSupport.keymaster(gatekeeper);
         keymaster.newWallet(MNEMONIC, true);
 
         addId(keymaster, "Alice", DID_ACTIVE);
@@ -90,7 +89,7 @@ class WalletCheckFixTest {
     @Test
     void checkWalletDetectsInvalidDids() {
         GatekeeperStub gatekeeper = new GatekeeperStub(DID_SEED);
-        Keymaster keymaster = new Keymaster(new WalletJsonMemory<>(WalletEncFile.class), gatekeeper, PASSPHRASE);
+        Keymaster keymaster = KeymasterTestSupport.keymaster(gatekeeper);
         keymaster.newWallet(MNEMONIC, true);
 
         addId(keymaster, "Alice", DID_ACTIVE);
@@ -107,7 +106,7 @@ class WalletCheckFixTest {
     @Test
     void checkWalletDetectsRevokedCredentials() {
         GatekeeperStub gatekeeper = new GatekeeperStub(DID_SEED);
-        Keymaster keymaster = new Keymaster(new WalletJsonMemory<>(WalletEncFile.class), gatekeeper, PASSPHRASE);
+        Keymaster keymaster = KeymasterTestSupport.keymaster(gatekeeper);
         keymaster.newWallet(MNEMONIC, true);
 
         addId(keymaster, "Alice", DID_ACTIVE);
@@ -134,7 +133,7 @@ class WalletCheckFixTest {
     @Test
     void fixWalletEmpty() {
         GatekeeperStub gatekeeper = new GatekeeperStub(DID_SEED);
-        Keymaster keymaster = new Keymaster(new WalletJsonMemory<>(WalletEncFile.class), gatekeeper, PASSPHRASE);
+        Keymaster keymaster = KeymasterTestSupport.keymaster(gatekeeper);
         keymaster.newWallet(MNEMONIC, true);
 
         FixWalletResult result = keymaster.fixWallet();
@@ -147,7 +146,7 @@ class WalletCheckFixTest {
     @Test
     void fixWalletSingleId() {
         GatekeeperStub gatekeeper = new GatekeeperStub(DID_SEED);
-        Keymaster keymaster = new Keymaster(new WalletJsonMemory<>(WalletEncFile.class), gatekeeper, PASSPHRASE);
+        Keymaster keymaster = KeymasterTestSupport.keymaster(gatekeeper);
         keymaster.newWallet(MNEMONIC, true);
         addId(keymaster, "Alice", DID_ACTIVE);
         gatekeeper.addDoc(DID_ACTIVE, false);
@@ -162,7 +161,7 @@ class WalletCheckFixTest {
     @Test
     void fixWalletRemovesRevokedId() {
         GatekeeperStub gatekeeper = new GatekeeperStub(DID_SEED);
-        Keymaster keymaster = new Keymaster(new WalletJsonMemory<>(WalletEncFile.class), gatekeeper, PASSPHRASE);
+        Keymaster keymaster = KeymasterTestSupport.keymaster(gatekeeper);
         keymaster.newWallet(MNEMONIC, true);
         addId(keymaster, "Alice", DID_ACTIVE);
         gatekeeper.addDoc(DID_ACTIVE, true);
@@ -177,7 +176,7 @@ class WalletCheckFixTest {
     @Test
     void fixWalletRemovesDeletedDids() {
         GatekeeperStub gatekeeper = new GatekeeperStub(DID_SEED);
-        Keymaster keymaster = new Keymaster(new WalletJsonMemory<>(WalletEncFile.class), gatekeeper, PASSPHRASE);
+        Keymaster keymaster = KeymasterTestSupport.keymaster(gatekeeper);
         keymaster.newWallet(MNEMONIC, true);
         addId(keymaster, "Alice", DID_ACTIVE);
         keymaster.addName("schema", DID_REVOKED);
@@ -195,7 +194,7 @@ class WalletCheckFixTest {
     @Test
     void fixWalletRemovesInvalidDids() {
         GatekeeperStub gatekeeper = new GatekeeperStub(DID_SEED);
-        Keymaster keymaster = new Keymaster(new WalletJsonMemory<>(WalletEncFile.class), gatekeeper, PASSPHRASE);
+        Keymaster keymaster = KeymasterTestSupport.keymaster(gatekeeper);
         keymaster.newWallet(MNEMONIC, true);
         addId(keymaster, "Alice", DID_ACTIVE);
         addOwned(keymaster, "Alice", List.of("did:test:mock1"));
@@ -212,7 +211,7 @@ class WalletCheckFixTest {
     @Test
     void fixWalletRemovesRevokedCredentials() {
         GatekeeperStub gatekeeper = new GatekeeperStub(DID_SEED);
-        Keymaster keymaster = new Keymaster(new WalletJsonMemory<>(WalletEncFile.class), gatekeeper, PASSPHRASE);
+        Keymaster keymaster = KeymasterTestSupport.keymaster(gatekeeper);
         keymaster.newWallet(MNEMONIC, true);
         addId(keymaster, "Carol", DID_ACTIVE);
         addHeld(keymaster, "Carol", List.of(DID_REVOKED, DID_SEED));

@@ -21,9 +21,10 @@ import org.keychain.keymaster.model.WalletEncFile;
 import org.keychain.keymaster.model.WalletFile;
 import org.keychain.keymaster.store.WalletJsonMemory;
 import org.keychain.keymaster.testutil.GatekeeperStub;
+import org.keychain.keymaster.testutil.KeymasterTestSupport;
 
 class SeedBankTest {
-    private static final String PASSPHRASE = "passphrase";
+    private static final String PASSPHRASE = KeymasterTestSupport.DEFAULT_PASSPHRASE;
     private static final String MNEMONIC =
         "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
     private static final String SEED_BANK_DID =
@@ -33,9 +34,9 @@ class SeedBankTest {
 
     @Test
     void resolveSeedBankIsDeterministic() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         GatekeeperStub gatekeeper = new GatekeeperStub(SEED_BANK_DID, ASSET_DID);
-        Keymaster keymaster = new Keymaster(store, gatekeeper, PASSPHRASE);
+        Keymaster keymaster = KeymasterTestSupport.keymaster(store, gatekeeper);
 
         MdipDocument bank1 = keymaster.resolveSeedBank();
         MdipDocument bank2 = keymaster.resolveSeedBank();
@@ -47,9 +48,9 @@ class SeedBankTest {
 
     @Test
     void updateSeedBankThrowsOnMissingDid() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         GatekeeperStub gatekeeper = new GatekeeperStub(SEED_BANK_DID, ASSET_DID);
-        Keymaster keymaster = new Keymaster(store, gatekeeper, PASSPHRASE);
+        Keymaster keymaster = KeymasterTestSupport.keymaster(store, gatekeeper);
 
         try {
             keymaster.updateSeedBank(new MdipDocument());
@@ -61,9 +62,9 @@ class SeedBankTest {
 
     @Test
     void backupWalletStoresDidInSeedBank() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         GatekeeperStub gatekeeper = new GatekeeperStub(SEED_BANK_DID, ASSET_DID);
-        Keymaster keymaster = new Keymaster(store, gatekeeper, PASSPHRASE);
+        Keymaster keymaster = KeymasterTestSupport.keymaster(store, gatekeeper);
 
         WalletFile wallet = createWalletWithId(keymaster, "Bob", ASSET_DID);
         String did = keymaster.backupWallet("hyperswarm", wallet);
@@ -77,9 +78,9 @@ class SeedBankTest {
 
     @Test
     void recoverWalletFromSeedBank() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         GatekeeperStub gatekeeper = new GatekeeperStub(SEED_BANK_DID, ASSET_DID);
-        Keymaster keymaster = new Keymaster(store, gatekeeper, PASSPHRASE);
+        Keymaster keymaster = KeymasterTestSupport.keymaster(store, gatekeeper);
 
         WalletFile wallet = createWalletWithId(keymaster, "Bob", ASSET_DID);
         keymaster.backupWallet("hyperswarm", wallet);
@@ -95,9 +96,9 @@ class SeedBankTest {
 
     @Test
     void recoverOverExistingWallet() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         GatekeeperStub gatekeeper = new GatekeeperStub(SEED_BANK_DID, ASSET_DID);
-        Keymaster keymaster = new Keymaster(store, gatekeeper, PASSPHRASE);
+        Keymaster keymaster = KeymasterTestSupport.keymaster(store, gatekeeper);
 
         WalletFile wallet = createWalletWithId(keymaster, "Bob", ASSET_DID);
         keymaster.backupWallet("hyperswarm", wallet);
@@ -119,9 +120,9 @@ class SeedBankTest {
 
     @Test
     void recoverAugmentedWallet() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         GatekeeperStub gatekeeper = new GatekeeperStub(SEED_BANK_DID, ASSET_DID);
-        Keymaster keymaster = new Keymaster(store, gatekeeper, PASSPHRASE);
+        Keymaster keymaster = KeymasterTestSupport.keymaster(store, gatekeeper);
 
         WalletFile wallet = createWalletWithId(keymaster, "Bob", ASSET_DID);
         wallet.extras = new HashMap<>();
@@ -139,9 +140,9 @@ class SeedBankTest {
 
     @Test
     void recoverV0WalletFromSeedBank() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         GatekeeperStub gatekeeper = new GatekeeperStub(SEED_BANK_DID, ASSET_DID);
-        Keymaster keymaster = new Keymaster(store, gatekeeper, PASSPHRASE);
+        Keymaster keymaster = KeymasterTestSupport.keymaster(store, gatekeeper);
 
         WalletFile legacy = buildLegacyV0Wallet();
         keymaster.backupWallet("hyperswarm", legacy);
@@ -153,9 +154,9 @@ class SeedBankTest {
 
     @Test
     void recoverWalletFromBackupDid() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         GatekeeperStub gatekeeper = new GatekeeperStub(SEED_BANK_DID, ASSET_DID);
-        Keymaster keymaster = new Keymaster(store, gatekeeper, PASSPHRASE);
+        Keymaster keymaster = KeymasterTestSupport.keymaster(store, gatekeeper);
 
         WalletFile wallet = createWalletWithId(keymaster, "Bob", ASSET_DID);
         String backupDid = keymaster.backupWallet("hyperswarm", wallet);
@@ -168,9 +169,9 @@ class SeedBankTest {
 
     @Test
     void recoverDoesNothingWhenNoBackup() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         GatekeeperStub gatekeeper = new GatekeeperStub(SEED_BANK_DID, ASSET_DID);
-        Keymaster keymaster = new Keymaster(store, gatekeeper, PASSPHRASE);
+        Keymaster keymaster = KeymasterTestSupport.keymaster(store, gatekeeper);
 
         keymaster.newWallet(MNEMONIC, true);
         WalletFile recovered = keymaster.recoverWallet();
@@ -180,9 +181,9 @@ class SeedBankTest {
 
     @Test
     void recoverDoesNothingWhenBackupDidInvalid() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         GatekeeperStub gatekeeper = new GatekeeperStub(SEED_BANK_DID, ASSET_DID);
-        Keymaster keymaster = new Keymaster(store, gatekeeper, PASSPHRASE);
+        Keymaster keymaster = KeymasterTestSupport.keymaster(store, gatekeeper);
 
         MdipDocument agent = buildAgentDoc("did:test:bafybeihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku");
         gatekeeper.putDoc(agent);

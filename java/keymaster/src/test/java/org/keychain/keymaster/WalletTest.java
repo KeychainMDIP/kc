@@ -30,15 +30,16 @@ import org.keychain.keymaster.model.WalletEncFile;
 import org.keychain.keymaster.model.WalletFile;
 import org.keychain.keymaster.store.WalletJsonMapper;
 import org.keychain.keymaster.store.WalletJsonMemory;
+import org.keychain.keymaster.testutil.KeymasterTestSupport;
 
 class WalletTest {
-    private static final String PASSPHRASE = "passphrase";
+    private static final String PASSPHRASE = KeymasterTestSupport.DEFAULT_PASSPHRASE;
     private static final String MNEMONIC =
         "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 
     @Test
     void loadWalletCreatesWalletOnFirstLoad() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         Keymaster keymaster = new Keymaster(store, PASSPHRASE);
 
         WalletFile wallet = keymaster.loadWallet();
@@ -57,7 +58,7 @@ class WalletTest {
 
     @Test
     void loadWalletReturnsSameInstanceFromCache() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         Keymaster keymaster = new Keymaster(store, PASSPHRASE);
 
         WalletFile wallet1 = keymaster.loadWallet();
@@ -68,7 +69,7 @@ class WalletTest {
 
     @Test
     void loadWalletThrowsOnIncorrectPassphrase() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         Keymaster keymaster = new Keymaster(store, PASSPHRASE);
         keymaster.newWallet(MNEMONIC, true);
 
@@ -83,7 +84,7 @@ class WalletTest {
 
     @Test
     void saveWalletStoresAndLoads() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         Keymaster keymaster = new Keymaster(store, PASSPHRASE);
 
         WalletFile wallet = buildWallet(0);
@@ -99,7 +100,7 @@ class WalletTest {
 
     @Test
     void saveWalletIgnoresOverwriteFlagIfUnnecessary() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         Keymaster keymaster = new Keymaster(store, PASSPHRASE);
 
         WalletFile wallet = buildWallet(0);
@@ -110,7 +111,7 @@ class WalletTest {
 
     @Test
     void saveWalletOverwritesExistingWallet() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         Keymaster keymaster = new Keymaster(store, PASSPHRASE);
 
         WalletFile wallet = buildWallet(0);
@@ -125,7 +126,7 @@ class WalletTest {
 
     @Test
     void saveWalletDoesNotOverwriteWhenFlagFalse() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         Keymaster keymaster = new Keymaster(store, PASSPHRASE);
 
         WalletFile wallet = buildWallet(0);
@@ -140,7 +141,7 @@ class WalletTest {
 
     @Test
     void saveWalletOverwritesInLoop() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         Keymaster keymaster = new Keymaster(store, PASSPHRASE);
 
         for (int i = 0; i < 5; i += 1) {
@@ -153,7 +154,7 @@ class WalletTest {
 
     @Test
     void saveWalletPersistsAugmentedWallet() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         Keymaster keymaster = new Keymaster(store, PASSPHRASE);
 
         WalletFile wallet = buildWallet(0);
@@ -173,7 +174,7 @@ class WalletTest {
 
     @Test
     void newWalletOverwritesExistingWhenAllowed() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         Keymaster keymaster = new Keymaster(store, PASSPHRASE);
 
         WalletFile wallet1 = keymaster.loadWallet();
@@ -184,7 +185,7 @@ class WalletTest {
 
     @Test
     void newWalletDoesNotOverwriteByDefault() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         Keymaster keymaster = new Keymaster(store, PASSPHRASE);
         keymaster.loadWallet();
 
@@ -198,7 +199,7 @@ class WalletTest {
 
     @Test
     void newWalletCreatesFromMnemonic() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         Keymaster keymaster = new Keymaster(store, PASSPHRASE);
 
         keymaster.newWallet(MNEMONIC, true);
@@ -208,7 +209,7 @@ class WalletTest {
 
     @Test
     void decryptMnemonicReturns12Words() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         Keymaster keymaster = new Keymaster(store, PASSPHRASE);
 
         String mnemonic = keymaster.decryptMnemonic();
@@ -218,7 +219,7 @@ class WalletTest {
 
     @Test
     void exportEncryptedWalletReturnsEncryptedPayload() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         Keymaster keymaster = new Keymaster(store, PASSPHRASE);
         keymaster.loadWallet();
 
@@ -231,7 +232,7 @@ class WalletTest {
 
     @Test
     void mutateWalletCreatesWalletIfMissing() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         Keymaster keymaster = new Keymaster(store, PASSPHRASE);
 
         keymaster.mutateWallet(wallet -> wallet.counter = 1);
@@ -242,7 +243,7 @@ class WalletTest {
 
     @Test
     void loadWalletUpgradesLegacyV0() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
 
         WalletFile legacy = buildLegacyV0Wallet();
         WalletEncFile stored = new WalletEncFile();
@@ -265,7 +266,7 @@ class WalletTest {
 
     @Test
     void loadWalletUpgradesLegacyEncryptedWrapper() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         WalletFile legacy = buildLegacyV0Wallet();
         WalletEncFile wrapper = buildLegacyEncryptedWrapper(legacy, PASSPHRASE);
         store.saveWallet(wrapper, true);
@@ -280,12 +281,12 @@ class WalletTest {
 
     @Test
     void loadWalletV1EncryptedDoesNotExposeHdKey() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         Keymaster keymaster = new Keymaster(store, PASSPHRASE);
         keymaster.loadWallet();
         WalletEncFile exported = keymaster.exportEncryptedWallet();
 
-        WalletJsonMemory<WalletEncFile> store2 = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store2 = KeymasterTestSupport.memoryStore();
         store2.saveWallet(exported, true);
         Keymaster keymaster2 = new Keymaster(store2, PASSPHRASE);
         WalletFile loaded = keymaster2.loadWallet();
@@ -296,12 +297,12 @@ class WalletTest {
 
     @Test
     void loadWalletV1EncryptedCacheDoesNotExposeHdKey() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         Keymaster keymaster = new Keymaster(store, PASSPHRASE);
         keymaster.loadWallet();
         WalletEncFile exported = keymaster.exportEncryptedWallet();
 
-        WalletJsonMemory<WalletEncFile> store2 = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store2 = KeymasterTestSupport.memoryStore();
         store2.saveWallet(exported, true);
         Keymaster keymaster2 = new Keymaster(store2, PASSPHRASE);
         keymaster2.loadWallet();
@@ -313,7 +314,7 @@ class WalletTest {
 
     @Test
     void saveWalletUpgradesLegacyV0() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         Keymaster keymaster = new Keymaster(store, PASSPHRASE);
         WalletFile legacy = buildLegacyV0Wallet();
 
@@ -329,7 +330,7 @@ class WalletTest {
 
     @Test
     void saveWalletLegacyUpgradeDoesNotUseStaleCache() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         Keymaster keymaster = new Keymaster(store, PASSPHRASE);
         keymaster.newWallet(null, true);
 
@@ -339,7 +340,7 @@ class WalletTest {
 
     @Test
     void saveWalletEncryptsV1AndRemovesHdKey() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         Keymaster keymaster = new Keymaster(store, PASSPHRASE);
         WalletFile wallet = keymaster.newWallet(MNEMONIC, true);
 
@@ -356,22 +357,22 @@ class WalletTest {
 
     @Test
     void saveWalletAcceptsV1EncryptedWallet() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         Keymaster keymaster = new Keymaster(store, PASSPHRASE);
         WalletEncFile exported = keymaster.exportEncryptedWallet();
 
-        WalletJsonMemory<WalletEncFile> store2 = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store2 = KeymasterTestSupport.memoryStore();
         Keymaster keymaster2 = new Keymaster(store2, PASSPHRASE);
         assertTrue(keymaster2.saveWallet(exported, true));
     }
 
     @Test
     void saveWalletRejectsEncryptedWalletWithWrongPassphrase() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         Keymaster keymaster = new Keymaster(store, PASSPHRASE);
         WalletEncFile exported = keymaster.exportEncryptedWallet();
 
-        WalletJsonMemory<WalletEncFile> store2 = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store2 = KeymasterTestSupport.memoryStore();
         Keymaster wrong = new Keymaster(store2, "incorrect");
         try {
             wrong.saveWallet(exported, true);
@@ -383,7 +384,7 @@ class WalletTest {
 
     @Test
     void loadWalletThrowsOnUnsupportedVersion() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
+        WalletJsonMemory<WalletEncFile> store = KeymasterTestSupport.memoryStore();
         WalletEncFile stored = new WalletEncFile();
         stored.version = 1;
         stored.seed = new Seed();
