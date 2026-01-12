@@ -48,13 +48,15 @@ public class Keymaster {
     private final String passphrase;
     private final GatekeeperClient gatekeeper;
     private final OperationFactory operationFactory;
+    private final String defaultRegistry;
 
     public Keymaster(
         WalletStore<WalletEncFile> store,
         GatekeeperClient gatekeeper,
         KeymasterCrypto crypto,
         OperationFactory operationFactory,
-        String passphrase
+        String passphrase,
+        String defaultRegistry
     ) {
         if (store == null) {
             throw new IllegalArgumentException("store is required");
@@ -73,7 +75,18 @@ public class Keymaster {
         this.passphrase = passphrase;
         this.gatekeeper = gatekeeper;
         this.operationFactory = operationFactory;
+        this.defaultRegistry = normalizeRegistry(defaultRegistry);
         this.walletManager = new KeymasterWalletManager(store, crypto, passphrase);
+    }
+
+    public Keymaster(
+        WalletStore<WalletEncFile> store,
+        GatekeeperClient gatekeeper,
+        KeymasterCrypto crypto,
+        OperationFactory operationFactory,
+        String passphrase
+    ) {
+        this(store, gatekeeper, crypto, operationFactory, passphrase, DEFAULT_REGISTRY);
     }
 
     public Keymaster(
@@ -82,19 +95,33 @@ public class Keymaster {
         KeymasterCrypto crypto,
         String passphrase
     ) {
-        this(store, gatekeeper, crypto, new OperationFactory(crypto), passphrase);
+        this(store, gatekeeper, crypto, new OperationFactory(crypto), passphrase, DEFAULT_REGISTRY);
+    }
+
+    public Keymaster(
+        WalletStore<WalletEncFile> store,
+        GatekeeperClient gatekeeper,
+        KeymasterCrypto crypto,
+        String passphrase,
+        String defaultRegistry
+    ) {
+        this(store, gatekeeper, crypto, new OperationFactory(crypto), passphrase, defaultRegistry);
     }
 
     public Keymaster(WalletStore<WalletEncFile> store, KeymasterCrypto crypto, String passphrase) {
-        this(store, null, crypto, passphrase);
+        this(store, null, crypto, passphrase, DEFAULT_REGISTRY);
     }
 
     public Keymaster(WalletStore<WalletEncFile> store, GatekeeperClient gatekeeper, String passphrase) {
-        this(store, gatekeeper, new KeymasterCryptoImpl(), passphrase);
+        this(store, gatekeeper, new KeymasterCryptoImpl(), passphrase, DEFAULT_REGISTRY);
+    }
+
+    public Keymaster(WalletStore<WalletEncFile> store, GatekeeperClient gatekeeper, String passphrase, String defaultRegistry) {
+        this(store, gatekeeper, new KeymasterCryptoImpl(), passphrase, defaultRegistry);
     }
 
     public Keymaster(WalletStore<WalletEncFile> store, String passphrase) {
-        this(store, null, new KeymasterCryptoImpl(), passphrase);
+        this(store, null, new KeymasterCryptoImpl(), passphrase, DEFAULT_REGISTRY);
     }
 
     public WalletFile loadWallet() {
@@ -178,6 +205,44 @@ public class Keymaster {
         return true;
     }
 
+    public boolean removeId(String name) {
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("name is required");
+        }
+        mutateWallet(wallet -> {
+            if (wallet.ids == null || !wallet.ids.containsKey(name)) {
+                throw new IllegalArgumentException("unknown id");
+            }
+            wallet.ids.remove(name);
+            if (name.equals(wallet.current)) {
+                wallet.current = wallet.ids.isEmpty() ? "" : wallet.ids.keySet().iterator().next();
+            }
+        });
+        return true;
+    }
+
+    public boolean renameId(String currentName, String newName) {
+        if (currentName == null || currentName.isBlank()) {
+            throw new IllegalArgumentException("current name is required");
+        }
+        mutateWallet(wallet -> {
+            String validNew = validateNameInternal(newName, null);
+            if (wallet.ids == null || !wallet.ids.containsKey(currentName)) {
+                throw new IllegalArgumentException("unknown id");
+            }
+            if (wallet.ids.containsKey(validNew)) {
+                throw new IllegalArgumentException("name already used");
+            }
+            IDInfo info = wallet.ids.get(currentName);
+            wallet.ids.put(validNew, info);
+            wallet.ids.remove(currentName);
+            if (currentName.equals(wallet.current)) {
+                wallet.current = validNew;
+            }
+        });
+        return true;
+    }
+
     public boolean addName(String name, String did) {
         if (did == null || did.isBlank()) {
             throw new IllegalArgumentException("did is required");
@@ -186,7 +251,7 @@ public class Keymaster {
             if (wallet.names == null) {
                 wallet.names = new java.util.HashMap<>();
             }
-            String valid = validateName(name, wallet);
+            String valid = validateNameInternal(name, wallet);
             wallet.names.put(valid, did);
         });
         return true;
@@ -349,7 +414,7 @@ public class Keymaster {
         Mdip mdip = new Mdip();
         mdip.version = 1;
         mdip.type = "agent";
-        mdip.registry = DEFAULT_REGISTRY;
+        mdip.registry = defaultRegistry;
         operation.mdip = mdip;
         operation.publicJwk = JwkConverter.toEcdsaJwkPublic(keypair.publicJwk);
 
@@ -362,6 +427,115 @@ public class Keymaster {
 
         String did = gatekeeper.createDID(operation);
         return gatekeeper.resolveDID(did, null);
+    }
+
+    public boolean backupId() {
+        return backupId(null);
+    }
+
+    public boolean backupId(String id) {
+        if (gatekeeper == null) {
+            throw new IllegalStateException("gatekeeper not configured");
+        }
+        WalletFile wallet = loadWallet();
+        String name = id;
+        if (name == null || name.isBlank()) {
+            name = wallet.current;
+        }
+        if (name == null || name.isBlank()) {
+            throw new IllegalStateException("no current id");
+        }
+        IDInfo idInfo = fetchIdInfo(name, wallet);
+        JwkPair keypair = hdKeyPair();
+
+        java.util.Map<String, Object> data = new java.util.LinkedHashMap<>();
+        data.put("name", name);
+        data.put("id", idInfo);
+        String msg;
+        try {
+            msg = WalletJsonMapper.mapper().writeValueAsString(data);
+        } catch (Exception e) {
+            throw new IllegalStateException("backupId: unable to serialize data", e);
+        }
+
+        String backup = crypto.encryptMessage(keypair.publicJwk, keypair.privateJwk, msg);
+        MdipDocument doc = resolveDID(idInfo.did);
+        String registry = doc != null && doc.mdip != null ? doc.mdip.registry : null;
+        if (registry == null || registry.isBlank()) {
+            throw new IllegalArgumentException("no registry found for agent DID");
+        }
+
+        java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("backup", backup);
+        String vaultDid = createAsset(payload, registry, name, null);
+
+        if (doc.didDocumentData == null || !(doc.didDocumentData instanceof java.util.Map<?, ?>)) {
+            doc.didDocumentData = new java.util.LinkedHashMap<String, Object>();
+        }
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> docData = (java.util.Map<String, Object>) doc.didDocumentData;
+        docData.put("vault", vaultDid);
+        doc.didDocumentData = docData;
+        return updateDID(doc);
+    }
+
+    public String recoverId(String did) {
+        try {
+            if (did == null || did.isBlank()) {
+                throw new IllegalArgumentException("did is required");
+            }
+            JwkPair keypair = hdKeyPair();
+            MdipDocument doc = resolveDID(did);
+            if (doc == null || doc.didDocumentData == null || !(doc.didDocumentData instanceof java.util.Map<?, ?>)) {
+                throw new IllegalArgumentException("didDocumentData missing vault");
+            }
+
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Object> docData = (java.util.Map<String, Object>) doc.didDocumentData;
+            Object vaultObj = docData.get("vault");
+            if (!(vaultObj instanceof String)) {
+                throw new IllegalArgumentException("didDocumentData missing vault");
+            }
+
+            MdipDocument vault = resolveAsset((String) vaultObj);
+            if (vault == null || vault.didDocumentData == null || !(vault.didDocumentData instanceof java.util.Map<?, ?>)) {
+                throw new IllegalArgumentException("backup not found in vault");
+            }
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Object> vaultData = (java.util.Map<String, Object>) vault.didDocumentData;
+            Object backupObj = vaultData.get("backup");
+            if (!(backupObj instanceof String)) {
+                throw new IllegalArgumentException("backup not found in vault");
+            }
+
+            String decrypted = crypto.decryptMessage(keypair.publicJwk, keypair.privateJwk, (String) backupObj);
+            java.util.Map<String, Object> data = WalletJsonMapper.mapper().readValue(decrypted, java.util.Map.class);
+            Object nameObj = data.get("name");
+            Object idObj = data.get("id");
+            if (!(nameObj instanceof String) || !(idObj instanceof java.util.Map<?, ?>)) {
+                throw new IllegalArgumentException("Invalid backup data");
+            }
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Object> idMap = (java.util.Map<String, Object>) idObj;
+            IDInfo idInfo = WalletJsonMapper.mapper().convertValue(idMap, IDInfo.class);
+            String name = (String) nameObj;
+
+            mutateWallet(wallet -> {
+                if (wallet.ids != null && wallet.ids.containsKey(name)) {
+                    throw new IllegalStateException(name + " already exists in wallet");
+                }
+                wallet.ids.put(name, idInfo);
+                wallet.current = name;
+                wallet.counter = wallet.counter + 1;
+            });
+
+            return name;
+        } catch (Exception e) {
+            if (e instanceof IllegalStateException) {
+                throw (IllegalStateException) e;
+            }
+            throw new IllegalArgumentException("did");
+        }
     }
 
     public boolean updateSeedBank(MdipDocument doc) {
@@ -395,7 +569,7 @@ public class Keymaster {
     }
 
     public String backupWallet() {
-        return backupWallet(DEFAULT_REGISTRY, null);
+        return backupWallet(defaultRegistry, null);
     }
 
     public String backupWallet(String registry) {
@@ -407,7 +581,7 @@ public class Keymaster {
             throw new IllegalStateException("gatekeeper not configured");
         }
         if (registry == null || registry.isBlank()) {
-            registry = DEFAULT_REGISTRY;
+            registry = defaultRegistry;
         }
         if (wallet == null) {
             wallet = loadWallet();
@@ -524,18 +698,13 @@ public class Keymaster {
         if (gatekeeper == null) {
             throw new IllegalStateException("gatekeeper not configured");
         }
-        if (name == null || name.isBlank()) {
-            throw new IllegalArgumentException("name is required");
-        }
         if (registry == null || registry.isBlank()) {
             throw new IllegalArgumentException("registry is required");
         }
 
         final String[] createdDid = new String[1];
         mutateWallet(wallet -> {
-            if (wallet.ids != null && wallet.ids.containsKey(name)) {
-                throw new IllegalArgumentException("name already exists");
-            }
+            String validName = validateNameInternal(name, wallet);
 
             int account = wallet.counter;
             int index = 0;
@@ -559,16 +728,50 @@ public class Keymaster {
             idInfo.account = account;
             idInfo.index = index;
 
-            wallet.ids.put(name, idInfo);
+            wallet.ids.put(validName, idInfo);
             wallet.counter = account + 1;
-            wallet.current = name;
+            wallet.current = validName;
         });
 
         return createdDid[0];
     }
 
     public String createId(String name) {
-        return createId(name, DEFAULT_REGISTRY);
+        return createId(name, defaultRegistry);
+    }
+
+    public Operation createIdOperation(String name) {
+        return createIdOperation(name, 0, null);
+    }
+
+    public Operation createIdOperation(String name, int account) {
+        return createIdOperation(name, account, null);
+    }
+
+    public Operation createIdOperation(String name, int account, String registry) {
+        if (gatekeeper == null) {
+            throw new IllegalStateException("gatekeeper not configured");
+        }
+        if (account < 0) {
+            throw new IllegalArgumentException("account must be non-negative");
+        }
+        String targetRegistry = registry == null || registry.isBlank() ? defaultRegistry : registry;
+
+        WalletFile wallet = loadWallet();
+        String validName = validateNameInternal(name, wallet);
+        JwkPair keypair = getCurrentKeypairFromPath(wallet, account, 0);
+
+        BlockInfo block = gatekeeper.getBlock(targetRegistry);
+        String blockid = block != null ? block.hash : null;
+
+        Operation signed = operationFactory.createSignedCreateIdOperation(
+            targetRegistry,
+            JwkConverter.toEcdsaJwkPublic(keypair.publicJwk),
+            keypair.privateJwk,
+            blockid
+        );
+
+        return signed;
     }
 
     public String createAsset(Object data, String registry) {
@@ -640,7 +843,7 @@ public class Keymaster {
     }
 
     public String createSchema(Object schema) {
-        return createSchema(schema, DEFAULT_REGISTRY);
+        return createSchema(schema, defaultRegistry);
     }
 
     public Object getSchema(String did) {
@@ -827,7 +1030,7 @@ public class Keymaster {
         java.util.Map<String, Object> notice = new java.util.LinkedHashMap<>();
         notice.put("to", java.util.List.of(subjectId));
         notice.put("dids", java.util.List.of(did));
-        return createNotice(notice, DEFAULT_REGISTRY, validUntil);
+        return createNotice(notice, defaultRegistry, validUntil);
     }
 
     public java.util.Map<String, Object> getCredential(String id) {
@@ -929,14 +1132,14 @@ public class Keymaster {
     }
 
     public String createNotice(java.util.Map<String, Object> message) {
-        return createNotice(message, DEFAULT_REGISTRY, null);
+        return createNotice(message, defaultRegistry, null);
     }
 
     public String createNotice(java.util.Map<String, Object> message, String registry, String validUntil) {
         java.util.Map<String, Object> notice = verifyNotice(message);
         java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
         payload.put("notice", notice);
-        String targetRegistry = registry == null || registry.isBlank() ? DEFAULT_REGISTRY : registry;
+        String targetRegistry = registry == null || registry.isBlank() ? defaultRegistry : registry;
         return createAsset(payload, targetRegistry, null, validUntil);
     }
 
@@ -1171,7 +1374,23 @@ public class Keymaster {
         if (did == null || did.isBlank()) {
             throw new IllegalArgumentException("did is required");
         }
-        return gatekeeper.resolveDID(did, null);
+        String actualDid = lookupDID(did);
+        MdipDocument doc = gatekeeper.resolveDID(actualDid, null);
+        if (doc != null) {
+            String controller = null;
+            if (doc.didDocument != null) {
+                controller = doc.didDocument.controller != null ? doc.didDocument.controller : doc.didDocument.id;
+            }
+            DocumentMetadata metadata = doc.didDocumentMetadata != null ? doc.didDocumentMetadata : new DocumentMetadata();
+            metadata.isOwned = controller != null ? idInWallet(controller) : false;
+            doc.didDocumentMetadata = metadata;
+        }
+        return doc;
+    }
+
+    public boolean testAgent(String id) {
+        MdipDocument doc = resolveDID(id);
+        return doc != null && doc.mdip != null && "agent".equals(doc.mdip.type);
     }
 
     public String lookupDID(String nameOrDid) {
@@ -1363,7 +1582,11 @@ public class Keymaster {
         return signed;
     }
 
-    private static String validateName(String name, WalletFile wallet) {
+    public String validateName(String name) {
+        return validateNameInternal(name, null);
+    }
+
+    private static String validateNameInternal(String name, WalletFile wallet) {
         if (name == null || name.trim().isEmpty()) {
             throw new IllegalArgumentException("name must be a non-empty string");
         }
@@ -1385,6 +1608,13 @@ public class Keymaster {
             }
         }
         return trimmed;
+    }
+
+    private static String normalizeRegistry(String registry) {
+        if (registry == null || registry.isBlank()) {
+            return DEFAULT_REGISTRY;
+        }
+        return registry;
     }
 
     private void tallyDid(String did, CheckWalletResult result) {
@@ -1473,7 +1703,7 @@ public class Keymaster {
 
         java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
         payload.put("encrypted", encrypted);
-        return createAsset(payload, DEFAULT_REGISTRY);
+        return createAsset(payload, defaultRegistry);
     }
 
     public String encryptJSON(Object json, String receiverDid) {
@@ -1658,6 +1888,23 @@ public class Keymaster {
 
     public IDInfo fetchIdInfo(String nameOrDid) {
         return fetchIdInfo(nameOrDid, null);
+    }
+
+    public boolean idInWallet(String did) {
+        try {
+            fetchIdInfo(did);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public String hashJson(Object obj) {
+        return crypto.hashJson(obj);
+    }
+
+    public boolean verifySig(String msgHashHex, String sigCompactHex, org.keychain.crypto.JwkPublic publicJwk) {
+        return crypto.verifySig(msgHashHex, sigCompactHex, publicJwk);
     }
 
     public IDInfo fetchIdInfo(String nameOrDid, WalletFile wallet) {
