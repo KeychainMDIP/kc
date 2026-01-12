@@ -17,7 +17,7 @@ import org.keychain.keymaster.testutil.TestFixtures;
 
 @Tag("live")
 class LiveCredentialTest {
-    private static final String REGISTRY = "hyperswarm";
+    private static final String REGISTRY = "local";
     private static final String DEFAULT_GATEKEEPER_URL = "http://localhost:4224";
     private static final String ENV_GATEKEEPER_URL = "KC_GATEKEEPER_URL";
 
