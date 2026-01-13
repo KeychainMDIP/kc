@@ -99,6 +99,11 @@ public class GatekeeperHttpClient implements GatekeeperClient {
     }
 
     @Override
+    public boolean removeDIDs(java.util.List<String> dids) {
+        return postJson("/dids/remove", dids, Boolean.class);
+    }
+
+    @Override
     public BlockInfo getBlock(String registry) {
         HttpUrl url = baseUrl.newBuilder()
             .addPathSegment("block")

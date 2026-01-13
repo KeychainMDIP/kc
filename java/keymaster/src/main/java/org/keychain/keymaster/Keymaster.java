@@ -874,6 +874,10 @@ public class Keymaster {
         return createSchema(schema, defaultRegistry);
     }
 
+    public String createSchema() {
+        return createSchema(null, defaultRegistry);
+    }
+
     public String createChallenge() {
         return createChallenge(new java.util.LinkedHashMap<>(), null);
     }
@@ -1569,6 +1573,16 @@ public class Keymaster {
         }
         String actualDid = lookupDID(did);
         MdipDocument doc = gatekeeper.resolveDID(actualDid, options);
+        if (doc != null && doc.didResolutionMetadata != null && doc.didResolutionMetadata.error != null) {
+            String error = doc.didResolutionMetadata.error;
+            if ("notFound".equals(error)) {
+                throw new IllegalArgumentException("unknown");
+            }
+            if ("invalidDid".equals(error)) {
+                throw new IllegalArgumentException("bad format");
+            }
+            throw new IllegalArgumentException("did");
+        }
         return augmentDidMetadata(doc);
     }
 
@@ -2347,7 +2361,10 @@ public class Keymaster {
             ? (current.didDocument.controller != null ? current.didDocument.controller : current.didDocument.id)
             : did;
 
-        JwkPair keypair = getCurrentKeypair(loadWallet());
+        JwkPair keypair = fetchKeyPair(signerDid);
+        if (keypair == null) {
+            throw new IllegalStateException("addSignature: no keypair");
+        }
         Operation signed = operationFactory.createSignedUpdateDidOperation(
             did,
             previd,
@@ -2385,7 +2402,10 @@ public class Keymaster {
             ? (current.didDocument.controller != null ? current.didDocument.controller : current.didDocument.id)
             : did;
 
-        JwkPair keypair = getCurrentKeypair(loadWallet());
+        JwkPair keypair = fetchKeyPair(signerDid);
+        if (keypair == null) {
+            throw new IllegalStateException("addSignature: no keypair");
+        }
         Operation signed = new OperationSignerImpl(crypto).sign(operation, keypair.privateJwk, signerDid);
         return gatekeeper.deleteDID(signed);
     }

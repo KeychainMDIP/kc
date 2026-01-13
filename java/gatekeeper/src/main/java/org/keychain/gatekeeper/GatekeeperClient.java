@@ -11,5 +11,6 @@ public interface GatekeeperClient {
     MdipDocument resolveDID(String did, ResolveDIDOptions options);
     boolean updateDID(Operation operation);
     boolean deleteDID(Operation operation);
+    boolean removeDIDs(java.util.List<String> dids);
     BlockInfo getBlock(String registry);
 }

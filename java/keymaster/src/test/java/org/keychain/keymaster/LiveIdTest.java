@@ -1,41 +1,33 @@
 package org.keychain.keymaster;
 
+import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.keychain.gatekeeper.GatekeeperClient;
-import org.keychain.gatekeeper.GatekeeperClientOptions;
-import org.keychain.gatekeeper.GatekeeperHttpClient;
+import org.junit.jupiter.api.io.TempDir;
 import org.keychain.crypto.KeymasterCryptoImpl;
+import org.keychain.gatekeeper.GatekeeperClient;
 import org.keychain.gatekeeper.model.MdipDocument;
 import org.keychain.gatekeeper.model.Operation;
-import org.keychain.keymaster.model.WalletEncFile;
-import org.keychain.keymaster.store.WalletJsonMemory;
+import org.keychain.keymaster.model.WalletFile;
+import org.keychain.keymaster.testutil.LiveTestSupport;
 
 @Tag("live")
 class LiveIdTest {
-    private static final String REGISTRY = "hyperswarm";
-    private static final String DEFAULT_GATEKEEPER_URL = "http://localhost:4224";
-    private static final String ENV_GATEKEEPER_URL = "KC_GATEKEEPER_URL";
-
-    protected GatekeeperClient gatekeeperClient() {
-        GatekeeperClientOptions options = new GatekeeperClientOptions();
-        String override = System.getenv(ENV_GATEKEEPER_URL);
-        if (override != null && !override.isBlank()) {
-            options.baseUrl = override;
-        } else {
-            options.baseUrl = DEFAULT_GATEKEEPER_URL;
-        }
-        return new GatekeeperHttpClient(options);
-    }
+    @TempDir
+    Path tempDir;
 
     protected Keymaster liveKeymaster() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
-        return new Keymaster(store, gatekeeperClient(), "passphrase");
+        return LiveTestSupport.keymaster(tempDir);
+    }
+
+    protected GatekeeperClient gatekeeperClient() {
+        return LiveTestSupport.gatekeeperClient();
     }
 
     protected String testRegistry() {
-        return "local";
+        return LiveTestSupport.DEFAULT_REGISTRY;
     }
 
     @Test
@@ -45,21 +37,44 @@ class LiveIdTest {
         String did = keymaster.createId("Bob");
         MdipDocument doc = keymaster.resolveDID(did);
 
-        org.junit.jupiter.api.Assertions.assertEquals(REGISTRY, doc.mdip.registry);
+        org.junit.jupiter.api.Assertions.assertEquals(LiveTestSupport.DEFAULT_REGISTRY, doc.mdip.registry);
     }
 
     @Test
     @Tag("live")
     void createIdCustomDefaultRegistry() {
-        GatekeeperClient gatekeeper = gatekeeperClient();
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
         String customRegistry = testRegistry();
-        Keymaster keymaster = new Keymaster(store, gatekeeper, "passphrase", customRegistry);
+        Keymaster keymaster = LiveTestSupport.keymaster(tempDir, customRegistry);
 
         String did = keymaster.createId("Bob");
         MdipDocument doc = keymaster.resolveDID(did);
 
         org.junit.jupiter.api.Assertions.assertEquals(customRegistry, doc.mdip.registry);
+    }
+
+    @Test
+    @Tag("live")
+    void createIdStoresWalletEntry() {
+        Keymaster keymaster = liveKeymaster();
+
+        String did = keymaster.createId("Bob");
+        WalletFile wallet = keymaster.loadWallet();
+
+        org.junit.jupiter.api.Assertions.assertEquals(did, wallet.ids.get("Bob").did);
+        org.junit.jupiter.api.Assertions.assertEquals("Bob", wallet.current);
+    }
+
+    @Test
+    @Tag("live")
+    void createIdUnicodeName() {
+        Keymaster keymaster = liveKeymaster();
+
+        String name = "unicode-name";
+        String did = keymaster.createId(name);
+        WalletFile wallet = keymaster.loadWallet();
+
+        org.junit.jupiter.api.Assertions.assertEquals(did, wallet.ids.get(name).did);
+        org.junit.jupiter.api.Assertions.assertEquals(name, wallet.current);
     }
 
     @Test
@@ -71,6 +86,19 @@ class LiveIdTest {
 
         org.junit.jupiter.api.Assertions.assertEquals(customRegistry, op.mdip.registry);
         org.junit.jupiter.api.Assertions.assertEquals("create", op.type);
+        org.junit.jupiter.api.Assertions.assertNotNull(op.publicJwk);
+        org.junit.jupiter.api.Assertions.assertNotNull(op.signature);
+    }
+
+    @Test
+    @Tag("live")
+    void createIdOperationDefaultRegistry() {
+        Keymaster keymaster = liveKeymaster();
+
+        Operation op = keymaster.createIdOperation("Bob");
+
+        org.junit.jupiter.api.Assertions.assertEquals("create", op.type);
+        org.junit.jupiter.api.Assertions.assertEquals(LiveTestSupport.DEFAULT_REGISTRY, op.mdip.registry);
         org.junit.jupiter.api.Assertions.assertNotNull(op.publicJwk);
         org.junit.jupiter.api.Assertions.assertNotNull(op.signature);
     }
@@ -102,11 +130,43 @@ class LiveIdTest {
 
     @Test
     @Tag("live")
+    void createIdOperationDoesNotMutateWallet() {
+        Keymaster keymaster = liveKeymaster();
+
+        WalletFile before = keymaster.loadWallet();
+        int counterBefore = before.counter;
+
+        keymaster.createIdOperation("Dave");
+
+        WalletFile after = keymaster.loadWallet();
+        org.junit.jupiter.api.Assertions.assertEquals(counterBefore, after.counter);
+        org.junit.jupiter.api.Assertions.assertFalse(after.ids.containsKey("Dave"));
+        org.junit.jupiter.api.Assertions.assertEquals(before.current, after.current);
+    }
+
+    @Test
+    @Tag("live")
+    void createIdOperationCreatesResolvableDid() {
+        Keymaster keymaster = liveKeymaster();
+
+        Operation op = keymaster.createIdOperation("Grace");
+        String did = gatekeeperClient().createDID(op);
+
+        MdipDocument doc = keymaster.resolveDID(did);
+        org.junit.jupiter.api.Assertions.assertEquals(did, doc.didDocument.id);
+        org.junit.jupiter.api.Assertions.assertEquals("agent", doc.mdip.type);
+    }
+
+    @Test
+    @Tag("live")
     void removeAndRenameId() {
         Keymaster keymaster = liveKeymaster();
         String did = keymaster.createId("Bob");
         boolean renamed = keymaster.renameId("Bob", "Alice");
         org.junit.jupiter.api.Assertions.assertTrue(renamed);
+
+        org.junit.jupiter.api.Assertions.assertEquals("Alice", keymaster.loadWallet().current);
+        org.junit.jupiter.api.Assertions.assertEquals(did, keymaster.loadWallet().ids.get("Alice").did);
 
         boolean removed = keymaster.removeId("Alice");
         org.junit.jupiter.api.Assertions.assertTrue(removed);
@@ -161,5 +221,15 @@ class LiveIdTest {
         String did = keymaster.createId("Bob");
         boolean isAgent = keymaster.testAgent(did);
         org.junit.jupiter.api.Assertions.assertTrue(isAgent);
+    }
+
+    @Test
+    @Tag("live")
+    void testAgentOnAsset() {
+        Keymaster keymaster = liveKeymaster();
+
+        keymaster.createId("Bob");
+        String assetDid = keymaster.createAsset(Map.of("name", "mockAnchor"), LiveTestSupport.DEFAULT_REGISTRY);
+        org.junit.jupiter.api.Assertions.assertFalse(keymaster.testAgent(assetDid));
     }
 }

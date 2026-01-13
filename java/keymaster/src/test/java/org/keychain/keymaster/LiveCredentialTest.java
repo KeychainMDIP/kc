@@ -1,44 +1,26 @@
 package org.keychain.keymaster;
 
+import java.nio.file.Path;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Tag;
-import org.keychain.gatekeeper.GatekeeperClient;
-import org.keychain.gatekeeper.GatekeeperClientOptions;
-import org.keychain.gatekeeper.GatekeeperHttpClient;
+import org.junit.jupiter.api.io.TempDir;
 import org.keychain.gatekeeper.model.MdipDocument;
 import org.keychain.keymaster.model.IDInfo;
 import org.keychain.keymaster.model.WalletFile;
-import org.keychain.keymaster.model.WalletEncFile;
-import org.keychain.keymaster.store.WalletJsonMemory;
 import org.junit.jupiter.api.Test;
+import org.keychain.keymaster.testutil.AssertUtils;
+import org.keychain.keymaster.testutil.LiveTestSupport;
 import org.keychain.keymaster.testutil.TestFixtures;
 
 @Tag("live")
 class LiveCredentialTest {
-    private static final String REGISTRY = "local";
-    private static final String DEFAULT_GATEKEEPER_URL = "http://localhost:4224";
-    private static final String ENV_GATEKEEPER_URL = "KC_GATEKEEPER_URL";
-
-    protected GatekeeperClient gatekeeperClient() {
-        GatekeeperClientOptions options = new GatekeeperClientOptions();
-        String override = System.getenv(ENV_GATEKEEPER_URL);
-        if (override != null && !override.isBlank()) {
-            options.baseUrl = override;
-        } else {
-            options.baseUrl = DEFAULT_GATEKEEPER_URL;
-        }
-        return new GatekeeperHttpClient(options);
-    }
+    @TempDir
+    Path tempDir;
 
     protected Keymaster liveKeymaster() {
-        WalletJsonMemory<WalletEncFile> store = new WalletJsonMemory<>(WalletEncFile.class);
-        return new Keymaster(store, gatekeeperClient(), "passphrase");
-    }
-
-    protected String registry() {
-        return REGISTRY;
+        return LiveTestSupport.keymaster(tempDir);
     }
 
     @Test
@@ -53,6 +35,7 @@ class LiveCredentialTest {
         org.junit.jupiter.api.Assertions.assertNotNull(schemaDid);
         org.junit.jupiter.api.Assertions.assertNotNull(template);
         org.junit.jupiter.api.Assertions.assertEquals(schemaDid, template.get("$schema"));
+        org.junit.jupiter.api.Assertions.assertEquals("TBD", template.get("email"));
     }
 
     @Test
@@ -68,11 +51,22 @@ class LiveCredentialTest {
         java.util.Map<String, Object> vc = keymaster.getCredential(credentialDid);
         org.junit.jupiter.api.Assertions.assertNotNull(vc);
         org.junit.jupiter.api.Assertions.assertEquals(subjectDid, vc.get("issuer"));
+        AssertUtils.assertCredentialShape(vc);
         Object subjectObj = vc.get("credentialSubject");
         org.junit.jupiter.api.Assertions.assertTrue(subjectObj instanceof java.util.Map<?, ?>);
         @SuppressWarnings("unchecked")
         java.util.Map<String, Object> subject = (java.util.Map<String, Object>) subjectObj;
         org.junit.jupiter.api.Assertions.assertEquals(subjectDid, subject.get("id"));
+        Object credObj = vc.get("credential");
+        org.junit.jupiter.api.Assertions.assertTrue(credObj instanceof java.util.Map<?, ?>);
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> cred = (java.util.Map<String, Object>) credObj;
+        org.junit.jupiter.api.Assertions.assertEquals("TBD", cred.get("email"));
+        org.junit.jupiter.api.Assertions.assertTrue(keymaster.verifySignature(vc));
+
+        WalletFile wallet = keymaster.loadWallet();
+        IDInfo owner = wallet.ids.get("Alice");
+        org.junit.jupiter.api.Assertions.assertTrue(owner.owned.contains(credentialDid));
     }
 
     @Test
@@ -97,6 +91,7 @@ class LiveCredentialTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> cred = (Map<String, Object>) credObj;
         org.junit.jupiter.api.Assertions.assertEquals("alice@example.com", cred.get("email"));
+        AssertUtils.assertCredentialShape(vc);
     }
 
     @Test
@@ -116,6 +111,7 @@ class LiveCredentialTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> subject = (Map<String, Object>) subjectObj;
         org.junit.jupiter.api.Assertions.assertEquals(subjectDid, subject.get("id"));
+        AssertUtils.assertCredentialShape(vc);
     }
 
     @Test
@@ -136,6 +132,9 @@ class LiveCredentialTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> entry = (Map<String, Object>) entryObj;
         org.junit.jupiter.api.Assertions.assertNotNull(entry.get("credential"));
+        Map<String, Object> vc = keymaster.getCredential(credentialDid);
+        org.junit.jupiter.api.Assertions.assertNotNull(vc);
+        AssertUtils.assertCredentialShape(vc);
     }
 
     @Test
@@ -203,6 +202,31 @@ class LiveCredentialTest {
 
     @Test
     @Tag("live")
+    void listIssuedReturnsOnlyIssuerCredentials() {
+        Keymaster keymaster = liveKeymaster();
+        keymaster.createId("Alice");
+        keymaster.createId("Bob");
+        keymaster.setCurrentId("Alice");
+        String schemaDid = keymaster.createSchema(TestFixtures.mockSchema());
+
+        Map<String, Object> boundAlice = keymaster.bindCredential(schemaDid, keymaster.fetchIdInfo("Bob").did);
+        String aliceCred = keymaster.issueCredential(boundAlice);
+
+        keymaster.setCurrentId("Bob");
+        Map<String, Object> boundBob = keymaster.bindCredential(schemaDid, keymaster.fetchIdInfo("Bob").did);
+        String bobCred = keymaster.issueCredential(boundBob);
+
+        List<String> issuedByAlice = keymaster.listIssued("Alice");
+        org.junit.jupiter.api.Assertions.assertTrue(issuedByAlice.contains(aliceCred));
+        org.junit.jupiter.api.Assertions.assertFalse(issuedByAlice.contains(bobCred));
+
+        List<String> issuedByBob = keymaster.listIssued("Bob");
+        org.junit.jupiter.api.Assertions.assertTrue(issuedByBob.contains(bobCred));
+        org.junit.jupiter.api.Assertions.assertFalse(issuedByBob.contains(aliceCred));
+    }
+
+    @Test
+    @Tag("live")
     void listIssuedEmpty() {
         Keymaster keymaster = liveKeymaster();
         keymaster.createId("Bob");
@@ -225,14 +249,23 @@ class LiveCredentialTest {
     @Tag("live")
     void listCredentialsHeld() {
         Keymaster keymaster = liveKeymaster();
-        String credentialDid = issueCredential(keymaster, "Alice", "Bob");
+        keymaster.createId("Alice");
+        keymaster.createId("Bob");
+        keymaster.setCurrentId("Alice");
+        String schemaDid = keymaster.createSchema(TestFixtures.mockSchema());
+        String bobDid = keymaster.fetchIdInfo("Bob").did;
+        Map<String, Object> bound = keymaster.bindCredential(schemaDid, bobDid);
+        String credentialDid = keymaster.issueCredential(bound);
+        String credentialDid2 = keymaster.issueCredential(bound);
 
         keymaster.setCurrentId("Bob");
         boolean accepted = keymaster.acceptCredential(credentialDid);
         org.junit.jupiter.api.Assertions.assertTrue(accepted);
+        org.junit.jupiter.api.Assertions.assertTrue(keymaster.acceptCredential(credentialDid2));
 
         List<String> held = keymaster.listCredentials("Bob");
         org.junit.jupiter.api.Assertions.assertTrue(held.contains(credentialDid));
+        org.junit.jupiter.api.Assertions.assertTrue(held.contains(credentialDid2));
     }
 
     @Test
@@ -356,6 +389,7 @@ class LiveCredentialTest {
 
         org.junit.jupiter.api.Assertions.assertEquals(validFrom, vc.get("validFrom"));
         org.junit.jupiter.api.Assertions.assertEquals(validUntil, vc.get("validUntil"));
+        AssertUtils.assertCredentialShape(vc);
     }
 
     @Test
@@ -394,12 +428,19 @@ class LiveCredentialTest {
         Keymaster keymaster = liveKeymaster();
         String credentialDid = issueCredential(keymaster, "Alice", "Alice");
 
+        WalletFile before = keymaster.loadWallet();
+        IDInfo owner = before.ids.get("Alice");
+        org.junit.jupiter.api.Assertions.assertTrue(owner.owned.contains(credentialDid));
+
         boolean ok = keymaster.revokeCredential(credentialDid);
         org.junit.jupiter.api.Assertions.assertTrue(ok);
 
         MdipDocument revoked = keymaster.resolveDID(credentialDid);
         org.junit.jupiter.api.Assertions.assertNotNull(revoked.didDocumentMetadata);
         org.junit.jupiter.api.Assertions.assertTrue(Boolean.TRUE.equals(revoked.didDocumentMetadata.deactivated));
+
+        WalletFile after = keymaster.loadWallet();
+        org.junit.jupiter.api.Assertions.assertFalse(after.ids.get("Alice").owned.contains(credentialDid));
     }
 
     private Map<String, Object> manifestFromDoc(MdipDocument doc) {
