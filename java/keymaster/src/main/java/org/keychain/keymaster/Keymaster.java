@@ -37,7 +37,6 @@ public class Keymaster {
     private static final DateTimeFormatter ISO_MILLIS =
         DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC);
     private static final String DEFAULT_REGISTRY = "hyperswarm";
-    private static final String EPHEMERAL_REGISTRY = "hyperswarm";
     private static final String EPOCH_ISO = ISO_MILLIS.format(Instant.EPOCH);
     private static final int MAX_NAME_LENGTH = 32;
     private static Supplier<Instant> NOW_SUPPLIER = Instant::now;
@@ -75,7 +74,7 @@ public class Keymaster {
         this.gatekeeper = gatekeeper;
         this.operationFactory = operationFactory;
         this.defaultRegistry = normalizeRegistry(defaultRegistry);
-        this.ephemeralRegistry = EPHEMERAL_REGISTRY;
+        this.ephemeralRegistry = this.defaultRegistry;
         this.walletManager = new KeymasterWalletManager(store, crypto, passphrase);
     }
 
@@ -457,7 +456,7 @@ public class Keymaster {
             name = wallet.current;
         }
         if (name == null || name.isBlank()) {
-            throw new IllegalStateException("no current id");
+            throw new IllegalStateException("Keymaster: No current ID");
         }
         IDInfo idInfo = fetchIdInfo(name, wallet);
         JwkPair keypair = hdKeyPair();
@@ -511,12 +510,12 @@ public class Keymaster {
                 throw new IllegalArgumentException("didDocumentData missing vault");
             }
 
-            MdipDocument vault = resolveAsset((String) vaultObj);
-            if (vault == null || vault.didDocumentData == null || !(vault.didDocumentData instanceof java.util.Map<?, ?>)) {
+            Object vaultObjData = resolveAsset((String) vaultObj);
+            if (!(vaultObjData instanceof java.util.Map<?, ?>)) {
                 throw new IllegalArgumentException("backup not found in vault");
             }
             @SuppressWarnings("unchecked")
-            java.util.Map<String, Object> vaultData = (java.util.Map<String, Object>) vault.didDocumentData;
+            java.util.Map<String, Object> vaultData = (java.util.Map<String, Object>) vaultObjData;
             Object backupObj = vaultData.get("backup");
             if (!(backupObj instanceof String)) {
                 throw new IllegalArgumentException("backup not found in vault");
@@ -673,19 +672,12 @@ public class Keymaster {
             }
 
             JwkPair keypair = hdKeyPair();
-            MdipDocument asset = resolveAsset(did);
-            if (asset == null || asset.didDocumentData == null) {
+            Object assetObj = resolveAsset(did);
+            if (!(assetObj instanceof java.util.Map<?, ?>)) {
                 throw new IllegalArgumentException("No asset data found");
             }
-
-            java.util.Map<String, Object> data;
-            if (asset.didDocumentData instanceof java.util.Map<?, ?>) {
-                @SuppressWarnings("unchecked")
-                java.util.Map<String, Object> map = (java.util.Map<String, Object>) asset.didDocumentData;
-                data = map;
-            } else {
-                throw new IllegalArgumentException("No asset data found");
-            }
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Object> data = (java.util.Map<String, Object>) assetObj;
 
             Object backupObj = data.get("backup");
             if (!(backupObj instanceof String)) {
@@ -792,6 +784,10 @@ public class Keymaster {
         return createAsset(data, registry, null, null);
     }
 
+    public String createAsset(Object data) {
+        return createAsset(data, defaultRegistry, null, null);
+    }
+
     public String createAsset(Object data, String registry, String controllerDid, String validUntil) {
         if (gatekeeper == null) {
             throw new IllegalStateException("gatekeeper not configured");
@@ -802,6 +798,7 @@ public class Keymaster {
         if (registry == null || registry.isBlank()) {
             throw new IllegalArgumentException("registry is required");
         }
+        validateValidUntil(validUntil);
 
         WalletFile wallet = loadWallet();
         IDInfo idInfo = controllerDid != null ? fetchIdInfo(controllerDid, wallet) : fetchIdInfo(null, wallet);
@@ -863,7 +860,7 @@ public class Keymaster {
             schema = defaultSchema();
         }
         if (!validateSchema(schema)) {
-            throw new IllegalArgumentException("schema is invalid");
+            throw new IllegalArgumentException("Invalid parameter: schema");
         }
         java.util.Map<String, Object> data = new java.util.HashMap<>();
         data.put("schema", schema);
@@ -912,11 +909,10 @@ public class Keymaster {
     }
 
     public Object getSchema(String did) {
-        MdipDocument doc = resolveAsset(did);
-        if (doc == null) {
-            return null;
+        if (did == null || did.isBlank()) {
+            throw new IllegalArgumentException("did is required");
         }
-        Object data = doc.didDocumentData;
+        Object data = resolveAsset(did);
         if (data instanceof java.util.Map<?, ?>) {
             @SuppressWarnings("unchecked")
             java.util.Map<String, Object> map = (java.util.Map<String, Object>) data;
@@ -933,7 +929,7 @@ public class Keymaster {
 
     public boolean setSchema(String did, Object schema) {
         if (!validateSchema(schema)) {
-            throw new IllegalArgumentException("schema is invalid");
+            throw new IllegalArgumentException("Invalid parameter: schema");
         }
         java.util.Map<String, Object> data = new java.util.HashMap<>();
         data.put("schema", schema);
@@ -959,7 +955,7 @@ public class Keymaster {
 
     public java.util.Map<String, Object> createTemplate(String schemaId) {
         if (!testSchema(schemaId)) {
-            throw new IllegalArgumentException("schemaId");
+            throw new IllegalArgumentException("Invalid parameter: schemaId");
         }
         Object schema = getSchema(schemaId);
         java.util.Map<String, Object> template = generateSchema(schema);
@@ -976,6 +972,10 @@ public class Keymaster {
             }
         }
         return schemas;
+    }
+
+    public java.util.List<String> listSchemas() {
+        return listSchemas(null);
     }
 
     public String cloneAsset(String id) {
@@ -1027,13 +1027,13 @@ public class Keymaster {
 
         Object result = resolveAsset(challengeDid);
         if (!(result instanceof java.util.Map<?, ?>)) {
-            throw new IllegalArgumentException("challengeDID");
+            throw new IllegalArgumentException("Invalid parameter: challengeDID");
         }
         @SuppressWarnings("unchecked")
         java.util.Map<String, Object> resultMap = (java.util.Map<String, Object>) result;
         Object challengeObj = resultMap.get("challenge");
         if (!(challengeObj instanceof java.util.Map<?, ?>)) {
-            throw new IllegalArgumentException("challengeDID");
+            throw new IllegalArgumentException("Invalid parameter: challengeDID");
         }
         @SuppressWarnings("unchecked")
         java.util.Map<String, Object> challenge = (java.util.Map<String, Object>) challengeObj;
@@ -1126,7 +1126,7 @@ public class Keymaster {
         java.util.Map<String, Object> resultMap = (java.util.Map<String, Object>) result;
         Object challengeObj = resultMap.get("challenge");
         if (!(challengeObj instanceof java.util.Map<?, ?>)) {
-            throw new IllegalArgumentException("challengeDID");
+            throw new IllegalArgumentException("Invalid parameter: challengeDID");
         }
         @SuppressWarnings("unchecked")
         java.util.Map<String, Object> challenge = (java.util.Map<String, Object>) challengeObj;
@@ -1313,7 +1313,7 @@ public class Keymaster {
             throw new IllegalArgumentException("credential.issuer");
         }
 
-        java.util.Map<String, Object> signed = addSignature(bound, null);
+        java.util.Map<String, Object> signed = addSignatureInternal(bound, null);
         Object subjectObj = signed.get("credentialSubject");
         if (!(subjectObj instanceof java.util.Map<?, ?>)) {
             throw new IllegalArgumentException("credential.credentialSubject.id");
@@ -1429,7 +1429,7 @@ public class Keymaster {
 
         java.util.Map<String, Object> unsigned = new java.util.LinkedHashMap<>(credential);
         unsigned.remove("signature");
-        java.util.Map<String, Object> signed = addSignature(unsigned, null);
+        java.util.Map<String, Object> signed = addSignatureInternal(unsigned, null);
 
         String msg;
         try {
@@ -1616,7 +1616,7 @@ public class Keymaster {
 
             MdipDocument doc = resolveDID(id.did);
             if (doc.didDocumentMetadata == null || !Boolean.TRUE.equals(doc.didDocumentMetadata.confirmed)) {
-                throw new IllegalStateException("Cannot rotate keys");
+                throw new IllegalStateException("Keymaster: Cannot rotate keys");
             }
             if (doc.didDocument == null || doc.didDocument.verificationMethod == null) {
                 throw new IllegalStateException("DID Document missing verificationMethod");
@@ -1773,12 +1773,31 @@ public class Keymaster {
         throw new IllegalArgumentException("unknown id");
     }
 
-    public MdipDocument resolveAsset(String did) {
-        MdipDocument doc = resolveDID(did);
-        if (doc == null || doc.mdip == null || !"asset".equals(doc.mdip.type)) {
-            throw new IllegalArgumentException("did is not an asset");
+    public Object resolveAsset(String did) {
+        try {
+            MdipDocument doc = resolveDID(did);
+            if (doc == null || doc.mdip == null || !"asset".equals(doc.mdip.type)) {
+                return new java.util.LinkedHashMap<String, Object>();
+            }
+            if (doc.didDocumentMetadata != null && Boolean.TRUE.equals(doc.didDocumentMetadata.deactivated)) {
+                return new java.util.LinkedHashMap<String, Object>();
+            }
+            if (doc.didDocument == null || doc.didDocument.controller == null || doc.didDocument.controller.isBlank()) {
+                return new java.util.LinkedHashMap<String, Object>();
+            }
+            if (doc.didDocumentData == null) {
+                return new java.util.LinkedHashMap<String, Object>();
+            }
+            return doc.didDocumentData;
+        } catch (IllegalArgumentException e) {
+            String msg = e.getMessage();
+            if ("unknown id".equals(msg) || "bad format".equals(msg) || "unknown".equals(msg)) {
+                throw e;
+            }
+            return new java.util.LinkedHashMap<String, Object>();
+        } catch (Exception e) {
+            return new java.util.LinkedHashMap<String, Object>();
         }
-        return doc;
     }
 
     public boolean updateAsset(String did, java.util.Map<String, Object> data) {
@@ -1797,7 +1816,13 @@ public class Keymaster {
             java.util.Map<String, Object> current = (java.util.Map<String, Object>) currentData;
             merged.putAll(current);
         }
-        merged.putAll(data);
+        for (java.util.Map.Entry<String, Object> entry : data.entrySet()) {
+            if (entry.getValue() == null) {
+                merged.remove(entry.getKey());
+            } else {
+                merged.put(entry.getKey(), entry.getValue());
+            }
+        }
         doc.didDocumentData = merged;
         return updateDID(doc);
     }
@@ -1810,7 +1835,8 @@ public class Keymaster {
             throw new IllegalArgumentException("controller did is required");
         }
 
-        MdipDocument assetDoc = resolveDID(assetDid);
+        String resolvedAssetDid = lookupDID(assetDid);
+        MdipDocument assetDoc = resolveDID(resolvedAssetDid);
         if (assetDoc.mdip == null || !"asset".equals(assetDoc.mdip.type)) {
             throw new IllegalArgumentException("asset did is not an asset");
         }
@@ -1822,21 +1848,22 @@ public class Keymaster {
         if (controllerDoc.mdip == null || !"agent".equals(controllerDoc.mdip.type)) {
             throw new IllegalArgumentException("controller did is not an agent");
         }
+        String resolvedControllerDid = controllerDoc.didDocument != null && controllerDoc.didDocument.id != null
+            ? controllerDoc.didDocument.id
+            : lookupDID(controllerDid);
 
         String prevOwner = assetDoc.didDocument.controller;
-        if (controllerDid.equals(prevOwner)) {
+        if (resolvedControllerDid.equals(prevOwner)) {
             return true;
         }
 
-        assetDoc.didDocument.controller = controllerDoc.didDocument != null
-            ? controllerDoc.didDocument.id
-            : controllerDid;
+        assetDoc.didDocument.controller = resolvedControllerDid;
 
         boolean ok = updateDID(assetDoc);
         if (ok && prevOwner != null) {
-            removeFromOwned(assetDid, prevOwner);
+            removeFromOwned(resolvedAssetDid, prevOwner);
             try {
-                addToOwned(assetDid, controllerDid);
+                addToOwned(resolvedAssetDid, resolvedControllerDid);
             } catch (IllegalArgumentException ignored) {
                 // controller not in wallet
             }
@@ -1848,6 +1875,10 @@ public class Keymaster {
     public java.util.List<String> listAssets(String ownerDid) {
         IDInfo idInfo = fetchIdInfo(ownerDid);
         return idInfo.owned != null ? idInfo.owned : java.util.Collections.emptyList();
+    }
+
+    public java.util.List<String> listAssets() {
+        return listAssets(null);
     }
 
     private static boolean validateSchema(Object schema) {
@@ -1912,7 +1943,18 @@ public class Keymaster {
         NOW_SUPPLIER = Instant::now;
     }
 
-    private java.util.Map<String, Object> addSignature(
+    public java.util.Map<String, Object> addSignature(java.util.Map<String, Object> obj) {
+        return addSignatureInternal(obj, null);
+    }
+
+    public java.util.Map<String, Object> addSignature(
+        java.util.Map<String, Object> obj,
+        String controllerDid
+    ) {
+        return addSignatureInternal(obj, controllerDid);
+    }
+
+    private java.util.Map<String, Object> addSignatureInternal(
         java.util.Map<String, Object> obj,
         String controllerDid
     ) {
@@ -1949,23 +1991,23 @@ public class Keymaster {
 
     private static String validateNameInternal(String name, WalletFile wallet) {
         if (name == null || name.trim().isEmpty()) {
-            throw new IllegalArgumentException("name must be a non-empty string");
+            throw new IllegalArgumentException("Invalid parameter: name must be a non-empty string");
         }
         String trimmed = name.trim();
         if (trimmed.length() > MAX_NAME_LENGTH) {
-            throw new IllegalArgumentException("name too long");
+            throw new IllegalArgumentException("Invalid parameter: name too long");
         }
         for (int i = 0; i < trimmed.length(); i += 1) {
             if (Character.isISOControl(trimmed.charAt(i))) {
-                throw new IllegalArgumentException("name contains unprintable characters");
+                throw new IllegalArgumentException("Invalid parameter: name contains unprintable characters");
             }
         }
         if (wallet != null) {
             if (wallet.names != null && wallet.names.containsKey(trimmed)) {
-                throw new IllegalArgumentException("name already used");
+                throw new IllegalArgumentException("Invalid parameter: name already used");
             }
             if (wallet.ids != null && wallet.ids.containsKey(trimmed)) {
-                throw new IllegalArgumentException("name already used");
+                throw new IllegalArgumentException("Invalid parameter: name already used");
             }
         }
         return trimmed;
@@ -2101,33 +2143,27 @@ public class Keymaster {
         try {
             return WalletJsonMapper.mapper().readValue(plaintext, Object.class);
         } catch (Exception e) {
-            throw new IllegalArgumentException("did not encrypted JSON");
+            throw new IllegalArgumentException("Invalid parameter: did not encrypted JSON");
         }
     }
 
     public String decryptMessage(String did) {
         WalletFile wallet = loadWallet();
         IDInfo id = fetchIdInfo(null, wallet);
-        MdipDocument asset = resolveAsset(did);
-
-        if (asset == null || asset.didDocumentData == null) {
-            throw new IllegalArgumentException("did not encrypted");
+        Object assetObj = resolveAsset(did);
+        if (!(assetObj instanceof java.util.Map<?, ?>)) {
+            throw new IllegalArgumentException("Invalid parameter: did not encrypted");
         }
-
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> data = (java.util.Map<String, Object>) assetObj;
+        Object nested = data.get("encrypted");
         java.util.Map<String, Object> encrypted;
-        if (asset.didDocumentData instanceof java.util.Map<?, ?>) {
+        if (nested instanceof java.util.Map<?, ?>) {
             @SuppressWarnings("unchecked")
-            java.util.Map<String, Object> data = (java.util.Map<String, Object>) asset.didDocumentData;
-            Object nested = data.get("encrypted");
-            if (nested instanceof java.util.Map<?, ?>) {
-                @SuppressWarnings("unchecked")
-                java.util.Map<String, Object> nestedMap = (java.util.Map<String, Object>) nested;
-                encrypted = nestedMap;
-            } else {
-                encrypted = data;
-            }
+            java.util.Map<String, Object> nestedMap = (java.util.Map<String, Object>) nested;
+            encrypted = nestedMap;
         } else {
-            throw new IllegalArgumentException("did not encrypted");
+            encrypted = data;
         }
 
         Object senderObj = encrypted.get("sender");
@@ -2135,14 +2171,14 @@ public class Keymaster {
         Object senderCipherObj = encrypted.get("cipher_sender");
         Object receiverCipherObj = encrypted.get("cipher_receiver");
         if (!(senderObj instanceof String) || !(createdObj instanceof String)) {
-            throw new IllegalArgumentException("did not encrypted");
+            throw new IllegalArgumentException("Invalid parameter: did not encrypted");
         }
         String senderDid = (String) senderObj;
         String created = (String) createdObj;
         String cipherSender = senderCipherObj instanceof String ? (String) senderCipherObj : null;
         String cipherReceiver = receiverCipherObj instanceof String ? (String) receiverCipherObj : null;
         if (cipherSender == null && cipherReceiver == null) {
-            throw new IllegalArgumentException("did not encrypted");
+            throw new IllegalArgumentException("Invalid parameter: did not encrypted");
         }
 
         ResolveDIDOptions options = new ResolveDIDOptions();
@@ -2159,7 +2195,7 @@ public class Keymaster {
 
         String ciphertext = senderDid.equals(id.did) && cipherSender != null ? cipherSender : cipherReceiver;
         if (ciphertext == null) {
-            throw new IllegalArgumentException("did not encrypted");
+            throw new IllegalArgumentException("Invalid parameter: did not encrypted");
         }
         return decryptWithDerivedKeys(wallet, id, senderCrypto, ciphertext);
     }
@@ -2256,10 +2292,10 @@ public class Keymaster {
         mutateWallet(wallet -> {
             try {
                 IDInfo idInfo = fetchIdInfo(ownerDid, wallet);
-                ownerFound[0] = true;
                 if (idInfo.owned == null) {
                     return;
                 }
+                ownerFound[0] = true;
                 idInfo.owned.removeIf(item -> did.equals(item));
             } catch (IllegalArgumentException ignored) {
                 ownerFound[0] = false;
@@ -2290,7 +2326,7 @@ public class Keymaster {
         IDInfo idInfo = null;
         if (nameOrDid == null || nameOrDid.isBlank()) {
             if (currentWallet.current == null || currentWallet.current.isBlank()) {
-                throw new IllegalStateException("no current id");
+                throw new IllegalStateException("Keymaster: No current ID");
             }
             idInfo = currentWallet.ids != null ? currentWallet.ids.get(currentWallet.current) : null;
         } else if (nameOrDid.startsWith("did")) {
@@ -2353,6 +2389,20 @@ public class Keymaster {
         MdipDocument current = resolveDID(did);
         String previd = current != null && current.didDocumentMetadata != null ? current.didDocumentMetadata.versionId : null;
         String registry = current != null && current.mdip != null ? current.mdip.registry : null;
+
+        if (current != null) {
+            MdipDocument currentCopy = WalletJsonMapper.mapper().convertValue(current, MdipDocument.class);
+            MdipDocument docCopy = WalletJsonMapper.mapper().convertValue(doc, MdipDocument.class);
+            currentCopy.didDocumentMetadata = null;
+            currentCopy.didResolutionMetadata = null;
+            docCopy.didDocumentMetadata = null;
+            docCopy.didResolutionMetadata = null;
+            String currentHash = crypto.hashJson(currentCopy);
+            String updateHash = crypto.hashJson(docCopy);
+            if (currentHash.equals(updateHash)) {
+                return true;
+            }
+        }
 
         BlockInfo block = gatekeeper.getBlock(registry);
         String blockid = block != null ? block.hash : null;
@@ -2440,7 +2490,7 @@ public class Keymaster {
             throw new IllegalStateException("wallet not loaded");
         }
         if (wallet.current == null || wallet.current.isBlank()) {
-            throw new IllegalStateException("no current id");
+            throw new IllegalStateException("Keymaster: No current ID");
         }
         if (wallet.ids == null || !wallet.ids.containsKey(wallet.current)) {
             throw new IllegalStateException("current id not found in wallet");
@@ -2484,6 +2534,26 @@ public class Keymaster {
         return suffix1.equals(suffix2);
     }
 
+    private void validateValidUntil(String validUntil) {
+        if (validUntil == null) {
+            return;
+        }
+        if (validUntil.isBlank()) {
+            throw new IllegalArgumentException("options.validUntil");
+        }
+        try {
+            Instant.parse(validUntil);
+            return;
+        } catch (java.time.format.DateTimeParseException ignored) {
+            // fall through
+        }
+        try {
+            java.time.LocalDate.parse(validUntil);
+        } catch (java.time.format.DateTimeParseException ignored) {
+            throw new IllegalArgumentException("options.validUntil");
+        }
+    }
+
     private static boolean isValidDID(String did) {
         if (did == null || !did.startsWith("did:")) {
             return false;
@@ -2501,15 +2571,25 @@ public class Keymaster {
 
     public EcdsaJwkPublic getPublicKeyJwk(MdipDocument doc) {
         if (doc == null || doc.didDocument == null || doc.didDocument.verificationMethod == null) {
-            throw new IllegalArgumentException("didDocument missing verificationMethod");
+            throw new IllegalArgumentException("Missing didDocument.");
         }
         if (doc.didDocument.verificationMethod.isEmpty()) {
-            throw new IllegalArgumentException("didDocument missing verificationMethod");
+            throw new IllegalArgumentException("The DID document does not contain any verification methods.");
         }
         EcdsaJwkPublic publicKeyJwk = doc.didDocument.verificationMethod.get(0).publicKeyJwk;
         if (publicKeyJwk == null) {
-            throw new IllegalArgumentException("didDocument missing publicKeyJwk");
+            throw new IllegalArgumentException("The publicKeyJwk is missing in the first verification method.");
         }
         return publicKeyJwk;
+    }
+
+    public String getAgentDID(MdipDocument doc) {
+        if (doc == null || doc.mdip == null || !"agent".equals(doc.mdip.type)) {
+            throw new IllegalArgumentException("Document is not an agent");
+        }
+        if (doc.didDocument == null || doc.didDocument.id == null || doc.didDocument.id.isBlank()) {
+            throw new IllegalArgumentException("Agent document does not have a DID");
+        }
+        return doc.didDocument.id;
     }
 }

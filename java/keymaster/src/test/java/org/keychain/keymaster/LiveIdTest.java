@@ -69,7 +69,7 @@ class LiveIdTest {
     void createIdUnicodeName() {
         Keymaster keymaster = liveKeymaster();
 
-        String name = "unicode-name";
+        String name = "ҽ× ʍɑϲհíղɑ";
         String did = keymaster.createId(name);
         WalletFile wallet = keymaster.loadWallet();
 
