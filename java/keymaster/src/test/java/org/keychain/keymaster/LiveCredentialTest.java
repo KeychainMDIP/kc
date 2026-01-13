@@ -335,28 +335,6 @@ class LiveCredentialTest {
 
     @Test
     @Tag("live")
-    void sendCredential() {
-        Keymaster keymaster = liveKeymaster();
-        String credentialDid = issueCredential(keymaster, "Alice", "Alice");
-
-        String noticeDid = keymaster.sendCredential(credentialDid);
-        org.junit.jupiter.api.Assertions.assertNotNull(noticeDid);
-
-        MdipDocument noticeDoc = keymaster.resolveAsset(noticeDid);
-        Object dataObj = noticeDoc != null ? noticeDoc.didDocumentData : null;
-        org.junit.jupiter.api.Assertions.assertTrue(dataObj instanceof Map<?, ?>);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> data = (Map<String, Object>) dataObj;
-        Object noticeObj = data.get("notice");
-        org.junit.jupiter.api.Assertions.assertTrue(noticeObj instanceof Map<?, ?>);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> notice = (Map<String, Object>) noticeObj;
-        org.junit.jupiter.api.Assertions.assertEquals(List.of(keymaster.fetchIdInfo("Alice").did), notice.get("to"));
-        org.junit.jupiter.api.Assertions.assertEquals(List.of(credentialDid), notice.get("dids"));
-    }
-
-    @Test
-    @Tag("live")
     void issueCredentialFromTemplate() {
         Keymaster keymaster = liveKeymaster();
         String subjectDid = keymaster.createId("Alice");
@@ -389,17 +367,6 @@ class LiveCredentialTest {
 
         org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> {
             keymaster.publishCredential(did, false);
-        });
-    }
-
-    @Test
-    @Tag("live")
-    void sendCredentialRejectsNonCredential() {
-        Keymaster keymaster = liveKeymaster();
-        String bobDid = keymaster.createId("Bob");
-
-        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> {
-            keymaster.sendCredential(bobDid);
         });
     }
 

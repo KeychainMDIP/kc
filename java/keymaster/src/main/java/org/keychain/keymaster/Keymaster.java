@@ -6,9 +6,6 @@ import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
-import java.time.Instant;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
 import org.bitcoinj.crypto.DeterministicKey;
 import org.keychain.cid.Cid;
 import org.keychain.crypto.HdKeyUtil;
@@ -40,6 +37,7 @@ public class Keymaster {
     private static final DateTimeFormatter ISO_MILLIS =
         DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC);
     private static final String DEFAULT_REGISTRY = "hyperswarm";
+    private static final String EPHEMERAL_REGISTRY = "hyperswarm";
     private static final String EPOCH_ISO = ISO_MILLIS.format(Instant.EPOCH);
     private static final int MAX_NAME_LENGTH = 32;
     private static Supplier<Instant> NOW_SUPPLIER = Instant::now;
@@ -49,6 +47,7 @@ public class Keymaster {
     private final GatekeeperClient gatekeeper;
     private final OperationFactory operationFactory;
     private final String defaultRegistry;
+    private final String ephemeralRegistry;
 
     public Keymaster(
         WalletStore<WalletEncFile> store,
@@ -76,6 +75,7 @@ public class Keymaster {
         this.gatekeeper = gatekeeper;
         this.operationFactory = operationFactory;
         this.defaultRegistry = normalizeRegistry(defaultRegistry);
+        this.ephemeralRegistry = EPHEMERAL_REGISTRY;
         this.walletManager = new KeymasterWalletManager(store, crypto, passphrase);
     }
 
@@ -840,6 +840,20 @@ public class Keymaster {
         return did;
     }
 
+    public String createAsset(Object data, CreateAssetOptions options) {
+        if (options == null) {
+            return createAsset(data, defaultRegistry, null, null);
+        }
+        String registry = options.registry != null ? options.registry : defaultRegistry;
+        String validUntil = options.validUntil;
+        String controller = options.controller;
+        String did = createAsset(data, registry, controller, validUntil);
+        if (options.name != null && !options.name.isBlank()) {
+            addName(options.name, did);
+        }
+        return did;
+    }
+
     public String createSchema(String registry) {
         return createSchema(null, registry);
     }
@@ -858,6 +872,39 @@ public class Keymaster {
 
     public String createSchema(Object schema) {
         return createSchema(schema, defaultRegistry);
+    }
+
+    public String createChallenge() {
+        return createChallenge(new java.util.LinkedHashMap<>(), null);
+    }
+
+    public String createChallenge(java.util.Map<String, Object> challenge) {
+        return createChallenge(challenge, null);
+    }
+
+    public String createChallenge(java.util.Map<String, Object> challenge, CreateAssetOptions options) {
+        if (challenge == null) {
+            throw new IllegalArgumentException("challenge");
+        }
+        if (challenge instanceof java.util.List<?>) {
+            throw new IllegalArgumentException("challenge");
+        }
+        Object credentialsObj = challenge.get("credentials");
+        if (credentialsObj != null && !(credentialsObj instanceof java.util.List<?>)) {
+            throw new IllegalArgumentException("challenge.credentials");
+        }
+
+        CreateAssetOptions effective = options != null ? options : new CreateAssetOptions();
+        if (effective.registry == null || effective.registry.isBlank()) {
+            effective.registry = ephemeralRegistry;
+        }
+        if (effective.validUntil == null) {
+            effective.validUntil = ISO_MILLIS.format(Instant.now().plusSeconds(3600));
+        }
+
+        java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("challenge", challenge);
+        return createAsset(payload, effective);
     }
 
     public Object getSchema(String did) {
@@ -925,6 +972,261 @@ public class Keymaster {
             }
         }
         return schemas;
+    }
+
+    public String cloneAsset(String id) {
+        return cloneAsset(id, null, null);
+    }
+
+    public String cloneAsset(String id, String registry, String controller) {
+        MdipDocument assetDoc = resolveDID(id);
+        if (assetDoc == null || assetDoc.mdip == null || !"asset".equals(assetDoc.mdip.type)) {
+            throw new IllegalArgumentException("id");
+        }
+
+        java.util.Map<String, Object> assetData = new java.util.LinkedHashMap<>();
+        if (assetDoc.didDocumentData instanceof java.util.Map<?, ?>) {
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Object> data = (java.util.Map<String, Object>) assetDoc.didDocumentData;
+            assetData.putAll(data);
+        }
+        assetData.put("cloned", assetDoc.didDocument != null ? assetDoc.didDocument.id : null);
+
+        String targetRegistry = registry;
+        if (targetRegistry == null || targetRegistry.isBlank()) {
+            targetRegistry = assetDoc.mdip != null ? assetDoc.mdip.registry : defaultRegistry;
+        }
+
+        return createAsset(assetData, targetRegistry, controller, null);
+    }
+
+    public String createResponse(String challengeDid) {
+        return createResponse(challengeDid, null);
+    }
+
+    public String createResponse(String challengeDid, CreateResponseOptions options) {
+        CreateResponseOptions effective = options != null ? options : new CreateResponseOptions();
+        int retries = effective.retries != null ? effective.retries : 0;
+        int delay = effective.delay != null ? effective.delay : 1000;
+
+        if (effective.registry == null || effective.registry.isBlank()) {
+            effective.registry = ephemeralRegistry;
+        }
+        if (effective.validUntil == null) {
+            effective.validUntil = ISO_MILLIS.format(Instant.now().plusSeconds(3600));
+        }
+
+        MdipDocument doc = resolveWithRetries(challengeDid, retries, delay);
+        if (doc == null) {
+            throw new IllegalArgumentException("challengeDID does not resolve");
+        }
+
+        Object result = resolveAsset(challengeDid);
+        if (!(result instanceof java.util.Map<?, ?>)) {
+            throw new IllegalArgumentException("challengeDID");
+        }
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> resultMap = (java.util.Map<String, Object>) result;
+        Object challengeObj = resultMap.get("challenge");
+        if (!(challengeObj instanceof java.util.Map<?, ?>)) {
+            throw new IllegalArgumentException("challengeDID");
+        }
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> challenge = (java.util.Map<String, Object>) challengeObj;
+
+        String requestor = doc.didDocument != null ? doc.didDocument.controller : null;
+        if (requestor == null || requestor.isBlank()) {
+            throw new IllegalArgumentException("requestor undefined");
+        }
+
+        java.util.List<String> matches = new java.util.ArrayList<>();
+        Object credentialsObj = challenge.get("credentials");
+        if (credentialsObj instanceof java.util.List<?>) {
+            @SuppressWarnings("unchecked")
+            java.util.List<Object> credentials = (java.util.List<Object>) credentialsObj;
+            for (Object item : credentials) {
+                if (!(item instanceof java.util.Map<?, ?>)) {
+                    continue;
+                }
+                @SuppressWarnings("unchecked")
+                java.util.Map<String, Object> spec = (java.util.Map<String, Object>) item;
+                String match = findMatchingCredential(spec);
+                if (match != null) {
+                    matches.add(match);
+                }
+            }
+        }
+
+        java.util.List<java.util.Map<String, Object>> pairs = new java.util.ArrayList<>();
+        for (String vcDid : matches) {
+            String plaintext = decryptMessage(vcDid);
+            String vpDid = encryptMessage(plaintext, requestor, true, effective.registry, effective.validUntil);
+            java.util.Map<String, Object> pair = new java.util.LinkedHashMap<>();
+            pair.put("vc", vcDid);
+            pair.put("vp", vpDid);
+            pairs.add(pair);
+        }
+
+        int requested = credentialsObj instanceof java.util.List<?> ? ((java.util.List<?>) credentialsObj).size() : 0;
+        int fulfilled = matches.size();
+        boolean match = requested == fulfilled;
+
+        java.util.Map<String, Object> response = new java.util.LinkedHashMap<>();
+        response.put("challenge", challengeDid);
+        response.put("credentials", pairs);
+        response.put("requested", requested);
+        response.put("fulfilled", fulfilled);
+        response.put("match", match);
+
+        java.util.Map<String, Object> wrapper = new java.util.LinkedHashMap<>();
+        wrapper.put("response", response);
+        return encryptJsonInternal(wrapper, requestor, false, effective.registry, effective.validUntil);
+    }
+
+    public java.util.Map<String, Object> verifyResponse(String responseDid) {
+        return verifyResponse(responseDid, null);
+    }
+
+    public java.util.Map<String, Object> verifyResponse(String responseDid, CreateResponseOptions options) {
+        CreateResponseOptions effective = options != null ? options : new CreateResponseOptions();
+        int retries = effective.retries != null ? effective.retries : 0;
+        int delay = effective.delay != null ? effective.delay : 1000;
+
+        MdipDocument responseDoc = resolveWithRetries(responseDid, retries, delay);
+        if (responseDoc == null) {
+            throw new IllegalArgumentException("responseDID does not resolve");
+        }
+
+        Object wrapperObj = decryptJSON(responseDid);
+        if (!(wrapperObj instanceof java.util.Map<?, ?>)) {
+            throw new IllegalArgumentException("responseDID not a valid challenge response");
+        }
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> wrapper = (java.util.Map<String, Object>) wrapperObj;
+        Object responseObj = wrapper.get("response");
+        if (!(responseObj instanceof java.util.Map<?, ?>)) {
+            throw new IllegalArgumentException("responseDID not a valid challenge response");
+        }
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> response = (java.util.Map<String, Object>) responseObj;
+
+        Object challengeDidObj = response.get("challenge");
+        if (!(challengeDidObj instanceof String)) {
+            throw new IllegalArgumentException("challenge not found");
+        }
+        Object result = resolveAsset((String) challengeDidObj);
+        if (!(result instanceof java.util.Map<?, ?>)) {
+            throw new IllegalArgumentException("challenge not found");
+        }
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> resultMap = (java.util.Map<String, Object>) result;
+        Object challengeObj = resultMap.get("challenge");
+        if (!(challengeObj instanceof java.util.Map<?, ?>)) {
+            throw new IllegalArgumentException("challengeDID");
+        }
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> challenge = (java.util.Map<String, Object>) challengeObj;
+
+        java.util.List<java.util.Map<String, Object>> vps = new java.util.ArrayList<>();
+        Object credentialsObj = response.get("credentials");
+        if (credentialsObj instanceof java.util.List<?>) {
+            for (Object entry : (java.util.List<?>) credentialsObj) {
+                if (!(entry instanceof java.util.Map<?, ?>)) {
+                    continue;
+                }
+                @SuppressWarnings("unchecked")
+                java.util.Map<String, Object> pair = (java.util.Map<String, Object>) entry;
+                Object vcObj = pair.get("vc");
+                Object vpObj = pair.get("vp");
+                if (!(vcObj instanceof String) || !(vpObj instanceof String)) {
+                    continue;
+                }
+
+                Object vcData = resolveAsset((String) vcObj);
+                Object vpData = resolveAsset((String) vpObj);
+                if (!(vcData instanceof java.util.Map<?, ?>) || !(vpData instanceof java.util.Map<?, ?>)) {
+                    continue;
+                }
+
+                @SuppressWarnings("unchecked")
+                java.util.Map<String, Object> vcDataMap = (java.util.Map<String, Object>) vcData;
+                @SuppressWarnings("unchecked")
+                java.util.Map<String, Object> vpDataMap = (java.util.Map<String, Object>) vpData;
+                Object vcEncryptedObj = vcDataMap.get("encrypted");
+                Object vpEncryptedObj = vpDataMap.get("encrypted");
+                if (!(vcEncryptedObj instanceof java.util.Map<?, ?>) || !(vpEncryptedObj instanceof java.util.Map<?, ?>)) {
+                    continue;
+                }
+                @SuppressWarnings("unchecked")
+                java.util.Map<String, Object> vcEncrypted = (java.util.Map<String, Object>) vcEncryptedObj;
+                @SuppressWarnings("unchecked")
+                java.util.Map<String, Object> vpEncrypted = (java.util.Map<String, Object>) vpEncryptedObj;
+                Object vcHash = vcEncrypted.get("cipher_hash");
+                Object vpHash = vpEncrypted.get("cipher_hash");
+                if (vcHash == null || vpHash == null || !vcHash.equals(vpHash)) {
+                    continue;
+                }
+
+                Object vpPlain = decryptJSON((String) vpObj);
+                if (!(vpPlain instanceof java.util.Map<?, ?>)) {
+                    continue;
+                }
+                @SuppressWarnings("unchecked")
+                java.util.Map<String, Object> vp = (java.util.Map<String, Object>) vpPlain;
+                if (!verifySignature(vp)) {
+                    continue;
+                }
+
+                Object typesObj = vp.get("type");
+                if (!(typesObj instanceof java.util.List<?>)) {
+                    continue;
+                }
+
+                if (((java.util.List<?>) typesObj).size() >= 2) {
+                    Object schemaObj = ((java.util.List<?>) typesObj).get(1);
+                    if (schemaObj instanceof String) {
+                        String schema = (String) schemaObj;
+                        Object challengeCredentialsObj = challenge.get("credentials");
+                        if (challengeCredentialsObj instanceof java.util.List<?>) {
+                            java.util.Map<String, Object> matchSpec = null;
+                            for (Object specObj : (java.util.List<?>) challengeCredentialsObj) {
+                                if (specObj instanceof java.util.Map<?, ?>) {
+                                    @SuppressWarnings("unchecked")
+                                    java.util.Map<String, Object> spec = (java.util.Map<String, Object>) specObj;
+                                    if (schema.equals(spec.get("schema"))) {
+                                        matchSpec = spec;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (matchSpec != null) {
+                                Object issuersObj = matchSpec.get("issuers");
+                                if (issuersObj instanceof java.util.List<?>) {
+                                    Object issuerObj = vp.get("issuer");
+                                    if (issuerObj instanceof String) {
+                                        if (!((java.util.List<?>) issuersObj).contains(issuerObj)) {
+                                            continue;
+                                        }
+                                    }
+                                }
+                            } else {
+                                continue;
+                            }
+                        }
+                    }
+                }
+
+                vps.add(vp);
+            }
+        }
+
+        response.put("vps", vps);
+        Object challengeCredentialsObj = challenge.get("credentials");
+        int requested = challengeCredentialsObj instanceof java.util.List<?> ? ((java.util.List<?>) challengeCredentialsObj).size() : 0;
+        response.put("match", vps.size() == requested);
+        response.put("responder", responseDoc.didDocument != null ? responseDoc.didDocument.controller : null);
+
+        return response;
     }
 
     public java.util.Map<String, Object> bindCredential(String schemaId, String subjectId) {
@@ -1023,30 +1325,6 @@ public class Keymaster {
         return encryptJsonInternal(signed, (String) subjectId, true);
     }
 
-    public String sendCredential(String did) {
-        java.util.Map<String, Object> vc = getCredential(did);
-        if (vc == null) {
-            return null;
-        }
-
-        Object subjectObj = vc.get("credentialSubject");
-        if (!(subjectObj instanceof java.util.Map<?, ?>)) {
-            throw new IllegalArgumentException("credential.credentialSubject.id");
-        }
-        @SuppressWarnings("unchecked")
-        java.util.Map<String, Object> subject = (java.util.Map<String, Object>) subjectObj;
-        Object subjectId = subject.get("id");
-        if (!(subjectId instanceof String) || ((String) subjectId).isBlank()) {
-            throw new IllegalArgumentException("credential.credentialSubject.id");
-        }
-
-        String validUntil = ISO_MILLIS.format(Instant.now().plusSeconds(7 * 24 * 60 * 60));
-        java.util.Map<String, Object> notice = new java.util.LinkedHashMap<>();
-        notice.put("to", java.util.List.of(subjectId));
-        notice.put("dids", java.util.List.of(did));
-        return createNotice(notice, defaultRegistry, validUntil);
-    }
-
     public java.util.Map<String, Object> getCredential(String id) {
         if (id == null || id.isBlank()) {
             throw new IllegalArgumentException("id is required");
@@ -1059,109 +1337,6 @@ public class Keymaster {
         @SuppressWarnings("unchecked")
         java.util.Map<String, Object> map = (java.util.Map<String, Object>) vc;
         return map;
-    }
-
-    public java.util.List<String> verifyRecipientList(java.util.List<?> list) {
-        if (list == null) {
-            throw new IllegalArgumentException("list");
-        }
-
-        java.util.List<String> newList = new java.util.ArrayList<>();
-        for (Object obj : list) {
-            if (!(obj instanceof String)) {
-                String type = obj == null ? "null" : obj.getClass().getSimpleName();
-                throw new IllegalArgumentException("Invalid recipient type: " + type);
-            }
-
-            String id = (String) obj;
-            String did = id;
-
-            if (!isValidDID(id)) {
-                try {
-                    did = lookupDID(id);
-                } catch (IllegalArgumentException e) {
-                    throw new IllegalArgumentException("Invalid recipient: " + id);
-                }
-            }
-
-            if (!isValidDID(did)) {
-                throw new IllegalArgumentException("Invalid recipient: " + id);
-            }
-
-            if (gatekeeper != null) {
-                MdipDocument doc = resolveDID(did);
-                if (doc == null || doc.mdip == null || !"agent".equals(doc.mdip.type)) {
-                    throw new IllegalArgumentException("Invalid recipient: " + id);
-                }
-            }
-
-            newList.add(did);
-        }
-
-        return newList;
-    }
-
-    public java.util.List<String> verifyDIDList(java.util.List<?> didList) {
-        if (didList == null) {
-            throw new IllegalArgumentException("didList");
-        }
-
-        java.util.List<String> verified = new java.util.ArrayList<>();
-        for (Object obj : didList) {
-            if (!(obj instanceof String)) {
-                throw new IllegalArgumentException("Invalid DID: " + obj);
-            }
-
-            String did = (String) obj;
-            if (!isValidDID(did)) {
-                throw new IllegalArgumentException("Invalid DID: " + did);
-            }
-            verified.add(did);
-        }
-
-        return verified;
-    }
-
-    public java.util.Map<String, Object> verifyNotice(java.util.Map<String, Object> notice) {
-        if (notice == null) {
-            throw new IllegalArgumentException("notice");
-        }
-
-        Object toObj = notice.get("to");
-        Object didsObj = notice.get("dids");
-        java.util.List<String> to = verifyRecipientList(toObj instanceof java.util.List<?> ? (java.util.List<?>) toObj : null);
-        java.util.List<String> dids = verifyDIDList(didsObj instanceof java.util.List<?> ? (java.util.List<?>) didsObj : null);
-
-        if (to.isEmpty()) {
-            throw new IllegalArgumentException("notice.to");
-        }
-        if (dids.isEmpty()) {
-            throw new IllegalArgumentException("notice.dids");
-        }
-
-        java.util.Map<String, Object> verified = new java.util.LinkedHashMap<>();
-        verified.put("to", to);
-        verified.put("dids", dids);
-        return verified;
-    }
-
-    public String createNotice(java.util.Map<String, Object> message) {
-        return createNotice(message, defaultRegistry, null);
-    }
-
-    public String createNotice(java.util.Map<String, Object> message, String registry, String validUntil) {
-        java.util.Map<String, Object> notice = verifyNotice(message);
-        java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
-        payload.put("notice", notice);
-        String targetRegistry = registry == null || registry.isBlank() ? defaultRegistry : registry;
-        return createAsset(payload, targetRegistry, null, validUntil);
-    }
-
-    public boolean updateNotice(String id, java.util.Map<String, Object> message) {
-        java.util.Map<String, Object> notice = verifyNotice(message);
-        java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
-        payload.put("notice", notice);
-        return updateAsset(id, payload);
     }
 
     public boolean removeCredential(String id) {
@@ -1415,6 +1590,40 @@ public class Keymaster {
         return doc != null && doc.mdip != null && "agent".equals(doc.mdip.type);
     }
 
+    public boolean rotateKeys() {
+        final boolean[] ok = {false};
+        mutateWallet(wallet -> {
+            IDInfo id = getCurrentIdInfo(wallet);
+            int nextIndex = id.index + 1;
+
+            DeterministicKey master = walletManager.getHdKeyFromCacheOrMnemonic(wallet);
+            DeterministicKey derived = HdKeyUtil.derivePath(master, id.account, nextIndex);
+            JwkPair keypair = crypto.generateJwk(HdKeyUtil.privateKeyBytes(derived));
+
+            MdipDocument doc = resolveDID(id.did);
+            if (doc.didDocumentMetadata == null || !Boolean.TRUE.equals(doc.didDocumentMetadata.confirmed)) {
+                throw new IllegalStateException("Cannot rotate keys");
+            }
+            if (doc.didDocument == null || doc.didDocument.verificationMethod == null) {
+                throw new IllegalStateException("DID Document missing verificationMethod");
+            }
+
+            MdipDocument.VerificationMethod method = doc.didDocument.verificationMethod.get(0);
+            method.id = "#key-" + (nextIndex + 1);
+            method.publicKeyJwk = JwkConverter.toEcdsaJwkPublic(keypair.publicJwk);
+            doc.didDocument.authentication = java.util.List.of(method.id);
+
+            ok[0] = updateDID(doc);
+            if (!ok[0]) {
+                throw new IllegalStateException("Cannot rotate keys");
+            }
+
+            id.index = nextIndex;
+        });
+
+        return ok[0];
+    }
+
     public boolean verifySignature(java.util.Map<String, Object> obj) {
         if (obj == null) {
             return false;
@@ -1459,6 +1668,76 @@ public class Keymaster {
         } catch (Exception e) {
             return false;
         }
+    }
+
+    private MdipDocument resolveWithRetries(String did, int retries, int delayMs) {
+        while (retries >= 0) {
+            try {
+                return resolveDID(did);
+            } catch (Exception e) {
+                if (retries == 0) {
+                    throw e;
+                }
+                retries -= 1;
+                try {
+                    Thread.sleep(delayMs);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("interrupted");
+                }
+            }
+        }
+        return null;
+    }
+
+    private String findMatchingCredential(java.util.Map<String, Object> credential) {
+        IDInfo id = fetchIdInfo(null);
+        if (id.held == null) {
+            return null;
+        }
+
+        for (String did : id.held) {
+            try {
+                Object docObj = decryptJSON(did);
+                if (!isVerifiableCredential(docObj)) {
+                    continue;
+                }
+                @SuppressWarnings("unchecked")
+                java.util.Map<String, Object> doc = (java.util.Map<String, Object>) docObj;
+                Object subjectObj = doc.get("credentialSubject");
+                if (!(subjectObj instanceof java.util.Map<?, ?>)) {
+                    continue;
+                }
+                @SuppressWarnings("unchecked")
+                java.util.Map<String, Object> subject = (java.util.Map<String, Object>) subjectObj;
+                Object subjectId = subject.get("id");
+                if (!(subjectId instanceof String) || !id.did.equals(subjectId)) {
+                    continue;
+                }
+
+                Object issuersObj = credential.get("issuers");
+                if (issuersObj instanceof java.util.List<?>) {
+                    Object issuerObj = doc.get("issuer");
+                    if (issuerObj instanceof String && !((java.util.List<?>) issuersObj).contains(issuerObj)) {
+                        continue;
+                    }
+                }
+
+                Object schemaObj = credential.get("schema");
+                Object typeObj = doc.get("type");
+                if (schemaObj instanceof String && typeObj instanceof java.util.List<?>) {
+                    if (!((java.util.List<?>) typeObj).contains(schemaObj)) {
+                        continue;
+                    }
+                }
+
+                return did;
+            } catch (Exception ignored) {
+                // Not encrypted or not a VC.
+            }
+        }
+
+        return null;
     }
 
     public String lookupDID(String nameOrDid) {
@@ -1721,13 +2000,23 @@ public class Keymaster {
     }
 
     private String encryptJsonInternal(Object json, String receiverDid, boolean includeHash) {
+        return encryptJsonInternal(json, receiverDid, includeHash, null, null);
+    }
+
+    private String encryptJsonInternal(
+        Object json,
+        String receiverDid,
+        boolean includeHash,
+        String registry,
+        String validUntil
+    ) {
         String plaintext;
         try {
             plaintext = WalletJsonMapper.mapper().writeValueAsString(json);
         } catch (Exception e) {
             throw new IllegalArgumentException("json");
         }
-        return encryptMessage(plaintext, receiverDid, includeHash);
+        return encryptMessage(plaintext, receiverDid, includeHash, registry, validUntil);
     }
 
     public String encryptMessage(String msg, String receiverDid) {
@@ -1735,6 +2024,16 @@ public class Keymaster {
     }
 
     public String encryptMessage(String msg, String receiverDid, boolean includeHash) {
+        return encryptMessage(msg, receiverDid, includeHash, null, null);
+    }
+
+    private String encryptMessage(
+        String msg,
+        String receiverDid,
+        boolean includeHash,
+        String registry,
+        String validUntil
+    ) {
         if (receiverDid == null || receiverDid.isBlank()) {
             throw new IllegalArgumentException("receiver did is required");
         }
@@ -1771,7 +2070,8 @@ public class Keymaster {
 
         java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
         payload.put("encrypted", encrypted);
-        return createAsset(payload, defaultRegistry);
+        String targetRegistry = registry == null || registry.isBlank() ? defaultRegistry : registry;
+        return createAsset(payload, targetRegistry, null, validUntil);
     }
 
     public String encryptJSON(Object json, String receiverDid) {
