@@ -181,8 +181,7 @@ class LiveResponseTest {
         keymaster.acceptCredential(vc1);
 
         keymaster.setCurrentId("Alice");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> credential2 = (Map<String, Object>) keymaster.getCredential(vc1);
+        Map<String, Object> credential2 = keymaster.getCredential(vc1);
         @SuppressWarnings("unchecked")
         Map<String, Object> updated = (Map<String, Object>) credential2.get("credential");
         updated.put("email", "updated@email.com");

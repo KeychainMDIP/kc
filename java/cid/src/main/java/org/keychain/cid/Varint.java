@@ -44,10 +44,6 @@ public final class Varint {
         throw new IllegalArgumentException("varint overflow");
     }
 
-    public static Decoded decodeUnsigned(byte[] input) {
-        return decodeUnsigned(input, 0);
-    }
-
     public static final class Decoded {
         public final long value;
         public final int length;

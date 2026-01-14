@@ -1,6 +1,7 @@
 package org.keychain.keymaster;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -130,7 +131,7 @@ class LiveNameTest {
         keymaster.createId("Bob");
 
         String did = keymaster.getName("Jack");
-        assertEquals(null, did);
+        assertNull(did);
     }
 
     @Test
@@ -142,7 +143,7 @@ class LiveNameTest {
         keymaster.removeName("Jack");
 
         WalletFile wallet = keymaster.loadWallet();
-        assertEquals(null, wallet.names.get("Jack"));
+        assertNull(wallet.names.get("Jack"));
     }
 
     @Test

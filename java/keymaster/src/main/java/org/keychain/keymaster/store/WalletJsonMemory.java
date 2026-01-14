@@ -39,5 +39,4 @@ public class WalletJsonMemory<T> implements WalletStore<T> {
             throw new IllegalStateException("Failed to parse wallet", e);
         }
     }
-
 }

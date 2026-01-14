@@ -80,7 +80,9 @@ class GatekeeperHttpClientTest {
 
         var recorded = server.takeRequest();
         assertEquals("GET", recorded.getMethod());
+        assertNotNull(recorded.getPath());
         assertTrue(recorded.getPath().startsWith("/api/v1/did/did:test:abc?"));
+        assertNotNull(recorded.getRequestUrl());
         assertEquals("true", recorded.getRequestUrl().queryParameter("confirm"));
         assertEquals("false", recorded.getRequestUrl().queryParameter("verify"));
         assertEquals("2", recorded.getRequestUrl().queryParameter("versionSequence"));
@@ -148,7 +150,7 @@ class GatekeeperHttpClientTest {
     }
 
     @Test
-    void errorsThrowGatekeeperClientException() throws Exception {
+    void errorsThrowGatekeeperClientException() {
         server.enqueue(new MockResponse().setResponseCode(400).setBody("{\"type\":\"Invalid\",\"message\":\"bad\"}"));
 
         Operation op = new Operation();

@@ -2,6 +2,7 @@ package org.keychain.keymaster;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -29,7 +30,8 @@ class LiveCryptoTest {
         return LiveTestSupport.keymaster(tempDir);
     }
 
-    private String randomString(int length) {
+    private String randomString() {
+        int length = 1024;
         String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
         StringBuilder result = new StringBuilder(length);
         for (int i = 0; i < length; i++) {
@@ -76,7 +78,7 @@ class LiveCryptoTest {
         Keymaster keymaster = newKeymaster();
         String did = keymaster.createId("Bob");
 
-        String msg = randomString(1024);
+        String msg = randomString();
         String encryptDid = keymaster.encryptMessage(msg, did, true);
         MdipDocument doc = keymaster.resolveDID(encryptDid);
         String msgHash = new KeymasterCryptoImpl().hashMessage(msg);
@@ -146,7 +148,7 @@ class LiveCryptoTest {
         String bob = keymaster.createId("Bob");
 
         keymaster.setCurrentId("Alice");
-        String msg = randomString(1024);
+        String msg = randomString();
         String encryptDid = keymaster.encryptMessage(msg, bob);
 
         keymaster.setCurrentId("Bob");
@@ -215,7 +217,7 @@ class LiveCryptoTest {
 
         assertEquals(did, signature.get("signer"));
         assertEquals(msgHash, signature.get("hash"));
-        assertTrue(signature.get("value") instanceof String);
+        assertInstanceOf(String.class, signature.get("value"));
     }
 
     @Test

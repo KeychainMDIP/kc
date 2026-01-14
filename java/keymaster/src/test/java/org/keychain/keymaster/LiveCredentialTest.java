@@ -10,9 +10,10 @@ import org.keychain.gatekeeper.model.MdipDocument;
 import org.keychain.keymaster.model.IDInfo;
 import org.keychain.keymaster.model.WalletFile;
 import org.junit.jupiter.api.Test;
-import org.keychain.keymaster.testutil.AssertUtils;
 import org.keychain.keymaster.testutil.LiveTestSupport;
 import org.keychain.keymaster.testutil.TestFixtures;
+
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Tag("live")
 class LiveCredentialTest {
@@ -21,6 +22,13 @@ class LiveCredentialTest {
 
     protected Keymaster liveKeymaster() {
         return LiveTestSupport.keymaster(tempDir);
+    }
+
+    private void assertCredentialShape(Map<String, Object> vc) {
+        assertTrue(vc.containsKey("@context"), "missing @context");
+        assertTrue(vc.containsKey("type"), "missing type");
+        assertTrue(vc.containsKey("issuer"), "missing issuer");
+        assertTrue(vc.containsKey("credentialSubject"), "missing credentialSubject");
     }
 
     @Test
@@ -51,14 +59,14 @@ class LiveCredentialTest {
         java.util.Map<String, Object> vc = keymaster.getCredential(credentialDid);
         org.junit.jupiter.api.Assertions.assertNotNull(vc);
         org.junit.jupiter.api.Assertions.assertEquals(subjectDid, vc.get("issuer"));
-        AssertUtils.assertCredentialShape(vc);
+        assertCredentialShape(vc);
         Object subjectObj = vc.get("credentialSubject");
-        org.junit.jupiter.api.Assertions.assertTrue(subjectObj instanceof java.util.Map<?, ?>);
+        org.junit.jupiter.api.Assertions.assertInstanceOf(java.util.Map.class, subjectObj);
         @SuppressWarnings("unchecked")
         java.util.Map<String, Object> subject = (java.util.Map<String, Object>) subjectObj;
         org.junit.jupiter.api.Assertions.assertEquals(subjectDid, subject.get("id"));
         Object credObj = vc.get("credential");
-        org.junit.jupiter.api.Assertions.assertTrue(credObj instanceof java.util.Map<?, ?>);
+        org.junit.jupiter.api.Assertions.assertInstanceOf(java.util.Map.class, credObj);
         @SuppressWarnings("unchecked")
         java.util.Map<String, Object> cred = (java.util.Map<String, Object>) credObj;
         org.junit.jupiter.api.Assertions.assertEquals("TBD", cred.get("email"));
@@ -82,16 +90,16 @@ class LiveCredentialTest {
 
         org.junit.jupiter.api.Assertions.assertEquals(subjectDid, vc.get("issuer"));
         Object subjectObj = vc.get("credentialSubject");
-        org.junit.jupiter.api.Assertions.assertTrue(subjectObj instanceof Map<?, ?>);
+        org.junit.jupiter.api.Assertions.assertInstanceOf(Map.class, subjectObj);
         @SuppressWarnings("unchecked")
         Map<String, Object> subject = (Map<String, Object>) subjectObj;
         org.junit.jupiter.api.Assertions.assertEquals(subjectDid, subject.get("id"));
         Object credObj = vc.get("credential");
-        org.junit.jupiter.api.Assertions.assertTrue(credObj instanceof Map<?, ?>);
+        org.junit.jupiter.api.Assertions.assertInstanceOf(Map.class, credObj);
         @SuppressWarnings("unchecked")
         Map<String, Object> cred = (Map<String, Object>) credObj;
         org.junit.jupiter.api.Assertions.assertEquals("alice@example.com", cred.get("email"));
-        AssertUtils.assertCredentialShape(vc);
+        assertCredentialShape(vc);
     }
 
     @Test
@@ -107,11 +115,11 @@ class LiveCredentialTest {
 
         org.junit.jupiter.api.Assertions.assertEquals(issuerDid, vc.get("issuer"));
         Object subjectObj = vc.get("credentialSubject");
-        org.junit.jupiter.api.Assertions.assertTrue(subjectObj instanceof Map<?, ?>);
+        org.junit.jupiter.api.Assertions.assertInstanceOf(Map.class, subjectObj);
         @SuppressWarnings("unchecked")
         Map<String, Object> subject = (Map<String, Object>) subjectObj;
         org.junit.jupiter.api.Assertions.assertEquals(subjectDid, subject.get("id"));
-        AssertUtils.assertCredentialShape(vc);
+        assertCredentialShape(vc);
     }
 
     @Test
@@ -128,13 +136,13 @@ class LiveCredentialTest {
         MdipDocument doc = keymaster.resolveDID(subjectDid);
         Map<String, Object> manifest = manifestFromDoc(doc);
         Object entryObj = manifest.get(credentialDid);
-        org.junit.jupiter.api.Assertions.assertTrue(entryObj instanceof Map<?, ?>);
+        org.junit.jupiter.api.Assertions.assertInstanceOf(Map.class, entryObj);
         @SuppressWarnings("unchecked")
         Map<String, Object> entry = (Map<String, Object>) entryObj;
         org.junit.jupiter.api.Assertions.assertNotNull(entry.get("credential"));
         Map<String, Object> vc = keymaster.getCredential(credentialDid);
         org.junit.jupiter.api.Assertions.assertNotNull(vc);
-        AssertUtils.assertCredentialShape(vc);
+        assertCredentialShape(vc);
     }
 
     @Test
@@ -151,7 +159,7 @@ class LiveCredentialTest {
         MdipDocument doc = keymaster.resolveDID(subjectDid);
         Map<String, Object> manifest = manifestFromDoc(doc);
         Object entryObj = manifest.get(credentialDid);
-        org.junit.jupiter.api.Assertions.assertTrue(entryObj instanceof Map<?, ?>);
+        org.junit.jupiter.api.Assertions.assertInstanceOf(Map.class, entryObj);
         @SuppressWarnings("unchecked")
         Map<String, Object> entry = (Map<String, Object>) entryObj;
         org.junit.jupiter.api.Assertions.assertTrue(entry.containsKey("credential"));
@@ -184,7 +192,7 @@ class LiveCredentialTest {
         Map<String, Object> credential = keymaster.getCredential(credentialDid);
         org.junit.jupiter.api.Assertions.assertNotNull(credential);
         Object typesObj = credential.get("type");
-        org.junit.jupiter.api.Assertions.assertTrue(typesObj instanceof List<?>);
+        org.junit.jupiter.api.Assertions.assertInstanceOf(List.class, typesObj);
         @SuppressWarnings("unchecked")
         List<Object> types = (List<Object>) typesObj;
         org.junit.jupiter.api.Assertions.assertTrue(types.contains("VerifiableCredential"));
@@ -194,9 +202,9 @@ class LiveCredentialTest {
     @Tag("live")
     void listIssued() {
         Keymaster keymaster = liveKeymaster();
-        String credentialDid = issueCredential(keymaster, "Alice", "Alice");
+        String credentialDid = issueCredential(keymaster, "Bob", "Bob");
 
-        List<String> issued = keymaster.listIssued("Alice");
+        List<String> issued = keymaster.listIssued("Bob");
         org.junit.jupiter.api.Assertions.assertTrue(issued.contains(credentialDid));
     }
 
@@ -389,7 +397,7 @@ class LiveCredentialTest {
 
         org.junit.jupiter.api.Assertions.assertEquals(validFrom, vc.get("validFrom"));
         org.junit.jupiter.api.Assertions.assertEquals(validUntil, vc.get("validUntil"));
-        AssertUtils.assertCredentialShape(vc);
+        assertCredentialShape(vc);
     }
 
     @Test
@@ -399,9 +407,9 @@ class LiveCredentialTest {
         String bobDid = keymaster.createId("Bob");
         String did = keymaster.encryptJSON(TestFixtures.mockJson(), bobDid);
 
-        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> {
-            keymaster.publishCredential(did, false);
-        });
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () ->
+            keymaster.publishCredential(did, false)
+        );
     }
 
     @Test
@@ -437,7 +445,7 @@ class LiveCredentialTest {
 
         MdipDocument revoked = keymaster.resolveDID(credentialDid);
         org.junit.jupiter.api.Assertions.assertNotNull(revoked.didDocumentMetadata);
-        org.junit.jupiter.api.Assertions.assertTrue(Boolean.TRUE.equals(revoked.didDocumentMetadata.deactivated));
+        org.junit.jupiter.api.Assertions.assertEquals(true, revoked.didDocumentMetadata.deactivated);
 
         WalletFile after = keymaster.loadWallet();
         org.junit.jupiter.api.Assertions.assertFalse(after.ids.get("Alice").owned.contains(credentialDid));
@@ -462,8 +470,7 @@ class LiveCredentialTest {
     }
 
     private String issueCredential(Keymaster keymaster, String issuerName, String subjectName) {
-        String issuerDid = keymaster.createId(issuerName);
-        String subjectDid = issuerDid;
+        String subjectDid = keymaster.createId(issuerName);
         if (!issuerName.equals(subjectName)) {
             keymaster.createId(subjectName);
             subjectDid = keymaster.fetchIdInfo(subjectName).did;

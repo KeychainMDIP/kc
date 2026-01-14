@@ -1,8 +1,11 @@
 package org.keychain.keymaster;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -162,7 +165,7 @@ class LiveWalletTest {
         assertTrue(keymaster.saveWallet(wallet, true));
 
         WalletFile updated = buildWallet(2);
-        assertEquals(false, keymaster.saveWallet(updated, false));
+        assertFalse(keymaster.saveWallet(updated, false));
 
         WalletFile loaded = keymaster.loadWallet();
         assertEquals(0, loaded.counter);
@@ -297,7 +300,7 @@ class LiveWalletTest {
     void loadWalletUpgradesLegacyEncryptedWrapper() {
         WalletJson<WalletEncFile> store = newStore("wallet");
         WalletFile legacy = buildLegacyV0Wallet();
-        WalletEncFile wrapper = buildLegacyEncryptedWrapper(legacy, PASSPHRASE);
+        WalletEncFile wrapper = buildLegacyEncryptedWrapper(legacy);
         store.saveWallet(wrapper, true);
 
         Keymaster keymaster = newKeymaster(store);
@@ -321,7 +324,7 @@ class LiveWalletTest {
         WalletFile loaded = keymaster2.loadWallet();
 
         assertNotNull(loaded.seed);
-        assertEquals(null, loaded.seed.hdkey);
+        assertNull(loaded.seed.hdkey);
     }
 
     @Test
@@ -338,7 +341,7 @@ class LiveWalletTest {
         WalletFile loaded = keymaster2.loadWallet();
 
         assertNotNull(loaded.seed);
-        assertEquals(null, loaded.seed.hdkey);
+        assertNull(loaded.seed.hdkey);
     }
 
     @Test
@@ -373,14 +376,13 @@ class LiveWalletTest {
         Keymaster keymaster = newKeymaster(store);
         WalletFile wallet = keymaster.newWallet(MNEMONIC, true);
 
-        HdKey hdkey = toModelHdKey(HdKeyUtil.masterFromMnemonic(MNEMONIC));
-        wallet.seed.hdkey = hdkey;
+        wallet.seed.hdkey = toModelHdKey(HdKeyUtil.masterFromMnemonic(MNEMONIC));
 
         assertTrue(keymaster.saveWallet(wallet, true));
 
         WalletEncFile stored = store.loadWallet();
         assertNotNull(stored.seed);
-        assertEquals(null, stored.seed.hdkey);
+        assertNull(stored.seed.hdkey);
         assertNotNull(stored.enc);
     }
 
@@ -475,7 +477,7 @@ class LiveWalletTest {
         MdipDocument bank = keymaster.resolveSeedBank();
         assertNotNull(bank);
         assertNotNull(bank.didDocumentData);
-        assertTrue(bank.didDocumentData instanceof Map<?, ?>);
+        assertInstanceOf(Map.class, bank.didDocumentData);
         @SuppressWarnings("unchecked")
         Map<String, Object> data = (Map<String, Object>) bank.didDocumentData;
         assertEquals(did, data.get("wallet"));
@@ -792,14 +794,14 @@ class LiveWalletTest {
         return wallet;
     }
 
-    private static WalletEncFile buildLegacyEncryptedWrapper(WalletFile wallet, String passphrase) {
+    private static WalletEncFile buildLegacyEncryptedWrapper(WalletFile wallet) {
         try {
             byte[] salt = new byte[16];
             byte[] iv = new byte[12];
             new SecureRandom().nextBytes(salt);
             new SecureRandom().nextBytes(iv);
 
-            SecretKey key = deriveLegacyKey(passphrase, salt);
+            SecretKey key = deriveLegacyKey(salt);
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
             cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(128, iv));
             byte[] plaintext = WalletJsonMapper.mapper().writeValueAsString(wallet).getBytes(StandardCharsets.UTF_8);
@@ -815,8 +817,8 @@ class LiveWalletTest {
         }
     }
 
-    private static SecretKey deriveLegacyKey(String passphrase, byte[] salt) throws GeneralSecurityException {
-        PBEKeySpec spec = new PBEKeySpec(passphrase.toCharArray(), salt, 100_000, 256);
+    private static SecretKey deriveLegacyKey(byte[] salt) throws GeneralSecurityException {
+        PBEKeySpec spec = new PBEKeySpec(PASSPHRASE.toCharArray(), salt, 100_000, 256);
         SecretKeyFactory factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA512");
         byte[] keyBytes = factory.generateSecret(spec).getEncoded();
         return new SecretKeySpec(keyBytes, "AES");

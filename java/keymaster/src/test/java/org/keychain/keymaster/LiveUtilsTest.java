@@ -1,6 +1,8 @@
 package org.keychain.keymaster;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -91,7 +93,7 @@ class LiveUtilsTest {
         boolean ok = keymaster.updateDID(doc);
         MdipDocument doc2 = keymaster.resolveDID(dataDid);
 
-        assertEquals(true, ok);
+        assertTrue(ok);
         assertEquals(dataUpdated, doc2.didDocumentData);
         assertEquals("2", doc2.didDocumentMetadata.version);
     }
@@ -108,7 +110,7 @@ class LiveUtilsTest {
         boolean ok = keymaster.updateDID(doc);
         MdipDocument doc2 = keymaster.resolveDID(dataDid);
 
-        assertEquals(true, ok);
+        assertTrue(ok);
         assertEquals(mockAnchor, doc2.didDocumentData);
         assertEquals("1", doc2.didDocumentMetadata.version);
     }
@@ -132,7 +134,7 @@ class LiveUtilsTest {
         boolean ok = keymaster.updateDID(doc);
         MdipDocument doc2 = keymaster.resolveDID(dataDid);
 
-        assertEquals(true, ok);
+        assertTrue(ok);
         assertEquals(bob, doc2.didDocument.controller);
         assertEquals(dataUpdated, doc2.didDocumentData);
         assertEquals("2", doc2.didDocumentMetadata.version);
@@ -149,8 +151,7 @@ class LiveUtilsTest {
         String dataDid = keymaster.createAsset(mockAnchor);
         MdipDocument doc = keymaster.resolveDID(dataDid);
 
-        Map<String, Object> dataUpdated = Map.of("name", "updated");
-        doc.didDocumentData = dataUpdated;
+        doc.didDocumentData = Map.of("name", "updated");
 
         keymaster.setCurrentId("Alice");
         keymaster.removeId("Bob");
@@ -172,7 +173,7 @@ class LiveUtilsTest {
         boolean ok = keymaster.revokeDID(dataDid);
         MdipDocument doc = keymaster.resolveDID(dataDid);
 
-        assertEquals(true, ok);
+        assertTrue(ok);
         assertEquals(dataDid, doc.didDocument.id);
         assertEquals(Map.of(), doc.didDocumentData);
         assertEquals(true, doc.didDocumentMetadata.deactivated);
@@ -192,7 +193,7 @@ class LiveUtilsTest {
         boolean ok = keymaster.revokeDID(dataDid);
         MdipDocument doc = keymaster.resolveDID(dataDid);
 
-        assertEquals(true, ok);
+        assertTrue(ok);
         assertEquals(dataDid, doc.didDocument.id);
         assertEquals(Map.of(), doc.didDocumentData);
         assertEquals(true, doc.didDocumentMetadata.deactivated);
@@ -204,7 +205,7 @@ class LiveUtilsTest {
         String owner = keymaster.createId("Alice");
 
         boolean ok = keymaster.removeFromOwned("did:mock", owner);
-        assertEquals(false, ok);
+        assertFalse(ok);
     }
 
     @Test
@@ -221,8 +222,8 @@ class LiveUtilsTest {
             doc = keymaster.resolveDID(alice);
             vm = doc.didDocument.verificationMethod.get(0);
 
-            assertTrue(!pubkey.x.equals(vm.publicKeyJwk.x));
-            assertTrue(!pubkey.y.equals(vm.publicKeyJwk.y));
+            assertNotEquals(pubkey.x, vm.publicKeyJwk.x);
+            assertNotEquals(pubkey.y, vm.publicKeyJwk.y);
 
             pubkey = vm.publicKeyJwk;
         }

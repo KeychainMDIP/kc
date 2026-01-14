@@ -56,6 +56,7 @@ public class GatekeeperHttpClient implements GatekeeperClient {
     }
 
     @Override
+    @SuppressWarnings("unchecked")
     public java.util.List<String> listRegistries() {
         HttpUrl url = baseUrl.newBuilder()
             .addPathSegment("registries")
@@ -157,7 +158,7 @@ public class GatekeeperHttpClient implements GatekeeperClient {
                 }
             }
 
-            if (body == null || body.isEmpty()) {
+            if (body.isEmpty()) {
                 return null;
             }
 

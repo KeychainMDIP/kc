@@ -94,8 +94,8 @@ public class KeymasterWalletManager {
         return ok;
     }
 
-    WalletFile decryptStoredWallet(WalletEncFile stored) {
-        return decryptWalletFromStorage(stored);
+    void decryptStoredWallet(WalletEncFile stored) {
+        decryptWalletFromStorage(stored);
     }
 
     public boolean mutateWallet(Consumer<WalletFile> mutator) {
@@ -123,14 +123,6 @@ public class KeymasterWalletManager {
         } finally {
             writeLock.unlock();
         }
-    }
-
-    DeterministicKey getHdkeyCache() {
-        return hdkeyCache;
-    }
-
-    WalletFile getWalletCache() {
-        return walletCache;
     }
 
     DeterministicKey getHdKeyFromCacheOrMnemonic(WalletFile wallet) {
@@ -293,7 +285,7 @@ public class KeymasterWalletManager {
 
     private static Map<String, Object> walletToMap(WalletFile wallet) {
         ObjectMapper mapper = WalletJsonMapper.mapper();
-        Map<String, Object> data = mapper.convertValue(wallet, new TypeReference<Map<String, Object>>() {});
+        Map<String, Object> data = mapper.convertValue(wallet, new TypeReference<>() {});
         data.remove("version");
         data.remove("seed");
         return data;
@@ -309,7 +301,7 @@ public class KeymasterWalletManager {
 
     private static Map<String, Object> fromJson(ObjectMapper mapper, String data) {
         try {
-            return mapper.readValue(data, new TypeReference<Map<String, Object>>() {});
+            return mapper.readValue(data, new TypeReference<>() {});
         } catch (Exception e) {
             throw new IllegalStateException("Failed to parse wallet", e);
         }

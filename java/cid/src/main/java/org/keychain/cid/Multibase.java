@@ -11,9 +11,6 @@ public final class Multibase {
 
         char prefix = value.charAt(0);
         String payload = value.substring(1);
-        if (payload.isEmpty()) {
-            throw new IllegalArgumentException("value");
-        }
 
         if (prefix == 'z') {
             return Base58Btc.decode(payload);

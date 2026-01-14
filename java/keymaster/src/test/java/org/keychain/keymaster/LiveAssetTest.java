@@ -2,8 +2,8 @@ package org.keychain.keymaster;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -17,7 +17,7 @@ import org.keychain.keymaster.testutil.LiveTestSupport;
 @Tag("live")
 class LiveAssetTest {
     @TempDir
-    Path tempDir;
+    private Path tempDir;
 
     private Keymaster newKeymaster() {
         return LiveTestSupport.keymaster(tempDir);
@@ -103,9 +103,9 @@ class LiveAssetTest {
         Keymaster keymaster = newKeymaster();
         Map<String, Object> mockAnchor = Map.of("name", "mockAnchor");
 
-        IllegalStateException error = assertThrows(IllegalStateException.class, () -> {
-            keymaster.createAsset(mockAnchor);
-        });
+        IllegalStateException error = assertThrows(IllegalStateException.class, () ->
+            keymaster.createAsset(mockAnchor)
+        );
         assertEquals("Keymaster: No current ID", error.getMessage());
     }
 
@@ -116,9 +116,9 @@ class LiveAssetTest {
 
         CreateAssetOptions options = new CreateAssetOptions();
         options.name = "Bob";
-        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> {
-            keymaster.createAsset(Map.of(), options);
-        });
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () ->
+            keymaster.createAsset(Map.of(), options)
+        );
         assertEquals("Invalid parameter: name already used", error.getMessage());
     }
 
@@ -127,9 +127,9 @@ class LiveAssetTest {
         Keymaster keymaster = newKeymaster();
         keymaster.createId("Bob");
 
-        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> {
-            keymaster.createAsset(null);
-        });
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () ->
+            keymaster.createAsset(null)
+        );
         assertEquals("data is required", error.getMessage());
     }
 
@@ -195,9 +195,9 @@ class LiveAssetTest {
         Keymaster keymaster = newKeymaster();
         String bob = keymaster.createId("Bob");
 
-        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> {
-            keymaster.cloneAsset(bob);
-        });
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () ->
+            keymaster.cloneAsset(bob)
+        );
         assertEquals("id", error.getMessage());
     }
 
@@ -209,10 +209,9 @@ class LiveAssetTest {
         Map<String, Object> mockAnchor = Map.of("name", "mockAnchor");
         String dataDid = keymaster.createAsset(mockAnchor);
 
-        boolean ok = keymaster.transferAsset(dataDid, alice);
+        assertTrue(keymaster.transferAsset(dataDid, alice));
         MdipDocument doc = keymaster.resolveDID(dataDid);
 
-        assertEquals(true, ok);
         assertEquals(alice, doc.didDocument.controller);
 
         List<String> assetsAlice = keymaster.listAssets("Alice");
@@ -231,10 +230,9 @@ class LiveAssetTest {
         String dataDid = keymaster.createAsset(mockAnchor);
         keymaster.addName("asset", dataDid);
 
-        boolean ok = keymaster.transferAsset("asset", "Alice");
+        assertTrue(keymaster.transferAsset("asset", "Alice"));
         MdipDocument doc = keymaster.resolveDID(dataDid);
 
-        assertEquals(true, ok);
         assertEquals(alice, doc.didDocument.controller);
 
         List<String> assetsAlice = keymaster.listAssets("Alice");
@@ -251,10 +249,9 @@ class LiveAssetTest {
         Map<String, Object> mockAnchor = Map.of("name", "mockAnchor");
         String dataDid = keymaster.createAsset(mockAnchor);
 
-        boolean ok = keymaster.transferAsset(dataDid, bob);
+        assertTrue(keymaster.transferAsset(dataDid, bob));
         MdipDocument doc = keymaster.resolveDID(dataDid);
 
-        assertEquals(true, ok);
         assertEquals(bob, doc.didDocument.controller);
         assertEquals("1", doc.didDocumentMetadata.version);
     }
@@ -264,9 +261,9 @@ class LiveAssetTest {
         Keymaster keymaster = newKeymaster();
         String bob = keymaster.createId("Bob");
 
-        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> {
-            keymaster.transferAsset("mockDID", bob);
-        });
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () ->
+            keymaster.transferAsset("mockDID", bob)
+        );
         assertEquals("unknown id", error.getMessage());
     }
 
@@ -275,9 +272,9 @@ class LiveAssetTest {
         Keymaster keymaster = newKeymaster();
         String bob = keymaster.createId("Bob");
 
-        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> {
-            keymaster.transferAsset(bob, bob);
-        });
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () ->
+            keymaster.transferAsset(bob, bob)
+        );
         assertEquals("asset did is not an asset", error.getMessage());
     }
 
@@ -288,9 +285,9 @@ class LiveAssetTest {
         Map<String, Object> mockAnchor = Map.of("name", "mockAnchor");
         String dataDid = keymaster.createAsset(mockAnchor);
 
-        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> {
-            keymaster.transferAsset(dataDid, dataDid);
-        });
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () ->
+            keymaster.transferAsset(dataDid, dataDid)
+        );
         assertEquals("controller did is not an agent", error.getMessage());
     }
 
@@ -398,10 +395,9 @@ class LiveAssetTest {
         Map<String, Object> mockAsset1 = Map.of("name", "original");
         Map<String, Object> mockAsset2 = Map.of("name", "updated");
         String did = keymaster.createAsset(mockAsset1);
-        boolean ok = keymaster.updateAsset(did, mockAsset2);
+        assertTrue(keymaster.updateAsset(did, mockAsset2));
         Object asset = keymaster.resolveAsset(did);
 
-        assertEquals(true, ok);
         assertEquals(mockAsset2, asset);
     }
 
@@ -412,10 +408,9 @@ class LiveAssetTest {
         Map<String, Object> mockAsset1 = Map.of("key1", "val1");
         Map<String, Object> mockAsset2 = Map.of("key2", "val2");
         String did = keymaster.createAsset(mockAsset1);
-        boolean ok = keymaster.updateAsset(did, mockAsset2);
+        assertTrue(keymaster.updateAsset(did, mockAsset2));
         Object asset = keymaster.resolveAsset(did);
 
-        assertEquals(true, ok);
         assertEquals(Map.of("key1", "val1", "key2", "val2"), asset);
     }
 
@@ -427,10 +422,9 @@ class LiveAssetTest {
         Map<String, Object> mockAsset2 = new java.util.HashMap<>();
         mockAsset2.put("key2", null);
         String did = keymaster.createAsset(mockAsset1);
-        boolean ok = keymaster.updateAsset(did, mockAsset2);
+        assertTrue(keymaster.updateAsset(did, mockAsset2));
         Object asset = keymaster.resolveAsset(did);
 
-        assertEquals(true, ok);
         assertEquals(Map.of("key1", "val1"), asset);
     }
 }

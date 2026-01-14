@@ -8,7 +8,7 @@ import java.util.function.Supplier;
 
 public final class XChaCha20Util {
     private static final int NONCE_LENGTH = 24;
-    private static Supplier<byte[]> NONCE_SUPPLIER = () -> Bytes.random(NONCE_LENGTH);
+    private static final Supplier<byte[]> NONCE_SUPPLIER = () -> Bytes.random(NONCE_LENGTH);
 
     private XChaCha20Util() {}
 
@@ -58,13 +58,5 @@ public final class XChaCha20Util {
 
     public static String decryptToString(byte[] key32, String nonceCiphertextB64Url) {
         return new String(decrypt(key32, nonceCiphertextB64Url), StandardCharsets.UTF_8);
-    }
-
-    static void setNonceSupplier(Supplier<byte[]> supplier) {
-        NONCE_SUPPLIER = supplier != null ? supplier : () -> Bytes.random(NONCE_LENGTH);
-    }
-
-    static void resetNonceSupplier() {
-        NONCE_SUPPLIER = () -> Bytes.random(NONCE_LENGTH);
     }
 }

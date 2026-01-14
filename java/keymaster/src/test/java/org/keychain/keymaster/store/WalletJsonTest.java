@@ -59,7 +59,7 @@ class WalletJsonTest {
     }
 
     @Test
-    void loadReturnsNullIfMissing() throws Exception {
+    void loadReturnsNullIfMissing() {
         WalletJson<WalletFile> store = new WalletJson<>(WalletFile.class, tempDir, "wallet.json");
         assertNull(store.loadWallet());
         assertFalse(Files.exists(tempDir.resolve("wallet.json")));

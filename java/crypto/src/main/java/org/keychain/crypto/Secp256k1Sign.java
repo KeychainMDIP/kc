@@ -44,8 +44,8 @@ public final class Secp256k1Sign {
             s = n.subtract(s);
         }
 
-        byte[] rBytes = toFixedLength(r, 32);
-        byte[] sBytes = toFixedLength(s, 32);
+        byte[] rBytes = toFixedLength(r);
+        byte[] sBytes = toFixedLength(s);
         byte[] sig = new byte[64];
         System.arraycopy(rBytes, 0, sig, 0, 32);
         System.arraycopy(sBytes, 0, sig, 32, 32);
@@ -81,7 +81,8 @@ public final class Secp256k1Sign {
         return verifier.verifySignature(msg, r, s);
     }
 
-    private static byte[] toFixedLength(BigInteger value, int length) {
+    private static byte[] toFixedLength(BigInteger value) {
+        int length = 32;
         byte[] raw = value.toByteArray();
         if (raw.length == length) {
             return raw;

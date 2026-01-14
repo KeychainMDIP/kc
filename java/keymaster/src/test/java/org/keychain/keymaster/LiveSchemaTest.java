@@ -2,6 +2,7 @@ package org.keychain.keymaster;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -18,7 +19,7 @@ import org.keychain.keymaster.testutil.TestFixtures;
 @Tag("live")
 class LiveSchemaTest {
     @TempDir
-    Path tempDir;
+    private Path tempDir;
 
     private Keymaster newKeymaster() {
         return LiveTestSupport.keymaster(tempDir);
@@ -123,7 +124,7 @@ class LiveSchemaTest {
         String did = keymaster.createId("Bob");
 
         Object schema = keymaster.getSchema(did);
-        assertEquals(null, schema);
+        assertNull(schema);
     }
 
     @Test
@@ -157,7 +158,7 @@ class LiveSchemaTest {
         boolean ok = keymaster.setSchema(did, TestFixtures.mockSchema());
         Object schema = keymaster.getSchema(did);
 
-        assertEquals(true, ok);
+        assertTrue(ok);
         assertEquals(TestFixtures.mockSchema(), schema);
     }
 
@@ -182,7 +183,7 @@ class LiveSchemaTest {
         keymaster.setSchema(did, TestFixtures.mockSchema());
 
         boolean isSchema = keymaster.testSchema(did);
-        assertEquals(true, isSchema);
+        assertTrue(isSchema);
     }
 
     @Test
@@ -190,15 +191,13 @@ class LiveSchemaTest {
         Keymaster keymaster = newKeymaster();
         String agentDid = keymaster.createId("Bob");
 
-        boolean isSchema = keymaster.testSchema(agentDid);
-        assertEquals(false, isSchema);
+        assertFalse(keymaster.testSchema(agentDid));
     }
 
     @Test
     void testSchemaReturnsFalseForInvalidDid() {
         Keymaster keymaster = newKeymaster();
-        boolean isSchema = keymaster.testSchema("mock7");
-        assertEquals(false, isSchema);
+        assertFalse(keymaster.testSchema("mock7"));
     }
 
     @Test
