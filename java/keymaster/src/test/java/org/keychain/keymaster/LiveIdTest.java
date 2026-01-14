@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.keychain.crypto.KeymasterCryptoImpl;
-import org.keychain.gatekeeper.GatekeeperClient;
+import org.keychain.gatekeeper.GatekeeperInterface;
 import org.keychain.gatekeeper.model.MdipDocument;
 import org.keychain.gatekeeper.model.Operation;
 import org.keychain.keymaster.model.WalletFile;
@@ -22,7 +22,7 @@ class LiveIdTest {
         return LiveTestSupport.keymaster(tempDir);
     }
 
-    protected GatekeeperClient gatekeeperClient() {
+    protected GatekeeperInterface gatekeeperClient() {
         return LiveTestSupport.gatekeeperClient();
     }
 

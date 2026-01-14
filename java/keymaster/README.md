@@ -9,7 +9,6 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import org.keychain.gatekeeper.GatekeeperClient;
 import org.keychain.gatekeeper.GatekeeperClientOptions;
-import org.keychain.gatekeeper.GatekeeperHttpClient;
 import org.keychain.keymaster.Keymaster;
 import org.keychain.keymaster.model.WalletEncFile;
 import org.keychain.keymaster.store.WalletJson;
@@ -20,7 +19,7 @@ WalletStore<WalletEncFile> store = new WalletJson<>(WalletEncFile.class, dataDir
 
 GatekeeperClientOptions options = new GatekeeperClientOptions();
 options.baseUrl = "http://localhost:4224";
-GatekeeperClient gatekeeper = new GatekeeperHttpClient(options);
+GatekeeperClient gatekeeper = new GatekeeperClient(options);
 
 Keymaster keymaster = new Keymaster(store, gatekeeper, "passphrase");
 keymaster.newWallet(null, true);

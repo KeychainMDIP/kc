@@ -5,7 +5,6 @@ import java.time.Duration;
 public class GatekeeperClientOptions {
     public String baseUrl;
     public String url;
-    public Object console;
     public Boolean waitUntilReady;
     public Integer intervalSeconds;
     public Boolean chatty;

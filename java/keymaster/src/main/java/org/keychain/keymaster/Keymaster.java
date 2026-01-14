@@ -15,7 +15,7 @@ import org.keychain.crypto.KeymasterCryptoImpl;
 import org.keychain.crypto.MnemonicEncryption;
 import java.util.ArrayList;
 import java.util.List;
-import org.keychain.gatekeeper.GatekeeperClient;
+import org.keychain.gatekeeper.GatekeeperInterface;
 import org.keychain.gatekeeper.model.BlockInfo;
 import org.keychain.gatekeeper.model.DocumentMetadata;
 import org.keychain.gatekeeper.model.EcdsaJwkPublic;
@@ -43,14 +43,14 @@ public class Keymaster {
     private final KeymasterWalletManager walletManager;
     private final KeymasterCrypto crypto;
     private final String passphrase;
-    private final GatekeeperClient gatekeeper;
+    private final GatekeeperInterface gatekeeper;
     private final OperationFactory operationFactory;
     private final String defaultRegistry;
     private final String ephemeralRegistry;
 
     public Keymaster(
         WalletStore<WalletEncFile> store,
-        GatekeeperClient gatekeeper,
+        GatekeeperInterface gatekeeper,
         KeymasterCrypto crypto,
         OperationFactory operationFactory,
         String passphrase,
@@ -80,7 +80,7 @@ public class Keymaster {
 
     public Keymaster(
         WalletStore<WalletEncFile> store,
-        GatekeeperClient gatekeeper,
+        GatekeeperInterface gatekeeper,
         KeymasterCrypto crypto,
         OperationFactory operationFactory,
         String passphrase
@@ -90,7 +90,7 @@ public class Keymaster {
 
     public Keymaster(
         WalletStore<WalletEncFile> store,
-        GatekeeperClient gatekeeper,
+        GatekeeperInterface gatekeeper,
         KeymasterCrypto crypto,
         String passphrase
     ) {
@@ -99,7 +99,7 @@ public class Keymaster {
 
     public Keymaster(
         WalletStore<WalletEncFile> store,
-        GatekeeperClient gatekeeper,
+        GatekeeperInterface gatekeeper,
         KeymasterCrypto crypto,
         String passphrase,
         String defaultRegistry
@@ -111,11 +111,11 @@ public class Keymaster {
         this(store, null, crypto, passphrase, DEFAULT_REGISTRY);
     }
 
-    public Keymaster(WalletStore<WalletEncFile> store, GatekeeperClient gatekeeper, String passphrase) {
+    public Keymaster(WalletStore<WalletEncFile> store, GatekeeperInterface gatekeeper, String passphrase) {
         this(store, gatekeeper, new KeymasterCryptoImpl(), passphrase, DEFAULT_REGISTRY);
     }
 
-    public Keymaster(WalletStore<WalletEncFile> store, GatekeeperClient gatekeeper, String passphrase, String defaultRegistry) {
+    public Keymaster(WalletStore<WalletEncFile> store, GatekeeperInterface gatekeeper, String passphrase, String defaultRegistry) {
         this(store, gatekeeper, new KeymasterCryptoImpl(), passphrase, defaultRegistry);
     }
 

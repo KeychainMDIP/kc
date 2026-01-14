@@ -3,7 +3,7 @@ package org.keychain.keymaster.testutil;
 import java.nio.file.Path;
 import org.keychain.gatekeeper.GatekeeperClient;
 import org.keychain.gatekeeper.GatekeeperClientOptions;
-import org.keychain.gatekeeper.GatekeeperHttpClient;
+import org.keychain.gatekeeper.GatekeeperInterface;
 import org.keychain.keymaster.Keymaster;
 import org.keychain.keymaster.model.WalletEncFile;
 import org.keychain.keymaster.store.WalletJson;
@@ -18,7 +18,7 @@ public final class LiveTestSupport {
     private LiveTestSupport() {
     }
 
-    public static GatekeeperClient gatekeeperClient() {
+    public static GatekeeperInterface gatekeeperClient() {
         GatekeeperClientOptions options = new GatekeeperClientOptions();
         String override = System.getenv(ENV_GATEKEEPER_URL);
         if (override != null && !override.isBlank()) {
@@ -26,7 +26,7 @@ public final class LiveTestSupport {
         } else {
             options.baseUrl = DEFAULT_GATEKEEPER_URL;
         }
-        return new GatekeeperHttpClient(options);
+        return new GatekeeperClient(options);
     }
 
     public static WalletJson<WalletEncFile> walletStore(Path tempDir) {

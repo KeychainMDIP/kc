@@ -30,7 +30,7 @@ import org.keychain.crypto.HdKeyUtil;
 import org.keychain.crypto.JwkPair;
 import org.keychain.crypto.KeymasterCryptoImpl;
 import org.keychain.crypto.MnemonicEncryption;
-import org.keychain.gatekeeper.GatekeeperClient;
+import org.keychain.gatekeeper.GatekeeperInterface;
 import org.keychain.gatekeeper.model.MdipDocument;
 import org.keychain.keymaster.model.CheckWalletResult;
 import org.keychain.keymaster.model.FixWalletResult;
@@ -65,7 +65,7 @@ class LiveWalletTest {
         return newKeymaster(newStore("wallet"));
     }
 
-    private GatekeeperClient gatekeeperClient() {
+    private GatekeeperInterface gatekeeperClient() {
         return LiveTestSupport.gatekeeperClient();
     }
 

@@ -18,9 +18,9 @@ import org.keychain.gatekeeper.model.MdipDocument;
 import org.keychain.gatekeeper.model.Operation;
 import org.keychain.gatekeeper.model.ResolveDIDOptions;
 
-class GatekeeperHttpClientTest {
+class GatekeeperClientTest {
     private MockWebServer server;
-    private GatekeeperHttpClient client;
+    private GatekeeperClient client;
     private ObjectMapper mapper;
 
     @BeforeEach
@@ -29,7 +29,7 @@ class GatekeeperHttpClientTest {
         server.start();
         GatekeeperClientOptions options = new GatekeeperClientOptions();
         options.baseUrl = server.url("/").toString().replaceAll("/$", "");
-        client = new GatekeeperHttpClient(options);
+        client = new GatekeeperClient(options);
         mapper = new ObjectMapper();
     }
 
@@ -142,7 +142,7 @@ class GatekeeperHttpClientTest {
 
         GatekeeperClientOptions options = new GatekeeperClientOptions();
         options.baseUrl = server.url("/api/v1/").toString();
-        GatekeeperHttpClient localClient = new GatekeeperHttpClient(options);
+        GatekeeperClient localClient = new GatekeeperClient(options);
 
         localClient.getBlock("local");
         var recorded = server.takeRequest();
