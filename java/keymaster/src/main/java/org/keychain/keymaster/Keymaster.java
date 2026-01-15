@@ -3,7 +3,7 @@ package org.keychain.keymaster;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
-import java.util.HashMap;
+import java.util.*;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import org.bitcoinj.crypto.DeterministicKey;
@@ -13,8 +13,6 @@ import org.keychain.crypto.JwkPair;
 import org.keychain.crypto.KeymasterCrypto;
 import org.keychain.crypto.KeymasterCryptoImpl;
 import org.keychain.crypto.MnemonicEncryption;
-import java.util.ArrayList;
-import java.util.List;
 import org.keychain.gatekeeper.GatekeeperInterface;
 import org.keychain.gatekeeper.model.BlockInfo;
 import org.keychain.gatekeeper.model.DocumentMetadata;
@@ -26,6 +24,7 @@ import org.keychain.gatekeeper.model.ResolveDIDOptions;
 import org.keychain.gatekeeper.model.Signature;
 import org.keychain.keymaster.model.Seed;
 import org.keychain.keymaster.model.IDInfo;
+import org.keychain.keymaster.model.Group;
 import org.keychain.keymaster.model.CheckWalletResult;
 import org.keychain.keymaster.model.FixWalletResult;
 import org.keychain.keymaster.model.WalletEncFile;
@@ -482,8 +481,8 @@ public class Keymaster {
         payload.put("backup", backup);
         String vaultDid = createAsset(payload, registry, name, null);
 
-        if (doc.didDocumentData == null || !(doc.didDocumentData instanceof java.util.Map<?, ?>)) {
-            doc.didDocumentData = new java.util.LinkedHashMap<String, Object>();
+        if (!(doc.didDocumentData instanceof java.util.Map<?, ?>)) {
+            doc.didDocumentData = new java.util.LinkedHashMap<>();
         }
         @SuppressWarnings("unchecked")
         java.util.Map<String, Object> docData = (java.util.Map<String, Object>) doc.didDocumentData;
@@ -499,7 +498,7 @@ public class Keymaster {
             }
             JwkPair keypair = hdKeyPair();
             MdipDocument doc = resolveDID(did);
-            if (doc == null || doc.didDocumentData == null || !(doc.didDocumentData instanceof java.util.Map<?, ?>)) {
+            if (doc == null || !(doc.didDocumentData instanceof java.util.Map<?, ?>)) {
                 throw new IllegalArgumentException("didDocumentData missing vault");
             }
 
@@ -522,6 +521,7 @@ public class Keymaster {
             }
 
             String decrypted = crypto.decryptMessage(keypair.publicJwk, keypair.privateJwk, (String) backupObj);
+            @SuppressWarnings("unchecked")
             java.util.Map<String, Object> data = WalletJsonMapper.mapper().readValue(decrypted, java.util.Map.class);
             Object nameObj = data.get("name");
             Object idObj = data.get("id");
@@ -534,7 +534,10 @@ public class Keymaster {
             String name = (String) nameObj;
 
             mutateWallet(wallet -> {
-                if (wallet.ids != null && wallet.ids.containsKey(name)) {
+                if (wallet.ids == null) {
+                    wallet.ids = new java.util.LinkedHashMap<>();
+                }
+                if (wallet.ids.containsKey(name)) {
                     throw new IllegalStateException(name + " already exists in wallet");
                 }
                 wallet.ids.put(name, idInfo);
@@ -764,20 +767,18 @@ public class Keymaster {
         String targetRegistry = registry == null || registry.isBlank() ? defaultRegistry : registry;
 
         WalletFile wallet = loadWallet();
-        String validName = validateNameInternal(name, wallet);
+        validateNameInternal(name, wallet);
         JwkPair keypair = getCurrentKeypairFromPath(wallet, account, 0);
 
         BlockInfo block = gatekeeper.getBlock(targetRegistry);
         String blockid = block != null ? block.hash : null;
 
-        Operation signed = operationFactory.createSignedCreateIdOperation(
+        return operationFactory.createSignedCreateIdOperation(
             targetRegistry,
             JwkConverter.toEcdsaJwkPublic(keypair.publicJwk),
             keypair.privateJwk,
             blockid
         );
-
-        return signed;
     }
 
     public String createAsset(Object data, String registry) {
@@ -822,15 +823,14 @@ public class Keymaster {
 
         String did = gatekeeper.createDID(signed);
         if (validUntil == null) {
-            String createdDid = did;
             mutateWallet(updated -> {
                 IDInfo current = getCurrentIdInfo(updated);
                 if (current.owned == null) {
                     current.owned = new ArrayList<>();
                 }
                 List<String> owned = current.owned;
-                if (!owned.contains(createdDid)) {
-                    owned.add(createdDid);
+                if (!owned.contains(did)) {
+                    owned.add(did);
                 }
             });
         }
@@ -998,7 +998,7 @@ public class Keymaster {
 
         String targetRegistry = registry;
         if (targetRegistry == null || targetRegistry.isBlank()) {
-            targetRegistry = assetDoc.mdip != null ? assetDoc.mdip.registry : defaultRegistry;
+            targetRegistry = assetDoc.mdip.registry ;
         }
 
         return createAsset(assetData, targetRegistry, controller, null);
@@ -1167,7 +1167,7 @@ public class Keymaster {
                 java.util.Map<String, Object> vpEncrypted = (java.util.Map<String, Object>) vpEncryptedObj;
                 Object vcHash = vcEncrypted.get("cipher_hash");
                 Object vpHash = vpEncrypted.get("cipher_hash");
-                if (vcHash == null || vpHash == null || !vcHash.equals(vpHash)) {
+                if (vcHash == null || !vcHash.equals(vpHash)) {
                     continue;
                 }
 
@@ -1231,6 +1231,159 @@ public class Keymaster {
         response.put("responder", responseDoc.didDocument != null ? responseDoc.didDocument.controller : null);
 
         return response;
+    }
+
+    public String createGroup(String name) {
+        return createGroup(name, null);
+    }
+
+    public String createGroup(String name, CreateAssetOptions options) {
+        java.util.Map<String, Object> group = new java.util.LinkedHashMap<>();
+        group.put("name", name);
+        group.put("members", new java.util.ArrayList<>());
+
+        java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("group", group);
+        return createAsset(payload, options);
+    }
+
+    public Group getGroup(String id) {
+        Object asset = resolveAsset(id);
+        if (!(asset instanceof java.util.Map<?, ?>)) {
+            return null;
+        }
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> map = (java.util.Map<String, Object>) asset;
+        if (map.isEmpty()) {
+            return null;
+        }
+
+        if (map.containsKey("members")) {
+            return WalletJsonMapper.mapper().convertValue(map, Group.class);
+        }
+
+        Object groupObj = map.get("group");
+        if (groupObj == null) {
+            return null;
+        }
+
+        return WalletJsonMapper.mapper().convertValue(groupObj, Group.class);
+    }
+
+    public boolean addGroupMember(String groupId, String memberId) {
+        String groupDid = lookupDID(groupId);
+        String memberDid = lookupDID(memberId);
+
+        if (memberDid.equals(groupDid)) {
+            throw new IllegalArgumentException("Invalid parameter: can't add a group to itself");
+        }
+
+        try {
+            resolveDID(memberDid);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Invalid parameter: memberId");
+        }
+
+        Group group = getGroup(groupId);
+        if (group == null || group.members == null) {
+            throw new IllegalArgumentException("Invalid parameter: groupId");
+        }
+
+        if (group.members.contains(memberDid)) {
+            return true;
+        }
+
+        boolean isMember = testGroup(memberId, groupId);
+        if (isMember) {
+            throw new IllegalArgumentException("Invalid parameter: can't create mutual membership");
+        }
+
+        java.util.Set<String> members = new java.util.LinkedHashSet<>(group.members);
+        members.add(memberDid);
+        group.members = new java.util.ArrayList<>(members);
+
+        java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("group", WalletJsonMapper.mapper().convertValue(group, java.util.Map.class));
+        return updateAsset(groupDid, payload);
+    }
+
+    public boolean removeGroupMember(String groupId, String memberId) {
+        String groupDid = lookupDID(groupId);
+        String memberDid = lookupDID(memberId);
+        Group group = getGroup(groupDid);
+
+        if (group == null || group.members == null) {
+            throw new IllegalArgumentException("Invalid parameter: groupId");
+        }
+
+        try {
+            resolveDID(memberDid);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Invalid parameter: memberId");
+        }
+
+        if (!group.members.contains(memberDid)) {
+            return true;
+        }
+
+        java.util.Set<String> members = new java.util.LinkedHashSet<>(group.members);
+        members.remove(memberDid);
+        group.members = new java.util.ArrayList<>(members);
+
+        java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("group", WalletJsonMapper.mapper().convertValue(group, java.util.Map.class));
+        return updateAsset(groupDid, payload);
+    }
+
+    public boolean testGroup(String groupId) {
+        return testGroup(groupId, null);
+    }
+
+    public boolean testGroup(String groupId, String memberId) {
+        try {
+            Group group = getGroup(groupId);
+            if (group == null) {
+                return false;
+            }
+
+            if (memberId == null || memberId.isBlank()) {
+                return true;
+            }
+
+            String didMember = lookupDID(memberId);
+            boolean isMember = group.members != null && group.members.contains(didMember);
+
+            if (!isMember && group.members != null) {
+                for (String did : group.members) {
+                    isMember = testGroup(did, didMember);
+                    if (isMember) {
+                        break;
+                    }
+                }
+            }
+
+            return isMember;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public java.util.List<String> listGroups(String owner) {
+        java.util.List<String> assets = listAssets(owner);
+        java.util.List<String> groups = new java.util.ArrayList<>();
+
+        for (String did : assets) {
+            if (testGroup(did)) {
+                groups.add(did);
+            }
+        }
+
+        return groups;
+    }
+
+    public java.util.List<String> listGroups() {
+        return listGroups(null);
     }
 
     public java.util.Map<String, Object> bindCredential(String schemaId, String subjectId) {
@@ -1502,8 +1655,8 @@ public class Keymaster {
         }
 
         MdipDocument doc = resolveDID(id.did);
-        if (doc.didDocumentData == null || !(doc.didDocumentData instanceof java.util.Map<?, ?>)) {
-            doc.didDocumentData = new java.util.LinkedHashMap<String, Object>();
+        if (!(doc.didDocumentData instanceof java.util.Map<?, ?>)) {
+            doc.didDocumentData = new java.util.LinkedHashMap<>();
         }
 
         @SuppressWarnings("unchecked")
@@ -1593,7 +1746,7 @@ public class Keymaster {
                 controller = doc.didDocument.controller != null ? doc.didDocument.controller : doc.didDocument.id;
             }
             DocumentMetadata metadata = doc.didDocumentMetadata != null ? doc.didDocumentMetadata : new DocumentMetadata();
-            metadata.isOwned = controller != null ? idInWallet(controller) : false;
+            metadata.isOwned = controller != null && idInWallet(controller);
             doc.didDocumentMetadata = metadata;
         }
         return doc;
@@ -1785,10 +1938,7 @@ public class Keymaster {
             if (doc.didDocument == null || doc.didDocument.controller == null || doc.didDocument.controller.isBlank()) {
                 return new java.util.LinkedHashMap<String, Object>();
             }
-            if (doc.didDocumentData == null) {
-                return new java.util.LinkedHashMap<String, Object>();
-            }
-            return doc.didDocumentData;
+            return Objects.requireNonNullElseGet(doc.didDocumentData, LinkedHashMap::new);
         } catch (IllegalArgumentException e) {
             String msg = e.getMessage();
             if ("unknown id".equals(msg) || "bad format".equals(msg) || "unknown".equals(msg)) {
@@ -1935,14 +2085,6 @@ public class Keymaster {
         return ISO_MILLIS.format(NOW_SUPPLIER.get());
     }
 
-    static void setNowSupplier(Supplier<Instant> supplier) {
-        NOW_SUPPLIER = supplier != null ? supplier : Instant::now;
-    }
-
-    static void resetNowSupplier() {
-        NOW_SUPPLIER = Instant::now;
-    }
-
     public java.util.Map<String, Object> addSignature(java.util.Map<String, Object> obj) {
         return addSignatureInternal(obj, null);
     }
@@ -2022,7 +2164,7 @@ public class Keymaster {
 
     private void tallyDid(String did, CheckWalletResult result) {
         result.checked += 1;
-        if (did == null || !isValidDID(did)) {
+        if (!isValidDID(did)) {
             result.invalid += 1;
             return;
         }
@@ -2041,7 +2183,7 @@ public class Keymaster {
     }
 
     private boolean shouldRemoveDid(String did) {
-        if (did == null || !isValidDID(did)) {
+        if (!isValidDID(did)) {
             return true;
         }
         try {
@@ -2277,7 +2419,7 @@ public class Keymaster {
             if (idInfo.held == null) {
                 return;
             }
-            if (idInfo.held.removeIf(item -> did.equals(item))) {
+            if (idInfo.held.removeIf(did::equals)) {
                 changed[0] = true;
             }
         });
