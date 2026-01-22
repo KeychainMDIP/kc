@@ -9,7 +9,5 @@ public class IDInfo {
     public int index;
     public List<String> held;
     public List<String> owned;
-    public Map<String, Object> dmail;
-    public Map<String, Object> notices;
     public Map<String, Object> extras;
 }
