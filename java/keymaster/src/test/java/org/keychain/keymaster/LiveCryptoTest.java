@@ -66,7 +66,9 @@ class LiveCryptoTest {
         String did = keymaster.createId("Bob");
 
         String msg = "Hi Bob!";
-        String encryptDid = keymaster.encryptMessage(msg, did, true);
+        EncryptOptions options = new EncryptOptions();
+        options.includeHash = true;
+        String encryptDid = keymaster.encryptMessage(msg, did, options);
         MdipDocument doc = keymaster.resolveDID(encryptDid);
         String msgHash = new KeymasterCryptoImpl().hashMessage(msg);
 
@@ -79,7 +81,9 @@ class LiveCryptoTest {
         String did = keymaster.createId("Bob");
 
         String msg = randomString();
-        String encryptDid = keymaster.encryptMessage(msg, did, true);
+        EncryptOptions options = new EncryptOptions();
+        options.includeHash = true;
+        String encryptDid = keymaster.encryptMessage(msg, did, options);
         MdipDocument doc = keymaster.resolveDID(encryptDid);
         String msgHash = new KeymasterCryptoImpl().hashMessage(msg);
 

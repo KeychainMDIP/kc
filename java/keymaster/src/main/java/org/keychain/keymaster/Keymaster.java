@@ -902,6 +902,7 @@ public class Keymaster {
         if (effective.validUntil == null) {
             effective.validUntil = ISO_MILLIS.format(Instant.now().plusSeconds(3600));
         }
+        boolean encryptForSender = effective.encryptForSender == null || effective.encryptForSender;
 
         java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
         payload.put("challenge", challenge);
@@ -1064,7 +1065,14 @@ public class Keymaster {
         java.util.List<java.util.Map<String, Object>> pairs = new java.util.ArrayList<>();
         for (String vcDid : matches) {
             String plaintext = decryptMessage(vcDid);
-            String vpDid = encryptMessage(plaintext, requestor, true, effective.registry, effective.validUntil);
+            String vpDid = encryptMessage(
+                plaintext,
+                requestor,
+                true,
+                effective.registry,
+                effective.validUntil,
+                encryptForSender
+            );
             java.util.Map<String, Object> pair = new java.util.LinkedHashMap<>();
             pair.put("vc", vcDid);
             pair.put("vp", vpDid);
@@ -1084,7 +1092,14 @@ public class Keymaster {
 
         java.util.Map<String, Object> wrapper = new java.util.LinkedHashMap<>();
         wrapper.put("response", response);
-        return encryptJsonInternal(wrapper, requestor, false, effective.registry, effective.validUntil);
+        return encryptJsonInternal(
+            wrapper,
+            requestor,
+            false,
+            effective.registry,
+            effective.validUntil,
+            encryptForSender
+        );
     }
 
     public java.util.Map<String, Object> verifyResponse(String responseDid) {
@@ -1481,7 +1496,8 @@ public class Keymaster {
 
         String targetRegistry = options != null ? options.registry : null;
         String targetValidUntil = options != null ? options.validUntil : null;
-        return encryptJsonInternal(signed, (String) subjectId, true, targetRegistry, targetValidUntil);
+        boolean encryptForSender = options == null || options.encryptForSender == null || options.encryptForSender;
+        return encryptJsonInternal(signed, (String) subjectId, true, targetRegistry, targetValidUntil, encryptForSender);
     }
 
     public java.util.Map<String, Object> getCredential(String id) {
@@ -2200,7 +2216,7 @@ public class Keymaster {
     }
 
     private String encryptJsonInternal(Object json, String receiverDid, boolean includeHash) {
-        return encryptJsonInternal(json, receiverDid, includeHash, null, null);
+        return encryptJsonInternal(json, receiverDid, includeHash, null, null, true);
     }
 
     private String encryptJsonInternal(
@@ -2210,21 +2226,48 @@ public class Keymaster {
         String registry,
         String validUntil
     ) {
+        return encryptJsonInternal(json, receiverDid, includeHash, registry, validUntil, true);
+    }
+
+    private String encryptJsonInternal(
+        Object json,
+        String receiverDid,
+        boolean includeHash,
+        String registry,
+        String validUntil,
+        boolean encryptForSender
+    ) {
         String plaintext;
         try {
             plaintext = WalletJsonMapper.mapper().writeValueAsString(json);
         } catch (Exception e) {
             throw new IllegalArgumentException("json");
         }
-        return encryptMessage(plaintext, receiverDid, includeHash, registry, validUntil);
+        return encryptMessage(plaintext, receiverDid, includeHash, registry, validUntil, encryptForSender);
     }
 
     public String encryptMessage(String msg, String receiverDid) {
-        return encryptMessage(msg, receiverDid, false);
+        return encryptMessage(msg, receiverDid, (EncryptOptions) null);
     }
 
     public String encryptMessage(String msg, String receiverDid, boolean includeHash) {
-        return encryptMessage(msg, receiverDid, includeHash, null, null);
+        EncryptOptions options = new EncryptOptions();
+        options.includeHash = includeHash;
+        return encryptMessage(msg, receiverDid, options);
+    }
+
+    public String encryptMessage(String msg, String receiverDid, EncryptOptions options) {
+        EncryptOptions effective = options != null ? options : new EncryptOptions();
+        boolean includeHash = effective.includeHash != null && effective.includeHash;
+        boolean encryptForSender = effective.encryptForSender == null || effective.encryptForSender;
+        return encryptMessage(
+            msg,
+            receiverDid,
+            includeHash,
+            effective.registry,
+            effective.validUntil,
+            encryptForSender
+        );
     }
 
     private String encryptMessage(
@@ -2232,7 +2275,8 @@ public class Keymaster {
         String receiverDid,
         boolean includeHash,
         String registry,
-        String validUntil
+        String validUntil,
+        boolean encryptForSender
     ) {
         if (receiverDid == null || receiverDid.isBlank()) {
             throw new IllegalArgumentException("receiver did is required");
@@ -2255,7 +2299,9 @@ public class Keymaster {
             receiverJwk.y
         );
 
-        String cipherSender = crypto.encryptMessage(senderKeypair.publicJwk, senderKeypair.privateJwk, msg);
+        String cipherSender = encryptForSender
+            ? crypto.encryptMessage(senderKeypair.publicJwk, senderKeypair.privateJwk, msg)
+            : null;
         String cipherReceiver = crypto.encryptMessage(receiverCrypto, senderKeypair.privateJwk, msg);
         String cipherHash = includeHash ? crypto.hashMessage(msg) : null;
 
@@ -2275,11 +2321,27 @@ public class Keymaster {
     }
 
     public String encryptJSON(Object json, String receiverDid) {
-        return encryptJsonInternal(json, receiverDid, false);
+        return encryptJSON(json, receiverDid, (EncryptOptions) null);
     }
 
     public String encryptJSON(Object json, String receiverDid, boolean includeHash) {
-        return encryptJsonInternal(json, receiverDid, includeHash);
+        EncryptOptions options = new EncryptOptions();
+        options.includeHash = includeHash;
+        return encryptJSON(json, receiverDid, options);
+    }
+
+    public String encryptJSON(Object json, String receiverDid, EncryptOptions options) {
+        EncryptOptions effective = options != null ? options : new EncryptOptions();
+        boolean includeHash = effective.includeHash != null && effective.includeHash;
+        boolean encryptForSender = effective.encryptForSender == null || effective.encryptForSender;
+        return encryptJsonInternal(
+            json,
+            receiverDid,
+            includeHash,
+            effective.registry,
+            effective.validUntil,
+            encryptForSender
+        );
     }
 
     public Object decryptJSON(String did) {
