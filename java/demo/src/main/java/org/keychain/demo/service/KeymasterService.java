@@ -1,5 +1,6 @@
 package org.keychain.demo.service;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.net.URI;
@@ -36,6 +37,7 @@ public class KeymasterService {
         this.gatekeeper = gatekeeper;
         this.registry = config.getRegistry();
         this.mapper = new ObjectMapper();
+        this.mapper.setSerializationInclusion(JsonInclude.Include.NON_NULL);
     }
 
     public Keymaster getKeymaster() {
