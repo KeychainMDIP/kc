@@ -131,7 +131,9 @@ class LiveCredentialTest {
         java.util.Map<String, Object> bound = keymaster.bindCredential(schemaDid, subjectDid);
         String credentialDid = keymaster.issueCredential(bound);
 
-        keymaster.publishCredential(credentialDid, true);
+        PublishCredentialOptions reveal = new PublishCredentialOptions();
+        reveal.reveal = true;
+        keymaster.publishCredential(credentialDid, reveal);
 
         MdipDocument doc = keymaster.resolveDID(subjectDid);
         Map<String, Object> manifest = manifestFromDoc(doc);
@@ -154,7 +156,9 @@ class LiveCredentialTest {
         java.util.Map<String, Object> bound = keymaster.bindCredential(schemaDid, subjectDid);
         String credentialDid = keymaster.issueCredential(bound);
 
-        keymaster.publishCredential(credentialDid, false);
+        PublishCredentialOptions noReveal = new PublishCredentialOptions();
+        noReveal.reveal = false;
+        keymaster.publishCredential(credentialDid, noReveal);
 
         MdipDocument doc = keymaster.resolveDID(subjectDid);
         Map<String, Object> manifest = manifestFromDoc(doc);
@@ -174,7 +178,9 @@ class LiveCredentialTest {
         String schemaDid = keymaster.createSchema(TestFixtures.mockSchema());
         java.util.Map<String, Object> bound = keymaster.bindCredential(schemaDid, subjectDid);
         String credentialDid = keymaster.issueCredential(bound);
-        keymaster.publishCredential(credentialDid, true);
+        PublishCredentialOptions reveal = new PublishCredentialOptions();
+        reveal.reveal = true;
+        keymaster.publishCredential(credentialDid, reveal);
 
         keymaster.unpublishCredential(credentialDid);
 
@@ -407,8 +413,10 @@ class LiveCredentialTest {
         String bobDid = keymaster.createId("Bob");
         String did = keymaster.encryptJSON(TestFixtures.mockJson(), bobDid);
 
+        PublishCredentialOptions noReveal = new PublishCredentialOptions();
+        noReveal.reveal = false;
         org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () ->
-            keymaster.publishCredential(did, false)
+            keymaster.publishCredential(did, noReveal)
         );
     }
 

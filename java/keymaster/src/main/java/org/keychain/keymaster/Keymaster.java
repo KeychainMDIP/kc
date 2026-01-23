@@ -707,9 +707,7 @@ public class Keymaster {
         if (gatekeeper == null) {
             throw new IllegalStateException("gatekeeper not configured");
         }
-        if (registry == null || registry.isBlank()) {
-            throw new IllegalArgumentException("registry is required");
-        }
+        String targetRegistry = registry == null || registry.isBlank() ? defaultRegistry : registry;
 
         final String[] createdDid = new String[1];
         mutateWallet(wallet -> {
@@ -719,11 +717,11 @@ public class Keymaster {
             int index = 0;
             JwkPair keypair = getCurrentKeypairFromPath(wallet, account, index);
 
-            BlockInfo block = gatekeeper.getBlock(registry);
+            BlockInfo block = gatekeeper.getBlock(targetRegistry);
             String blockid = block != null ? block.hash : null;
 
             Operation signed = operationFactory.createSignedCreateIdOperation(
-                registry,
+                targetRegistry,
                 JwkConverter.toEcdsaJwkPublic(keypair.publicJwk),
                 keypair.privateJwk,
                 blockid
@@ -745,16 +743,25 @@ public class Keymaster {
         return createdDid[0];
     }
 
+    public String createId(String name, CreateIdOptions options) {
+        String registry = options != null ? options.registry : null;
+        return createId(name, registry);
+    }
+
     public String createId(String name) {
-        return createId(name, defaultRegistry);
+        return createId(name, (CreateIdOptions) null);
     }
 
     public Operation createIdOperation(String name) {
-        return createIdOperation(name, 0, null);
+        return createIdOperation(name, 0, (String) null);
     }
 
     public Operation createIdOperation(String name, int account) {
-        return createIdOperation(name, account, null);
+        return createIdOperation(name, account, (String) null);
+    }
+
+    public Operation createIdOperation(String name, CreateIdOptions options) {
+        return createIdOperation(name, 0, options);
     }
 
     public Operation createIdOperation(String name, int account, String registry) {
@@ -779,6 +786,11 @@ public class Keymaster {
             keypair.privateJwk,
             blockid
         );
+    }
+
+    public Operation createIdOperation(String name, int account, CreateIdOptions options) {
+        String registry = options != null ? options.registry : null;
+        return createIdOperation(name, account, registry);
     }
 
     public String createAsset(Object data, String registry) {
@@ -856,6 +868,14 @@ public class Keymaster {
     }
 
     public String createSchema(Object schema, String registry) {
+        CreateAssetOptions options = new CreateAssetOptions();
+        if (registry != null && !registry.isBlank()) {
+            options.registry = registry;
+        }
+        return createSchema(schema, options);
+    }
+
+    public String createSchema(Object schema, CreateAssetOptions options) {
         if (schema == null) {
             schema = defaultSchema();
         }
@@ -864,15 +884,19 @@ public class Keymaster {
         }
         java.util.Map<String, Object> data = new java.util.HashMap<>();
         data.put("schema", schema);
-        return createAsset(data, registry);
+        return createAsset(data, options);
     }
 
     public String createSchema(Object schema) {
-        return createSchema(schema, defaultRegistry);
+        return createSchema(schema, (CreateAssetOptions) null);
     }
 
     public String createSchema() {
-        return createSchema(null, defaultRegistry);
+        return createSchema(null, (CreateAssetOptions) null);
+    }
+
+    public String createSchema(CreateAssetOptions options) {
+        return createSchema(null, options);
     }
 
     public String createChallenge() {
@@ -902,7 +926,6 @@ public class Keymaster {
         if (effective.validUntil == null) {
             effective.validUntil = ISO_MILLIS.format(Instant.now().plusSeconds(3600));
         }
-        boolean encryptForSender = effective.encryptForSender == null || effective.encryptForSender;
 
         java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
         payload.put("challenge", challenge);
@@ -1020,6 +1043,7 @@ public class Keymaster {
         if (effective.validUntil == null) {
             effective.validUntil = ISO_MILLIS.format(Instant.now().plusSeconds(3600));
         }
+        boolean encryptForSender = effective.encryptForSender == null || effective.encryptForSender;
 
         MdipDocument doc = resolveWithRetries(challengeDid, retries, delay);
         if (doc == null) {
@@ -1408,6 +1432,17 @@ public class Keymaster {
     public java.util.Map<String, Object> bindCredential(
         String schemaId,
         String subjectId,
+        BindCredentialOptions options
+    ) {
+        if (options == null) {
+            return bindCredential(schemaId, subjectId, null, null, null);
+        }
+        return bindCredential(schemaId, subjectId, options.validFrom, options.validUntil, options.credential);
+    }
+
+    public java.util.Map<String, Object> bindCredential(
+        String schemaId,
+        String subjectId,
         String validFrom,
         String validUntil,
         java.util.Map<String, Object> credential
@@ -1650,6 +1685,11 @@ public class Keymaster {
 
     public java.util.Map<String, Object> publishCredential(String did) {
         return publishCredential(did, false);
+    }
+
+    public java.util.Map<String, Object> publishCredential(String did, PublishCredentialOptions options) {
+        boolean reveal = options != null && Boolean.TRUE.equals(options.reveal);
+        return publishCredential(did, reveal);
     }
 
     public java.util.Map<String, Object> publishCredential(String did, boolean reveal) {
