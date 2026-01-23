@@ -1479,7 +1479,9 @@ public class Keymaster {
             throw new IllegalArgumentException("credential.credentialSubject.id");
         }
 
-        return encryptJsonInternal(signed, (String) subjectId, true);
+        String targetRegistry = options != null ? options.registry : null;
+        String targetValidUntil = options != null ? options.validUntil : null;
+        return encryptJsonInternal(signed, (String) subjectId, true, targetRegistry, targetValidUntil);
     }
 
     public java.util.Map<String, Object> getCredential(String id) {

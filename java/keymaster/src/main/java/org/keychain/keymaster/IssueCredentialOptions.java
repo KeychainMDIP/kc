@@ -5,6 +5,7 @@ public class IssueCredentialOptions {
     public String subject;
     public String validFrom;
     public String validUntil;
+    public String registry;
 
     public IssueCredentialOptions() {}
 }

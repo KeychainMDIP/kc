@@ -186,6 +186,14 @@ public class KeymasterService {
         return requireKeymaster().verifyResponse(responseDid);
     }
 
+    public String issueCredential(java.util.Map<String, Object> credential, String registry) {
+        org.keychain.keymaster.IssueCredentialOptions options = new org.keychain.keymaster.IssueCredentialOptions();
+        if (registry != null && !registry.isBlank()) {
+            options.registry = registry;
+        }
+        return requireKeymaster().issueCredential(credential, options);
+    }
+
     public String createGroup(String name, String registry) {
         if (name == null || name.isBlank()) {
             throw new IllegalArgumentException("Name is required");

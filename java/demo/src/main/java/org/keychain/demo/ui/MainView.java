@@ -1870,6 +1870,10 @@ public class MainView extends VerticalLayout {
             showError("Credential JSON is required");
             return;
         }
+        String registry = issueRegistrySelect.getValue();
+        if (!canUseRegistry(registry, "credential")) {
+            return;
+        }
         try {
             Object parsed = keymasterService.parseJson(json);
             if (!(parsed instanceof java.util.Map<?, ?>)) {
@@ -1878,7 +1882,7 @@ public class MainView extends VerticalLayout {
             }
             @SuppressWarnings("unchecked")
             java.util.Map<String, Object> map = (java.util.Map<String, Object>) parsed;
-            String did = keymasterService.issueCredential(map);
+            String did = keymasterService.issueCredential(map, registry);
             issueResult.setText(did);
             updateIssueButtons();
             refreshIssued();
@@ -1895,7 +1899,8 @@ public class MainView extends VerticalLayout {
         issueEditButton.setEnabled(canEdit);
 
         String json = issueArea.getValue();
-        boolean canIssue = json != null && !json.isBlank();
+        boolean hasRegistry = issueRegistrySelect.getValue() != null && !issueRegistrySelect.getValue().isBlank();
+        boolean canIssue = json != null && !json.isBlank() && hasRegistry;
         issueButton.setEnabled(canIssue);
     }
 
@@ -2471,6 +2476,9 @@ public class MainView extends VerticalLayout {
                 return;
             }
         }
+        if (!canUseRegistry(config.getRegistry(), "challenge")) {
+            return;
+        }
         try {
             String did = keymasterService.createChallenge(map, null);
             authChallengeDialog.close();
@@ -2493,6 +2501,9 @@ public class MainView extends VerticalLayout {
     private void createResponse() {
         String challengeDid = authChallengeField.getValue();
         try {
+            if (!canUseRegistry(config.getRegistry(), "response")) {
+                return;
+            }
             clearResponse();
             String responseDid = keymasterService.createResponse(challengeDid.trim());
             authResponseField.setValue(responseDid);
