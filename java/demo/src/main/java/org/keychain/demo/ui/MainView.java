@@ -2192,7 +2192,12 @@ public class MainView extends VerticalLayout {
             showError("Select a name first");
             return;
         }
-        resolveDidInput();
+        try {
+            MdipDocument doc = keymasterService.resolveDID(name.trim());
+            didDocsArea.setValue(keymasterService.prettyJson(doc));
+        } catch (Exception e) {
+            showError(e.getMessage());
+        }
     }
 
     private void addDidName() {
