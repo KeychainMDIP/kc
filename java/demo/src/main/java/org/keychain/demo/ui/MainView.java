@@ -1020,6 +1020,7 @@ public class MainView extends VerticalLayout {
         removeConfirm.setHeader("Remove ID");
         removeConfirm.setConfirmText("Remove");
         removeConfirm.setCancelText("Cancel");
+        removeConfirm.setCancelable(true);
         removeConfirm.addConfirmListener(event -> removeSelectedId());
         add(removeConfirm);
     }
@@ -1041,6 +1042,7 @@ public class MainView extends VerticalLayout {
         recoverWalletConfirm.setText("Overwrite wallet from backup?");
         recoverWalletConfirm.setConfirmText("Recover");
         recoverWalletConfirm.setCancelText("Cancel");
+        recoverWalletConfirm.setCancelable(true);
         recoverWalletConfirm.addConfirmListener(event -> recoverWallet());
         add(recoverWalletConfirm);
     }
