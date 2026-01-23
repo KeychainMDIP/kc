@@ -779,6 +779,11 @@ public class MainView extends VerticalLayout {
             String value = event.getValue();
             if (value != null && !value.isBlank()) {
                 selectedHeldDid = value;
+                heldArea.clear();
+                updateHeldSelectionState();
+            } else {
+                selectedHeldDid = null;
+                heldArea.clear();
                 updateHeldSelectionState();
             }
         });
@@ -2054,6 +2059,7 @@ public class MainView extends VerticalLayout {
                 return;
             }
             issuedOriginal = json;
+            resetHeldSelection();
             showSuccess("Credential updated");
         } catch (Exception e) {
             showError(e.getMessage());
@@ -2073,6 +2079,7 @@ public class MainView extends VerticalLayout {
                 return;
             }
             refreshIssued();
+            resetHeldSelection();
             showSuccess("Credential revoked");
         } catch (Exception e) {
             showError(e.getMessage());
@@ -2356,6 +2363,13 @@ public class MainView extends VerticalLayout {
     private void updateIssuedSelectionState() {
         String selected = issuedSelect.getValue();
         setButtonsEnabledOnValue(selected, issuedCopyButton);
+    }
+
+    private void resetHeldSelection() {
+        heldSelect.clear();
+        selectedHeldDid = null;
+        heldArea.clear();
+        updateHeldSelectionState();
     }
 
     private void setButtonsEnabledOnValue(String value, Button... buttons) {
@@ -3018,10 +3032,10 @@ public class MainView extends VerticalLayout {
         boolean hasSelection = did != null && !did.isBlank();
 
         heldResolveSelectedButton.setEnabled(hasSelection);
-        heldDecryptSelectedButton.setEnabled(hasSelection);
         heldCopyButton.setEnabled(hasSelection);
 
         if (!hasSelection) {
+            heldDecryptSelectedButton.setEnabled(false);
             heldRemoveButton.setEnabled(false);
             heldPublishButton.setEnabled(false);
             heldRevealButton.setEnabled(false);
@@ -3029,6 +3043,18 @@ public class MainView extends VerticalLayout {
             return;
         }
 
+        boolean deactivatedEmpty = isDeactivatedEmptyCredential(did);
+        if (deactivatedEmpty) {
+            boolean unpublished = credentialUnpublished(did);
+            heldDecryptSelectedButton.setEnabled(false);
+            heldPublishButton.setEnabled(false);
+            heldRevealButton.setEnabled(false);
+            heldRemoveButton.setEnabled(true);
+            heldUnpublishButton.setEnabled(!unpublished);
+            return;
+        }
+
+        heldDecryptSelectedButton.setEnabled(true);
         boolean unpublished = credentialUnpublished(did);
         boolean published = credentialPublished(did);
         boolean revealed = credentialRevealed(did);
@@ -3068,6 +3094,28 @@ public class MainView extends VerticalLayout {
             return true;
         }
         return !manifest.containsKey(did);
+    }
+
+    private boolean isDeactivatedEmptyCredential(String did) {
+        try {
+            MdipDocument doc = keymasterService.resolveDID(did);
+            if (doc == null || doc.didDocumentMetadata == null) {
+                return false;
+            }
+            if (!Boolean.TRUE.equals(doc.didDocumentMetadata.deactivated)) {
+                return false;
+            }
+            Object data = doc.didDocumentData;
+            if (data == null) {
+                return true;
+            }
+            if (data instanceof java.util.Map<?, ?>) {
+                return ((java.util.Map<?, ?>) data).isEmpty();
+            }
+            return false;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private void updateSchemaCreateState() {
