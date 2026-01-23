@@ -1,6 +1,6 @@
 keymaster:
   gatekeeperUrl: http://localhost:4224
-  registry: local
+  registry: hyperswarm
   walletDir: data
   walletFile: wallet.json
 
