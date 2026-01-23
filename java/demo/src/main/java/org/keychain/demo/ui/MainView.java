@@ -1339,6 +1339,7 @@ public class MainView extends VerticalLayout {
 
     private void refresh() {
         refreshing = true;
+        String previousId = currentIdName;
         if (!keymasterService.isReady()) {
             currentIdSelect.setItems(Collections.emptyList());
             currentIdSelect.clear();
@@ -1365,6 +1366,11 @@ public class MainView extends VerticalLayout {
         }
 
         hasCurrentId = currentId != null && !currentId.isBlank();
+        boolean idChanged = (previousId == null && hasCurrentId)
+            || (previousId != null && !previousId.equals(currentId));
+        if (idChanged) {
+            resetForUserChange();
+        }
         List<String> ids = Collections.emptyList();
         try {
             ids = keymasterService.listIds();
@@ -1409,6 +1415,80 @@ public class MainView extends VerticalLayout {
             refreshAuth();
         }
         refreshing = false;
+    }
+
+    private void resetForUserChange() {
+        didNameField.clear();
+        didValueField.clear();
+        didSelect.clear();
+        didDocsArea.clear();
+        updateDidActionsState();
+        updateDidSelectionState();
+
+        schemaNameField.clear();
+        schemaRegistrySelect.clear();
+        schemaSelect.clear();
+        schemaArea.clear();
+        schemaOwned = false;
+        selectedSchemaDid = null;
+        schemaDetails.setVisible(false);
+        schemaCreateArea.clear();
+        schemaCreateDialog.close();
+        updateSchemaCreateState();
+        updateSchemaSelectionState();
+
+        groupNameField.clear();
+        groupRegistrySelect.clear();
+        groupSelect.clear();
+        groupArea.clear();
+        groupDetails.setVisible(false);
+        selectedGroupDid = null;
+        groupMemberField.clear();
+        groupMemberSelect.clear();
+        groupActionResult.setText("");
+        updateGroupMemberControls(false);
+        updateGroupSelectionState();
+        updateGroupCreateState();
+
+        heldDidField.clear();
+        heldSelect.clear();
+        heldArea.clear();
+        selectedHeldDid = null;
+        updateHeldInputState();
+        updateHeldSelectionState();
+
+        issuedSelect.clear();
+        issuedArea.clear();
+        selectedIssuedDid = null;
+        issuedOriginal = "";
+        issuedEditable = false;
+        updateIssuedSelectionState();
+
+        issueSubjectSelect.clear();
+        issueSchemaSelect.clear();
+        issueRegistrySelect.clear();
+        issueArea.clear();
+        issueResult.setText("");
+        updateIssueButtons();
+
+        authChallengeField.clear();
+        authResponseField.clear();
+        authDidValue.setText("");
+        authStringArea.clear();
+        callbackUrl = null;
+        disableSendResponse = true;
+        authChallengeDialog.close();
+        updateAuthButtons();
+
+        walletArea.clear();
+        mnemonicArea.clear();
+        importMnemonic.clear();
+        createNameField.clear();
+        createRegistrySelect.clear();
+        renameField.clear();
+        recoverField.clear();
+        createInlineNameField.clear();
+        createInlineRegistrySelect.clear();
     }
 
     private void updateTabVisibility() {
