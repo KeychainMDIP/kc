@@ -1,0 +1,20 @@
+keymaster:
+  gatekeeperUrl: http://localhost:4224
+  registry: hyperswarm
+  walletDir: data
+  walletFile: wallet.json
+
+spring:
+  devtools:
+    restart:
+      enabled: true
+    livereload:
+      enabled: true
+
+server:
+  port: 8080
+
+vaadin:
+  liveReload:
+    enabled: true
+  whitelisted-packages: com.vaadin,org.keychain.demo

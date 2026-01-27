@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "seed": {
+    "mnemonicEnc": {
+      "salt": "AAECAwQFBgcICQoLDA0ODw==",
+      "iv": "EBESExQVFhcYGRob",
+      "data": "wx3fGlIor3vtRtYk0WPnbnEOHnM0agBEUugXfr1FoCrNenafh5H5xfsLXMmVUGBR38HreYHMF5yCmoBMAxwFxmIRsFBVQ0XbajAInzL7WF9UysoSsEstXtP7+M0U/ajMkXQuo0I2ZkrOlxtbIg=="
+    }
+  },
+  "enc": "NUKhOmTQbN4-BAUml2Jswqrb8tyDjWGXmNiT1SO874b1BiuzuUgcpgFL6wggPmSy1eBGsGbB3O6YoMfk4so-MEq4EbP80kqs8XmxbrUnoQURUPFWb2OFqf9B3ziVYGM06zxhAHarQXmPOfEJrJpS9KFz-QBjB7SvY-fGK8EEjXh0ny_w6N2XyOtD_txHY8uzXS9qF0s30AGl77i9JO7DxDPKFbHpyro1hyIizmlFEOOMFNhZKDbk00Ns5-Z5Sg6mtxFGi1Ha3eAk9y22FvfT2-rXrrgWWX5Cf6Fzja1Jkg",
+  "passphrase": "passphrase",
+  "wallet": {
+    "counter": 1,
+    "ids": {
+      "Alice": {
+        "did": "did:test:alice",
+        "account": 0,
+        "index": 0,
+        "held": [
+          "did:test:cred1"
+        ],
+        "owned": [
+          "did:test:asset1"
+        ]
+      }
+    },
+    "current": "Alice",
+    "names": {
+      "alias": "did:test:alice"
+    }
+  }
+}
