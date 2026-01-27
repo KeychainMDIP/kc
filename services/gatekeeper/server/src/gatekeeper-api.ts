@@ -12,6 +12,7 @@ import DbSqlite from '@mdip/gatekeeper/db/sqlite';
 import DbMongo from '@mdip/gatekeeper/db/mongo';
 import { CheckDIDsResult, ResolveDIDOptions, Operation } from '@mdip/gatekeeper/types';
 import KuboClient from '@mdip/ipfs/kubo';
+import ClusterClient from '@mdip/ipfs/cluster';
 import config from './config.js';
 
 EventEmitter.defaultMaxListeners = 100;
@@ -34,12 +35,21 @@ if (!db) {
 
 await db.start();
 
-const ipfs = await KuboClient.create({
-    url: config.ipfsURL,
-    waitUntilReady: true,
-    intervalSeconds: 5,
-    chatty: true,
-});
+const ipfs = config.ipfsClusterURL
+    ? await ClusterClient.create({
+        kuboUrl: config.ipfsURL,
+        clusterUrl: config.ipfsClusterURL,
+        clusterAuthHeader: config.ipfsClusterAuthHeader,
+        waitUntilReady: true,
+        intervalSeconds: 5,
+        chatty: true,
+    })
+    : await KuboClient.create({
+        url: config.ipfsURL,
+        waitUntilReady: true,
+        intervalSeconds: 5,
+        chatty: true,
+    });
 
 const gatekeeper = new Gatekeeper({
     db,
