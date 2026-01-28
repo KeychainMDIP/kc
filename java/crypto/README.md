@@ -5,10 +5,10 @@ Core crypto utilities that mirror the JS Keymaster behavior.
 ## Usage
 
 ```java
-import org.keychain.crypto.HdKey;
-import org.keychain.crypto.JwkPair;
-import org.keychain.crypto.KeymasterCrypto;
-import org.keychain.crypto.KeymasterCryptoImpl;
+import com.selfid.crypto.HdKey;
+import com.selfid.crypto.JwkPair;
+import com.selfid.crypto.KeymasterCrypto;
+import com.selfid.crypto.KeymasterCryptoImpl;
 
 KeymasterCrypto crypto = new KeymasterCryptoImpl();
 

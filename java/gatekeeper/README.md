@@ -5,9 +5,9 @@ HTTP client for the Gatekeeper REST API.
 ## Usage
 
 ```java
-import org.keychain.gatekeeper.GatekeeperClient;
-import org.keychain.gatekeeper.GatekeeperClientOptions;
-import org.keychain.gatekeeper.model.MdipDocument;
+import com.selfid.gatekeeper.GatekeeperClient;
+import com.selfid.gatekeeper.GatekeeperClientOptions;
+import com.selfid.gatekeeper.model.MdipDocument;
 
 GatekeeperClientOptions options = new GatekeeperClientOptions();
 options.baseUrl = "http://localhost:4224";
