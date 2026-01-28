@@ -29,3 +29,75 @@ subprojects {
         testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.10.2'
     }
 }
+
+def publishableModules = ['cid', 'crypto', 'gatekeeper', 'keymaster']
+
+configure(subprojects.findAll { it.name in publishableModules }) {
+    apply plugin: 'maven-publish'
+    apply plugin: 'signing'
+
+    java {
+        withSourcesJar()
+        withJavadocJar()
+    }
+
+    publishing {
+        publications {
+            mavenJava(MavenPublication) {
+                from components.java
+                artifactId = project.name
+
+                pom {
+                    name = "Self ID Java ${project.name}"
+                    description = "Self ID Java ${project.name} module"
+                    url = "https://github.com/KeychainMDIP/kc"
+
+                    licenses {
+                        license {
+                            name = "MIT License"
+                            url = "https://opensource.org/licenses/MIT"
+                            distribution = "repo"
+                        }
+                    }
+
+                    developers {
+                        developer {
+                            id = "selfid"
+                            name = "Self ID"
+                            organization = "Self ID"
+                            organizationUrl = "https://selfid.com"
+                        }
+                    }
+
+                    scm {
+                        url = "https://github.com/KeychainMDIP/kc"
+                        connection = "scm:git:https://github.com/KeychainMDIP/kc.git"
+                        developerConnection = "scm:git:https://github.com/KeychainMDIP/kc.git"
+                    }
+                }
+            }
+        }
+
+        repositories {
+            maven {
+                name = "MavenCentral"
+                url = uri("https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/")
+                credentials {
+                    username = findProperty("sonatypeUsername") ?: System.getenv("SONATYPE_USERNAME")
+                    password = findProperty("sonatypePassword") ?: System.getenv("SONATYPE_PASSWORD")
+                }
+            }
+        }
+    }
+
+    signing {
+        def signingKey = findProperty("signingKey") ?: System.getenv("SIGNING_KEY")
+        def signingPassword = findProperty("signingPassword") ?: System.getenv("SIGNING_PASSWORD")
+
+        if (signingKey && signingPassword) {
+            useInMemoryPgpKeys(signingKey, signingPassword)
+        }
+
+        sign publishing.publications.mavenJava
+    }
+}

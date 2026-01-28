@@ -7,12 +7,12 @@ Keymaster manages an encrypted wallet and signs Gatekeeper operations.
 ```java
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import org.keychain.gatekeeper.GatekeeperClient;
-import org.keychain.gatekeeper.GatekeeperClientOptions;
-import org.keychain.keymaster.Keymaster;
-import org.keychain.keymaster.model.WalletEncFile;
-import org.keychain.keymaster.store.WalletJson;
-import org.keychain.keymaster.store.WalletStore;
+import com.selfid.gatekeeper.GatekeeperClient;
+import com.selfid.gatekeeper.GatekeeperClientOptions;
+import com.selfid.keymaster.Keymaster;
+import com.selfid.keymaster.model.WalletEncFile;
+import com.selfid.keymaster.store.WalletJson;
+import com.selfid.keymaster.store.WalletStore;
 
 Path dataDir = Paths.get(System.getProperty("user.home"), ".keymaster");
 WalletStore<WalletEncFile> store = new WalletJson<>(WalletEncFile.class, dataDir, "wallet.json");
