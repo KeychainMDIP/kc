@@ -50,7 +50,7 @@ configure(subprojects.findAll { it.name in publishableModules }) {
                 pom {
                     name = "Self ID Java ${project.name}"
                     description = "Self ID Java ${project.name} module"
-                    url = "https://github.com/KeychainMDIP/kc"
+                    url = "https://selfid.com"
 
                     licenses {
                         license {
