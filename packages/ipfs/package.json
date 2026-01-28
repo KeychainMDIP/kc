@@ -38,6 +38,11 @@
       "require": "./dist/cjs/kubo-client.cjs",
       "types": "./dist/types/kubo-client.d.ts"
     },
+    "./cluster": {
+      "import": "./dist/esm/cluster-client.js",
+      "require": "./dist/cjs/cluster-client.cjs",
+      "types": "./dist/types/cluster-client.d.ts"
+    },
     "./utils": {
       "import": "./dist/esm/utils.js",
       "require": "./dist/cjs/utils.cjs",
@@ -54,6 +59,9 @@
       ],
       "kubo": [
         "./dist/types/kubo-client.d.ts"
+      ],
+      "cluster": [
+        "./dist/types/cluster-client.d.ts"
       ],
       "utils": [
         "./dist/types/utils.d.ts"

@@ -41,6 +41,8 @@ services:
       - KC_MONGODB_URL=mongodb://mongodb:27017
       - KC_REDIS_URL=redis://redis:6379
       - KC_IPFS_URL=http://ipfs:5001/api/v0
+      - KC_IPFS_CLUSTER_URL=${KC_IPFS_CLUSTER_URL}
+      - KC_IPFS_CLUSTER_AUTH_HEADER=${KC_IPFS_CLUSTER_AUTH_HEADER}
     volumes:
       - ./data:/app/gatekeeper/data
     user: "${KC_UID}:${KC_GID}"
