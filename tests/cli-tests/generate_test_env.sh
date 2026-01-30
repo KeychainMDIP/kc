@@ -19,6 +19,7 @@ KC_UID=1000
 KC_GID=1000
 KC_NODE_NAME=mdip-quality
 KC_NODE_ID=mdip-quality
+KC_LOG_LEVEL=info
 KC_MDIP_PROTOCOL=/MDIP/test
 
 
