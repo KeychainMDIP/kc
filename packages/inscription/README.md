@@ -183,10 +183,11 @@ Derives a Taproot (BIP86) bech32m address from an account‑level BIP86 xprv and
 
 ```ts
 import Inscription from '@mdip/inscription';
+import { logger } from '@mdip/common/logger';
 
 const ins = new Inscription({ feeMax: 0.002, network: 'testnet' });
 const addr = ins.deriveP2TRAddress(process.env.BIP86_XPRV, "m/86/1/0/0/0");
-console.log('Taproot address:', addr);
+logger.info(`Taproot address: ${addr}`);
 ```
 
 ---
@@ -206,10 +207,11 @@ Derives a Native SegWit (BIP84) bech32 P2WPKH address from an account‑level BI
 
 ```ts
 import Inscription from '@mdip/inscription';
+import { logger } from '@mdip/common/logger';
 
 const ins = new Inscription({ feeMax: 0.002, network: 'testnet' });
 const addr = ins.deriveP2WPKHAddress(process.env.BIP84_XPRV, "m/84/1/0/0/0");
-console.log('P2WPKH address:', addr);
+logger.info(`P2WPKH address: ${addr}`);
 ```
 
 ---

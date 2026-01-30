@@ -9,11 +9,13 @@ import config from './config.js';
 import { isValidDID } from '@mdip/ipfs/utils';
 import { MediatorDb, MediatorDbInterface, DiscoveredItem, BlockVerbosity } from './types.js';
 import { GatekeeperEvent, Operation } from '@mdip/gatekeeper/types';
+import { childLogger } from '@mdip/common/logger';
 
 const REGISTRY = config.chain;
 const SMART_FEE_MODE = "CONSERVATIVE";
 
 const READ_ONLY = config.exportInterval === 0;
+const log = childLogger({ service: 'satoshi-mediator' });
 
 const gatekeeper = new GatekeeperClient();
 const keymaster = new KeymasterClient();
@@ -70,7 +72,7 @@ async function resolveScanStart(blockCount: number): Promise<number> {
         return db.height + 1;
     }
 
-    console.log(`Reorg detected at height ${db.height}, rewinding to a confirmed block...`);
+    log.warn(`Reorg detected at height ${db.height}, rewinding to a confirmed block...`);
 
     let height = db.height;
     let hash = db.hash;
@@ -149,7 +151,7 @@ async function fetchBlock(height: number, blockCount: number): Promise<void> {
             const tx = block.tx[i];
             const txid = tx.txid;
 
-            console.log(height, String(i).padStart(4), txid);
+            log.debug(`${height} ${String(i).padStart(4)} ${txid}`);
 
             const asm = tx.vout?.[0]?.scriptPubKey?.asm;
             if (!asm) {
@@ -169,7 +171,7 @@ async function fetchBlock(height: number, blockCount: number): Promise<void> {
                     });
                 }
             } catch (error: any) {
-                console.error('Error decoding OP_RETURN or updating DB:', error);
+                log.error({ error }, 'Error decoding OP_RETURN or updating DB');
             }
         }
 
@@ -185,19 +187,19 @@ async function fetchBlock(height: number, blockCount: number): Promise<void> {
         await addBlock(height, blockHash, block.time);
 
     } catch (error) {
-        console.error(`Error fetching block: ${error}`);
+        log.error({ error }, 'Error fetching block');
     }
 }
 
 async function scanBlocks(): Promise<void> {
     let blockCount = await btcClient.getBlockCount();
 
-    console.log(`current block height: ${blockCount}`);
+    log.info(`current block height: ${blockCount}`);
 
     let start = await resolveScanStart(blockCount);
 
     for (let height = start; height <= blockCount; height++) {
-        console.log(`${height}/${blockCount} blocks (${(100 * height / blockCount).toFixed(2)}%)`);
+        log.debug(`${height}/${blockCount} blocks (${(100 * height / blockCount).toFixed(2)}%)`);
         await fetchBlock(height, blockCount);
         blockCount = await btcClient.getBlockCount();
     }
@@ -247,7 +249,7 @@ async function importBatch(item: DiscoveredItem) {
         update.error = JSON.stringify(error);
     }
 
-    console.log(JSON.stringify(update, null, 4));
+    log.debug({ update }, 'importBatch update');
     return update;
 }
 
@@ -276,7 +278,7 @@ async function importBatches(): Promise<boolean> {
         catch (error: any) {
             // OK if DID not found, we'll just try again later
             if (error.error !== 'DID not found') {
-                console.error(`Error importing ${item.did}: ${error.error || JSON.stringify(error)}`);
+                log.error({ error }, `Error importing ${item.did}`);
             }
         }
     }
@@ -315,12 +317,12 @@ export async function createOpReturnTxn(opReturnData: string): Promise<string | 
         signedTxn = await btcClient.signRawTransaction(funded.hex);
     }
 
-    console.log(JSON.stringify(signedTxn, null, 4));
+    log.debug({ signedTxn }, 'signed transaction');
 
     // Broadcast the transaction
     const txid = await btcClient.sendRawTransaction(signedTxn.hex);
 
-    console.log(`Transaction broadcast with txid: ${txid}`);
+    log.info(`Transaction broadcast with txid: ${txid}`);
     return txid;
 }
 
@@ -345,7 +347,7 @@ async function checkPendingTransactions(txids: string[]): Promise<boolean> {
             await jsonPersister.updateDb((db) => { db.pending = undefined; });
             return false;
         } else {
-            console.log('pending txid', txids.at(-1));
+            log.debug(`pending txid ${txids.at(-1)}`);
         }
     }
 
@@ -405,7 +407,7 @@ async function replaceByFee(): Promise<boolean> {
 
     if (result.txid) {
         const txid = result.txid;
-        console.log(`RBF: Transaction broadcast with txid: ${txid}`);
+        log.info(`RBF: Transaction broadcast with txid: ${txid}`);
         await jsonPersister.updateDb((db) => {
             if (db.pending?.txids) {
                 db.pending.txids.push(txid);
@@ -450,19 +452,19 @@ async function anchorBatch(): Promise<void> {
 
         if (walletInfo.balance < config.feeMax) {
             const address = await btcClient.getNewAddress('funds', 'bech32');
-            console.log(`Wallet has insufficient funds (${walletInfo.balance}). Send ${config.chain} to ${address}`);
+            log.warn(`Wallet has insufficient funds (${walletInfo.balance}). Send ${config.chain} to ${address}`);
             return;
         }
     }
     catch {
-        console.log(`${config.chain} node not accessible`);
+        log.warn(`${config.chain} node not accessible`);
         return;
     }
 
     const batch = await gatekeeper.getQueue(REGISTRY);
 
     if (batch.length > 0) {
-        console.log(JSON.stringify(batch, null, 4));
+        log.debug({ batch }, 'export batch');
 
         const did = await keymaster.createAsset({ batch }, { registry: 'hyperswarm', controller: config.nodeID });
         const txid = await createOpReturnTxn(did);
@@ -487,14 +489,14 @@ async function anchorBatch(): Promise<void> {
         }
     }
     else {
-        console.log(`empty ${REGISTRY} queue`);
+        log.debug(`empty ${REGISTRY} queue`);
     }
 }
 
 async function importLoop(): Promise<void> {
     if (importRunning) {
         setTimeout(importLoop, config.importInterval * 60 * 1000);
-        console.log(`import loop busy, waiting ${config.importInterval} minute(s)...`);
+        log.debug(`import loop busy, waiting ${config.importInterval} minute(s)...`);
         return;
     }
 
@@ -504,10 +506,10 @@ async function importLoop(): Promise<void> {
         await scanBlocks();
         await importBatches();
     } catch (error: any) {
-        console.error(`Error in importLoop: ${error.error || JSON.stringify(error)}`);
+        log.error({ error }, 'Error in importLoop');
     } finally {
         importRunning = false;
-        console.log(`import loop waiting ${config.importInterval} minute(s)...`);
+        log.debug(`import loop waiting ${config.importInterval} minute(s)...`);
         setTimeout(importLoop, config.importInterval * 60 * 1000);
     }
 }
@@ -515,7 +517,7 @@ async function importLoop(): Promise<void> {
 async function exportLoop(): Promise<void> {
     if (exportRunning) {
         setTimeout(exportLoop, config.exportInterval * 60 * 1000);
-        console.log(`Export loop busy, waiting ${config.exportInterval} minute(s)...`);
+        log.debug(`Export loop busy, waiting ${config.exportInterval} minute(s)...`);
         return;
     }
 
@@ -524,10 +526,10 @@ async function exportLoop(): Promise<void> {
     try {
         await anchorBatch();
     } catch (error) {
-        console.error(`Error in exportLoop: ${error}`);
+        log.error({ error }, 'Error in exportLoop');
     } finally {
         exportRunning = false;
-        console.log(`export loop waiting ${config.exportInterval} minute(s)...`);
+        log.debug(`export loop waiting ${config.exportInterval} minute(s)...`);
         setTimeout(exportLoop, config.exportInterval * 60 * 1000);
     }
 }
@@ -535,15 +537,15 @@ async function exportLoop(): Promise<void> {
 async function waitForChain() {
     let isReady = false;
 
-    console.log(`Connecting to ${config.chain} node on ${config.host}:${config.port} using wallet '${config.wallet}'`);
+    log.info(`Connecting to ${config.chain} node on ${config.host}:${config.port} using wallet '${config.wallet}'`);
 
     while (!isReady) {
         try {
             const blockchainInfo = await btcClient.getBlockchainInfo();
-            console.log("Blockchain Info:", JSON.stringify(blockchainInfo, null, 4));
+            log.debug({ blockchainInfo }, 'Blockchain Info');
             isReady = true;
         } catch (error) {
-            console.log(`Waiting for ${config.chain} node...`);
+            log.debug(`Waiting for ${config.chain} node...`);
         }
 
         if (!isReady) {
@@ -557,30 +559,30 @@ async function waitForChain() {
 
     try {
         await btcClient.createWallet(config.wallet!);
-        console.log(`Wallet '${config.wallet}' created successfully.`);
+        log.info(`Wallet '${config.wallet}' created successfully.`);
     } catch (error: any) {
         // If wallet already exists, log a message
         if (error.message.includes("already exists")) {
-            console.log(`Wallet '${config.wallet}' already exists.`);
+            log.info(`Wallet '${config.wallet}' already exists.`);
         } else {
-            console.error("Error creating wallet:", error);
+            log.error({ error }, 'Error creating wallet');
             return false;
         }
     }
 
     try {
         const walletInfo = await btcClient.getWalletInfo();
-        console.log("Wallet Info:", JSON.stringify(walletInfo, null, 4));
+        log.debug({ walletInfo }, 'Wallet Info');
     } catch (error) {
-        console.error("Error fetching wallet info:", error);
+        log.error({ error }, 'Error fetching wallet info');
         return false;
     }
 
     try {
         const address = await btcClient.getNewAddress('funds', 'bech32');
-        console.log(`Send ${config.chain} to address: ${address}`);
+        log.info(`Send ${config.chain} to address: ${address}`);
     } catch (error) {
-        console.error("Error generating new address:", error);
+        log.error({ error }, 'Error generating new address');
         return false;
     }
 
@@ -597,22 +599,22 @@ async function syncBlocks(): Promise<void> {
         const currentMax = latest ? latest.height : config.startBlock;
         const blockCount = await btcClient.getBlockCount();
 
-        console.log(`current block height: ${blockCount}`);
+        log.info(`current block height: ${blockCount}`);
 
         for (let height = currentMax; height <= blockCount; height++) {
             const blockHash = await btcClient.getBlockHash(height);
             const block = await btcClient.getBlock(blockHash) as Block;
-            console.log(`${height}/${blockCount} blocks (${(100 * height / blockCount).toFixed(2)}%)`);
+            log.debug(`${height}/${blockCount} blocks (${(100 * height / blockCount).toFixed(2)}%)`);
             await addBlock(height, blockHash, block.time);
         }
     } catch (error) {
-        console.error(`Error syncing blocks: ${error}`);
+        log.error({ error }, 'Error syncing blocks');
     }
 }
 
 async function main() {
     if (!READ_ONLY && !config.nodeID) {
-        console.log('satoshi-mediator must have a KC_NODE_ID configured');
+        log.error('satoshi-mediator must have a KC_NODE_ID configured');
         return;
     }
 
@@ -637,10 +639,10 @@ async function main() {
 
         if (!jsonDb && fileDb) {
             await jsonPersister.saveDb(fileDb);
-            console.log(`Database upgraded to ${config.db}`);
+            log.info(`Database upgraded to ${config.db}`);
         }
         else {
-            console.log(`Persisting to ${config.db}`);
+            log.info(`Persisting to ${config.db}`);
         }
     }
 
@@ -677,13 +679,13 @@ async function main() {
     await syncBlocks();
 
     if (config.importInterval > 0) {
-        console.log(`Importing operations every ${config.importInterval} minute(s)`);
+        log.info(`Importing operations every ${config.importInterval} minute(s)`);
         setTimeout(importLoop, config.importInterval * 60 * 1000);
     }
 
     if (!READ_ONLY) {
-        console.log(`Exporting operations every ${config.exportInterval} minute(s)`);
-        console.log(`Txn fees (${config.chain}): conf target: ${config.feeConf}, maximum: ${config.feeMax}, fallback Sat/Byte: ${config.feeFallback}`);
+        log.info(`Exporting operations every ${config.exportInterval} minute(s)`);
+        log.info(`Txn fees (${config.chain}): conf target: ${config.feeConf}, maximum: ${config.feeMax}, fallback Sat/Byte: ${config.feeFallback}`);
         setTimeout(exportLoop, config.exportInterval * 60 * 1000);
     }
 }

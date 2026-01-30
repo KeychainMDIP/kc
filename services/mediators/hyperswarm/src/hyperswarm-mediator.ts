@@ -10,8 +10,11 @@ import KeymasterClient from '@mdip/keymaster/client';
 import KuboClient from '@mdip/ipfs/kubo';
 import { Operation } from '@mdip/gatekeeper/types';
 import CipherNode from '@mdip/cipher/node';
+import { childLogger } from '@mdip/common/logger';
 import config from './config.js';
 import { exit } from 'process';
+
+const log = childLogger({ service: 'hyperswarm-mediator' });
 
 interface HyperMessage {
     type: 'batch' | 'queue' | 'sync' | 'ping';
@@ -91,7 +94,7 @@ async function createSwarm(): Promise<void> {
     await discovery.flushed();
 
     const shortTopic = shortName(b4a.toString(topic, 'hex'));
-    console.log(`new hyperswarm peer id: ${shortName(nodeKey)} (${config.nodeName}) joined topic: ${shortTopic} using protocol: ${config.protocol}`);
+    log.info(`new hyperswarm peer id: ${shortName(nodeKey)} (${config.nodeName}) joined topic: ${shortTopic} using protocol: ${config.protocol}`);
 }
 
 let syncQueue = asyncLib.queue<HyperswarmConnection, asyncLib.ErrorCallback>(
@@ -99,7 +102,7 @@ let syncQueue = asyncLib.queue<HyperswarmConnection, asyncLib.ErrorCallback>(
         try {
             // Wait until the importQueue is empty
             while (importQueue.length() > 0) {
-                console.log(`* sync waiting 10s for importQueue to empty. Current length: ${importQueue.length()}`);
+                log.debug(`* sync waiting 10s for importQueue to empty. Current length: ${importQueue.length()}`);
                 await new Promise(resolve => setTimeout(resolve, 10000));
             }
 
@@ -114,7 +117,7 @@ let syncQueue = asyncLib.queue<HyperswarmConnection, asyncLib.ErrorCallback>(
             conn.write(json);
         }
         catch (error) {
-            console.log('sync error:', error);
+            log.error({ error }, 'sync error');
         }
         callback();
     }, 1); // concurrency is 1
@@ -126,7 +129,7 @@ function addConnection(conn: HyperswarmConnection): void {
     conn.once('close', () => closeConnection(peerKey));
     conn.on('data', data => receiveMsg(peerKey, data));
 
-    console.log(`received connection from: ${peerName}`);
+    log.info(`received connection from: ${peerName}`);
 
     // Push the connection to the syncQueue instead of writing directly
     syncQueue.push(conn);
@@ -141,12 +144,12 @@ function addConnection(conn: HyperswarmConnection): void {
     };
 
     const peerNames = Object.values(connectionInfo).map(info => info.peerName);
-    console.log(`--- ${peerNames.length} nodes connected, detected nodes: ${peerNames.join(', ')}`);
+    log.debug(`--- ${peerNames.length} nodes connected, detected nodes: ${peerNames.join(', ')}`);
 }
 
 function closeConnection(peerKey: string): void {
     const conn = connectionInfo[peerKey];
-    console.log(`* connection closed with: ${conn.peerName} (${conn.nodeName}) *`);
+    log.info(`* connection closed with: ${conn.peerName} (${conn.nodeName}) *`);
 
     delete connectionInfo[peerKey];
 }
@@ -170,12 +173,12 @@ function sendBatch(conn: HyperswarmConnection, batch: Operation[]): number {
 
     if (json.length < limit) {
         conn.write(json);
-        console.log(` * sent ${batch.length} ops in ${json.length} bytes`);
+        log.debug(` * sent ${batch.length} ops in ${json.length} bytes`);
         return batch.length;
     }
     else {
         if (batch.length < 2) {
-            console.error(`Error: Single operation exceeds the limit of ${limit} bytes. Unable to send.`);
+            log.error(`Error: Single operation exceeds the limit of ${limit} bytes. Unable to send.`);
             return 0;
         }
 
@@ -193,7 +196,7 @@ function isStringArray(arr: any[]): arr is string[] {
 }
 
 async function shareDb(conn: HyperswarmConnection): Promise<void> {
-    console.time('shareDb');
+    const startTimeMs = Date.now();
     try {
         const batchSize = 1000; // export DIDs in batches of 1000 for scalability
         const dids = await gatekeeper.getDIDs();
@@ -209,31 +212,33 @@ async function shareDb(conn: HyperswarmConnection): Promise<void> {
 
             // hyperswarm distributes only operations
             const batch = exports.map(event => event.operation);
-            console.log(`${batch.length} operations fetched`);
+            log.debug(`${batch.length} operations fetched`);
 
             if (!batch || batch.length === 0) {
                 continue;
             }
 
             const opsCount = batch.length;
-            console.time('sendBatch');
+            const sendBatchStart = Date.now();
             const opsSent = sendBatch(conn, batch);
-            console.timeEnd('sendBatch');
-            console.log(` * sent ${opsSent}/${opsCount} operations`);
+            const sendBatchDurationMs = Date.now() - sendBatchStart;
+            log.debug({ durationMs: sendBatchDurationMs }, 'sendBatch');
+            log.debug(` * sent ${opsSent}/${opsCount} operations`);
         }
     }
     catch (error) {
-        console.log(error);
+        log.error({ error }, 'shareDb error');
     }
-    console.timeEnd('shareDb');
+    const durationMs = Date.now() - startTimeMs;
+    log.debug({ durationMs }, 'shareDb');
 }
 
 async function relayMsg(msg: HyperMessage): Promise<void> {
     const json = JSON.stringify(msg);
 
     const connectionsCount = Object.keys(connectionInfo).length;
-    console.log(`Connected nodes: ${connectionsCount}`);
-    console.log(`* sending ${msg.type} from: ${shortName(nodeKey)} (${config.nodeName}) *`);
+    log.debug(`Connected nodes: ${connectionsCount}`);
+    log.debug(`* sending ${msg.type} from: ${shortName(nodeKey)} (${config.nodeName}) *`);
 
     for (const peerKey in connectionInfo) {
         const conn = connectionInfo[peerKey];
@@ -244,10 +249,10 @@ async function relayMsg(msg: HyperMessage): Promise<void> {
 
         if (!msg.relays.includes(peerKey)) {
             conn.connection.write(json);
-            console.log(`* relaying to: ${conn.peerName} (${conn.nodeName}) ${lastSeen} *`);
+            log.debug(`* relaying to: ${conn.peerName} (${conn.nodeName}) ${lastSeen} *`);
         }
         else {
-            console.log(`* skipping relay to: ${conn.peerName} (${conn.nodeName}) ${lastSeen} *`);
+            log.debug(`* skipping relay to: ${conn.peerName} (${conn.nodeName}) ${lastSeen} *`);
         }
     }
 }
@@ -271,14 +276,15 @@ async function importBatch(batch: Operation[]): Promise<void> {
             })
         }
 
-        console.log(`importBatch: ${shortName(hash)} merging ${events.length} events...`);
-        console.time('importBatch');
+        log.debug(`importBatch: ${shortName(hash)} merging ${events.length} events...`);
+        const importStart = Date.now();
         const response = await gatekeeper.importBatch(events);
-        console.timeEnd('importBatch');
-        console.log(`* ${JSON.stringify(response)}`);
+        const importDurationMs = Date.now() - importStart;
+        log.debug({ durationMs: importDurationMs }, 'importBatch');
+        log.debug(`* ${JSON.stringify(response)}`);
     }
     catch (error) {
-        console.error(`importBatch error: ${error}`);
+        log.error({ error }, 'importBatch error');
     }
 }
 
@@ -302,10 +308,11 @@ async function mergeBatch(batch: Operation[]): Promise<void> {
         await importBatch(chunk);
     }
 
-    console.time('processEvents');
+    const processStart = Date.now();
     const response = await gatekeeper.processEvents();
-    console.timeEnd('processEvents');
-    console.log(`mergeBatch: ${JSON.stringify(response)}`);
+    const processDurationMs = Date.now() - processStart;
+    log.debug({ durationMs: processDurationMs }, 'processEvents');
+    log.debug(`mergeBatch: ${JSON.stringify(response)}`);
 }
 
 let importQueue = asyncLib.queue<ImportQueueTask, asyncLib.ErrorCallback>(
@@ -322,12 +329,12 @@ let importQueue = asyncLib.queue<ImportQueueTask, asyncLib.ErrorCallback>(
                 }
 
                 const nodeName = msg.node || 'anon';
-                console.log(`* merging batch (${batch.length} events) from: ${shortName(name)} (${nodeName}) *`);
+                log.debug(`* merging batch (${batch.length} events) from: ${shortName(name)} (${nodeName}) *`);
                 await mergeBatch(batch);
             }
         }
         catch (error) {
-            console.log('mergeBatch error:', error);
+            log.error({ error }, 'mergeBatch error');
         }
         callback();
     }, 1); // concurrency is 1
@@ -339,12 +346,12 @@ let exportQueue = asyncLib.queue<ExportQueueTask, asyncLib.ErrorCallback>(
             const ready = await gatekeeper.isReady();
 
             if (ready) {
-                console.log(`* sharing db with: ${shortName(name)} (${msg.node || 'anon'}) *`);
+                log.debug(`* sharing db with: ${shortName(name)} (${msg.node || 'anon'}) *`);
                 await shareDb(conn);
             }
         }
         catch (error) {
-            console.log('shareDb error:', error);
+            log.error({ error }, 'shareDb error');
         }
         callback();
     }, 1); // concurrency is 1
@@ -371,7 +378,7 @@ async function addPeer(did: string): Promise<void> {
         return;
     }
 
-    console.log(`Adding peer ${did}...`);
+    log.info(`Adding peer ${did}...`);
     addedPeers[suffix] = Date.now();
 
     try {
@@ -403,13 +410,13 @@ async function addPeer(did: string): Promise<void> {
 
         knownPeers[id] = data.node.name;
 
-        console.log(`Added IPFS peer: ${did} ${JSON.stringify(knownNodes[did], null, 4)}`);
+        log.info(`Added IPFS peer: ${did} ${JSON.stringify(knownNodes[did], null, 4)}`);
     }
     catch (error) {
         if (!(did in badPeers)) {
             // Store time of first error so we can later implement a retry mechanism
             badPeers[did] = Date.now();
-            console.error(`Error adding IPFS peer: ${did}`, error);
+            log.error({ error }, `Error adding IPFS peer: ${did}`);
         }
     }
 }
@@ -423,13 +430,13 @@ async function receiveMsg(peerKey: string, json: string): Promise<void> {
     }
     catch (error) {
         const jsonPreview = json.length > 80 ? `${json.slice(0, 40)}...${json.slice(-40)}` : json;
-        console.log(`received invalid message from: ${conn.peerName}, JSON: ${jsonPreview}`);
+        log.warn(`received invalid message from: ${conn.peerName}, JSON: ${jsonPreview}`);
         return;
     }
 
     const nodeName = msg.node || 'anon';
 
-    console.log(`received ${msg.type} from: ${shortName(peerKey)} (${nodeName})`);
+    log.debug(`received ${msg.type} from: ${shortName(peerKey)} (${nodeName})`);
     connectionInfo[peerKey].lastSeen = new Date().getTime();
 
     if (msg.type === 'batch') {
@@ -465,12 +472,12 @@ async function receiveMsg(peerKey: string, json: string): Promise<void> {
         return;
     }
 
-    console.log(`unknown message type: ${msg.type}`);
+    log.warn(`unknown message type: ${msg.type}`);
 }
 
 async function flushQueue(): Promise<void> {
     const batch = await gatekeeper.getQueue(REGISTRY);
-    console.log(`${REGISTRY} queue: ${JSON.stringify(batch, null, 4)}`);
+    log.debug(`${REGISTRY} queue: ${JSON.stringify(batch, null, 4)}`);
 
     if (batch.length > 0) {
         const msg: BatchMessage = {
@@ -491,25 +498,25 @@ async function exportLoop(): Promise<void> {
     try {
         await flushQueue();
     } catch (error) {
-        console.error(`Error in exportLoop: ${error}`);
+        log.error({ error }, 'Error in exportLoop');
     }
 
     const importQueueLength = importQueue.length();
 
     if (importQueueLength > 0) {
         const delay = 60;
-        console.log(`export loop waiting ${delay}s for import queue to clear: ${importQueueLength}...`);
+        log.debug(`export loop waiting ${delay}s for import queue to clear: ${importQueueLength}...`);
         setTimeout(exportLoop, delay * 1000);
     }
     else {
-        console.log(`export loop waiting ${config.exportInterval}s...`);
+        log.debug(`export loop waiting ${config.exportInterval}s...`);
         setTimeout(exportLoop, config.exportInterval * 1000);
     }
 }
 
 async function checkConnections(): Promise<void> {
     if (Object.keys(connectionInfo).length === 0) {
-        console.log("No active connections, rejoining the topic...");
+        log.warn("No active connections, rejoining the topic...");
         await createSwarm();
         return;
     }
@@ -522,7 +529,7 @@ async function checkConnections(): Promise<void> {
         const timeSinceLastSeen = now - conn.lastSeen;
 
         if (timeSinceLastSeen > expireLimit) {
-            console.log(`Removing stale connection info for: ${conn.peerName} (${conn.nodeName}), last seen ${timeSinceLastSeen / 1000}s ago`);
+            log.info(`Removing stale connection info for: ${conn.peerName} (${conn.nodeName}), last seen ${timeSinceLastSeen / 1000}s ago`);
             delete connectionInfo[peerKey];
         }
     }
@@ -530,8 +537,8 @@ async function checkConnections(): Promise<void> {
 
 async function connectionLoop(): Promise<void> {
     try {
-        console.log(`Node info: ${JSON.stringify(nodeInfo, null, 4)}`);
-        console.log(`Connected to hyperswarm protocol: ${config.protocol}`);
+        log.debug(`Node info: ${JSON.stringify(nodeInfo, null, 4)}`);
+        log.info(`Connected to hyperswarm protocol: ${config.protocol}`);
 
         await checkConnections();
 
@@ -546,24 +553,24 @@ async function connectionLoop(): Promise<void> {
         await relayMsg(msg);
 
         const peeringPeers = await ipfs.getPeeringPeers();
-        console.log(`IPFS peers: ${peeringPeers.length}`);
+        log.debug(`IPFS peers: ${peeringPeers.length}`);
         for (const peer of peeringPeers) {
-            console.log(`* peer ${peer.ID} (${knownPeers[peer.ID]})`);
+            log.debug(`* peer ${peer.ID} (${knownPeers[peer.ID]})`);
         }
 
-        console.log('connection loop waiting 60s...');
+        log.debug('connection loop waiting 60s...');
     } catch (error) {
-        console.error(`Error in pingLoop: ${error}`);
+        log.error({ error }, 'Error in pingLoop');
     }
     setTimeout(connectionLoop, 60 * 1000);
 }
 
 process.on('uncaughtException', (error) => {
-    console.error('Unhandled exception caught', error);
+    log.error({ error }, 'Unhandled exception caught');
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-    console.error('Unhandled rejection at:', promise, 'reason:', reason);
+    log.error({ reason, promise }, 'Unhandled rejection at');
 });
 
 process.stdin.on('data', d => {
@@ -593,25 +600,25 @@ async function main(): Promise<void> {
     });
 
     if (!config.nodeID) {
-        console.log('nodeID is not set. Please set the nodeID in the config file.');
+        log.error('nodeID is not set. Please set the nodeID in the config file.');
         exit(1);
     }
 
     const { didDocument } = await keymaster.resolveDID(config.nodeID);
 
     if (!didDocument) {
-        console.error(`DID document not found for nodeID: ${config.nodeID}`);
+        log.error(`DID document not found for nodeID: ${config.nodeID}`);
         exit(1);
     }
 
     const nodeDID = didDocument.id;
 
     if (!nodeDID) {
-        console.error(`DID not found in the DID document for nodeID: ${config.nodeID}`);
+        log.error(`DID not found in the DID document for nodeID: ${config.nodeID}`);
         exit(1);
     }
 
-    console.log(`Using nodeID: ${config.nodeID} (${nodeDID})`);
+    log.info(`Using nodeID: ${config.nodeID} (${nodeDID})`);
 
     await ipfs.connect({
         url: config.ipfsURL,
@@ -623,7 +630,7 @@ async function main(): Promise<void> {
 
     const ipfsID = await ipfs.getPeerID();
     const ipfsAddresses = await ipfs.getAddresses();
-    console.log(`Using IPFS nodeID: ${JSON.stringify(ipfsID, null, 4)}`);
+    log.info(`Using IPFS nodeID: ${JSON.stringify(ipfsID, null, 4)}`);
 
     nodeInfo = {
         name: config.nodeName,

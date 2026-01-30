@@ -30,3 +30,4 @@ The mediator has two responsibilities:
 | `KC_SAT_START_BLOCK`      | 0                     | Blockchain scan starting block index                              |
 | `KC_SAT_REIMPORT`         | true                  | Whether to reimport all discovered batches on startup             |
 | `KC_SAT_DB`               | json                  | Database adapter, must be `redis`, `json`, `mongodb`, or `sqlite` |
+| `KC_LOG_LEVEL`            | info                  | Log level: `debug`, `info`, `warn`, `error`                       |

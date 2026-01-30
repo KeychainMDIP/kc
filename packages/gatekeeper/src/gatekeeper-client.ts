@@ -1,4 +1,5 @@
 import axiosModule, { AxiosError, type AxiosInstance, type AxiosStatic } from 'axios';
+import { childLogger, createConsoleLogger, type LoggerLike } from '@mdip/common/logger';
 import {
     BlockId,
     BlockInfo,
@@ -27,6 +28,7 @@ function throwError(error: AxiosError | any): never {
 export default class GatekeeperClient implements GatekeeperInterface {
     private API: string;
     private axios: AxiosInstance;
+    private log: LoggerLike = childLogger({ service: 'gatekeeper-client' });
 
     // Factory method
     static async create(options: GatekeeperClientOptions): Promise<GatekeeperClient> {
@@ -60,8 +62,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
         // Only used for unit testing
         // TBD replace console with a real logging package
         if (options?.console) {
-            // eslint-disable-next-line
-            console = options.console;
+            this.log = createConsoleLogger(options.console);
         }
 
         if (options?.waitUntilReady) {
@@ -75,7 +76,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
         let retries = 0;
 
         if (chatty) {
-            console.log(`Connecting to gatekeeper at ${this.API}`);
+            this.log.info(`Connecting to gatekeeper at ${this.API}`);
         }
 
         while (!ready) {
@@ -83,7 +84,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
 
             if (!ready) {
                 if (chatty) {
-                    console.log('Waiting for Gatekeeper to be ready...');
+                    this.log.debug('Waiting for Gatekeeper to be ready...');
                 }
                 // wait for 1 second before checking again
                 await new Promise(resolve => setTimeout(resolve, intervalSeconds * 1000));
@@ -96,13 +97,13 @@ export default class GatekeeperClient implements GatekeeperInterface {
             }
 
             if (!chatty && becomeChattyAfter > 0 && retries > becomeChattyAfter) {
-                console.log(`Connecting to gatekeeper at ${this.API}`);
+                this.log.info(`Connecting to gatekeeper at ${this.API}`);
                 chatty = true;
             }
         }
 
         if (chatty) {
-            console.log('Gatekeeper service is ready!');
+            this.log.info('Gatekeeper service is ready!');
         }
     }
 

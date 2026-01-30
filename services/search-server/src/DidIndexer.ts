@@ -1,5 +1,6 @@
 import GatekeeperClient from "@mdip/gatekeeper/client";
 import type { DIDsDb } from "./types.js";
+import { childLogger } from "@mdip/common/logger";
 
 export interface DidIndexerOptions {
     intervalMs: number;
@@ -11,6 +12,7 @@ export default class DidIndexer {
     private readonly intervalMs: number;
     private timer: NodeJS.Timeout | null;
     private refreshInProgress: boolean;
+    private log = childLogger({ service: 'search-server', module: 'DidIndexer' });
 
     constructor(
         gatekeeper: GatekeeperClient,
@@ -25,12 +27,12 @@ export default class DidIndexer {
     }
 
     async startIndexing(): Promise<void> {
-        console.log("Starting indexing...");
+        this.log.info("Starting indexing...");
         await this.refreshIndex();
 
         this.timer = setInterval(() => {
             this.refreshIndex().catch((err) => {
-                console.error("refreshIndex error:", err);
+                this.log.error({ error: err }, "refreshIndex error");
             });
         }, this.intervalMs);
     }
@@ -62,9 +64,9 @@ export default class DidIndexer {
 
             await this.db.saveUpdatedAfter(now);
 
-            console.log(`Indexed ${dids.length} DIDs. updatedAfter set to ${now}`);
+            this.log.info(`Indexed ${dids.length} DIDs. updatedAfter set to ${now}`);
         } catch (err) {
-            console.error("Error in refreshIndex:", err);
+            this.log.error({ error: err }, "Error in refreshIndex");
         } finally {
             this.refreshInProgress = false;
         }

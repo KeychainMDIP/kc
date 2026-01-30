@@ -24,6 +24,7 @@ The library must be configured by calling the start function with one of the sup
 // Import using subpaths
 import Gatekeeper from '@mdip/gatekeeper';
 import DbRedis from '@mdip/gatekeeper/db/redis';
+import { logger } from '@mdip/common/logger';
 
 // Non-subpath imports
 import Gatekeeper, { DbRedis } from '@mdip/gatekeeper';
@@ -34,7 +35,7 @@ await db_redis.start();
 const gatekeeper = new Gatekeeper({ db: db_redis });
 const did = 'did:test:z3v8AuaTV5VKcT9MJoSHkSTRLpXDoqcgqiKkwGBNSV4nVzb6kLk';
 const docs = await gatekeeper.resolveDID(did);
-console.log(JSON.stringify(docs, null, 4));
+logger.info(JSON.stringify(docs, null, 4));
 ```
 
 ### Client
@@ -44,6 +45,7 @@ The GatekeeperClient is used to communicate with a Gatekeeper REST API service.
 ```js
 // Import using subpaths
 import GatekeeperClient from '@mdip/gatekeeper/client';
+import { logger } from '@mdip/common/logger';
 
 // Non-subpath imports
 import { GatekeeperClient } from '@mdip/gatekeeper';
@@ -61,5 +63,5 @@ await gatekeeper.connect({
 
 const did = 'did:test:z3v8AuaTV5VKcT9MJoSHkSTRLpXDoqcgqiKkwGBNSV4nVzb6kLk';
 const docs = await gatekeeper.resolveDID(did);
-console.log(JSON.stringify(docs, null, 4));
+logger.info(JSON.stringify(docs, null, 4));
 ```

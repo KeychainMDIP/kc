@@ -38,6 +38,7 @@ services:
       - KC_GATEKEEPER_GC_INTERVAL=${KC_GATEKEEPER_GC_INTERVAL}
       - KC_GATEKEEPER_STATUS_INTERVAL=${KC_GATEKEEPER_STATUS_INTERVAL}
       - KC_GATEKEEPER_SERVE_CLIENT=${KC_GATEKEEPER_SERVE_CLIENT}
+      - KC_LOG_LEVEL=${KC_LOG_LEVEL}
       - KC_MONGODB_URL=mongodb://mongodb:27017
       - KC_REDIS_URL=redis://redis:6379
       - KC_IPFS_URL=http://ipfs:5001/api/v0
@@ -67,6 +68,7 @@ services:
       - KC_WALLET_CACHE=${KC_WALLET_CACHE}
       - KC_DEFAULT_REGISTRY=${KC_DEFAULT_REGISTRY}
       - KC_KEYMASTER_SERVE_CLIENT=${KC_KEYMASTER_SERVE_CLIENT}
+      - KC_LOG_LEVEL=${KC_LOG_LEVEL}
       - KC_MONGODB_URL=mongodb://mongodb:27017
       - KC_REDIS_URL=redis://redis:6379
     volumes:
@@ -93,6 +95,7 @@ services:
       - KC_NODE_NAME=${KC_NODE_NAME}
       - KC_MDIP_PROTOCOL=${KC_MDIP_PROTOCOL}
       - KC_HYPR_EXPORT_INTERVAL=${KC_HYPR_EXPORT_INTERVAL}
+      - KC_LOG_LEVEL=${KC_LOG_LEVEL}
     user: "${KC_UID}:${KC_GID}"
     depends_on:
       - gatekeeper
@@ -131,6 +134,7 @@ services:
       - KC_SAT_RBF_ENABLED=${KC_TFTC_RBF_ENABLED}
       - KC_SAT_REIMPORT=${KC_TFTC_REIMPORT}
       - KC_SAT_DB=${KC_TFTC_DB}
+      - KC_LOG_LEVEL=${KC_LOG_LEVEL}
     volumes:
       - ./data:/app/satoshi/data
     user: "${KC_UID}:${KC_GID}"
@@ -173,6 +177,7 @@ services:
       - KC_SAT_RBF_ENABLED=${KC_BTC_RBF_ENABLED}
       - KC_SAT_REIMPORT=${KC_BTC_REIMPORT}
       - KC_SAT_DB=${KC_BTC_DB}
+      - KC_LOG_LEVEL=${KC_LOG_LEVEL}
     volumes:
       - ./data:/app/satoshi/data
     user: "${KC_UID}:${KC_GID}"
@@ -213,6 +218,7 @@ services:
       - KC_SAT_RBF_ENABLED=${KC_TBTC_RBF_ENABLED}
       - KC_SAT_REIMPORT=${KC_TBTC_REIMPORT}
       - KC_SAT_DB=${KC_TBTC_DB}
+      - KC_LOG_LEVEL=${KC_LOG_LEVEL}
     volumes:
       - ./data:/app/satoshi/data
     user: "${KC_UID}:${KC_GID}"
@@ -255,6 +261,7 @@ services:
       - KC_SAT_RBF_ENABLED=${KC_SIGNET_RBF_ENABLED}
       - KC_SAT_REIMPORT=${KC_SIGNET_REIMPORT}
       - KC_SAT_DB=${KC_SIGNET_DB}
+      - KC_LOG_LEVEL=${KC_LOG_LEVEL}
     volumes:
       - ./data:/app/satoshi/data
     user: "${KC_UID}:${KC_GID}"
@@ -290,6 +297,7 @@ services:
       - KC_SAT_RBF_ENABLED=${KC_SIGNET_INS_RBF_ENABLED}
       - KC_SAT_REIMPORT=${KC_SIGNET_INS_REIMPORT}
       - KC_SAT_DB=${KC_SIGNET_INS_DB}
+      - KC_LOG_LEVEL=${KC_LOG_LEVEL}
     volumes:
       - ./data:/app/satoshi/data
     user: "${KC_UID}:${KC_GID}"
@@ -307,6 +315,7 @@ services:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
       - KC_KEYMASTER_URL=http://keymaster:4226
       - KC_IPFS_URL=http://ipfs:5001/api/v0
+      - KC_LOG_LEVEL=${KC_LOG_LEVEL}
     volumes:
       - ./share:/app/share
     user: "${KC_UID}:${KC_GID}"
@@ -325,6 +334,7 @@ services:
       - VITE_GATEKEEPER_URL=http://localhost:4224
       - VITE_SEARCH_SERVER=http://localhost:4002
       - VITE_OPERATION_NETWORKS=hyperswarm,local,TFTC,TBTC
+      - KC_LOG_LEVEL=${KC_LOG_LEVEL}
     ports:
       - "4000:4000"
     depends_on:
@@ -340,6 +350,7 @@ services:
       - SEARCH_SERVER_GATEKEEPER_URL=http://gatekeeper:4224
       - SEARCH_SERVER_REFRESH_INTERVAL_MS=5000
       - SEARCH_SERVER_DB=sqlite
+      - KC_LOG_LEVEL=${KC_LOG_LEVEL}
     volumes:
       - ./data:/app/search-server/data
     user: "${KC_UID}:${KC_GID}"

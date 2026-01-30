@@ -18,3 +18,4 @@ When a node receives a `queue` message it will import the operations like during
 | `KC_NODE_NAME`            | anon                   | Human-readable name for the node |
 | `KC_MDIP_PROTOCOL`        | /MDIP/v1.0-public      | MDIP network topic to join    |
 | `KC_HYPR_EXPORT_INTERVAL` |  2                     | Seconds between export cycles |
+| `KC_LOG_LEVEL`            | info                   | Log level: `debug`, `info`, `warn`, `error` |

@@ -14,3 +14,4 @@ This service is also useful when clients share a wallet, such as the `kc` CLI an
 | `KC_ENCRYPTED_PASSPHRASE` |  (no default) | If specified, the wallet will be encrypted and decrypted with this passphrase  |
 | `KC_WALLET_CACHE`     |  false | Use wallet cache to increase performance (but understand security implications)  |
 | `KC_DEFAULT_REGISTRY` |  hyperswarm | Default registry to use when creating DIDs               |
+| `KC_LOG_LEVEL`        | info | Log level: `debug`, `info`, `warn`, `error`               |

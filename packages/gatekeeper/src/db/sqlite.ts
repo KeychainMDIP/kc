@@ -1,6 +1,7 @@
 import * as sqlite from 'sqlite';
 import sqlite3 from 'sqlite3';
 import { InvalidDIDError } from '@mdip/common/errors';
+import { childLogger } from '@mdip/common/logger';
 import { GatekeeperDb, GatekeeperEvent, Operation, BlockId, BlockInfo } from '../types.js'
 
 interface DidsRow {
@@ -14,6 +15,7 @@ interface QueueRow {
 }
 
 const SQLITE_NOT_STARTED_ERROR = 'SQLite DB not open. Call start() first.';
+const log = childLogger({ service: 'gatekeeper-db', module: 'sqlite' });
 
 export default class DbSqlite implements GatekeeperDb {
     private readonly dbName: string;
@@ -258,7 +260,7 @@ export default class DbSqlite implements GatekeeperDb {
                 );
                 return true;
             }).catch(err => {
-                console.error(err);
+                log.error({ error: err }, 'SQLite clearQueue error');
                 return false;
             })
         );

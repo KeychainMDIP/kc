@@ -2,8 +2,10 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
+import { childLogger } from '@mdip/common/logger';
 
 dotenv.config();
+const log = childLogger({ service: 'explorer-server' });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,5 +20,5 @@ app.get('{*path}', (req, res) => {
 });
 
 app.listen(port, () => {
-    console.log(`Explorer running at http://localhost:${port}`);
+    log.info(`Explorer running at http://localhost:${port}`);
 });

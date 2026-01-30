@@ -5,6 +5,7 @@ import {
 } from './types.js'
 
 import axiosModule, { AxiosError, type AxiosInstance, type AxiosStatic } from 'axios';
+import { childLogger, createConsoleLogger, type LoggerLike } from '@mdip/common/logger';
 
 const axios =
     (axiosModule as AxiosStatic & { default?: AxiosInstance })?.default ??
@@ -22,6 +23,7 @@ function throwError(error: AxiosError | any): never {
 
 export default class SearchClient implements SearchEngine {
     private API: string = "/api/v1";
+    private log: LoggerLike = childLogger({ service: 'search-client' });
 
     // Factory method
     static async create(options: SearchClientOptions): Promise<SearchClient> {
@@ -38,8 +40,7 @@ export default class SearchClient implements SearchEngine {
         // Only used for unit testing
         // TBD replace console with a real logging package
         if (options.console) {
-            // eslint-disable-next-line
-            console = options.console;
+            this.log = createConsoleLogger(options.console);
         }
 
         if (options.waitUntilReady) {
@@ -53,7 +54,7 @@ export default class SearchClient implements SearchEngine {
         let retries = 0;
 
         if (chatty) {
-            console.log(`Connecting to Search-server at ${this.API}`);
+            this.log.info(`Connecting to Search-server at ${this.API}`);
         }
 
         while (!ready) {
@@ -61,7 +62,7 @@ export default class SearchClient implements SearchEngine {
 
             if (!ready) {
                 if (chatty) {
-                    console.log('Waiting for Search-server to be ready...');
+                    this.log.debug('Waiting for Search-server to be ready...');
                 }
                 // wait for 1 second before checking again
                 await new Promise(resolve => setTimeout(resolve, intervalSeconds * 1000));
@@ -74,13 +75,13 @@ export default class SearchClient implements SearchEngine {
             }
 
             if (!chatty && becomeChattyAfter > 0 && retries > becomeChattyAfter) {
-                console.log(`Connecting to Search-server at ${this.API}`);
+                this.log.info(`Connecting to Search-server at ${this.API}`);
                 chatty = true;
             }
         }
 
         if (chatty) {
-            console.log('Search-server is ready!');
+            this.log.info('Search-server is ready!');
         }
     }
 

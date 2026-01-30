@@ -27,6 +27,11 @@
       "import": "./dist/esm/errors.js",
       "require": "./dist/cjs/errors.cjs",
       "types": "./dist/types/errors.d.ts"
+    },
+    "./logger": {
+      "import": "./dist/esm/logger.js",
+      "require": "./dist/cjs/logger.cjs",
+      "types": "./dist/types/logger.d.ts"
     }
   },
   "typesVersions": {
@@ -36,6 +41,9 @@
       ],
       "errors": [
         "./dist/types/errors.d.ts"
+      ],
+      "logger": [
+        "./dist/types/logger.d.ts"
       ]
     }
   },
@@ -48,7 +56,10 @@
   "keywords": [],
   "author": "David McFadzean <davidmc@gmail.com>",
   "license": "MIT",
-  "dependencies": {},
+  "dependencies": {
+    "pino": "^9.0.0",
+    "pino-pretty": "^10.3.0"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/KeychainMDIP/kc.git"

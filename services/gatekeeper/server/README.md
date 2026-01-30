@@ -15,3 +15,4 @@ Operations come from Keymaster clients such as end-user wallets and network medi
 | `KC_GATEKEEPER_DID_PREFIX`      | did:test | Default prefix assigned to DIDs created                                |
 | `KC_GATEKEEPER_GC_INTERVAL`     | 15       | The number of minutes between garbage collection cycles (0 to disable) |
 | `KC_GATEKEEPER_STATUS_INTERVAL` |  5       | The number of minutes between logging status updates (0 to disable)    |
+| `KC_LOG_LEVEL`                  | info     | Log level: `debug`, `info`, `warn`, `error`                             |
