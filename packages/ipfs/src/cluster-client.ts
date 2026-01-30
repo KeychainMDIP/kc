@@ -123,6 +123,7 @@ class ClusterClient implements IPFSClient {
     }
 
     private async pinInCluster(cid: string): Promise<void> {
+        console.log(`Pinning CID in IPFS Cluster: ${cid}`);
         await this.clusterPost(`/pins/${encodeURIComponent(cid)}`);
     }
 
