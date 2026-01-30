@@ -404,6 +404,7 @@ v1router.post('/did', async (req, res) => {
         }
         res.json(result);
     } catch (error: any) {
+        // eslint-disable-next-line sonarjs/no-duplicate-string
         log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
