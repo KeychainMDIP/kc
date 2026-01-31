@@ -20,6 +20,7 @@
       "@mdip/cipher/types": ["packages/cipher/src/types.ts"],
       "@mdip/common/errors": ["packages/common/src/errors.ts"],
       "@mdip/common/utils": ["packages/common/src/utils.ts"],
+      "@mdip/common/logger": ["packages/common/src/logger.ts"],
       "@mdip/inscription": ["packages/inscription/src/inscription.ts"],
       "@mdip/gatekeeper": ["packages/gatekeeper/src/gatekeeper.ts"],
       "@mdip/gatekeeper/types": ["packages/gatekeeper/src/types.ts"],

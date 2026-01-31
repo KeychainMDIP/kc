@@ -78,8 +78,7 @@ export function createLogger(
     env: Env = process.env,
 ): Logger {
     const resolvedLevel = options.level ?? getLogLevel(env);
-    const prettyEnabled = getPrettyEnabled();
-    const transport = options.transport ?? (prettyEnabled ? {
+    const transport = options.transport ?? {
         target: 'pino-pretty',
         options: {
             colorize: false,
@@ -87,12 +86,12 @@ export function createLogger(
             ignore: 'pid,hostname,service',
             singleLine: true,
         },
-    } : undefined);
+    };
 
     const loggerOptions: LoggerOptions = {
         ...options,
         level: resolvedLevel,
-        ...(transport ? { transport } : {}),
+        transport,
     };
 
     return pino(loggerOptions);
