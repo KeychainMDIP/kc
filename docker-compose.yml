@@ -16,6 +16,8 @@ services:
       - 127.0.0.1:6379:6379
 
   ipfs:
+    profiles:
+      - ipfs
     image: ipfs/kubo:v0.35.0
     ports:
       - 4001:4001
@@ -52,7 +54,6 @@ services:
     depends_on:
       - mongodb
       - redis
-      - ipfs
 
   keymaster:
     build:
@@ -101,7 +102,6 @@ services:
     depends_on:
       - gatekeeper
       - keymaster
-      - ipfs
 
   tftc-node:
     image: keychainmdip/feathercoin:v0.19.2
@@ -317,7 +317,6 @@ services:
     depends_on:
       - gatekeeper
       - keymaster
-      - ipfs
 
   explorer:
     build:

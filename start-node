@@ -1,6 +1,26 @@
 #!/usr/bin/env bash
 set -e
 
+PROFILE_ARGS=()
+SERVICES=("$@")
+
+if [ -f .env ]; then
+    set -a
+    # shellcheck disable=SC1091
+    . ./.env
+    set +a
+fi
+
+if [ "${KC_IPFS_ENABLE,,}" != "false" ]; then
+    PROFILE_ARGS=(--profile ipfs)
+fi
+
+if [ ${#SERVICES[@]} -gt 0 ] && [ "${KC_IPFS_ENABLE,,}" != "false" ]; then
+    if ! printf '%s\n' "${SERVICES[@]}" | grep -qx "ipfs"; then
+        SERVICES=("ipfs" "${SERVICES[@]}")
+    fi
+fi
+
 docker compose down
-docker compose build "$@"
-docker compose up "$@"
+docker compose "${PROFILE_ARGS[@]}" build "${SERVICES[@]}"
+docker compose "${PROFILE_ARGS[@]}" up "${SERVICES[@]}"
