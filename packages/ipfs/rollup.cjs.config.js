@@ -14,6 +14,7 @@ const config = {
         'node': 'dist/esm/node.js',
         'helia-client': 'dist/esm/helia-client.js',
         'kubo-client': 'dist/esm/kubo-client.js',
+        'cluster-client': 'dist/esm/cluster-client.js',
         utils: 'dist/esm/utils.js'
     },
     output: {

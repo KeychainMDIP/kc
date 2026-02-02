@@ -136,6 +136,10 @@ KC_SIGNET_INS_DB=json
 KC_IPFS_INTERVAL=60
 KC_IPFS_BATCH_SIZE=100
 KC_IPFS_CONCURRENCY=10
+
+# Optional IPFS Cluster support
+KC_IPFS_CLUSTER_URL=""
+KC_IPFS_CLUSTER_AUTH_HEADER=""
 EOL
 
 echo ".env file created with the following content:"

@@ -6,6 +6,8 @@ const config = {
     port: process.env.KC_GATEKEEPER_PORT ? parseInt(process.env.KC_GATEKEEPER_PORT) : 4224,
     db: process.env.KC_GATEKEEPER_DB || 'redis',
     ipfsURL: process.env.KC_IPFS_URL || 'http://localhost:5001/api/v0',
+    ipfsClusterURL: process.env.KC_IPFS_CLUSTER_URL,
+    ipfsClusterAuthHeader: process.env.KC_IPFS_CLUSTER_AUTH_HEADER,
     didPrefix: process.env.KC_GATEKEEPER_DID_PREFIX || 'did:test',
     registries: process.env.KC_GATEKEEPER_REGISTRIES ? process.env.KC_GATEKEEPER_REGISTRIES.split(',') : undefined,
     jsonLimit: process.env.KC_GATEKEEPER_JSON_LIMIT || '4mb',
