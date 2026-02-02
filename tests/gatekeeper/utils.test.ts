@@ -258,6 +258,7 @@ describe('ipfs disabled', () => {
     it('should throw on addText/addData/addJSON when disabled', async () => {
         const gatekeeper = new Gatekeeper({ db, ipfsEnabled: false });
 
+        // eslint-disable-next-line sonarjs/no-duplicate-string
         await expect(gatekeeper.addText('hello')).rejects.toThrow('IPFS disabled');
         await expect(gatekeeper.addData(Buffer.from('data'))).rejects.toThrow('IPFS disabled');
         await expect(gatekeeper.addJSON({ hello: 'world' })).rejects.toThrow('IPFS disabled');

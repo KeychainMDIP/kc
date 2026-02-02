@@ -1626,6 +1626,7 @@ v1router.post('/cas/json', async (req, res) => {
         const response = await gatekeeper.addJSON(req.body);
         res.send(response);
     } catch (error: any) {
+        // eslint-disable-next-line sonarjs/no-duplicate-string
         if (error?.message?.includes('IPFS disabled')) {
             res.status(503).send('IPFS disabled');
             return;
