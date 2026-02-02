@@ -1673,6 +1673,10 @@ v1router.get('/cas/json/:cid', async (req, res) => {
         const response = await gatekeeper.getJSON(req.params.cid);
         res.json(response);
     } catch (error: any) {
+        if (error?.message?.includes('IPFS disabled')) {
+            res.status(503).send('IPFS disabled');
+            return;
+        }
         res.status(500).send(error.toString());
     }
 });
@@ -1758,6 +1762,10 @@ v1router.get('/cas/text/:cid', async (req, res) => {
         const response = await gatekeeper.getText(req.params.cid);
         res.send(response);
     } catch (error: any) {
+        if (error?.message?.includes('IPFS disabled')) {
+            res.status(503).send('IPFS disabled');
+            return;
+        }
         res.status(500).send(error.toString());
     }
 });
@@ -1847,6 +1855,10 @@ v1router.get('/cas/data/:cid', async (req, res) => {
         res.set('Content-Type', 'application/octet-stream');
         res.send(response);
     } catch (error: any) {
+        if (error?.message?.includes('IPFS disabled')) {
+            res.status(503).send('IPFS disabled');
+            return;
+        }
         res.status(500).send(error.toString());
     }
 });
