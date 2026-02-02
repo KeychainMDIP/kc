@@ -53,11 +53,12 @@ export default class Gatekeeper implements GatekeeperInterface {
     private readonly eventsSeen: Record<string, boolean>;
     private verifiedDIDs: Record<string, boolean>;
     private isProcessingEvents: boolean;
-    private ipfs: IPFSClient;
+    private ipfs?: IPFSClient;
     private cipher: CipherNode;
     readonly didPrefix: string;
     private readonly maxOpBytes: number;
     private readonly maxQueueSize: number;
+    private readonly ipfsEnabled: boolean;
     supportedRegistries: string[];
     private didLocks = new Map<string, Promise<void>>();
 
@@ -78,7 +79,13 @@ export default class Gatekeeper implements GatekeeperInterface {
         this.eventsSeen = {};
         this.verifiedDIDs = {};
         this.isProcessingEvents = false;
-        this.ipfs = options.ipfs;
+        this.ipfsEnabled = options.ipfsEnabled ?? true;
+        if (this.ipfsEnabled) {
+            if (!options.ipfs) {
+                throw new InvalidParameterError('missing options.ipfs');
+            }
+            this.ipfs = options.ipfs;
+        }
         this.cipher = new CipherNode();
         this.didPrefix = options.didPrefix || 'did:test';
         this.maxOpBytes = options.maxOpBytes || 64 * 1024; // 64KB
@@ -277,7 +284,7 @@ export default class Gatekeeper implements GatekeeperInterface {
     async generateCID(operation: unknown, save: boolean = false): Promise<string> {
         const canonical = this.cipher.canonicalizeJSON(operation);
 
-        if (save) {
+        if (save && this.ipfs) {
             return this.ipfs.addJSON(JSON.parse(canonical));
         }
 
@@ -1261,26 +1268,48 @@ export default class Gatekeeper implements GatekeeperInterface {
     }
 
     async addText(text: string): Promise<string> {
+        if (!this.ipfs) {
+            // eslint-disable-next-line sonarjs/no-duplicate-string
+            throw new InvalidOperationError('IPFS disabled');
+        }
         return this.ipfs.addText(text);
     }
 
     async getText(cid: string): Promise<string | null> {
+        if (!this.ipfs) {
+            // eslint-disable-next-line sonarjs/no-duplicate-string
+            throw new InvalidOperationError('IPFS disabled');
+        }
         return this.ipfs.getText(cid);
     }
 
     async addData(data: Buffer): Promise<string> {
+        if (!this.ipfs) {
+            // eslint-disable-next-line sonarjs/no-duplicate-string
+            throw new InvalidOperationError('IPFS disabled');
+        }
         return this.ipfs.addData(data);
     }
 
     async getData(cid: string): Promise<Buffer | null> {
+        if (!this.ipfs) {
+            // eslint-disable-next-line sonarjs/no-duplicate-string
+            throw new InvalidOperationError('IPFS disabled');
+        }
         return this.ipfs.getData(cid);
     }
 
     async addJSON(json: object): Promise<string> {
+        if (!this.ipfs) {
+            throw new InvalidOperationError('IPFS disabled');
+        }
         return this.ipfs.addJSON(json);
     }
 
     async getJSON(cid: string): Promise<object | null> {
+        if (!this.ipfs) {
+            throw new InvalidOperationError('IPFS disabled');
+        }
         return this.ipfs.getJSON(cid);
     }
 }
