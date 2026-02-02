@@ -45,6 +45,7 @@ KC_GID=1002                                        # Docker host GID
 KC_NODE_NAME=anon                                  # Hyperswarm node name
 KC_NODE_ID=anon                                    # Node Keymaster DID name
 KC_GATEKEEPER_REGISTRIES=hyperswarm,TBTC,TFTC      # Supported DID Registries
+KC_IPFS_ENABLE=true                                # Enable Gatekeeper IPFS storage and CAS endpoints
 ...
 {adjust registry details for advanced users only}
 ```

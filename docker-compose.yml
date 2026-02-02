@@ -40,6 +40,7 @@ services:
       - KC_GATEKEEPER_SERVE_CLIENT=${KC_GATEKEEPER_SERVE_CLIENT}
       - KC_MONGODB_URL=mongodb://mongodb:27017
       - KC_REDIS_URL=redis://redis:6379
+      - KC_IPFS_ENABLE=${KC_IPFS_ENABLE}
       - KC_IPFS_URL=http://ipfs:5001/api/v0
       - KC_IPFS_CLUSTER_URL=${KC_IPFS_CLUSTER_URL}
       - KC_IPFS_CLUSTER_AUTH_HEADER=${KC_IPFS_CLUSTER_AUTH_HEADER}
@@ -90,6 +91,7 @@ services:
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
       - KC_KEYMASTER_URL=http://keymaster:4226
+      - KC_IPFS_ENABLE=${KC_IPFS_ENABLE}
       - KC_IPFS_URL=http://ipfs:5001/api/v0
       - KC_NODE_ID=${KC_NODE_ID}
       - KC_NODE_NAME=${KC_NODE_NAME}

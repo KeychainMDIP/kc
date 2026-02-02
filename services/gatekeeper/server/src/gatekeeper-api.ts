@@ -35,21 +35,23 @@ if (!db) {
 
 await db.start();
 
-const ipfs = config.ipfsClusterURL
-    ? await ClusterClient.create({
-        kuboUrl: config.ipfsURL,
-        clusterUrl: config.ipfsClusterURL,
-        clusterAuthHeader: config.ipfsClusterAuthHeader,
-        waitUntilReady: true,
-        intervalSeconds: 5,
-        chatty: true,
-    })
-    : await KuboClient.create({
-        url: config.ipfsURL,
-        waitUntilReady: true,
-        intervalSeconds: 5,
-        chatty: true,
-    });
+const ipfs = config.ipfsEnabled
+    ? (config.ipfsClusterURL
+        ? await ClusterClient.create({
+            kuboUrl: config.ipfsURL,
+            clusterUrl: config.ipfsClusterURL,
+            clusterAuthHeader: config.ipfsClusterAuthHeader,
+            waitUntilReady: true,
+            intervalSeconds: 5,
+            chatty: true,
+        })
+        : await KuboClient.create({
+            url: config.ipfsURL,
+            waitUntilReady: true,
+            intervalSeconds: 5,
+            chatty: true,
+        }))
+    : undefined;
 
 const gatekeeper = new Gatekeeper({
     db,
@@ -57,6 +59,7 @@ const gatekeeper = new Gatekeeper({
     didPrefix: config.didPrefix,
     registries: config.registries,
     maxOpBytes: config.maxOpBytes,
+    ipfsEnabled: config.ipfsEnabled,
 });
 const startTime = new Date();
 const app = express();
@@ -1623,6 +1626,10 @@ v1router.post('/cas/json', async (req, res) => {
         const response = await gatekeeper.addJSON(req.body);
         res.send(response);
     } catch (error: any) {
+        if (error?.message?.includes('IPFS disabled')) {
+            res.status(503).send('IPFS disabled');
+            return;
+        }
         res.status(500).send(error.toString());
     }
 });
@@ -1704,6 +1711,10 @@ v1router.post('/cas/text', express.text({ type: 'text/plain', limit: '10mb' }), 
         const response = await gatekeeper.addText(req.body);
         res.send(response);
     } catch (error: any) {
+        if (error?.message?.includes('IPFS disabled')) {
+            res.status(503).send('IPFS disabled');
+            return;
+        }
         res.status(500).send(error.toString());
     }
 });
@@ -1787,6 +1798,10 @@ v1router.post('/cas/data', express.raw({ type: 'application/octet-stream', limit
         const response = await gatekeeper.addData(data);
         res.send(response);
     } catch (error: any) {
+        if (error?.message?.includes('IPFS disabled')) {
+            res.status(503).send('IPFS disabled');
+            return;
+        }
         res.status(500).send(error.toString());
     }
 });

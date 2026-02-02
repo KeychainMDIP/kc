@@ -7,6 +7,7 @@ const config = {
     gatekeeperURL: process.env.KC_GATEKEEPER_URL || 'http://localhost:4224',
     keymasterURL: process.env.KC_KEYMASTER_URL || 'http://localhost:4226',
     ipfsURL: process.env.KC_IPFS_URL || 'http://localhost:5001/api/v0',
+    ipfsEnabled: process.env.KC_IPFS_ENABLE ? process.env.KC_IPFS_ENABLE.toLowerCase() !== 'false' : true,
     nodeID: process.env.KC_NODE_ID || '',
     nodeName: process.env.KC_NODE_NAME || 'anon',
     protocol: process.env.KC_MDIP_PROTOCOL || '/MDIP/v1.0-public',

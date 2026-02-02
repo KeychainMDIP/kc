@@ -364,6 +364,10 @@ function newBatch(batch: Operation[]): boolean {
 }
 
 async function addPeer(did: string): Promise<void> {
+    if (!config.ipfsEnabled) {
+        return;
+    }
+
     // Check peer suffix to avoid duplicate DID aliases
     const suffix = did.split(':').pop() || '';
 
@@ -545,10 +549,12 @@ async function connectionLoop(): Promise<void> {
 
         await relayMsg(msg);
 
-        const peeringPeers = await ipfs.getPeeringPeers();
-        console.log(`IPFS peers: ${peeringPeers.length}`);
-        for (const peer of peeringPeers) {
-            console.log(`* peer ${peer.ID} (${knownPeers[peer.ID]})`);
+        if (config.ipfsEnabled) {
+            const peeringPeers = await ipfs.getPeeringPeers();
+            console.log(`IPFS peers: ${peeringPeers.length}`);
+            for (const peer of peeringPeers) {
+                console.log(`* peer ${peer.ID} (${knownPeers[peer.ID]})`);
+            }
         }
 
         console.log('connection loop waiting 60s...');
@@ -585,58 +591,65 @@ async function main(): Promise<void> {
         chatty: true,
     });
 
-    await keymaster.connect({
-        url: config.keymasterURL,
-        waitUntilReady: true,
-        intervalSeconds: 5,
-        chatty: true,
-    });
+    if (config.ipfsEnabled) {
+        await keymaster.connect({
+            url: config.keymasterURL,
+            waitUntilReady: true,
+            intervalSeconds: 5,
+            chatty: true,
+        });
 
-    if (!config.nodeID) {
-        console.log('nodeID is not set. Please set the nodeID in the config file.');
-        exit(1);
+        if (!config.nodeID) {
+            console.log('nodeID is not set. Please set the nodeID in the config file.');
+            exit(1);
+        }
+
+        const { didDocument } = await keymaster.resolveDID(config.nodeID);
+
+        if (!didDocument) {
+            console.error(`DID document not found for nodeID: ${config.nodeID}`);
+            exit(1);
+        }
+
+        const nodeDID = didDocument.id;
+
+        if (!nodeDID) {
+            console.error(`DID not found in the DID document for nodeID: ${config.nodeID}`);
+            exit(1);
+        }
+
+        console.log(`Using nodeID: ${config.nodeID} (${nodeDID})`);
+
+        await ipfs.connect({
+            url: config.ipfsURL,
+            waitUntilReady: true,
+            intervalSeconds: 5,
+            chatty: true,
+        });
+        await ipfs.resetPeeringPeers();
+
+        const ipfsID = await ipfs.getPeerID();
+        const ipfsAddresses = await ipfs.getAddresses();
+        console.log(`Using IPFS nodeID: ${JSON.stringify(ipfsID, null, 4)}`);
+
+        nodeInfo = {
+            name: config.nodeName,
+            ipfs: {
+                id: ipfsID,
+                addresses: ipfsAddresses,
+            },
+        };
+
+        knownNodes[nodeDID] = nodeInfo;
+        await keymaster.updateAsset(nodeDID, { node: nodeInfo });
+    } else {
+        nodeInfo = {
+            name: config.nodeName,
+            ipfs: null,
+        };
     }
-
-    const { didDocument } = await keymaster.resolveDID(config.nodeID);
-
-    if (!didDocument) {
-        console.error(`DID document not found for nodeID: ${config.nodeID}`);
-        exit(1);
-    }
-
-    const nodeDID = didDocument.id;
-
-    if (!nodeDID) {
-        console.error(`DID not found in the DID document for nodeID: ${config.nodeID}`);
-        exit(1);
-    }
-
-    console.log(`Using nodeID: ${config.nodeID} (${nodeDID})`);
-
-    await ipfs.connect({
-        url: config.ipfsURL,
-        waitUntilReady: true,
-        intervalSeconds: 5,
-        chatty: true,
-    });
-    await ipfs.resetPeeringPeers();
-
-    const ipfsID = await ipfs.getPeerID();
-    const ipfsAddresses = await ipfs.getAddresses();
-    console.log(`Using IPFS nodeID: ${JSON.stringify(ipfsID, null, 4)}`);
-
-    nodeInfo = {
-        name: config.nodeName,
-        ipfs: {
-            id: ipfsID,
-            addresses: ipfsAddresses,
-        },
-    };
-
-    knownNodes[nodeDID] = nodeInfo;
 
     await exportLoop();
-    await keymaster.updateAsset(nodeDID, { node: nodeInfo });
     await connectionLoop();
 }
 

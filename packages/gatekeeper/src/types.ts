@@ -91,12 +91,13 @@ export interface GatekeeperDb {
 
 export interface GatekeeperOptions {
     db: GatekeeperDb,
-    ipfs: IPFSClient,
+    ipfs?: IPFSClient,
     console?: typeof console,
     didPrefix?: string,
     maxOpBytes?: number,
     maxQueueSize?: number,
     registries?: string[],
+    ipfsEnabled?: boolean,
 }
 
 export interface CheckDIDsOptions {
