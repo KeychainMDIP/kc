@@ -5,6 +5,7 @@ import {
     InvalidParameterError,
     InvalidOperationError
 } from '@mdip/common/errors';
+import { childLogger, createConsoleLogger, type LoggerLike } from '@mdip/common/logger';
 import { IPFSClient } from '@mdip/ipfs/types';
 import {
     BlockId,
@@ -56,6 +57,7 @@ export default class Gatekeeper implements GatekeeperInterface {
     private ipfs?: IPFSClient;
     private cipher: CipherNode;
     readonly didPrefix: string;
+    private log: LoggerLike;
     private readonly maxOpBytes: number;
     private readonly maxQueueSize: number;
     private readonly ipfsEnabled: boolean;
@@ -68,12 +70,9 @@ export default class Gatekeeper implements GatekeeperInterface {
         }
         this.db = options.db;
 
-        // Only used for unit testing
-        // TBD replace console with a real logging package
-        if (options.console) {
-            // eslint-disable-next-line
-            console = options.console;
-        }
+        this.log = options.console
+            ? createConsoleLogger(options.console)
+            : childLogger({ service: 'gatekeeper' });
 
         this.eventsQueue = [];
         this.eventsSeen = {};
@@ -128,9 +127,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         let invalid = 0;
         let verified = Object.keys(this.verifiedDIDs).length;
 
-        if (chatty) {
-            console.time('verifyDb');
-        }
+        const verifyStart = chatty ? Date.now() : 0;
 
         for (const did of dids) {
             n += 1;
@@ -147,7 +144,7 @@ export default class Gatekeeper implements GatekeeperInterface {
             }
             catch (error) {
                 if (chatty) {
-                    console.log(`removing ${n}/${total} ${did} invalid`);
+                    this.log.warn(`removing ${n}/${total} ${did} invalid`);
                 }
                 invalid += 1;
                 await this.db.deleteEvents(did);
@@ -160,7 +157,7 @@ export default class Gatekeeper implements GatekeeperInterface {
 
                 if (expires < now) {
                     if (chatty) {
-                        console.log(`removing ${n}/${total} ${did} expired`);
+                        this.log.warn(`removing ${n}/${total} ${did} expired`);
                     }
                     await this.db.deleteEvents(did);
                     expired += 1;
@@ -169,14 +166,14 @@ export default class Gatekeeper implements GatekeeperInterface {
                     const minutesLeft = Math.round((expires.getTime() - now.getTime()) / 60 / 1000);
 
                     if (chatty) {
-                        console.log(`expiring ${n}/${total} ${did} in ${minutesLeft} minutes`);
+                        this.log.debug(`expiring ${n}/${total} ${did} in ${minutesLeft} minutes`);
                     }
                     verified += 1;
                 }
             }
             else {
                 if (chatty) {
-                    console.log(`verifying ${n}/${total} ${did} OK`);
+                    this.log.debug(`verifying ${n}/${total} ${did} OK`);
                 }
                 this.verifiedDIDs[did] = true;
                 verified += 1;
@@ -187,7 +184,8 @@ export default class Gatekeeper implements GatekeeperInterface {
         this.eventsQueue = [];
 
         if (chatty) {
-            console.timeEnd('verifyDb');
+            const durationMs = Date.now() - verifyStart;
+            this.log.debug({ durationMs }, 'verifyDb');
         }
 
         return { total, verified, expired, invalid };
@@ -220,13 +218,13 @@ export default class Gatekeeper implements GatekeeperInterface {
                 if (doc.didResolutionMetadata?.error) {
                     invalid += 1;
                     if (chatty) {
-                        console.log(`can't resolve ${n}/${total} ${did} ${doc.didResolutionMetadata.error}`);
+                        this.log.warn(`can't resolve ${n}/${total} ${did} ${doc.didResolutionMetadata.error}`);
                     }
                     continue;
                 }
 
                 if (chatty) {
-                    console.log(`resolved ${n}/${total} ${did} OK`);
+                    this.log.debug(`resolved ${n}/${total} ${did} OK`);
                 }
 
                 if (doc.mdip?.type === 'agent') {
@@ -599,7 +597,6 @@ export default class Gatekeeper implements GatekeeperInterface {
             }
         }
         catch (error) {
-            // console.error(error);
         }
 
         return doc;
@@ -1039,19 +1036,19 @@ export default class Gatekeeper implements GatekeeperInterface {
 
             if (status === ImportStatus.ADDED) {
                 added += 1;
-                console.log(`import ${i}/${total}: added event for ${event.did}`);
+                this.log.debug(`import ${i}/${total}: added event for ${event.did}`);
             }
             else if (status === ImportStatus.MERGED) {
                 merged += 1;
-                console.log(`import ${i}/${total}: merged event for ${event.did}`);
+                this.log.debug(`import ${i}/${total}: merged event for ${event.did}`);
             }
             else if (status === ImportStatus.REJECTED) {
                 rejected += 1;
-                console.log(`import ${i}/${total}: rejected event for ${event.did}`);
+                this.log.debug(`import ${i}/${total}: rejected event for ${event.did}`);
             }
             else if (status === ImportStatus.DEFERRED) {
                 this.eventsQueue.push(event);
-                console.log(`import ${i}/${total}: deferred event for ${event.did}`);
+                this.log.debug(`import ${i}/${total}: deferred event for ${event.did}`);
             }
 
             event = tempQueue.shift();
@@ -1084,18 +1081,17 @@ export default class Gatekeeper implements GatekeeperInterface {
             }
         }
         catch (error) {
-            console.log(error);
+            this.log.error({ error }, 'processEvents error');
             this.eventsQueue = [];
         }
         finally {
             this.isProcessingEvents = false;
         }
 
-        //console.log(JSON.stringify(eventsQueue, null, 4));
         const pending = this.eventsQueue.length;
         const response = { added, merged, rejected, pending };
 
-        console.log(`processEvents: ${JSON.stringify(response)}`);
+        this.log.debug(`processEvents: ${JSON.stringify(response)}`);
 
         return response;
     }

@@ -1,5 +1,6 @@
 import { MongoClient, Db } from 'mongodb';
 import { InvalidDIDError } from '@mdip/common/errors';
+import { childLogger } from '@mdip/common/logger';
 import { GatekeeperDb, GatekeeperEvent, Operation, BlockId, BlockInfo } from '../types.js'
 
 interface DidsDoc {
@@ -13,6 +14,7 @@ interface QueueDoc {
 }
 
 const MONGO_NOT_STARTED_ERROR = 'Mongo not started. Call start() first.';
+const log = childLogger({ service: 'gatekeeper-db', module: 'mongo' });
 
 export default class DbMongo implements GatekeeperDb {
     private readonly dbName: string
@@ -197,7 +199,7 @@ export default class DbMongo implements GatekeeperDb {
             return true;
         }
         catch (error) {
-            console.error(error);
+            log.error({ error }, 'Mongo clearQueue error');
             return false;
         }
     }

@@ -32,6 +32,9 @@ VITE_EXPLORER_PORT=4000
 
 # URL where your Gatekeeper service is running
 VITE_GATEKEEPER_URL=http://localhost:4224
+
+# Logging for the explorer server
+KC_LOG_LEVEL=info
 ```
 
 ### Running the Explorer
@@ -61,5 +64,4 @@ npm run build
 ## Contributing
 
 Feel free to open issues or submit pull requests for improvements and new features.
-
 

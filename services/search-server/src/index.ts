@@ -6,8 +6,10 @@ import DIDsSQLite from "./db/sqlite.js";
 import DIDsDbMemory from './db/json-memory.js';
 import DidIndexer from "./DidIndexer.js";
 import {DIDsDb} from "./types.js";
+import { childLogger } from "@mdip/common/logger";
 
 dotenv.config();
+const log = childLogger({ service: 'search-server' });
 
 async function main() {
     const {
@@ -70,7 +72,7 @@ async function main() {
             }
             res.json(doc);
         } catch (error) {
-            console.error(error);
+            log.error({ error }, 'Get DID error');
             res.status(500).json({ error: String(error) });
         }
     });
@@ -85,7 +87,7 @@ async function main() {
             const dids = await didDb.searchDocs(q);
             return res.json(dids);
         } catch (error) {
-            console.error("/api/search error:", error);
+            log.error({ error }, '/api/search error');
             return res.status(500).json({ error: String(error) });
         }
     });
@@ -100,7 +102,7 @@ async function main() {
             const dids = await didDb.queryDocs(where);
             return res.json(dids);
         } catch (err) {
-            console.error("/query error:", err);
+            log.error({ error: err }, '/query error');
             res.status(500).json({ error: String(err) });
         }
     });
@@ -109,7 +111,7 @@ async function main() {
 
     const port = Number(SEARCH_SERVER_PORT) || 4002;
     const server = app.listen(port, () => {
-        console.log(`Listening on port ${port}`);
+        log.info(`Listening on port ${port}`);
     });
 
     const shutdown = async () => {
@@ -118,7 +120,7 @@ async function main() {
             indexer.stopIndexing();
             await didDb.disconnect();
         } catch (error: any) {
-            console.error("Error during shutdown:", error);
+            log.error({ error }, 'Error during shutdown');
         } finally {
             process.exit(0);
         }
@@ -129,6 +131,6 @@ async function main() {
 }
 
 main().catch((err) => {
-    console.error("[search-server] Fatal error:", err);
+    log.error({ error: err }, '[search-server] Fatal error');
     process.exit(1);
 });

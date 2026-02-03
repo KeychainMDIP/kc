@@ -1,5 +1,4 @@
 import express from 'express';
-import morgan from 'morgan';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -15,12 +14,39 @@ import WalletEncrypted from '@mdip/keymaster/wallet/json-enc';
 import WalletCache from '@mdip/keymaster/wallet/cache';
 import CipherNode from '@mdip/cipher/node';
 import { InvalidParameterError } from '@mdip/common/errors';
+import { childLogger } from '@mdip/common/logger';
 import config from './config.js';
 
 const app = express();
 const v1router = express.Router();
+const log = childLogger({ service: 'keymaster-server' });
 
-app.use(morgan('dev'));
+function logRequest(req: express.Request, res: express.Response, next: express.NextFunction): void {
+    const startTime = process.hrtime.bigint();
+
+    res.on('finish', () => {
+        const durationMs = Number(process.hrtime.bigint() - startTime) / 1e6;
+        const contentLength = res.getHeader('content-length');
+        const size = typeof contentLength === 'number'
+            ? String(contentLength)
+            : (typeof contentLength === 'string' ? contentLength : '-');
+        const msg = `${req.method} ${req.originalUrl} ${res.statusCode} ${durationMs.toFixed(3)} ms - ${size}`;
+
+        if (res.statusCode >= 500) {
+            log.error(msg);
+        }
+        else if (res.statusCode >= 400) {
+            log.warn(msg);
+        }
+        else {
+            log.info(msg);
+        }
+    });
+
+    next();
+}
+
+app.use(logRequest);
 app.use(express.json());
 
 // Define __dirname in ES module scope
@@ -6066,18 +6092,16 @@ v1router.post('/notices/refresh', async (req, res) => {
 app.use('/api/v1', v1router);
 
 app.use('/api', (req, res) => {
-    console.warn(`Warning: Unhandled API endpoint - ${req.method} ${req.originalUrl}`);
+    log.warn(`Warning: Unhandled API endpoint - ${req.method} ${req.originalUrl}`);
     res.status(404).json({ message: 'Endpoint not found' });
 });
 
 process.on('uncaughtException', (error) => {
-    //console.error('Unhandled exception caught');
-    console.error('Unhandled exception caught', error);
+    log.error({ error }, 'Unhandled exception caught');
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-    console.error('Unhandled rejection at:', promise, 'reason:', reason);
-    //console.error('Unhandled rejection caught');
+    log.error({ reason, promise }, 'Unhandled rejection at');
 });
 
 async function waitForNodeId() {
@@ -6091,18 +6115,18 @@ async function waitForNodeId() {
 
     if (!ids.includes(config.nodeID)) {
         await keymaster.createId(config.nodeID!);
-        console.log(`Created node ID '${config.nodeID}'`);
+        log.info(`Created node ID '${config.nodeID}'`);
     }
 
     while (!isReady) {
         try {
-            console.log(`Resolving node ID: ${config.nodeID}`);
+            log.debug(`Resolving node ID: ${config.nodeID}`);
             const doc = await keymaster.resolveDID(config.nodeID);
-            console.log(JSON.stringify(doc, null, 4));
+            log.debug(JSON.stringify(doc, null, 4));
             isReady = true;
         }
         catch {
-            console.log(`Waiting for gatekeeper to sync...`);
+            log.debug('Waiting for gatekeeper to sync...');
         }
 
         if (!isReady) {
@@ -6161,22 +6185,22 @@ const server = app.listen(port, async () => {
             chatty: true,
         });
     } else {
-        console.warn('Search client is disabled. Keymaster will not be able to search assets.');
+        log.warn('Search client is disabled. Keymaster will not be able to search assets.');
     }
 
     const wallet = await initWallet();
     const cipher = new CipherNode();
     const defaultRegistry = config.defaultRegistry;
     keymaster = new Keymaster({ gatekeeper, wallet, cipher, search, defaultRegistry, passphrase: config.keymasterPassphrase });
-    console.log(`Keymaster server running on port ${port}`);
-    console.log(`Keymaster server persisting to ${config.db}`);
+    log.info(`Keymaster server running on port ${port}`);
+    log.info(`Keymaster server persisting to ${config.db}`);
 
     try {
         await waitForNodeId();
         serverReady = true;
     }
     catch (error) {
-        console.error('Failed to wait for node ID:', error);
+        log.error({ error }, 'Failed to wait for node ID');
     }
 });
 
@@ -6184,7 +6208,7 @@ const shutdown = async () => {
     try {
         server.close();
     } catch (error: any) {
-        console.error("Error during shutdown:", error);
+        log.error({ error }, 'Error during shutdown');
     } finally {
         process.exit(0);
     }

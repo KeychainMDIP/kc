@@ -1,8 +1,10 @@
 import { Redis } from 'ioredis';
 import { InvalidDIDError } from '@mdip/common/errors';
+import { childLogger } from '@mdip/common/logger';
 import { GatekeeperDb, GatekeeperEvent, Operation, BlockId, BlockInfo } from '../types.js'
 
 const REDIS_NOT_STARTED_ERROR = 'Redis not started. Call start() first.';
+const log = childLogger({ service: 'gatekeeper-db', module: 'redis' });
 
 export default class DbRedis implements GatekeeperDb {
     private readonly dbName: string;
@@ -198,7 +200,7 @@ export default class DbRedis implements GatekeeperDb {
             await this.redis!.eval(script, 1, key, hashes.length.toString(), ...hashes);
             return true;
         } catch (e) {
-            console.error(e);
+            log.error({ error: e }, 'Redis eval error');
             return false;
         }
     }

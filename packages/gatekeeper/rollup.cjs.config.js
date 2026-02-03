@@ -8,6 +8,7 @@ const external = [
     ...Object.keys(pkg.dependencies || {}),
     ...Object.keys(pkg.peerDependencies || {})
 ];
+const isExternal = (id) => external.some((pkgName) => id === pkgName || id.startsWith(`${pkgName}/`) || id.includes(`/node_modules/${pkgName}/`));
 
 const config = {
     input: {
@@ -29,7 +30,7 @@ const config = {
         entryFileNames: '[name].cjs',
         chunkFileNames: '[name]-[hash].cjs'
     },
-    external,
+    external: isExternal,
     plugins: [
         resolve({
             preferBuiltins: true

@@ -1,5 +1,4 @@
 import express from 'express';
-import morgan from 'morgan';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -12,10 +11,38 @@ import DbSqlite from '@mdip/gatekeeper/db/sqlite';
 import DbMongo from '@mdip/gatekeeper/db/mongo';
 import { CheckDIDsResult, ResolveDIDOptions, Operation } from '@mdip/gatekeeper/types';
 import KuboClient from '@mdip/ipfs/kubo';
+import { childLogger } from '@mdip/common/logger';
 import ClusterClient from '@mdip/ipfs/cluster';
 import config from './config.js';
 
 EventEmitter.defaultMaxListeners = 100;
+
+const log = childLogger({ service: 'gatekeeper-server' });
+
+function logRequest(req: express.Request, res: express.Response, next: express.NextFunction): void {
+    const startTime = process.hrtime.bigint();
+
+    res.on('finish', () => {
+        const durationMs = Number(process.hrtime.bigint() - startTime) / 1e6;
+        const contentLength = res.getHeader('content-length');
+        const size = typeof contentLength === 'number'
+            ? String(contentLength)
+            : (typeof contentLength === 'string' ? contentLength : '-');
+        const msg = `${req.method} ${req.originalUrl} ${res.statusCode} ${durationMs.toFixed(3)} ms - ${size}`;
+
+        if (res.statusCode >= 500) {
+            log.error(msg);
+        }
+        else if (res.statusCode >= 400) {
+            log.warn(msg);
+        }
+        else {
+            log.info(msg);
+        }
+    });
+
+    next();
+}
 
 const dbName = 'mdip';
 const db = (() => {
@@ -68,7 +95,7 @@ const v1router = express.Router();
 app.use(cors());
 app.options('*', cors());
 
-app.use(morgan('dev'));
+app.use(logRequest);
 app.use(express.json({ limit: config.jsonLimit }));
 
 // Define __dirname in ES module scope
@@ -390,7 +417,8 @@ v1router.post('/did', async (req, res) => {
         }
         res.json(result);
     } catch (error: any) {
-        console.error(error);
+        // eslint-disable-next-line sonarjs/no-duplicate-string
+        log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
 });
@@ -746,7 +774,7 @@ v1router.post('/did/:did', async (req, res) => {
         const ok = await gatekeeper.updateDID(operation);
         res.json(ok);
     } catch (error: any) {
-        console.error(error);
+        log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
 });
@@ -805,7 +833,7 @@ v1router.delete('/did/:did', async (req, res) => {
         const ok = await gatekeeper.deleteDID(operation);
         res.json(ok);
     } catch (error: any) {
-        console.error(error);
+        log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
 });
@@ -884,7 +912,7 @@ v1router.post('/dids/', async (req, res) => {
         const dids = await gatekeeper.getDIDs(req.body);
         res.json(dids);
     } catch (error: any) {
-        console.error(error);
+        log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
 });
@@ -925,7 +953,7 @@ v1router.post('/dids/remove', async (req, res) => {
         const response = await gatekeeper.removeDIDs(dids);
         res.json(response);
     } catch (error: any) {
-        console.error(error);
+        log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
 });
@@ -999,7 +1027,7 @@ v1router.post('/dids/export', async (req, res) => {
         const response = await gatekeeper.exportDIDs(dids);
         res.json(response);
     } catch (error: any) {
-        console.error(error);
+        log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
 });
@@ -1102,7 +1130,7 @@ v1router.post('/dids/import', async (req, res) => {
         const response = await gatekeeper.importDIDs(dids);
         res.json(response);
     } catch (error: any) {
-        console.error(error);
+        log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
 });
@@ -1182,7 +1210,7 @@ v1router.post('/batch/export', async (req, res) => {
         const response = await gatekeeper.exportBatch(dids);
         res.json(response);
     } catch (error: any) {
-        console.error(error);
+        log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
 });
@@ -1279,7 +1307,7 @@ v1router.post('/batch/import', async (req, res) => {
         const response = await gatekeeper.importBatch(batch);
         res.json(response);
     } catch (error: any) {
-        console.error(error);
+        log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
 });
@@ -1355,7 +1383,7 @@ v1router.get('/queue/:registry', async (req, res) => {
         const queue = await gatekeeper.getQueue(req.params.registry);
         res.json(queue);
     } catch (error: any) {
-        console.error(error);
+        log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
 });
@@ -1435,7 +1463,7 @@ v1router.post('/queue/:registry/clear', async (req, res) => {
         const queue = await gatekeeper.clearQueue(req.params.registry, eventsOrHashes);
         res.json(queue);
     } catch (error: any) {
-        console.error(error);
+        log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
 });
@@ -1466,7 +1494,7 @@ v1router.get('/registries', async (req, res) => {
         const registries = await gatekeeper.listRegistries();
         res.json(registries);
     } catch (error: any) {
-        console.error(error);
+        log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
 });
@@ -2037,18 +2065,18 @@ v1router.post('/block/:registry', async (req, res) => {
 app.use('/api/v1', v1router);
 
 app.use('/api', (req, res) => {
-    console.warn(`Warning: Unhandled API endpoint - ${req.method} ${req.originalUrl}`);
+    log.warn(`Warning: Unhandled API endpoint - ${req.method} ${req.originalUrl}`);
     res.status(404).json({ message: 'Endpoint not found' });
 });
 
 async function gcLoop() {
     try {
         const response = await gatekeeper.verifyDb();
-        console.log(`DID garbage collection: ${JSON.stringify(response)} waiting ${config.gcInterval} minutes...`);
+        log.info(`DID garbage collection: ${JSON.stringify(response)} waiting ${config.gcInterval} minutes...`);
         await checkDids();
     }
     catch (error: any) {
-        console.error(`Error in DID garbage collection: ${error}`);
+        log.error(`Error in DID garbage collection: ${error}`);
     }
     setTimeout(gcLoop, config.gcInterval * 60 * 1000);
 }
@@ -2056,9 +2084,10 @@ async function gcLoop() {
 let didCheck: CheckDIDsResult;
 
 async function checkDids() {
-    console.time('checkDIDs');
+    const startTimeMs = Date.now();
     didCheck = await gatekeeper.checkDIDs();
-    console.timeEnd('checkDIDs');
+    const durationMs = Date.now() - startTimeMs;
+    log.debug({ durationMs }, 'checkDIDs');
 }
 
 async function getStatus() {
@@ -2073,48 +2102,48 @@ async function reportStatus() {
     await checkDids();
     const status = await getStatus();
 
-    console.log('Status -----------------------------');
+    log.info('Status -----------------------------');
 
-    console.log(`DID Database (${config.db}):`);
-    console.log(`  Total: ${status.dids.total}`);
+    log.info(`DID Database (${config.db}):`);
+    log.info(`  Total: ${status.dids.total}`);
 
     if (status.dids.total > 0) {
-        console.log(`  By type:`);
-        console.log(`    Agents: ${status.dids.byType.agents}`);
-        console.log(`    Assets: ${status.dids.byType.assets}`);
-        console.log(`    Confirmed: ${status.dids.byType.confirmed}`);
-        console.log(`    Unconfirmed: ${status.dids.byType.unconfirmed}`);
-        console.log(`    Ephemeral: ${status.dids.byType.ephemeral}`);
-        console.log(`    Invalid: ${status.dids.byType.invalid}`);
+        log.info(`  By type:`);
+        log.info(`    Agents: ${status.dids.byType.agents}`);
+        log.info(`    Assets: ${status.dids.byType.assets}`);
+        log.info(`    Confirmed: ${status.dids.byType.confirmed}`);
+        log.info(`    Unconfirmed: ${status.dids.byType.unconfirmed}`);
+        log.info(`    Ephemeral: ${status.dids.byType.ephemeral}`);
+        log.info(`    Invalid: ${status.dids.byType.invalid}`);
 
-        console.log(`  By registry:`);
+        log.info(`  By registry:`);
         const registries = Object.keys(status.dids.byRegistry).sort();
         for (let registry of registries) {
-            console.log(`    ${registry}: ${status.dids.byRegistry[registry]}`);
+            log.info(`    ${registry}: ${status.dids.byRegistry[registry]}`);
         }
 
-        console.log(`  By version:`);
+        log.info(`  By version:`);
         let count = 0;
         for (let version of [1, 2, 3, 4, 5]) {
             const num = status.dids.byVersion[version] || 0;
-            console.log(`    ${version}: ${num}`);
+            log.info(`    ${version}: ${num}`);
             count += num;
         }
-        console.log(`    6+: ${status.dids.total - count}`);
+        log.info(`    6+: ${status.dids.total - count}`);
     }
 
-    console.log(`Events Queue: ${status.dids.eventsQueue.length} pending`);
+    log.info(`Events Queue: ${status.dids.eventsQueue.length} pending`);
 
-    console.log(`Memory Usage Report:`);
-    console.log(`  RSS: ${formatBytes(status.memoryUsage.rss)} (Resident Set Size - total memory allocated for the process)`);
-    console.log(`  Heap Total: ${formatBytes(status.memoryUsage.heapTotal)} (Total heap allocated)`);
-    console.log(`  Heap Used: ${formatBytes(status.memoryUsage.heapUsed)} (Heap actually used)`);
-    console.log(`  External: ${formatBytes(status.memoryUsage.external)} (Memory used by C++ objects bound to JavaScript)`);
-    console.log(`  Array Buffers: ${formatBytes(status.memoryUsage.arrayBuffers)} (Memory used by ArrayBuffer and SharedArrayBuffer)`);
+    log.info(`Memory Usage Report:`);
+    log.info(`  RSS: ${formatBytes(status.memoryUsage.rss)} (Resident Set Size - total memory allocated for the process)`);
+    log.info(`  Heap Total: ${formatBytes(status.memoryUsage.heapTotal)} (Total heap allocated)`);
+    log.info(`  Heap Used: ${formatBytes(status.memoryUsage.heapUsed)} (Heap actually used)`);
+    log.info(`  External: ${formatBytes(status.memoryUsage.external)} (Memory used by C++ objects bound to JavaScript)`);
+    log.info(`  Array Buffers: ${formatBytes(status.memoryUsage.arrayBuffers)} (Memory used by ArrayBuffer and SharedArrayBuffer)`);
 
-    console.log(`Uptime: ${status.uptimeSeconds}s (${formatDuration(status.uptimeSeconds)})`);
+    log.info(`Uptime: ${status.uptimeSeconds}s (${formatDuration(status.uptimeSeconds)})`);
 
-    console.log('------------------------------------');
+    log.info('------------------------------------');
 }
 
 function formatDuration(seconds: number) {
@@ -2174,30 +2203,30 @@ function formatBytes(bytes: number) {
 }
 
 async function main() {
-    console.log(`Starting KeychainMDIP Gatekeeper with a db (${config.db}) check...`);
+    log.info(`Starting KeychainMDIP Gatekeeper with a db (${config.db}) check...`);
     await reportStatus();
 
     if (config.statusInterval > 0) {
-        console.log(`Starting status update every ${config.statusInterval} minutes`);
+        log.info(`Starting status update every ${config.statusInterval} minutes`);
         setInterval(reportStatus, config.statusInterval * 60 * 1000);
     }
     else {
-        console.log(`Status update disabled`);
+        log.info(`Status update disabled`);
     }
 
     if (config.gcInterval > 0) {
-        console.log(`Starting DID garbage collection in ${config.gcInterval} minutes`);
+        log.info(`Starting DID garbage collection in ${config.gcInterval} minutes`);
         setTimeout(gcLoop, config.gcInterval * 60 * 1000);
     }
     else {
-        console.log(`DID garbage collection disabled`);
+        log.info(`DID garbage collection disabled`);
     }
 
-    console.log(`DID prefix: ${JSON.stringify(gatekeeper.didPrefix)}`);
-    console.log(`Supported registries: ${JSON.stringify(gatekeeper.supportedRegistries)}`);
+    log.info(`DID prefix: ${JSON.stringify(gatekeeper.didPrefix)}`);
+    log.info(`Supported registries: ${JSON.stringify(gatekeeper.supportedRegistries)}`);
 
     const server = app.listen(config.port, () => {
-        console.log(`Server is running on port ${config.port}`);
+        log.info(`Server is running on port ${config.port}`);
         serverReady = true;
     });
 
@@ -2208,7 +2237,7 @@ async function main() {
                 db.stop();
             }
         } catch (error: any) {
-            console.error("Error during shutdown:", error);
+            log.error({ error }, 'Error during shutdown');
         } finally {
             process.exit(0);
         }
@@ -2221,9 +2250,9 @@ async function main() {
 main();
 
 process.on('uncaughtException', (error) => {
-    console.error('Unhandled exception caught', error);
+    log.error({ error }, 'Unhandled exception caught');
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-    console.error('Unhandled rejection caught', reason, promise);
+    log.error({ reason, promise }, 'Unhandled rejection caught');
 });

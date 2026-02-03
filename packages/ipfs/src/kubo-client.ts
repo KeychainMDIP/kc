@@ -6,6 +6,9 @@ import * as jsonCodec from 'multiformats/codecs/json';
 import * as sha256 from 'multiformats/hashes/sha2';
 import ip from 'ip';
 import { IPFSClient } from './types.js';
+import { childLogger } from '@mdip/common/logger';
+
+const log = childLogger({ service: 'ipfs-kubo-client' });
 
 interface KuboClientConfig {
     url: string;
@@ -45,7 +48,7 @@ class KuboClient implements IPFSClient {
         let retries = 0;
 
         if (chatty) {
-            console.log(`Connecting to IPFS at ${options.url}`);
+            log.info(`Connecting to IPFS at ${options.url}`);
         }
 
         while (!ready) {
@@ -53,7 +56,7 @@ class KuboClient implements IPFSClient {
 
             if (!ready) {
                 if (chatty) {
-                    console.log('Waiting for IPFS to be ready...');
+                    log.debug('Waiting for IPFS to be ready...');
                 }
                 // wait for 1 second before checking again
                 await new Promise(resolve => setTimeout(resolve, intervalSeconds * 1000));
@@ -66,13 +69,13 @@ class KuboClient implements IPFSClient {
             }
 
             if (!chatty && becomeChattyAfter > 0 && retries > becomeChattyAfter) {
-                console.log(`Connecting to IPFS at ${options.url}`);
+                log.info(`Connecting to IPFS at ${options.url}`);
                 chatty = true;
             }
         }
 
         if (chatty) {
-            console.log('IPFS service is ready!');
+            log.info('IPFS service is ready!');
         }
     }
 
@@ -167,7 +170,7 @@ class KuboClient implements IPFSClient {
             //const match = peer.match(/\/ip4\/([\d.]+)/);
 
             if (!match) {
-                console.warn(`Invalid peer address format: ${peer}`);
+                log.warn(`Invalid peer address format: ${peer}`);
                 return false;
             }
 
@@ -175,7 +178,7 @@ class KuboClient implements IPFSClient {
 
             // Check if the IP address is private
             if (ip.isPrivate(ipAddress)) {
-                console.warn(`Skipping private IP address: ${ipAddress}`);
+                log.warn(`Skipping private IP address: ${ipAddress}`);
                 return false;
             }
 
@@ -186,18 +189,18 @@ class KuboClient implements IPFSClient {
             if (Array.isArray(response) && response.length === 1 && typeof response[0] === 'string') {
                 const responseString = response[0];
                 if (responseString.includes('success')) {
-                    console.log(`Successfully connected to peer: ${peer}`);
+                    log.info(`Successfully connected to peer: ${peer}`);
                     return true;
                 }
 
-                console.warn(`Unexpected response from swarm.connect: ${responseString}`);
+                log.warn(`Unexpected response from swarm.connect: ${responseString}`);
                 return false;
             }
 
-            console.warn(`Unexpected response from swarm.connect: ${response}`);
+            log.warn(`Unexpected response from swarm.connect: ${response}`);
             return false;
         } catch (error) {
-            console.error(`Failed to connect to peer ${peer}:`, error);
+            log.error({ error }, `Failed to connect to peer ${peer}`);
             return false;
         }
     }
@@ -209,7 +212,7 @@ class KuboClient implements IPFSClient {
             const ok = await this.addPeer(peer);
 
             if (ok) {
-                console.log(`Added peer ${peer}`);
+                log.info(`Added peer ${peer}`);
                 addedPeers.push(peer);
             }
         }

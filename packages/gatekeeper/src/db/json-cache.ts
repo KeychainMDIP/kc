@@ -1,6 +1,9 @@
 import fs from 'fs';
 import { JsonDbFile } from '../types.js'
 import { AbstractJson } from "./abstract-json.js";
+import { childLogger } from '@mdip/common/logger';
+
+const log = childLogger({ service: 'gatekeeper-db', module: 'json-cache' });
 
 export default class DbJsonCache extends AbstractJson {
     private dbCache: JsonDbFile | null = null;
@@ -27,9 +30,9 @@ export default class DbJsonCache extends AbstractJson {
     async saveLoop(): Promise<void> {
         try {
             this.saveDb();
-            console.log(`DID db saved to ${this.dbName}`);
+            log.debug(`DID db saved to ${this.dbName}`);
         } catch (error) {
-            console.error(`Error in saveLoop: ${error}`);
+            log.error({ error }, 'Error in saveLoop');
         }
 
         this.saveLoopTimeoutId = setTimeout(() => this.saveLoop(), 20 * 1000);

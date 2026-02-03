@@ -11,6 +11,7 @@ import JsonSQLite from './db/sqlite.js';
 import config from './config.js';
 import { GatekeeperEvent, Operation } from '@mdip/gatekeeper/types';
 import Inscription from '@mdip/inscription';
+import { childLogger } from '@mdip/common/logger';
 import {
     AccountKeys,
     MediatorDb,
@@ -27,6 +28,7 @@ const PROTOCOL_TAG = Buffer.from('MDIP', 'ascii');
 const SMART_FEE_MODE = "CONSERVATIVE";
 
 const READ_ONLY = config.exportInterval === 0;
+const log = childLogger({ service: 'satoshi-inscription-mediator' });
 
 const gatekeeper = new GatekeeperClient();
 const btcClient = new BtcClient({
@@ -90,7 +92,7 @@ async function resolveScanStart(blockCount: number): Promise<number> {
         return db.height + 1;
     }
 
-    console.log(`Reorg detected at height ${db.height}, rewinding to a confirmed block...`);
+    log.warn(`Reorg detected at height ${db.height}, rewinding to a confirmed block...`);
 
     let height = db.height;
     let hash = db.hash;
@@ -224,7 +226,7 @@ async function extractOperations(txn: BlockTxVerbose, height: number, index: num
 
             ops = JSON.parse(raw.toString('utf8'));
         } catch (e) {
-            console.warn(`bad payload at ${txid}:${index} – ${e}`);
+            log.warn(`bad payload at ${txid}:${index} – ${e}`);
             return;
         }
 
@@ -233,7 +235,7 @@ async function extractOperations(txn: BlockTxVerbose, height: number, index: num
             ['create', 'update', 'delete'].includes(o.type);
 
         if (!Array.isArray(ops) || ops.some(o => !isOp(o))) {
-            console.warn(`invalid Operation array at ${txid}:${index}`);
+            log.warn(`invalid Operation array at ${txid}:${index}`);
             return;
         }
 
@@ -256,7 +258,7 @@ async function extractOperations(txn: BlockTxVerbose, height: number, index: num
         });
     }
     catch (error) {
-        console.error(`Error fetching txn: ${error}`);
+        log.error({ error }, 'Error fetching txn');
     }
 }
 
@@ -269,7 +271,7 @@ async function fetchBlock(height: number, blockCount: number): Promise<void> {
         for (let i = 0; i < block.tx.length; i++) {
             const tx = block.tx[i];
 
-            console.log(height, String(i).padStart(4), tx.txid);
+            log.debug(`${height} ${String(i).padStart(4)} ${tx.txid}`);
 
             const asm: string | undefined = tx.vout?.[0]?.scriptPubKey?.asm;
             if (!asm || !asm.startsWith('OP_RETURN 4d44495001')) {
@@ -291,19 +293,19 @@ async function fetchBlock(height: number, blockCount: number): Promise<void> {
         await addBlock(height, blockHash, block.time);
 
     } catch (error) {
-        console.error(`Error fetching block: ${error}`);
+        log.error({ error }, 'Error fetching block');
     }
 }
 
 async function scanBlocks(): Promise<void> {
     let blockCount = await btcClient.getBlockCount();
 
-    console.log(`current block height: ${blockCount}`);
+    log.info(`current block height: ${blockCount}`);
 
     let start = await resolveScanStart(blockCount);
 
     for (let height = start; height <= blockCount; height++) {
-        console.log(`${height}/${blockCount} blocks (${(100 * height / blockCount).toFixed(2)}%)`);
+        log.debug(`${height}/${blockCount} blocks (${(100 * height / blockCount).toFixed(2)}%)`);
         await fetchBlock(height, blockCount);
         blockCount = await btcClient.getBlockCount();
     }
@@ -337,7 +339,7 @@ async function importBatch(item: DiscoveredInscribedItem) {
         logObj = { ...logObj, error: update.error };
     }
 
-    console.log(JSON.stringify(logObj, null, 4));
+    log.debug({ logObj }, 'inscription log');
     return update;
 }
 
@@ -533,7 +535,7 @@ async function checkPendingTransactions(): Promise<boolean> {
                 }
             });
         } else {
-            console.log('pendingTaproot commitTxid', db.pendingTaproot.commitTxid);
+            log.debug(`pendingTaproot commitTxid ${db.pendingTaproot.commitTxid}`);
         }
     }
 
@@ -545,7 +547,7 @@ async function checkPendingTransactions(): Promise<boolean> {
             });
             return false;
         } else {
-            console.log('pendingTaproot revealTxid', db.pendingTaproot.revealTxids.at(-1));
+            log.debug(`pendingTaproot revealTxid ${db.pendingTaproot.revealTxids.at(-1)}`);
         }
     }
 
@@ -581,7 +583,7 @@ async function replaceByFee(): Promise<boolean> {
     const utxos = await getUnspentOutputs();
     const keys = await getAccountXprvsFromCore();
 
-    console.log("Bump Fees");
+    log.info('Bump Fees');
 
     const newRevealHex = await inscription.bumpTransactionFee(
         db.pendingTaproot.hdkeypath,
@@ -601,7 +603,7 @@ async function replaceByFee(): Promise<boolean> {
         }
     });
 
-    console.log(`Reveal TXID: ${newRevealTxid}`);
+    log.info(`Reveal TXID: ${newRevealTxid}`);
 
     return true;
 }
@@ -630,7 +632,7 @@ async function fundWalletMessage() {
 
     if (walletInfo.balance < config.feeMax) {
         const address = await btcClient.getNewAddress('funds', 'bech32m');
-        console.log(`Wallet has insufficient funds (${walletInfo.balance}). Send ${config.chain} to ${address}`);
+        log.warn(`Wallet has insufficient funds (${walletInfo.balance}). Send ${config.chain} to ${address}`);
     }
 }
 
@@ -647,14 +649,14 @@ async function anchorBatch(): Promise<void> {
     try {
         await fundWalletMessage();
     } catch (error) {
-        console.error("Error generating new address:", error);
+        log.error({ error }, 'Error generating new address');
         return;
     }
 
     const queue = await gatekeeper.getQueue(REGISTRY);
 
     if (queue.length === 0) {
-        console.log(`empty ${REGISTRY} queue`);
+        log.debug(`empty ${REGISTRY} queue`);
         return;
     }
 
@@ -678,13 +680,13 @@ async function anchorBatch(): Promise<void> {
             keys,
         );
 
-        console.log(JSON.stringify(batch, null, 4));
+        log.debug({ batch }, 'export batch');
 
         const commitTxid = await btcClient.sendRawTransaction(commitHex);
         const revealTxid = await btcClient.sendRawTransaction(revealHex);
 
-        console.log("Commit TXID", commitTxid);
-        console.log("Reveal TXID", revealTxid);
+        log.info(`Commit TXID ${commitTxid}`);
+        log.info(`Reveal TXID ${revealTxid}`);
 
         const hashes = batch
             .map(op => op.signature?.hash)
@@ -704,14 +706,14 @@ async function anchorBatch(): Promise<void> {
             });
         }
     } catch (err) {
-        console.error(`Taproot anchor error: ${err}`);
+        log.error({ error: err }, 'Taproot anchor error');
     }
 }
 
 async function importLoop(): Promise<void> {
     if (importRunning) {
         setTimeout(importLoop, config.importInterval * 60 * 1000);
-        console.log(`import loop busy, waiting ${config.importInterval} minute(s)...`);
+        log.debug(`import loop busy, waiting ${config.importInterval} minute(s)...`);
         return;
     }
 
@@ -721,10 +723,10 @@ async function importLoop(): Promise<void> {
         await scanBlocks();
         await importBatches();
     } catch (error: any) {
-        console.error(`Error in importLoop: ${error.error || JSON.stringify(error)}`);
+        log.error({ error }, 'Error in importLoop');
     } finally {
         importRunning = false;
-        console.log(`import loop waiting ${config.importInterval} minute(s)...`);
+        log.debug(`import loop waiting ${config.importInterval} minute(s)...`);
         setTimeout(importLoop, config.importInterval * 60 * 1000);
     }
 }
@@ -732,7 +734,7 @@ async function importLoop(): Promise<void> {
 async function exportLoop(): Promise<void> {
     if (exportRunning) {
         setTimeout(exportLoop, config.exportInterval * 60 * 1000);
-        console.log(`Export loop busy, waiting ${config.exportInterval} minute(s)...`);
+        log.debug(`Export loop busy, waiting ${config.exportInterval} minute(s)...`);
         return;
     }
 
@@ -741,10 +743,10 @@ async function exportLoop(): Promise<void> {
     try {
         await anchorBatch();
     } catch (error) {
-        console.error(`Error in exportLoop: ${error}`);
+        log.error({ error }, 'Error in exportLoop');
     } finally {
         exportRunning = false;
-        console.log(`export loop waiting ${config.exportInterval} minute(s)...`);
+        log.debug(`export loop waiting ${config.exportInterval} minute(s)...`);
         setTimeout(exportLoop, config.exportInterval * 60 * 1000);
     }
 }
@@ -752,15 +754,15 @@ async function exportLoop(): Promise<void> {
 async function waitForChain() {
     let isReady = false;
 
-    console.log(`Connecting to ${config.chain} node on ${config.host}:${config.port} using wallet '${config.wallet}'`);
+    log.info(`Connecting to ${config.chain} node on ${config.host}:${config.port} using wallet '${config.wallet}'`);
 
     while (!isReady) {
         try {
             const blockchainInfo = await btcClient.getBlockchainInfo();
-            console.log("Blockchain Info:", JSON.stringify(blockchainInfo, null, 4));
+            log.debug({ blockchainInfo }, 'Blockchain Info');
             isReady = true;
         } catch (error) {
-            console.log(`Waiting for ${config.chain} node...`);
+            log.debug(`Waiting for ${config.chain} node...`);
         }
 
         if (!isReady) {
@@ -774,29 +776,29 @@ async function waitForChain() {
 
     try {
         await btcClient.createWallet(config.wallet!);
-        console.log(`Wallet '${config.wallet}' created successfully.`);
+        log.info(`Wallet '${config.wallet}' created successfully.`);
     } catch (error: any) {
         // If wallet already exists, log a message
         if (error.message.includes("already exists")) {
-            console.log(`Wallet '${config.wallet}' already exists.`);
+            log.info(`Wallet '${config.wallet}' already exists.`);
         } else {
-            console.error("Error creating wallet:", error);
+            log.error({ error }, 'Error creating wallet');
             return false;
         }
     }
 
     try {
         const walletInfo = await btcClient.getWalletInfo();
-        console.log("Wallet Info:", JSON.stringify(walletInfo, null, 4));
+        log.debug({ walletInfo }, 'Wallet Info');
     } catch (error) {
-        console.error("Error fetching wallet info:", error);
+        log.error({ error }, 'Error fetching wallet info');
         return false;
     }
 
     try {
         await fundWalletMessage();
     } catch (error) {
-        console.error("Error generating new address:", error);
+        log.error({ error }, 'Error generating new address');
         return false;
     }
 
@@ -813,22 +815,22 @@ async function syncBlocks(): Promise<void> {
         const currentMax = latest ? latest.height : config.startBlock;
         const blockCount = await btcClient.getBlockCount();
 
-        console.log(`current block height: ${blockCount}`);
+        log.info(`current block height: ${blockCount}`);
 
         for (let height = currentMax; height <= blockCount; height++) {
             const blockHash = await btcClient.getBlockHash(height);
             const block = await btcClient.getBlock(blockHash) as Block;
-            console.log(`${height}/${blockCount} blocks (${(100 * height / blockCount).toFixed(2)}%)`);
+            log.debug(`${height}/${blockCount} blocks (${(100 * height / blockCount).toFixed(2)}%)`);
             await addBlock(height, blockHash, block.time);
         }
     } catch (error) {
-        console.error(`Error syncing blocks: ${error}`);
+        log.error({ error }, 'Error syncing blocks');
     }
 }
 
 async function main() {
     if (!READ_ONLY && !config.nodeID) {
-        console.log('inscription-mediator must have a KC_NODE_ID configured');
+        log.error('inscription-mediator must have a KC_NODE_ID configured');
         return;
     }
 
@@ -853,10 +855,10 @@ async function main() {
 
         if (!jsonDb && fileDb) {
             await jsonPersister.saveDb(fileDb);
-            console.log(`Database upgraded to ${config.db}`);
+            log.info(`Database upgraded to ${config.db}`);
         }
         else {
-            console.log(`Persisting to ${config.db}`);
+            log.info(`Persisting to ${config.db}`);
         }
     }
 
@@ -886,13 +888,13 @@ async function main() {
     await syncBlocks();
 
     if (config.importInterval > 0) {
-        console.log(`Importing operations every ${config.importInterval} minute(s)`);
+        log.info(`Importing operations every ${config.importInterval} minute(s)`);
         setTimeout(importLoop, config.importInterval * 60 * 1000);
     }
 
     if (!READ_ONLY) {
-        console.log(`Exporting operations every ${config.exportInterval} minute(s)`);
-        console.log(`Txn fees (${REGISTRY}): conf target: ${config.feeConf}, maximum: ${config.feeMax}, fallback Sat/Byte: ${config.feeFallback}`);
+        log.info(`Exporting operations every ${config.exportInterval} minute(s)`);
+        log.info(`Txn fees (${REGISTRY}): conf target: ${config.feeConf}, maximum: ${config.feeMax}, fallback Sat/Byte: ${config.feeFallback}`);
         setTimeout(exportLoop, config.exportInterval * 60 * 1000);
     }
 }
