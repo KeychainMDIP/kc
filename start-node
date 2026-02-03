@@ -21,6 +21,7 @@ if [ ${#SERVICES[@]} -gt 0 ] && [ "${KC_IPFS_ENABLE,,}" != "false" ]; then
     fi
 fi
 
+docker compose --profile ipfs down
 docker compose down
 docker compose "${PROFILE_ARGS[@]}" build "${SERVICES[@]}"
 docker compose "${PROFILE_ARGS[@]}" up "${SERVICES[@]}"

@@ -143,7 +143,7 @@ export interface GatekeeperInterface {
     importBatch(batch: GatekeeperEvent[]): Promise<ImportBatchResult>;
     processEvents(): Promise<ProcessEventsResult>;
     getQueue(registry: string): Promise<Operation[]>;
-    clearQueue(registry: string, events: Operation[]): Promise<boolean>;
+    clearQueue(registry: string, events: Operation[] | string[]): Promise<boolean>;
     addData(data: Buffer): Promise<string>;
     getData(cid: string): Promise<Buffer | null>;
     addJSON(json: object): Promise<string>;

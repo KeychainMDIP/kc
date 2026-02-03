@@ -1570,39 +1570,50 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "array",
-                "description": "An array of DID operation event objects to remove from the queue.",
-                "items": {
-                  "type": "object",
-                  "description": "A queued DID operation event.",
-                  "properties": {
-                    "type": {
-                      "type": "string",
-                      "description": "The operation type."
-                    },
-                    "did": {
-                      "type": "string",
-                      "description": "The DID targeted by this operation."
-                    },
-                    "doc": {
-                      "type": "object",
-                      "description": "The (optional) DID document content, present if type is \"update\" or \"create\" with doc data."
-                    },
-                    "previd": {
-                      "type": "string",
-                      "description": "Reference to the previous version (optional)."
-                    },
-                    "signature": {
-                      "type": "object",
-                      "description": "Cryptographic signature."
+                "oneOf": [
+                  {
+                    "type": "array",
+                    "description": "An array of SHA-256 hashes of queued operations to remove.",
+                    "items": {
+                      "type": "string"
                     }
                   },
-                  "required": [
-                    "type",
-                    "did",
-                    "signature"
-                  ]
-                }
+                  {
+                    "type": "array",
+                    "description": "An array of DID operation event objects to remove from the queue.",
+                    "items": {
+                      "type": "object",
+                      "description": "A queued DID operation event.",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "description": "The operation type."
+                        },
+                        "did": {
+                          "type": "string",
+                          "description": "The DID targeted by this operation."
+                        },
+                        "doc": {
+                          "type": "object",
+                          "description": "The (optional) DID document content, present if type is \"update\" or \"create\" with doc data."
+                        },
+                        "previd": {
+                          "type": "string",
+                          "description": "Reference to the previous version (optional)."
+                        },
+                        "signature": {
+                          "type": "object",
+                          "description": "Cryptographic signature."
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "did",
+                        "signature"
+                      ]
+                    }
+                  }
+                ]
               }
             }
           }

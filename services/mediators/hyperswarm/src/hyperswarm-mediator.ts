@@ -485,7 +485,10 @@ async function flushQueue(): Promise<void> {
             data: batch,
         };
 
-        await gatekeeper.clearQueue(REGISTRY, batch);
+        const hashes = batch
+            .map(op => op.signature?.hash)
+            .filter((hash): hash is string => !!hash);
+        await gatekeeper.clearQueue(REGISTRY, hashes);
         await relayMsg(msg);
         await mergeBatch(batch);
     }

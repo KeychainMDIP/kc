@@ -468,7 +468,10 @@ async function anchorBatch(): Promise<void> {
         const txid = await createOpReturnTxn(did);
 
         if (txid) {
-            const ok = await gatekeeper.clearQueue(REGISTRY, batch);
+            const hashes = batch
+                .map(op => op.signature?.hash)
+                .filter((hash): hash is string => !!hash);
+            const ok = await gatekeeper.clearQueue(REGISTRY, hashes);
 
             if (ok) {
                 const blockCount = await btcClient.getBlockCount();
