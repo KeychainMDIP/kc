@@ -1,12 +1,25 @@
 #!/usr/bin/env bash
 set -e
-source .env
 
-echo $KC_GATEKEEPER_URL
+PROFILE_ARGS=()
+SERVICES=(cli gatekeeper keymaster redis mongodb)
 
+if [ -f .env ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . ./.env
+  set +a
+fi
+
+if [ "${KC_IPFS_ENABLE,,}" != "false" ]; then
+  PROFILE_ARGS=(--profile ipfs)
+  SERVICES=(ipfs "${SERVICES[@]}")
+fi
+
+docker compose --profile ipfs down
 docker compose down
-docker compose build cli gatekeeper keymaster ipfs redis mongodb
-docker compose up -d "$@"
+docker compose "${PROFILE_ARGS[@]}" build "${SERVICES[@]}"
+docker compose "${PROFILE_ARGS[@]}" up -d "${SERVICES[@]}"
 
 echo "Waiting for all services to be 'Up'..."
 
@@ -15,11 +28,8 @@ RETRY_INTERVAL=5
 RETRY_COUNT=0
 
 while true; do
-  # Count total services defined
-  TOTAL_SERVICES="6"
-
-  # Count lines with 'Up' in status
-  UP_COUNT=$(docker compose ps | grep 'Up' | wc -l)
+  TOTAL_SERVICES="${#SERVICES[@]}"
+  UP_COUNT=$(docker compose "${PROFILE_ARGS[@]}" ps --services --status running | wc -l)
 
   if [[ "$UP_COUNT" -eq "$TOTAL_SERVICES" ]]; then
     echo "✅ All containers are 'Up'"
@@ -32,7 +42,7 @@ while true; do
     exit 1
   fi
 
-  echo "⏳ Waiting... ($RETRY_COUNT/$MAX_RETRIES)"
+  echo "⏳ Waiting... ($RETRY_COUNT/$MAX_RETRIES) running ${UP_COUNT}/${TOTAL_SERVICES}"
   sleep "$RETRY_INTERVAL"
   ((RETRY_COUNT++))
 done

@@ -1,2 +1,6 @@
 #!/usr/bin/env bash
+set -e
+
+# Always attempt to stop profile services so IPFS doesn't stay running.
+docker compose --profile ipfs down
 docker compose down
