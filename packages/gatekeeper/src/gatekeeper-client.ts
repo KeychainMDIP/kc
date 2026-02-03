@@ -285,7 +285,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
         }
     }
 
-    async clearQueue(registry: string, events: Operation[]): Promise<boolean> {
+    async clearQueue(registry: string, events: Operation[] | string[]): Promise<boolean> {
         try {
             const response = await this.axios.post(`${this.API}/queue/${registry}/clear`, events);
             return response.data;

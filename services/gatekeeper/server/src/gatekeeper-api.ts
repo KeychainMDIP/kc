@@ -1381,31 +1381,36 @@ v1router.get('/queue/:registry', async (req, res) => {
  *       content:
  *         application/json:
  *           schema:
- *             type: array
- *             description: An array of DID operation event objects to remove from the queue.
- *             items:
- *               type: object
- *               description: A queued DID operation event.
- *               properties:
- *                 type:
+ *             oneOf:
+ *               - type: array
+ *                 description: An array of SHA-256 hashes of queued operations to remove.
+ *                 items:
  *                   type: string
- *                   description: The operation type.
- *                 did:
- *                   type: string
- *                   description: The DID targeted by this operation.
- *                 doc:
+ *               - type: array
+ *                 description: An array of DID operation event objects to remove from the queue.
+ *                 items:
  *                   type: object
- *                   description: The (optional) DID document content, present if type is "update" or "create" with doc data.
- *                 previd:
- *                   type: string
- *                   description: Reference to the previous version (optional).
- *                 signature:
- *                   type: object
- *                   description: Cryptographic signature.
- *               required:
- *                 - type
- *                 - did
- *                 - signature
+ *                   description: A queued DID operation event.
+ *                   properties:
+ *                     type:
+ *                       type: string
+ *                       description: The operation type.
+ *                     did:
+ *                       type: string
+ *                       description: The DID targeted by this operation.
+ *                     doc:
+ *                       type: object
+ *                       description: The (optional) DID document content, present if type is "update" or "create" with doc data.
+ *                     previd:
+ *                       type: string
+ *                       description: Reference to the previous version (optional).
+ *                     signature:
+ *                       type: object
+ *                       description: Cryptographic signature.
+ *                   required:
+ *                     - type
+ *                     - did
+ *                     - signature
  *
  *     responses:
  *       200:
@@ -1426,8 +1431,8 @@ v1router.get('/queue/:registry', async (req, res) => {
  */
 v1router.post('/queue/:registry/clear', async (req, res) => {
     try {
-        const events = req.body;
-        const queue = await gatekeeper.clearQueue(req.params.registry, events);
+        const eventsOrHashes = req.body;
+        const queue = await gatekeeper.clearQueue(req.params.registry, eventsOrHashes);
         res.json(queue);
     } catch (error: any) {
         console.error(error);

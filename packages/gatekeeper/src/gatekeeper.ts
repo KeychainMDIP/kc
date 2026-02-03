@@ -1243,12 +1243,36 @@ export default class Gatekeeper implements GatekeeperInterface {
         return this.db.getQueue(registry);
     }
 
-    async clearQueue(registry: string, events: Operation[]): Promise<boolean> {
+    async clearQueue(registry: string, events: Operation[] | string[]): Promise<boolean> {
         if (!ValidRegistries.includes(registry)) {
             throw new InvalidParameterError(`registry=${registry}`);
         }
 
-        return this.db.clearQueue(registry, events);
+        if (!Array.isArray(events) || events.length === 0) {
+            return true;
+        }
+
+        const isHashArray = events.every(item => typeof item === 'string');
+        if (isHashArray) {
+            const hashes = new Set((events as string[]).filter(Boolean));
+            if (hashes.size === 0) {
+                return true;
+            }
+
+            const queue = await this.db.getQueue(registry);
+            const toClear = queue.filter(op => {
+                const hash = op.signature?.hash;
+                return hash ? hashes.has(hash) : false;
+            });
+
+            if (toClear.length === 0) {
+                return true;
+            }
+
+            return this.db.clearQueue(registry, toClear);
+        }
+
+        return this.db.clearQueue(registry, events as Operation[]);
     }
 
     async getBlock(registry: string, block?: BlockId): Promise<BlockInfo | null> {
