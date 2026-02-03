@@ -85,6 +85,27 @@ describe('clearQueue', () => {
         expect(queue2).toStrictEqual([]);
     });
 
+    it('should clear queue using signature hashes', async () => {
+        const registry = 'TFTC';
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await helper.createAgentOp(keypair, { version: 1, registry });
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        doc.didDocumentData = { mock: 1 };
+        const updateOp = await helper.createUpdateOp(keypair, did, doc);
+        await gatekeeper.updateDID(updateOp);
+
+        const queue = await gatekeeper.getQueue(registry);
+        const hashes = queue
+            .map(op => op.signature?.hash)
+            .filter((hash): hash is string => !!hash);
+
+        await gatekeeper.clearQueue(registry, hashes);
+        const queue2 = await gatekeeper.getQueue(registry);
+
+        expect(queue2).toStrictEqual([]);
+    });
+
     it('should clear only specified events', async () => {
         const registry = 'TFTC';
         const keypair = cipher.generateRandomJwk();
