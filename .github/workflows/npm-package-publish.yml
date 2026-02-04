@@ -36,6 +36,7 @@ on:
           - beta
           - alpha
           - rc
+          - none
 
 permissions:
   contents: write
@@ -98,7 +99,8 @@ jobs:
       
       - name: Publish to NPM
         run: |
-          if [[ "${{ github.event.inputs.version }}" == pre* ]]; then
+          # Determine if this is a prerelease and what dist-tag to use
+          if [[ "${{ github.event.inputs.version }}" == pre* ]] && [[ "${{ github.event.inputs.preid }}" != "none" ]]; then
             npx lerna publish from-git --dist-tag ${{ github.event.inputs.preid }} --yes -- --provenance
           else
             npx lerna publish from-git --yes -- --provenance
