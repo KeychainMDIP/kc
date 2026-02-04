@@ -20,13 +20,15 @@ on:
         required: true
         type: choice
         options:
-          - patch
-          - minor
-          - major
-          - prepatch
-          - preminor
-          - premajor
-          - prerelease
+        - none          # Skip versioning
+        - graduate      # Beta → Stable
+        - patch         # Bug fixes
+        - minor         # New features
+        - major         # Breaking changes
+        - prerelease    # Increment beta
+        - prepatch      # New beta patch
+        - preminor      # New beta minor
+        - premajor      # New beta major
       preid:
         description: 'Pre-release identifier'
         required: false
@@ -65,7 +67,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
       
-# (Removed deprecated 'Bootstrap Lerna' step)
       
       - name: Run tests
         run: |
@@ -85,13 +86,17 @@ jobs:
         continue-on-error: false 
 
       - name: Version packages
+        if: github.event.inputs.version != 'none'
         run: |
           SCOPE_FLAG=""
           if [ "${{ github.event.inputs.package }}" != "all" ]; then
             SCOPE_FLAG="--scope ${{ github.event.inputs.package }}"
           fi
           
-          if [[ "${{ github.event.inputs.version }}" == pre* ]]; then
+          if [[ "${{ github.event.inputs.version }}" == "graduate" ]]; then
+            # Graduate: strip prerelease identifiers
+            npx lerna version --conventional-graduate --yes --no-private $SCOPE_FLAG
+          elif [[ "${{ github.event.inputs.version }}" == pre* ]]; then
             npx lerna version ${{ github.event.inputs.version }} --preid ${{ github.event.inputs.preid }} --yes --no-private $SCOPE_FLAG
           else
             npx lerna version ${{ github.event.inputs.version }} --yes --no-private $SCOPE_FLAG
