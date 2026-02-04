@@ -2,7 +2,7 @@
 set -e
 
 PROFILE_ARGS=()
-SERVICES=(cli gatekeeper keymaster redis mongodb)
+SERVICES=(cli gatekeeper keymaster redis mongodb search-server)
 
 if [ -f .env ]; then
   set -a
@@ -29,7 +29,7 @@ RETRY_COUNT=0
 
 while true; do
   TOTAL_SERVICES="${#SERVICES[@]}"
-  UP_COUNT=$(docker compose "${PROFILE_ARGS[@]}" ps --services --status running | wc -l)
+  UP_COUNT=$(docker compose "${PROFILE_ARGS[@]}" ps --services --status running "${SERVICES[@]}" | wc -l)
 
   if [[ "$UP_COUNT" -eq "$TOTAL_SERVICES" ]]; then
     echo "✅ All containers are 'Up'"
@@ -44,5 +44,5 @@ while true; do
 
   echo "⏳ Waiting... ($RETRY_COUNT/$MAX_RETRIES) running ${UP_COUNT}/${TOTAL_SERVICES}"
   sleep "$RETRY_INTERVAL"
-  ((RETRY_COUNT++))
+  RETRY_COUNT=$((RETRY_COUNT + 1))
 done
