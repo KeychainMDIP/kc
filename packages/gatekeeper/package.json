@@ -1,6 +1,6 @@
 {
   "name": "@mdip/gatekeeper",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "MDIP Gatekeeper",
   "type": "module",
   "module": "./dist/esm/index.js",
@@ -105,9 +105,9 @@
   "author": "David McFadzean <davidmc@gmail.com>",
   "license": "MIT",
   "dependencies": {
-    "@mdip/cipher": "*",
-    "@mdip/common": "*",
-    "@mdip/ipfs": "*",
+    "@mdip/cipher": "^1.4.1",
+    "@mdip/common": "^1.4.1",
+    "@mdip/ipfs": "^1.4.1",
     "axios": "^1.7.7",
     "canonicalize": "^2.0.0",
     "dotenv": "^16.4.5",

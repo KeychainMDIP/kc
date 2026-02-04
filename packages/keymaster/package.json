@@ -1,6 +1,6 @@
 {
   "name": "@mdip/keymaster",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "MDIP Keymaster",
   "type": "module",
   "module": "./dist/esm/index.js",
@@ -169,7 +169,7 @@
   "author": "David McFadzean <davidmc@gmail.com>",
   "license": "MIT",
   "dependencies": {
-    "@mdip/common": "*",
+    "@mdip/common": "^1.4.1",
     "axios": "^1.7.7",
     "file-type": "^21.0.0",
     "image-size": "^2.0.1",
