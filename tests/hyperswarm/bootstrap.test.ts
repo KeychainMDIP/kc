@@ -30,6 +30,7 @@ describe('bootstrapSyncStoreIfEmpty', () => {
         await store.start();
         await store.upsertMany([{
             id: h('a'),
+            // eslint-disable-next-line sonarjs/no-duplicate-string
             ts: Date.parse('2026-02-10T10:00:00.000Z'),
             operation: makeOperation('a', '2026-02-10T10:00:00.000Z'),
         }]);

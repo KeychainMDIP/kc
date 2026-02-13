@@ -26,6 +26,7 @@ function makeCreateOp(hashChar: string, signed: string): Operation {
 
 describe('sync-persistence helpers', () => {
     it('filters rejected indices in original submitted order', () => {
+        // eslint-disable-next-line sonarjs/no-duplicate-string
         const a = makeCreateOp('a', '2026-02-10T10:00:00.000Z');
         const b = makeCreateOp('b', '2026-02-10T11:00:00.000Z');
         const c = makeCreateOp('c', '2026-02-10T12:00:00.000Z');

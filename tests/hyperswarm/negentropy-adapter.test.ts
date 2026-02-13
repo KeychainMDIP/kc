@@ -63,7 +63,9 @@ describe('NegentropyAdapter', () => {
     it('loads and builds from store', async () => {
         const store = new InMemoryOperationSyncStore();
         await seedStore(store, [
+            // eslint-disable-next-line sonarjs/no-duplicate-string
             { id: h('a'), ts: 1000, op: makeOp('a', '2026-02-09T10:00:00.000Z') },
+            // eslint-disable-next-line sonarjs/no-duplicate-string
             { id: h('b'), ts: 2000, op: makeOp('b', '2026-02-09T11:00:00.000Z') },
         ]);
 
@@ -85,6 +87,7 @@ describe('NegentropyAdapter', () => {
         await seedStore(storeA, [
             { id: h('a'), ts: 1000, op: makeOp('a', '2026-02-09T10:00:00.000Z') },
             { id: h('b'), ts: 2000, op: makeOp('b', '2026-02-09T11:00:00.000Z') },
+            // eslint-disable-next-line sonarjs/no-duplicate-string
             { id: h('c'), ts: 3000, op: makeOp('c', '2026-02-09T12:00:00.000Z') },
         ]);
 
@@ -140,6 +143,7 @@ describe('NegentropyAdapter', () => {
 
     it('plans recent window first then older windows in descending recency', async () => {
         const store = new InMemoryOperationSyncStore();
+        // eslint-disable-next-line sonarjs/no-duplicate-string
         const nowMs = Date.parse('2026-02-10T00:00:00.000Z');
         await seedStore(store, [
             { id: h('a'), ts: nowMs - (10 * DAY_MS), op: makeOp('a', '2026-01-31T00:00:00.000Z') },
