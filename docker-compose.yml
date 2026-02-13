@@ -101,6 +101,8 @@ services:
       - KC_MDIP_PROTOCOL=${KC_MDIP_PROTOCOL}
       - KC_HYPR_EXPORT_INTERVAL=${KC_HYPR_EXPORT_INTERVAL}
       - KC_LOG_LEVEL=${KC_LOG_LEVEL}
+    volumes:
+      - ./data:/app/hyperswarm/data
     user: "${KC_UID}:${KC_GID}"
     depends_on:
       - gatekeeper

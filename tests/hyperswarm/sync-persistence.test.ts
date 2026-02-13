@@ -1,0 +1,58 @@
+import { Operation } from '@mdip/gatekeeper/types';
+import {
+    filterOperationsByAcceptedHashes,
+    filterIndexRejectedOperations,
+    mapAcceptedOperationsToSyncRecords,
+} from '../../services/mediators/hyperswarm/src/sync-persistence.ts';
+
+const h = (c: string) => c.repeat(64);
+
+function makeCreateOp(hashChar: string, signed: string): Operation {
+    return {
+        type: 'create',
+        created: signed,
+        mdip: {
+            version: 1,
+            type: 'agent',
+            registry: 'hyperswarm',
+        },
+        signature: {
+            signed,
+            hash: h(hashChar),
+            value: `sig-${hashChar}`,
+        },
+    };
+}
+
+describe('sync-persistence helpers', () => {
+    it('filters rejected indices in original submitted order', () => {
+        const a = makeCreateOp('a', '2026-02-10T10:00:00.000Z');
+        const b = makeCreateOp('b', '2026-02-10T11:00:00.000Z');
+        const c = makeCreateOp('c', '2026-02-10T12:00:00.000Z');
+
+        const filtered = filterIndexRejectedOperations([a, b, c], [1, 0, 999, -1, 1]);
+
+        expect(filtered).toStrictEqual([c]);
+    });
+
+    it('maps accepted operations to sync records and counts invalid operations', () => {
+        const valid = makeCreateOp('A', '2026-02-10T10:00:00.000Z');
+        const invalid = makeCreateOp('b', 'not-a-date');
+
+        const result = mapAcceptedOperationsToSyncRecords([valid, invalid]);
+
+        expect(result.records.length).toBe(1);
+        expect(result.records[0].id).toBe(h('a'));
+        expect(result.records[0].ts).toBe(Date.parse(valid.signature!.signed));
+        expect(result.invalid).toBe(1);
+    });
+
+    it('filters operations by accepted hashes', () => {
+        const a = makeCreateOp('a', '2026-02-10T10:00:00.000Z');
+        const b = makeCreateOp('b', '2026-02-10T11:00:00.000Z');
+        const c = makeCreateOp('c', '2026-02-10T12:00:00.000Z');
+
+        const accepted = filterOperationsByAcceptedHashes([a, b, c], [h('a').toUpperCase(), h('c')]);
+        expect(accepted).toStrictEqual([a, c]);
+    });
+});
