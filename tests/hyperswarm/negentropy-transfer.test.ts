@@ -42,6 +42,10 @@ describe('negentropy transfer batching helpers', () => {
         ]);
     });
 
+    it('returns empty id chunks when input ids are empty', () => {
+        expect(chunkIds([], 2)).toStrictEqual([]);
+    });
+
     it('splits operations by count and bytes', () => {
         const ops = [
             makeOp('a', 'small'),

@@ -84,4 +84,9 @@ describe('sync-persistence helpers', () => {
         expect(filterOperationsByAcceptedHashes([a], [])).toStrictEqual([]);
         expect(filterOperationsByAcceptedHashes([a], ['', '' as unknown as string])).toStrictEqual([]);
     });
+
+    it('returns empty when operations input is empty or not an array', () => {
+        expect(filterOperationsByAcceptedHashes([], [h('a')])).toStrictEqual([]);
+        expect(filterOperationsByAcceptedHashes('not-an-array' as unknown as Operation[], [h('a')])).toStrictEqual([]);
+    });
 });
