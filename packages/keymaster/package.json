@@ -181,5 +181,8 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/KeychainMDIP/kc.git"
+  },
+  "devDependencies": {
+    "@rollup/plugin-json": "^6.1.0"
   }
 }
