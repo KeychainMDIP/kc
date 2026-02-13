@@ -78,11 +78,7 @@ export default class InMemoryOperationSyncStore implements OperationSyncStore {
                 return false;
             }
 
-            if (typeof toTs === 'number' && item.ts > toTs) {
-                return false;
-            }
-
-            return true;
+            return !(typeof toTs === 'number' && item.ts > toTs);
         });
 
         return filtered.slice(0, limit);
