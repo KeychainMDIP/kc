@@ -20,6 +20,18 @@ function makeOp(hashChar: string, sizeTag: string = ''): Operation {
 }
 
 describe('negentropy transfer batching helpers', () => {
+    it('throws on invalid chunking options', () => {
+        expect(() => chunkIds(['a'], 0)).toThrow('maxPerChunk');
+        expect(() => chunkOperationsForPush([makeOp('a')], {
+            maxOpsPerPush: 0,
+            maxBytesPerPush: 1024,
+        })).toThrow('maxOpsPerPush');
+        expect(() => chunkOperationsForPush([makeOp('a')], {
+            maxOpsPerPush: 1,
+            maxBytesPerPush: 0,
+        })).toThrow('maxBytesPerPush');
+    });
+
     it('chunks id lists with de-duplication', () => {
         const ids = ['a', 'b', 'c', 'c', 'd', 'e'];
         const chunks = chunkIds(ids, 2);
@@ -59,5 +71,12 @@ describe('negentropy transfer batching helpers', () => {
         });
 
         expect(batches).toStrictEqual([[op]]);
+    });
+
+    it('returns empty when operations input is empty', () => {
+        expect(chunkOperationsForPush([], {
+            maxOpsPerPush: 10,
+            maxBytesPerPush: 1024,
+        })).toStrictEqual([]);
     });
 });

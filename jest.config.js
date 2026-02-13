@@ -43,6 +43,10 @@ const config = {
         "/node_modules/",
         "/kc-app/",
         "/client/"
+    ],
+    coveragePathIgnorePatterns: [
+        "/node_modules/",
+        "/services/mediators/hyperswarm/src/negentropy/Negentropy\\.cjs$",
     ]
 };
 

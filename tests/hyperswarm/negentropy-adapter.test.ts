@@ -1,6 +1,7 @@
 import InMemoryOperationSyncStore from '../../services/mediators/hyperswarm/src/db/memory.ts';
 import NegentropyAdapter from '../../services/mediators/hyperswarm/src/negentropy/adapter.ts';
 import { Operation } from '@mdip/gatekeeper/types';
+import type { OperationSyncStore, SyncOperationRecord, SyncStoreListOptions } from '../../services/mediators/hyperswarm/src/db/types.ts';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const h = (c: string) => c.repeat(64);
@@ -60,6 +61,20 @@ async function seedNumericRange(
 }
 
 describe('NegentropyAdapter', () => {
+    it('returns null session/window stats before any rebuilds', async () => {
+        const store = new InMemoryOperationSyncStore();
+        await seedStore(store, []);
+
+        const adapter = await NegentropyAdapter.create({
+            syncStore: store,
+            frameSizeLimit: 0,
+            deferInitialBuild: true,
+        });
+
+        expect(adapter.getLastWindowStats()).toBeNull();
+        expect(adapter.getLastSessionStats()).toBeNull();
+    });
+
     it('loads and builds from store', async () => {
         const store = new InMemoryOperationSyncStore();
         await seedStore(store, [
@@ -139,6 +154,107 @@ describe('NegentropyAdapter', () => {
             syncStore: store,
             frameSizeLimit: 1024,
         })).rejects.toThrow('frameSizeLimit');
+    });
+
+    it('throws when integer options are invalid', async () => {
+        const store = new InMemoryOperationSyncStore();
+        await seedStore(store, []);
+
+        await expect(() => NegentropyAdapter.create({
+            syncStore: store,
+            frameSizeLimit: 0,
+            recentWindowDays: 0,
+        })).rejects.toThrow('recentWindowDays');
+
+        await expect(() => NegentropyAdapter.create({
+            syncStore: store,
+            frameSizeLimit: 0,
+            olderWindowDays: 0,
+        })).rejects.toThrow('olderWindowDays');
+
+        await expect(() => NegentropyAdapter.create({
+            syncStore: store,
+            frameSizeLimit: 0,
+            maxRecordsPerWindow: 0,
+        })).rejects.toThrow('maxRecordsPerWindow');
+
+        await expect(() => NegentropyAdapter.create({
+            syncStore: store,
+            frameSizeLimit: 0,
+            maxRoundsPerSession: 0,
+        })).rejects.toThrow('maxRoundsPerSession');
+    });
+
+    it('throws if initiate/reconcile called before adapter has been built', async () => {
+        const store = new InMemoryOperationSyncStore();
+        await seedStore(store, []);
+
+        const adapter = await NegentropyAdapter.create({
+            syncStore: store,
+            frameSizeLimit: 0,
+            deferInitialBuild: true,
+        });
+
+        await expect(adapter.initiate()).rejects.toThrow('not initialized');
+        await expect(adapter.reconcile('msg')).rejects.toThrow('not initialized');
+    });
+
+    it('returns empty windows for empty store and rejects non-finite nowMs', async () => {
+        const store = new InMemoryOperationSyncStore();
+        await seedStore(store, []);
+
+        const adapter = await NegentropyAdapter.create({
+            syncStore: store,
+            frameSizeLimit: 0,
+            deferInitialBuild: true,
+        });
+
+        await expect(adapter.planWindows(Number.NaN)).rejects.toThrow('nowMs must be a finite timestamp');
+        await expect(adapter.planWindows(Date.now())).resolves.toStrictEqual([]);
+    });
+
+    it('skips invalid sync rows when rebuilding a window', async () => {
+        const validId = h('a');
+        const validTs = Date.parse('2026-02-13T00:00:00.000Z');
+        const validOp = makeOp('a', '2026-02-13T00:00:00.000Z');
+        const rows: SyncOperationRecord[] = [
+            { id: 'invalid-id', ts: validTs, operation: validOp, insertedAt: 1 },
+            { id: validId, ts: Number.NaN, operation: validOp, insertedAt: 2 },
+            { id: validId, ts: validTs, operation: validOp, insertedAt: 3 },
+        ];
+
+        const stubStore: OperationSyncStore = {
+            start: async () => undefined,
+            stop: async () => undefined,
+            reset: async () => undefined,
+            upsertMany: async () => 0,
+            getByIds: async () => [],
+            has: async () => false,
+            count: async () => rows.length,
+            iterateSorted: async (options: SyncStoreListOptions = {}) => {
+                if (options.after) {
+                    return [];
+                }
+                return rows;
+            },
+        };
+
+        const adapter = await NegentropyAdapter.create({
+            syncStore: stubStore,
+            frameSizeLimit: 0,
+            deferInitialBuild: true,
+        });
+
+        const stats = await adapter.rebuildForWindow({
+            name: 'recent',
+            fromTs: Number.MIN_SAFE_INTEGER,
+            toTs: Number.MAX_SAFE_INTEGER,
+            maxRecords: 100,
+            order: 0,
+        });
+
+        expect(stats.loaded).toBe(1);
+        expect(stats.skipped).toBe(2);
     });
 
     it('plans recent window first then older windows in descending recency', async () => {
@@ -228,6 +344,28 @@ describe('NegentropyAdapter', () => {
         expect(session.windowCount).toBeGreaterThan(0);
         expect(session.windows.some(window => window.cappedByRounds)).toBe(true);
         expect(session.windows[0].rounds).toBe(1);
+    });
+
+    it('throws for invalid runWindowedSessionWithPeer maxRoundsPerSession option', async () => {
+        const storeA = new InMemoryOperationSyncStore();
+        const storeB = new InMemoryOperationSyncStore();
+        await seedStore(storeA, []);
+        await seedStore(storeB, []);
+
+        const adapterA = await NegentropyAdapter.create({
+            syncStore: storeA,
+            frameSizeLimit: 0,
+            deferInitialBuild: true,
+        });
+        const adapterB = await NegentropyAdapter.create({
+            syncStore: storeB,
+            frameSizeLimit: 0,
+            deferInitialBuild: true,
+        });
+
+        await expect(adapterA.runWindowedSessionWithPeer(adapterB, {
+            maxRoundsPerSession: 0,
+        })).rejects.toThrow('maxRoundsPerSession');
     });
 
     it('continues into older windows when a newer window hits record cap', async () => {

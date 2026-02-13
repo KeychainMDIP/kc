@@ -25,6 +25,10 @@ function makeCreateOp(hashChar: string, signed: string): Operation {
 }
 
 describe('sync-persistence helpers', () => {
+    it('returns empty array when filterIndexRejectedOperations receives empty batch', () => {
+        expect(filterIndexRejectedOperations([], [0, 1])).toStrictEqual([]);
+    });
+
     it('filters rejected indices in original submitted order', () => {
         // eslint-disable-next-line sonarjs/no-duplicate-string
         const a = makeCreateOp('a', '2026-02-10T10:00:00.000Z');
@@ -34,6 +38,14 @@ describe('sync-persistence helpers', () => {
         const filtered = filterIndexRejectedOperations([a, b, c], [1, 0, 999, -1, 1]);
 
         expect(filtered).toStrictEqual([c]);
+    });
+
+    it('returns original batch when rejected indices are missing/empty', () => {
+        const a = makeCreateOp('a', '2026-02-10T10:00:00.000Z');
+        const b = makeCreateOp('b', '2026-02-10T11:00:00.000Z');
+
+        expect(filterIndexRejectedOperations([a, b], undefined)).toStrictEqual([a, b]);
+        expect(filterIndexRejectedOperations([a, b], [])).toStrictEqual([a, b]);
     });
 
     it('maps accepted operations to sync records and counts invalid operations', () => {
@@ -48,6 +60,15 @@ describe('sync-persistence helpers', () => {
         expect(result.invalid).toBe(1);
     });
 
+    it('returns no records when all operations are invalid', () => {
+        const invalidA = makeCreateOp('a', 'not-a-date');
+        const invalidB = { type: 'create' } as Operation;
+
+        const result = mapAcceptedOperationsToSyncRecords([invalidA, invalidB]);
+        expect(result.records).toStrictEqual([]);
+        expect(result.invalid).toBe(2);
+    });
+
     it('filters operations by accepted hashes', () => {
         const a = makeCreateOp('a', '2026-02-10T10:00:00.000Z');
         const b = makeCreateOp('b', '2026-02-10T11:00:00.000Z');
@@ -55,5 +76,11 @@ describe('sync-persistence helpers', () => {
 
         const accepted = filterOperationsByAcceptedHashes([a, b, c], [h('a').toUpperCase(), h('c')]);
         expect(accepted).toStrictEqual([a, c]);
+    });
+
+    it('returns empty when accepted hashes are empty or normalize to empty set', () => {
+        const a = makeCreateOp('a', '2026-02-10T10:00:00.000Z');
+        expect(filterOperationsByAcceptedHashes([a], [])).toStrictEqual([]);
+        expect(filterOperationsByAcceptedHashes([a], ['', '' as unknown as string])).toStrictEqual([]);
     });
 });

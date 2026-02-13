@@ -90,6 +90,23 @@ describe('InMemoryOperationSyncStore', () => {
         const store = new InMemoryOperationSyncStore();
         await runStoreContractTests(store);
     });
+
+    it('preserves explicit insertedAt and handles empty getByIds input', async () => {
+        const store = new InMemoryOperationSyncStore();
+        await store.start();
+        await store.reset();
+
+        const insertedAt = 123456789;
+        const inserted = await store.upsertMany([{
+            ...recA,
+            insertedAt,
+        }]);
+
+        expect(inserted).toBe(1);
+        const rows = await store.getByIds([recA.id]);
+        expect(rows[0].insertedAt).toBe(insertedAt);
+        expect(await store.getByIds([])).toStrictEqual([]);
+    });
 });
 
 describe('SqliteOperationSyncStore', () => {
@@ -108,5 +125,64 @@ describe('SqliteOperationSyncStore', () => {
     it('implements sync-store contract', async () => {
         const store = new SqliteOperationSyncStore('operations.db', path.join(tmpRoot, 'data/hyperswarm'));
         await runStoreContractTests(store);
+    });
+
+    it('is safe to stop before start and idempotent to start twice', async () => {
+        const store = new SqliteOperationSyncStore('operations.db', path.join(tmpRoot, 'data/hyperswarm'));
+        await expect(store.stop()).resolves.toBeUndefined();
+        await store.start();
+        await store.start();
+        await expect(store.stop()).resolves.toBeUndefined();
+    });
+
+    it('throws from data APIs when start was not called', async () => {
+        const store = new SqliteOperationSyncStore('operations.db', path.join(tmpRoot, 'data/hyperswarm'));
+
+        await expect(store.reset()).rejects.toThrow('Call start() first');
+        await expect(store.upsertMany([recA])).rejects.toThrow('Call start() first');
+        await expect(store.getByIds([recA.id])).rejects.toThrow('Call start() first');
+        await expect(store.iterateSorted()).rejects.toThrow('Call start() first');
+        await expect(store.has(recA.id)).rejects.toThrow('Call start() first');
+        await expect(store.count()).rejects.toThrow('Call start() first');
+    });
+
+    it('returns early for empty inputs', async () => {
+        const store = new SqliteOperationSyncStore('operations.db', path.join(tmpRoot, 'data/hyperswarm'));
+        await store.start();
+        await store.reset();
+
+        expect(await store.upsertMany([])).toBe(0);
+        expect(await store.getByIds([])).toStrictEqual([]);
+    });
+
+    it('rolls back transaction when an upsert item fails serialization', async () => {
+        const store = new SqliteOperationSyncStore('operations.db', path.join(tmpRoot, 'data/hyperswarm'));
+        await store.start();
+        await store.reset();
+
+        const circular: any = { type: 'create' };
+        circular.self = circular;
+
+        await expect(store.upsertMany([
+            recA,
+            {
+                id: h('d'),
+                ts: 4000,
+                operation: circular,
+            } as any,
+        ])).rejects.toThrow();
+
+        expect(await store.count()).toBe(0);
+    });
+
+    it('returns zero count when sqlite get returns no row', async () => {
+        const store = new SqliteOperationSyncStore('operations.db', path.join(tmpRoot, 'data/hyperswarm'));
+        await store.start();
+
+        const db = (store as any).db;
+        const originalGet = db.get.bind(db);
+        db.get = async () => undefined;
+        await expect(store.count()).resolves.toBe(0);
+        db.get = originalGet;
     });
 });

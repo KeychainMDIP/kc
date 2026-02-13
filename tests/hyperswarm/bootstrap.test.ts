@@ -79,4 +79,22 @@ describe('bootstrapSyncStoreIfEmpty', () => {
 
         await expect(bootstrapSyncStoreIfEmpty(store, gatekeeper)).rejects.toThrow('boom');
     });
+
+    it('handles empty/invalid export payload without upserting', async () => {
+        const store = new InMemoryOperationSyncStore();
+        await store.start();
+
+        const gatekeeper = {
+            exportBatch: jest.fn(async () => [{ registry: 'hyperswarm', time: new Date().toISOString() }]),
+        };
+
+        const result = await bootstrapSyncStoreIfEmpty(store, gatekeeper as any);
+        expect(result.skipped).toBe(false);
+        expect(result.exported).toBe(0);
+        expect(result.mapped).toBe(0);
+        expect(result.invalid).toBe(0);
+        expect(result.inserted).toBe(0);
+        expect(result.countAfter).toBe(0);
+        expect(gatekeeper.exportBatch).toHaveBeenCalledTimes(1);
+    });
 });
