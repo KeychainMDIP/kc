@@ -213,7 +213,8 @@ let negentropyAdapter: NegentropyAdapter | null = null;
 let adapterChangeSeq = 0;
 let adapterBuiltSeq = -1;
 let adapterBuiltAt = 0;
-let adapterRebuildInFlight: Promise<void> | null = null;
+let rebuildPromise: Promise<void> | null = null;
+let backgroundPrebuildQueued = false;
 
 EventEmitter.defaultMaxListeners = 100;
 
@@ -464,6 +465,8 @@ function closePeerSession(peerKey: string, reason: string): void {
         }
     }
 
+    maybeStartBackgroundPrebuild('session_closed');
+
     log.debug({
         peer: shortName(peerKey),
         mode: session.mode,
@@ -685,6 +688,41 @@ function markNegentropyAdapterDirty(): void {
     adapterChangeSeq += 1;
 }
 
+function maybeStartBackgroundPrebuild(reason: string): void {
+    if (!negentropyAdapter) {
+        return;
+    }
+
+    if (!isNegentropyAdapterDirty()) {
+        return;
+    }
+
+    if (getActiveNegentropySessions() > 0) {
+        return;
+    }
+
+    if (rebuildPromise) {
+        backgroundPrebuildQueued = true;
+        return;
+    }
+
+    backgroundPrebuildQueued = false;
+    void ensureAdapterFresh(`background_${reason}`)
+        .catch(error => {
+            log.error({ error, reason }, 'background negentropy prebuild failed');
+        })
+        .finally(() => {
+            if (!backgroundPrebuildQueued) {
+                return;
+            }
+
+            backgroundPrebuildQueued = false;
+            if (isNegentropyAdapterDirty() && getActiveNegentropySessions() === 0) {
+                maybeStartBackgroundPrebuild('queued_followup');
+            }
+        });
+}
+
 async function ensureAdapterFresh(reason: string): Promise<void> {
     if (!negentropyAdapter) {
         throw new Error('negentropy adapter unavailable');
@@ -697,8 +735,8 @@ async function ensureAdapterFresh(reason: string): Promise<void> {
         return;
     }
 
-    if (adapterRebuildInFlight) {
-        await adapterRebuildInFlight;
+    if (rebuildPromise) {
+        await rebuildPromise;
         const recentAfterWait = adapterBuiltAt > 0 && (Date.now() - adapterBuiltAt) <= NEG_ADAPTER_MAX_AGE_MS;
         if (!isNegentropyAdapterDirty() && recentAfterWait) {
             return;
@@ -707,7 +745,7 @@ async function ensureAdapterFresh(reason: string): Promise<void> {
 
     const rebuildStartSeq = adapterChangeSeq;
     const rebuildStartedAt = Date.now();
-    const rebuildPromise = (async () => {
+    const currentRebuildPromise = (async () => {
         await negentropyAdapter!.rebuildFromStore();
         adapterBuiltSeq = rebuildStartSeq;
         adapterBuiltAt = Date.now();
@@ -722,13 +760,13 @@ async function ensureAdapterFresh(reason: string): Promise<void> {
         );
     })();
 
-    adapterRebuildInFlight = rebuildPromise;
+    rebuildPromise = currentRebuildPromise;
     try {
-        await rebuildPromise;
+        await currentRebuildPromise;
     }
     finally {
-        if (adapterRebuildInFlight === rebuildPromise) {
-            adapterRebuildInFlight = null;
+        if (rebuildPromise === currentRebuildPromise) {
+            rebuildPromise = null;
         }
     }
 }
@@ -1127,6 +1165,7 @@ async function persistAcceptedOperations(operations: Operation[], source: string
     const inserted = await syncStore.upsertMany(records);
     if (inserted > 0) {
         markNegentropyAdapterDirty();
+        maybeStartBackgroundPrebuild(`persist_${source}`);
     }
     log.debug(
         { source, attempted: operations.length, mapped: records.length, invalid, inserted },
@@ -1663,7 +1702,8 @@ async function initNegentropyAdapter(): Promise<void> {
     adapterChangeSeq = 0;
     adapterBuiltSeq = -1;
     adapterBuiltAt = 0;
-    adapterRebuildInFlight = null;
+    rebuildPromise = null;
+    backgroundPrebuildQueued = false;
     log.info(
         {
             stats: negentropyAdapter.getStats(),
