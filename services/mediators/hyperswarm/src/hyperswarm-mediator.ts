@@ -210,6 +210,10 @@ const ipfs = new KuboClient();
 const cipher = new CipherNode();
 let syncStore: OperationSyncStore = new SqliteOperationSyncStore();
 let negentropyAdapter: NegentropyAdapter | null = null;
+let adapterChangeSeq = 0;
+let adapterBuiltSeq = -1;
+let adapterBuiltAt = 0;
+let adapterRebuildInFlight: Promise<void> | null = null;
 
 EventEmitter.defaultMaxListeners = 100;
 
@@ -222,6 +226,7 @@ const NEG_MAX_IDS_PER_LOOKUP = 1_000;
 const NEG_MAX_OPS_PER_PUSH = 256;
 const NEG_MAX_BYTES_PER_PUSH = 512 * 1024;
 const NEG_REPAIR_INTERVAL_MS = config.negentropyRepairIntervalSeconds * 1000;
+const NEG_ADAPTER_MAX_AGE_MS = 60 * 1000;
 
 const connectionInfo: Record<string, ConnectionInfo> = {};
 const knownNodes: Record<string, NodeInfo> = {};
@@ -672,12 +677,68 @@ function buildSyncStatsSnapshot(): object {
     };
 }
 
+function isNegentropyAdapterDirty(): boolean {
+    return adapterBuiltSeq < adapterChangeSeq;
+}
+
+function markNegentropyAdapterDirty(): void {
+    adapterChangeSeq += 1;
+}
+
+async function ensureAdapterFresh(reason: string): Promise<void> {
+    if (!negentropyAdapter) {
+        throw new Error('negentropy adapter unavailable');
+    }
+
+    const now = Date.now();
+    const recentlyBuilt = adapterBuiltAt > 0 && (now - adapterBuiltAt) <= NEG_ADAPTER_MAX_AGE_MS;
+
+    if (!isNegentropyAdapterDirty() && recentlyBuilt) {
+        return;
+    }
+
+    if (adapterRebuildInFlight) {
+        await adapterRebuildInFlight;
+        const recentAfterWait = adapterBuiltAt > 0 && (Date.now() - adapterBuiltAt) <= NEG_ADAPTER_MAX_AGE_MS;
+        if (!isNegentropyAdapterDirty() && recentAfterWait) {
+            return;
+        }
+    }
+
+    const rebuildStartSeq = adapterChangeSeq;
+    const rebuildStartedAt = Date.now();
+    const rebuildPromise = (async () => {
+        await negentropyAdapter!.rebuildFromStore();
+        adapterBuiltSeq = rebuildStartSeq;
+        adapterBuiltAt = Date.now();
+        log.debug(
+            {
+                reason,
+                durationMs: adapterBuiltAt - rebuildStartedAt,
+                adapterBuiltAt,
+                dirtyAfterRebuild: isNegentropyAdapterDirty(),
+            },
+            'negentropy adapter rebuilt from sync-store'
+        );
+    })();
+
+    adapterRebuildInFlight = rebuildPromise;
+    try {
+        await rebuildPromise;
+    }
+    finally {
+        if (adapterRebuildInFlight === rebuildPromise) {
+            adapterRebuildInFlight = null;
+        }
+    }
+}
+
 async function startNegentropyOpen(peerKey: string, session: PeerSyncSession): Promise<void> {
     if (!negentropyAdapter) {
         throw new Error('negentropy adapter unavailable');
     }
 
-    await negentropyAdapter.rebuildFromStore();
+    await ensureAdapterFresh('session_open_initiator');
     const firstFrame = await negentropyAdapter.initiate();
     const msg: NegOpenMessage = {
         ...createBaseMessage('neg_open'),
@@ -1064,6 +1125,9 @@ async function persistAcceptedOperations(operations: Operation[], source: string
     }
 
     const inserted = await syncStore.upsertMany(records);
+    if (inserted > 0) {
+        markNegentropyAdapterDirty();
+    }
     log.debug(
         { source, attempted: operations.length, mapped: records.length, invalid, inserted },
         'sync-store persist accepted ops'
@@ -1309,7 +1373,7 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
             closePeerSession(peerKey, 'replaced_by_remote_open');
         }
 
-        await negentropyAdapter.rebuildFromStore();
+        await ensureAdapterFresh('session_open_responder');
         const session = createPeerSession(peerKey, 'negentropy', false, msg.sessionId);
         touchPeerSession(peerKey);
         await handleNegentropyRoundAsResponder(peerKey, session, decodeNegentropyFrame(msg.frame));
@@ -1596,6 +1660,10 @@ async function initNegentropyAdapter(): Promise<void> {
         maxRoundsPerSession: config.negentropyMaxRoundsPerSession,
         deferInitialBuild: true,
     });
+    adapterChangeSeq = 0;
+    adapterBuiltSeq = -1;
+    adapterBuiltAt = 0;
+    adapterRebuildInFlight = null;
     log.info(
         {
             stats: negentropyAdapter.getStats(),
