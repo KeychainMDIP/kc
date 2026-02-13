@@ -62,7 +62,6 @@ const config = {
     negentropyMaxRecordsPerWindow: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW', 25000),
     negentropyMaxRoundsPerSession: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_MAX_ROUNDS_PER_SESSION', 64),
     negentropyRepairIntervalSeconds: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_REPAIR_INTERVAL_SECONDS', 300),
-    negentropyMaxConcurrentSessions: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_MAX_CONCURRENT_SESSIONS', 1),
     legacySyncEnabled: parseBooleanEnv('KC_HYPR_LEGACY_SYNC_ENABLE', true),
 };
 

@@ -582,7 +582,6 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
             hasActiveSession,
             importQueueLength: importQueue.length(),
             activeNegentropySessions,
-            maxConcurrentNegentropySessions: config.negentropyMaxConcurrentSessions,
             lastRepairAtMs: conn.lastNegentropyRepairAt,
             nowMs: Date.now(),
             repairIntervalMs: NEG_REPAIR_INTERVAL_MS,
@@ -596,11 +595,7 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
         return;
     }
 
-    if (activeNegentropySessions >= config.negentropyMaxConcurrentSessions) {
-        log.debug(
-            { peer: shortName(peerKey), activeNegentropySessions, max: config.negentropyMaxConcurrentSessions, source },
-            'negentropy session deferred by concurrency limit'
-        );
+    if (activeNegentropySessions > 0) {
         return;
     }
 

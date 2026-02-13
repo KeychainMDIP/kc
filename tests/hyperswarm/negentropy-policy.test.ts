@@ -25,7 +25,6 @@ describe('negentropy sync policy', () => {
             hasActiveSession: false,
             importQueueLength: 0,
             activeNegentropySessions: 0,
-            maxConcurrentNegentropySessions: 1,
             lastRepairAtMs: 0,
             nowMs: 1_000_000,
             repairIntervalMs: 300_000,

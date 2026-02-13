@@ -52,9 +52,10 @@ The mediator emits periodic structured sync metrics in `connectionLoop` includin
 | `KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW` | 25000                        | Maximum operations loaded into a single window adapter |
 | `KC_HYPR_NEGENTROPY_MAX_ROUNDS_PER_SESSION` | 64                           | Maximum negentropy rounds per window session |
 | `KC_HYPR_NEGENTROPY_REPAIR_INTERVAL_SECONDS` | 300                          | Seconds between periodic negentropy repair attempts per peer |
-| `KC_HYPR_NEGENTROPY_MAX_CONCURRENT_SESSIONS` | 1                            | Maximum concurrent negentropy sessions on this node |
 | `KC_HYPR_LEGACY_SYNC_ENABLE` | true                         | Allow legacy `sync`/`shareDb` compatibility path |
 | `KC_LOG_LEVEL`            | info                         | Log level: `debug`, `info`, `warn`, `error` |
+
+Negentropy session concurrency is currently fixed at one active session per node.
 
 ## IPFS disabled mode
 

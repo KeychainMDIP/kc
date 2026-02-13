@@ -5,7 +5,6 @@ export interface RepairSchedulingInput {
     hasActiveSession: boolean;
     importQueueLength: number;
     activeNegentropySessions: number;
-    maxConcurrentNegentropySessions: number;
     lastRepairAtMs: number;
     nowMs: number;
     repairIntervalMs: number;
@@ -48,7 +47,7 @@ export function shouldSchedulePeriodicRepair(input: RepairSchedulingInput): bool
         return false;
     }
 
-    if (input.activeNegentropySessions >= input.maxConcurrentNegentropySessions) {
+    if (input.activeNegentropySessions > 0) {
         return false;
     }
 
