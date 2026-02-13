@@ -123,6 +123,7 @@ describe('SqliteOperationSyncStore', () => {
     });
 
     it('implements sync-store contract', async () => {
+        // eslint-disable-next-line sonarjs/no-duplicate-string
         const store = new SqliteOperationSyncStore('operations.db', path.join(tmpRoot, 'data/hyperswarm'));
         await runStoreContractTests(store);
     });
@@ -138,6 +139,7 @@ describe('SqliteOperationSyncStore', () => {
     it('throws from data APIs when start was not called', async () => {
         const store = new SqliteOperationSyncStore('operations.db', path.join(tmpRoot, 'data/hyperswarm'));
 
+        // eslint-disable-next-line sonarjs/no-duplicate-string
         await expect(store.reset()).rejects.toThrow('Call start() first');
         await expect(store.upsertMany([recA])).rejects.toThrow('Call start() first');
         await expect(store.getByIds([recA.id])).rejects.toThrow('Call start() first');
