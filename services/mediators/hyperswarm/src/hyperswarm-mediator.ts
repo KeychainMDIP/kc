@@ -17,12 +17,13 @@ import SqliteOperationSyncStore from './db/sqlite.js';
 import NegentropyAdapter from './negentropy/adapter.js';
 import {
     NEG_SYNC_ID_RE,
-    chooseSyncMode as chooseNegotiatedSyncMode,
+    chooseConnectSyncMode,
     decodeNegentropyFrame,
     encodeNegentropyFrame,
     extractOperationHashes,
     normalizeNegentropyIds,
     normalizePeerCapabilities,
+    type ConnectSyncModeReason,
     type NegentropyFrame,
     type NegotiatedPeerCapabilities,
     type PeerCapabilities,
@@ -173,6 +174,10 @@ interface MediatorSyncStats {
     modeSelectionsTotal: number;
     modeSelectionsLegacy: number;
     modeSelectionsNegentropy: number;
+    modeSelectionsLegacyMissingCapabilities: number;
+    modeSelectionsLegacyNegentropyDisabled: number;
+    modeSelectionsLegacyVersionMismatch: number;
+    modeSelectionsNoModeLegacyDisabled: number;
     queueOpsRelayed: number;
     queueOpsImported: number;
     queueDelayMs: AggregateMetric;
@@ -228,6 +233,10 @@ const syncStats: MediatorSyncStats = {
     modeSelectionsTotal: 0,
     modeSelectionsLegacy: 0,
     modeSelectionsNegentropy: 0,
+    modeSelectionsLegacyMissingCapabilities: 0,
+    modeSelectionsLegacyNegentropyDisabled: 0,
+    modeSelectionsLegacyVersionMismatch: 0,
+    modeSelectionsNoModeLegacyDisabled: 0,
     queueOpsRelayed: 0,
     queueOpsImported: 0,
     queueDelayMs: createAggregateMetric(),
@@ -470,13 +479,17 @@ function expireIdlePeerSessions(): void {
     }
 }
 
-function choosePeerSyncMode(peerKey: string): SyncMode | null {
+function choosePeerSyncMode(peerKey: string): { mode: SyncMode | null; reason: ConnectSyncModeReason } | null {
     const conn = connectionInfo[peerKey];
     if (!conn) {
         return null;
     }
 
-    return chooseNegotiatedSyncMode(conn.capabilities, NEGENTROPY_VERSION);
+    return chooseConnectSyncMode(
+        conn.capabilities,
+        NEGENTROPY_VERSION,
+        config.legacySyncEnabled,
+    );
 }
 
 function getActiveNegentropySessions(): number {
@@ -499,11 +512,24 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
         return;
     }
 
-    const mode = source === 'connect'
-        ? choosePeerSyncMode(peerKey)
-        : conn.syncMode;
+    let mode: SyncMode | 'unknown' | null;
+    let modeReason: ConnectSyncModeReason | null = null;
 
-    if (!mode) {
+    if (source === 'connect') {
+        const decision = choosePeerSyncMode(peerKey);
+        if (!decision) {
+            return;
+        }
+        mode = decision.mode;
+        modeReason = decision.reason;
+    } else {
+        mode = conn.syncMode;
+    }
+
+    if (!mode || mode === 'unknown') {
+        if (source === 'connect' && modeReason === 'legacy_disabled') {
+            syncStats.modeSelectionsNoModeLegacyDisabled += 1;
+        }
         return;
     }
 
@@ -516,6 +542,15 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
         syncStats.modeSelectionsTotal += 1;
         if (mode === 'legacy') {
             syncStats.modeSelectionsLegacy += 1;
+            if (modeReason === 'missing_capabilities') {
+                syncStats.modeSelectionsLegacyMissingCapabilities += 1;
+            }
+            if (modeReason === 'negentropy_disabled') {
+                syncStats.modeSelectionsLegacyNegentropyDisabled += 1;
+            }
+            if (modeReason === 'version_mismatch') {
+                syncStats.modeSelectionsLegacyVersionMismatch += 1;
+            }
         } else {
             syncStats.modeSelectionsNegentropy += 1;
         }
@@ -532,7 +567,7 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
 
         createPeerSession(peerKey, 'legacy', true, `legacy-${Date.now().toString(36)}`);
         syncQueue.push(conn.connection);
-        log.info({ peer: shortName(peerKey), mode }, 'peer sync mode selected');
+        log.info({ peer: shortName(peerKey), mode, modeReason }, 'peer sync mode selected');
         return;
     }
 
@@ -571,7 +606,7 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
 
     const session = createPeerSession(peerKey, 'negentropy', initiator);
     log.info(
-        { peer: shortName(peerKey), mode, initiator, sessionId: session.sessionId, source },
+        { peer: shortName(peerKey), mode, modeReason, initiator, sessionId: session.sessionId, source },
         'peer sync mode selected'
     );
     await startNegentropyOpen(peerKey, session);
@@ -595,6 +630,14 @@ function buildSyncStatsSnapshot(): object {
             negentropy: syncStats.modeSelectionsNegentropy,
             fallbackCount: syncStats.modeSelectionsLegacy,
             fallbackRate: safeRate(syncStats.modeSelectionsLegacy, syncStats.modeSelectionsTotal),
+            legacyReasons: {
+                missingCapabilities: syncStats.modeSelectionsLegacyMissingCapabilities,
+                negentropyDisabled: syncStats.modeSelectionsLegacyNegentropyDisabled,
+                versionMismatch: syncStats.modeSelectionsLegacyVersionMismatch,
+            },
+            noMode: {
+                legacyDisabled: syncStats.modeSelectionsNoModeLegacyDisabled,
+            },
         },
         queue: {
             relayed: syncStats.queueOpsRelayed,

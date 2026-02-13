@@ -15,6 +15,18 @@ export interface NegotiatedPeerCapabilities {
     version: number | null;
 }
 
+export type ConnectSyncModeReason =
+    | 'negentropy_supported'
+    | 'missing_capabilities'
+    | 'negentropy_disabled'
+    | 'version_mismatch'
+    | 'legacy_disabled';
+
+export interface ConnectSyncModeDecision {
+    mode: SyncMode | null;
+    reason: ConnectSyncModeReason;
+}
+
 export interface NegentropyFrame {
     encoding: NegentropyFrameEncoding;
     data: string;
@@ -58,6 +70,30 @@ export function chooseSyncMode(
     return supportsPeerNegentropy(capabilities, minVersion)
         ? 'negentropy'
         : 'legacy';
+}
+
+export function chooseConnectSyncMode(
+    capabilities: NegotiatedPeerCapabilities,
+    minVersion: number,
+    legacySyncEnabled: boolean,
+): ConnectSyncModeDecision {
+    if (supportsPeerNegentropy(capabilities, minVersion)) {
+        return { mode: 'negentropy', reason: 'negentropy_supported' };
+    }
+
+    if (!legacySyncEnabled) {
+        return { mode: null, reason: 'legacy_disabled' };
+    }
+
+    if (!capabilities.advertised) {
+        return { mode: 'legacy', reason: 'missing_capabilities' };
+    }
+
+    if (!capabilities.negentropy) {
+        return { mode: 'legacy', reason: 'negentropy_disabled' };
+    }
+
+    return { mode: 'legacy', reason: 'version_mismatch' };
 }
 
 export function encodeNegentropyFrame(frame: string | Uint8Array): NegentropyFrame {

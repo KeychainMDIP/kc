@@ -1,6 +1,7 @@
 import { Operation } from '@mdip/gatekeeper/types';
 import {
     NEG_SYNC_ID_RE,
+    chooseConnectSyncMode,
     chooseSyncMode,
     decodeNegentropyFrame,
     encodeNegentropyFrame,
@@ -49,6 +50,36 @@ describe('negentropy protocol helpers', () => {
 
         const oldVersion = normalizePeerCapabilities({ negentropy: true, negentropyVersion: 0 });
         expect(chooseSyncMode(oldVersion, 1)).toBe('legacy');
+    });
+
+    it('chooses connect sync mode with explicit fallback reasons', () => {
+        const missing = normalizePeerCapabilities();
+        expect(chooseConnectSyncMode(missing, 1, true)).toStrictEqual({
+            mode: 'legacy',
+            reason: 'missing_capabilities',
+        });
+        expect(chooseConnectSyncMode(missing, 1, false)).toStrictEqual({
+            mode: null,
+            reason: 'legacy_disabled',
+        });
+
+        const disabled = normalizePeerCapabilities({ negentropy: false, negentropyVersion: 1 });
+        expect(chooseConnectSyncMode(disabled, 1, true)).toStrictEqual({
+            mode: 'legacy',
+            reason: 'negentropy_disabled',
+        });
+
+        const oldVersion = normalizePeerCapabilities({ negentropy: true, negentropyVersion: 0 });
+        expect(chooseConnectSyncMode(oldVersion, 1, true)).toStrictEqual({
+            mode: 'legacy',
+            reason: 'version_mismatch',
+        });
+
+        const supported = normalizePeerCapabilities({ negentropy: true, negentropyVersion: 1 });
+        expect(chooseConnectSyncMode(supported, 1, true)).toStrictEqual({
+            mode: 'negentropy',
+            reason: 'negentropy_supported',
+        });
     });
 
     it('normalizes negentropy ids and filters invalid values', () => {
