@@ -104,6 +104,7 @@ export default class Keymaster implements KeymasterInterface {
     private readonly maxNameLength: number;
     private readonly maxDataLength: number;
     private _walletCache?: WalletFile;
+    private _walletMutationLock: Promise<void> = Promise.resolve();
     private _hdkeyCache?: any;
 
     constructor(options: KeymasterOptions) {
@@ -142,12 +143,12 @@ export default class Keymaster implements KeymasterInterface {
     private async mutateWallet(
         mutator: (wallet: WalletFile) => void | Promise<void>
     ): Promise<void> {
-        // Create wallet if none and make sure _walletCache is set
-        if (!this._walletCache) {
-            await this.loadWallet();
-        }
+        const run = async () => {
+            // Create wallet if none and make sure _walletCache is set
+            if (!this._walletCache) {
+                await this.loadWallet();
+            }
 
-        await this.db.updateWallet(async (stored: StoredWallet) => {
             const decrypted = this._walletCache!;
 
             const before = JSON.stringify(decrypted);
@@ -159,10 +160,17 @@ export default class Keymaster implements KeymasterInterface {
             }
 
             const reenc = await this.encryptWalletForStorage(decrypted);
-            Object.assign(stored as WalletEncFile, reenc);
+            const ok = await this.db.saveWallet(reenc, true);
+            if (!ok) {
+                throw new KeymasterError('save wallet failed');
+            }
 
             this._walletCache = decrypted;
-        });
+        };
+
+        const chained = this._walletMutationLock.then(run, run);
+        this._walletMutationLock = chained.catch(() => { });
+        return chained;
     }
 
     async loadWallet(): Promise<WalletFile> {

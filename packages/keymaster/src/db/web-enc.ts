@@ -1,5 +1,4 @@
 import { StoredWallet, WalletBase } from '../types.js';
-import { AbstractBase } from './abstract-base.js';
 import { isEncryptedWallet } from './typeGuards.js';
 
 const algorithm = 'AES-GCM';
@@ -48,12 +47,11 @@ async function deriveKey(pass: string, salt: Uint8Array): Promise<CryptoKey> {
     );
 }
 
-export default class WalletWebEncrypted extends AbstractBase {
+export default class WalletWebEncrypted implements WalletBase {
     private baseWallet: WalletBase;
     private readonly passphrase: string;
 
     constructor(baseWallet: WalletBase, passphrase: string) {
-        super();
         this.baseWallet = baseWallet;
         this.passphrase = passphrase;
     }
