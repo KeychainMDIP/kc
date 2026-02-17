@@ -160,6 +160,22 @@ describe('loadWallet', () => {
             expect(error.message).toBe(ServerError.message);
         }
     });
+
+    it('should throw raw error on loadWallet network error', async () => {
+        nock(KeymasterURL)
+            .get(Endpoints.wallet)
+            .replyWithError('mock network failure');
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.loadWallet();
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toMatch(/mock network failure/i);
+        }
+    });
 });
 
 describe('saveWallet', () => {
@@ -1107,6 +1123,20 @@ describe('resolveAsset', () => {
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
         const asset = await keymaster.resolveAsset(mockAssetId);
+
+        expect(asset).toStrictEqual(mockAsset);
+    });
+
+    it('should resolve asset with query options', async () => {
+        const versionTime = '2026-02-17T00:00:00.000Z';
+
+        nock(KeymasterURL)
+            .get(`${Endpoints.assets}/${mockAssetId}`)
+            .query((query) => query.versionTime === versionTime && query.confirm === 'true')
+            .reply(200, { asset: mockAsset });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const asset = await keymaster.resolveAsset(mockAssetId, { versionTime, confirm: true });
 
         expect(asset).toStrictEqual(mockAsset);
     });
