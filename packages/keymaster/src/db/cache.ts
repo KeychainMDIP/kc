@@ -1,12 +1,10 @@
 import { StoredWallet, WalletBase } from '../types.js';
-import { AbstractBase } from './abstract-base.js';
 
-export default class WalletCache extends AbstractBase {
+export default class WalletCache implements WalletBase {
     private baseWallet: WalletBase;
     private cachedWallet: StoredWallet;
 
     constructor(baseWallet: WalletBase) {
-        super();
         this.baseWallet = baseWallet;
         this.cachedWallet = null;
     }

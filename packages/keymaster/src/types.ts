@@ -231,7 +231,6 @@ export type StoredWallet = EncryptedWallet | WalletFile | WalletEncFile | null;
 export interface WalletBase {
     saveWallet(wallet: StoredWallet, overwrite?: boolean): Promise<boolean>;
     loadWallet(): Promise<StoredWallet | null>;
-    updateWallet(mutator: (wallet: StoredWallet) => void | Promise<void>): Promise<void>;
 }
 
 export interface SearchEngine {

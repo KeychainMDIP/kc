@@ -845,18 +845,6 @@ describe('WalletEncrypted', () => {
     });
 });
 
-describe('updateWallet', () => {
-    it('should throw when no wallet has been created', async () => {
-        const test = new WalletJsonMemory();
-        try {
-            await test.updateWallet(() => { });
-            throw new ExpectedExceptionError();
-        } catch (error: any) {
-            expect(error.message).toBe('updateWallet: no wallet found to update');
-        }
-    });
-});
-
 describe('no WebCrypto subtle', () => {
     let restore: () => void;
 
