@@ -51,8 +51,7 @@ import {
 import {
     isV1WithEnc,
     isV1Decrypted,
-    isLegacyV0,
-    isEncryptedWallet
+    isLegacyV0
 } from './db/typeGuards.js';
 import {
     Cipher,
@@ -3654,11 +3653,6 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     private async upgradeWallet(wallet: any): Promise<WalletFile> {
-        if (isEncryptedWallet(wallet)) {
-            await this.db.saveWallet(wallet, true);
-            wallet = await this.db.loadWallet();
-        }
-
         if (isLegacyV0(wallet)) {
             const hdkey = this.cipher.generateHDKeyJSON(wallet.seed.hdkey!);
             const keypair = this.cipher.generateJwk(hdkey.privateKey!);

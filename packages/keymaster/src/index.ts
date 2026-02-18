@@ -3,7 +3,6 @@ export { default as KeymasterClient } from './keymaster-client.js';
 export { default as SearchClient } from './search-client.js';
 export { default as WalletJsonMemory } from './db/json-memory.js';
 export { default as WalletWeb } from './db/web.js';
-export { default as WalletWebEncrypted } from './db/web-enc.js';
 export { default as WalletCache } from './db/cache.js';
 export { default as WalletChrome } from './db/chrome.js';
 export * from './db/typeGuards.js';
