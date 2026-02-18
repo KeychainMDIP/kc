@@ -150,6 +150,7 @@ describe('loadWallet', () => {
             await keymaster.saveWallet(mockWallet);
             throw new ExpectedExceptionError();
         } catch (error: any) {
+            // eslint-disable-next-line sonarjs/no-duplicate-string
             expect(error.message).toBe('Keymaster: Unsupported wallet version.');
         }
     });
