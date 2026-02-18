@@ -65,7 +65,12 @@ function normalizeLevel(level?: string): LogLevel {
 
 type Env = Record<string, string | undefined>;
 
-export function getLogLevel(env: Env = process.env): LogLevel {
+function resolveEnv(): Env {
+    const maybeProcess = (globalThis as { process?: { env?: Env } }).process;
+    return maybeProcess?.env ?? {};
+}
+
+export function getLogLevel(env: Env = resolveEnv()): LogLevel {
     return normalizeLevel(env.KC_LOG_LEVEL);
 }
 
@@ -75,7 +80,7 @@ export function getPrettyEnabled(): boolean {
 
 export function createLogger(
     options: LoggerOptions = {},
-    env: Env = process.env,
+    env: Env = resolveEnv(),
 ): Logger {
     const resolvedLevel = options.level ?? getLogLevel(env);
     const transport = options.transport ?? {
