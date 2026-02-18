@@ -6,10 +6,9 @@ import CipherWeb from '@mdip/cipher/web';
 import Keymaster from '@mdip/keymaster';
 import SearchClient from '@mdip/keymaster/search';
 import WalletWeb from '@mdip/keymaster/wallet/web';
-import WalletWebEncrypted from '@mdip/keymaster/wallet/web-enc';
 import WalletCache from '@mdip/keymaster/wallet/cache';
 import WalletJsonMemory from "@mdip/keymaster/wallet/json-memory";
-import { isEncryptedWallet, isV1WithEnc, isLegacyV0 } from '@mdip/keymaster/wallet/typeGuards';
+import { isV1WithEnc, isLegacyV0 } from '@mdip/keymaster/wallet/typeGuards';
 import KeymasterUI from './KeymasterUI.js';
 import PassphraseModal from './PassphraseModal';
 import WarningModal from './WarningModal';
@@ -93,36 +92,16 @@ function App() {
                 await walletMemory.saveWallet(pendingWallet, true);
 
                 try {
-                    if (uploadAction === 'upload-enc-v0') {
-                        const walletEnc = new WalletWebEncrypted(walletMemory, passphrase);
-                        // check pass & remove encyption wrapper
-                        const decrypted = await walletEnc.loadWallet();
-                        await walletWeb.saveWallet(decrypted, true);
-                    } else { // upload-enc-v1
-                        const km = new Keymaster({ gatekeeper, wallet: walletMemory, cipher, search, passphrase });
-                        // check pass
-                        await km.loadWallet();
-                        await walletWeb.saveWallet(pendingWallet, true);
-                    }
+                    const km = new Keymaster({ gatekeeper, wallet: walletMemory, cipher, search, passphrase });
+                    // check pass
+                    await km.loadWallet();
+                    await walletWeb.saveWallet(pendingWallet, true);
                 } catch {
                     setPassphraseErrorText('Incorrect passphrase');
                     return;
                 }
             } else { // upload-plain-v0
                 await walletWeb.saveWallet(pendingWallet, true);
-            }
-        } else {
-            const wallet = await walletWeb.loadWallet();
-            if (isEncryptedWallet(wallet)) {
-                try {
-                    const walletEnc = new WalletWebEncrypted(walletWeb, passphrase);
-                    // check pass & remove encyption wrapper
-                    const decrypted = await walletEnc.loadWallet();
-                    await walletWeb.saveWallet(decrypted, true);
-                } catch {
-                    setPassphraseErrorText('Incorrect passphrase');
-                    return;
-                }
             }
         }
 
@@ -175,9 +154,6 @@ function App() {
             setModalAction('set-passphrase');
         } else if (isV1WithEnc(uploaded)) {
             setUploadAction('upload-enc-v1');
-            setModalAction('decrypt');
-        } else if (isEncryptedWallet(uploaded)) {
-            setUploadAction('upload-enc-v0');
             setModalAction('decrypt');
         } else {
             window.alert('Unsupported wallet type');

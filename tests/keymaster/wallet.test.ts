@@ -1,15 +1,12 @@
 import Gatekeeper from '@mdip/gatekeeper';
 import Keymaster from '@mdip/keymaster';
-import { WalletEncFile } from '@mdip/keymaster/types';
 import {
-    EncryptedWallet,
-    Seed,
+    WalletEncFile,
     WalletFile,
 } from '@mdip/keymaster/types';
 import CipherNode from '@mdip/cipher/node';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory';
 import WalletJsonMemory from '@mdip/keymaster/wallet/json-memory';
-import WalletEncrypted from '@mdip/keymaster/wallet/json-enc';
 import { ExpectedExceptionError } from '@mdip/common/errors';
 import HeliaClient from '@mdip/ipfs/helia';
 import { MdipDocument } from "@mdip/gatekeeper/types";
@@ -139,42 +136,17 @@ describe('loadWallet', () => {
         expect(wallet2).toStrictEqual(wallet1);
     });
 
-    it('should return null when loading non-existing encrypted wallet', async () => {
-        const wallet_enc = new WalletEncrypted(wallet, PASSPHRASE);
-        const check_wallet = await wallet_enc.loadWallet();
-        expect(check_wallet).toBe(null);
-    });
-
-    it('should throw exception when passphrase not set', async () => {
-        const wallet_enc = new WalletEncrypted(wallet, "");
-        wallet_enc.saveWallet(MOCK_WALLET_V0_ENCRYPTED);
-
-        try {
-            await wallet_enc.loadWallet();
-            throw new ExpectedExceptionError();
-        } catch (error: any) {
-            expect(error.message).toBe('KC_ENCRYPTED_PASSPHRASE not set');
-        }
-    });
-
     it('should throw exception on load with incorrect passphrase', async () => {
-        const wallet_enc1 = new WalletJsonMemory();
-        const ok = await wallet_enc1.saveWallet(MOCK_WALLET_V0_ENCRYPTED);
-        expect(ok).toBe(true);
-
-        try {
-            const wallet_enc2 = new WalletEncrypted(wallet_enc1, 'incorrect');
-            await wallet_enc2.loadWallet();
-            throw new ExpectedExceptionError();
-        } catch (error: any) {
-            expect(error.message).toBe('Incorrect passphrase.');
-        }
+        await wallet.saveWallet(MOCK_WALLET_V1_ENCRYPTED);
+        const keymasterIncorrect = new Keymaster({ gatekeeper, wallet, cipher, passphrase: 'incorrect' });
+        await expect(keymasterIncorrect.loadWallet()).rejects.toThrow('Keymaster: Incorrect passphrase.');
     });
 
-    it('should throw exception saving an encrypted wallet', async () => {
-        const mockWallet: EncryptedWallet = { salt: "", iv: "", data: "" };
+    it('should throw exception saving a deprecated encrypted wallet', async () => {
+        const mockWallet = { salt: "", iv: "", data: "" };
 
         try {
+            // @ts-expect-error Testing unsupported historical wallet shape
             await keymaster.saveWallet(mockWallet);
             throw new ExpectedExceptionError();
         } catch (error: any) {
@@ -182,10 +154,8 @@ describe('loadWallet', () => {
         }
     });
 
-    it('should convert encrypted v0 wallet', async () => {
-        const wallet_enc = new WalletEncrypted(wallet, PASSPHRASE);
-        const keymaster = new Keymaster({ gatekeeper, wallet: wallet_enc, cipher, passphrase: PASSPHRASE });
-        await keymaster.saveWallet(MOCK_WALLET_V0_UNENCRYPTED);
+    it('should upgrade a v0 unencrypted wallet to v1', async () => {
+        await wallet.saveWallet(MOCK_WALLET_V0_UNENCRYPTED as any);
 
         const res = await keymaster.loadWallet();
         expect(res).toEqual(
@@ -199,38 +169,11 @@ describe('loadWallet', () => {
         );
     });
 
-    it('should upgrade a v0 unencrypted to v1', async () => {
-        const wallet_enc = new WalletEncrypted(wallet, PASSPHRASE);
-        await wallet_enc.saveWallet(MOCK_WALLET_V0_UNENCRYPTED);
+    it('should throw on deprecated encrypted v0 wallet', async () => {
+        // @ts-expect-error Testing unsupported historical wallet shape
+        await wallet.saveWallet(MOCK_WALLET_V0_ENCRYPTED, true);
 
-        const keymaster = new Keymaster({ gatekeeper, wallet: wallet_enc, cipher, passphrase: PASSPHRASE });
-        const res = await keymaster.loadWallet();
-        expect(res).toEqual(
-            expect.objectContaining({
-                version: 1,
-                counter: 0,
-                seed: expect.objectContaining({
-                    mnemonicEnc: expect.any(Object),
-                }),
-            })
-        );
-    });
-
-    it('should upgrade a v0 encrypted to v1 without encryption wrapper', async () => {
-        const wallet_enc = new WalletEncrypted(wallet, PASSPHRASE);
-        await wallet_enc.saveWallet(MOCK_WALLET_V0_ENCRYPTED);
-
-        const keymaster = new Keymaster({ gatekeeper, wallet: wallet_enc, cipher, passphrase: PASSPHRASE });
-        const res = await keymaster.loadWallet();
-        expect(res).toEqual(
-            expect.objectContaining({
-                version: 1,
-                counter: 0,
-                seed: expect.objectContaining({
-                    mnemonicEnc: expect.any(Object),
-                }),
-            })
-        );
+        await expect(keymaster.loadWallet()).rejects.toThrow('Keymaster: Unsupported wallet version.');
     });
 
     it('should load a v1 encrypted wallet without hdkey', async () => {
@@ -283,13 +226,6 @@ describe('loadWallet', () => {
 describe('saveWallet', () => {
     it('test saving directly on the unencrypted wallet', async () => {
         const ok = await wallet.saveWallet(MOCK_WALLET_V1);
-        expect(ok).toBe(true);
-    });
-
-    it('test saving directly on the encrypted wallet', async () => {
-        const wallet_enc = new WalletEncrypted(wallet, PASSPHRASE);
-        const ok = await wallet_enc.saveWallet(MOCK_WALLET_V1);
-
         expect(ok).toBe(true);
     });
 
@@ -356,15 +292,6 @@ describe('saveWallet', () => {
 
         expect(ok).toBe(false);
         expect(walletData).toStrictEqual(MOCK_WALLET_V1);
-    });
-
-    it('encrypted wallet should return unencrypted wallet', async () => {
-        const wallet_enc = new WalletEncrypted(wallet, PASSPHRASE);
-        const keymaster = new Keymaster({ gatekeeper, wallet: wallet_enc, cipher, passphrase: PASSPHRASE });
-        const testWallet = await keymaster.loadWallet();
-        const expectedWallet = await keymaster.loadWallet();
-
-        expect(testWallet).toStrictEqual(expectedWallet);
     });
 
     it('should save augmented wallet', async () => {
@@ -830,18 +757,6 @@ describe('fixWallet', () => {
         expect(ownedRemoved).toBe(0);
         expect(heldRemoved).toBe(2);
         expect(namesRemoved).toBe(2);
-    });
-});
-
-describe('WalletEncrypted', () => {
-    it('returns the plain wallet when base wallet is not encrypted', async () => {
-        const base = new WalletJsonMemory();
-        const plain: WalletFile = { seed: {} as Seed, counter: 42, ids: {}, names: { foo: 'did:test:abc' } };
-        await base.saveWallet(plain, true);
-        const wrapped = new WalletEncrypted(base, PASSPHRASE);
-        const loaded = await wrapped.loadWallet();
-
-        expect(loaded).toStrictEqual(plain);
     });
 });
 
