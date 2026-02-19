@@ -1508,7 +1508,8 @@ async function mergeBatch(batch: Operation[]): Promise<void> {
     const response = await gatekeeper.processEvents();
     const processDurationMs = Date.now() - processStart;
     log.debug({ durationMs: processDurationMs }, 'processEvents');
-    log.debug(`mergeBatch: ${JSON.stringify(response)}`);
+    const { acceptedHashes: _acceptedHashes, ...processSummary } = response;
+    log.debug(`mergeBatch: ${JSON.stringify(processSummary)}`);
     syncStats.opsApplied += (response.added ?? 0) + (response.merged ?? 0);
     syncStats.opsRejected += response.rejected ?? 0;
 
