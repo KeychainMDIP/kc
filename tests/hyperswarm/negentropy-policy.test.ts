@@ -5,9 +5,9 @@ import {
 } from '../../services/mediators/hyperswarm/src/negentropy/policy.ts';
 
 describe('negentropy sync policy', () => {
-    it('accepts legacy sync only when enabled and peer is not in negentropy mode', () => {
+    it('accepts legacy sync only when enabled and mode is explicitly legacy', () => {
         expect(shouldAcceptLegacySync('legacy', true)).toBe(true);
-        expect(shouldAcceptLegacySync('unknown', true)).toBe(true);
+        expect(shouldAcceptLegacySync('unknown', true)).toBe(false);
         expect(shouldAcceptLegacySync('negentropy', true)).toBe(false);
         expect(shouldAcceptLegacySync('legacy', false)).toBe(false);
     });

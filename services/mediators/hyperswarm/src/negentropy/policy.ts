@@ -19,7 +19,7 @@ export function shouldAcceptLegacySync(
         return false;
     }
 
-    return syncMode !== 'negentropy';
+    return syncMode === 'legacy';
 }
 
 export function shouldStartConnectTimeNegentropy(
