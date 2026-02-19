@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">MDIPAndroid</string>
+    <string name="title_activity_main">MDIPAndroid</string>
+    <string name="package_name">org.keychain.android</string>
+    <string name="custom_url_scheme">org.keychain.android</string>
+</resources>
