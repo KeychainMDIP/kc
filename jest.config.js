@@ -32,6 +32,8 @@ const config = {
         '^pino$': '<rootDir>/tests/common/pino.mock.ts',
         '^\\.\\/typeGuards\\.js$': '<rootDir>/packages/keymaster/src/db/typeGuards.ts',
         '^\\.\\/db\\/typeGuards\\.js$': '<rootDir>/packages/keymaster/src/db/typeGuards.ts',
+        '^\\.\\/sync-mapping\\.js$': '<rootDir>/services/mediators/hyperswarm/src/sync-mapping.ts',
+        '^\\.\\/sync-persistence\\.js$': '<rootDir>/services/mediators/hyperswarm/src/sync-persistence.ts',
         '^\\.\\/abstract-json\\.js$': '<rootDir>/packages/gatekeeper/src/db/abstract-json.ts',
         '^\\.\\/cipher-base\\.js$': '<rootDir>/packages/cipher/src/cipher-base.ts',
         '^\\.\\/encryption\\.js$': '<rootDir>/packages/keymaster/src/encryption.ts',
@@ -40,6 +42,10 @@ const config = {
         "/node_modules/",
         "/kc-app/",
         "/client/"
+    ],
+    coveragePathIgnorePatterns: [
+        "/node_modules/",
+        "/services/mediators/hyperswarm/src/negentropy/Negentropy\\.cjs$",
     ]
 };
 
