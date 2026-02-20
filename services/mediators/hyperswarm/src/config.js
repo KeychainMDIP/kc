@@ -46,34 +46,6 @@ function parseBooleanEnv(varName, defaultValue) {
     throw new Error(`Invalid ${varName}; expected true or false`);
 }
 
-function parseBootstrapEnv(varName) {
-    const raw = process.env[varName];
-    if (raw == null || raw.trim() === '') {
-        return [];
-    }
-
-    const endpoints = raw
-        .split(',')
-        .map(value => value.trim())
-        .filter(value => value.length > 0);
-
-    for (const endpoint of endpoints) {
-        const splitIndex = endpoint.lastIndexOf(':');
-        if (splitIndex <= 0 || splitIndex === endpoint.length - 1) {
-            throw new Error(`Invalid ${varName}; expected host:port entries`);
-        }
-
-        const host = endpoint.slice(0, splitIndex).trim();
-        const portRaw = endpoint.slice(splitIndex + 1).trim();
-        const port = Number.parseInt(portRaw, 10);
-        if (!host || !Number.isInteger(port) || port <= 0 || port > 65535) {
-            throw new Error(`Invalid ${varName}; expected host:port entries`);
-        }
-    }
-
-    return endpoints;
-}
-
 const config = {
     debug: process.env.KC_DEBUG ? process.env.KC_DEBUG === 'true' : false,
     gatekeeperURL: process.env.KC_GATEKEEPER_URL || 'http://localhost:4224',
@@ -83,7 +55,6 @@ const config = {
     nodeID: process.env.KC_NODE_ID || '',
     nodeName: process.env.KC_NODE_NAME || 'anon',
     protocol: process.env.KC_MDIP_PROTOCOL || '/MDIP/v1.0-public',
-    hyperswarmBootstrap: parseBootstrapEnv('KC_HYPR_DHT_BOOTSTRAP'),
     exportInterval: parsePositiveIntEnv('KC_HYPR_EXPORT_INTERVAL', 2),
     negentropyFrameSizeLimit: parseFrameSizeLimit(),
     negentropyRecentWindowDays: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_RECENT_WINDOW_DAYS', 7),

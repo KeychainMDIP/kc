@@ -307,8 +307,7 @@ async function createSwarm(): Promise<void> {
         swarm.destroy();
     }
 
-    const hasCustomBootstrap = config.hyperswarmBootstrap.length > 0;
-    swarm = new Hyperswarm(hasCustomBootstrap ? { bootstrap: config.hyperswarmBootstrap } : {});
+    swarm = new Hyperswarm();
     nodeKey = b4a.toString(swarm.keyPair.publicKey, 'hex');
 
     swarm.on('connection', conn => addConnection(conn));
