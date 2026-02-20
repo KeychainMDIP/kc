@@ -5,12 +5,6 @@ import {
     ResolveDIDOptions,
 } from '@mdip/gatekeeper/types';
 
-export interface EncryptedWallet {
-    salt: string;
-    iv: string;
-    data: string;
-}
-
 export interface HDKey {
     xpriv: string;
     xpub: string;
@@ -226,12 +220,11 @@ export interface GroupVaultLogin {
     password: string;
 }
 
-export type StoredWallet = EncryptedWallet | WalletFile | WalletEncFile | null;
+export type StoredWallet = WalletFile | WalletEncFile | null;
 
 export interface WalletBase {
     saveWallet(wallet: StoredWallet, overwrite?: boolean): Promise<boolean>;
     loadWallet(): Promise<StoredWallet | null>;
-    updateWallet(mutator: (wallet: StoredWallet) => void | Promise<void>): Promise<void>;
 }
 
 export interface SearchEngine {

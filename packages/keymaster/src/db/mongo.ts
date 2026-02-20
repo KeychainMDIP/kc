@@ -1,8 +1,7 @@
-import { StoredWallet } from '../types.js';
-import { AbstractBase } from './abstract-base.js';
+import { StoredWallet, WalletBase } from '../types.js';
 import { MongoClient, Db, Collection } from 'mongodb'
 
-export default class WalletMongo extends AbstractBase {
+export default class WalletMongo implements WalletBase {
     private client: MongoClient;
     private db?: Db;
     private collection?: Collection;
@@ -16,7 +15,6 @@ export default class WalletMongo extends AbstractBase {
     }
 
     constructor(walletKey: string = 'wallet') {
-        super();
         const url = process.env.KC_MONGODB_URL || 'mongodb://localhost:27017';
         this.client = new MongoClient(url);
         this.collectionName = walletKey;
