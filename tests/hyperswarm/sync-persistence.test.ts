@@ -4,6 +4,9 @@ import {
     filterIndexRejectedOperations,
     mapAcceptedOperationsToSyncRecords,
 } from '../../services/mediators/hyperswarm/src/sync-persistence.ts';
+import {
+    MDIP_EPOCH_SECONDS,
+} from '../../services/mediators/hyperswarm/src/sync-mapping.ts';
 
 const h = (c: string) => c.repeat(64);
 
@@ -59,6 +62,14 @@ describe('sync-persistence helpers', () => {
         expect(result.records[0].id).toBe(h('a'));
         expect(result.records[0].ts).toBe(Math.floor(Date.parse(valid.signature!.signed) / 1000));
         expect(result.invalid).toBe(1);
+    });
+
+    it('maps unix epoch signed timestamp to MDIP epoch seconds', () => {
+        const legacyEpoch = makeCreateOp('a', '1970-01-01T00:00:00.000Z');
+        const result = mapAcceptedOperationsToSyncRecords([legacyEpoch]);
+        expect(result.records.length).toBe(1);
+        expect(result.records[0].ts).toBe(MDIP_EPOCH_SECONDS);
+        expect(result.invalid).toBe(0);
     });
 
     it('returns no records when all operations are invalid', () => {
