@@ -292,14 +292,22 @@ let swarm: Hyperswarm | null = null;
 let nodeKey = '';
 let nodeInfo: NodeInfo;
 
-goodbye(() => {
+goodbye(async () => {
     if (swarm) {
-        swarm.destroy();
+        try {
+            await Promise.resolve(swarm.destroy());
+        } catch (error) {
+            log.error({ error }, 'swarm destroy error');
+        } finally {
+            swarm = null;
+        }
     }
 
-    void syncStore.stop().catch(error => {
+    try {
+        await syncStore.stop();
+    } catch (error) {
         log.error({ error }, 'syncStore stop error');
-    });
+    }
 });
 
 async function createSwarm(): Promise<void> {
