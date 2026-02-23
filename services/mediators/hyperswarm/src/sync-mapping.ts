@@ -2,7 +2,7 @@ import { Operation } from '@mdip/gatekeeper/types';
 
 // - id = operation.signature.hash (64 hex chars => 32 bytes)
 // - timestamp = Math.floor(Date.parse(operation.signature.signed) / 1000) in epoch seconds
-// - if timestamp is Unix epoch (0), remap to MDIP epoch (2024-01-01T00:00:00Z)
+// - if timestamp is before MDIP epoch, clamp it to MDIP epoch (2024-01-01T00:00:00Z)
 export const SYNC_ID_HEX_LEN = 64;
 export const SYNC_ID_BYTES_LEN = 32;
 export const MDIP_EPOCH_SECONDS = 1_704_067_200; // 2024-01-01T00:00:00Z
@@ -76,7 +76,7 @@ export function mapOperationToSyncKey(operation: Operation): SyncMappingResult {
         return fail('invalid_signature_signed_value', 'operation.signature.signed must be parseable by Date.parse');
     }
     const tsSec = Math.floor(parsedSigned / 1000);
-    const normalizedTsSec = tsSec === 0 ? MDIP_EPOCH_SECONDS : tsSec;
+    const normalizedTsSec = tsSec < MDIP_EPOCH_SECONDS ? MDIP_EPOCH_SECONDS : tsSec;
 
     const idBytes = Buffer.from(idHex, 'hex');
     if (idBytes.length !== SYNC_ID_BYTES_LEN) {

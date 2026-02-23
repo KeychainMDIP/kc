@@ -41,8 +41,17 @@ describe('sync-mapping', () => {
         }
     });
 
-    it('remaps unix epoch signed timestamp to MDIP epoch', () => {
+    it('clamps unix epoch signed timestamp to MDIP epoch', () => {
         const op = makeOp({ signed: '1970-01-01T00:00:00.000Z' });
+        const result = mapOperationToSyncKey(op);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+            expect(result.value.tsSec).toBe(MDIP_EPOCH_SECONDS);
+        }
+    });
+
+    it('clamps pre-MDIP signed timestamps to MDIP epoch', () => {
+        const op = makeOp({ signed: '1971-01-01T00:00:00.000Z' });
         const result = mapOperationToSyncKey(op);
         expect(result.ok).toBe(true);
         if (result.ok) {

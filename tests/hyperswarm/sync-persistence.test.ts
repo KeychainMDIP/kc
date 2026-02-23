@@ -64,6 +64,14 @@ describe('sync-persistence helpers', () => {
         expect(result.invalid).toBe(1);
     });
 
+    it('maps pre-MDIP signed timestamp to MDIP epoch seconds', () => {
+        const legacyEpoch = makeCreateOp('a', '1971-01-01T00:00:00.000Z');
+        const result = mapAcceptedOperationsToSyncRecords([legacyEpoch]);
+        expect(result.records.length).toBe(1);
+        expect(result.records[0].ts).toBe(MDIP_EPOCH_SECONDS);
+        expect(result.invalid).toBe(0);
+    });
+
     it('maps unix epoch signed timestamp to MDIP epoch seconds', () => {
         const legacyEpoch = makeCreateOp('a', '1970-01-01T00:00:00.000Z');
         const result = mapAcceptedOperationsToSyncRecords([legacyEpoch]);
