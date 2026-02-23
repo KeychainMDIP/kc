@@ -11,7 +11,7 @@ const DEFAULT_RECENT_WINDOW_DAYS = 7;
 const DEFAULT_OLDER_WINDOW_DAYS = 30;
 const DEFAULT_MAX_RECORDS_PER_WINDOW = 25_000;
 const DEFAULT_MAX_ROUNDS_PER_SESSION = 64;
-const DAY_MS = 24 * 60 * 60 * 1000;
+const DAY_SECONDS = 24 * 60 * 60;
 const require = createRequire(import.meta.url);
 
 interface NegentropyInstance {
@@ -85,6 +85,7 @@ export interface NegentropySessionStats {
 }
 
 export interface NegentropyWindowSessionOptions {
+    nowTs?: number;
     nowMs?: number;
     maxRoundsPerSession?: number;
 }
@@ -160,9 +161,9 @@ export default class NegentropyAdapter {
         return this.rebuildWindowAdapter(window);
     }
 
-    async planWindows(nowMs: number = Date.now(), earliestTsOverride?: number): Promise<ReconciliationWindow[]> {
-        if (!Number.isFinite(nowMs)) {
-            throw new Error('nowMs must be a finite timestamp');
+    async planWindows(nowTs: number = currentEpochSeconds(), earliestTsOverride?: number): Promise<ReconciliationWindow[]> {
+        if (!Number.isFinite(nowTs)) {
+            throw new Error('nowTs must be a finite timestamp');
         }
 
         const earliestTs = typeof earliestTsOverride === 'number'
@@ -174,14 +175,14 @@ export default class NegentropyAdapter {
         }
 
         const windows: ReconciliationWindow[] = [];
-        const recentSpanMs = this.recentWindowDays * DAY_MS;
-        const olderSpanMs = this.olderWindowDays * DAY_MS;
-        const recentStart = Math.max(earliestTs, nowMs - recentSpanMs);
+        const recentSpanTs = this.recentWindowDays * DAY_SECONDS;
+        const olderSpanTs = this.olderWindowDays * DAY_SECONDS;
+        const recentStart = Math.max(earliestTs, nowTs - recentSpanTs);
 
         windows.push({
             name: 'recent',
             fromTs: recentStart,
-            toTs: nowMs,
+            toTs: nowTs,
             maxRecords: this.maxRecordsPerWindow,
             order: 0,
         });
@@ -189,7 +190,7 @@ export default class NegentropyAdapter {
         let cursorTo = recentStart - 1;
         let order = 1;
         while (cursorTo >= earliestTs) {
-            const fromTs = Math.max(earliestTs, cursorTo - olderSpanMs + 1);
+            const fromTs = Math.max(earliestTs, cursorTo - olderSpanTs + 1);
             windows.push({
                 name: `older_${order}`,
                 fromTs,
@@ -209,7 +210,7 @@ export default class NegentropyAdapter {
         options: NegentropyWindowSessionOptions = {},
     ): Promise<NegentropySessionStats> {
         const startedAt = Date.now();
-        const sessionNowMs = options.nowMs ?? Date.now();
+        const sessionNowTs = options.nowTs ?? options.nowMs ?? currentEpochSeconds();
         const maxRoundsPerSession = options.maxRoundsPerSession ?? this.maxRoundsPerSession;
         assertPositiveInteger(maxRoundsPerSession, 'maxRoundsPerSession');
 
@@ -222,7 +223,7 @@ export default class NegentropyAdapter {
 
         const windows = earliestCandidates.length === 0
             ? []
-            : await this.planWindows(sessionNowMs, Math.min(...earliestCandidates));
+            : await this.planWindows(sessionNowTs, Math.min(...earliestCandidates));
 
         const windowStats: NegentropyWindowStats[] = [];
         let totalLoaded = 0;
@@ -450,6 +451,10 @@ export default class NegentropyAdapter {
             cappedByRounds: !completed && rounds >= maxRounds,
         };
     }
+}
+
+function currentEpochSeconds(): number {
+    return Math.floor(Date.now() / 1000);
 }
 
 function isValidSyncId(id: string): boolean {

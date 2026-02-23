@@ -1,14 +1,14 @@
 import { Operation } from '@mdip/gatekeeper/types';
 
 // - id = operation.signature.hash (64 hex chars => 32 bytes)
-// - timestamp = Date.parse(operation.signature.signed) in ms
+// - timestamp = Math.floor(Date.parse(operation.signature.signed) / 1000) in epoch seconds
 export const SYNC_ID_HEX_LEN = 64;
 export const SYNC_ID_BYTES_LEN = 32;
 
 export interface SyncMappedOperation {
     idHex: string;
     idBytes: Buffer;
-    tsMs: number;
+    tsSec: number;
     operation: Operation;
 }
 
@@ -69,10 +69,11 @@ export function mapOperationToSyncKey(operation: Operation): SyncMappingResult {
         return fail('invalid_signature_signed_type', 'operation.signature.signed must be a string');
     }
 
-    const tsMs = Date.parse(signature.signed);
-    if (!Number.isFinite(tsMs)) {
+    const parsedSigned = Date.parse(signature.signed);
+    if (!Number.isFinite(parsedSigned)) {
         return fail('invalid_signature_signed_value', 'operation.signature.signed must be parseable by Date.parse');
     }
+    const tsSec = Math.floor(parsedSigned / 1000);
 
     const idBytes = Buffer.from(idHex, 'hex');
     if (idBytes.length !== SYNC_ID_BYTES_LEN) {
@@ -87,9 +88,8 @@ export function mapOperationToSyncKey(operation: Operation): SyncMappingResult {
         value: {
             idHex,
             idBytes,
-            tsMs,
+            tsSec,
             operation,
         },
     };
 }
-

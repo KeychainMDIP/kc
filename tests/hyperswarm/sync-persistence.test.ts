@@ -57,7 +57,7 @@ describe('sync-persistence helpers', () => {
 
         expect(result.records.length).toBe(1);
         expect(result.records[0].id).toBe(h('a'));
-        expect(result.records[0].ts).toBe(Date.parse(valid.signature!.signed));
+        expect(result.records[0].ts).toBe(Math.floor(Date.parse(valid.signature!.signed) / 1000));
         expect(result.invalid).toBe(1);
     });
 

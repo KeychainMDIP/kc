@@ -35,7 +35,7 @@ describe('sync-mapping', () => {
         if (result.ok) {
             expect(result.value.idHex).toBe(h('a'));
             expect(result.value.idBytes.length).toBe(SYNC_ID_BYTES_LEN);
-            expect(result.value.tsMs).toBe(Date.parse('2026-02-13T00:00:00.000Z'));
+            expect(result.value.tsSec).toBe(Math.floor(Date.parse('2026-02-13T00:00:00.000Z') / 1000));
             expect(result.value.operation).toBe(op);
         }
     });
@@ -68,4 +68,3 @@ describe('sync-mapping', () => {
         expectFailure(makeOp({ signed: 'not-a-date' }), 'invalid_signature_signed_value');
     });
 });
-

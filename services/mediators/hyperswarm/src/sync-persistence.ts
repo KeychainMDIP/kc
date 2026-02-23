@@ -72,7 +72,7 @@ export function mapAcceptedOperationsToSyncRecords(operations: Operation[]): Map
 
         records.push({
             id: mapped.value.idHex,
-            ts: mapped.value.tsMs,
+            ts: mapped.value.tsSec,
             operation,
         });
     }
