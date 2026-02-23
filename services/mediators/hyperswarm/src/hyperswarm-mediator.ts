@@ -402,13 +402,19 @@ function createBaseMessage<T extends HyperMessage['type']>(type: T): Omit<HyperM
 }
 
 function buildPingMessage(): PingMessage {
+    const capabilities = config.negentropyEnabled
+        ? {
+            negentropy: true,
+            negentropyVersion: NEGENTROPY_VERSION,
+        }
+        : {
+            negentropy: false,
+        };
+
     return {
         ...createBaseMessage('ping'),
         peers: Object.keys(knownNodes),
-        capabilities: {
-            negentropy: true,
-            negentropyVersion: NEGENTROPY_VERSION,
-        },
+        capabilities,
     };
 }
 
@@ -527,6 +533,7 @@ function choosePeerSyncMode(peerKey: string): { mode: SyncMode | null; reason: C
         conn.capabilities,
         NEGENTROPY_VERSION,
         config.legacySyncEnabled,
+        config.negentropyEnabled,
     );
 }
 
@@ -2032,6 +2039,19 @@ async function main(): Promise<void> {
 }
 
 async function initNegentropyAdapter(): Promise<void> {
+    if (!config.negentropyEnabled) {
+        negentropyAdapter = null;
+        adapterChangeSeq = 0;
+        adapterBuiltSeq = -1;
+        adapterBuiltAt = 0;
+        adapterBuiltWindowId = null;
+        adapterBuiltWindowStats = null;
+        rebuildPromise = null;
+        backgroundPrebuildQueued = false;
+        log.info('negentropy disabled via KC_HYPR_NEGENTROPY_ENABLE; using legacy sync mode when available');
+        return;
+    }
+
     negentropyAdapter = await NegentropyAdapter.create({
         syncStore,
         frameSizeLimit: config.negentropyFrameSizeLimit,

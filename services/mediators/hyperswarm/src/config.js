@@ -56,6 +56,7 @@ const config = {
     nodeName: process.env.KC_NODE_NAME || 'anon',
     protocol: process.env.KC_MDIP_PROTOCOL || '/MDIP/v1.0-public',
     exportInterval: parsePositiveIntEnv('KC_HYPR_EXPORT_INTERVAL', 2),
+    negentropyEnabled: parseBooleanEnv('KC_HYPR_NEGENTROPY_ENABLE', true),
     negentropyFrameSizeLimit: parseFrameSizeLimit(),
     negentropyRecentWindowDays: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_RECENT_WINDOW_DAYS', 7),
     negentropyOlderWindowDays: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_OLDER_WINDOW_DAYS', 30),
@@ -64,5 +65,11 @@ const config = {
     negentropyRepairIntervalSeconds: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_REPAIR_INTERVAL_SECONDS', 300),
     legacySyncEnabled: parseBooleanEnv('KC_HYPR_LEGACY_SYNC_ENABLE', true),
 };
+
+if (!config.negentropyEnabled && !config.legacySyncEnabled) {
+    throw new Error(
+        'Invalid sync configuration; at least one of KC_HYPR_NEGENTROPY_ENABLE or KC_HYPR_LEGACY_SYNC_ENABLE must be true'
+    );
+}
 
 export default config;

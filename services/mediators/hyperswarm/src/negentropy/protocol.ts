@@ -76,13 +76,18 @@ export function chooseConnectSyncMode(
     capabilities: NegotiatedPeerCapabilities,
     minVersion: number,
     legacySyncEnabled: boolean,
+    negentropyEnabled = true,
 ): ConnectSyncModeDecision {
-    if (supportsPeerNegentropy(capabilities, minVersion)) {
+    if (negentropyEnabled && supportsPeerNegentropy(capabilities, minVersion)) {
         return { mode: 'negentropy', reason: 'negentropy_supported' };
     }
 
     if (!legacySyncEnabled) {
         return { mode: null, reason: 'legacy_disabled' };
+    }
+
+    if (!negentropyEnabled) {
+        return { mode: 'legacy', reason: 'negentropy_disabled' };
     }
 
     if (!capabilities.advertised) {

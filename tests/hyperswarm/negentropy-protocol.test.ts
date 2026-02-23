@@ -80,6 +80,10 @@ describe('negentropy protocol helpers', () => {
             mode: 'negentropy',
             reason: 'negentropy_supported',
         });
+        expect(chooseConnectSyncMode(supported, 1, true, false)).toStrictEqual({
+            mode: 'legacy',
+            reason: 'negentropy_disabled',
+        });
     });
 
     it('normalizes negentropy ids and filters invalid values', () => {
