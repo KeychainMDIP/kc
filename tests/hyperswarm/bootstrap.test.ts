@@ -28,6 +28,7 @@ describe('bootstrapSyncStoreIfEmpty', () => {
     it('skips rebuild when store drift is within configured percentage tolerance', async () => {
         const store = new InMemoryOperationSyncStore();
         await store.start();
+        // eslint-disable-next-line sonarjs/no-duplicate-string
         const opA = makeOperation('a', '2026-02-10T10:00:00.000Z');
         await store.upsertMany([{
             id: h('a'),
