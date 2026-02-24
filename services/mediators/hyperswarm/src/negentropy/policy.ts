@@ -5,10 +5,11 @@ export interface RepairSchedulingInput {
     hasActiveSession: boolean;
     importQueueLength: number;
     activeNegentropySessions: number;
-    lastRepairAtMs: number;
+    lastAttemptAtMs: number;
     nowMs: number;
     repairIntervalMs: number;
     isInitiator: boolean;
+    syncCompleted: boolean;
 }
 
 export function shouldAcceptLegacySync(
@@ -51,9 +52,13 @@ export function shouldSchedulePeriodicRepair(input: RepairSchedulingInput): bool
         return false;
     }
 
-    if (input.lastRepairAtMs <= 0) {
+    if (input.syncCompleted) {
+        return false;
+    }
+
+    if (input.lastAttemptAtMs <= 0) {
         return true;
     }
 
-    return (input.nowMs - input.lastRepairAtMs) >= input.repairIntervalMs;
+    return (input.nowMs - input.lastAttemptAtMs) >= input.repairIntervalMs;
 }

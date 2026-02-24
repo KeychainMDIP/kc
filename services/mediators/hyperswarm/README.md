@@ -4,7 +4,7 @@ The Hyperswarm mediator is responsible for distributing unconfirmed MDIP operati
 
 The mediator supports two synchronization modes:
 
-- `negentropy` mode (preferred): connect-time catch-up and periodic anti-entropy repair using `neg_open`/`neg_msg`/`ops_req`/`ops_push`/`neg_close`.
+- `negentropy` mode (preferred): full-history windowed sync on connect, with periodic retry only until the peer reaches a completed sync, using `neg_open`/`neg_msg`/`ops_req`/`ops_push`/`neg_close`.
 - `legacy` mode (compatibility): classic `sync` -> full-history `batch` transfer (`shareDb`).
 
 Realtime propagation is always handled by the Gatekeeper queue gossip path:
@@ -12,13 +12,13 @@ Realtime propagation is always handled by the Gatekeeper queue gossip path:
 - relays queue operations with a `queue` message
 - peers import and further relay `queue` messages
 
-This keeps low latency for new operations while negentropy handles catch-up/repair.
+This keeps low latency for new operations while negentropy handles catch-up.
 
 ## Sync mode behavior
 
 | peer mode | connect-time behavior | periodic behavior | queue gossip |
 | --- | --- | --- | --- |
-| `negentropy` | negotiate + run negentropy session | periodic anti-entropy repair sessions | enabled |
+| `negentropy` | negotiate + run full-history windowed session | periodic retry until sync completes, then stop | enabled |
 | `legacy` | `sync` + `shareDb` full-history export | n/a | enabled |
 
 `shareDb` is intentionally retained for backward compatibility and can be disabled once compatibility validation is complete.
@@ -46,12 +46,11 @@ The mediator emits periodic structured sync metrics in `connectionLoop` includin
 | `KC_NODE_NAME`            | anon                         | Human-readable name for the node |
 | `KC_MDIP_PROTOCOL`        | /MDIP/v1.0-public            | MDIP network topic to join    |
 | `KC_HYPR_EXPORT_INTERVAL` | 2                            | Seconds between export cycles |
-| `KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT` | 0                            | Negentropy frame-size limit (0 or >= 4096) |
-| `KC_HYPR_NEGENTROPY_RECENT_WINDOW_DAYS` | 7                            | First reconciliation window size in days (recent-first) |
-| `KC_HYPR_NEGENTROPY_OLDER_WINDOW_DAYS` | 30                           | Older reconciliation window size in days |
+| `KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT` | 0                            | Negentropy frame-size limit in KB (0 or >= 4) |
+| `KC_HYPR_NEGENTROPY_WINDOW_DAYS` | 30                           | Reconciliation window size in days for full-sync chunking |
 | `KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW` | 25000                        | Maximum operations loaded into a single window adapter |
 | `KC_HYPR_NEGENTROPY_MAX_ROUNDS_PER_SESSION` | 64                           | Maximum negentropy rounds per window session |
-| `KC_HYPR_NEGENTROPY_REPAIR_INTERVAL_SECONDS` | 300                          | Seconds between periodic negentropy repair attempts per peer |
+| `KC_HYPR_NEGENTROPY_INTERVAL` | 300                          | Seconds between retry attempts for peers not yet fully synced |
 | `KC_HYPR_LEGACY_SYNC_ENABLE` | true                         | Allow legacy `sync`/`shareDb` compatibility path |
 | `KC_LOG_LEVEL`            | info                         | Log level: `debug`, `info`, `warn`, `error` |
 

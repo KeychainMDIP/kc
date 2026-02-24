@@ -19,13 +19,13 @@ function parsePositiveIntEnv(varName, defaultValue, options = {}) {
 }
 
 function parseFrameSizeLimit() {
-    const value = parsePositiveIntEnv('KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT', 0, { allowZero: true });
+    const valueKb = parsePositiveIntEnv('KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT', 0, { allowZero: true });
 
-    if (value > 0 && value < 4096) {
-        throw new Error('KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT must be 0 or >= 4096');
+    if (valueKb > 0 && valueKb < 4) {
+        throw new Error('KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT must be 0 or >= 4 (KB)');
     }
 
-    return value;
+    return valueKb * 1024;
 }
 
 function parseBooleanEnv(varName, defaultValue) {
@@ -58,11 +58,10 @@ const config = {
     exportInterval: parsePositiveIntEnv('KC_HYPR_EXPORT_INTERVAL', 2),
     negentropyEnabled: parseBooleanEnv('KC_HYPR_NEGENTROPY_ENABLE', true),
     negentropyFrameSizeLimit: parseFrameSizeLimit(),
-    negentropyRecentWindowDays: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_RECENT_WINDOW_DAYS', 7),
-    negentropyOlderWindowDays: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_OLDER_WINDOW_DAYS', 30),
+    negentropyWindowDays: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_WINDOW_DAYS', 30),
     negentropyMaxRecordsPerWindow: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW', 25000),
     negentropyMaxRoundsPerSession: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_MAX_ROUNDS_PER_SESSION', 64),
-    negentropyRepairIntervalSeconds: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_REPAIR_INTERVAL_SECONDS', 300),
+    negentropyIntervalSeconds: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_INTERVAL', 300),
     legacySyncEnabled: parseBooleanEnv('KC_HYPR_LEGACY_SYNC_ENABLE', true),
 };
 

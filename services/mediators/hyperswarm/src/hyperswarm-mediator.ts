@@ -95,7 +95,6 @@ interface NegOpenMessage extends HyperMessageBase {
         maxRecords: number;
         order: number;
     };
-    fullRepair: boolean;
     round: number;
     frame: NegentropyFrame;
 }
@@ -168,7 +167,8 @@ interface ConnectionInfo {
     capabilities: NegotiatedPeerCapabilities;
     syncMode: SyncMode | 'unknown';
     syncStarted: boolean;
-    lastNegentropyRepairAt: number;
+    lastNegentropyAttemptAt: number;
+    negentropySynced: boolean;
 }
 
 interface PeerSyncSession {
@@ -176,7 +176,6 @@ interface PeerSyncSession {
     peerKey: string;
     mode: SyncMode;
     initiator: boolean;
-    fullRepair: boolean;
     windows: ReconciliationWindow[];
     windowIndex: number;
     windowId: string | null;
@@ -250,7 +249,7 @@ const NEG_MAX_IDS_PER_OPS_REQ = 1_000;
 const NEG_MAX_IDS_PER_LOOKUP = 1_000;
 const NEG_MAX_OPS_PER_PUSH = 256;
 const NEG_MAX_BYTES_PER_PUSH = 512 * 1024;
-const NEG_REPAIR_INTERVAL_MS = config.negentropyRepairIntervalSeconds * 1000;
+const NEG_REPAIR_INTERVAL_MS = config.negentropyIntervalSeconds * 1000;
 const NEG_ADAPTER_MAX_AGE_MS = 60 * 1000;
 
 const connectionInfo: Record<string, ConnectionInfo> = {};
@@ -376,7 +375,8 @@ function addConnection(conn: HyperswarmConnection): void {
         },
         syncMode: 'unknown',
         syncStarted: false,
-        lastNegentropyRepairAt: 0,
+        lastNegentropyAttemptAt: 0,
+        negentropySynced: false,
     };
 
     const peerNames = Object.values(connectionInfo).map(info => info.peerName);
@@ -457,7 +457,6 @@ function createPeerSession(peerKey: string, mode: SyncMode, initiator: boolean, 
         peerKey,
         mode,
         initiator,
-        fullRepair: false,
         windows: [],
         windowIndex: 0,
         windowId: null,
@@ -477,7 +476,7 @@ function createPeerSession(peerKey: string, mode: SyncMode, initiator: boolean, 
     connectionInfo[peerKey].syncStarted = true;
     if (mode === 'negentropy') {
         syncStats.negentropySessionsStarted += 1;
-        connectionInfo[peerKey].lastNegentropyRepairAt = now;
+        connectionInfo[peerKey].lastNegentropyAttemptAt = now;
     }
     return session;
 }
@@ -500,11 +499,13 @@ function closePeerSession(peerKey: string, reason: string): void {
     addAggregateSample(syncStats.syncDurationMs, Date.now() - session.startedAt);
     const conn = connectionInfo[peerKey];
     if (conn && session.mode === 'negentropy') {
-        conn.lastNegentropyRepairAt = Date.now();
+        conn.lastNegentropyAttemptAt = Date.now();
         syncStats.negentropySessionsClosed += 1;
-        if (reason === 'complete' || reason === 'remote_closed') {
+        if (reason === 'complete') {
+            conn.negentropySynced = true;
             syncStats.negentropySessionsCompleted += 1;
         } else {
+            conn.negentropySynced = false;
             syncStats.negentropySessionsFailed += 1;
         }
     }
@@ -628,6 +629,13 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
     const hasActiveSession = peerSessions.has(peerKey);
     const activeNegentropySessions = getActiveNegentropySessions();
 
+    conn.syncMode = 'negentropy';
+    conn.syncStarted = true;
+
+    if (conn.negentropySynced) {
+        return;
+    }
+
     const shouldStart = source === 'connect'
         ? shouldStartConnectTimeNegentropy(mode, hasActiveSession, initiator)
         : shouldSchedulePeriodicRepair({
@@ -635,14 +643,12 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
             hasActiveSession,
             importQueueLength: importQueue.length(),
             activeNegentropySessions,
-            lastRepairAtMs: conn.lastNegentropyRepairAt,
+            lastAttemptAtMs: conn.lastNegentropyAttemptAt,
             nowMs: Date.now(),
             repairIntervalMs: NEG_REPAIR_INTERVAL_MS,
             isInitiator: initiator,
+            syncCompleted: conn.negentropySynced,
         });
-
-    conn.syncMode = 'negentropy';
-    conn.syncStarted = true;
 
     if (!shouldStart) {
         return;
@@ -653,7 +659,6 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
     }
 
     const session = createPeerSession(peerKey, 'negentropy', initiator);
-    session.fullRepair = source === 'periodic';
     session.windows = await planRuntimeWindows();
     session.windowIndex = 0;
     session.completedWindows = [];
@@ -665,7 +670,6 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
             initiator,
             sessionId: session.sessionId,
             source,
-            fullRepair: session.fullRepair,
             plannedWindows: session.windows.length,
         },
         'peer sync mode selected'
@@ -855,16 +859,7 @@ function finalizeCurrentWindowStats(
 }
 
 function shouldAdvanceToOlderWindow(session: PeerSyncSession): boolean {
-    const hasMoreWindows = session.windowIndex + 1 < session.windows.length;
-    if (!hasMoreWindows) {
-        return false;
-    }
-
-    if (session.fullRepair) {
-        return true;
-    }
-
-    return session.currentWindowStats?.cappedByRecords === true;
+    return session.windowIndex + 1 < session.windows.length;
 }
 
 async function planRuntimeWindows(): Promise<ReconciliationWindow[]> {
@@ -1012,7 +1007,6 @@ async function startNextNegentropyWindow(peerKey: string, session: PeerSyncSessi
             maxRecords: window.maxRecords,
             order: window.order,
         },
-        fullRepair: session.fullRepair,
         round: session.rounds,
         frame: encodeNegentropyFrame(firstFrame),
     };
@@ -1028,7 +1022,6 @@ async function startNextNegentropyWindow(peerKey: string, session: PeerSyncSessi
             sessionId: session.sessionId,
             windowId,
             window: windowLabel(window),
-            fullRepair: session.fullRepair,
         },
         'negentropy window open sent'
     );
@@ -1754,7 +1747,6 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
         }
 
         session.initiator = false;
-        session.fullRepair = msg.fullRepair === true;
         session.maxRounds = config.negentropyMaxRoundsPerSession;
         const existingIndex = session.windows.findIndex(existingWindow => makeWindowId(existingWindow) === msg.windowId);
         if (existingIndex >= 0) {
@@ -2067,8 +2059,8 @@ async function initNegentropyAdapter(): Promise<void> {
     negentropyAdapter = await NegentropyAdapter.create({
         syncStore,
         frameSizeLimit: config.negentropyFrameSizeLimit,
-        recentWindowDays: config.negentropyRecentWindowDays,
-        olderWindowDays: config.negentropyOlderWindowDays,
+        recentWindowDays: config.negentropyWindowDays,
+        olderWindowDays: config.negentropyWindowDays,
         maxRecordsPerWindow: config.negentropyMaxRecordsPerWindow,
         maxRoundsPerSession: config.negentropyMaxRoundsPerSession,
         deferInitialBuild: true,
@@ -2083,8 +2075,7 @@ async function initNegentropyAdapter(): Promise<void> {
     log.info(
         {
             stats: negentropyAdapter.getStats(),
-            recentWindowDays: config.negentropyRecentWindowDays,
-            olderWindowDays: config.negentropyOlderWindowDays,
+            windowDays: config.negentropyWindowDays,
             maxRecordsPerWindow: config.negentropyMaxRecordsPerWindow,
             maxRoundsPerSession: config.negentropyMaxRoundsPerSession,
             frameSizeLimit: config.negentropyFrameSizeLimit,

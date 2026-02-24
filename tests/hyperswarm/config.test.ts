@@ -63,13 +63,20 @@ describe('hyperswarm config', () => {
     });
 
     it('throws when frame size limit is non-zero and below minimum', async () => {
-        process.env.KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT = '1024';
+        process.env.KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT = '2';
 
         await expect(
             jest.isolateModulesAsync(async () => {
                 await import(CONFIG_PATH);
             })
-        ).rejects.toThrow('KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT must be 0 or >= 4096');
+        ).rejects.toThrow('KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT must be 0 or >= 4 (KB)');
+    });
+
+    it('interprets frame size limit env value as KB', async () => {
+        process.env.KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT = '4';
+
+        const config = await importConfigIsolated();
+        expect(config.negentropyFrameSizeLimit).toBe(4096);
     });
 
     it('throws on invalid boolean env values', async () => {
