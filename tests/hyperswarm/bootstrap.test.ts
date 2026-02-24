@@ -25,25 +25,51 @@ function makeEvent(operation: Operation): GatekeeperEvent {
 }
 
 describe('bootstrapSyncStoreIfEmpty', () => {
-    it('skips bootstrap when store is already populated', async () => {
+    it('skips rebuild when store drift is within configured percentage tolerance', async () => {
         const store = new InMemoryOperationSyncStore();
         await store.start();
+        const opA = makeOperation('a', '2026-02-10T10:00:00.000Z');
         await store.upsertMany([{
             id: h('a'),
             // eslint-disable-next-line sonarjs/no-duplicate-string
             ts: Math.floor(Date.parse('2026-02-10T10:00:00.000Z') / 1000),
-            operation: makeOperation('a', '2026-02-10T10:00:00.000Z'),
+            operation: opA,
         }]);
 
         const gatekeeper = {
-            exportBatch: jest.fn(async () => []),
+            exportBatch: jest.fn(async () => [makeEvent(opA)]),
         };
 
         const result = await bootstrapSyncStoreIfEmpty(store, gatekeeper);
         expect(result.skipped).toBe(true);
-        expect(result.reason).toBe('store_not_empty');
-        expect(gatekeeper.exportBatch).not.toHaveBeenCalled();
+        expect(result.reason).toBe('store_within_drift_tolerance');
+        expect(result.driftPct).toBe(0);
+        expect(gatekeeper.exportBatch).toHaveBeenCalledTimes(1);
         expect(await store.count()).toBe(1);
+    });
+
+    it('rebuilds populated store when drift percentage exceeds threshold', async () => {
+        const store = new InMemoryOperationSyncStore();
+        await store.start();
+        await store.upsertMany([{
+            id: h('a'),
+            ts: Math.floor(Date.parse('2026-02-10T10:00:00.000Z') / 1000),
+            operation: makeOperation('a', '2026-02-10T10:00:00.000Z'),
+        }]);
+
+        const opA = makeOperation('a', '2026-02-10T10:00:00.000Z');
+        const opB = makeOperation('b', '2026-02-10T11:00:00.000Z');
+        const gatekeeper = {
+            exportBatch: jest.fn(async () => [makeEvent(opA), makeEvent(opB)]),
+        };
+
+        const result = await bootstrapSyncStoreIfEmpty(store, gatekeeper);
+        expect(result.skipped).toBe(false);
+        expect(result.countBefore).toBe(1);
+        expect(result.countAfter).toBe(2);
+        expect(result.driftPct).toBeGreaterThan(result.driftThresholdPct);
+        expect(result.inserted).toBe(2);
+        expect(await store.count()).toBe(2);
     });
 
     it('bootstraps from gatekeeper exportBatch when store is empty', async () => {
@@ -63,6 +89,7 @@ describe('bootstrapSyncStoreIfEmpty', () => {
         expect(result.invalid).toBe(0);
         expect(result.inserted).toBe(2);
         expect(result.countAfter).toBe(2);
+        expect(result.driftPct).toBe(1);
         expect(gatekeeper.exportBatch).toHaveBeenCalledTimes(1);
         expect(await store.count()).toBe(2);
     });
@@ -95,6 +122,7 @@ describe('bootstrapSyncStoreIfEmpty', () => {
         expect(result.invalid).toBe(0);
         expect(result.inserted).toBe(0);
         expect(result.countAfter).toBe(0);
+        expect(result.driftPct).toBe(0);
         expect(gatekeeper.exportBatch).toHaveBeenCalledTimes(1);
     });
 });
