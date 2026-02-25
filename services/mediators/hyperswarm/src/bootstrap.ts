@@ -1,14 +1,11 @@
-import type { GatekeeperEvent } from '@mdip/gatekeeper/types';
+import type { GatekeeperEvent, GatekeeperInterface, MdipDocument } from '@mdip/gatekeeper/types';
 import type { OperationSyncStore } from './db/types.js';
 import { mapAcceptedOperationsToSyncRecords } from './sync-persistence.js';
 
 const DEFAULT_DRIFT_THRESHOLD_PCT = 0.01; // 1%
 const BOOTSTRAP_DID_BATCH_SIZE = 500;
 
-export interface BootstrapGatekeeper {
-    getDIDs(): Promise<string[]>;
-    exportBatch(dids?: string[]): Promise<GatekeeperEvent[]>;
-}
+export type BootstrapGatekeeper = Pick<GatekeeperInterface, 'getDIDs' | 'exportBatch'>;
 
 export interface BootstrapResult {
     skipped: boolean;
@@ -49,6 +46,19 @@ function toOperations(events: GatekeeperEvent[]): NonNullable<GatekeeperEvent['o
     return events
         .map(event => event.operation)
         .filter((operation): operation is NonNullable<GatekeeperEvent['operation']> => !!operation);
+}
+
+function normalizeDids(input: string[] | MdipDocument[]): string[] {
+    const dids = input
+        .map(item => {
+            if (typeof item === 'string') {
+                return item;
+            }
+            return item?.didDocument?.id;
+        })
+        .filter((did): did is string => typeof did === 'string' && did !== '');
+
+    return Array.from(new Set(dids));
 }
 
 async function exportBatchForDids(
@@ -139,7 +149,7 @@ export async function bootstrapSyncStoreIfEmpty(
 
     const startedAt = Date.now();
     const countBefore = await syncStore.count();
-    const dids = await gatekeeper.getDIDs();
+    const dids = normalizeDids(await gatekeeper.getDIDs());
 
     let exported = 0;
     let mapped = 0;
