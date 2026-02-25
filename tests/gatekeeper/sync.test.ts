@@ -146,6 +146,25 @@ describe('importDIDs', () => {
 
         expect(response.merged).toBe(1);
     });
+
+    it('should report rejectedIndices using dids.flat() order', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const op1 = await helper.createAgentOp(keypair);
+        const did1 = await gatekeeper.createDID(op1);
+        const did1Events = await gatekeeper.exportDIDs([did1]);
+
+        const op2 = await helper.createAgentOp(keypair);
+        const did2 = await gatekeeper.createDID(op2);
+        const did2Events = await gatekeeper.exportDIDs([did2]);
+
+        delete did2Events[0][0].operation.signature;
+
+        const response = await gatekeeper.importDIDs([did1Events[0], did2Events[0]]);
+
+        expect(response.queued).toBe(1);
+        expect(response.rejected).toBe(1);
+        expect(response.rejectedIndices).toStrictEqual([1]);
+    });
 });
 
 describe('removeDIDs', () => {
@@ -295,6 +314,7 @@ describe('importBatch', () => {
         const response = await gatekeeper.importBatch([1, 2, 3]);
 
         expect(response.rejected).toBe(3);
+        expect(response.rejectedIndices).toStrictEqual([0, 1, 2]);
     });
 
     it('should report an error on invalid event time', async () => {
@@ -498,6 +518,22 @@ describe('importBatch', () => {
 
         expect(response.queued).toBe(1);
         expect(response.rejected).toBe(1);
+        expect(response.rejectedIndices).toStrictEqual([1]);
+    });
+
+    it('should report sparse rejectedIndices in original submitted order', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await helper.createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        const invalid1 = { ...ops[0], time: 'invalid' } as any;
+        const invalid2 = { ...ops[0], operation: { ...ops[0].operation, type: 'bad-type' } } as any;
+        const response = await gatekeeper.importBatch([invalid1, ops[0], invalid2]);
+
+        expect(response.queued).toBe(1);
+        expect(response.rejected).toBe(2);
+        expect(response.rejectedIndices).toStrictEqual([0, 2]);
     });
 
     it('should report an error on invalid update operation missing did', async () => {
@@ -547,6 +583,7 @@ describe('processEvents', () => {
         const response = await gatekeeper.processEvents();
 
         expect(response.merged).toBe(1);
+        expect(response.acceptedHashes).toContain(ops[0].operation.signature!.hash.toLowerCase());
     });
 
     it('should import a valid asset DID export', async () => {
@@ -921,6 +958,7 @@ describe('processEvents', () => {
         const response = await gatekeeper.processEvents();
         expect(response.added).toBe(1);
         expect(response.rejected).toBe(2);
+        expect(response.acceptedHashes).toStrictEqual([updateOp1.signature!.hash.toLowerCase()]);
     });
 
     it('should handle a reorg event', async () => {

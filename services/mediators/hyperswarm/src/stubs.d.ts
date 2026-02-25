@@ -12,6 +12,18 @@ declare module 'hyperswarm' {
         destroy?(): void;
     }
 
+    export interface HyperswarmOptions {
+        bootstrap?: string[];
+        dht?: any;
+        keyPair?: { publicKey: Buffer; secretKey?: Buffer };
+        seed?: Buffer;
+        maxPeers?: number;
+        firewall?: (remotePublicKey: Buffer) => boolean;
+        debug?: boolean;
+        backoffs?: number[];
+        jitter?: number;
+    }
+
     interface Discovery {
         flushed(): Promise<void>;
     }

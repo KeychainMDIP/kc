@@ -1114,6 +1114,11 @@ v1router.post('/dids/export', async (req, res) => {
  *                 rejected:
  *                   type: integer
  *                   description: Number of events that failed validation (bad signature, size limit, etc.).
+ *                 rejectedIndices:
+ *                   type: array
+ *                   description: Zero-based indexes of rejected events in the original submitted batch order (for importDIDs this is `dids.flat()` order).
+ *                   items:
+ *                     type: integer
  *                 total:
  *                   type: integer
  *                   description: Total number of events in the queue after this import.
@@ -1290,6 +1295,11 @@ v1router.post('/batch/export', async (req, res) => {
  *                 rejected:
  *                   type: integer
  *                   description: Number of events that failed validation.
+ *                 rejectedIndices:
+ *                   type: array
+ *                   description: Zero-based indexes of rejected events in the original submitted batch order.
+ *                   items:
+ *                     type: integer
  *                 total:
  *                   type: integer
  *                   description: The total event queue size after this import.
@@ -1608,6 +1618,11 @@ v1router.get('/db/verify', async (req, res) => {
  *                     pending:
  *                       type: integer
  *                       description: Number of events still left in the queue after processing.
+ *                     acceptedHashes:
+ *                       type: array
+ *                       description: Lower-case signature hashes of events accepted during this processing run (added or merged).
+ *                       items:
+ *                         type: string
  *       500:
  *         description: Internal Server Error.
  *         content:
