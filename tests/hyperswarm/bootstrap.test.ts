@@ -24,6 +24,10 @@ function makeEvent(operation: Operation): GatekeeperEvent {
     };
 }
 
+function makeDid(index: number): string {
+    return `did:test:${index}`;
+}
+
 describe('bootstrapSyncStoreIfEmpty', () => {
     it('skips rebuild when store drift is within configured percentage tolerance', async () => {
         const store = new InMemoryOperationSyncStore();
@@ -38,6 +42,7 @@ describe('bootstrapSyncStoreIfEmpty', () => {
         }]);
 
         const gatekeeper = {
+            getDIDs: jest.fn(async () => [makeDid(1)]),
             exportBatch: jest.fn(async () => [makeEvent(opA)]),
         };
 
@@ -45,7 +50,9 @@ describe('bootstrapSyncStoreIfEmpty', () => {
         expect(result.skipped).toBe(true);
         expect(result.reason).toBe('store_within_drift_tolerance');
         expect(result.driftPct).toBe(0);
+        expect(gatekeeper.getDIDs).toHaveBeenCalledTimes(1);
         expect(gatekeeper.exportBatch).toHaveBeenCalledTimes(1);
+        expect(gatekeeper.exportBatch).toHaveBeenCalledWith([makeDid(1)]);
         expect(await store.count()).toBe(1);
     });
 
@@ -61,6 +68,7 @@ describe('bootstrapSyncStoreIfEmpty', () => {
         const opA = makeOperation('a', '2026-02-10T10:00:00.000Z');
         const opB = makeOperation('b', '2026-02-10T11:00:00.000Z');
         const gatekeeper = {
+            getDIDs: jest.fn(async () => [makeDid(1), makeDid(2)]),
             exportBatch: jest.fn(async () => [makeEvent(opA), makeEvent(opB)]),
         };
 
@@ -70,6 +78,8 @@ describe('bootstrapSyncStoreIfEmpty', () => {
         expect(result.countAfter).toBe(2);
         expect(result.driftPct).toBeGreaterThan(result.driftThresholdPct);
         expect(result.inserted).toBe(2);
+        expect(gatekeeper.getDIDs).toHaveBeenCalledTimes(1);
+        expect(gatekeeper.exportBatch).toHaveBeenCalledTimes(2);
         expect(await store.count()).toBe(2);
     });
 
@@ -80,6 +90,7 @@ describe('bootstrapSyncStoreIfEmpty', () => {
         const opA = makeOperation('a', '2026-02-10T10:00:00.000Z');
         const opB = makeOperation('b', '2026-02-10T11:00:00.000Z');
         const gatekeeper = {
+            getDIDs: jest.fn(async () => [makeDid(1), makeDid(2)]),
             exportBatch: jest.fn(async () => [makeEvent(opA), makeEvent(opB)]),
         };
 
@@ -91,7 +102,9 @@ describe('bootstrapSyncStoreIfEmpty', () => {
         expect(result.inserted).toBe(2);
         expect(result.countAfter).toBe(2);
         expect(result.driftPct).toBe(1);
+        expect(gatekeeper.getDIDs).toHaveBeenCalledTimes(1);
         expect(gatekeeper.exportBatch).toHaveBeenCalledTimes(1);
+        expect(gatekeeper.exportBatch).toHaveBeenCalledWith([makeDid(1), makeDid(2)]);
         expect(await store.count()).toBe(2);
     });
 
@@ -100,6 +113,7 @@ describe('bootstrapSyncStoreIfEmpty', () => {
         await store.start();
 
         const gatekeeper = {
+            getDIDs: jest.fn(async () => [makeDid(1)]),
             exportBatch: jest.fn(async () => {
                 throw new Error('boom');
             }),
@@ -113,6 +127,7 @@ describe('bootstrapSyncStoreIfEmpty', () => {
         await store.start();
 
         const gatekeeper = {
+            getDIDs: jest.fn(async () => [makeDid(1)]),
             exportBatch: jest.fn(async () => [{ registry: 'hyperswarm', time: new Date().toISOString() }]),
         };
 
@@ -124,6 +139,29 @@ describe('bootstrapSyncStoreIfEmpty', () => {
         expect(result.inserted).toBe(0);
         expect(result.countAfter).toBe(0);
         expect(result.driftPct).toBe(0);
+        expect(gatekeeper.getDIDs).toHaveBeenCalledTimes(1);
         expect(gatekeeper.exportBatch).toHaveBeenCalledTimes(1);
+    });
+
+    it('exports in DID batches to avoid loading the full export in one payload', async () => {
+        const store = new InMemoryOperationSyncStore();
+        await store.start();
+
+        const dids = Array.from({ length: 501 }, (_, index) => makeDid(index + 1));
+        const gatekeeper = {
+            getDIDs: jest.fn(async () => dids),
+            exportBatch: jest.fn(async (batchDids?: string[]) => {
+                return (batchDids ?? []).map((_, index) =>
+                    makeEvent(makeOperation(index % 2 === 0 ? 'a' : 'b', '2026-02-10T10:00:00.000Z'))
+                );
+            }),
+        };
+
+        await bootstrapSyncStoreIfEmpty(store, gatekeeper);
+
+        expect(gatekeeper.getDIDs).toHaveBeenCalledTimes(1);
+        expect(gatekeeper.exportBatch).toHaveBeenCalledTimes(2);
+        expect(gatekeeper.exportBatch).toHaveBeenNthCalledWith(1, dids.slice(0, 500));
+        expect(gatekeeper.exportBatch).toHaveBeenNthCalledWith(2, dids.slice(500, 501));
     });
 });
