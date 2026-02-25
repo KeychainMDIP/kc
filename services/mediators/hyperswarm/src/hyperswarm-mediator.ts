@@ -183,8 +183,8 @@ interface PeerSyncSession {
     completedWindows: NegentropyWindowStats[];
     startedAt: number;
     lastActivity: number;
-    pendingHaveIds: string[];
-    pendingNeedIds: string[];
+    pendingHaveIds: Set<string>;
+    pendingNeedIds: Set<string>;
     rounds: number;
     maxRounds: number;
     reconciliationComplete: boolean;
@@ -464,8 +464,8 @@ function createPeerSession(peerKey: string, mode: SyncMode, initiator: boolean, 
         completedWindows: [],
         startedAt: now,
         lastActivity: now,
-        pendingHaveIds: [],
-        pendingNeedIds: [],
+        pendingHaveIds: new Set<string>(),
+        pendingNeedIds: new Set<string>(),
         rounds: 0,
         maxRounds: config.negentropyMaxRoundsPerSession,
         reconciliationComplete: false,
@@ -516,8 +516,8 @@ function closePeerSession(peerKey: string, reason: string): void {
         peer: shortName(peerKey),
         mode: session.mode,
         rounds: session.rounds,
-        pendingHave: session.pendingHaveIds.length,
-        pendingNeed: session.pendingNeedIds.length,
+        pendingHave: session.pendingHaveIds.size,
+        pendingNeed: session.pendingNeedIds.size,
         reason,
     }, 'peer sync session closed');
 }
@@ -795,8 +795,9 @@ function parseRemoteWindow(raw: NegOpenMessage['window']): ReconciliationWindow 
     const fromTs = Number(raw.fromTs);
     const toTs = Number(raw.toTs);
     const order = Number(raw.order);
-    const maxRecords = Number.isInteger(Number(raw.maxRecords)) && Number(raw.maxRecords) > 0
-        ? Number(raw.maxRecords)
+    const remoteMaxRecords = Number(raw.maxRecords);
+    const maxRecords = Number.isInteger(remoteMaxRecords) && remoteMaxRecords > 0
+        ? Math.min(remoteMaxRecords, config.negentropyMaxRecordsPerWindow)
         : config.negentropyMaxRecordsPerWindow;
 
     if (!Number.isFinite(fromTs) || !Number.isFinite(toTs) || fromTs > toTs) {
@@ -823,8 +824,8 @@ function initializeSessionWindowState(
     windowStats: NegentropyWindowStats,
 ): void {
     session.windowId = windowId;
-    session.pendingHaveIds = [];
-    session.pendingNeedIds = [];
+    session.pendingHaveIds = new Set<string>();
+    session.pendingNeedIds = new Set<string>();
     session.reconciliationComplete = false;
     session.currentWindowStats = {
         ...windowStats,
@@ -1142,22 +1143,6 @@ function sendNegClose(peerKey: string, session: PeerSyncSession, reason: string)
     return sendToPeer(peerKey, closeMsg);
 }
 
-function mergeUniqueIds(current: string[], incoming: string[]): string[] {
-    if (incoming.length === 0) {
-        return current;
-    }
-    return Array.from(new Set([...current, ...incoming]));
-}
-
-function removeKnownIds(current: string[], known: string[]): string[] {
-    if (known.length === 0 || current.length === 0) {
-        return current;
-    }
-
-    const knownSet = new Set(known);
-    return current.filter(id => !knownSet.has(id));
-}
-
 async function reconcileNegentropyFrame(
     peerKey: string,
     session: PeerSyncSession,
@@ -1202,7 +1187,7 @@ async function maybeFinalizeInitiatorSession(peerKey: string, session: PeerSyncS
         return;
     }
 
-    if (session.pendingNeedIds.length > 0) {
+    if (session.pendingNeedIds.size > 0) {
         return;
     }
 
@@ -1229,9 +1214,16 @@ async function handleNegentropyRoundAsInitiator(
         return;
     }
 
-    session.pendingHaveIds = mergeUniqueIds(session.pendingHaveIds, outcome.haveIds);
-    const newNeedIds = removeKnownIds(outcome.needIds, session.pendingNeedIds);
-    session.pendingNeedIds = mergeUniqueIds(session.pendingNeedIds, newNeedIds);
+    for (const id of outcome.haveIds) {
+        session.pendingHaveIds.add(id);
+    }
+    const newNeedIds: string[] = [];
+    for (const id of outcome.needIds) {
+        if (!session.pendingNeedIds.has(id)) {
+            session.pendingNeedIds.add(id);
+            newNeedIds.push(id);
+        }
+    }
     syncStats.negentropyRounds += 1;
     syncStats.negentropyHaveIds += outcome.haveIds.length;
     syncStats.negentropyNeedIds += outcome.needIds.length;
@@ -1251,7 +1243,7 @@ async function handleNegentropyRoundAsInitiator(
             round: session.rounds,
             have: outcome.haveIds.length,
             need: outcome.needIds.length,
-            pendingNeed: session.pendingNeedIds.length,
+            pendingNeed: session.pendingNeedIds.size,
         },
         'negentropy initiator round'
     );
@@ -1815,7 +1807,9 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
         if (batch.length > 0) {
             syncStats.negentropyOpsPushReceived += batch.length;
             const pushedIds = new Set(extractOperationHashes(batch));
-            session.pendingNeedIds = session.pendingNeedIds.filter(id => !pushedIds.has(id));
+            for (const id of pushedIds) {
+                session.pendingNeedIds.delete(id);
+            }
 
             if (newBatch(batch)) {
                 importQueue.push({
@@ -1847,7 +1841,6 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
 
 async function flushQueue(): Promise<void> {
     const batch = await gatekeeper.getQueue(REGISTRY);
-    log.debug(`${REGISTRY} queue: ${JSON.stringify(batch, null, 4)}`);
 
     if (batch.length > 0) {
         await persistAcceptedOperations(batch, 'flushQueue');
