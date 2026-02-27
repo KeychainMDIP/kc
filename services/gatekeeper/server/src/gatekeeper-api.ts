@@ -1,8 +1,10 @@
 import express from 'express';
 import cors from 'cors';
+import { BlockList, isIP } from 'net';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { EventEmitter } from 'events';
+import rateLimit from 'express-rate-limit';
 
 import Gatekeeper from '@mdip/gatekeeper';
 import DbJsonCache from '@mdip/gatekeeper/db/json-cache';
@@ -18,6 +20,11 @@ import config from './config.js';
 EventEmitter.defaultMaxListeners = 100;
 
 const log = childLogger({ service: 'gatekeeper-server' });
+const rateLimitWindowUnits = {
+    second: 1000,
+    minute: 60 * 1000,
+    hour: 60 * 60 * 1000,
+} as const;
 
 function logRequest(req: express.Request, res: express.Response, next: express.NextFunction): void {
     const startTime = process.hrtime.bigint();
@@ -91,6 +98,135 @@ const gatekeeper = new Gatekeeper({
 const startTime = new Date();
 const app = express();
 const v1router = express.Router();
+
+if (config.gatekeeperTrustProxy) {
+    app.set('trust proxy', true);
+}
+
+function normalizeIp(ip: string): string {
+    const withoutZone = ip.split('%')[0];
+
+    if (withoutZone === '::1') {
+        return '127.0.0.1';
+    }
+
+    if (withoutZone.startsWith('::ffff:')) {
+        return withoutZone.slice(7);
+    }
+
+    return withoutZone;
+}
+
+function detectIpFamily(ip: string): 'ipv4' | 'ipv6' | null {
+    const version = isIP(ip);
+
+    if (version === 4) {
+        return 'ipv4';
+    }
+
+    if (version === 6) {
+        return 'ipv6';
+    }
+
+    return null;
+}
+
+function createWhitelistBlockList(whitelist: string[]): BlockList {
+    const blockList = new BlockList();
+
+    for (const entry of whitelist) {
+        const [rawAddress, rawPrefixLength] = entry.split('/');
+        const address = normalizeIp(rawAddress);
+        const family = detectIpFamily(address);
+
+        if (!family) {
+            log.warn(`Ignoring invalid rate limit whitelist entry: '${entry}'`);
+            continue;
+        }
+
+        if (rawPrefixLength !== undefined) {
+            const prefixLength = Number.parseInt(rawPrefixLength, 10);
+
+            if (!Number.isInteger(prefixLength)) {
+                log.warn(`Ignoring invalid rate limit CIDR entry: '${entry}'`);
+                continue;
+            }
+
+            try {
+                blockList.addSubnet(address, prefixLength, family);
+            }
+            catch {
+                log.warn(`Ignoring invalid rate limit CIDR entry: '${entry}'`);
+            }
+            continue;
+        }
+
+        try {
+            blockList.addAddress(address, family);
+        }
+        catch {
+            log.warn(`Ignoring invalid rate limit whitelist entry: '${entry}'`);
+        }
+    }
+
+    return blockList;
+}
+
+function shouldSkipRateLimitPath(req: express.Request): boolean {
+    const pathOnly = req.originalUrl.split('?')[0];
+
+    return config.rateLimitSkipPaths.some((skipPath: string) =>
+        pathOnly === skipPath || pathOnly.startsWith(`${skipPath}/`));
+}
+
+const whitelistBlockList = createWhitelistBlockList(config.rateLimitWhitelist);
+const rateLimitWindowUnit = config.rateLimitWindowUnit as keyof typeof rateLimitWindowUnits;
+const rateLimitWindowMs = config.rateLimitWindowValue * (rateLimitWindowUnits[rateLimitWindowUnit] ?? rateLimitWindowUnits.minute);
+
+const apiRateLimiter = config.rateLimitEnabled
+    ? rateLimit({
+        windowMs: rateLimitWindowMs,
+        limit: config.rateLimitMaxRequests,
+        statusCode: 429,
+        message: { error: 'Too many requests' },
+        standardHeaders: 'draft-7',
+        legacyHeaders: false,
+        skip: (req) => {
+            if (req.method === 'OPTIONS') {
+                return true;
+            }
+
+            if (shouldSkipRateLimitPath(req)) {
+                return true;
+            }
+
+            if (config.rateLimitWhitelist.length === 0) {
+                return false;
+            }
+
+            const candidates = [req.ip, req.socket.remoteAddress]
+                .filter((ip): ip is string => typeof ip === 'string' && ip.length > 0);
+
+            for (const candidate of candidates) {
+                const normalizedIp = normalizeIp(candidate);
+                const family = detectIpFamily(normalizedIp);
+
+                if (family && whitelistBlockList.check(normalizedIp, family)) {
+                    return true;
+                }
+            }
+
+            return false;
+        },
+    })
+    : null;
+
+if (config.rateLimitEnabled) {
+    log.info(`Rate limiting enabled: ${config.rateLimitMaxRequests} requests per ${config.rateLimitWindowValue} ${config.rateLimitWindowUnit}(s)`);
+}
+else {
+    log.info('Rate limiting disabled');
+}
 
 app.use(cors());
 app.options('*', cors());
@@ -2061,6 +2197,10 @@ v1router.post('/block/:registry', async (req, res) => {
         res.status(500).send(error.toString());
     }
 });
+
+if (apiRateLimiter) {
+    app.use('/api', apiRateLimiter);
+}
 
 app.use('/api/v1', v1router);
 
