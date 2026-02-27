@@ -11,7 +11,8 @@ COPY package*.json ./
 COPY packages/ ./packages/
 
 # Install dependencies
-RUN npm ci
+RUN npm ci --ignore-scripts
+RUN npm rebuild sqlite3
 RUN npm run build
 
 COPY services/mediators/satoshi-inscription ./satoshi/
