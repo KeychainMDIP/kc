@@ -13,6 +13,7 @@ export interface ImportBatchResult {
     processed: number;
     rejected: number;
     total: number;
+    rejectedIndices: number[];
 }
 
 export interface ProcessEventsResult {
@@ -21,6 +22,7 @@ export interface ProcessEventsResult {
     merged?: number;
     rejected?: number;
     pending?: number;
+    acceptedHashes?: string[];
 }
 
 export interface VerifyDbResult {
@@ -109,6 +111,7 @@ export interface ImportEventsResult {
     added: number;
     merged: number;
     rejected: number;
+    acceptedHashes: string[];
 }
 
 export interface GatekeeperClientOptions {

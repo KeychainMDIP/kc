@@ -5,7 +5,7 @@
   "description": "MDIP hyperswarm network mediator",
   "main": "src/index.js",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && mkdir -p dist/negentropy && cp src/negentropy/Negentropy.cjs dist/negentropy/Negentropy.cjs",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -18,7 +18,9 @@
     "dotenv": "^16.4.5",
     "express": "^4.21.0",
     "graceful-goodbye": "^1.3.0",
-    "hyperswarm": "^4.7.14"
+    "hyperswarm": "^4.7.14",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7"
   },
   "devDependencies": {
     "@types/async": "^3.2.24",

@@ -1026,6 +1026,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         let added = 0;
         let merged = 0;
         let rejected = 0;
+        const acceptedHashes: string[] = [];
 
         this.eventsQueue = [];
 
@@ -1036,10 +1037,16 @@ export default class Gatekeeper implements GatekeeperInterface {
 
             if (status === ImportStatus.ADDED) {
                 added += 1;
+                if (event.operation.signature?.hash) {
+                    acceptedHashes.push(event.operation.signature.hash.toLowerCase());
+                }
                 this.log.debug(`import ${i}/${total}: added event for ${event.did}`);
             }
             else if (status === ImportStatus.MERGED) {
                 merged += 1;
+                if (event.operation.signature?.hash) {
+                    acceptedHashes.push(event.operation.signature.hash.toLowerCase());
+                }
                 this.log.debug(`import ${i}/${total}: merged event for ${event.did}`);
             }
             else if (status === ImportStatus.REJECTED) {
@@ -1054,7 +1061,7 @@ export default class Gatekeeper implements GatekeeperInterface {
             event = tempQueue.shift();
         }
 
-        return { added, merged, rejected };
+        return { added, merged, rejected, acceptedHashes };
     }
 
     async processEvents(): Promise<ProcessEventsResult> {
@@ -1066,6 +1073,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         let merged = 0;
         let rejected = 0;
         let done = false;
+        const acceptedHashes = new Set<string>();
 
         try {
             this.isProcessingEvents = true;
@@ -1076,6 +1084,9 @@ export default class Gatekeeper implements GatekeeperInterface {
                 added += response.added;
                 merged += response.merged;
                 rejected += response.rejected;
+                for (const hash of response.acceptedHashes) {
+                    acceptedHashes.add(hash);
+                }
 
                 done = (response.added === 0 && response.merged === 0);
             }
@@ -1089,7 +1100,13 @@ export default class Gatekeeper implements GatekeeperInterface {
         }
 
         const pending = this.eventsQueue.length;
-        const response = { added, merged, rejected, pending };
+        const response = {
+            added,
+            merged,
+            rejected,
+            pending,
+            acceptedHashes: Array.from(acceptedHashes),
+        };
 
         this.log.debug(`processEvents: ${JSON.stringify(response)}`);
 
@@ -1181,8 +1198,8 @@ export default class Gatekeeper implements GatekeeperInterface {
         }
 
         let queued = 0;
-        let rejected = 0;
         let processed = 0;
+        const rejectedIndices: number[] = [];
 
         for (let i = 0; i < batch.length; i++) {
             const event = batch[i];
@@ -1200,15 +1217,16 @@ export default class Gatekeeper implements GatekeeperInterface {
                 }
             }
             else {
-                rejected += 1;
+                rejectedIndices.push(i);
             }
         }
 
         return {
             queued,
             processed,
-            rejected,
-            total: this.eventsQueue.length
+            rejected: rejectedIndices.length,
+            total: this.eventsQueue.length,
+            rejectedIndices,
         };
     }
 
