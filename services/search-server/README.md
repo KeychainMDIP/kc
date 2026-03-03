@@ -31,6 +31,20 @@ SEARCH_SERVER_GATEKEEPER_URL=http://localhost:4224
 # How often (in ms) to poll Gatekeeper for new or updated DIDs.
 SEARCH_SERVER_REFRESH_INTERVAL_MS=5000
 
+# Database backend (sqlite or memory)
+SEARCH_SERVER_DB=sqlite
+
+# Trust proxy headers when determining req.ip
+SEARCH_SERVER_TRUST_PROXY=false
+
+# API rate limiting
+SEARCH_SERVER_RATE_LIMIT_ENABLED=false
+SEARCH_SERVER_RATE_LIMIT_WINDOW_VALUE=1
+SEARCH_SERVER_RATE_LIMIT_WINDOW_UNIT=minute
+SEARCH_SERVER_RATE_LIMIT_MAX_REQUESTS=600
+SEARCH_SERVER_RATE_LIMIT_WHITELIST=
+SEARCH_SERVER_RATE_LIMIT_SKIP_PATHS=/api/v1/ready
+
 # Logging
 KC_LOG_LEVEL=info
 ```
