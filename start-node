@@ -11,11 +11,13 @@ if [ -f .env ]; then
     set +a
 fi
 
-if [ "${KC_IPFS_ENABLE,,}" != "false" ]; then
+KC_IPFS_ENABLE_LC="$(printf '%s' "${KC_IPFS_ENABLE:-}" | tr '[:upper:]' '[:lower:]')"
+
+if [ "$KC_IPFS_ENABLE_LC" != "false" ]; then
     PROFILE_ARGS=(--profile ipfs)
 fi
 
-if [ ${#SERVICES[@]} -gt 0 ] && [ "${KC_IPFS_ENABLE,,}" != "false" ]; then
+if [ ${#SERVICES[@]} -gt 0 ] && [ "$KC_IPFS_ENABLE_LC" != "false" ]; then
     if ! printf '%s\n' "${SERVICES[@]}" | grep -qx "ipfs"; then
         SERVICES=("ipfs" "${SERVICES[@]}")
     fi
