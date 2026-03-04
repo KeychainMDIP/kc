@@ -29,6 +29,20 @@ function makeDid(index: number): string {
 }
 
 describe('bootstrapSyncStoreIfEmpty', () => {
+    it('throws when driftThresholdPct is outside [0, 1]', async () => {
+        const store = new InMemoryOperationSyncStore();
+        await store.start();
+
+        const gatekeeper = {
+            getDIDs: jest.fn(async () => []),
+            exportBatch: jest.fn(async () => []),
+        };
+
+        await expect(
+            bootstrapSyncStoreIfEmpty(store, gatekeeper, { driftThresholdPct: -0.001 })
+        ).rejects.toThrow('Invalid driftThresholdPct; expected a number between 0 and 1');
+    });
+
     it('skips rebuild when store drift is within configured percentage tolerance', async () => {
         const store = new InMemoryOperationSyncStore();
         await store.start();
@@ -120,6 +134,46 @@ describe('bootstrapSyncStoreIfEmpty', () => {
         };
 
         await expect(bootstrapSyncStoreIfEmpty(store, gatekeeper)).rejects.toThrow('boom');
+    });
+
+    it('includes non-Error export failures in batch error messages', async () => {
+        const store = new InMemoryOperationSyncStore();
+        await store.start();
+
+        const gatekeeper = {
+            getDIDs: jest.fn(async () => [makeDid(1)]),
+            exportBatch: jest.fn(async () => {
+                throw 'explode';
+            }),
+        };
+
+        await expect(bootstrapSyncStoreIfEmpty(store, gatekeeper))
+            .rejects
+            .toThrow('bootstrap exportBatch failed for DID batch 1/1 (1 dids): explode');
+    });
+
+    it('normalizes DID list from mixed DID docs and strings before batching', async () => {
+        const store = new InMemoryOperationSyncStore();
+        await store.start();
+
+        const opA = makeOperation('a', '2026-02-10T10:00:00.000Z');
+        const opB = makeOperation('b', '2026-02-10T11:00:00.000Z');
+        const gatekeeper = {
+            getDIDs: jest.fn(async () => [
+                makeDid(1),
+                { didDocument: { id: makeDid(2) } },
+                { didDocument: { id: '' } },
+                { didDocument: {} },
+                makeDid(1),
+            ]),
+            exportBatch: jest.fn(async () => [makeEvent(opA), makeEvent(opB)]),
+        };
+
+        const result = await bootstrapSyncStoreIfEmpty(store, gatekeeper as any);
+        expect(result.skipped).toBe(false);
+        expect(result.mapped).toBe(2);
+        expect(gatekeeper.exportBatch).toHaveBeenCalledTimes(1);
+        expect(gatekeeper.exportBatch).toHaveBeenCalledWith([makeDid(1), makeDid(2)]);
     });
 
     it('handles empty/invalid export payload without upserting', async () => {
