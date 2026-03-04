@@ -15,6 +15,23 @@ services:
     ports:
       - 127.0.0.1:6379:6379
 
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      - POSTGRES_DB=${KC_POSTGRES_DB:-mdip}
+      - POSTGRES_USER=${KC_POSTGRES_USER:-mdip}
+      - POSTGRES_PASSWORD=${KC_POSTGRES_PASSWORD:-mdip}
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    ports:
+      - 127.0.0.1:${KC_POSTGRES_PORT:-5432}:5432
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${KC_POSTGRES_USER:-mdip} -d ${KC_POSTGRES_DB:-mdip}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
   ipfs:
     profiles:
       - ipfs
@@ -43,6 +60,7 @@ services:
       - KC_LOG_LEVEL=${KC_LOG_LEVEL}
       - KC_MONGODB_URL=mongodb://mongodb:27017
       - KC_REDIS_URL=redis://redis:6379
+      - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}:${KC_POSTGRES_PASSWORD:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
       - KC_IPFS_ENABLE=${KC_IPFS_ENABLE}
       - KC_IPFS_URL=http://ipfs:5001/api/v0
       - KC_IPFS_CLUSTER_URL=${KC_IPFS_CLUSTER_URL}
@@ -55,6 +73,7 @@ services:
     depends_on:
       - mongodb
       - redis
+      - postgres
 
   keymaster:
     build:
@@ -75,6 +94,7 @@ services:
       - KC_LOG_LEVEL=${KC_LOG_LEVEL}
       - KC_MONGODB_URL=mongodb://mongodb:27017
       - KC_REDIS_URL=redis://redis:6379
+      - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}:${KC_POSTGRES_PASSWORD:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
     volumes:
       - ./data:/app/keymaster/data
     user: "${KC_UID}:${KC_GID}"
@@ -84,6 +104,7 @@ services:
       - gatekeeper
       - redis
       - mongodb
+      - postgres
       - search-server
 
   hypr-mediator:
@@ -99,6 +120,8 @@ services:
       - KC_NODE_ID=${KC_NODE_ID}
       - KC_NODE_NAME=${KC_NODE_NAME}
       - KC_MDIP_PROTOCOL=${KC_MDIP_PROTOCOL}
+      - KC_HYPR_DB=${KC_HYPR_DB:-sqlite}
+      - KC_HYPR_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}:${KC_POSTGRES_PASSWORD:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
       - KC_HYPR_EXPORT_INTERVAL=${KC_HYPR_EXPORT_INTERVAL}
       - KC_HYPR_NEGENTROPY_ENABLE=${KC_HYPR_NEGENTROPY_ENABLE}
       - KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT=${KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT}
@@ -130,6 +153,7 @@ services:
       - KC_KEYMASTER_URL=http://keymaster:4226
       - KC_MONGODB_URL=mongodb://mongodb:27017
       - KC_REDIS_URL=redis://redis:6379
+      - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}:${KC_POSTGRES_PASSWORD:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
       - KC_NODE_ID=${KC_NODE_ID}
       - KC_SAT_CHAIN=TFTC
       - KC_SAT_NETWORK=testnet
@@ -173,6 +197,7 @@ services:
       - KC_KEYMASTER_URL=http://keymaster:4226
       - KC_MONGODB_URL=mongodb://mongodb:27017
       - KC_REDIS_URL=redis://redis:6379
+      - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}:${KC_POSTGRES_PASSWORD:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
       - KC_NODE_ID=${KC_NODE_ID}
       - KC_SAT_CHAIN=BTC
       - KC_SAT_NETWORK=bitcoin
@@ -214,6 +239,7 @@ services:
       - KC_KEYMASTER_URL=http://keymaster:4226
       - KC_MONGODB_URL=mongodb://mongodb:27017
       - KC_REDIS_URL=redis://redis:6379
+      - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}:${KC_POSTGRES_PASSWORD:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
       - KC_NODE_ID=${KC_NODE_ID}
       - KC_SAT_CHAIN=TBTC
       - KC_SAT_NETWORK=testnet
@@ -257,6 +283,7 @@ services:
       - KC_KEYMASTER_URL=http://keymaster:4226
       - KC_MONGODB_URL=mongodb://mongodb:27017
       - KC_REDIS_URL=redis://redis:6379
+      - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}:${KC_POSTGRES_PASSWORD:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
       - KC_NODE_ID=${KC_NODE_ID}
       - KC_SAT_CHAIN=Signet
       - KC_SAT_NETWORK=testnet
@@ -293,6 +320,7 @@ services:
       - KC_KEYMASTER_URL=http://keymaster:4226
       - KC_MONGODB_URL=mongodb://mongodb:27017
       - KC_REDIS_URL=redis://redis:6379
+      - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}:${KC_POSTGRES_PASSWORD:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
       - KC_NODE_ID=${KC_NODE_ID}
       - KC_SAT_CHAIN=Signet
       - KC_SAT_NETWORK=testnet
@@ -361,7 +389,8 @@ services:
       - SEARCH_SERVER_PORT=4002
       - SEARCH_SERVER_GATEKEEPER_URL=http://gatekeeper:4224
       - SEARCH_SERVER_REFRESH_INTERVAL_MS=5000
-      - SEARCH_SERVER_DB=sqlite
+      - SEARCH_SERVER_DB=${KC_SEARCH_SERVER_DB:-sqlite}
+      - SEARCH_SERVER_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}:${KC_POSTGRES_PASSWORD:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
       - KC_LOG_LEVEL=${KC_LOG_LEVEL}
     volumes:
       - ./data:/app/search-server/data

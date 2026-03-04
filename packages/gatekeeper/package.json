@@ -58,6 +58,11 @@
       "require": "./dist/cjs/db/redis.cjs",
       "types": "./dist/types/db/redis.d.ts"
     },
+    "./db/postgres": {
+      "import": "./dist/esm/db/postgres.js",
+      "require": "./dist/cjs/db/postgres.cjs",
+      "types": "./dist/types/db/postgres.d.ts"
+    },
     "./db/mongo": {
       "import": "./dist/esm/db/mongo.js",
       "require": "./dist/cjs/db/mongo.cjs",
@@ -87,6 +92,9 @@
       "db/redis": [
         "./dist/types/db/redis.d.ts"
       ],
+      "db/postgres": [
+        "./dist/types/db/postgres.d.ts"
+      ],
       "db/mongo": [
         "./dist/types/db/mongo.d.ts"
       ],
@@ -113,6 +121,7 @@
     "dotenv": "^16.4.5",
     "ioredis": "^5.4.1",
     "mongodb": "^6.5.0",
+    "pg": "^8.16.3",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7"
   },
@@ -121,6 +130,7 @@
     "url": "git+https://github.com/KeychainMDIP/kc.git"
   },
   "devDependencies": {
+    "@types/pg": "^8.15.5",
     "@rollup/plugin-json": "^6.1.0"
   }
 }

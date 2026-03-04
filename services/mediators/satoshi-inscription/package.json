@@ -19,11 +19,13 @@
     "express": "^4.21.0",
     "ioredis": "^5.5.0",
     "mongodb": "^6.13.0",
+    "pg": "^8.16.3",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7",
     "tiny-secp256k1": "^2.2.4"
   },
   "devDependencies": {
+    "@types/pg": "^8.15.5",
     "patch-package": "^8.0.1"
   }
 }

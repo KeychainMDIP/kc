@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import GatekeeperClient from "@mdip/gatekeeper/client";
 import DIDsSQLite from "./db/sqlite.js";
 import DIDsDbMemory from './db/json-memory.js';
+import DIDsPostgres from './db/postgres.js';
 import DidIndexer from "./DidIndexer.js";
 import {DIDsDb} from "./types.js";
 import { childLogger } from "@mdip/common/logger";
@@ -17,6 +18,8 @@ async function main() {
         SEARCH_SERVER_GATEKEEPER_URL = 'http://localhost:4224',
         SEARCH_SERVER_REFRESH_INTERVAL_MS = 5000,
         SEARCH_SERVER_DB = 'sqlite',
+        SEARCH_SERVER_POSTGRES_URL,
+        KC_POSTGRES_URL,
     } = process.env;
 
     const app = express();
@@ -35,6 +38,12 @@ async function main() {
 
     if (SEARCH_SERVER_DB === 'sqlite') {
         didDb = await DIDsSQLite.create();
+    } else if (SEARCH_SERVER_DB === 'postgres') {
+        const postgresUrl = SEARCH_SERVER_POSTGRES_URL
+            || KC_POSTGRES_URL
+            || 'postgresql://mdip:mdip@localhost:5432/mdip';
+
+        didDb = await DIDsPostgres.create(postgresUrl);
     } else {
         didDb = new DIDsDbMemory();
     }

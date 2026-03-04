@@ -46,6 +46,20 @@ function parseBooleanEnv(varName, defaultValue) {
     throw new Error(`Invalid ${varName}; expected true or false`);
 }
 
+function parseSyncDbEnv() {
+    const raw = process.env.KC_HYPR_DB;
+    if (raw == null || raw === '') {
+        return 'sqlite';
+    }
+
+    const normalized = raw.trim().toLowerCase();
+    if (normalized === 'sqlite' || normalized === 'postgres') {
+        return normalized;
+    }
+
+    throw new Error('Invalid KC_HYPR_DB; expected sqlite or postgres');
+}
+
 const config = {
     debug: process.env.KC_DEBUG ? process.env.KC_DEBUG === 'true' : false,
     gatekeeperURL: process.env.KC_GATEKEEPER_URL || 'http://localhost:4224',
@@ -63,6 +77,10 @@ const config = {
     negentropyMaxRoundsPerSession: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_MAX_ROUNDS_PER_SESSION', 64),
     negentropyIntervalSeconds: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_INTERVAL', 300),
     legacySyncEnabled: parseBooleanEnv('KC_HYPR_LEGACY_SYNC_ENABLE', true),
+    db: parseSyncDbEnv(),
+    postgresURL: process.env.KC_HYPR_POSTGRES_URL
+        || process.env.KC_POSTGRES_URL
+        || 'postgresql://mdip:mdip@localhost:5432/mdip',
 };
 
 if (!config.negentropyEnabled && !config.legacySyncEnabled) {
