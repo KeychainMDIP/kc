@@ -369,6 +369,7 @@ describe('NegentropyAdapter', () => {
         const storeB = new InMemoryOperationSyncStore();
 
         await seedStore(storeA, [
+            // eslint-disable-next-line sonarjs/no-duplicate-string
             { id: h('a'), ts: nowTs - 100, op: makeOp('a', '2026-02-09T23:58:20.000Z') },
         ]);
         await seedStore(storeB, [

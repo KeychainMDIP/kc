@@ -80,6 +80,7 @@ describe('bootstrapSyncStoreIfEmpty', () => {
         }]);
 
         const opA = makeOperation('a', '2026-02-10T10:00:00.000Z');
+        // eslint-disable-next-line sonarjs/no-duplicate-string
         const opB = makeOperation('b', '2026-02-10T11:00:00.000Z');
         const gatekeeper = {
             getDIDs: jest.fn(async () => [makeDid(1), makeDid(2)]),
