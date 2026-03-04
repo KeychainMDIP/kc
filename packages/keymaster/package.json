@@ -68,6 +68,11 @@
       "require": "./dist/cjs/db/sqlite.cjs",
       "types": "./dist/types/db/sqlite.d.ts"
     },
+    "./wallet/postgres": {
+      "import": "./dist/esm/db/postgres.js",
+      "require": "./dist/cjs/db/postgres.cjs",
+      "types": "./dist/types/db/postgres.d.ts"
+    },
     "./wallet/cache": {
       "import": "./dist/esm/db/cache.js",
       "require": "./dist/cjs/db/cache.cjs",
@@ -118,6 +123,9 @@
       "wallet/sqlite": [
         "./dist/types/db/sqlite.d.ts"
       ],
+      "wallet/postgres": [
+        "./dist/types/db/postgres.d.ts"
+      ],
       "wallet/cache": [
         "./dist/types/db/cache.d.ts"
       ],
@@ -151,6 +159,7 @@
     "image-size": "^2.0.1",
     "ioredis": "^5.4.1",
     "mongodb": "^6.5.0",
+    "pg": "^8.16.3",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7"
   },
@@ -159,6 +168,7 @@
     "url": "git+https://github.com/KeychainMDIP/kc.git"
   },
   "devDependencies": {
+    "@types/pg": "^8.15.5",
     "@rollup/plugin-json": "^6.1.0"
   }
 }

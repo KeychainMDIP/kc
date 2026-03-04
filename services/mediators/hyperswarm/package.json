@@ -19,6 +19,7 @@
     "express": "^4.21.0",
     "graceful-goodbye": "^1.3.0",
     "hyperswarm": "^4.7.14",
+    "pg": "^8.19.0",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7"
   },

@@ -20,6 +20,7 @@ const config = {
         'db/json-memory': 'dist/esm/db/json-memory.js',
         'db/sqlite': 'dist/esm/db/sqlite.js',
         'db/redis': 'dist/esm/db/redis.js',
+        'db/postgres': 'dist/esm/db/postgres.js',
         'db/mongo': 'dist/esm/db/mongo.js'
     },
     output: {
