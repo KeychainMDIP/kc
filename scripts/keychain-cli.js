@@ -10,6 +10,86 @@ let keymaster;
 
 const UPDATE_OK = "OK";
 const UPDATE_FAILED = "Update failed";
+const NAME_OPTIONS = new Set(['-n', '--name']);
+const VALUE_OPTIONS = new Set(['-n', '--name', '-r', '--registry']);
+
+function hasNameOption(args) {
+    return args.some(arg => NAME_OPTIONS.has(arg) || arg.startsWith('--name='));
+}
+
+function splitCommandArgs(args) {
+    const options = [];
+    const operands = [];
+
+    for (let i = 0; i < args.length; i++) {
+        const arg = args[i];
+
+        if (VALUE_OPTIONS.has(arg)) {
+            options.push(arg);
+
+            if (i + 1 < args.length) {
+                options.push(args[i + 1]);
+                i++;
+            }
+
+            continue;
+        }
+
+        if (arg.startsWith('--name=') || arg.startsWith('--registry=')) {
+            options.push(arg);
+            continue;
+        }
+
+        if (arg.startsWith('-')) {
+            options.push(arg);
+            continue;
+        }
+
+        operands.push(arg);
+    }
+
+    return { options, operands };
+}
+
+function normalizeLegacyNameSyntax(argv, commandName) {
+    const [nodePath, scriptPath, , ...commandArgs] = argv;
+
+    if (hasNameOption(commandArgs)) {
+        return argv;
+    }
+
+    const { options, operands } = splitCommandArgs(commandArgs);
+
+    if (operands.length !== 2) {
+        return argv;
+    }
+
+    const [primaryOperand, legacyName] = operands;
+
+    return [
+        nodePath,
+        scriptPath,
+        commandName,
+        ...options,
+        '--name',
+        legacyName,
+        primaryOperand
+    ];
+}
+
+function normalizeLegacyCliArgs(argv) {
+    const commandName = argv[2];
+
+    switch (commandName) {
+    case 'accept-credential':
+    case 'create-schema':
+        // Preserve the current option-based help while still accepting the
+        // older positional "<target> <name>" form used by the expect suite.
+        return normalizeLegacyNameSyntax(argv, commandName);
+    default:
+        return argv;
+    }
+}
 
 program
     .version('1.0.0')
@@ -1270,6 +1350,7 @@ program
 
 async function run() {
     const keymasterURL = process.env.KC_KEYMASTER_URL || 'http://localhost:4226';
+    const cliArgs = normalizeLegacyCliArgs(process.argv);
 
     keymaster = new KeymasterClient();
     await keymaster.connect({
@@ -1279,7 +1360,7 @@ async function run() {
         chatty: false,
         becomeChattyAfter: 2
     });
-    program.parse(process.argv);
+    program.parse(cliArgs);
 }
 
 run();
