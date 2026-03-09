@@ -4,6 +4,13 @@ on:
   push:
     branches:
       - '**'
+  pull_request:
+    branches:
+      - '**'
+
+concurrency:
+  group: unit-test-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
 
 jobs:
   build-and-test:
@@ -31,6 +38,7 @@ jobs:
       run: npm test
 
     - name: Generate Code Coverage report
+      if: github.event_name == 'push'
       id: code-coverage
       uses: barecheck/code-coverage-action@v1
       with:
@@ -40,4 +48,5 @@ jobs:
         show-annotations: "warning"
 
     - name: Coveralls GitHub Action
+      if: github.event_name == 'push'
       uses: coverallsapp/github-action@v2.3.6

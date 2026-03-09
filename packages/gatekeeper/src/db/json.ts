@@ -11,7 +11,7 @@ export default class DbJson extends AbstractJson {
         try {
             return JSON.parse(fs.readFileSync(this.dbName, 'utf-8'));
         }
-        catch (err) {
+        catch {
             const db = { dids: {} };
             this.writeDb(db);
             return db;

@@ -20,6 +20,7 @@ const app = express();
 const v1router = express.Router();
 const log = childLogger({ service: 'keymaster-server' });
 
+app.disable('x-powered-by');
 function logRequest(req: express.Request, res: express.Response, next: express.NextFunction): void {
     const startTime = process.hrtime.bigint();
 
@@ -826,7 +827,7 @@ v1router.get('/did/:id', async (req, res) => {
     try {
         const docs = await keymaster.resolveDID(req.params.id, req.query);
         res.json({ docs });
-    } catch (error: any) {
+    } catch {
         res.status(404).send(DIDNotFound);
     }
 });
@@ -1090,7 +1091,7 @@ v1router.get('/ids/:id', async (req, res) => {
     try {
         const docs = await keymaster.resolveDID(req.params.id);
         res.json({ docs });
-    } catch (error: any) {
+    } catch {
         res.status(404).send({ error: 'ID not found' });
     }
 });
@@ -1411,7 +1412,7 @@ v1router.get('/names/:name', async (req, res) => {
     try {
         const did = await keymaster.getName(req.params.name);
         res.json({ did });
-    } catch (error: any) {
+    } catch {
         res.status(404).send(DIDNotFound);
     }
 });
@@ -1919,7 +1920,7 @@ v1router.get('/groups/:name', async (req, res) => {
     try {
         const group = await keymaster.getGroup(req.params.name);
         res.json({ group });
-    } catch (error: any) {
+    } catch {
         res.status(404).send({ error: 'Group not found' });
     }
 });
@@ -2232,7 +2233,7 @@ v1router.get('/schemas/:id', async (req, res) => {
     try {
         const schema = await keymaster.getSchema(req.params.id);
         res.json({ schema });
-    } catch (error: any) {
+    } catch {
         res.status(404).send({ error: 'Schema not found' });
     }
 });
@@ -3605,7 +3606,7 @@ v1router.get('/assets/:id', async (req, res) => {
     try {
         const asset = await keymaster.resolveAsset(req.params.id);
         res.json({ asset });
-    } catch (error: any) {
+    } catch {
         res.status(404).send({ error: 'Asset not found' });
     }
 });
@@ -5546,7 +5547,7 @@ v1router.get('/dmail/:id', async (req, res) => {
     try {
         const message = await keymaster.getDmailMessage(req.params.id);
         res.json({ message });
-    } catch (error: any) {
+    } catch {
         res.status(404).send({ error: 'Dmail not found' });
     }
 });

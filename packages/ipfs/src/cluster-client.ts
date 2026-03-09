@@ -114,7 +114,7 @@ class ClusterClient implements IPFSClient {
         try {
             body = await response.text();
         }
-        catch (error) {
+        catch {
             body = '';
         }
 

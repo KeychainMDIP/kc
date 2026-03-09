@@ -51,8 +51,8 @@ describe('createResponse', () => {
         expect(ok).toBe(true);
 
         const wallet = await keymaster.loadWallet();
-        expect(wallet.ids['Alice'].owned!.includes(vcDid));
-        expect(wallet.ids['Bob'].held!.includes(vcDid));
+        expect(wallet.ids['Alice'].owned!.includes(vcDid)).toBe(true);
+        expect(wallet.ids['Bob'].held!.includes(vcDid)).toBe(true);
 
         await keymaster.setCurrentId('Victor');
 

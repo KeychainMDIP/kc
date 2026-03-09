@@ -440,8 +440,8 @@ describe('recoverId', () => {
         await keymaster.recoverId(did);
         wallet = await keymaster.loadWallet();
         expect(wallet.ids[name]).toStrictEqual(bob);
-        expect(wallet.current === name);
-        expect(wallet.counter === 1);
+        expect(wallet.current).toBe(name);
+        expect(wallet.counter).toBe(1);
     });
 
     it('should not overwrite an id with the same name', async () => {

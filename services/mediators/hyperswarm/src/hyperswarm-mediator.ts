@@ -1,6 +1,7 @@
 import Hyperswarm, { HyperswarmConnection } from 'hyperswarm';
 import goodbye from 'graceful-goodbye';
 import b4a from 'b4a';
+import { randomBytes } from 'crypto';
 import { sha256 } from '@noble/hashes/sha256';
 import asyncLib from 'async';
 import { EventEmitter } from 'events';
@@ -446,7 +447,7 @@ async function sendPingToPeer(peerKey: string): Promise<void> {
 }
 
 function createSessionId(peerKey: string): string {
-    const nonce = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER).toString(36);
+    const nonce = randomBytes(8).toString('hex');
     return `${Date.now().toString(36)}-${shortName(nodeKey)}-${shortName(peerKey)}-${nonce}`;
 }
 
@@ -896,7 +897,7 @@ function maybeStartBackgroundPrebuild(reason: string): void {
     }
 
     backgroundPrebuildQueued = false;
-    void (async () => {
+    (async () => {
         const windows = await planRuntimeWindows();
         const recentWindow = windows[0];
         await ensureWindowAdapterFresh(recentWindow, `background_${reason}`);
@@ -1511,7 +1512,8 @@ async function mergeBatch(batch: Operation[]): Promise<void> {
     const response = await gatekeeper.processEvents();
     const processDurationMs = Date.now() - processStart;
     log.debug({ durationMs: processDurationMs }, 'processEvents');
-    const { acceptedHashes: _acceptedHashes, ...processSummary } = response;
+    const processSummary = { ...response };
+    delete processSummary.acceptedHashes;
     log.debug(`mergeBatch: ${JSON.stringify(processSummary)}`);
     syncStats.opsApplied += (response.added ?? 0) + (response.merged ?? 0);
     syncStats.opsRejected += response.rejected ?? 0;
@@ -1656,7 +1658,7 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
     try {
         msg = JSON.parse(payload);
     }
-    catch (error) {
+    catch {
         const jsonPreview = payload.length > 80 ? `${payload.slice(0, 40)}...${payload.slice(-40)}` : payload;
         log.warn(`received invalid message from: ${conn.peerName}, JSON: ${jsonPreview}`);
         return;

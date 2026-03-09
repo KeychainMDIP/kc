@@ -118,7 +118,7 @@ export default class KeymasterClient implements KeymasterInterface {
             const response = await axios.get(`${this.API}/ready`);
             return response.data.ready;
         }
-        catch (error) {
+        catch {
             return false;
         }
     }

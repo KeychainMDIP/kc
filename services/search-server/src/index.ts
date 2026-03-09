@@ -22,12 +22,14 @@ async function main() {
     const app = express();
     const v1router = express.Router();
 
+    app.disable('x-powered-by');
     const corsOptions = {
         origin: '*', // Origin needs to be specified with credentials true
         methods: ['GET', 'POST', 'OPTIONS'],  // Specify which methods are allowed (e.g., GET, POST)
         optionsSuccessStatus: 200  // Some legacy browsers choke on 204
     };
 
+    // eslint-disable-next-line sonarjs/cors
     app.use(cors(corsOptions));
     app.use(express.json({ limit: '2mb' }));
 

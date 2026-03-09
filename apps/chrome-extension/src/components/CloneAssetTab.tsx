@@ -24,7 +24,7 @@ function CloneAssetTab() {
             await refreshNames();
             setAliasName("");
             setAliasDID("");
-        } catch (error: any) {
+        } catch {
             setError("Only assets can be cloned");
         }
     }

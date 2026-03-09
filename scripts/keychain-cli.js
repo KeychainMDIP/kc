@@ -308,7 +308,7 @@ program
             const doc = await keymaster.resolveDID(did, { confirm: !!confirm });
             console.log(JSON.stringify(doc, null, 4));
         }
-        catch (error) {
+        catch {
             console.error(`cannot resolve ${did}`);
         }
     });
@@ -321,7 +321,7 @@ program
             const doc = await keymaster.resolveDID(did, { versionSequence: version });
             console.log(JSON.stringify(doc, null, 4));
         }
-        catch (error) {
+        catch {
             console.error(`cannot resolve ${did}`);
         }
     });
@@ -329,12 +329,12 @@ program
 program
     .command('revoke-did <did>')
     .description('Permanently revoke a DID')
-    .action(async (did, confirm) => {
+    .action(async (did) => {
         try {
             const ok = await keymaster.revokeDID(did);
             console.log(ok ? UPDATE_OK : UPDATE_FAILED);
         }
-        catch (error) {
+        catch {
             console.error(`cannot revoke ${did}`);
         }
     });
@@ -374,7 +374,7 @@ program
             const plaintext = await keymaster.decryptMessage(did);
             console.log(plaintext);
         }
-        catch (error) {
+        catch {
             console.error(`cannot decrypt ${did}`);
         }
     });
@@ -387,7 +387,7 @@ program
             const json = await keymaster.decryptJSON(did);
             console.log(JSON.stringify(json, null, 4));
         }
-        catch (error) {
+        catch {
             console.error(`cannot decrypt ${did}`);
         }
     });

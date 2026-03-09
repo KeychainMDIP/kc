@@ -90,7 +90,7 @@ export default class SearchClient implements SearchEngine {
             const response = await axios.get(`${this.API}/ready`);
             return response.data.ready;
         }
-        catch (error) {
+        catch {
             return false;
         }
     }

@@ -53,6 +53,7 @@ const WalletContext = createContext<WalletContextValue | null>(null);
 
 let search: SearchClient | undefined;
 
+// eslint-disable-next-line sonarjs/no-hardcoded-passwords
 const INCORRECT_PASSPHRASE = "Incorrect passphrase";
 
 export function WalletProvider({ children }: { children: ReactNode }) {

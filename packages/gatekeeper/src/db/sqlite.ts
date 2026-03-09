@@ -294,7 +294,7 @@ export default class DbSqlite implements GatekeeperDb {
             );
 
             return true;
-        } catch (error) {
+        } catch {
             return false;
         }
     }
@@ -328,7 +328,7 @@ export default class DbSqlite implements GatekeeperDb {
             }
 
             return blockRow ?? null;
-        } catch (error) {
+        } catch {
             return null;
         }
     }
