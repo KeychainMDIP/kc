@@ -14,16 +14,21 @@ const DEFAULT_MAX_ROUNDS_PER_SESSION = 64;
 const DAY_SECONDS = 24 * 60 * 60;
 const require = createRequire(import.meta.url);
 
+type NegentropyFrameValue = string | Uint8Array;
+type NegentropyFrameMessage = NegentropyFrameValue | null;
+type NegentropyFrameList = Array<NegentropyFrameValue>;
+type NegentropyStorageValue = string | Uint8Array | Buffer;
+
 interface NegentropyInstance {
     wantUint8ArrayOutput?: boolean;
-    initiate(): Promise<string | Uint8Array>;
+    initiate(): Promise<NegentropyFrameValue>;
     reconcile(
-        msg: string | Uint8Array
-    ): Promise<[string | Uint8Array | null, Array<string | Uint8Array>, Array<string | Uint8Array>]>;
+        msg: NegentropyFrameValue
+    ): Promise<[NegentropyFrameValue | null, Array<NegentropyFrameValue>, Array<NegentropyFrameValue>]>;
 }
 
 interface NegentropyStorageVectorInstance {
-    insert(timestamp: number, id: string | Uint8Array | Buffer): void;
+    insert(timestamp: number, id: NegentropyStorageValue): void;
     seal(): void;
 }
 
@@ -53,9 +58,9 @@ export interface ReconciliationWindow {
 }
 
 export interface NegentropyReconcileResult {
-    nextMsg: string | Uint8Array | null;
-    haveIds: Array<string | Uint8Array>;
-    needIds: Array<string | Uint8Array>;
+    nextMsg: NegentropyFrameMessage;
+    haveIds: NegentropyFrameList;
+    needIds: NegentropyFrameList;
 }
 
 export interface NegentropyAdapterStats {

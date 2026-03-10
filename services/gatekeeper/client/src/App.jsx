@@ -9,20 +9,22 @@ import WalletWeb from '@mdip/keymaster/wallet/web';
 import WalletCache from '@mdip/keymaster/wallet/cache';
 import WalletJsonMemory from "@mdip/keymaster/wallet/json-memory";
 import { isV1WithEnc, isLegacyV0 } from '@mdip/keymaster/wallet/typeGuards';
-import KeymasterUI from './KeymasterUI.js';
+import KeymasterUI from './KeymasterUI';
 import PassphraseModal from './PassphraseModal';
 import WarningModal from './WarningModal';
 import MnemonicModal from './MnemonicModal';
 import { encMnemonic } from '@mdip/keymaster/encryption';
 import './App.css';
 
-global.Buffer = Buffer;
+globalThis.Buffer = Buffer;
 
 const gatekeeper = new GatekeeperClient();
 const cipher = new CipherWeb();
 
-const { protocol, hostname } = window.location;
-const search = await SearchClient.create({ url: `${protocol}//${hostname}:4002` });
+async function createSearchClient() {
+    const { protocol, hostname } = window.location;
+    return SearchClient.create({ url: `${protocol}//${hostname}:4002` });
+}
 
 function App() {
     const [isReady, setIsReady] = useState(false);
@@ -38,24 +40,45 @@ function App() {
     const [mnemonicErrorText, setMnemonicErrorText] = useState("");
     const [recoveredMnemonic, setRecoveredMnemonic] = useState("");
     const [showRecoverSetup, setShowRecoverSetup] = useState(false);
+    const [searchClient, setSearchClient] = useState(null);
     const [searchParams] = useSearchParams();
     const challengeDID = searchParams.get('challenge');
 
     useEffect(() => {
         const init = async () => {
-            const walletWeb = new WalletWeb();
-            const walletData = await walletWeb.loadWallet();
+            try {
+                const [search, walletData] = await Promise.all([
+                    createSearchClient(),
+                    new WalletWeb().loadWallet(),
+                ]);
 
-            if (!walletData || isLegacyV0(walletData)) {
-                setModalAction('set-passphrase');
-            } else {
-                setModalAction('decrypt');
+                setSearchClient(search);
+
+                if (!walletData || isLegacyV0(walletData)) {
+                    setModalAction('set-passphrase');
+                } else {
+                    setModalAction('decrypt');
+                }
+            } catch {
+                setPassphraseErrorText('Failed to initialize wallet services.');
             }
         };
-        init();
+
+        void init();
     }, []);
 
+    const getSearchClient = async () => {
+        if (searchClient) {
+            return searchClient;
+        }
+
+        const created = await createSearchClient();
+        setSearchClient(created);
+        return created;
+    };
+
     const buildKeymaster = async (wallet, passphrase) => {
+        const search = await getSearchClient();
         const instance = new Keymaster({gatekeeper, wallet, cipher, search, passphrase});
 
         try {
@@ -86,6 +109,7 @@ function App() {
 
         const walletWeb = new WalletWeb();
         const walletMemory = new WalletJsonMemory();
+        const search = await getSearchClient();
 
         if (uploadAction && pendingWallet) {
             if (modalAction === 'decrypt') {
@@ -137,6 +161,7 @@ function App() {
     async function handleResetPassphraseSubmit(newPassphrase) {
         try {
             const walletWeb = new WalletWeb();
+            const search = await getSearchClient();
             const km = new Keymaster({ gatekeeper, wallet: walletWeb, cipher, search, passphrase: newPassphrase });
             await km.newWallet(undefined, true);
             setShowResetSetup(false);

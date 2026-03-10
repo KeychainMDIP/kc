@@ -53,6 +53,19 @@ const mockConsole = {
     timeEnd: () => { },
 }
 
+beforeAll(() => {
+    nock.disableNetConnect();
+});
+
+afterEach(() => {
+    nock.abortPendingRequests();
+    nock.cleanAll();
+});
+
+afterAll(() => {
+    nock.enableNetConnect();
+});
+
 const mockCredential = {
     "@context": [
         "https://www.w3.org/ns/credentials/v2",
@@ -115,6 +128,7 @@ describe('isReady', () => {
     it('should timeout if not ready', async () => {
         nock(KeymasterURL)
             .get(Endpoints.ready)
+            .times(3)
             .reply(200, { ready: false });
 
         const keymaster = await KeymasterClient.create({
@@ -164,7 +178,7 @@ describe('loadWallet', () => {
     it('should throw raw error on loadWallet network error', async () => {
         nock(KeymasterURL)
             .get(Endpoints.wallet)
-            .replyWithError('mock network failure');
+            .replyWithError(new Error('mock network failure'));
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
 

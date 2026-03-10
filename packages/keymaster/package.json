@@ -146,11 +146,11 @@
   "license": "MIT",
   "dependencies": {
     "@mdip/common": "*",
-    "axios": "^1.7.7",
-    "file-type": "^21.0.0",
-    "image-size": "^2.0.1",
-    "ioredis": "^5.4.1",
-    "mongodb": "^6.5.0",
+    "axios": "^1.13.6",
+    "file-type": "^21.3.0",
+    "image-size": "^2.0.2",
+    "ioredis": "^5.10.0",
+    "mongodb": "^7.1.0",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7"
   },

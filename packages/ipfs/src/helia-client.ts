@@ -17,7 +17,7 @@ interface HeliaConfig {
 }
 
 export class NotConnectedError extends MDIPError {
-    static type = 'Not connected';
+    static readonly type = 'Not connected';
 
     constructor() {
         super(NotConnectedError.type);
@@ -66,14 +66,15 @@ class HeliaClient implements IPFSClient {
             return;
         }
 
+        const libp2p = await createLibp2p({
+            transports: [], // local only
+        });
+
         if (this.config.datadir) {
             const blockstore = new FsBlockstore(this.config.datadir);
-            this.helia = await createHelia({ blockstore });
+            this.helia = await createHelia({ blockstore, libp2p });
         }
         else {
-            const libp2p = await createLibp2p({
-                transports: [], // local only
-            });
             this.helia = await createHelia({ libp2p });
         }
 

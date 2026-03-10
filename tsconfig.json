@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "rootDir": ".",
     "target": "ES2022",
     "module": "nodenext",
     "sourceMap": true,
@@ -43,4 +44,3 @@
     "node_modules"
   ]
 }
-

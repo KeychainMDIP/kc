@@ -37,21 +37,21 @@ const b64 = (buf: Uint8Array) => {
     return Buffer.from(buf).toString('base64');
 }
 
-const ub64 = (b64: string) => {
-    return new Uint8Array(Buffer.from(b64, 'base64'));
+const ub64 = (b64: string): Uint8Array<ArrayBuffer> => {
+    return Uint8Array.from(Buffer.from(b64, 'base64'));
 }
 
 const hasSubtle = () =>
     typeof globalThis !== 'undefined' &&
     !!(globalThis.crypto && globalThis.crypto.subtle);
 
-async function randBytes(len: number): Promise<Uint8Array> {
+async function randBytes(len: number): Promise<Uint8Array<ArrayBuffer>> {
     const u8 = new Uint8Array(len);
     crypto.getRandomValues(u8);
-    return u8;
+    return Uint8Array.from(u8);
 }
 
-async function deriveKey(pass: string, salt: Uint8Array): Promise<CryptoKey> {
+async function deriveKey(pass: string, salt: Uint8Array<ArrayBuffer>): Promise<CryptoKey> {
     const enc = new TextEncoder();
     const passKey = await crypto.subtle.importKey('raw', enc.encode(pass), { name: ENC_KDF }, false, ['deriveKey']);
     return crypto.subtle.deriveKey(

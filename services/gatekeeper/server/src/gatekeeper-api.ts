@@ -228,8 +228,10 @@ else {
     log.info('Rate limiting disabled');
 }
 
+app.disable('x-powered-by');
+// eslint-disable-next-line sonarjs/cors
 app.use(cors());
-app.options('*', cors());
+app.options('/{*corsPreflight}', cors());
 
 app.use(logRequest);
 app.use(express.json({ limit: config.jsonLimit }));
@@ -841,7 +843,7 @@ v1router.get('/did/:did', async (req, res) => {
 
         const doc = await gatekeeper.resolveDID(req.params.did, options);
         res.json(doc);
-    } catch (error: any) {
+    } catch {
         res.status(404).send({ error: 'DID not found' });
     }
 });

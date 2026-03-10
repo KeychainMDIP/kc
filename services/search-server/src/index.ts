@@ -99,6 +99,7 @@ async function main() {
     const whitelistBlockList = createWhitelistBlockList(config.rateLimitWhitelist);
     const rateLimitWindowMs = config.rateLimitWindowValue * rateLimitWindowUnits[config.rateLimitWindowUnit];
 
+    app.disable('x-powered-by');
     const corsOptions = {
         origin: '*', // Origin needs to be specified with credentials true
         methods: ['GET', 'POST', 'OPTIONS'],  // Specify which methods are allowed (e.g., GET, POST)
@@ -154,6 +155,7 @@ async function main() {
         log.info('Rate limiting disabled');
     }
 
+    // eslint-disable-next-line sonarjs/cors
     app.use(cors(corsOptions));
     app.use(express.json({ limit: config.jsonLimit }));
 

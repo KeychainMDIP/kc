@@ -28,6 +28,10 @@ const NETWORK: 'testnet' = 'testnet';
 const net = bitcoin.networks[NETWORK];
 const PROTOCOL_TAG = Buffer.from('MDIP', 'ascii');
 
+function toBuffer(data: Uint8Array | Buffer): Buffer {
+    return Buffer.isBuffer(data) ? data : Buffer.from(data);
+}
+
 function seedNode(): BIP32Interface {
     const seed = Buffer.from(
         '000102030405060708090a0b0c0d0e0ff1f2f3f4f5f6f7f8f9fafbfcfdfeff',
@@ -64,27 +68,27 @@ function computeTxVsize(tx: bitcoin.Transaction): number {
 function parseFeeFromReveal(
     revealHex: string,
     commitHex: string,
-    extraUtxoMap?: Record<string, number>
+    extraUtxoMap?: Record<string, number | bigint>
 ) {
     const reveal = bitcoin.Transaction.fromHex(revealHex);
     const commit = bitcoin.Transaction.fromHex(commitHex);
     const commitId = commit.getId();
 
-    let totalIn = 0;
+    let totalIn = 0n;
     for (const inp of reveal.ins) {
         const txid = Buffer.from(inp.hash).reverse().toString('hex');
         const vout = inp.index;
         if (txid === commitId) {
-            totalIn += commit.outs[vout].value;
+            totalIn += BigInt(commit.outs[vout].value);
         } else if (extraUtxoMap) {
             const key = `${txid}:${vout}`;
             if (extraUtxoMap[key] != null) {
-                totalIn += extraUtxoMap[key];
+                totalIn += BigInt(extraUtxoMap[key]);
             }
         }
     }
 
-    const totalOut = reveal.outs.reduce((s, o) => s + o.value, 0);
+    const totalOut = reveal.outs.reduce((sum, output) => sum + BigInt(output.value), 0n);
     const fee = totalIn - totalOut;
     const vsize = computeTxVsize(reveal);
     return { fee, vsize, reveal, commit };
@@ -149,7 +153,13 @@ describe('Inscription createTransactions', () => {
         const hasOpReturn = reveal.outs.some((o) => {
             try {
                 const decomp = bitcoin.script.decompile(o.script) || [];
-                return decomp[0] === bitcoin.opcodes.OP_RETURN && Buffer.isBuffer(decomp[1]) && (decomp[1] as Buffer).toString('ascii').startsWith('MDIP');
+                const opReturnPayload = decomp[1];
+                return (
+                    decomp[0] === bitcoin.opcodes.OP_RETURN &&
+                    opReturnPayload != null &&
+                    typeof opReturnPayload !== 'number' &&
+                    toBuffer(opReturnPayload).toString('ascii').startsWith('MDIP')
+                );
             } catch {
                 return false;
             }
@@ -305,8 +315,8 @@ describe('Inscription createTransactions', () => {
         expect(commit.outs.length).toBe(2);
         expect(reveal.ins.length).toBe(2);
 
-        expect(commit.outs[0].value).toBe(546);
-        expect(commit.outs[1].value).toBeGreaterThan(546);
+        expect(commit.outs[0].value).toBe(546n);
+        expect(commit.outs[1].value).toBeGreaterThan(546n);
     });
 
     it('handles maximum leaves up to the hard limit', async () => {
@@ -346,8 +356,8 @@ describe('Inscription createTransactions', () => {
         expect(commit.outs.length).toBe(38);
         expect(reveal.ins.length).toBe(commit.outs.length);
 
-        expect(commit.outs[0].value).toBe(546);
-        expect(commit.outs[37].value).toBeGreaterThan(546);
+        expect(commit.outs[0].value).toBe(546n);
+        expect(commit.outs[37].value).toBeGreaterThan(546n);
     });
 
     it('rejects P2WPKH inputs if BIP84 account key is not provided', async () => {
@@ -554,7 +564,7 @@ describe('Inscription createTransactions', () => {
         const reveal = bitcoin.Transaction.fromHex(revealHex);
 
         const witnessHex = reveal.ins
-            .flatMap((i) => (i.witness ?? []).map((w) => w.toString("hex")))
+            .flatMap((i) => (i.witness ?? []).map((w) => toBuffer(w).toString('hex')))
             .join("");
 
         expect(witnessHex).toContain(PROTOCOL_TAG.toString("hex"));
@@ -562,16 +572,16 @@ describe('Inscription createTransactions', () => {
         const mdipInput = reveal.ins.find((i) => {
             const w = i.witness;
             if (!w || w.length < 3) return false;
-            return w[w.length - 2].includes(PROTOCOL_TAG);
+            return toBuffer(w[w.length - 2]).includes(PROTOCOL_TAG);
         });
 
         expect(mdipInput).toBeTruthy();
 
-        const tapScript = mdipInput!.witness![mdipInput!.witness!.length - 2];
+        const tapScript = toBuffer(mdipInput!.witness![mdipInput!.witness!.length - 2]);
         const decomp = bitcoin.script.decompile(tapScript) ?? [];
 
         const tagIdx = decomp.findIndex(
-            (el) => Buffer.isBuffer(el) && (el as Buffer).equals(PROTOCOL_TAG),
+            (el) => typeof el !== 'number' && toBuffer(el).equals(PROTOCOL_TAG),
         );
         expect(tagIdx).toBeGreaterThanOrEqual(0);
 
@@ -579,7 +589,7 @@ describe('Inscription createTransactions', () => {
         for (let i = tagIdx + 1; i < decomp.length; i++) {
             const el = decomp[i];
             if (typeof el === "number") break;
-            chunks.push(el as Buffer);
+            chunks.push(toBuffer(el));
         }
 
         const payload = Buffer.concat(chunks);
@@ -615,7 +625,7 @@ describe('Inscription bumpTransactionFee', () => {
         );
 
         const base = parseFeeFromReveal(revealHex, commitHex);
-        const curSatPerVb = Math.floor(base.fee / base.vsize);
+        const curSatPerVb = Math.floor(Number(base.fee) / base.vsize);
 
         const bumpedHex = await lib.bumpTransactionFee(
             hdp(86, 0, 0),
@@ -630,7 +640,7 @@ describe('Inscription bumpTransactionFee', () => {
         const bumped = parseFeeFromReveal(bumpedHex, commitHex);
         expect(bumped.vsize).toBe(base.vsize);
         expect(bumped.fee).toBeGreaterThan(base.fee);
-        expect(bumped.fee).toBeGreaterThanOrEqual(base.fee + base.vsize);
+        expect(bumped.fee).toBeGreaterThanOrEqual(base.fee + BigInt(base.vsize));
     });
 
     it('bump uses extra P2TR input path (covers extra p2tr signer branch)', async () => {
@@ -719,8 +729,8 @@ describe('Inscription bumpTransactionFee', () => {
         const bumpedHex = await lib.bumpTransactionFee(
             hdp(86, 0, 0),
             [extra],
-            Math.floor(base.fee / base.vsize),
-            Math.floor(base.fee / base.vsize) + 10,
+            Math.floor(Number(base.fee) / base.vsize),
+            Math.floor(Number(base.fee) / base.vsize) + 10,
             keys,
             commitHex,
             revealHex
@@ -759,13 +769,13 @@ describe('Inscription bumpTransactionFee', () => {
         );
 
         const base = parseFeeFromReveal(revealHex, commitHex);
-        const hugeTarget = Math.floor(base.fee / base.vsize) + 5000;
+        const hugeTarget = Math.floor(Number(base.fee) / base.vsize) + 5000;
 
         await expect(
             lib.bumpTransactionFee(
                 hdp(86, 0, 0),
                 [],
-                Math.floor(base.fee / base.vsize),
+                Math.floor(Number(base.fee) / base.vsize),
                 hugeTarget,
                 keys,
                 commitHex,

@@ -13,6 +13,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const port = process.env.VITE_EXPLORER_PORT || 4000;
 
+app.disable('x-powered-by');
 app.use(express.static(path.join(__dirname, 'dist')));
 
 app.get('{*path}', (req, res) => {

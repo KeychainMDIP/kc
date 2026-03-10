@@ -74,4 +74,4 @@ export const BlockVerbosity = {
     JSON_TX_DATA: 2,
 };
 
-export type BlockVerbosity = typeof BlockVerbosity[keyof typeof BlockVerbosity];
+export type BlockVerbosityValue = typeof BlockVerbosity[keyof typeof BlockVerbosity];

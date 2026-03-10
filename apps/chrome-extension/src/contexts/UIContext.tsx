@@ -34,9 +34,9 @@ interface UIContextValue {
     setSelectedTab: (value: string) => Promise<void>;
     selectedMessageTab: string;
     setSelectedMessageTab: (value: string) => Promise<void>;
-    openBrowser: openBrowserValues | undefined;
-    setOpenBrowser: Dispatch<SetStateAction<openBrowserValues | undefined>> | undefined;
-    openBrowserWindow: (options: openBrowserValues) => void;
+    openBrowser: OpenBrowserValues | undefined;
+    setOpenBrowser: Dispatch<SetStateAction<OpenBrowserValues | undefined>> | undefined;
+    openBrowserWindow: (options: OpenBrowserValues) => void;
     handleCopyDID: (did: string) => void;
     getVaultItemIcon: (name: string, item: any) => React.ReactNode;
     updateManifest: () => Promise<void>;
@@ -47,7 +47,7 @@ interface UIContextValue {
     refreshInbox: () => Promise<void>;
 }
 
-export interface openBrowserValues {
+export interface OpenBrowserValues {
     title?: string;
     did?: string;
     tab?: string;
@@ -71,8 +71,8 @@ export function UIProvider(
         children: ReactNode,
         pendingAuth?: string,
         pendingCredential?: string,
-        openBrowser?: openBrowserValues,
-        setOpenBrowser?: Dispatch<SetStateAction<openBrowserValues | undefined>>,
+        openBrowser?: OpenBrowserValues,
+        setOpenBrowser?: Dispatch<SetStateAction<OpenBrowserValues | undefined>>,
         browserRefresh?: RefreshMode,
         setBrowserRefresh?: Dispatch<SetStateAction<RefreshMode>>,
     }) {
@@ -327,7 +327,7 @@ export function UIProvider(
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentId, pendingAuth, pendingCredential, pendingTab, pendingMessageTab]);
 
-    function openBrowserWindow(options: openBrowserValues) {
+    function openBrowserWindow(options: OpenBrowserValues) {
         const tab = options.tab ?? "viewer";
 
         const payload = {

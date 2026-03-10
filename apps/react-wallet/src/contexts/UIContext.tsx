@@ -30,8 +30,8 @@ interface UIContextValue {
     setPendingSubTab: Dispatch<SetStateAction<string | null>>;
     pendingHeldDID: string | null;
     setPendingHeldDID: Dispatch<SetStateAction<string | null>>;
-    openBrowser: openBrowserValues | undefined;
-    setOpenBrowser: Dispatch<SetStateAction<openBrowserValues | undefined>>;
+    openBrowser: OpenBrowserValues | undefined;
+    setOpenBrowser: Dispatch<SetStateAction<OpenBrowserValues | undefined>>;
     handleCopyDID: (did: string) => void;
     getVaultItemIcon: (name: string, item: any) => React.ReactNode;
     updateManifest: () => Promise<void>;
@@ -42,7 +42,7 @@ interface UIContextValue {
     refreshInbox: () => Promise<void>;
 }
 
-export interface openBrowserValues {
+export interface OpenBrowserValues {
     did?: string;
     tab?: string;
     subTab?: string;
@@ -63,7 +63,7 @@ export function UIProvider(
     const [pendingSubTab, setPendingSubTab] = useState<string | null>(null);
     const [pendingHeldDID, setPendingHeldDID] = useState<string | null>(null);
     const [selectedTab, setSelectedTab] = useState<string>("identities");
-    const [openBrowser, setOpenBrowser] = useState<openBrowserValues | undefined>(undefined);
+    const [openBrowser, setOpenBrowser] = useState<OpenBrowserValues | undefined>(undefined);
 
     const {
         keymaster,

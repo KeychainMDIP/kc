@@ -1,5 +1,5 @@
 import KeymasterClient from '@mdip/keymaster/client';
-import KeymasterUI from './KeymasterUI.js';
+import KeymasterUI from './KeymasterUI';
 import './App.css';
 
 function App() {

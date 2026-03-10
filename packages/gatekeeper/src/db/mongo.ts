@@ -218,7 +218,7 @@ export default class DbMongo implements GatekeeperDb {
             );
 
             return true;
-        } catch (error) {
+        } catch {
             return false;
         }
     }
@@ -250,7 +250,7 @@ export default class DbMongo implements GatekeeperDb {
             }
 
             return await blocks.findOne(query);
-        } catch (error) {
+        } catch {
             return null;
         }
     }
