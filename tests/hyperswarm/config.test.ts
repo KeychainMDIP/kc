@@ -3,16 +3,9 @@ import { jest } from '@jest/globals';
 const CONFIG_PATH = '../../services/mediators/hyperswarm/src/config.js';
 const ORIGINAL_ENV = { ...process.env };
 
-async function importConfigIsolated(options: { mockDotenv?: boolean } = {}) {
+async function importConfigIsolated() {
     let loaded: any;
     await jest.isolateModulesAsync(async () => {
-        if (options.mockDotenv) {
-            jest.unstable_mockModule('dotenv', () => ({
-                default: {
-                    config: jest.fn(),
-                },
-            }));
-        }
         loaded = (await import(CONFIG_PATH)).default;
     });
     return loaded;
@@ -21,7 +14,6 @@ async function importConfigIsolated(options: { mockDotenv?: boolean } = {}) {
 describe('hyperswarm config', () => {
     afterEach(() => {
         process.env = { ...ORIGINAL_ENV };
-        jest.unstable_unmockModule('dotenv');
         jest.resetModules();
     });
 
