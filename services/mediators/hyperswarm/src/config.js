@@ -47,12 +47,11 @@ function parseBooleanEnv(varName, defaultValue) {
 }
 
 function parseSyncDbEnv() {
-    const raw = process.env.KC_HYPR_DB;
-    if (raw == null || raw === '') {
-        return 'sqlite';
+    const normalized = process.env.KC_HYPR_DB?.trim().toLowerCase();
+    if (!normalized) {
+        throw new Error('Missing KC_HYPR_DB; expected sqlite or postgres');
     }
 
-    const normalized = raw.trim().toLowerCase();
     if (normalized === 'sqlite' || normalized === 'postgres') {
         return normalized;
     }

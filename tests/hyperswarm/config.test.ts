@@ -3,9 +3,16 @@ import { jest } from '@jest/globals';
 const CONFIG_PATH = '../../services/mediators/hyperswarm/src/config.js';
 const ORIGINAL_ENV = { ...process.env };
 
-async function importConfigIsolated() {
+async function importConfigIsolated(options: { mockDotenv?: boolean } = {}) {
     let loaded: any;
     await jest.isolateModulesAsync(async () => {
+        if (options.mockDotenv) {
+            jest.unstable_mockModule('dotenv', () => ({
+                default: {
+                    config: jest.fn(),
+                },
+            }));
+        }
         loaded = (await import(CONFIG_PATH)).default;
     });
     return loaded;
@@ -14,6 +21,7 @@ async function importConfigIsolated() {
 describe('hyperswarm config', () => {
     afterEach(() => {
         process.env = { ...ORIGINAL_ENV };
+        jest.unstable_unmockModule('dotenv');
         jest.resetModules();
     });
 
@@ -90,11 +98,18 @@ describe('hyperswarm config', () => {
         ).rejects.toThrow('Invalid KC_HYPR_NEGENTROPY_ENABLE; expected true or false');
     });
 
-    it('defaults sync DB to sqlite when KC_HYPR_DB is empty', async () => {
+    it('throws when KC_HYPR_DB is empty or whitespace', async () => {
         process.env.KC_HYPR_DB = '';
 
-        const config = await importConfigIsolated();
-        expect(config.db).toBe('sqlite');
+        await expect(importConfigIsolated())
+            .rejects
+            .toThrow('Missing KC_HYPR_DB; expected sqlite or postgres');
+
+        process.env.KC_HYPR_DB = '   ';
+
+        await expect(importConfigIsolated())
+            .rejects
+            .toThrow('Missing KC_HYPR_DB; expected sqlite or postgres');
     });
 
     it('accepts postgres sync DB and uses service postgres URL before shared URL', async () => {
