@@ -45,6 +45,19 @@ const mockConsole = {
     timeEnd: () => { },
 } as unknown as typeof console;
 
+beforeAll(() => {
+    nock.disableNetConnect();
+});
+
+afterEach(() => {
+    nock.abortPendingRequests();
+    nock.cleanAll();
+});
+
+afterAll(() => {
+    nock.enableNetConnect();
+});
+
 describe('isReady', () => {
     it('should return ready flag', async () => {
         nock(GatekeeperURL)
@@ -86,6 +99,7 @@ describe('isReady', () => {
     it('should timeout if not ready', async () => {
         nock(GatekeeperURL)
             .get(Endpoints.ready)
+            .times(3)
             .reply(200, 'false');
 
         const gatekeeper = await GatekeeperClient.create({

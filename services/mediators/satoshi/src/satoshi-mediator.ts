@@ -479,7 +479,9 @@ async function anchorBatch(): Promise<void> {
             if (ok) {
                 const blockCount = await btcClient.getBlockCount();
                 await jsonPersister.updateDb(async (db) => {
-                    (db.registered ??= []).push({
+                    const registered = db.registered ?? [];
+                    db.registered = registered;
+                    registered.push({
                         did,
                         txid: txid!
                     });
@@ -548,7 +550,7 @@ async function waitForChain() {
             const blockchainInfo = await btcClient.getBlockchainInfo();
             log.debug({ blockchainInfo }, 'Blockchain Info');
             isReady = true;
-        } catch (error) {
+        } catch {
             log.debug(`Waiting for ${config.chain} node...`);
         }
 

@@ -91,7 +91,7 @@ function BrowserContent() {
         if (urlDoc) {
             try {
                 parsedContents = JSON.parse(urlDoc);
-            } catch (error) {}
+            } catch {}
         }
 
         if (setOpenBrowser) {

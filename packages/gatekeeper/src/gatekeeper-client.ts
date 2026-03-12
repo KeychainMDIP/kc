@@ -142,7 +142,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
             const response = await this.axios.get(`${this.API}/ready`);
             return response.data;
         }
-        catch (error) {
+        catch {
             return false;
         }
     }

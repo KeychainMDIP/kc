@@ -142,7 +142,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                 const doc = await this.resolveDID(did, { verify: true });
                 validUntil = doc.mdip?.validUntil;
             }
-            catch (error) {
+            catch {
                 if (chatty) {
                     this.log.warn(`removing ${n}/${total} ${did} invalid`);
                 }
@@ -259,7 +259,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                     }
                 }
             }
-            catch (error) {
+            catch {
             }
         }
 
@@ -596,7 +596,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                 doc.didDocumentMetadata.canonicalId = did;
             }
         }
-        catch (error) {
+        catch {
         }
 
         return doc;

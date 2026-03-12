@@ -2,12 +2,12 @@ import React, { useState } from "react";
 import ReactDOM from "react-dom/client";
 import BrowserContent from "./components/BrowserContent";
 import { ContextProviders } from "./contexts/ContextProviders";
-import type { openBrowserValues } from "./contexts/UIContext";
+import type { OpenBrowserValues } from "./contexts/UIContext";
 import "./static/extension.css";
 import { RefreshMode } from './contexts/UIContext';
 
 const BrowserUI = () => {
-    const [openBrowser, setOpenBrowser] = useState<openBrowserValues | undefined>(undefined);
+    const [openBrowser, setOpenBrowser] = useState<OpenBrowserValues | undefined>(undefined);
     const [browserRefresh, setBrowserRefresh] = useState<RefreshMode>(RefreshMode.NONE);
 
     chrome.runtime.onMessage.addListener((request, _, sendResponse) => {

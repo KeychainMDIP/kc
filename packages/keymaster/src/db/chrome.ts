@@ -10,7 +10,7 @@ export default class WalletChrome implements WalletBase {
     async saveWallet(wallet: StoredWallet, overwrite: boolean = false): Promise<boolean> {
         if (!overwrite) {
             const res = await chrome.storage.local.get([this.walletName]);
-            if (res[this.walletName]) {
+            if (typeof res[this.walletName] === 'string') {
                 return false;
             }
         }
@@ -21,9 +21,10 @@ export default class WalletChrome implements WalletBase {
 
     async loadWallet(): Promise<StoredWallet | null> {
         const res = await chrome.storage.local.get([this.walletName]);
+        const wallet = res[this.walletName];
 
-        if (res[this.walletName]) {
-            return JSON.parse(res[this.walletName]);
+        if (typeof wallet === 'string') {
+            return JSON.parse(wallet) as StoredWallet;
         }
 
         return null;

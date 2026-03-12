@@ -84,7 +84,7 @@ class KuboClient implements IPFSClient {
             await this.ipfs.id();
             return true;
         }
-        catch (error) {
+        catch {
             return false;
         }
     }
@@ -167,8 +167,6 @@ class KuboClient implements IPFSClient {
         try {
             // Match both IPv4 and IPv6 addresses
             const match = peer.match(/\/ip[46]\/([a-fA-F\d.:]+)/);
-            //const match = peer.match(/\/ip4\/([\d.]+)/);
-
             if (!match) {
                 log.warn(`Invalid peer address format: ${peer}`);
                 return false;

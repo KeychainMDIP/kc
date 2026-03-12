@@ -13,10 +13,10 @@
   "license": "MIT",
   "dependencies": {
     "bitcoin-core": "^5.0.0",
-    "dotenv": "^16.4.5",
-    "express": "^4.21.0",
-    "ioredis": "^5.5.0",
-    "mongodb": "^6.13.0",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "ioredis": "^5.10.0",
+    "mongodb": "^7.1.0",
     "pg": "^8.16.3",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7"

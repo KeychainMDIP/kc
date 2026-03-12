@@ -26,7 +26,7 @@ const INPUT_VBYTES: Record<SupportedTypes, number> = {
     p2wpkh: 69,
     p2tr:   57,
 };
-const DUST = 546;
+const DUST = 546n;
 const P2TR_OUTPUT_VBYTES = 43;
 const OVERHEAD_VBYTES = 11;
 const OP_RETURN_VBYTES = 16;
@@ -78,7 +78,7 @@ export default class Inscription {
         const slices = this.splitPayload(payloadBuf);
 
         const { xonly } = this.deriveP2TRAddressFromAccount(keys.bip86, hdkeypath);
-        const outputMap: Record<string, number> = {};
+        const outputMap: Record<string, bigint> = {};
         const tapScripts: Buffer[] = [];
 
         for (const slice of slices) {
@@ -141,14 +141,14 @@ export default class Inscription {
     }
 
     private async createCommitTransaction(
-        outputMap: Record<string, number>,
+        outputMap: Record<string, bigint>,
         estSatPerVByte: number,
         inputs: FundInput[],
         keys: AccountKeys
     ) {
 
         const nTapOuts = Object.keys(outputMap).length;
-        const totalOutputsSat = Object.values(outputMap).reduce((a, b) => a + b, 0);
+        const totalOutputsSat = Object.values(outputMap).reduce((a, b) => a + b, 0n);
 
         const sumInputVbytes = (ins: FundInput[]) =>
             ins.reduce((s, u) => s + INPUT_VBYTES[u.type], 0);
@@ -160,9 +160,9 @@ export default class Inscription {
         };
 
         let selected: FundInput[] = [];
-        let selectedSat = 0;
-        let requiredSat = Infinity;
-        let changeSat = 0;
+        let selectedSat = 0n;
+        let requiredSat = 0n;
+        let changeSat = 0n;
 
         for (const input of inputs) {
             if (!this.supported.includes(input.type as SupportedTypes)) {
@@ -170,18 +170,18 @@ export default class Inscription {
             }
 
             selected.push(input);
-            selectedSat += input.amount;
+            selectedSat += BigInt(input.amount);
 
             const vChosen = estimateCommitVsize(selected, nTapOuts);
-            requiredSat = totalOutputsSat + estSatPerVByte * vChosen;
-            changeSat = Math.max(0, selectedSat - requiredSat);
+            requiredSat = totalOutputsSat + this.estimateFeeSats(estSatPerVByte, vChosen);
+            changeSat = selectedSat > requiredSat ? selectedSat - requiredSat : 0n;
 
             if (selectedSat >= requiredSat) {
                 break;
             }
         }
 
-        const requiredBtc = requiredSat / 1e8;
+        const requiredBtc = Number(requiredSat) / 1e8;
         if (selectedSat < requiredSat) {
             throw new Error(`insufficient UTXOs for commit + reveal fees: ${requiredBtc.toFixed(8)}`);
         }
@@ -190,7 +190,7 @@ export default class Inscription {
             throw new Error(`Fee above maximum allowed. Required: ${requiredBtc} feeMax: ${this.feeMax}`);
         }
 
-        if (changeSat) {
+        if (changeSat > 0n) {
             const keys = Object.keys(outputMap);
             if (!keys.length) {
                 throw new Error('no taproot outputs');
@@ -222,7 +222,7 @@ export default class Inscription {
                     hash: inp.txid,
                     index: inp.vout,
                     sequence: 0xfffffffd,
-                    witnessUtxo: { script, value: inp.amount }
+                    witnessUtxo: { script, value: BigInt(inp.amount) }
                 });
 
                 signers.push({
@@ -242,7 +242,7 @@ export default class Inscription {
                     hash: inp.txid,
                     index: inp.vout,
                     sequence: 0xfffffffd,
-                    witnessUtxo: { script, value: inp.amount },
+                    witnessUtxo: { script, value: BigInt(inp.amount) },
                     tapInternalKey: xonlyChild,
                     tapBip32Derivation: [{
                         masterFingerprint: fp86,
@@ -255,9 +255,10 @@ export default class Inscription {
                 signers.push({
                     index: offset + i,
                     signer: {
-                        publicKey: p2tr.pubkey,
-                        signSchnorr: (h: Buffer) => Buffer.from(ecc.signSchnorr(h, tweakedPriv))
-                    } as bitcoin.Signer,
+                        publicKey: Buffer.from(pubkey),
+                        sign: (h: Uint8Array) => Buffer.from(ecc.sign(h, tweakedPriv)),
+                        signSchnorr: (h: Uint8Array) => Buffer.from(ecc.signSchnorr(h, tweakedPriv))
+                    },
                 });
             }
         });
@@ -317,18 +318,18 @@ export default class Inscription {
         const candidates = inputs ?? [];
         const chosenExtras: FundInput[] = [];
 
-        let totalIn = tapScripts.reduce((s, _t, idx) => s + commitTx.outs[idx].value, 0);
+        let totalIn = tapScripts.reduce((s, _t, idx) => s + commitTx.outs[idx].value, 0n);
 
         let targetVbytes = this.estimateRevealTotalVbytes(tapScripts, chosenExtras);
-        let targetFee = estSatPerVByte * targetVbytes;
+        let targetFee = this.estimateFeeSats(estSatPerVByte, targetVbytes);
 
         for (let i = 0; totalIn < targetFee && i < candidates.length; ++i) {
             const inp = candidates[i];
             chosenExtras.push(inp);
-            totalIn += inp.amount;
+            totalIn += BigInt(inp.amount);
 
             targetVbytes = this.estimateRevealTotalVbytes(tapScripts, chosenExtras);
-            targetFee = estSatPerVByte * targetVbytes;
+            targetFee = this.estimateFeeSats(estSatPerVByte, targetVbytes);
         }
 
         if (totalIn < targetFee) {
@@ -354,7 +355,7 @@ export default class Inscription {
                         sequence: 0xfffffffd,
                         witnessUtxo: {
                             script: p2wpkh.output!,
-                            value: inp.amount,
+                            value: BigInt(inp.amount),
                         }
                     });
 
@@ -378,7 +379,7 @@ export default class Inscription {
                         hash: inp.txid,
                         index: inp.vout,
                         sequence: 0xfffffffd,
-                        witnessUtxo: { script, value: inp.amount },
+                        witnessUtxo: { script, value: BigInt(inp.amount) },
                         tapInternalKey: xonlyChild,
                         tapBip32Derivation: [{
                             masterFingerprint: fp86,
@@ -391,9 +392,10 @@ export default class Inscription {
                     extraSigners.push({
                         index: offset + i,
                         signer: {
-                            publicKey: p2tr.pubkey,
-                            signSchnorr: (h: Buffer) => Buffer.from(ecc.signSchnorr(h, tweakedPriv)),
-                        } as bitcoin.Signer,
+                            publicKey: Buffer.from(pubkey),
+                            sign: (h: Uint8Array) => Buffer.from(ecc.sign(h, tweakedPriv)),
+                            signSchnorr: (h: Uint8Array) => Buffer.from(ecc.signSchnorr(h, tweakedPriv)),
+                        },
                     });
                 }
             });
@@ -402,7 +404,7 @@ export default class Inscription {
         const marker = Buffer.concat([PROTOCOL_TAG, Buffer.from([0x01])]);
         psbt.addOutput({
             script: bitcoin.script.compile([bitcoin.opcodes.OP_RETURN, marker]),
-            value: 0,
+            value: 0n,
         });
 
         const changeSat = totalIn - targetFee;
@@ -415,8 +417,9 @@ export default class Inscription {
         const xonlyPub = this.xonlyFromPriv(privKey);
         const signer = {
             publicKey: xonlyPub,
-            signSchnorr: (hash: Buffer) => ecc.signSchnorr(hash, privKey),
-        } as bitcoin.Signer;
+            sign: (hash: Uint8Array) => Buffer.from(ecc.sign(hash, privKey)),
+            signSchnorr: (hash: Uint8Array) => Buffer.from(ecc.signSchnorr(hash, privKey)),
+        };
 
         tapScripts.forEach((_tScript, idx) => psbt.signInput(idx, signer));
         extraSigners.forEach(({ index, signer }) => psbt.signInput(index, signer));
@@ -450,6 +453,10 @@ export default class Inscription {
         return base;
     }
 
+    private estimateFeeSats(estSatPerVByte: number, vbytes: number): bigint {
+        return BigInt(Math.ceil(estSatPerVByte * vbytes));
+    }
+
     private tweakPrivKeyTaproot(priv: Buffer, internalXOnly: Buffer) {
         const P = ecc.pointFromScalar(priv, true);
         let dEven = Buffer.from(priv);
@@ -473,6 +480,7 @@ export default class Inscription {
 
     private normalisePath(path: string): string {
         const withM = path.startsWith('m/') ? path : `m/${path}`;
+        // eslint-disable-next-line sonarjs/slow-regex
         return withM.replace(/(\d+)h/g, "$1'");
     }
 
@@ -500,7 +508,7 @@ export default class Inscription {
         const verBuf = Buffer.from([leafVer]);
         const enc = varuintEncode(script.length);
         const lenBuf = Buffer.from(enc.buffer).subarray(0, enc.bytes);
-        return bitcoin.crypto.taggedHash('TapLeaf', Buffer.concat([verBuf, lenBuf, script]));
+        return Buffer.from(bitcoin.crypto.taggedHash('TapLeaf', Buffer.concat([verBuf, lenBuf, script])));
     }
 
     private chooseAccountXprvForInput(keys: AccountKeys, type: FundInput['type']): string {
@@ -575,7 +583,7 @@ export default class Inscription {
             chunks.push(payload.subarray(i, i + 520));
         }
 
-        return script.compile([
+        return Buffer.from(script.compile([
             xonly,
             opcodes.OP_CHECKSIG,
             opcodes.OP_FALSE,
@@ -583,7 +591,7 @@ export default class Inscription {
             ...(includeMdipTag ? [PROTOCOL_TAG] : []),
             ...chunks,
             opcodes.OP_ENDIF,
-        ]);
+        ]));
     }
 
     private deriveP2TRAddressFromAccount(bip86Xprv: string, hdkeypath: string) {

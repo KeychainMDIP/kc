@@ -12,29 +12,29 @@
   "author": "Peter Bushnell",
   "license": "MIT",
   "dependencies": {
-    "@capacitor-mlkit/barcode-scanning": "^7.3.0",
-    "@capacitor/android": "^7.4.4",
-    "@capacitor/app": "^7.1.0",
-    "@capacitor/core": "^7.4.4",
+    "@capacitor-mlkit/barcode-scanning": "^8.0.1",
+    "@capacitor/android": "^8.2.0",
+    "@capacitor/app": "^8.0.1",
+    "@capacitor/core": "^8.2.0",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
-    "@fontsource/roboto": "^5.2.8",
-    "@mui/icons-material": "^7.3.5",
-    "@mui/lab": "^7.0.1-beta.19",
-    "@mui/material": "^7.3.5",
-    "@uiw/react-json-view": "^2.0.0-alpha.39",
+    "@fontsource/roboto": "^5.2.10",
+    "@mui/icons-material": "^7.3.9",
+    "@mui/lab": "^7.0.1-beta.23",
+    "@mui/material": "^7.3.9",
+    "@uiw/react-json-view": "^2.0.0-alpha.41",
     "buffer": "^6.0.3",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",
-    "@capacitor/cli": "^7.4.4",
-    "@types/node": "^24.10.1",
-    "@types/react": "^19.2.6",
+    "@capacitor/cli": "^8.2.0",
+    "@types/node": "^25.3.5",
+    "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^5.1.1",
+    "@vitejs/plugin-react": "^5.1.4",
     "typescript": "^5.9.3",
-    "vite": "^7.2.4"
+    "vite": "^7.3.1"
   }
 }

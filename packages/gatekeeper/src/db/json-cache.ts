@@ -43,14 +43,13 @@ export default class DbJsonCache extends AbstractJson {
             try {
                 const raw = fs.readFileSync(this.dbName, 'utf-8')
                 const parsed: JsonDbFile = JSON.parse(raw)
-                this.dbCache = JSON.parse(fs.readFileSync(this.dbName, 'utf-8'));
 
                 if (!parsed.dids) {
                     throw new Error();
                 }
                 this.dbCache = parsed
             }
-            catch (err) {
+            catch {
                 this.dbCache = { dids: {} };
                 this.saveDb();
             }

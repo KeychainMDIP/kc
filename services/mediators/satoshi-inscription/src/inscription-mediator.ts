@@ -255,7 +255,9 @@ async function extractOperations(txn: BlockTxVerbose, height: number, index: num
         }));
 
         await jsonPersister.updateDb((db) => {
-            (db.discovered ??= []).push({ events });
+            const discovered = db.discovered ?? [];
+            db.discovered = discovered;
+            discovered.push({ events });
         });
     }
     catch (error) {
@@ -762,7 +764,7 @@ async function waitForChain() {
             const blockchainInfo = await btcClient.getBlockchainInfo();
             log.debug({ blockchainInfo }, 'Blockchain Info');
             isReady = true;
-        } catch (error) {
+        } catch {
             log.debug(`Waiting for ${config.chain} node...`);
         }
 

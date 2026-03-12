@@ -2,7 +2,7 @@ import React, { createContext, Dispatch, ReactNode, SetStateAction, useContext, 
 import { WalletProvider } from "./WalletProvider";
 import { VariablesProvider } from "./VariablesProvider";
 import { AuthProvider } from "./AuthContext";
-import { RefreshMode, UIProvider, openBrowserValues } from "./UIContext";
+import { RefreshMode, UIProvider, OpenBrowserValues } from "./UIContext";
 import { createTheme, ThemeProvider } from "@mui/material/styles";
 import { Box } from "@mui/material";
 import { requestBrowserRefresh } from "../utils/utils";
@@ -31,8 +31,8 @@ export function ContextProviders(
         isBrowser: boolean,
         pendingAuth?: string,
         pendingCredential?: string,
-        openBrowser?: openBrowserValues,
-        setOpenBrowser?: Dispatch<SetStateAction<openBrowserValues | undefined>>,
+        openBrowser?: OpenBrowserValues,
+        setOpenBrowser?: Dispatch<SetStateAction<OpenBrowserValues | undefined>>,
         browserRefresh?: RefreshMode,
         setBrowserRefresh?: Dispatch<SetStateAction<RefreshMode>>,
     }) {
