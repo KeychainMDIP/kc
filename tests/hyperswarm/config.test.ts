@@ -12,6 +12,13 @@ async function importConfigIsolated() {
 }
 
 describe('hyperswarm config', () => {
+    beforeEach(() => {
+        process.env = {
+            ...ORIGINAL_ENV,
+            KC_HYPR_DB: 'sqlite',
+        };
+    });
+
     afterEach(() => {
         process.env = { ...ORIGINAL_ENV };
         jest.resetModules();
