@@ -34,7 +34,6 @@ const config = {
         '^\\.\\/db\\/typeGuards\\.js$': '<rootDir>/packages/keymaster/src/db/typeGuards.ts',
         '^\\.\\/provider\\/mnemonic-hd\\.js$': '<rootDir>/packages/keymaster/src/provider/mnemonic-hd.ts',
         '^\\.\\./encryption\\.js$': '<rootDir>/packages/keymaster/src/encryption.ts',
-        '^\\.\\./types\\.js$': '<rootDir>/packages/keymaster/src/types.ts',
         '^\\.\\./db\\/typeGuards\\.js$': '<rootDir>/packages/keymaster/src/db/typeGuards.ts',
         '^\\.\\/sync-mapping\\.js$': '<rootDir>/services/mediators/hyperswarm/src/sync-mapping.ts',
         '^\\.\\/sync-persistence\\.js$': '<rootDir>/services/mediators/hyperswarm/src/sync-persistence.ts',
