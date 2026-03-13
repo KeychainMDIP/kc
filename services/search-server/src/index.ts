@@ -5,6 +5,7 @@ import rateLimit from "express-rate-limit";
 import GatekeeperClient from "@mdip/gatekeeper/client";
 import DIDsSQLite from "./db/sqlite.js";
 import DIDsDbMemory from './db/json-memory.js';
+import DIDsPostgres from './db/postgres.js';
 import DidIndexer from "./DidIndexer.js";
 import {DIDsDb} from "./types.js";
 import { childLogger } from "@mdip/common/logger";
@@ -118,7 +119,7 @@ async function main() {
             message: { error: 'Too many requests' },
             standardHeaders: 'draft-7',
             legacyHeaders: false,
-            skip: (req) => {
+            skip: (req: express.Request) => {
                 if (req.method === 'OPTIONS') {
                     return true;
                 }
@@ -163,6 +164,8 @@ async function main() {
 
     if (config.db === 'sqlite') {
         didDb = await DIDsSQLite.create();
+    } else if (config.db === 'postgres') {
+        didDb = await DIDsPostgres.create(config.postgresURL);
     } else {
         didDb = new DIDsDbMemory();
     }

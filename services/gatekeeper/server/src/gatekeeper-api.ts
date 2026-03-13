@@ -11,6 +11,7 @@ import DbJsonCache from '@mdip/gatekeeper/db/json-cache';
 import DbRedis from '@mdip/gatekeeper/db/redis';
 import DbSqlite from '@mdip/gatekeeper/db/sqlite';
 import DbMongo from '@mdip/gatekeeper/db/mongo';
+import DbPostgres from '@mdip/gatekeeper/db/postgres';
 import { CheckDIDsResult, ResolveDIDOptions, Operation } from '@mdip/gatekeeper/types';
 import KuboClient from '@mdip/ipfs/kubo';
 import { childLogger } from '@mdip/common/logger';
@@ -57,6 +58,7 @@ const db = (() => {
     case 'sqlite': return new DbSqlite(dbName);
     case 'mongodb': return new DbMongo(dbName);
     case 'redis': return new DbRedis(dbName);
+    case 'postgres': return new DbPostgres(dbName);
     case 'json':
     case 'json-cache': return new DbJsonCache(dbName);
     default: return null;

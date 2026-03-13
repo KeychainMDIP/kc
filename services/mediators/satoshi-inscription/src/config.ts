@@ -4,7 +4,7 @@ dotenv.config();
 
 export type NetworkName = 'bitcoin' | 'testnet' | 'regtest';
 export type ChainName = 'BTC' | 'TBTC' | 'Signet' | 'TFTC';
-export type SatoshiDB = 'json' | 'sqlite' | 'mongodb' | 'redis';
+export type SatoshiDB = 'json' | 'sqlite' | 'mongodb' | 'redis' | 'postgres';
 
 export interface AppConfig {
     nodeID?: string;
@@ -70,6 +70,8 @@ function toDB(name: string | undefined): SatoshiDB {
         return 'mongodb';
     case 'redis':
         return 'redis';
+    case 'postgres':
+        return 'postgres';
     default:
         throw new Error(`Unsupported DB "${name}"`);
     }

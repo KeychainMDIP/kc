@@ -31,8 +31,12 @@ SEARCH_SERVER_GATEKEEPER_URL=http://localhost:4224
 # How often (in ms) to poll Gatekeeper for new or updated DIDs.
 SEARCH_SERVER_REFRESH_INTERVAL_MS=5000
 
-# Database backend (sqlite or memory)
+# Database adapter: sqlite | postgres | memory
 SEARCH_SERVER_DB=sqlite
+
+# Used when SEARCH_SERVER_DB=postgres
+# Falls back to KC_POSTGRES_URL when unset
+SEARCH_SERVER_POSTGRES_URL=postgresql://mdip:mdip@localhost:5432/mdip
 
 # Trust proxy headers when determining req.ip
 SEARCH_SERVER_TRUST_PROXY=false

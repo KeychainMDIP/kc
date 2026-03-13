@@ -11,7 +11,7 @@ Operations come from Keymaster clients such as end-user wallets and network medi
 | variable | default | description |
 | --- | --- | --- |
 | `KC_GATEKEEPER_PORT` | 4224 | Service port |
-| `KC_GATEKEEPER_DB` | redis | DID database adapter, must be `redis`, `json`, `mongodb`, or `sqlite` |
+| `KC_GATEKEEPER_DB` | redis | DID database adapter, must be `redis`, `json`, `mongodb`, `sqlite`, or `postgres` |
 | `KC_GATEKEEPER_DID_PREFIX` | did:test | Default prefix assigned to DIDs created |
 | `KC_IPFS_ENABLE` | true | Enable IPFS storage for opids and CAS endpoints |
 | `KC_GATEKEEPER_GC_INTERVAL` | 15 | The number of minutes between garbage collection cycles (0 to disable) |
