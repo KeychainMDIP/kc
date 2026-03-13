@@ -397,7 +397,7 @@ async function extractCommitHex(revealHex: string) {
         }
 
         if (!commitTxid) {
-            commitTxid = inp.hash.subarray().reverse().toString('hex');
+            commitTxid = Buffer.from(inp.hash).reverse().toString('hex');
             break;
         }
     }
