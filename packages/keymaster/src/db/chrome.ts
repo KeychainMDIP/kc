@@ -1,6 +1,6 @@
-import { StoredWallet, WalletBase } from '../types.js';
+import { KeymasterStore, StoredWallet } from '../types.js';
 
-export default class WalletChrome implements WalletBase {
+export default class WalletChrome implements KeymasterStore {
     walletName: string;
 
     constructor(walletName: string = 'mdip-keymaster') {

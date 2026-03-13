@@ -10,7 +10,7 @@ export interface HDKey {
     xpub: string;
 }
 
-export interface Seed {
+export interface LegacySeed {
     // v0 legacy
     mnemonic?: string;
     hdkey?: HDKey;
@@ -25,8 +25,8 @@ export interface Seed {
 
 export interface IDInfo {
     did: string;
-    account: number;
-    index: number;
+    // Provider-managed key reference. Rotating providers may encode a key version.
+    keyRef: string;
     held?: string[];
     owned?: string[];
     dmail?: Record<string, any>;
@@ -34,20 +34,53 @@ export interface IDInfo {
     [key: string]: any; // Allow custom metadata fields
 }
 
-export interface WalletEncFile {
+export interface LegacyIDInfo {
+    did: string;
+    account: number;
+    index: number;
+    held?: string[];
+    owned?: string[];
+    dmail?: Record<string, any>;
+    notices?: Record<string, any>;
+    [key: string]: any;
+}
+
+export interface LegacyWalletEncFile {
     version: number;
-    seed: Seed;
+    seed: LegacySeed;
     enc: string
 }
 
+export interface WalletProviderIdentity {
+    type: string;
+    walletFingerprint: string;
+}
+
 export interface WalletFile {
-    version?: number;
-    seed: Seed;
-    counter: number;
+    version: 2;
+    provider: WalletProviderIdentity;
     ids: Record<string, IDInfo>;
     current?: string;
     names?: Record<string, string>;
-    [key: string]: any; // Allow custom metadata fields
+    [key: string]: any;
+}
+
+export interface LegacyWalletFile {
+    version?: number;
+    seed: LegacySeed;
+    counter: number;
+    ids: Record<string, LegacyIDInfo>;
+    current?: string;
+    names?: Record<string, string>;
+    [key: string]: any;
+}
+
+export type LegacyStoredWallet = LegacyWalletFile | LegacyWalletEncFile;
+
+export interface KeymasterBackupV2 {
+    version: 1;
+    provider: WalletProviderIdentity;
+    store: WalletFile;
 }
 
 export interface CheckWalletResult {
@@ -220,11 +253,60 @@ export interface GroupVaultLogin {
     password: string;
 }
 
-export type StoredWallet = WalletFile | WalletEncFile | null;
+export type StoredWallet = WalletFile | KeymasterBackupV2 | LegacyStoredWallet;
 
-export interface WalletBase {
+export interface MnemonicHdKeyState {
+    kind: 'root' | 'id';
+    account?: number;
+    currentIndex: number;
+    knownIndices: number[];
+}
+
+export interface MnemonicHdWalletState {
+    version: 1;
+    type: 'mnemonic-hd';
+    mnemonicEnc: {
+        salt: string;
+        iv: string;
+        data: string;
+    };
+    nextAccount: number;
+    rootKeyRef: string;
+    keys: Record<string, MnemonicHdKeyState>;
+}
+
+export interface KeymasterStore {
     saveWallet(wallet: StoredWallet, overwrite?: boolean): Promise<boolean>;
     loadWallet(): Promise<StoredWallet | null>;
+}
+
+export interface WalletProviderStore {
+    saveWallet(wallet: MnemonicHdWalletState, overwrite?: boolean): Promise<boolean>;
+    loadWallet(): Promise<MnemonicHdWalletState | null>;
+}
+
+export interface WalletProviderKey {
+    // Provider-managed key reference for the created ID key version.
+    keyRef: string;
+    publicJwk: EcdsaJwkPublic;
+}
+
+export interface WalletProvider {
+    readonly type: string;
+    getFingerprint(): Promise<string>;
+    resetWallet(overwrite?: boolean): Promise<void>;
+    createIdKey(): Promise<WalletProviderKey>;
+    signDigest(keyRef: string, digest: string): Promise<string>;
+    encrypt(keyRef: string, receiver: EcdsaJwkPublic, plaintext: string): Promise<string>;
+    decrypt(keyRef: string, sender: EcdsaJwkPublic, ciphertext: string): Promise<string>;
+    rotateKey?(keyRef: string): Promise<{ publicJwk: EcdsaJwkPublic }>;
+}
+
+export interface MnemonicHdWalletProviderInterface extends WalletProvider {
+    newWallet(mnemonic?: string, overwrite?: boolean): Promise<void>;
+    migrateLegacyWallet(wallet: LegacyStoredWallet): Promise<WalletFile>;
+    backupWallet(): Promise<MnemonicHdWalletState>;
+    saveWallet(wallet: MnemonicHdWalletState, overwrite?: boolean): Promise<boolean>;
 }
 
 export interface SearchEngine {
@@ -232,9 +314,9 @@ export interface SearchEngine {
 }
 
 export interface KeymasterOptions {
-    passphrase: string;
     gatekeeper: GatekeeperInterface;
-    wallet: WalletBase;
+    store: KeymasterStore;
+    walletProvider: WalletProvider;
     cipher: Cipher;
     search?: SearchEngine;
     defaultRegistry?: string;
@@ -305,12 +387,10 @@ export interface KeymasterInterface {
     loadWallet(): Promise<WalletFile>;
     saveWallet(wallet: StoredWallet, overwrite?: boolean): Promise<boolean>;
     newWallet(mnemonic?: string, overwrite?: boolean): Promise<WalletFile>;
-    backupWallet(): Promise<boolean | string>;
-    recoverWallet(): Promise<WalletFile>;
+    backupWallet(): Promise<string>;
+    recoverWallet(did?: string): Promise<WalletFile>;
     checkWallet(): Promise<CheckWalletResult>;
     fixWallet(): Promise<FixWalletResult>;
-    decryptMnemonic(): Promise<string>;
-    exportEncryptedWallet(): Promise<WalletEncFile>;
 
     // IDs
     listIds(): Promise<string[]>;
