@@ -299,10 +299,10 @@ export interface WalletProvider {
     signDigest(keyRef: string, digest: string): Promise<string>;
     encrypt(keyRef: string, receiver: EcdsaJwkPublic, plaintext: string): Promise<string>;
     decrypt(keyRef: string, sender: EcdsaJwkPublic, ciphertext: string): Promise<string>;
-    rotateKey?(keyRef: string): Promise<{ publicJwk: EcdsaJwkPublic }>;
 }
 
 export interface MnemonicHdWalletProviderInterface extends WalletProvider {
+    rotateKey(keyRef: string): Promise<{ publicJwk: EcdsaJwkPublic }>;
     newWallet(mnemonic?: string, overwrite?: boolean): Promise<void>;
     migrateLegacyWallet(wallet: LegacyStoredWallet): Promise<WalletFile>;
     backupWallet(): Promise<MnemonicHdWalletState>;

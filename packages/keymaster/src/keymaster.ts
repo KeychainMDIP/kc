@@ -154,6 +154,12 @@ export default class Keymaster implements KeymasterInterface {
         return provider instanceof MnemonicHdWalletProvider;
     }
 
+    private supportsKeyRotation(
+        provider: WalletProvider
+    ): provider is WalletProvider & { rotateKey(keyRef: string): Promise<{ publicJwk: EcdsaJwkPublic }> } {
+        return 'rotateKey' in provider && typeof provider.rotateKey === 'function';
+    }
+
     private async normalizeStoredWallet(stored: StoredWallet): Promise<WalletFile> {
         if (isV2Wallet(stored)) {
             const provider = await this.getWalletProviderIdentity();
@@ -613,7 +619,7 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     private async getActiveKeyRef(id: IDInfo): Promise<string> {
-        if (!this.walletProvider.rotateKey) {
+        if (!this.supportsKeyRotation(this.walletProvider)) {
             return id.keyRef;
         }
 
@@ -1442,7 +1448,7 @@ export default class Keymaster implements KeymasterInterface {
 
         await this.mutateWallet(async (wallet) => {
             const id = wallet.ids[wallet.current!];
-            if (!this.walletProvider.rotateKey) {
+            if (!this.supportsKeyRotation(this.walletProvider)) {
                 throw new KeymasterError('Wallet provider does not support key rotation.');
             }
 
