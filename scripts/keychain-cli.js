@@ -184,10 +184,10 @@ program
 
 program
     .command('backup-wallet-file <file>')
-    .description('Backup wallet to file')
+    .description('Backup wallet metadata to file')
     .action(async (file) => {
         try {
-            const wallet = await keymaster.exportEncryptedWallet();
+            const wallet = await keymaster.loadWallet();
             fs.writeFileSync(file, JSON.stringify(wallet, null, 4));
             console.log(UPDATE_OK);
         }
@@ -198,7 +198,7 @@ program
 
 program
     .command('restore-wallet-file <file>')
-    .description('Restore wallet from backup file')
+    .description('Restore wallet metadata from backup file')
     .action(async (file) => {
         try {
             const contents = fs.readFileSync(file).toString();
@@ -212,21 +212,8 @@ program
     });
 
 program
-    .command('show-mnemonic')
-    .description('Show recovery phrase for wallet')
-    .action(async () => {
-        try {
-            const mnenomic = await keymaster.decryptMnemonic();
-            console.log(mnenomic);
-        }
-        catch (error) {
-            console.error(error.error || error);
-        }
-    });
-
-program
     .command('backup-wallet-did')
-    .description('Backup wallet to encrypted DID and seed bank')
+    .description('Backup wallet metadata to DID')
     .action(async () => {
         try {
             const did = await keymaster.backupWallet();
@@ -239,7 +226,7 @@ program
 
 program
     .command('recover-wallet-did [did]')
-    .description('Recover wallet from seed bank or encrypted DID')
+    .description('Recover wallet metadata from backup DID')
     .action(async (did) => {
         try {
             const wallet = await keymaster.recoverWallet(did);

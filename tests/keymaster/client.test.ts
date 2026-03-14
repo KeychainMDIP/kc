@@ -1,7 +1,7 @@
 import nock from 'nock';
 import KeymasterClient from '@mdip/keymaster/client';
 import { ExpectedExceptionError } from '@mdip/common/errors';
-import {Seed, WalletEncFile, WalletFile} from "@mdip/keymaster/types";
+import { WalletFile } from "@mdip/keymaster/types";
 
 const KeymasterURL = 'http://keymaster.org';
 const ServerError = { message: 'Server error' };
@@ -13,7 +13,6 @@ const Endpoints = {
     wallet_recover: '/api/v1/wallet/recover',
     wallet_check: '/api/v1/wallet/check',
     wallet_fix: '/api/v1/wallet/fix',
-    wallet_mnemonic: '/api/v1/wallet/mnemonic',
     registries: '/api/v1/registries',
     ids: '/api/v1/ids',
     ids_current: '/api/v1/ids/current',
@@ -43,7 +42,6 @@ const Endpoints = {
     groupVaults: `/api/v1/groupVaults`,
     dmail: '/api/v1/dmail',
     notices: '/api/v1/notices',
-    export_wallet_encrypted: '/api/v1/export/wallet/encrypted',
 };
 
 const mockConsole = {
@@ -193,7 +191,14 @@ describe('loadWallet', () => {
 });
 
 describe('saveWallet', () => {
-    const mockWallet: WalletFile = { seed: {} as Seed, counter: 0, ids: {} };
+    const mockWallet: WalletFile = {
+        version: 2,
+        provider: {
+            type: 'mnemonic-hd',
+            walletFingerprint: 'fingerprint',
+        },
+        ids: {},
+    };
 
     it('should save wallet', async () => {
         nock(KeymasterURL)
@@ -258,12 +263,12 @@ describe('backupWallet', () => {
     it('should backup wallet', async () => {
         nock(KeymasterURL)
             .post(Endpoints.wallet_backup)
-            .reply(200, { ok: true });
+            .reply(200, { did: 'did:test:backup' });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
-        const ok = await keymaster.backupWallet();
+        const did = await keymaster.backupWallet();
 
-        expect(ok).toStrictEqual(true);
+        expect(did).toStrictEqual('did:test:backup');
     });
 
     it('should throw exception on backupWallet server error', async () => {
@@ -364,37 +369,6 @@ describe('fixWallet', () => {
 
         try {
             await keymaster.fixWallet();
-            throw new ExpectedExceptionError();
-        }
-        catch (error: any) {
-            expect(error.message).toBe(ServerError.message);
-        }
-    });
-});
-
-describe('decryptMnemonic', () => {
-    const mockMnemonic = 'mock mnemonic phrase';
-
-    it('should decrypt mnemonic', async () => {
-        nock(KeymasterURL)
-            .get(Endpoints.wallet_mnemonic)
-            .reply(200, { mnemonic: mockMnemonic });
-
-        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
-        const mnemonic = await keymaster.decryptMnemonic();
-
-        expect(mnemonic).toStrictEqual(mockMnemonic);
-    });
-
-    it('should throw exception on decryptMnemonic server error', async () => {
-        nock(KeymasterURL)
-            .get(Endpoints.wallet_mnemonic)
-            .reply(500, ServerError);
-
-        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
-
-        try {
-            await keymaster.decryptMnemonic();
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
@@ -3527,47 +3501,6 @@ describe('refreshNotices', () => {
 
         try {
             await keymaster.refreshNotices();
-            throw new ExpectedExceptionError();
-        }
-        catch (error: any) {
-            expect(error.message).toBe(ServerError.message);
-        }
-    });
-});
-
-describe('exportEncryptedWallet', () => {
-    const mockEncWallet: WalletEncFile = {
-        version: 1,
-        seed: {
-            mnemonicEnc: {
-                salt: 'salt==',
-                iv: 'iviviviv',
-                data: 'ciphertext'
-            }
-        },
-        enc: 'top-level-seal'
-    };
-
-    it('should export encrypted wallet', async () => {
-        nock(KeymasterURL)
-            .get(Endpoints.export_wallet_encrypted)
-            .reply(200, { wallet: mockEncWallet });
-
-        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
-        const wallet = await keymaster.exportEncryptedWallet();
-
-        expect(wallet).toStrictEqual(mockEncWallet);
-    });
-
-    it('should throw exception on exportEncryptedWallet server error', async () => {
-        nock(KeymasterURL)
-            .get(Endpoints.export_wallet_encrypted)
-            .reply(500, ServerError);
-
-        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
-
-        try {
-            await keymaster.exportEncryptedWallet();
             throw new ExpectedExceptionError();
         }
         catch (error: any) {

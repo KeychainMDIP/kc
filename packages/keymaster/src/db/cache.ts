@@ -1,12 +1,11 @@
-import { StoredWallet, WalletBase } from '../types.js';
+import { KeymasterStore, StoredWallet } from '../types.js';
 
-export default class WalletCache implements WalletBase {
-    private baseWallet: WalletBase;
-    private cachedWallet: StoredWallet;
+export default class WalletCache implements KeymasterStore {
+    private baseWallet: KeymasterStore;
+    private cachedWallet: StoredWallet | null | undefined = undefined;
 
-    constructor(baseWallet: WalletBase) {
+    constructor(baseWallet: KeymasterStore) {
         this.baseWallet = baseWallet;
-        this.cachedWallet = null;
     }
 
     async saveWallet(wallet: StoredWallet, overwrite: boolean = false): Promise<boolean> {
@@ -15,10 +14,10 @@ export default class WalletCache implements WalletBase {
     }
 
     async loadWallet(): Promise<StoredWallet | null> {
-        if (!this.cachedWallet) {
+        if (this.cachedWallet === undefined) {
             this.cachedWallet = await this.baseWallet.loadWallet();
         }
 
-        return this.cachedWallet;
+        return this.cachedWallet ?? null;
     }
 }

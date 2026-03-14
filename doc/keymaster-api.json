@@ -98,27 +98,19 @@
                     "wallet": {
                       "type": "object",
                       "properties": {
-                        "seed": {
+                        "version": {
+                          "type": "integer"
+                        },
+                        "provider": {
                           "type": "object",
                           "properties": {
-                            "mnemonic": {
+                            "type": {
                               "type": "string"
                             },
-                            "hdkey": {
-                              "type": "object",
-                              "properties": {
-                                "xpriv": {
-                                  "type": "string"
-                                },
-                                "xpub": {
-                                  "type": "string"
-                                }
-                              }
+                            "walletFingerprint": {
+                              "type": "string"
                             }
                           }
-                        },
-                        "counter": {
-                          "type": "integer"
                         },
                         "ids": {
                           "type": "object",
@@ -128,11 +120,8 @@
                               "did": {
                                 "type": "string"
                               },
-                              "account": {
-                                "type": "integer"
-                              },
-                              "index": {
-                                "type": "integer"
+                              "keyRef": {
+                                "type": "string"
                               },
                               "owned": {
                                 "type": "array",
@@ -188,27 +177,19 @@
                   "wallet": {
                     "type": "object",
                     "properties": {
-                      "seed": {
+                      "version": {
+                        "type": "integer"
+                      },
+                      "provider": {
                         "type": "object",
                         "properties": {
-                          "mnemonic": {
+                          "type": {
                             "type": "string"
                           },
-                          "hdkey": {
-                            "type": "object",
-                            "properties": {
-                              "xpriv": {
-                                "type": "string"
-                              },
-                              "xpub": {
-                                "type": "string"
-                              }
-                            }
+                          "walletFingerprint": {
+                            "type": "string"
                           }
                         }
-                      },
-                      "counter": {
-                        "type": "integer"
                       },
                       "ids": {
                         "type": "object",
@@ -218,11 +199,8 @@
                             "did": {
                               "type": "string"
                             },
-                            "account": {
-                              "type": "integer"
-                            },
-                            "index": {
-                              "type": "integer"
+                            "keyRef": {
+                              "type": "string"
                             },
                             "owned": {
                               "type": "array",
@@ -321,27 +299,19 @@
                     "wallet": {
                       "type": "object",
                       "properties": {
-                        "seed": {
+                        "version": {
+                          "type": "integer"
+                        },
+                        "provider": {
                           "type": "object",
                           "properties": {
-                            "mnemonic": {
+                            "type": {
                               "type": "string"
                             },
-                            "hdkey": {
-                              "type": "object",
-                              "properties": {
-                                "xpriv": {
-                                  "type": "string"
-                                },
-                                "xpub": {
-                                  "type": "string"
-                                }
-                              }
+                            "walletFingerprint": {
+                              "type": "string"
                             }
                           }
-                        },
-                        "counter": {
-                          "type": "integer"
                         },
                         "ids": {
                           "type": "object",
@@ -351,11 +321,8 @@
                               "did": {
                                 "type": "string"
                               },
-                              "account": {
-                                "type": "integer"
-                              },
-                              "index": {
-                                "type": "integer"
+                              "keyRef": {
+                                "type": "string"
                               },
                               "owned": {
                                 "type": "array",
@@ -411,7 +378,7 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "ok": {
+                    "did": {
                       "type": "string",
                       "description": "The DID associated with the wallet backup."
                     }
@@ -452,27 +419,19 @@
                     "wallet": {
                       "type": "object",
                       "properties": {
-                        "seed": {
+                        "version": {
+                          "type": "integer"
+                        },
+                        "provider": {
                           "type": "object",
                           "properties": {
-                            "mnemonic": {
+                            "type": {
                               "type": "string"
                             },
-                            "hdkey": {
-                              "type": "object",
-                              "properties": {
-                                "xpriv": {
-                                  "type": "string"
-                                },
-                                "xpub": {
-                                  "type": "string"
-                                }
-                              }
+                            "walletFingerprint": {
+                              "type": "string"
                             }
                           }
-                        },
-                        "counter": {
-                          "type": "integer"
                         },
                         "ids": {
                           "type": "object",
@@ -482,11 +441,8 @@
                               "did": {
                                 "type": "string"
                               },
-                              "account": {
-                                "type": "integer"
-                              },
-                              "index": {
-                                "type": "integer"
+                              "keyRef": {
+                                "type": "string"
                               },
                               "owned": {
                                 "type": "array",
@@ -607,113 +563,6 @@
                         },
                         "namesRemoved": {
                           "type": "integer"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/wallet/mnemonic": {
-      "get": {
-        "summary": "Decrypt and retrieve the wallet's mnemonic phrase.",
-        "responses": {
-          "200": {
-            "description": "The mnemonic phrase.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "mnemonic": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/export/wallet/encrypted": {
-      "get": {
-        "summary": "Export the wallet in encrypted form.",
-        "description": "Returns the wallet in its encrypted format, which includes the encrypted mnemonic and encrypted wallet data. This format is secure for storage or backup purposes.\n",
-        "responses": {
-          "200": {
-            "description": "The encrypted wallet object.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "wallet": {
-                      "type": "object",
-                      "properties": {
-                        "version": {
-                          "type": "integer",
-                          "description": "The wallet format version."
-                        },
-                        "seed": {
-                          "type": "object",
-                          "properties": {
-                            "mnemonicEnc": {
-                              "type": "object",
-                              "properties": {
-                                "salt": {
-                                  "type": "string",
-                                  "description": "Base64-encoded salt used for key derivation."
-                                },
-                                "iv": {
-                                  "type": "string",
-                                  "description": "Base64-encoded initialization vector for AES-GCM encryption."
-                                },
-                                "data": {
-                                  "type": "string",
-                                  "description": "Base64-encoded encrypted mnemonic."
-                                }
-                              }
-                            }
-                          }
-                        },
-                        "enc": {
-                          "type": "string",
-                          "description": "Encrypted wallet data (IDs, names, etc.)."
                         }
                       }
                     }
