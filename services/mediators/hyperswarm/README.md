@@ -45,6 +45,8 @@ The mediator emits periodic structured sync metrics in `connectionLoop` includin
 | `KC_NODE_ID       `       | (no default)                 | Keymaster node agent name     |
 | `KC_NODE_NAME`            | anon                         | Human-readable name for the node |
 | `KC_MDIP_PROTOCOL`        | /MDIP/v1.0-public            | MDIP network topic to join    |
+| `KC_HYPR_DB`              | sqlite                       | Sync-store backend (`sqlite` or `postgres`) |
+| `KC_HYPR_POSTGRES_URL`    | postgresql://mdip:mdip@localhost:5432/mdip | Postgres DSN used when `KC_HYPR_DB=postgres` |
 | `KC_HYPR_EXPORT_INTERVAL` | 2                            | Seconds between export cycles |
 | `KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT` | 0                            | Negentropy frame-size limit in KB (0 or >= 4) |
 | `KC_HYPR_NEGENTROPY_WINDOW_DAYS` | 30                           | Reconciliation window size in days for full-sync chunking |
@@ -67,6 +69,9 @@ Set `KC_IPFS_ENABLE=false` to run the mediator without IPFS or Keymaster integra
 
 The mediator now includes a sync-store abstraction in `src/db/` with:
 - `SqliteOperationSyncStore` for persistent ordered storage
+- `PostgresOperationSyncStore` for persistent ordered storage
 - `InMemoryOperationSyncStore` for tests
 
-The SQLite implementation uses a fixed data path under `data/hyperswarm` (relative to the mediator working directory), with an index on `(ts, id)` to use SQLite's native B-tree ordering for range queries.
+SQLite uses a fixed data path under `data/hyperswarm` (relative to the mediator working directory), with an index on `(ts, id)` to use SQLite's native B-tree ordering for range queries.
+
+Postgres uses `hyperswarm_sync_operations` with a B-tree index on `(ts, id)` to preserve the same deterministic keyset ordering required by negentropy window rebuilds and cursor pagination.

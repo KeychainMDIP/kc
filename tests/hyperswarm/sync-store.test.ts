@@ -148,6 +148,12 @@ describe('SqliteOperationSyncStore', () => {
         await expect(store.count()).rejects.toThrow('Call start() first');
     });
 
+    it('throws from internal transaction helper when DB is not started', async () => {
+        const store = new SqliteOperationSyncStore();
+
+        await expect((store as any).withTx(async () => undefined)).rejects.toThrow('Call start() first');
+    });
+
     it('returns early for empty inputs', async () => {
         const store = new SqliteOperationSyncStore('operations.db', path.join(tmpRoot, 'data/hyperswarm'));
         await store.start();

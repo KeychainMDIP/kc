@@ -17,8 +17,9 @@ The library must be configured by calling the start function with one of the sup
 - JSON - @mdip/gatekeeper/db/json
 - JSON with memory cache - @mdip/gatekeeper/db/json-cache
 - sqlite - @mdip/gatekeeper/db/sqlite
-- mongodb - @mdip/gatekeeper/db/mongodb
+- mongodb - @mdip/gatekeeper/db/mongo
 - redis - @mdip/gatekeeper/db/redis
+- postgres - @mdip/gatekeeper/db/postgres
 
 ```js
 // Import using subpaths

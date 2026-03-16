@@ -64,6 +64,9 @@ const config = {
     gatekeeperURL: process.env.SEARCH_SERVER_GATEKEEPER_URL || 'http://localhost:4224',
     refreshIntervalMs: parsePositiveInteger(process.env.SEARCH_SERVER_REFRESH_INTERVAL_MS, 5000),
     db: process.env.SEARCH_SERVER_DB || 'sqlite',
+    postgresURL: process.env.SEARCH_SERVER_POSTGRES_URL
+        || process.env.KC_POSTGRES_URL
+        || 'postgresql://mdip:mdip@localhost:5432/mdip',
     trustProxy: parseBoolean(process.env.SEARCH_SERVER_TRUST_PROXY, false),
     jsonLimit: '2mb',
     rateLimitEnabled: parseBoolean(process.env.SEARCH_SERVER_RATE_LIMIT_ENABLED, false),
