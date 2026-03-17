@@ -15,8 +15,8 @@ cat > "$ENV_FILE" <<EOL
 # Auto-generated .env file
 
 # General
-KC_UID=1000
-KC_GID=1000
+KC_UID=$(id -u)
+KC_GID=$(id -g)
 KC_NODE_NAME=mdip-quality
 KC_NODE_ID=mdip-quality
 KC_LOG_LEVEL=info
