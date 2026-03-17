@@ -3,6 +3,7 @@
 ipfs/
 mongodb/
 redis/
+postgres/
 tesseract/
 tftc/
 tbtc/

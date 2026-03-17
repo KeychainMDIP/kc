@@ -16,6 +16,7 @@ import { childLogger } from '@mdip/common/logger';
 import config from './config.js';
 import type { OperationSyncStore } from './db/types.js';
 import SqliteOperationSyncStore from './db/sqlite.js';
+import PostgresOperationSyncStore from './db/postgres.js';
 import NegentropyAdapter, {
     type NegentropyWindowStats,
     type ReconciliationWindow,
@@ -231,7 +232,15 @@ const gatekeeper = new GatekeeperClient();
 const keymaster = new KeymasterClient();
 const ipfs = new KuboClient();
 const cipher = new CipherNode();
-let syncStore: OperationSyncStore = new SqliteOperationSyncStore();
+function createConfiguredSyncStore(): OperationSyncStore {
+    if (config.db === 'postgres') {
+        return new PostgresOperationSyncStore(config.postgresURL);
+    }
+
+    return new SqliteOperationSyncStore();
+}
+
+let syncStore: OperationSyncStore = createConfiguredSyncStore();
 let negentropyAdapter: NegentropyAdapter | null = null;
 let adapterChangeSeq = 0;
 let adapterBuiltSeq = -1;
@@ -1962,6 +1971,7 @@ const networkID = Buffer.from(hash).toString('hex');
 const topic = Buffer.from(b4a.from(networkID, 'hex'));
 
 async function main(): Promise<void> {
+    log.info({ db: config.db }, 'sync-store backend selected');
     await syncStore.start();
 
     await gatekeeper.connect({

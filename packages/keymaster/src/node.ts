@@ -5,3 +5,4 @@ export { default as WalletRedis } from './db/redis.js';
 export { default as WalletMongo } from './db/mongo.js';
 export { default as WalletSQLite } from './db/sqlite.js';
 export { default as MnemonicHdWalletProvider } from './provider/mnemonic-hd.js';
+export { default as WalletPostgres } from './db/postgres.js';

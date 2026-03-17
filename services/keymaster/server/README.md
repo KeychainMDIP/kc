@@ -10,7 +10,7 @@ This service is also useful when clients share a wallet, such as the `kc` CLI an
 | --- | --- | --- |
 | `KC_GATEKEEPER_URL` | http://localhost:4224 | MDIP gatekeeper service URL |
 | `KC_KEYMASTER_PORT` | 4226 | Service port |
-| `KC_KEYMASTER_DB` | json | Wallet database adapter, must be `redis`, `json`, `mongodb`, or `sqlite` |
+| `KC_KEYMASTER_DB` | json | Wallet database adapter, must be `redis`, `json`, `mongodb`, `sqlite`, or `postgres` |
 | `KC_WALLET_PROVIDER_PASSPHRASE` | (no default) | Passphrase for the built-in mnemonic wallet provider state |
 | `KC_WALLET_CACHE` | false | Use wallet cache to increase performance (but understand security implications) |
 | `KC_DEFAULT_REGISTRY` | hyperswarm | Default registry to use when creating DIDs |

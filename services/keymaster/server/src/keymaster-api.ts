@@ -12,6 +12,7 @@ import WalletJson from '@mdip/keymaster/wallet/json';
 import WalletRedis from '@mdip/keymaster/wallet/redis';
 import WalletMongo from '@mdip/keymaster/wallet/mongo';
 import WalletSQLite from '@mdip/keymaster/wallet/sqlite';
+import WalletPostgres from '@mdip/keymaster/wallet/postgres';
 import WalletCache from '@mdip/keymaster/wallet/cache';
 import CipherNode from '@mdip/cipher/node';
 import { InvalidParameterError } from '@mdip/common/errors';
@@ -6163,6 +6164,8 @@ async function initWallet() {
         wallet = await WalletMongo.create();
     } else if (config.db === 'sqlite') {
         wallet = await WalletSQLite.create();
+    } else if (config.db === 'postgres') {
+        wallet = await WalletPostgres.create();
     } else if (config.db === 'json') {
         wallet = new WalletJson();
     } else {

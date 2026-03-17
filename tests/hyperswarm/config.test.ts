@@ -12,6 +12,13 @@ async function importConfigIsolated() {
 }
 
 describe('hyperswarm config', () => {
+    beforeEach(() => {
+        process.env = {
+            ...ORIGINAL_ENV,
+            KC_HYPR_DB: 'sqlite',
+        };
+    });
+
     afterEach(() => {
         process.env = { ...ORIGINAL_ENV };
         jest.resetModules();
@@ -88,5 +95,49 @@ describe('hyperswarm config', () => {
                 await import(CONFIG_PATH);
             })
         ).rejects.toThrow('Invalid KC_HYPR_NEGENTROPY_ENABLE; expected true or false');
+    });
+
+    it('throws when KC_HYPR_DB is empty or whitespace', async () => {
+        process.env.KC_HYPR_DB = '';
+
+        await expect(importConfigIsolated())
+            .rejects
+            .toThrow('Missing KC_HYPR_DB; expected sqlite or postgres');
+
+        process.env.KC_HYPR_DB = '   ';
+
+        await expect(importConfigIsolated())
+            .rejects
+            .toThrow('Missing KC_HYPR_DB; expected sqlite or postgres');
+    });
+
+    it('accepts postgres sync DB and uses service postgres URL before shared URL', async () => {
+        process.env.KC_HYPR_DB = 'postgres';
+        process.env.KC_HYPR_POSTGRES_URL = 'postgresql://hypr-user:hypr-pass@db:5432/hypr';
+        // eslint-disable-next-line sonarjs/no-duplicate-string
+        process.env.KC_POSTGRES_URL = 'postgresql://shared-user:shared-pass@db:5432/shared';
+
+        const config = await importConfigIsolated();
+        expect(config.db).toBe('postgres');
+        expect(config.postgresURL).toBe('postgresql://hypr-user:hypr-pass@db:5432/hypr');
+    });
+
+    it('uses shared KC_POSTGRES_URL when KC_HYPR_POSTGRES_URL is not set', async () => {
+        process.env.KC_HYPR_DB = 'postgres';
+        process.env.KC_HYPR_POSTGRES_URL = '';
+        process.env.KC_POSTGRES_URL = 'postgresql://shared-user:shared-pass@db:5432/shared';
+
+        const config = await importConfigIsolated();
+        expect(config.postgresURL).toBe('postgresql://shared-user:shared-pass@db:5432/shared');
+    });
+
+    it('throws on invalid KC_HYPR_DB values', async () => {
+        process.env.KC_HYPR_DB = 'redis';
+
+        await expect(
+            jest.isolateModulesAsync(async () => {
+                await import(CONFIG_PATH);
+            })
+        ).rejects.toThrow('Invalid KC_HYPR_DB; expected sqlite or postgres');
     });
 });

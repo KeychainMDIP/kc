@@ -8,6 +8,7 @@ import JsonFile from './db/jsonfile.js';
 import JsonRedis from './db/redis.js';
 import JsonMongo from './db/mongo.js';
 import JsonSQLite from './db/sqlite.js';
+import JsonPostgres from './db/postgres.js';
 import config from './config.js';
 import { GatekeeperEvent, Operation } from '@mdip/gatekeeper/types';
 import Inscription from '@mdip/inscription';
@@ -846,6 +847,9 @@ async function main() {
     }
     else if (config.db === 'sqlite') {
         jsonPersister = await JsonSQLite.create(REGISTRY);
+    }
+    else if (config.db === 'postgres') {
+        jsonPersister = await JsonPostgres.create(REGISTRY);
     }
     else {
         jsonPersister = jsonFile;
