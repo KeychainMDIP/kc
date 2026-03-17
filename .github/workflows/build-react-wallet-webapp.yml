@@ -2,7 +2,6 @@ name: Build React-Wallet webapp
 
 on:
   push:
-  pull_request:
 
 jobs:
   build-react-wallet-webapp:
@@ -26,6 +25,10 @@ jobs:
       - name: Install react-wallet dependencies
         working-directory: ./apps/react-wallet
         run: npm ci
+
+      - name: Typecheck react-wallet webapp
+        working-directory: ./apps/react-wallet
+        run: npm run typecheck
 
       - name: Build react-wallet webapp
         working-directory: ./apps/react-wallet
