@@ -3,7 +3,6 @@ from datetime import datetime, timedelta, timezone
 import random
 import string
 import base64
-from unittest.mock import ANY
 from copy import deepcopy
 
 # Test vars
@@ -179,31 +178,29 @@ def test_accept_remove_revoke_credential():
 
 def test_wallet():
     wallet = keymaster.load_wallet()
-    assert "seed" in wallet, "seed not present in wallet"
-    assert "mnemonicEnc" in wallet["seed"], "mnemonicEnc not present in wallet"
-    assert "data" in wallet["seed"]["mnemonicEnc"], "data not present in mnemonicEnc"
-    assert "iv" in wallet["seed"]["mnemonicEnc"], "iv not present in mnemonicEnc"
-    assert "salt" in wallet["seed"]["mnemonicEnc"], "salt not present in mnemonicEnc"
+    assert_equal(wallet["version"], 2)
+    assert_equal(wallet["provider"]["type"], "mnemonic-hd")
+    assert "walletFingerprint" in wallet["provider"], "walletFingerprint not present in wallet provider"
+    assert "ids" in wallet, "ids not present in wallet"
 
     response = keymaster.save_wallet(wallet)
     assert_equal(response, True)
 
-    did = keymaster.backup_wallet()
-    doc = keymaster.resolve_did(did)
-    assert_equal(doc["didDocument"]["id"], did)
+    backup_did = keymaster.backup_wallet()
+    doc = keymaster.resolve_did(backup_did)
+    assert_equal(doc["didDocument"]["id"], backup_did)
 
-    mnemonic1 = keymaster.decrypt_mnemonic()
-    assert_equal(len(mnemonic1.split()), 12)
+    empty_wallet = {
+        "version": wallet["version"],
+        "provider": deepcopy(wallet["provider"]),
+        "ids": {},
+    }
+    response = keymaster.save_wallet(empty_wallet)
+    assert_equal(response, True)
 
-    new_wallet = keymaster.new_wallet(mnemonic1, True)
-
-    mnemonic2 = keymaster.decrypt_mnemonic()
-    assert_equal(mnemonic1, mnemonic2)
-
-    recovered = keymaster.recover_wallet()
+    recovered = keymaster.recover_wallet(backup_did)
 
     expected = deepcopy(wallet)
-    expected["seed"]["mnemonicEnc"] = ANY
 
     assert_equal(expected, recovered)
 
@@ -329,9 +326,10 @@ def test_rotate_keys():
     alice = generate_id()
     keymaster.create_id(alice, local_options)
 
+    before = keymaster.load_wallet()
     keymaster.rotate_keys()
-    wallet = keymaster.load_wallet()
-    assert_equal(wallet["ids"][alice]["index"], 1)
+    after = keymaster.load_wallet()
+    assert before["ids"][alice]["keyRef"] != after["ids"][alice]["keyRef"]
 
 
 def test_signature():
