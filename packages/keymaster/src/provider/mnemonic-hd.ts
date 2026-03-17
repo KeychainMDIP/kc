@@ -40,7 +40,7 @@ export default class MnemonicHdWalletProvider implements MnemonicHdWalletProvide
 
     private readonly store: WalletProviderStore;
     private readonly cipher: Cipher;
-    private readonly passphrase: string;
+    private passphrase: string;
     private stateCache?: MnemonicHdWalletState;
     private hdKeyCache?: any;
     private mutationLock: Promise<void> = Promise.resolve();
@@ -73,10 +73,13 @@ export default class MnemonicHdWalletProvider implements MnemonicHdWalletProvide
             throw new InvalidParameterError('mnemonic');
         }
 
+        const rootPublicJwk = this.getRootKeyPair().publicJwk;
+
         const mnemonicEnc = await encMnemonic(mnemonic, this.passphrase);
         const state: MnemonicHdWalletState = {
             version: 1,
             type: 'mnemonic-hd',
+            rootPublicJwk,
             mnemonicEnc,
             nextAccount: 0,
             rootKeyRef: 'root',
@@ -101,6 +104,35 @@ export default class MnemonicHdWalletProvider implements MnemonicHdWalletProvide
         await this.newWallet(undefined, overwrite);
     }
 
+    async decryptMnemonic(): Promise<string> {
+        const state = await this.loadState();
+        return this.decryptProviderMnemonic(state.mnemonicEnc);
+    }
+
+    async changePassphrase(mnemonic: string, newPassphrase: string): Promise<void> {
+        let hdKey;
+        try {
+            hdKey = this.cipher.generateHDKey(mnemonic);
+        } catch {
+            throw new InvalidParameterError('mnemonic');
+        }
+
+        const { publicJwk } = this.cipher.generateJwk(hdKey.privateKey!);
+        const state = await this.loadState();
+        if (this.cipher.hashJSON(publicJwk) !== this.cipher.hashJSON(state.rootPublicJwk)) {
+            throw new KeymasterError('Mnemonic does not match wallet.');
+        }
+
+        const mnemonicEnc = await encMnemonic(mnemonic, newPassphrase);
+        await this.mutateState((current) => {
+            current.rootPublicJwk = publicJwk;
+            current.mnemonicEnc = mnemonicEnc;
+        });
+
+        this.passphrase = newPassphrase;
+        this.hdKeyCache = hdKey;
+    }
+
     async backupWallet(): Promise<MnemonicHdWalletState> {
         const state = this.stateCache ?? await this.store.loadWallet();
         if (!state) {
@@ -112,7 +144,7 @@ export default class MnemonicHdWalletProvider implements MnemonicHdWalletProvide
     }
 
     async saveWallet(wallet: MnemonicHdWalletState, overwrite = false): Promise<boolean> {
-        if (wallet.version !== 1 || wallet.type !== this.type) {
+        if (wallet.version !== 1 || wallet.type !== this.type || !wallet.rootPublicJwk) {
             throw new InvalidParameterError('wallet');
         }
 
@@ -241,9 +273,11 @@ export default class MnemonicHdWalletProvider implements MnemonicHdWalletProvide
 
     private async buildStateFromLegacyWallet(wallet: LegacyWalletFile, mnemonic: string): Promise<MnemonicHdWalletState> {
         const mnemonicEnc = await encMnemonic(mnemonic, this.passphrase);
+        this.hdKeyCache = this.cipher.generateHDKey(mnemonic);
         const state: MnemonicHdWalletState = {
             version: 1,
             type: 'mnemonic-hd',
+            rootPublicJwk: this.getRootKeyPair().publicJwk,
             mnemonicEnc,
             nextAccount: wallet.counter,
             rootKeyRef: 'root',

@@ -14,16 +14,35 @@ import Keymaster from "@mdip/keymaster";
 import SearchClient from "@mdip/keymaster/search";
 import CipherWeb from "@mdip/cipher/web";
 import WalletChrome from "@mdip/keymaster/wallet/chrome";
-import { isLegacyV0, isV1WithEnc } from '@mdip/keymaster/wallet/typeGuards';
-import { StoredWallet, WalletBase } from "@mdip/keymaster/types";
+import MnemonicHdWalletProvider from "@mdip/keymaster/wallet/mnemonic-hd";
+import {
+    isLegacyV0,
+    isV1Decrypted,
+    isV1WithEnc,
+    isV2Wallet,
+} from "@mdip/keymaster/wallet/typeGuards";
+import {
+    MdipWalletBundle,
+    KeymasterStore,
+    MnemonicHdWalletProviderInterface,
+    MnemonicHdWalletState,
+    StoredWallet,
+    WalletFile,
+    WalletProviderStore,
+} from "@mdip/keymaster/types";
 import PassphraseModal from "../modals/PassphraseModal";
 import WarningModal from "../modals/WarningModal";
 import MnemonicModal from "../modals/MnemonicModal";
-import { encMnemonic } from '@mdip/keymaster/encryption';
+import { encMnemonic } from "@mdip/keymaster/encryption";
 import WalletJsonMemory from "@mdip/keymaster/wallet/json-memory";
 
 const gatekeeper = new GatekeeperClient();
 const cipher = new CipherWeb();
+
+const KEYMASTER_STORE_NAME = "mdip-keymaster";
+const WALLET_PROVIDER_STORE_NAME = "mdip-wallet-provider";
+
+type UploadAction = "upload-legacy-plain" | "upload-legacy-encrypted" | "upload-bundle";
 
 interface WalletContextValue {
     pendingMnemonic: string;
@@ -37,6 +56,7 @@ interface WalletContextValue {
     reloadBrowserWallet: () => Promise<void>;
     refreshFlag: number;
     keymaster: Keymaster | null;
+    walletProvider: MnemonicHdWalletProviderInterface | null;
 }
 
 const WalletContext = createContext<WalletContextValue | null>(null);
@@ -45,13 +65,64 @@ let search: SearchClient | undefined;
 
 // eslint-disable-next-line sonarjs/no-hardcoded-passwords
 const INCORRECT_PASSPHRASE = "Incorrect passphrase";
+const INCOMPLETE_WALLET = "Wallet data is incomplete. Restore from an mdip-wallet-bundle or reset the wallet.";
+
+function createMetadataStore() {
+    return new WalletChrome(KEYMASTER_STORE_NAME);
+}
+
+function createProviderStore(): WalletProviderStore {
+    return new WalletChrome(WALLET_PROVIDER_STORE_NAME) as unknown as WalletProviderStore;
+}
+
+function createMemoryProviderStore(): WalletProviderStore {
+    return new WalletJsonMemory() as unknown as WalletProviderStore;
+}
+
+function createMnemonicWalletProvider(
+    passphrase: string,
+    store: WalletProviderStore = createProviderStore(),
+) {
+    return new MnemonicHdWalletProvider({
+        store,
+        cipher,
+        passphrase,
+    });
+}
+
+function isMdipWalletBundle(wallet: unknown): wallet is MdipWalletBundle {
+    if (!wallet || typeof wallet !== "object") {
+        return false;
+    }
+
+    const bundle = wallet as Partial<MdipWalletBundle>;
+    return bundle.version === 1
+        && bundle.type === "mdip-wallet-bundle"
+        && isV2Wallet(bundle.keymaster)
+        && !!bundle.provider
+        && bundle.provider.version === 1
+        && bundle.provider.type === "mnemonic-hd"
+        && !!bundle.provider.rootPublicJwk;
+}
+
+async function verifyMnemonicAgainstProviderState(
+    providerState: MnemonicHdWalletState,
+    mnemonic: string,
+) {
+    const hdKey = cipher.generateHDKey(mnemonic);
+    const { publicJwk } = cipher.generateJwk(hdKey.privateKey!);
+
+    if (cipher.hashJSON(publicJwk) !== cipher.hashJSON(providerState.rootPublicJwk)) {
+        throw new Error("Mnemonic does not match wallet.");
+    }
+}
 
 export function WalletProvider({ children, isBrowser }: { children: ReactNode, isBrowser: boolean }) {
     const [passphraseErrorText, setPassphraseErrorText] = useState<string>("");
     const [pendingMnemonic, setPendingMnemonic] = useState<string>("");
     const [pendingWallet, setPendingWallet] = useState<unknown>(null);
     const [modalAction, setModalAction] = useState<null | "decrypt" | "set-passphrase">(null);
-    const [uploadAction, setUploadAction] = useState<null | "upload-plain-v0" | "upload-enc-v1">(null);
+    const [uploadAction, setUploadAction] = useState<UploadAction | null>(null);
     const [isReady, setIsReady] = useState<boolean>(false);
     const [showResetConfirm, setShowResetConfirm] = useState<boolean>(false);
     const [showResetSetup, setShowResetSetup] = useState<boolean>(false);
@@ -62,29 +133,34 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
     const [refreshFlag, setRefreshFlag] = useState<number>(0);
 
     const keymasterRef = useRef<Keymaster | null>(null);
-
-    const walletChrome = new WalletChrome();
+    const walletProviderRef = useRef<MnemonicHdWalletProviderInterface | null>(null);
 
     useEffect(() => {
         const initWallet = async () => {
             await initialiseServices();
             await initialiseWallet();
-        }
+        };
 
         initWallet();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     async function initialiseWallet() {
-        const walletData = await walletChrome.loadWallet();
+        const walletStore = createMetadataStore();
+        const providerStore = createProviderStore();
+        const walletData = await walletStore.loadWallet();
+        const providerData = await providerStore.loadWallet();
+        const hasIncompleteState =
+            (!!providerData && !walletData)
+            || (!!walletData && isV2Wallet(walletData) && !providerData);
 
-        let response = await chrome.runtime.sendMessage({
+        const response = await chrome.runtime.sendMessage({
             action: "GET_PASSPHRASE",
         });
         const pass = response?.passphrase || "";
 
-        if (!pendingMnemonic && pass) {
-            let res = await rebuildKeymaster(pass);
+        if (!pendingMnemonic && pass && !hasIncompleteState) {
+            const res = await buildKeymaster(pass);
             if (res) {
                 return;
             }
@@ -92,11 +168,18 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
             await chrome.runtime.sendMessage({ action: "CLEAR_PASSPHRASE" });
         }
 
-        if (!walletData || pendingMnemonic || isLegacyV0(walletData)) {
-            // eslint-disable-next-line sonarjs/no-duplicate-string
-            setModalAction('set-passphrase');
+        if (hasIncompleteState) {
+            setPassphraseErrorText(INCOMPLETE_WALLET);
+            setModalAction("decrypt");
+            return;
+        }
+
+        if (!walletData || pendingMnemonic || isLegacyV0(walletData) || isV1Decrypted(walletData)) {
+            setPassphraseErrorText("");
+            setModalAction("set-passphrase");
         } else {
-            setModalAction('decrypt');
+            setPassphraseErrorText("");
+            setModalAction("decrypt");
         }
     }
 
@@ -109,75 +192,130 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
         search = await SearchClient.create({ url: searchServerUrl as string });
     }
 
-    const buildKeymaster = async (wallet: WalletBase, passphrase: string) => {
-        const instance = new Keymaster({gatekeeper, wallet, cipher, search, passphrase});
+    function createKeymaster(
+        passphrase: string,
+        store: KeymasterStore = createMetadataStore(),
+        providerStore: WalletProviderStore = createProviderStore(),
+    ) {
+        const walletProvider = createMnemonicWalletProvider(passphrase, providerStore);
+        const instance = new Keymaster({
+            gatekeeper,
+            store,
+            walletProvider,
+            cipher,
+            search,
+        });
 
-        if (pendingMnemonic) {
-            await instance.newWallet(pendingMnemonic, true);
-            await instance.recoverWallet();
-        } else {
-            try {
-                // check pass & convert to v1 if needed
-                await instance.loadWallet();
-            } catch {
-                setPassphraseErrorText(INCORRECT_PASSPHRASE);
-                return false;
-            }
-        }
+        return { instance, walletProvider };
+    }
 
+    async function activateWallet(
+        keymaster: Keymaster,
+        walletProvider: MnemonicHdWalletProviderInterface,
+        passphrase: string,
+    ) {
         setModalAction(null);
         setPendingWallet(null);
         setPendingMnemonic("");
+        setRecoveredMnemonic("");
         setUploadAction(null);
         setPassphraseErrorText("");
-        keymasterRef.current = instance;
-        setRefreshFlag(r => r + 1);
+        keymasterRef.current = keymaster;
+        walletProviderRef.current = walletProvider;
+        setRefreshFlag((value) => value + 1);
         setIsReady(true);
         await chrome.runtime.sendMessage({
             action: "STORE_PASSPHRASE",
             passphrase,
         });
+    }
 
+    const buildKeymaster = async (passphrase: string) => {
+        const { instance, walletProvider } = createKeymaster(passphrase);
+
+        try {
+            if (pendingMnemonic) {
+                await instance.newWallet(pendingMnemonic, true);
+            } else {
+                await instance.loadWallet();
+            }
+        } catch {
+            setPassphraseErrorText(INCORRECT_PASSPHRASE);
+            return false;
+        }
+
+        await activateWallet(instance, walletProvider, passphrase);
         return true;
     };
 
-    async function rebuildKeymaster(passphrase: string) {
-        return await buildKeymaster(walletChrome, passphrase);
+    async function persistWalletData(wallet: WalletFile, providerState: MnemonicHdWalletState) {
+        const providerStore = createProviderStore();
+        const walletStore = createMetadataStore();
+
+        const providerOk = await providerStore.saveWallet(providerState, true);
+        if (!providerOk) {
+            throw new Error("save provider wallet failed");
+        }
+
+        const walletOk = await walletStore.saveWallet(wallet, true);
+        if (!walletOk) {
+            throw new Error("save wallet failed");
+        }
+    }
+
+    async function importLegacyWallet(wallet: StoredWallet, passphrase: string) {
+        const memoryStore = new WalletJsonMemory();
+        const memoryProviderStore = createMemoryProviderStore();
+        const { instance, walletProvider } = createKeymaster(passphrase, memoryStore, memoryProviderStore);
+
+        await memoryStore.saveWallet(wallet, true);
+        const normalized = await instance.loadWallet();
+        const providerState = await walletProvider.backupWallet();
+        await persistWalletData(normalized, providerState);
+    }
+
+    async function importWalletBundle(bundle: MdipWalletBundle, passphrase: string) {
+        const memoryStore = new WalletJsonMemory();
+        const memoryProviderStore = createMemoryProviderStore();
+        const { instance, walletProvider } = createKeymaster(passphrase, memoryStore, memoryProviderStore);
+
+        await memoryStore.saveWallet(bundle.keymaster, true);
+        await walletProvider.saveWallet(bundle.provider, true);
+        const normalized = await instance.loadWallet();
+        const providerState = await walletProvider.backupWallet();
+        await persistWalletData(normalized, providerState);
     }
 
     async function handlePassphraseSubmit(passphrase: string) {
         setPassphraseErrorText("");
 
-        const walletMemory = new WalletJsonMemory();
-
         if (uploadAction && pendingWallet) {
-            if (modalAction === 'decrypt') {
-                await walletMemory.saveWallet(pendingWallet as StoredWallet, true);
-
-                try {
-                    const km = new Keymaster({ gatekeeper, wallet: walletMemory, cipher, search, passphrase });
-                    // check pass
-                    await km.loadWallet();
-                    await walletChrome.saveWallet(pendingWallet as StoredWallet, true);
-                } catch {
-                    setPassphraseErrorText(INCORRECT_PASSPHRASE);
-                    return;
+            try {
+                if (uploadAction === "upload-bundle" && isMdipWalletBundle(pendingWallet)) {
+                    await importWalletBundle(pendingWallet, passphrase);
+                } else {
+                    await importLegacyWallet(pendingWallet as StoredWallet, passphrase);
                 }
-            } else { // upload-plain-v0
-                await walletChrome.saveWallet(pendingWallet as StoredWallet, true);
+            } catch {
+                setPassphraseErrorText(
+                    modalAction === "decrypt" ? INCORRECT_PASSPHRASE : "Failed to import wallet."
+                );
+                return;
             }
         }
 
-        await rebuildKeymaster(passphrase);
+        await buildKeymaster(passphrase);
     }
 
     async function handlePassphraseClose() {
         setPendingWallet(null);
         setPendingMnemonic("");
+        setRecoveredMnemonic("");
         setPassphraseErrorText("");
 
-        const walletData = await walletChrome.loadWallet();
-        if (walletData) {
+        const walletData = await createMetadataStore().loadWallet();
+        const providerData = await createProviderStore().loadWallet();
+        if (walletData || providerData) {
             setModalAction(null);
         }
     }
@@ -187,7 +325,7 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
             return;
         }
 
-        let response = await chrome.runtime.sendMessage({
+        const response = await chrome.runtime.sendMessage({
             action: "GET_PASSPHRASE",
         });
         const pass = response?.passphrase || "";
@@ -195,21 +333,36 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
             return;
         }
 
-        await rebuildKeymaster(pass);
+        await buildKeymaster(pass);
     }
 
     async function handleWalletUploadFile(uploaded: unknown) {
         setPendingWallet(uploaded);
 
-        if (isLegacyV0(uploaded)) {
-            setUploadAction('upload-plain-v0');
-            setModalAction('set-passphrase');
-        } else if (isV1WithEnc(uploaded)) {
-            setUploadAction('upload-enc-v1');
-            setModalAction('decrypt');
-        } else {
-            window.alert('Unsupported wallet type');
+        if (isMdipWalletBundle(uploaded)) {
+            setUploadAction("upload-bundle");
+            setModalAction("decrypt");
+            return;
         }
+
+        if (isLegacyV0(uploaded) || isV1Decrypted(uploaded)) {
+            setUploadAction("upload-legacy-plain");
+            setModalAction("set-passphrase");
+            return;
+        }
+
+        if (isV1WithEnc(uploaded)) {
+            setUploadAction("upload-legacy-encrypted");
+            setModalAction("decrypt");
+            return;
+        }
+
+        if (isV2Wallet(uploaded)) {
+            window.alert("Standalone keymaster metadata is not enough. Upload an mdip-wallet-bundle instead.");
+            return;
+        }
+
+        window.alert("Unsupported wallet type");
     }
 
     function handleStartReset() {
@@ -219,11 +372,10 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
 
     function handleStartRecover() {
         setMnemonicErrorText("");
+        setRecoveredMnemonic("");
         setShowRecoverMnemonic(true);
         setPassphraseErrorText("");
 
-        // only nullify modalAction if we are uploading a wallet, otherwise
-        // leave passphrase modal open in case the user cancels
         if (uploadAction !== null) {
             setModalAction(null);
         }
@@ -240,38 +392,47 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
 
     async function handleResetPassphraseSubmit(newPassphrase: string) {
         try {
-            const walletWeb = new WalletChrome();
-            const km = new Keymaster({ gatekeeper, wallet: walletWeb, cipher, search, passphrase: newPassphrase });
-            await km.newWallet(undefined, true);
+            const { instance } = createKeymaster(newPassphrase);
+            await instance.newWallet(undefined, true);
             setShowResetSetup(false);
-            await rebuildKeymaster(newPassphrase);
+            await buildKeymaster(newPassphrase);
         } catch {
-            setPassphraseErrorText('Failed to reset wallet. Try again.');
+            setPassphraseErrorText("Failed to reset wallet. Try again.");
         }
     }
 
     async function handleRecoverMnemonicSubmit(mnemonic: string) {
         setMnemonicErrorText("");
+
         try {
-            const walletWeb = new WalletChrome();
-            let stored = pendingWallet && isV1WithEnc(pendingWallet)
+            const walletStore = createMetadataStore();
+            const providerStore = createProviderStore();
+            const storedWallet = pendingWallet && isV1WithEnc(pendingWallet)
                 ? pendingWallet
-                : await walletWeb.loadWallet();
+                : await walletStore.loadWallet();
 
-            if (!isV1WithEnc(stored)) {
-                setMnemonicErrorText('Recovery not available for this wallet type.');
-                return;
+            if (isV1WithEnc(storedWallet)) {
+                const hdkey = cipher.generateHDKey(mnemonic);
+                const { publicJwk, privateJwk } = cipher.generateJwk(hdkey.privateKey!);
+                cipher.decryptMessage(publicJwk, privateJwk, storedWallet.enc);
+            } else {
+                const providerState = isMdipWalletBundle(pendingWallet)
+                    ? pendingWallet.provider
+                    : await providerStore.loadWallet();
+
+                if (!providerState) {
+                    setMnemonicErrorText("Recovery not available for this wallet type.");
+                    return;
+                }
+
+                await verifyMnemonicAgainstProviderState(providerState, mnemonic);
             }
-
-            const hdkey = cipher.generateHDKey(mnemonic);
-            const { publicJwk, privateJwk } = cipher.generateJwk(hdkey.privateKey!);
-            cipher.decryptMessage(publicJwk, privateJwk, stored.enc);
 
             setRecoveredMnemonic(mnemonic);
             setShowRecoverMnemonic(false);
             setShowRecoverSetup(true);
         } catch {
-            setMnemonicErrorText('Mnemonic is incorrect. Try again.');
+            setMnemonicErrorText("Mnemonic is incorrect. Try again.");
         }
     }
 
@@ -279,30 +440,56 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
         if (!recoveredMnemonic) {
             return;
         }
-        try {
-            const walletWeb = new WalletChrome();
-            const base = pendingWallet && isV1WithEnc(pendingWallet)
-                ? pendingWallet
-                : await walletWeb.loadWallet();
 
-            if (!isV1WithEnc(base)) {
-                setPassphraseErrorText('Recovery not available for this wallet type.');
-                return;
+        try {
+            const walletStore = createMetadataStore();
+            const providerStore = createProviderStore();
+            const storedWallet = pendingWallet && isV1WithEnc(pendingWallet)
+                ? pendingWallet
+                : await walletStore.loadWallet();
+
+            if (isV1WithEnc(storedWallet)) {
+                const mnemonicEnc = await encMnemonic(recoveredMnemonic, newPassphrase);
+                const updatedWallet = {
+                    version: storedWallet.version,
+                    seed: { mnemonicEnc },
+                    enc: storedWallet.enc,
+                } satisfies StoredWallet;
+
+                await importLegacyWallet(updatedWallet, newPassphrase);
+            } else {
+                const providerState = isMdipWalletBundle(pendingWallet)
+                    ? pendingWallet.provider
+                    : await providerStore.loadWallet();
+
+                if (!providerState) {
+                    setPassphraseErrorText("Recovery not available for this wallet type.");
+                    return;
+                }
+
+                const recoveryProvider = createMnemonicWalletProvider(newPassphrase, createMemoryProviderStore());
+                await recoveryProvider.saveWallet(providerState, true);
+                await recoveryProvider.changePassphrase(recoveredMnemonic, newPassphrase);
+                const updatedProviderState = await recoveryProvider.backupWallet();
+
+                if (isMdipWalletBundle(pendingWallet)) {
+                    await persistWalletData(pendingWallet.keymaster, updatedProviderState);
+                } else {
+                    const wallet = await walletStore.loadWallet();
+                    if (!wallet || !isV2Wallet(wallet)) {
+                        setPassphraseErrorText("Recovery not available for this wallet type.");
+                        return;
+                    }
+
+                    await persistWalletData(wallet, updatedProviderState);
+                }
             }
 
-            const mnemonicEnc = await encMnemonic(recoveredMnemonic, newPassphrase);
-            const updated = {
-                version: base.version,
-                seed: { mnemonicEnc },
-                enc: base.enc
-            };
-
-            await walletWeb.saveWallet(updated, true);
             setRecoveredMnemonic("");
             setShowRecoverSetup(false);
-            await rebuildKeymaster(newPassphrase);
+            await buildKeymaster(newPassphrase);
         } catch {
-            setPassphraseErrorText('Failed to update passphrase. Try again.');
+            setPassphraseErrorText("Failed to update passphrase. Try again.");
         }
     }
 
@@ -318,24 +505,27 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
         refreshFlag,
         isBrowser,
         keymaster: keymasterRef.current,
+        walletProvider: walletProviderRef.current,
     };
 
     return (
         <>
             <PassphraseModal
                 isOpen={modalAction !== null && !showResetSetup && !showRecoverSetup}
-                title={modalAction === 'set-passphrase'
-                    ? 'Set a Passphrase' : 'Enter Your Wallet Passphrase'}
+                title={modalAction === "set-passphrase"
+                    ? "Set a Passphrase" : "Enter Your Wallet Passphrase"}
                 errorText={passphraseErrorText}
                 onSubmit={handlePassphraseSubmit}
                 onClose={handlePassphraseClose}
-                encrypt={modalAction === 'set-passphrase'}
+                encrypt={modalAction === "set-passphrase"}
                 showCancel={pendingWallet !== null}
                 upload={uploadAction !== null}
                 onStartReset={handleStartReset}
                 onStartRecover={
-                    modalAction === 'decrypt' &&
-                    (uploadAction === null || uploadAction === 'upload-enc-v1')
+                    modalAction === "decrypt"
+                    && (uploadAction === null
+                        || uploadAction === "upload-legacy-encrypted"
+                        || uploadAction === "upload-bundle")
                         ? handleStartRecover
                         : undefined
                 }

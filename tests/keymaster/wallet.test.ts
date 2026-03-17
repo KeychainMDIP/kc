@@ -325,6 +325,32 @@ describe('MnemonicHdWalletProvider backup', () => {
         expect(ok).toBe(true);
         expect(await restoredProvider.getFingerprint()).toBe(await walletProvider.getFingerprint());
     });
+
+    it('should decrypt the mnemonic and change passphrase with a matching mnemonic', async () => {
+        const mnemonic = cipher.generateMnemonic();
+        await walletProvider.newWallet(mnemonic, true);
+
+        const backup = await walletProvider.backupWallet();
+        const restoredProvider = createWalletProvider(createProviderStore(), 'temporary');
+        await restoredProvider.saveWallet(backup, true);
+        await restoredProvider.changePassphrase(mnemonic, 'updated-passphrase');
+
+        expect(await restoredProvider.decryptMnemonic()).toBe(mnemonic);
+        expect(await restoredProvider.getFingerprint()).toBe(await walletProvider.getFingerprint());
+    });
+
+    it('should reject passphrase change when the mnemonic does not match', async () => {
+        const mnemonic = cipher.generateMnemonic();
+        await walletProvider.newWallet(mnemonic, true);
+
+        const backup = await walletProvider.backupWallet();
+        const restoredProvider = createWalletProvider(createProviderStore(), 'temporary');
+        await restoredProvider.saveWallet(backup, true);
+
+        await expect(
+            restoredProvider.changePassphrase(cipher.generateMnemonic(), 'updated-passphrase')
+        ).rejects.toThrow('Keymaster: Mnemonic does not match wallet.');
+    });
 });
 
 describe('backupWallet', () => {

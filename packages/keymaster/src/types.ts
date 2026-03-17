@@ -265,6 +265,7 @@ export interface MnemonicHdKeyState {
 export interface MnemonicHdWalletState {
     version: 1;
     type: 'mnemonic-hd';
+    rootPublicJwk: EcdsaJwkPublic;
     mnemonicEnc: {
         salt: string;
         iv: string;
@@ -273,6 +274,13 @@ export interface MnemonicHdWalletState {
     nextAccount: number;
     rootKeyRef: string;
     keys: Record<string, MnemonicHdKeyState>;
+}
+
+export interface MdipWalletBundle {
+    version: 1;
+    type: 'mdip-wallet-bundle';
+    keymaster: WalletFile;
+    provider: MnemonicHdWalletState;
 }
 
 export interface KeymasterStore {
@@ -307,6 +315,8 @@ export interface MnemonicHdWalletProviderInterface extends WalletProvider {
     migrateLegacyWallet(wallet: LegacyStoredWallet): Promise<WalletFile>;
     backupWallet(): Promise<MnemonicHdWalletState>;
     saveWallet(wallet: MnemonicHdWalletState, overwrite?: boolean): Promise<boolean>;
+    decryptMnemonic(): Promise<string>;
+    changePassphrase(mnemonic: string, newPassphrase: string): Promise<void>;
 }
 
 export interface SearchEngine {

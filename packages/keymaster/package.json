@@ -83,6 +83,10 @@
       "require": "./dist/cjs/db/chrome.cjs",
       "types": "./dist/types/db/chrome.d.ts"
     },
+    "./wallet/mnemonic-hd": {
+      "import": "./dist/esm/provider/mnemonic-hd.js",
+      "types": "./dist/types/provider/mnemonic-hd.d.ts"
+    },
     "./wallet/typeGuards": {
       "import": "./dist/esm/db/typeGuards.js",
       "require": "./dist/cjs/db/typeGuards.cjs",
@@ -126,6 +130,9 @@
       ],
       "wallet/chrome": [
         "./dist/types/db/chrome.d.ts"
+      ],
+      "wallet/mnemonic-hd": [
+        "./dist/types/provider/mnemonic-hd.d.ts"
       ],
       "wallet/typeGuards": [
         "./dist/types/db/typeGuards.d.ts"
