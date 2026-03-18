@@ -209,6 +209,7 @@ if (serveClient) {
 
 let gatekeeper: GatekeeperClient;
 let keymaster: Keymaster;
+let walletProvider: MnemonicHdWalletProvider;
 let serverReady = false;
 
 /**
