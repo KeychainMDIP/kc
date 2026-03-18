@@ -73,11 +73,6 @@
       "require": "./dist/cjs/db/postgres.cjs",
       "types": "./dist/types/db/postgres.d.ts"
     },
-    "./wallet/cache": {
-      "import": "./dist/esm/db/cache.js",
-      "require": "./dist/cjs/db/cache.cjs",
-      "types": "./dist/types/db/cache.d.ts"
-    },
     "./wallet/web": {
       "import": "./dist/esm/db/web.js",
       "require": "./dist/cjs/db/web.cjs",
@@ -129,9 +124,6 @@
       ],
       "wallet/postgres": [
         "./dist/types/db/postgres.d.ts"
-      ],
-      "wallet/cache": [
-        "./dist/types/db/cache.d.ts"
       ],
       "wallet/web": [
         "./dist/types/db/web.d.ts"

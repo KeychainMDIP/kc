@@ -67,7 +67,6 @@ const config = {
     nodeID: process.env.KC_NODE_ID || '',
     db: process.env.KC_KEYMASTER_DB || 'json',
     walletProviderPassphrase: process.env.KC_WALLET_PROVIDER_PASSPHRASE || process.env.KC_ENCRYPTED_PASSPHRASE || '',
-    walletCache: process.env.KC_WALLET_CACHE ? process.env.KC_WALLET_CACHE === 'true' : false,
     defaultRegistry: process.env.KC_DEFAULT_REGISTRY,
     keymasterTrustProxy: parseBoolean(process.env.KC_KEYMASTER_TRUST_PROXY, false),
     rateLimitEnabled: parseBoolean(process.env.KC_KEYMASTER_RATE_LIMIT_ENABLED, false),

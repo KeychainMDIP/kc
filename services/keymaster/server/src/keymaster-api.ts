@@ -13,7 +13,6 @@ import WalletRedis from '@mdip/keymaster/wallet/redis';
 import WalletMongo from '@mdip/keymaster/wallet/mongo';
 import WalletSQLite from '@mdip/keymaster/wallet/sqlite';
 import WalletPostgres from '@mdip/keymaster/wallet/postgres';
-import WalletCache from '@mdip/keymaster/wallet/cache';
 import CipherNode from '@mdip/cipher/node';
 import { InvalidParameterError } from '@mdip/common/errors';
 import { childLogger } from '@mdip/common/logger';
@@ -6207,10 +6206,6 @@ async function initWallet() {
         throw new InvalidParameterError(`db=${config.db}`);
     }
 
-    if (config.walletCache) {
-        wallet = new WalletCache(wallet);
-    }
-
     return wallet;
 }
 
@@ -6228,10 +6223,6 @@ async function initWalletProviderStore() {
         wallet = new WalletJson('wallet-provider.json') as unknown as WalletProviderStore;
     } else {
         throw new InvalidParameterError(`db=${config.db}`);
-    }
-
-    if (config.walletCache) {
-        wallet = new WalletCache(wallet as unknown as KeymasterStore) as unknown as WalletProviderStore;
     }
 
     return wallet;
@@ -6268,7 +6259,7 @@ const server = app.listen(port, async () => {
     const walletProviderStore = await initWalletProviderStore();
     const cipher = new CipherNode();
     const defaultRegistry = config.defaultRegistry;
-    const walletProvider = new MnemonicHdWalletProvider({
+    walletProvider = new MnemonicHdWalletProvider({
         store: walletProviderStore,
         cipher,
         passphrase: config.walletProviderPassphrase,

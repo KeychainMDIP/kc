@@ -6,7 +6,7 @@ import CipherWeb from '@mdip/cipher/web';
 import Keymaster from '@mdip/keymaster';
 import SearchClient from '@mdip/keymaster/search';
 import WalletWeb from '@mdip/keymaster/wallet/web';
-import WalletCache from '@mdip/keymaster/wallet/cache';
+import WalletJsonMemory from '@mdip/keymaster/wallet/json-memory';
 import WalletJsonMemory from "@mdip/keymaster/wallet/json-memory";
 import { isV1WithEnc, isLegacyV0 } from '@mdip/keymaster/wallet/typeGuards';
 import KeymasterUI from './KeymasterUI';
