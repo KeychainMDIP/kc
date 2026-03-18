@@ -7,7 +7,7 @@ import Keymaster from '@mdip/keymaster';
 import SearchClient from '@mdip/keymaster/search';
 import WalletWeb from '@mdip/keymaster/wallet/web';
 import WalletJsonMemory from '@mdip/keymaster/wallet/json-memory';
-import WalletJsonMemory from "@mdip/keymaster/wallet/json-memory";
+import MnemonicHdWalletProvider from '@mdip/keymaster/wallet/mnemonic-hd';
 import { isV1WithEnc, isLegacyV0 } from '@mdip/keymaster/wallet/typeGuards';
 import KeymasterUI from './KeymasterUI';
 import PassphraseModal from './PassphraseModal';
