@@ -106,6 +106,7 @@ Commands:
   revoke-did <did>                         Permanently revoke a DID
   rotate-keys                              Generates new set of keys for current ID
   set-property <id> <key> [value]          Assign a key-value pair to an asset
+  show-mnemonic                            Show recovery phrase for wallet
   show-wallet                              Show wallet
   sign-file <file>                         Sign a JSON file
   test-group <group> [member]              Determine if a member is in a group

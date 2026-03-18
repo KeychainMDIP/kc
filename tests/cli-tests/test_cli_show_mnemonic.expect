@@ -1,0 +1,74 @@
+#!/usr/bin/env expect
+
+spawn bash kc new-wallet
+expect {
+    -re {"version"\s*:\s*2} {
+        send_user "\n✅ Wallet Reset Complete!\n"
+    }
+    timeout {
+        send_user "\n❌ Wallet Reset Timeout.\n";
+        exit 1
+    }
+}
+
+spawn bash kc show-mnemonic
+
+set output ""
+expect {
+    -re "(.*)\n" {
+        append output $expect_out(1,string) " "
+        exp_continue
+    }
+    eof
+}
+
+set output [string trim $output]
+
+proc count_words {input} {
+    set words [split $input " "]
+    return [llength $words]
+}
+
+set word_count [count_words $output]
+
+if {$word_count == 12} {
+    puts "\n✅ Valid: The phrase contains exactly 12 words."
+} else {
+    puts "\n🔴 Invalid: The phrase contains $word_count words instead of 12."
+    exit 1
+}
+
+spawn bash admin reset-db
+expect {
+    "true" {
+        send_user "\n✅ DB Reset Complete!\n"
+    }
+    timeout {
+        send_user "\n❌ DB Reset Failed!.\n"
+        exit 1
+    }
+}
+
+foreach {key val} $argv {
+    if {$key == "--ci-json"} {
+        set result [exec docker exec kc-gatekeeper-1 rm -rf /app/gatekeeper/data/wallet.json]
+        puts "Deleted wallet.json!"
+        
+    } elseif {$key == "--local"} {
+        set script_dir [file dirname [file normalize [info script]]]
+        set filepath [file join $script_dir ../../data/wallet.json]
+        set abs_filepath [file normalize $filepath]
+
+        if {[file exists $abs_filepath]} {
+            puts "File exists: $abs_filepath"
+            file delete -force $abs_filepath
+            puts "File deleted: $abs_filepath"
+        } else {
+            puts "File not found: $abs_filepath"
+        }
+        
+    } elseif {$key == "--ci-redis"} {
+        set result [exec docker compose exec redis redis-cli flushall]
+        puts "Resetted Redis!"
+    }
+}

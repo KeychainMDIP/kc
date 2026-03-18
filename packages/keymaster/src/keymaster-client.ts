@@ -157,6 +157,16 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     }
 
+    async decryptMnemonic(): Promise<string> {
+        try {
+            const response = await axios.get(`${this.API}/wallet/mnemonic`);
+            return response.data.mnemonic;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
     async backupWallet(): Promise<string> {
         try {
             const response = await axios.post(`${this.API}/wallet/backup`);

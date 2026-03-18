@@ -183,6 +183,19 @@ program
     });
 
 program
+    .command('show-mnemonic')
+    .description('Show recovery phrase for wallet')
+    .action(async () => {
+        try {
+            const mnemonic = await keymaster.decryptMnemonic();
+            console.log(mnemonic);
+        }
+        catch (error) {
+            console.error(error.error || error);
+        }
+    });
+
+program
     .command('backup-wallet-file <file>')
     .description('Backup wallet metadata to file')
     .action(async (file) => {
