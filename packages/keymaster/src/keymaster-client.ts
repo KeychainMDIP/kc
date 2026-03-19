@@ -21,6 +21,7 @@ import {
     IssueCredentialsOptions,
     KeymasterClientOptions,
     KeymasterInterface,
+    MdipWalletBundle,
     NoticeMessage,
     Poll,
     StoredWallet,
@@ -180,6 +181,26 @@ export default class KeymasterClient implements KeymasterInterface {
     async recoverWallet(did?: string): Promise<WalletFile> {
         try {
             const response = await axios.post(`${this.API}/wallet/recover`, { did });
+            return response.data.wallet;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async exportWalletBundle(): Promise<MdipWalletBundle> {
+        try {
+            const response = await axios.get(`${this.API}/wallet/bundle`);
+            return response.data.bundle;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async importWalletBundle(bundle: MdipWalletBundle): Promise<WalletFile> {
+        try {
+            const response = await axios.put(`${this.API}/wallet/bundle`, { bundle });
             return response.data.wallet;
         }
         catch (error) {

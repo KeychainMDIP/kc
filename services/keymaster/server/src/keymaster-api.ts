@@ -7,7 +7,7 @@ import rateLimit from 'express-rate-limit';
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import Keymaster, { MnemonicHdWalletProvider } from '@mdip/keymaster';
 import SearchClient from '@mdip/keymaster/search';
-import { KeymasterStore, WalletProviderStore } from '@mdip/keymaster/types';
+import { KeymasterStore, MdipWalletBundle, WalletProviderStore } from '@mdip/keymaster/types';
 import WalletJson from '@mdip/keymaster/wallet/json';
 import WalletRedis from '@mdip/keymaster/wallet/redis';
 import WalletMongo from '@mdip/keymaster/wallet/mongo';
@@ -532,6 +532,98 @@ v1router.get('/wallet/mnemonic', async (req, res) => {
     }
 });
 
+/**
+ * @swagger
+ * /wallet/bundle:
+ *   get:
+ *     summary: Export the current keymaster metadata and mnemonic wallet provider state.
+ *     responses:
+ *       200:
+ *         description: The wallet bundle object.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 bundle:
+ *                   type: object
+ *       500:
+ *         description: Internal server error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+v1router.get('/wallet/bundle', async (req, res) => {
+    try {
+        const wallet = await keymaster.loadWallet();
+        const provider = await walletProvider.backupWallet();
+        const bundle: MdipWalletBundle = {
+            version: 1,
+            type: 'mdip-wallet-bundle',
+            keymaster: wallet,
+            provider,
+        };
+        res.json({ bundle });
+    } catch (error: any) {
+        res.status(500).send({ error: error.toString() });
+    }
+});
+
+/**
+ * @swagger
+ * /wallet/bundle:
+ *   put:
+ *     summary: Import a wallet bundle containing keymaster metadata and mnemonic wallet provider state.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               bundle:
+ *                 type: object
+ *     responses:
+ *       200:
+ *         description: The imported wallet object.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *                 wallet:
+ *                   type: object
+ *       500:
+ *         description: Internal server error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+v1router.put('/wallet/bundle', async (req, res) => {
+    try {
+        const bundle = req.body?.bundle as MdipWalletBundle;
+        const providerOk = await walletProvider.saveWallet(bundle.provider, true);
+        if (!providerOk) {
+            throw new Error('save provider wallet failed');
+        }
+
+        const ok = await keymaster.saveWallet(bundle.keymaster, true);
+        const wallet = await keymaster.loadWallet();
+        res.json({ ok, wallet });
+    } catch (error: any) {
+        res.status(500).send({ error: error.toString() });
+    }
+});
 
 /**
  * @swagger
