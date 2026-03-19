@@ -1,4 +1,4 @@
-import { CID } from 'multiformats';
+import { CID } from 'multiformats/cid';
 import { base58btc } from 'multiformats/bases/base58';
 import * as jsonCodec from 'multiformats/codecs/json';
 import * as rawCodec from 'multiformats/codecs/raw';

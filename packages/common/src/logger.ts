@@ -1,4 +1,5 @@
 import pino, { type Logger, type LoggerOptions, type ChildLoggerOptions } from 'pino';
+import pinoPretty from 'pino-pretty';
 
 export type LogLevel = 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace' | 'silent';
 export type LoggerLike = Pick<Logger, 'debug' | 'info' | 'warn' | 'error'>;
@@ -83,23 +84,24 @@ export function createLogger(
     env: Env = resolveEnv(),
 ): Logger {
     const resolvedLevel = options.level ?? getLogLevel(env);
-    const transport = options.transport ?? {
-        target: 'pino-pretty',
-        options: {
-            colorize: false,
-            translateTime: 'SYS:standard',
-            ignore: 'pid,hostname,service',
-            singleLine: true,
-        },
-    };
 
     const loggerOptions: LoggerOptions = {
         ...options,
         level: resolvedLevel,
-        transport,
     };
 
-    return pino(loggerOptions);
+    if (options.transport) {
+        return pino(loggerOptions);
+    }
+
+    const stream = pinoPretty({
+        colorize: false,
+        translateTime: 'SYS:standard',
+        ignore: 'pid,hostname,service',
+        singleLine: true,
+    });
+
+    return pino(loggerOptions, stream);
 }
 
 export let logger = createLogger();
