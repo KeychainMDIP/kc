@@ -14,24 +14,26 @@
   },
   "exports": {
     ".": {
+      "types": "./dist/types/index.d.ts",
+      "browser": "./dist/esm/index-browser.js",
       "import": "./dist/esm/index.js",
-      "require": "./dist/cjs/index.cjs",
-      "types": "./dist/types/index.d.ts"
+      "require": "./dist/cjs/index.cjs"
     },
     "./utils": {
+      "types": "./dist/types/utils.d.ts",
       "import": "./dist/esm/utils.js",
-      "require": "./dist/cjs/utils.cjs",
-      "types": "./dist/types/utils.d.ts"
+      "require": "./dist/cjs/utils.cjs"
     },
     "./errors": {
+      "types": "./dist/types/errors.d.ts",
       "import": "./dist/esm/errors.js",
-      "require": "./dist/cjs/errors.cjs",
-      "types": "./dist/types/errors.d.ts"
+      "require": "./dist/cjs/errors.cjs"
     },
     "./logger": {
+      "types": "./dist/types/logger.d.ts",
+      "browser": "./dist/esm/logger-browser.js",
       "import": "./dist/esm/logger.js",
-      "require": "./dist/cjs/logger.cjs",
-      "types": "./dist/types/logger.d.ts"
+      "require": "./dist/cjs/logger.cjs"
     }
   },
   "typesVersions": {

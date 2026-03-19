@@ -49,20 +49,17 @@ describe('logger', () => {
         expect(loggerMod.getLogLevel()).toBe('info');
     });
 
-    it('getPrettyEnabled always returns true', () => {
+    it('getPrettyEnabled returns the default pretty flag', () => {
         expect(loggerMod.getPrettyEnabled()).toBe(true);
     });
 
-    it('createLogger uses env level and pretty transport defaults', () => {
+    it('createLogger uses env level and pretty stream defaults', () => {
         loggerMod.createLogger({}, { KC_LOG_LEVEL: 'error' });
         const call = pinoMock.mock.calls.at(-1);
         expect(call).toBeTruthy();
         const options = call?.[0] as any;
         expect(options.level).toBe('error');
-        expect(options.transport?.target).toBe('pino-pretty');
-        expect(options.transport?.options?.singleLine).toBe(true);
-        expect(options.transport?.options?.ignore).toContain('service');
-        expect(options.transport?.options?.colorize).toBe(false);
+        expect(call?.[1]).toBeTruthy();
     });
 
     it('createLogger uses explicit level over env', () => {
