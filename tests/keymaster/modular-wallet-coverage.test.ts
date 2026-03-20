@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import Keymaster from '@mdip/keymaster';
 import type {
     KeymasterStore,
@@ -85,6 +86,10 @@ class ControlledProviderStore extends WalletProviderJsonMemory {
         if (initial) {
             this.walletCache = JSON.stringify(initial);
         }
+    }
+
+    queueSaveResult(result: boolean): void {
+        this.saveResults.push(result);
     }
 
     override async saveWallet(wallet: MnemonicHdWalletState, overwrite: boolean = false): Promise<boolean> {
@@ -394,6 +399,57 @@ describe('MnemonicHdWalletProvider coverage', () => {
         );
     });
 
+    it('rejects unsupported legacy wallet shapes', async () => {
+        const cipher = new CipherNode();
+        const provider = new MnemonicHdWalletProvider({
+            store: new ControlledProviderStore(),
+            cipher,
+            passphrase: PASSPHRASE,
+        });
+
+        await expect(provider.migrateLegacyWallet({ version: 99 } as any)).rejects.toThrow(
+            'Keymaster: Unsupported wallet version.'
+        );
+    });
+
+    it('loads provider state from the store when the cache is empty', async () => {
+        const cipher = new CipherNode();
+        const mnemonic = cipher.generateMnemonic();
+        const sourceProvider = new MnemonicHdWalletProvider({
+            store: new ControlledProviderStore(),
+            cipher,
+            passphrase: PASSPHRASE,
+        });
+
+        await sourceProvider.newWallet(mnemonic, true);
+        const backup = await sourceProvider.backupWallet();
+
+        const restoredProvider = new MnemonicHdWalletProvider({
+            store: new ControlledProviderStore(backup),
+            cipher,
+            passphrase: PASSPHRASE,
+        });
+
+        await expect(restoredProvider.decryptMnemonic()).resolves.toBe(mnemonic);
+    });
+
+    it('supports root key refs for signing and base key refs for rotation', async () => {
+        const cipher = new CipherNode();
+        const provider = new MnemonicHdWalletProvider({
+            store: new ControlledProviderStore(),
+            cipher,
+            passphrase: PASSPHRASE,
+        });
+
+        await provider.newWallet(undefined, true);
+        await provider.createIdKey();
+
+        await expect(provider.signDigest('root', cipher.hashMessage('root-message'))).resolves.toEqual(expect.any(String));
+        await expect(provider.rotateKey('hd:0')).resolves.toEqual({
+            publicJwk: expect.any(Object),
+        });
+    });
+
     it('rejects malformed versioned key refs', async () => {
         const cipher = new CipherNode();
         const provider = new MnemonicHdWalletProvider({
@@ -422,5 +478,92 @@ describe('MnemonicHdWalletProvider coverage', () => {
         await expect(provider.signDigest('hd:999#0', 'digest')).rejects.toThrow(
             'Keymaster: Unknown keyRef: hd:999'
         );
+    });
+
+    it('rejects unknown rotated key versions for known key rings', async () => {
+        const cipher = new CipherNode();
+        const provider = new MnemonicHdWalletProvider({
+            store: new ControlledProviderStore(),
+            cipher,
+            passphrase: PASSPHRASE,
+        });
+
+        await provider.newWallet(undefined, true);
+        await provider.createIdKey();
+
+        await expect(provider.signDigest('hd:0#1', 'digest')).rejects.toThrow(
+            'Keymaster: Unknown keyRef: hd:0#1'
+        );
+    });
+
+    it('repairs missing knownIndices when imported provider state is incomplete', async () => {
+        const cipher = new CipherNode();
+        const sourceProvider = new MnemonicHdWalletProvider({
+            store: new ControlledProviderStore(),
+            cipher,
+            passphrase: PASSPHRASE,
+        });
+
+        await sourceProvider.newWallet(undefined, true);
+        await sourceProvider.createIdKey();
+        const backup = await sourceProvider.backupWallet();
+        backup.keys['hd:0'].knownIndices = [];
+
+        const restoredProvider = new MnemonicHdWalletProvider({
+            store: new ControlledProviderStore(),
+            cipher,
+            passphrase: PASSPHRASE,
+        });
+        await restoredProvider.saveWallet(backup, true);
+
+        await expect(restoredProvider.signDigest('hd:0#0', cipher.hashMessage('message'))).resolves.toEqual(expect.any(String));
+    });
+
+    it('guards private helper access when state or hd cache is missing', () => {
+        const cipher = new CipherNode();
+        const provider = new MnemonicHdWalletProvider({
+            store: new ControlledProviderStore(),
+            cipher,
+            passphrase: PASSPHRASE,
+        });
+
+        expect(() => (provider as any).getRootKeyPair()).toThrow('Keymaster: HD wallet cache not loaded');
+        expect(() => (provider as any).deriveIdKeyPair(0, 0)).toThrow('Keymaster: HD wallet cache not loaded');
+        expect(() => (provider as any).findKeyPairForRef('hd:0#0')).toThrow('Keymaster: Wallet provider not initialized.');
+    });
+
+    it('does not save provider state when a private mutation is a no-op', async () => {
+        const cipher = new CipherNode();
+        const store = new ControlledProviderStore();
+        const provider = new MnemonicHdWalletProvider({
+            store,
+            cipher,
+            passphrase: PASSPHRASE,
+        });
+
+        await provider.newWallet(undefined, true);
+        const saveSpy = jest.spyOn(store, 'saveWallet');
+        saveSpy.mockClear();
+
+        await (provider as any).mutateState(() => { });
+
+        expect(saveSpy).not.toHaveBeenCalled();
+    });
+
+    it('throws when a private provider state mutation cannot be saved', async () => {
+        const cipher = new CipherNode();
+        const store = new ControlledProviderStore();
+        const provider = new MnemonicHdWalletProvider({
+            store,
+            cipher,
+            passphrase: PASSPHRASE,
+        });
+
+        await provider.newWallet(undefined, true);
+        store.queueSaveResult(false);
+
+        await expect((provider as any).mutateState((state: MnemonicHdWalletState) => {
+            state.nextAccount += 1;
+        })).rejects.toThrow('Keymaster: save wallet failed');
     });
 });
