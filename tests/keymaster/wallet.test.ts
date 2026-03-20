@@ -11,6 +11,7 @@ import DbJsonMemory from '@mdip/gatekeeper/db/json-memory';
 import WalletJsonMemory from '@mdip/keymaster/wallet/json-memory';
 import HeliaClient from '@mdip/ipfs/helia';
 import MnemonicHdWalletProvider from '../../packages/keymaster/src/provider/mnemonic-hd.ts';
+import WalletProviderJsonMemory from '../../packages/keymaster/src/provider/json-memory.ts';
 import { TestHelper } from './helper.ts';
 import { disableSubtle } from './testUtils.ts';
 import { encMnemonic, decMnemonic } from '@mdip/keymaster/encryption';
@@ -93,7 +94,7 @@ const MOCK_WALLET_V1_ENCRYPTED: LegacyWalletEncFile = {
 };
 
 function createProviderStore(): WalletProviderStore {
-    return new WalletJsonMemory() as unknown as WalletProviderStore;
+    return new WalletProviderJsonMemory();
 }
 
 function createWalletProvider(
@@ -118,9 +119,9 @@ beforeEach(() => {
     const db = new DbJsonMemory('test');
     gatekeeper = new Gatekeeper({ db, ipfs, registries: ['local', 'hyperswarm', 'TFTC'] });
     walletStore = new WalletJsonMemory();
-    providerStore = new WalletJsonMemory();
+    providerStore = new WalletProviderJsonMemory();
     cipher = new CipherNode();
-    walletProvider = createWalletProvider(providerStore as unknown as WalletProviderStore);
+    walletProvider = createWalletProvider(providerStore);
     keymaster = new Keymaster({ gatekeeper, store: walletStore, walletProvider, cipher });
     helper = new TestHelper(keymaster);
 });

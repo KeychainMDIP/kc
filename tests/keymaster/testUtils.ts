@@ -2,15 +2,16 @@ import Gatekeeper from '@mdip/gatekeeper';
 import Keymaster from '@mdip/keymaster';
 import type { SearchEngine, WalletProviderStore } from '@mdip/keymaster/types';
 import CipherNode from '@mdip/cipher/node';
-import WalletJsonMemory from '@mdip/keymaster/wallet/json-memory';
 import MnemonicHdWalletProvider from '../../packages/keymaster/src/provider/mnemonic-hd.ts';
+import WalletProviderJsonMemory from '../../packages/keymaster/src/provider/json-memory.ts';
+import WalletJsonMemory from '@mdip/keymaster/wallet/json-memory';
 
 type CryptoLike = typeof globalThis.crypto | undefined;
 
 export const TEST_PASSPHRASE = 'passphrase';
 
 export function createProviderStore(): WalletProviderStore {
-    return new WalletJsonMemory() as unknown as WalletProviderStore;
+    return new WalletProviderJsonMemory();
 }
 
 export function createMnemonicWalletProvider(

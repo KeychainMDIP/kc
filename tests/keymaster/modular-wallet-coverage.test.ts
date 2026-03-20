@@ -7,11 +7,11 @@ import type {
     WalletFile,
     WalletProvider,
     WalletProviderKey,
-    WalletProviderStore,
 } from '@mdip/keymaster/types';
 import type { EcdsaJwkPublic } from '@mdip/cipher/types';
 import CipherNode from '@mdip/cipher/node';
 import MnemonicHdWalletProvider from '../../packages/keymaster/src/provider/mnemonic-hd.ts';
+import WalletProviderJsonMemory from '../../packages/keymaster/src/provider/json-memory.ts';
 import { encMnemonic } from '@mdip/keymaster/encryption';
 
 const gatekeeper = {
@@ -32,16 +32,16 @@ const dummyPublicJwk = {
 
 const PASSPHRASE = 'passphrase';
 
-class MemoryKeymasterStore implements KeymasterStore {
-    private wallet: StoredWallet | null;
-    private readonly saveResults: boolean[];
+class MemoryStore<T> {
+    protected wallet: T | null;
+    protected readonly saveResults: boolean[];
 
-    constructor(initial: StoredWallet | null = null, saveResults: boolean[] = []) {
+    constructor(initial: T | null = null, saveResults: boolean[] = []) {
         this.wallet = initial ? structuredClone(initial) : null;
         this.saveResults = [...saveResults];
     }
 
-    async saveWallet(wallet: StoredWallet, overwrite: boolean = false): Promise<boolean> {
+    protected async saveValue(wallet: T, overwrite: boolean = false): Promise<boolean> {
         if (this.wallet && !overwrite) {
             return false;
         }
@@ -57,25 +57,37 @@ class MemoryKeymasterStore implements KeymasterStore {
         return true;
     }
 
-    async loadWallet(): Promise<StoredWallet | null> {
+    protected async loadValue(): Promise<T | null> {
         return this.wallet ? structuredClone(this.wallet) : null;
     }
 }
 
-class MemoryProviderStore implements WalletProviderStore {
-    private wallet: MnemonicHdWalletState | null;
+class MemoryKeymasterStore extends MemoryStore<StoredWallet> implements KeymasterStore {
+    constructor(initial: StoredWallet | null = null, saveResults: boolean[] = []) {
+        super(initial, saveResults);
+    }
+
+    async saveWallet(wallet: StoredWallet, overwrite: boolean = false): Promise<boolean> {
+        return this.saveValue(wallet, overwrite);
+    }
+
+    async loadWallet(): Promise<StoredWallet | null> {
+        return this.loadValue();
+    }
+}
+
+class ControlledProviderStore extends WalletProviderJsonMemory {
     private readonly saveResults: boolean[];
 
     constructor(initial: MnemonicHdWalletState | null = null, saveResults: boolean[] = []) {
-        this.wallet = initial ? structuredClone(initial) : null;
+        super();
         this.saveResults = [...saveResults];
+        if (initial) {
+            this.walletCache = JSON.stringify(initial);
+        }
     }
 
-    async saveWallet(wallet: MnemonicHdWalletState, overwrite: boolean = false): Promise<boolean> {
-        if (this.wallet && !overwrite) {
-            return false;
-        }
-
+    override async saveWallet(wallet: MnemonicHdWalletState, overwrite: boolean = false): Promise<boolean> {
         if (this.saveResults.length > 0) {
             const result = this.saveResults.shift()!;
             if (!result) {
@@ -83,12 +95,7 @@ class MemoryProviderStore implements WalletProviderStore {
             }
         }
 
-        this.wallet = structuredClone(wallet);
-        return true;
-    }
-
-    async loadWallet(): Promise<MnemonicHdWalletState | null> {
-        return this.wallet ? structuredClone(this.wallet) : null;
+        return super.saveWallet(wallet, overwrite);
     }
 }
 
@@ -174,7 +181,7 @@ describe('Keymaster modular wallet coverage', () => {
         const cipher = new CipherNode();
         const legacyWallet = await makeLegacyV1Decrypted(cipher);
         const store = new MemoryKeymasterStore(legacyWallet, [false]);
-        const providerStore = new MemoryProviderStore();
+        const providerStore = new ControlledProviderStore();
         const walletProvider = new MnemonicHdWalletProvider({ store: providerStore, cipher, passphrase: PASSPHRASE });
         const keymaster = new Keymaster({ gatekeeper, store, walletProvider, cipher });
 
@@ -258,15 +265,15 @@ describe('MnemonicHdWalletProvider coverage', () => {
 
         expect(() => new MnemonicHdWalletProvider({ store: undefined as any, cipher, passphrase: PASSPHRASE }))
             .toThrow('Invalid parameter: options.store');
-        expect(() => new MnemonicHdWalletProvider({ store: new MemoryProviderStore(), cipher: undefined as any, passphrase: PASSPHRASE }))
+        expect(() => new MnemonicHdWalletProvider({ store: new ControlledProviderStore(), cipher: undefined as any, passphrase: PASSPHRASE }))
             .toThrow('Invalid parameter: options.cipher');
-        expect(() => new MnemonicHdWalletProvider({ store: new MemoryProviderStore(), cipher, passphrase: '' as any }))
+        expect(() => new MnemonicHdWalletProvider({ store: new ControlledProviderStore(), cipher, passphrase: '' as any }))
             .toThrow('Invalid parameter: options.passphrase');
     });
 
     it('auto-initializes provider state when getFingerprint is called on an empty store', async () => {
         const cipher = new CipherNode();
-        const store = new MemoryProviderStore();
+        const store = new ControlledProviderStore();
         const provider = new MnemonicHdWalletProvider({ store, cipher, passphrase: PASSPHRASE });
 
         const fingerprint = await provider.getFingerprint();
@@ -279,7 +286,7 @@ describe('MnemonicHdWalletProvider coverage', () => {
 
     it('resetWallet creates provider state', async () => {
         const cipher = new CipherNode();
-        const store = new MemoryProviderStore();
+        const store = new ControlledProviderStore();
         const provider = new MnemonicHdWalletProvider({ store, cipher, passphrase: PASSPHRASE });
 
         await provider.resetWallet(true);
@@ -291,7 +298,7 @@ describe('MnemonicHdWalletProvider coverage', () => {
 
     it('backupWallet rejects when the provider has not been initialized', async () => {
         const cipher = new CipherNode();
-        const store = new MemoryProviderStore();
+        const store = new ControlledProviderStore();
         const provider = new MnemonicHdWalletProvider({ store, cipher, passphrase: PASSPHRASE });
 
         await expect(provider.backupWallet()).rejects.toThrow('Keymaster: Wallet provider not initialized.');
@@ -299,7 +306,7 @@ describe('MnemonicHdWalletProvider coverage', () => {
 
     it('saveWallet rejects invalid imported provider state', async () => {
         const cipher = new CipherNode();
-        const store = new MemoryProviderStore();
+        const store = new ControlledProviderStore();
         const provider = new MnemonicHdWalletProvider({ store, cipher, passphrase: PASSPHRASE });
 
         await expect(provider.saveWallet({
@@ -315,7 +322,7 @@ describe('MnemonicHdWalletProvider coverage', () => {
     it('saveWallet returns false when the provider store refuses the restore write', async () => {
         const cipher = new CipherNode();
         const sourceProvider = new MnemonicHdWalletProvider({
-            store: new MemoryProviderStore(),
+            store: new ControlledProviderStore(),
             cipher,
             passphrase: PASSPHRASE,
         });
@@ -323,7 +330,7 @@ describe('MnemonicHdWalletProvider coverage', () => {
         const backup = await sourceProvider.backupWallet();
 
         const failingProvider = new MnemonicHdWalletProvider({
-            store: new MemoryProviderStore(null, [false]),
+            store: new ControlledProviderStore(null, [false]),
             cipher,
             passphrase: PASSPHRASE,
         });
@@ -334,7 +341,7 @@ describe('MnemonicHdWalletProvider coverage', () => {
     it('changePassphrase rejects an invalid mnemonic', async () => {
         const cipher = new CipherNode();
         const provider = new MnemonicHdWalletProvider({
-            store: new MemoryProviderStore(),
+            store: new ControlledProviderStore(),
             cipher,
             passphrase: PASSPHRASE,
         });
@@ -350,7 +357,7 @@ describe('MnemonicHdWalletProvider coverage', () => {
         const cipher = new CipherNode();
         const legacyWallet = await makeLegacyV1Decrypted(cipher);
         const provider = new MnemonicHdWalletProvider({
-            store: new MemoryProviderStore(),
+            store: new ControlledProviderStore(),
             cipher,
             passphrase: PASSPHRASE,
         });
@@ -377,7 +384,7 @@ describe('MnemonicHdWalletProvider coverage', () => {
         const cipher = new CipherNode();
         const legacyWallet = await makeLegacyV1Decrypted(cipher);
         const provider = new MnemonicHdWalletProvider({
-            store: new MemoryProviderStore(null, [false]),
+            store: new ControlledProviderStore(null, [false]),
             cipher,
             passphrase: PASSPHRASE,
         });
@@ -390,7 +397,7 @@ describe('MnemonicHdWalletProvider coverage', () => {
     it('rejects malformed versioned key refs', async () => {
         const cipher = new CipherNode();
         const provider = new MnemonicHdWalletProvider({
-            store: new MemoryProviderStore(),
+            store: new ControlledProviderStore(),
             cipher,
             passphrase: PASSPHRASE,
         });
@@ -405,7 +412,7 @@ describe('MnemonicHdWalletProvider coverage', () => {
     it('rejects unknown imported key refs', async () => {
         const cipher = new CipherNode();
         const provider = new MnemonicHdWalletProvider({
-            store: new MemoryProviderStore(),
+            store: new ControlledProviderStore(),
             cipher,
             passphrase: PASSPHRASE,
         });
