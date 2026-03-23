@@ -165,7 +165,6 @@ export default class MnemonicHdWalletProvider implements MnemonicHdWalletProvide
             const account = state.nextAccount;
             created = this.deriveNextIdKey(account);
             state.keys[this.makeBaseIdKeyRef(account)] = {
-                account,
                 currentIndex: 0,
             };
             state.nextAccount += 1;
@@ -195,10 +194,11 @@ export default class MnemonicHdWalletProvider implements MnemonicHdWalletProvide
         await this.getHdKey();
         const { baseKeyRef, version } = this.parseKeyRef(keyRef);
         const entry = this.getIdKeyState(state, baseKeyRef);
+        const account = this.parseAccountFromBaseKeyRef(baseKeyRef);
         const maxIndex = typeof version === 'number' ? version : entry.currentIndex;
 
         for (let index = maxIndex; index >= 0; index--) {
-            const keyPair = this.deriveIdKeyPair(entry.account, index);
+            const keyPair = this.deriveIdKeyPair(account, index);
             try {
                 return this.cipher.decryptMessage(sender, keyPair.privateJwk, ciphertext);
             } catch {
@@ -215,10 +215,11 @@ export default class MnemonicHdWalletProvider implements MnemonicHdWalletProvide
             await this.getHdKey();
             const { baseKeyRef } = this.parseKeyRef(keyRef);
             const entry = this.getIdKeyState(state, baseKeyRef);
+            const account = this.parseAccountFromBaseKeyRef(baseKeyRef);
             const nextIndex = entry.currentIndex + 1;
             entry.currentIndex = nextIndex;
 
-            publicJwk = this.deriveIdKeyPair(entry.account, nextIndex).publicJwk;
+            publicJwk = this.deriveIdKeyPair(account, nextIndex).publicJwk;
         });
 
         return { publicJwk };
@@ -267,7 +268,6 @@ export default class MnemonicHdWalletProvider implements MnemonicHdWalletProvide
 
         for (const legacy of Object.values(wallet.ids)) {
             state.keys[this.makeBaseIdKeyRef(legacy.account)] = {
-                account: legacy.account,
                 currentIndex: legacy.index,
             };
             state.nextAccount = Math.max(state.nextAccount, legacy.account + 1);
@@ -414,6 +414,19 @@ export default class MnemonicHdWalletProvider implements MnemonicHdWalletProvide
         return { baseKeyRef, version };
     }
 
+    private parseAccountFromBaseKeyRef(baseKeyRef: string): number {
+        if (!baseKeyRef.startsWith('hd:')) {
+            throw new KeymasterError(`Unknown keyRef: ${baseKeyRef}`);
+        }
+
+        const account = Number(baseKeyRef.slice(3));
+        if (!Number.isInteger(account) || account < 0) {
+            throw new KeymasterError(`Unknown keyRef: ${baseKeyRef}`);
+        }
+
+        return account;
+    }
+
     private findKeyPairForRef(keyRef: string): EcdsaJwkPair {
         const state = this.stateCache;
         if (!state) {
@@ -422,18 +435,19 @@ export default class MnemonicHdWalletProvider implements MnemonicHdWalletProvide
 
         const { baseKeyRef, version } = this.parseKeyRef(keyRef);
         const entry = this.getIdKeyState(state, baseKeyRef);
+        const account = this.parseAccountFromBaseKeyRef(baseKeyRef);
         const index = typeof version === 'number' ? version : entry.currentIndex;
 
         if (index > entry.currentIndex) {
             throw new KeymasterError(`Unknown keyRef: ${keyRef}`);
         }
 
-        return this.deriveIdKeyPair(entry.account, index);
+        return this.deriveIdKeyPair(account, index);
     }
 
     private getIdKeyState(state: MnemonicHdWalletState, keyRef: string): MnemonicHdKeyState {
         const entry = state.keys[keyRef];
-        if (!entry || typeof entry.account !== 'number') {
+        if (!entry) {
             throw new KeymasterError(`Unknown keyRef: ${keyRef}`);
         }
 
