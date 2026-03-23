@@ -256,8 +256,7 @@ export interface GroupVaultLogin {
 export type StoredWallet = WalletFile | KeymasterBackupV2 | LegacyStoredWallet;
 
 export interface MnemonicHdKeyState {
-    kind: 'root' | 'id';
-    account?: number;
+    account: number;
     currentIndex: number;
     knownIndices: number[];
 }
@@ -272,7 +271,6 @@ export interface MnemonicHdWalletState {
         data: string;
     };
     nextAccount: number;
-    rootKeyRef: string;
     keys: Record<string, MnemonicHdKeyState>;
 }
 

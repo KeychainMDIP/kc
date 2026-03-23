@@ -298,7 +298,7 @@ describe('MnemonicHdWalletProvider coverage', () => {
         const backup = await provider.backupWallet();
 
         expect(backup.type).toBe('mnemonic-hd');
-        expect(backup.rootKeyRef).toBe('root');
+        expect(backup.keys).toEqual({});
     });
 
     it('backupWallet rejects when the provider has not been initialized', async () => {
@@ -319,7 +319,6 @@ describe('MnemonicHdWalletProvider coverage', () => {
             type: 'mnemonic-hd',
             mnemonicEnc: { salt: 'salt', iv: 'iv', data: 'data' },
             nextAccount: 0,
-            rootKeyRef: 'root',
             keys: {},
         } as any, true)).rejects.toThrow('Invalid parameter: wallet');
     });
@@ -433,7 +432,7 @@ describe('MnemonicHdWalletProvider coverage', () => {
         await expect(restoredProvider.decryptMnemonic()).resolves.toBe(mnemonic);
     });
 
-    it('supports root key refs for signing and base key refs for rotation', async () => {
+    it('supports base key refs for rotation', async () => {
         const cipher = new CipherNode();
         const provider = new MnemonicHdWalletProvider({
             store: new ControlledProviderStore(),
@@ -444,7 +443,6 @@ describe('MnemonicHdWalletProvider coverage', () => {
         await provider.newWallet(undefined, true);
         await provider.createIdKey();
 
-        await expect(provider.signDigest('root', cipher.hashMessage('root-message'))).resolves.toEqual(expect.any(String));
         await expect(provider.rotateKey('hd:0')).resolves.toEqual({
             publicJwk: expect.any(Object),
         });

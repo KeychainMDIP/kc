@@ -113,14 +113,7 @@ const mockWalletBundle: MdipWalletBundle = {
             data: 'data',
         },
         nextAccount: 0,
-        rootKeyRef: 'root',
-        keys: {
-            root: {
-                kind: 'root',
-                currentIndex: 0,
-                knownIndices: [0],
-            },
-        },
+        keys: {},
     },
 };
 

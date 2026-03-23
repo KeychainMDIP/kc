@@ -222,7 +222,6 @@ program
         }
     });
 
-
 program
     .command('show-mnemonic')
     .description('Show recovery phrase for wallet')

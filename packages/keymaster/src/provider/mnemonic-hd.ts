@@ -82,14 +82,7 @@ export default class MnemonicHdWalletProvider implements MnemonicHdWalletProvide
             rootPublicJwk,
             mnemonicEnc,
             nextAccount: 0,
-            rootKeyRef: 'root',
-            keys: {
-                root: {
-                    kind: 'root',
-                    currentIndex: 0,
-                    knownIndices: [0],
-                },
-            },
+            keys: {},
         };
 
         const ok = await this.store.saveWallet(state, overwrite);
@@ -176,7 +169,6 @@ export default class MnemonicHdWalletProvider implements MnemonicHdWalletProvide
             const account = state.nextAccount;
             created = this.deriveNextIdKey(account);
             state.keys[this.makeBaseIdKeyRef(account)] = {
-                kind: 'id',
                 account,
                 currentIndex: 0,
                 knownIndices: [0],
@@ -213,7 +205,7 @@ export default class MnemonicHdWalletProvider implements MnemonicHdWalletProvide
         for (const index of [...entry.knownIndices]
             .filter((knownIndex) => knownIndex <= maxIndex)
             .sort((a, b) => b - a)) {
-            const keyPair = this.deriveIdKeyPair(entry.account!, index);
+            const keyPair = this.deriveIdKeyPair(entry.account, index);
             try {
                 return this.cipher.decryptMessage(sender, keyPair.privateJwk, ciphertext);
             } catch {
@@ -236,7 +228,7 @@ export default class MnemonicHdWalletProvider implements MnemonicHdWalletProvide
                 entry.knownIndices.push(nextIndex);
             }
 
-            publicJwk = this.deriveIdKeyPair(entry.account!, nextIndex).publicJwk;
+            publicJwk = this.deriveIdKeyPair(entry.account, nextIndex).publicJwk;
         });
 
         return { publicJwk };
@@ -280,19 +272,11 @@ export default class MnemonicHdWalletProvider implements MnemonicHdWalletProvide
             rootPublicJwk: this.getRootKeyPair().publicJwk,
             mnemonicEnc,
             nextAccount: wallet.counter,
-            rootKeyRef: 'root',
-            keys: {
-                root: {
-                    kind: 'root',
-                    currentIndex: 0,
-                    knownIndices: [0],
-                },
-            },
+            keys: {},
         };
 
         for (const legacy of Object.values(wallet.ids)) {
             state.keys[this.makeBaseIdKeyRef(legacy.account)] = {
-                kind: 'id',
                 account: legacy.account,
                 currentIndex: legacy.index,
                 knownIndices: range(legacy.index),
@@ -442,10 +426,6 @@ export default class MnemonicHdWalletProvider implements MnemonicHdWalletProvide
     }
 
     private findKeyPairForRef(keyRef: string): EcdsaJwkPair {
-        if (keyRef === 'root') {
-            return this.getRootKeyPair();
-        }
-
         const state = this.stateCache;
         if (!state) {
             throw new KeymasterError('Wallet provider not initialized.');
@@ -459,12 +439,12 @@ export default class MnemonicHdWalletProvider implements MnemonicHdWalletProvide
             throw new KeymasterError(`Unknown keyRef: ${keyRef}`);
         }
 
-        return this.deriveIdKeyPair(entry.account!, index);
+        return this.deriveIdKeyPair(entry.account, index);
     }
 
     private getIdKeyState(state: MnemonicHdWalletState, keyRef: string): MnemonicHdKeyState {
         const entry = state.keys[keyRef];
-        if (!entry || entry.kind !== 'id' || typeof entry.account !== 'number') {
+        if (!entry || typeof entry.account !== 'number') {
             throw new KeymasterError(`Unknown keyRef: ${keyRef}`);
         }
 
