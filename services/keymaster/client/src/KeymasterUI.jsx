@@ -1765,7 +1765,11 @@ function KeymasterUI({
                 }
 
                 try {
-                    await keymaster.saveWallet(wallet, true);
+                    if (wallet?.type === 'mdip-wallet-bundle' && wallet?.version === 1) {
+                        await keymaster.importWalletBundle(wallet);
+                    } else {
+                        await keymaster.saveWallet(wallet, true);
+                    }
                     await keymaster.loadWallet();
                     await refreshAll();
                 } catch (e) {
@@ -1787,14 +1791,14 @@ function KeymasterUI({
                 return;
             }
 
-            const wallet = await keymaster.loadWallet();
-            const walletJSON = JSON.stringify(wallet, null, 4);
+            const bundle = await keymaster.exportWalletBundle();
+            const walletJSON = JSON.stringify(bundle, null, 4);
             const blob = new Blob([walletJSON], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
 
             const link = document.createElement('a');
             link.href = url;
-            link.download = 'mdip-keymaster-wallet.json';
+            link.download = 'mdip-wallet-bundle.json';
             link.click();
 
             // The URL.revokeObjectURL() method releases an existing object URL which was previously created by calling URL.createObjectURL().

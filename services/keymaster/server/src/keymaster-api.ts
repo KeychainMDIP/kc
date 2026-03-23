@@ -500,40 +500,6 @@ v1router.post('/wallet/new', async (req, res) => {
 
 /**
  * @swagger
- * /wallet/mnemonic:
- *   get:
- *     summary: Retrieve the recovery phrase for the mnemonic wallet provider.
- *     responses:
- *       200:
- *         description: The wallet recovery phrase.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 mnemonic:
- *                   type: string
- *       500:
- *         description: Internal server error.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- */
-v1router.get('/wallet/mnemonic', async (req, res) => {
-    try {
-        const mnemonic = await walletProvider.decryptMnemonic();
-        res.json({ mnemonic });
-    } catch (error: any) {
-        res.status(500).send({ error: error.toString() });
-    }
-});
-
-/**
- * @swagger
  * /wallet/bundle:
  *   get:
  *     summary: Export the current keymaster metadata and mnemonic wallet provider state.
@@ -810,6 +776,39 @@ v1router.post('/wallet/fix', async (req, res) => {
     }
 });
 
+/**
+ * @swagger
+ * /wallet/mnemonic:
+ *   get:
+ *     summary: Retrieve the recovery phrase for the mnemonic wallet provider.
+ *     responses:
+ *       200:
+ *         description: The wallet recovery phrase.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 mnemonic:
+ *                   type: string
+ *       500:
+ *         description: Internal server error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+v1router.get('/wallet/mnemonic', async (req, res) => {
+    try {
+        const mnemonic = await walletProvider.decryptMnemonic();
+        res.json({ mnemonic });
+    } catch (error: any) {
+        res.status(500).send({ error: error.toString() });
+    }
+});
 
 /**
  * @swagger
