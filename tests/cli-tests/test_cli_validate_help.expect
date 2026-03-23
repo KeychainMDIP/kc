@@ -42,7 +42,7 @@ Commands:
   add-name <name> <did>                    Add a name for a DID
   backup-id                                Backup the current ID to its registry
   backup-wallet-did                        Backup wallet metadata to DID
-  backup-wallet-file <file>                Backup wallet metadata to file
+  backup-wallet-file <file>                Backup wallet bundle to file
   bind-credential <schema> <subject>       Create bound credential for a user
   check-wallet                             Validate DIDs in wallet
   clone-asset [options] <id>               Clone an asset
@@ -99,7 +99,7 @@ Commands:
   resolve-did <did> [confirm]              Return document associated with DID
   resolve-did-version <did> <version>      Return specified version of document associated with DID
   resolve-id                               Resolves the current ID
-  restore-wallet-file <file>               Restore wallet metadata from backup file
+  restore-wallet-file <file>               Restore wallet bundle from backup file
   reveal-credential <did>                  Reveal a credential to the current user manifest
   reveal-poll <poll>                       Publish results to poll, revealing ballots
   revoke-credential <did>                  Revokes a verifiable credential

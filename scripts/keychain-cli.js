@@ -183,25 +183,12 @@ program
     });
 
 program
-    .command('show-mnemonic')
-    .description('Show recovery phrase for wallet')
-    .action(async () => {
-        try {
-            const mnemonic = await keymaster.decryptMnemonic();
-            console.log(mnemonic);
-        }
-        catch (error) {
-            console.error(error.error || error);
-        }
-    });
-
-program
     .command('backup-wallet-file <file>')
-    .description('Backup wallet metadata to file')
+    .description('Backup wallet bundle to file')
     .action(async (file) => {
         try {
-            const wallet = await keymaster.loadWallet();
-            fs.writeFileSync(file, JSON.stringify(wallet, null, 4));
+            const bundle = await keymaster.exportWalletBundle();
+            fs.writeFileSync(file, JSON.stringify(bundle, null, 4));
             console.log(UPDATE_OK);
         }
         catch (error) {
@@ -211,13 +198,38 @@ program
 
 program
     .command('restore-wallet-file <file>')
-    .description('Restore wallet metadata from backup file')
+    .description('Restore wallet bundle from backup file')
     .action(async (file) => {
         try {
             const contents = fs.readFileSync(file).toString();
             const wallet = JSON.parse(contents);
+
+            if (wallet?.type === 'mdip-wallet-bundle' && wallet?.version === 1) {
+                await keymaster.importWalletBundle(wallet);
+                console.log(UPDATE_OK);
+                return;
+            }
+
+            if (wallet?.version !== 0 && wallet?.version !== 1) {
+                throw new Error('Unsupported wallet backup format. Expected an mdip-wallet-bundle or legacy v0/v1 wallet.');
+            }
+
             const ok = await keymaster.saveWallet(wallet, true);
             console.log(ok ? UPDATE_OK : UPDATE_FAILED);
+        }
+        catch (error) {
+            console.error(error.error || error);
+        }
+    });
+
+
+program
+    .command('show-mnemonic')
+    .description('Show recovery phrase for wallet')
+    .action(async () => {
+        try {
+            const mnemonic = await keymaster.decryptMnemonic();
+            console.log(mnemonic);
         }
         catch (error) {
             console.error(error.error || error);
