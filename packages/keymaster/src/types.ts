@@ -258,7 +258,6 @@ export type StoredWallet = WalletFile | KeymasterBackupV2 | LegacyStoredWallet;
 export interface MnemonicHdKeyState {
     account: number;
     currentIndex: number;
-    knownIndices: number[];
 }
 
 export interface MnemonicHdWalletState {

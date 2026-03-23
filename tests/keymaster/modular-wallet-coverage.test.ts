@@ -494,29 +494,6 @@ describe('MnemonicHdWalletProvider coverage', () => {
         );
     });
 
-    it('repairs missing knownIndices when imported provider state is incomplete', async () => {
-        const cipher = new CipherNode();
-        const sourceProvider = new MnemonicHdWalletProvider({
-            store: new ControlledProviderStore(),
-            cipher,
-            passphrase: PASSPHRASE,
-        });
-
-        await sourceProvider.newWallet(undefined, true);
-        await sourceProvider.createIdKey();
-        const backup = await sourceProvider.backupWallet();
-        backup.keys['hd:0'].knownIndices = [];
-
-        const restoredProvider = new MnemonicHdWalletProvider({
-            store: new ControlledProviderStore(),
-            cipher,
-            passphrase: PASSPHRASE,
-        });
-        await restoredProvider.saveWallet(backup, true);
-
-        await expect(restoredProvider.signDigest('hd:0#0', cipher.hashMessage('message'))).resolves.toEqual(expect.any(String));
-    });
-
     it('guards private helper access when state or hd cache is missing', () => {
         const cipher = new CipherNode();
         const provider = new MnemonicHdWalletProvider({

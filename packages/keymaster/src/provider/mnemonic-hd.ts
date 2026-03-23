@@ -31,10 +31,6 @@ interface MnemonicHdWalletProviderOptions {
     passphrase: string;
 }
 
-function range(endInclusive: number): number[] {
-    return Array.from({ length: endInclusive + 1 }, (_, index) => index);
-}
-
 export default class MnemonicHdWalletProvider implements MnemonicHdWalletProviderInterface {
     readonly type = 'mnemonic-hd';
 
@@ -171,7 +167,6 @@ export default class MnemonicHdWalletProvider implements MnemonicHdWalletProvide
             state.keys[this.makeBaseIdKeyRef(account)] = {
                 account,
                 currentIndex: 0,
-                knownIndices: [0],
             };
             state.nextAccount += 1;
         });
@@ -202,9 +197,7 @@ export default class MnemonicHdWalletProvider implements MnemonicHdWalletProvide
         const entry = this.getIdKeyState(state, baseKeyRef);
         const maxIndex = typeof version === 'number' ? version : entry.currentIndex;
 
-        for (const index of [...entry.knownIndices]
-            .filter((knownIndex) => knownIndex <= maxIndex)
-            .sort((a, b) => b - a)) {
+        for (let index = maxIndex; index >= 0; index--) {
             const keyPair = this.deriveIdKeyPair(entry.account, index);
             try {
                 return this.cipher.decryptMessage(sender, keyPair.privateJwk, ciphertext);
@@ -224,9 +217,6 @@ export default class MnemonicHdWalletProvider implements MnemonicHdWalletProvide
             const entry = this.getIdKeyState(state, baseKeyRef);
             const nextIndex = entry.currentIndex + 1;
             entry.currentIndex = nextIndex;
-            if (!entry.knownIndices.includes(nextIndex)) {
-                entry.knownIndices.push(nextIndex);
-            }
 
             publicJwk = this.deriveIdKeyPair(entry.account, nextIndex).publicJwk;
         });
@@ -279,7 +269,6 @@ export default class MnemonicHdWalletProvider implements MnemonicHdWalletProvide
             state.keys[this.makeBaseIdKeyRef(legacy.account)] = {
                 account: legacy.account,
                 currentIndex: legacy.index,
-                knownIndices: range(legacy.index),
             };
             state.nextAccount = Math.max(state.nextAccount, legacy.account + 1);
         }
@@ -435,7 +424,7 @@ export default class MnemonicHdWalletProvider implements MnemonicHdWalletProvide
         const entry = this.getIdKeyState(state, baseKeyRef);
         const index = typeof version === 'number' ? version : entry.currentIndex;
 
-        if (!entry.knownIndices.includes(index)) {
+        if (index > entry.currentIndex) {
             throw new KeymasterError(`Unknown keyRef: ${keyRef}`);
         }
 
@@ -446,10 +435,6 @@ export default class MnemonicHdWalletProvider implements MnemonicHdWalletProvide
         const entry = state.keys[keyRef];
         if (!entry || typeof entry.account !== 'number') {
             throw new KeymasterError(`Unknown keyRef: ${keyRef}`);
-        }
-
-        if (!entry.knownIndices?.length) {
-            entry.knownIndices = [entry.currentIndex];
         }
 
         return entry;
