@@ -17,6 +17,10 @@ function hasNameOption(args) {
     return args.some(arg => NAME_OPTIONS.has(arg) || arg.startsWith('--name='));
 }
 
+function isLegacyV0(obj) {
+    return !!obj && !obj.version && !!obj.seed?.hdkey && typeof obj.seed.mnemonic === 'string';
+}
+
 function splitCommandArgs(args) {
     const options = [];
     const operands = [];
@@ -210,7 +214,7 @@ program
                 return;
             }
 
-            if (wallet?.version !== 0 && wallet?.version !== 1) {
+            if (!isLegacyV0(wallet) && wallet?.version !== 1) {
                 throw new Error('Unsupported wallet backup format. Expected an mdip-wallet-bundle or legacy v0/v1 wallet.');
             }
 
