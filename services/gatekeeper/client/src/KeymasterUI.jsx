@@ -303,14 +303,13 @@ function KeymasterUI({
         try {
             const currentId = await keymaster.getCurrentId();
             const registries = await keymaster.listRegistries();
+            const idList = await keymaster.listIds();
             setRegistries(registries);
+            setIdList(idList);
 
             if (currentId) {
                 setCurrentId(currentId);
                 setSelectedId(currentId);
-
-                const idList = await keymaster.listIds();
-                setIdList(idList);
 
                 const docs = await keymaster.resolveDID(currentId);
                 setCurrentDID(docs.didDocument.id);
@@ -335,6 +334,14 @@ function KeymasterUI({
                 setCurrentId('');
                 setSelectedId('');
                 setCurrentDID('');
+                setManifest(null);
+                setDocsString(null);
+                setDocsVersion(1);
+                setDocsVersionMax(1);
+                setNameList(null);
+                setHeldList(null);
+                setIssuedList(null);
+                setDmailList([]);
                 setTab('create');
             }
 
@@ -1761,6 +1768,7 @@ function KeymasterUI({
 
                 if (onWalletUpload) {
                     await onWalletUpload(wallet);
+                    await refreshAll();
                     return;
                 }
 
@@ -1770,7 +1778,6 @@ function KeymasterUI({
                     } else {
                         await keymaster.saveWallet(wallet, true);
                     }
-                    await keymaster.loadWallet();
                     await refreshAll();
                 } catch (e) {
                     window.alert('Upload rejected: unsupported wallet format for this client.');
