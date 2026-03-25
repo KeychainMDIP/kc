@@ -1749,38 +1749,39 @@ function KeymasterUI({
             fileInput.accept = 'application/json';
 
             fileInput.onchange = async (event) => {
-                const file = event.target.files[0];
-                if (!file) {
-                    return;
-                }
-
-                const text = await file.text();
-                let wallet;
                 try {
-                    wallet = JSON.parse(text);
-                } catch {
-                    showError("Invalid JSON file.");
-                }
+                    const file = event.target.files[0];
+                    if (!file) {
+                        return;
+                    }
 
-                if (!window.confirm('Overwrite wallet with upload?')) {
-                    return;
-                }
+                    const text = await file.text();
+                    let wallet;
+                    try {
+                        wallet = JSON.parse(text);
+                    } catch {
+                        showError("Invalid JSON file.");
+                        return;
+                    }
 
-                if (onWalletUpload) {
-                    await onWalletUpload(wallet);
-                    await refreshAll();
-                    return;
-                }
+                    if (!window.confirm('Overwrite wallet with upload?')) {
+                        return;
+                    }
 
-                try {
+                    if (onWalletUpload) {
+                        await onWalletUpload(wallet);
+                        await refreshAll();
+                        return;
+                    }
+
                     if (wallet?.type === 'mdip-wallet-bundle' && wallet?.version === 1) {
                         await keymaster.importWalletBundle(wallet);
                     } else {
                         await keymaster.saveWallet(wallet, true);
                     }
                     await refreshAll();
-                } catch (e) {
-                    window.alert('Upload rejected: unsupported wallet format for this client.');
+                } catch (error) {
+                    showError(error);
                 }
             };
 
