@@ -165,7 +165,8 @@ program
     .description('Create new wallet from a recovery phrase')
     .action(async (recoveryPhrase) => {
         try {
-            const wallet = await keymaster.newWallet(recoveryPhrase);
+            await keymaster.newWallet(recoveryPhrase, true);
+            const wallet = await keymaster.recoverWallet();
             console.log(JSON.stringify(wallet, null, 4));
         }
         catch (error) {
