@@ -189,6 +189,7 @@ function App() {
         try {
             if (pendingMnemonic) {
                 await instance.newWallet(pendingMnemonic, true);
+                await instance.recoverWallet();
             }
             else {
                 await instance.loadWallet();

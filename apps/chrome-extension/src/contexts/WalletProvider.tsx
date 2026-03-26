@@ -236,6 +236,7 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
         try {
             if (pendingMnemonic) {
                 await instance.newWallet(pendingMnemonic, true);
+                await instance.recoverWallet();
             } else {
                 await instance.loadWallet();
             }

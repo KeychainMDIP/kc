@@ -105,7 +105,6 @@ function KeymasterUI({
     onCreateWallet,
     onImportMnemonic,
     onWalletDownload,
-    onRecoverWallet,
 }) {
     const [tab, setTab] = useState(null);
     const [currentId, setCurrentId] = useState('');
@@ -1670,6 +1669,7 @@ function KeymasterUI({
             if (mnemonic) {
                 if (onImportMnemonic) {
                     await onImportMnemonic(mnemonic);
+                    refreshAll();
                     return;
                 }
                 else {
@@ -1685,8 +1685,8 @@ function KeymasterUI({
 
     async function backupWallet() {
         try {
-            await keymaster.backupWallet();
-            showSuccess('Wallet metadata backup successful');
+            const did = await keymaster.backupWallet();
+            showSuccess(`Wallet backup DID:\n${did}`);
 
         } catch (error) {
             showError(error);
@@ -1696,12 +1696,7 @@ function KeymasterUI({
     async function recoverWallet() {
         try {
             if (window.confirm(`Overwrite wallet from backup?`)) {
-                if (onRecoverWallet) {
-                    await onRecoverWallet();
-                }
-                else {
-                    await keymaster.recoverWallet();
-                }
+                await keymaster.recoverWallet();
                 refreshAll();
             }
         } catch (error) {

@@ -219,8 +219,8 @@ const WalletTab = () => {
             return;
         }
         try {
-            await keymaster.backupWallet();
-            setSuccess("Wallet metadata backup successful");
+            const did = await keymaster.backupWallet();
+            setSuccess(`Wallet backup DID:\n${did}`);
         } catch (error: any) {
             setError(error);
         }
