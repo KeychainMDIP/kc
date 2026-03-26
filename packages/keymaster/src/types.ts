@@ -62,6 +62,7 @@ export interface WalletFile {
     ids: Record<string, IDInfo>;
     current?: string;
     names?: Record<string, string>;
+    backupDid?: string;
     [key: string]: any;
 }
 
