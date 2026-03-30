@@ -49,6 +49,17 @@ describe('logger', () => {
         expect(loggerMod.getLogLevel()).toBe('info');
     });
 
+    it('getLogLevel falls back cleanly when process.env is unavailable', () => {
+        const originalProcess = (globalThis as any).process;
+
+        try {
+            (globalThis as any).process = undefined;
+            expect(loggerMod.getLogLevel()).toBe('info');
+        } finally {
+            (globalThis as any).process = originalProcess;
+        }
+    });
+
     it('getPrettyEnabled returns the default pretty flag', () => {
         expect(loggerMod.getPrettyEnabled()).toBe(true);
     });

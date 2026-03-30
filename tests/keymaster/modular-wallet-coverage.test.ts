@@ -330,6 +330,21 @@ describe('Keymaster modular wallet coverage', () => {
 });
 
 describe('MnemonicHdWalletProvider coverage', () => {
+    it('provider json memory refuses overwrite when state already exists', async () => {
+        const store = new WalletProviderJsonMemory();
+        const wallet: MnemonicHdWalletState = {
+            version: 1,
+            type: 'mnemonic-hd',
+            rootPublicJwk: dummyPublicJwk,
+            mnemonicEnc: { salt: 'salt', iv: 'iv', data: 'data' },
+            nextAccount: 0,
+            keys: {},
+        };
+
+        await expect(store.saveWallet(wallet, true)).resolves.toBe(true);
+        await expect(store.saveWallet(wallet, false)).resolves.toBe(false);
+    });
+
     it('validates constructor arguments', () => {
         const cipher = new CipherNode();
 
