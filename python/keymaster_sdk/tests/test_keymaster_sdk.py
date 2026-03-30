@@ -201,6 +201,7 @@ def test_wallet():
     recovered = keymaster.recover_wallet(backup_did)
 
     expected = deepcopy(wallet)
+    expected["backupDid"] = backup_did
 
     assert_equal(expected, recovered)
 
