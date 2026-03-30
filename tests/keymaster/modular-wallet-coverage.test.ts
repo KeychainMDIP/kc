@@ -262,6 +262,71 @@ describe('Keymaster modular wallet coverage', () => {
             'Keymaster: Wallet provider does not support key rotation.'
         );
     });
+
+    it('falls back to the current wallet when bundle recovery cannot save provider state', async () => {
+        const cipher = new CipherNode();
+        const store = new MemoryKeymasterStore();
+        const walletProvider = new MnemonicHdWalletProvider({
+            store: new ControlledProviderStore(),
+            cipher,
+            passphrase: PASSPHRASE,
+        });
+        const keymaster = new Keymaster({ gatekeeper, store, walletProvider, cipher });
+        const current = await keymaster.loadWallet();
+        const bundle = {
+            version: 1,
+            type: 'mdip-wallet-bundle' as const,
+            keymaster: structuredClone(current),
+            provider: await walletProvider.backupWallet(),
+        };
+
+        jest.spyOn(keymaster, 'resolveAsset').mockResolvedValue({ backup: bundle } as any);
+        jest.spyOn(walletProvider, 'saveWallet').mockResolvedValue(false);
+
+        await expect(keymaster.recoverWallet('did:test:bundle')).resolves.toEqual(current);
+        await expect(keymaster.loadWallet()).resolves.toStrictEqual(current);
+    });
+
+    it('falls back to the current wallet when bundle recovery cannot save keymaster metadata', async () => {
+        const cipher = new CipherNode();
+        const store = new MemoryKeymasterStore();
+        const walletProvider = new MnemonicHdWalletProvider({
+            store: new ControlledProviderStore(),
+            cipher,
+            passphrase: PASSPHRASE,
+        });
+        const keymaster = new Keymaster({ gatekeeper, store, walletProvider, cipher });
+        const current = await keymaster.loadWallet();
+        const bundle = {
+            version: 1,
+            type: 'mdip-wallet-bundle' as const,
+            keymaster: structuredClone(current),
+            provider: await walletProvider.backupWallet(),
+        };
+
+        jest.spyOn(keymaster, 'resolveAsset').mockResolvedValue({ backup: bundle } as any);
+        jest.spyOn(keymaster, 'saveWallet').mockResolvedValue(false as any);
+
+        await expect(keymaster.recoverWallet('did:test:bundle')).resolves.toEqual(current);
+        await expect(keymaster.loadWallet()).resolves.toStrictEqual(current);
+    });
+
+    it('falls back to the current wallet when a non-mnemonic provider receives a bundle backup', async () => {
+        const provider = new DummyWalletProvider();
+        const current = await makeWalletFile(provider);
+        const store = new MemoryKeymasterStore(current);
+        const keymaster = new Keymaster({ gatekeeper, store, walletProvider: provider, cipher: cipherStub });
+        const bundle = {
+            version: 1,
+            type: 'mdip-wallet-bundle' as const,
+            keymaster: structuredClone(current),
+            provider: { type: 'mnemonic-hd' },
+        };
+
+        jest.spyOn(keymaster, 'resolveAsset').mockResolvedValue({ backup: bundle } as any);
+
+        await expect(keymaster.recoverWallet('did:test:bundle')).resolves.toEqual(current);
+    });
 });
 
 describe('MnemonicHdWalletProvider coverage', () => {
@@ -486,6 +551,22 @@ describe('MnemonicHdWalletProvider coverage', () => {
         });
     });
 
+    it('supports base key refs for signing with the current key version', async () => {
+        const cipher = new CipherNode();
+        const provider = new MnemonicHdWalletProvider({
+            store: new ControlledProviderStore(),
+            cipher,
+            passphrase: PASSPHRASE,
+        });
+
+        await provider.newWallet(undefined, true);
+        const created = await provider.createIdKey();
+        const digest = cipher.hashJSON({ hello: 'id-key' });
+        const signature = await provider.signDigest('hd:0', digest);
+
+        expect(cipher.verifySig(digest, signature, created.publicJwk)).toBe(true);
+    });
+
     it('rejects malformed versioned key refs', async () => {
         const cipher = new CipherNode();
         const provider = new MnemonicHdWalletProvider({
@@ -513,6 +594,25 @@ describe('MnemonicHdWalletProvider coverage', () => {
 
         await expect(provider.signDigest('hd:999#0', 'digest')).rejects.toThrow(
             'Keymaster: Unknown keyRef: hd:999'
+        );
+    });
+
+    it('rejects malformed base key refs and malformed hd account values', async () => {
+        const cipher = new CipherNode();
+        const provider = new MnemonicHdWalletProvider({
+            store: new ControlledProviderStore(),
+            cipher,
+            passphrase: PASSPHRASE,
+        });
+
+        await provider.newWallet(undefined, true);
+        await provider.createIdKey();
+
+        await expect(provider.signDigest('dummy#0', 'digest')).rejects.toThrow(
+            'Keymaster: Unknown keyRef: dummy'
+        );
+        await expect(provider.signDigest('hd:nope#0', 'digest')).rejects.toThrow(
+            'Keymaster: Unknown keyRef: hd:nope'
         );
     });
 
