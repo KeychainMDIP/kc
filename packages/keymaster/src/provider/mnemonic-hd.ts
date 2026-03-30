@@ -190,6 +190,11 @@ export default class MnemonicHdWalletProvider implements MnemonicHdWalletProvide
     }
 
     async decrypt(keyRef: string, sender: EcdsaJwkPublic, ciphertext: string): Promise<string> {
+        if (keyRef === '') {
+            await this.getHdKey();
+            return this.cipher.decryptMessage(sender, this.getRootKeyPair().privateJwk, ciphertext);
+        }
+
         const state = await this.loadState();
         await this.getHdKey();
         const { baseKeyRef, version } = this.parseKeyRef(keyRef);
@@ -428,6 +433,15 @@ export default class MnemonicHdWalletProvider implements MnemonicHdWalletProvide
     }
 
     private findKeyPairForRef(keyRef: string): EcdsaJwkPair {
+        // An empty keyRef is reserved for mnemonic-hd's root key in recovery flows.
+        if (keyRef === '') {
+            if (!this.hdKeyCache) {
+                throw new KeymasterError('Wallet provider not initialized.');
+            }
+
+            return this.getRootKeyPair();
+        }
+
         const state = this.stateCache;
         if (!state) {
             throw new KeymasterError('Wallet provider not initialized.');

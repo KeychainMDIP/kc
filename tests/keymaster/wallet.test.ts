@@ -355,15 +355,19 @@ describe('MnemonicHdWalletProvider backup', () => {
 });
 
 describe('backupWallet', () => {
-    it('should return a valid DID and store backupDid in metadata', async () => {
+    it('should return a valid DID, store backupDid in metadata, and mirror it to the seed bank', async () => {
         await keymaster.createId('Bob');
 
         const did = await keymaster.backupWallet();
         const doc = await keymaster.resolveDID(did);
         const wallet = await keymaster.loadWallet();
+        const seedBank = await keymaster.resolveSeedBank();
+        const data = seedBank.didDocumentData as { wallet?: string };
 
         expect(did).toBe(doc.didDocument!.id);
+        expect(typeof doc.didDocumentData?.backup).toBe('string');
         expect(wallet.backupDid).toBe(did);
+        expect(data.wallet).toBe(did);
     });
 });
 
@@ -377,6 +381,22 @@ describe('recoverWallet', () => {
 
         expect(Object.keys(recovered.ids)).toEqual(['Bob']);
         expect(recovered.current).toBe('Bob');
+    });
+
+    it('should recover wallet from seed bank after resetting metadata', async () => {
+        await keymaster.createId('Bob');
+        const backupDid = await keymaster.backupWallet();
+        const mnemonic = await walletProvider.decryptMnemonic();
+
+        await keymaster.newWallet(mnemonic, true);
+        const recovered = await keymaster.recoverWallet();
+
+        expect(recovered.backupDid).toBe(backupDid);
+        expect(Object.keys(recovered.ids)).toEqual(['Bob']);
+        expect(recovered.current).toBe('Bob');
+
+        const providerState = await walletProvider.backupWallet();
+        expect(providerState.keys['hd:0']).toEqual({ currentIndex: 0 });
     });
 
     it('should recover augmented wallet from backup DID', async () => {
@@ -422,6 +442,77 @@ describe('recoverWallet', () => {
         const recovered = await keymaster.recoverWallet('did:test:invalid');
 
         expect(recovered).toStrictEqual(current);
+    });
+
+    it('should not overwrite wallet metadata when recovered backup fingerprint mismatches', async () => {
+        await keymaster.createId('Bob');
+        const current = await keymaster.loadWallet();
+        const mismatched = structuredClone(current);
+        mismatched.provider.walletFingerprint = 'wrong-wallet-fingerprint';
+        const backupDid = await keymaster.createAsset({ backup: mismatched });
+
+        const recovered = await keymaster.recoverWallet(backupDid);
+
+        expect(recovered).toStrictEqual(current);
+        expect(await keymaster.loadWallet()).toStrictEqual(current);
+    });
+
+    it('should recover wallet from explicit backup DID after resetting metadata', async () => {
+        await keymaster.createId('Bob');
+        const backupDid = await keymaster.backupWallet();
+        await keymaster.createId('Alice');
+        const mnemonic = await walletProvider.decryptMnemonic();
+
+        await keymaster.newWallet(mnemonic, true);
+        const recovered = await keymaster.recoverWallet(backupDid);
+
+        expect(recovered.backupDid).toBe(backupDid);
+        expect(Object.keys(recovered.ids)).toEqual(['Bob']);
+        expect(recovered.current).toBe('Bob');
+
+        const assetDid = await keymaster.createAsset({ hello: 'world' }, { controller: 'Bob' });
+        expect(assetDid).toMatch(/^did:/);
+
+        await keymaster.createId('Carol');
+        const updated = await keymaster.loadWallet();
+        expect(updated.ids.Carol.keyRef).toBe('hd:1#0');
+    });
+
+    it('should recover encrypted legacy backup from explicit backup DID', async () => {
+        await keymaster.createId('Bob');
+        const mnemonic = await walletProvider.decryptMnemonic();
+        const providerState = await walletProvider.backupWallet();
+        const current = await keymaster.loadWallet();
+        const legacyBackup: LegacyWalletFile = {
+            version: 1,
+            seed: {
+                mnemonicEnc: providerState.mnemonicEnc,
+            },
+            counter: 1,
+            ids: {
+                Bob: {
+                    did: current.ids.Bob.did,
+                    account: 0,
+                    index: 0,
+                },
+            },
+            current: 'Bob',
+        };
+
+        const hdKey = cipher.generateHDKey(mnemonic);
+        const { publicJwk, privateJwk } = cipher.generateJwk(hdKey.privateKey!);
+        const ciphertext = cipher.encryptMessage(publicJwk, privateJwk, JSON.stringify(legacyBackup));
+        const backupDid = await keymaster.createAsset({ backup: ciphertext });
+
+        await keymaster.newWallet(mnemonic, true);
+        const recovered = await keymaster.recoverWallet(backupDid);
+
+        expect(recovered.backupDid).toBe(backupDid);
+        expect(recovered.current).toBe('Bob');
+        expect(recovered.ids.Bob).toEqual({
+            did: current.ids.Bob.did,
+            keyRef: 'hd:0#0',
+        });
     });
 });
 

@@ -10,8 +10,8 @@ import {
     GatekeeperInterface,
     MdipDocument,
     DocumentMetadata,
-    ResolveDIDOptions,
     Operation,
+    ResolveDIDOptions,
 } from '@mdip/gatekeeper/types';
 import {
     Challenge,
@@ -34,6 +34,7 @@ import {
     IssueCredentialsOptions,
     KeymasterInterface,
     KeymasterOptions,
+    MdipWalletBundle,
     NoticeMessage,
     Poll,
     PollResults,
@@ -160,13 +161,20 @@ export default class Keymaster implements KeymasterInterface {
         return 'rotateKey' in provider && typeof provider.rotateKey === 'function';
     }
 
+    private isMdipWalletBundle(bundle: unknown): bundle is MdipWalletBundle {
+        return !!bundle
+            && typeof bundle === 'object'
+            && 'version' in bundle
+            && 'type' in bundle
+            && 'keymaster' in bundle
+            && 'provider' in bundle
+            && (bundle as MdipWalletBundle).version === 1
+            && (bundle as MdipWalletBundle).type === 'mdip-wallet-bundle';
+    }
+
     private async normalizeStoredWallet(stored: StoredWallet): Promise<WalletFile> {
         if (isV2Wallet(stored)) {
-            const provider = await this.getWalletProviderIdentity();
-            if (stored.provider.type !== provider.type || stored.provider.walletFingerprint !== provider.walletFingerprint) {
-                throw new KeymasterError('Wallet provider does not match stored metadata.');
-            }
-
+            await this.assertWalletMatchesProvider(stored);
             return stored;
         }
 
@@ -184,6 +192,13 @@ export default class Keymaster implements KeymasterInterface {
         }
 
         throw new KeymasterError('Unsupported wallet version.');
+    }
+
+    private async assertWalletMatchesProvider(wallet: WalletFile): Promise<void> {
+        const provider = await this.getWalletProviderIdentity();
+        if (wallet.provider.type !== provider.type || wallet.provider.walletFingerprint !== provider.walletFingerprint) {
+            throw new KeymasterError('Wallet provider does not match stored metadata.');
+        }
     }
 
     private async mutateWallet(
@@ -445,20 +460,147 @@ export default class Keymaster implements KeymasterInterface {
         return { idsRemoved, ownedRemoved, heldRemoved, namesRemoved };
     }
 
+    async resolveSeedBank(): Promise<MdipDocument> {
+        if (!this.isMnemonicHdWalletProvider(this.walletProvider)) {
+            throw new KeymasterError('Seed bank requires MnemonicHdWalletProvider.');
+        }
+
+        const provider = await this.walletProvider.backupWallet();
+        const publicJwk = provider.rootPublicJwk;
+
+        const operation: Operation = {
+            type: "create",
+            created: new Date(0).toISOString(),
+            mdip: {
+                version: 1,
+                type: "agent",
+                registry: this.defaultRegistry,
+            },
+            publicJwk,
+        };
+
+        const msgHash = this.cipher.hashJSON(operation);
+        const signature = await this.walletProvider.signDigest('', msgHash);
+        const signed: Operation = {
+            ...operation,
+            signature: {
+                signed: new Date(0).toISOString(),
+                hash: msgHash,
+                value: signature
+            }
+        };
+        const did = await this.gatekeeper.createDID(signed);
+        return this.gatekeeper.resolveDID(did);
+    }
+
+    async updateSeedBank(doc: MdipDocument): Promise<boolean> {
+        if (!this.isMnemonicHdWalletProvider(this.walletProvider)) {
+            throw new KeymasterError('Seed bank requires MnemonicHdWalletProvider.');
+        }
+
+        const did = doc.didDocument?.id;
+        if (!did) {
+            throw new InvalidParameterError('seed bank missing DID');
+        }
+        const current = await this.gatekeeper.resolveDID(did);
+        const previd = current.didDocumentMetadata?.versionId;
+
+        const operation: Operation = {
+            type: "update",
+            did,
+            previd,
+            doc,
+        };
+
+        const msgHash = this.cipher.hashJSON(operation);
+        const signature = await this.walletProvider.signDigest('', msgHash);
+        const signed = {
+            ...operation,
+            signature: {
+                signer: did,
+                signed: new Date().toISOString(),
+                hash: msgHash,
+                value: signature,
+            }
+        };
+
+        return this.gatekeeper.updateDID(signed);
+    }
+
     async backupWallet(registry = this.defaultRegistry, wallet?: WalletFile): Promise<string> {
         if (!wallet) {
             wallet = await this.loadWallet();
         }
 
-        const backupDID = await this.createAsset({ backup: wallet }, { registry });
+        if (!this.isMnemonicHdWalletProvider(this.walletProvider)) {
+            const backupDID = await this.createAsset({ backup: wallet }, { registry });
+            await this.mutateWallet((current) => {
+                current.backupDid = backupDID;
+            });
+            return backupDID;
+        }
+
+        const provider = await this.walletProvider.backupWallet();
+        const bundle: MdipWalletBundle = {
+            version: 1,
+            type: 'mdip-wallet-bundle',
+            keymaster: wallet,
+            provider,
+        };
+        const seedBank = await this.resolveSeedBank();
+        const backup = await this.walletProvider.encrypt('', provider.rootPublicJwk, JSON.stringify(bundle));
+
+        const operation: Operation = {
+            type: "create",
+            created: new Date().toISOString(),
+            mdip: {
+                version: 1,
+                type: "asset",
+                registry,
+            },
+            controller: seedBank.didDocument?.id,
+            data: { backup },
+        };
+
+        const msgHash = this.cipher.hashJSON(operation);
+        const signature = await this.walletProvider.signDigest('', msgHash);
+        const signed: Operation = {
+            ...operation,
+            signature: {
+                signer: seedBank.didDocument?.id,
+                signed: new Date().toISOString(),
+                hash: msgHash,
+                value: signature,
+            }
+        };
+
+        const backupDID = await this.gatekeeper.createDID(signed);
+
+        if (!seedBank.didDocumentData || typeof seedBank.didDocumentData !== 'object' || Array.isArray(seedBank.didDocumentData)) {
+            seedBank.didDocumentData = {};
+        }
+
+        const data = seedBank.didDocumentData as { wallet?: string };
+        data.wallet = backupDID;
+        await this.updateSeedBank(seedBank);
+
         await this.mutateWallet((current) => {
             current.backupDid = backupDID;
         });
+
         return backupDID;
     }
 
     async recoverWallet(did?: string): Promise<WalletFile> {
         try {
+            if (!did && this.isMnemonicHdWalletProvider(this.walletProvider)) {
+                const seedBank = await this.resolveSeedBank();
+                if (seedBank.didDocumentData && typeof seedBank.didDocumentData === 'object' && !Array.isArray(seedBank.didDocumentData)) {
+                    const data = seedBank.didDocumentData as { wallet?: string };
+                    did = data.wallet;
+                }
+            }
+
             if (!did) {
                 const wallet = await this.loadWallet();
                 did = wallet.backupDid;
@@ -479,8 +621,60 @@ export default class Keymaster implements KeymasterInterface {
                 throw new InvalidParameterError('Asset "backup" is missing');
             }
 
-            const backup = typeof castData.backup === 'string' ? JSON.parse(castData.backup) : castData.backup;
+            let backup: StoredWallet | MdipWalletBundle;
+            if (typeof castData.backup === 'string') {
+                try {
+                    backup = JSON.parse(castData.backup);
+                } catch {
+                    if (!this.isMnemonicHdWalletProvider(this.walletProvider)) {
+                        throw new InvalidParameterError('Asset "backup" is not valid JSON');
+                    }
+
+                    const providerState = await this.walletProvider.backupWallet();
+                    const plaintext = await this.walletProvider.decrypt('', providerState.rootPublicJwk, castData.backup);
+                    backup = JSON.parse(plaintext);
+                }
+            } else {
+                backup = castData.backup;
+            }
+
+            if (this.isMdipWalletBundle(backup)) {
+                if (!this.isMnemonicHdWalletProvider(this.walletProvider)) {
+                    throw new InvalidParameterError('Asset "backup" is not valid metadata');
+                }
+
+                await this.assertWalletMatchesProvider(backup.keymaster);
+
+                const currentProvider = await this.walletProvider.backupWallet();
+                const provider = {
+                    ...backup.provider,
+                    rootPublicJwk: currentProvider.rootPublicJwk,
+                    mnemonicEnc: currentProvider.mnemonicEnc,
+                };
+
+                const providerOk = await this.walletProvider.saveWallet(provider, true);
+                if (!providerOk) {
+                    throw new KeymasterError('save wallet failed');
+                }
+
+                const recovered = structuredClone(backup.keymaster);
+                recovered.backupDid = did;
+                const ok = await this.saveWallet(recovered, true);
+                if (!ok) {
+                    throw new KeymasterError('save wallet failed');
+                }
+
+                return this.loadWallet();
+            }
+
+            if (isV1Decrypted(backup) && this.isMnemonicHdWalletProvider(this.walletProvider)) {
+                const providerState = await this.walletProvider.backupWallet();
+                backup.seed.mnemonicEnc = providerState.mnemonicEnc;
+            }
+
             const recovered = await this.normalizeStoredWallet(backup);
+            await this.assertWalletMatchesProvider(recovered);
+            recovered.backupDid = did;
             const ok = await this.store.saveWallet(recovered, true);
             if (!ok) {
                 throw new KeymasterError('save wallet failed');
