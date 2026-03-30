@@ -432,6 +432,44 @@ describe('MnemonicHdWalletProvider coverage', () => {
         await expect(restoredProvider.decryptMnemonic()).resolves.toBe(mnemonic);
     });
 
+    it('supports root-key signing and recovery encryption via an empty keyRef after restoring state', async () => {
+        const cipher = new CipherNode();
+        const sourceProvider = new MnemonicHdWalletProvider({
+            store: new ControlledProviderStore(),
+            cipher,
+            passphrase: PASSPHRASE,
+        });
+        await sourceProvider.newWallet(undefined, true);
+        const backup = await sourceProvider.backupWallet();
+
+        const restoredProvider = new MnemonicHdWalletProvider({
+            store: new ControlledProviderStore(),
+            cipher,
+            passphrase: PASSPHRASE,
+        });
+        await restoredProvider.saveWallet(backup, true);
+
+        const digest = cipher.hashJSON({ hello: 'root' });
+        const signature = await restoredProvider.signDigest('', digest);
+        const ciphertext = await sourceProvider.encrypt('', backup.rootPublicJwk, 'secret');
+
+        expect(cipher.verifySig(digest, signature, backup.rootPublicJwk)).toBe(true);
+        await expect(restoredProvider.decrypt('', backup.rootPublicJwk, ciphertext)).resolves.toBe('secret');
+    });
+
+    it('rejects direct root-key access before the wallet cache is initialized', () => {
+        const cipher = new CipherNode();
+        const provider = new MnemonicHdWalletProvider({
+            store: new ControlledProviderStore(),
+            cipher,
+            passphrase: PASSPHRASE,
+        });
+
+        expect(() => (provider as any).findKeyPairForRef('')).toThrow(
+            'Keymaster: Wallet provider not initialized.'
+        );
+    });
+
     it('supports base key refs for rotation', async () => {
         const cipher = new CipherNode();
         const provider = new MnemonicHdWalletProvider({

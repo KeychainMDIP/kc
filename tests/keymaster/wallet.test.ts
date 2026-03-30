@@ -369,6 +369,19 @@ describe('backupWallet', () => {
         expect(wallet.backupDid).toBe(did);
         expect(data.wallet).toBe(did);
     });
+
+    it('should replace non-object seed bank data when mirroring the backup DID', async () => {
+        await keymaster.createId('Bob');
+
+        const seedBank = await keymaster.resolveSeedBank();
+        seedBank.didDocumentData = 'stale-data' as any;
+        await keymaster.updateSeedBank(seedBank);
+
+        const did = await keymaster.backupWallet();
+        const updated = await keymaster.resolveSeedBank();
+
+        expect(updated.didDocumentData).toEqual({ wallet: did });
+    });
 });
 
 describe('recoverWallet', () => {
@@ -397,6 +410,29 @@ describe('recoverWallet', () => {
 
         const providerState = await walletProvider.backupWallet();
         expect(providerState.keys['hd:0']).toEqual({ currentIndex: 0 });
+    });
+
+    it('should recover bundle state from the seed bank, including rotated keys and next account', async () => {
+        await keymaster.createId('Bob');
+        await keymaster.rotateKeys();
+        await keymaster.createId('Alice');
+
+        const backupDid = await keymaster.backupWallet();
+        const mnemonic = await walletProvider.decryptMnemonic();
+
+        await keymaster.newWallet(mnemonic, true);
+        const recovered = await keymaster.recoverWallet();
+
+        expect(recovered.backupDid).toBe(backupDid);
+        expect(recovered.ids.Bob.keyRef).toBe('hd:0#1');
+        expect(recovered.ids.Alice.keyRef).toBe('hd:1#0');
+
+        const assetDid = await keymaster.createAsset({ hello: 'world' }, { controller: 'Bob' });
+        expect(assetDid).toMatch(/^did:/);
+
+        const carolDid = await keymaster.createId('Carol');
+        expect(carolDid).toMatch(/^did:/);
+        expect((await keymaster.loadWallet()).ids.Carol.keyRef).toBe('hd:2#0');
     });
 
     it('should recover augmented wallet from backup DID', async () => {
