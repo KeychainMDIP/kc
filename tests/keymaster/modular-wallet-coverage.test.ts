@@ -14,6 +14,7 @@ import CipherNode from '@mdip/cipher/node';
 import MnemonicHdWalletProvider from '../../packages/keymaster/src/provider/mnemonic-hd.ts';
 import WalletProviderJsonMemory from '../../packages/keymaster/src/provider/json-memory.ts';
 import { encMnemonic } from '@mdip/keymaster/encryption';
+import WalletJsonMemory from '@mdip/keymaster/wallet/json-memory';
 
 const gatekeeper = {
     createDID: async () => 'did:test:stub',
@@ -330,6 +331,21 @@ describe('Keymaster modular wallet coverage', () => {
 });
 
 describe('MnemonicHdWalletProvider coverage', () => {
+    it('keymaster json memory uses the default overwrite argument', async () => {
+        const store = new WalletJsonMemory();
+        const wallet: WalletFile = {
+            version: 2,
+            provider: {
+                type: 'dummy',
+                walletFingerprint: 'dummy-fingerprint',
+            },
+            ids: {},
+        };
+
+        await expect(store.saveWallet(wallet)).resolves.toBe(true);
+        await expect(store.saveWallet(wallet)).resolves.toBe(false);
+    });
+
     it('provider json memory refuses overwrite when state already exists', async () => {
         const store = new WalletProviderJsonMemory();
         const wallet: MnemonicHdWalletState = {
@@ -341,8 +357,8 @@ describe('MnemonicHdWalletProvider coverage', () => {
             keys: {},
         };
 
-        await expect(store.saveWallet(wallet, true)).resolves.toBe(true);
-        await expect(store.saveWallet(wallet, false)).resolves.toBe(false);
+        await expect(store.saveWallet(wallet)).resolves.toBe(true);
+        await expect(store.saveWallet(wallet)).resolves.toBe(false);
     });
 
     it('validates constructor arguments', () => {
