@@ -18,6 +18,7 @@ import {
     Typography,
 } from "@mui/material";
 import { Link as RouterLink, useSearchParams } from "react-router-dom";
+import { fetchCachedDid } from "../shared/utilities.js";
 
 const searchServerURL = import.meta.env.VITE_SEARCH_SERVER || "http://localhost:4002";
 const VERSION = "/api/v1";
@@ -510,11 +511,21 @@ function Credentials(
                 }
 
                 if (nextDetailRecord) {
-                    const subjectDoc = await gatekeeper.resolveDID(nextDetailRecord.subjectDid) as Record<string, unknown>;
-                    const manifestEntry = getManifestEntryFromDoc({
-                        doc: subjectDoc,
-                        credentialDid: nextDetailRecord.credentialDid,
-                    });
+                    const cachedSubjectDoc = await fetchCachedDid(nextDetailRecord.subjectDid);
+                    let manifestEntry = cachedSubjectDoc
+                        ? getManifestEntryFromDoc({
+                            doc: cachedSubjectDoc,
+                            credentialDid: nextDetailRecord.credentialDid,
+                        })
+                        : null;
+
+                    if (!manifestEntry) {
+                        const subjectDoc = await gatekeeper.resolveDID(nextDetailRecord.subjectDid) as Record<string, unknown>;
+                        manifestEntry = getManifestEntryFromDoc({
+                            doc: subjectDoc,
+                            credentialDid: nextDetailRecord.credentialDid,
+                        });
+                    }
 
                     if (!ignore) {
                         if (!manifestEntry) {
@@ -529,7 +540,8 @@ function Credentials(
                     return;
                 }
 
-                const response = await gatekeeper.resolveDID(selectedDetailDid) as Record<string, unknown>;
+                const cachedDoc = await fetchCachedDid(selectedDetailDid);
+                const response = cachedDoc ?? await gatekeeper.resolveDID(selectedDetailDid) as Record<string, unknown>;
 
                 if (!ignore) {
                     setDetailDoc(response);

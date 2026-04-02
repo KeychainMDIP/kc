@@ -20,7 +20,7 @@ import {
     MdipDocument
 } from "@mdip/gatekeeper/types";
 import ContentCopy from "@mui/icons-material/ContentCopy";
-import { handleCopyDID } from '../shared/utilities.js';
+import { fetchCachedDid, handleCopyDID } from '../shared/utilities.js';
 import axios from "axios";
 import { useSearchParams } from "react-router-dom";
 
@@ -67,7 +67,8 @@ function JsonViewer(
             setAliasDocs(undefined);
             setFormDid(did);
 
-            const docs = await gatekeeper.resolveDID(did);
+            const cachedDocs = await fetchCachedDid(did);
+            const docs = (cachedDocs ?? await gatekeeper.resolveDID(did)) as MdipDocument;
             if (!docs.didDocumentMetadata) {
                 setError("Invalid DID");
                 return;
