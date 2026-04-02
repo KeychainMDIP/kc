@@ -2,6 +2,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { jest } from '@jest/globals';
+import sqlite3 from 'sqlite3';
+import { open } from 'sqlite';
 import { setLogger } from '../../packages/common/src/logger.ts';
 import DIDsDbMemory from '../../services/search-server/src/db/json-memory.ts';
 import Sqlite from '../../services/search-server/src/db/sqlite.ts';
@@ -142,6 +144,19 @@ beforeEach(() => {
     setLogger(logger as any);
 });
 
+function createLogger() {
+    const logger = {
+        child: jest.fn(),
+        debug: jest.fn(),
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+    };
+
+    logger.child.mockReturnValue(logger);
+    return logger;
+}
+
 describe('extractPublishedCredentials', () => {
     it('extracts normalized rows from a valid manifest using signature.signed as the published timestamp', () => {
         const holderDid = 'did:test:subject-1';
@@ -243,6 +258,53 @@ describe('extractPublishedCredentials', () => {
         expect(rows.map(row => ({ schemaDid: row.schemaDid, revealed: row.revealed }))).toStrictEqual([
             { schemaDid: 'did:test:schema-1', revealed: false },
             { schemaDid: 'did:test:schema-1', revealed: true },
+        ]);
+    });
+
+    it('returns an empty list when the manifest is missing or invalid', () => {
+        expect(extractPublishedCredentials('did:test:subject-1', {})).toStrictEqual([]);
+        expect(extractPublishedCredentials('did:test:subject-1', {
+            didDocumentData: {
+                manifest: [],
+            },
+        })).toStrictEqual([]);
+    });
+
+    it('falls back to the default holder DID and created timestamp when needed', () => {
+        const defaultHolderDid = 'did:test:subject-1';
+        const credentialDid = 'did:test:credential-1';
+        const schemaDid = 'did:test:schema-1';
+        const issuerDid = 'did:test:issuer-1';
+        const createdAt = '2026-03-31T09:59:00.000Z';
+
+        expect(extractPublishedCredentials(defaultHolderDid, {
+            didDocument: {
+                id: 'not-a-did',
+            },
+            didDocumentData: {
+                manifest: {
+                    [credentialDid]: {
+                        type: ['VerifiableCredential', schemaDid],
+                        issuer: issuerDid,
+                        credentialSubject: {
+                            id: defaultHolderDid,
+                        },
+                    },
+                },
+            },
+            didDocumentMetadata: {
+                created: createdAt,
+            },
+        })).toStrictEqual<PublishedCredentialRecord[]>([
+            {
+                holderDid: defaultHolderDid,
+                credentialDid,
+                schemaDid,
+                issuerDid,
+                subjectDid: defaultHolderDid,
+                revealed: false,
+                updatedAt: createdAt,
+            },
         ]);
     });
 });
@@ -694,6 +756,25 @@ describe('memory adapter query edge cases', () => {
 
         await db.disconnect();
     });
+
+    it('exposes getPath edge cases through direct calls', () => {
+        const db = new DIDsDbMemory() as any;
+        const root = {
+            profile: {
+                nested: [
+                    {
+                        value: 'found',
+                    },
+                ],
+            },
+        };
+
+        expect(db.getPath(root, '')).toBeUndefined();
+        expect(db.getPath(root, '$')).toBe(root);
+        expect(db.getPath(root, '$.profile.missing.value')).toBeUndefined();
+        expect(db.getPath({ profile: 'text' }, '$.profile.value')).toBeUndefined();
+        expect(db.getPath(root, '$.profile.nested.0.value')).toBe('found');
+    });
 });
 
 describe('sqlite adapter disconnected behavior', () => {
@@ -719,6 +800,347 @@ describe('sqlite adapter disconnected behavior', () => {
             await db.disconnect();
             fs.rmSync(tempDir, { recursive: true, force: true });
         }
+    });
+
+    it('connects idempotently and migrates legacy schemas without a revealed column', async () => {
+        const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'search-server-sqlite-legacy-'));
+        const dbFile = path.join(tempDir, 'legacy.db');
+        const rawDb = await open({
+            filename: dbFile,
+            driver: sqlite3.Database,
+        });
+
+        try {
+            await rawDb.exec(`
+                CREATE TABLE did_docs (
+                    did TEXT PRIMARY KEY,
+                    doc TEXT NOT NULL
+                );
+
+                CREATE TABLE published_credentials (
+                    holder_did TEXT NOT NULL,
+                    credential_did TEXT NOT NULL,
+                    schema_did TEXT NOT NULL,
+                    issuer_did TEXT NOT NULL,
+                    subject_did TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (holder_did, credential_did)
+                );
+
+                CREATE TABLE config (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                );
+            `);
+        }
+        finally {
+            await rawDb.close();
+        }
+
+        const db = new Sqlite('legacy.db', tempDir);
+
+        try {
+            await db.connect();
+            await db.connect();
+
+            const internalDb = (db as any).db;
+            const columns = await internalDb.all(`PRAGMA table_info('published_credentials')`);
+
+            expect(columns.some((column: { name: string }) => column.name === 'revealed')).toBe(true);
+        }
+        finally {
+            await db.disconnect();
+            fs.rmSync(tempDir, { recursive: true, force: true });
+        }
+    });
+
+    it('rolls back failed replacements and supports subject/revealed filters', async () => {
+        const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'search-server-sqlite-rollback-'));
+        const db = await Sqlite.create('rollback.db', tempDir) as Sqlite;
+
+        try {
+            await db.replacePublishedCredentials('did:test:subject-1', [
+                {
+                    holderDid: 'did:test:subject-1',
+                    credentialDid: 'did:test:credential-1',
+                    schemaDid: 'did:test:schema-1',
+                    issuerDid: 'did:test:issuer-1',
+                    subjectDid: 'did:test:subject-1',
+                    revealed: true,
+                    updatedAt: '2026-03-31T11:05:00.000Z',
+                },
+            ]);
+
+            expect(await db.listPublishedCredentials({
+                subjectDid: 'did:test:subject-1',
+                revealed: true,
+                limit: 10,
+                offset: 0,
+            })).toStrictEqual({
+                total: 1,
+                credentials: [
+                    {
+                        holderDid: 'did:test:subject-1',
+                        credentialDid: 'did:test:credential-1',
+                        schemaDid: 'did:test:schema-1',
+                        issuerDid: 'did:test:issuer-1',
+                        subjectDid: 'did:test:subject-1',
+                        revealed: true,
+                        updatedAt: '2026-03-31T11:05:00.000Z',
+                    },
+                ],
+            });
+
+            await expect(db.replacePublishedCredentials('did:test:subject-1', [
+                {
+                    holderDid: 'did:test:subject-1',
+                    credentialDid: 'did:test:credential-2',
+                    schemaDid: null as any,
+                    issuerDid: 'did:test:issuer-2',
+                    subjectDid: 'did:test:subject-1',
+                    revealed: false,
+                    updatedAt: '2026-03-31T11:06:00.000Z',
+                },
+            ] as any)).rejects.toBeTruthy();
+
+            expect(await db.listPublishedCredentials({
+                subjectDid: 'did:test:subject-1',
+                revealed: true,
+                limit: 10,
+                offset: 0,
+            })).toStrictEqual({
+                total: 1,
+                credentials: [
+                    {
+                        holderDid: 'did:test:subject-1',
+                        credentialDid: 'did:test:credential-1',
+                        schemaDid: 'did:test:schema-1',
+                        issuerDid: 'did:test:issuer-1',
+                        subjectDid: 'did:test:subject-1',
+                        revealed: true,
+                        updatedAt: '2026-03-31T11:05:00.000Z',
+                    },
+                ],
+            });
+        }
+        finally {
+            await db.disconnect();
+            fs.rmSync(tempDir, { recursive: true, force: true });
+        }
+    });
+});
+
+describe('postgres adapter with mocked pool', () => {
+    async function loadPostgresModule() {
+        jest.resetModules();
+        const module = await import('../../services/search-server/src/db/postgres.ts');
+        return module.default;
+    }
+
+    it('covers connect, read/write helpers, query variants, and wipe behavior', async () => {
+        let configReads = 0;
+        let didReads = 0;
+        const poolQuery = jest.fn(async (sql: string, params?: unknown[]) => {
+            const text = String(sql);
+
+            if (text.includes('CREATE TABLE IF NOT EXISTS did_docs')) {
+                return { rowCount: 0, rows: [] };
+            }
+            if (text.includes('ALTER TABLE published_credentials')) {
+                return { rowCount: 0, rows: [] };
+            }
+            if (text.includes('CREATE INDEX IF NOT EXISTS idx_published_credentials_schema_revealed')) {
+                return { rowCount: 0, rows: [] };
+            }
+            if (text.includes('SELECT value FROM config WHERE key = $1 LIMIT 1')) {
+                configReads += 1;
+                if (configReads === 1) {
+                    return { rowCount: 0, rows: [] };
+                }
+
+                return { rowCount: 1, rows: [{ value: '2026-04-02T09:00:00.000Z' }] };
+            }
+            if (text.includes(`INSERT INTO config (key, value) VALUES ('updated_after', $1)`)) {
+                return { rowCount: 1, rows: [] };
+            }
+            if (text.includes('INSERT INTO did_docs (did, doc) VALUES ($1, $2::jsonb)')) {
+                return { rowCount: 1, rows: [] };
+            }
+            if (text.includes('SELECT doc FROM did_docs WHERE did = $1 LIMIT 1')) {
+                didReads += 1;
+                if (didReads === 1) {
+                    return { rowCount: 1, rows: [{ doc: '{"stored":true}' }] };
+                }
+                if (didReads === 2) {
+                    return { rowCount: 1, rows: [{ doc: { stored: 'object' } }] };
+                }
+
+                return { rowCount: 0, rows: [] };
+            }
+            if (text.includes('COUNT(*)::int AS count')) {
+                return { rowCount: 1, rows: [{ schemaDid: 'did:test:schema-1', count: 2 }] };
+            }
+            if (text.includes('COUNT(*)::int AS total')) {
+                return { rowCount: 1, rows: [{ total: 1 }] };
+            }
+            if (text.includes('holder_did AS "holderDid"')) {
+                return {
+                    rowCount: 1,
+                    rows: [{
+                        holderDid: 'did:test:subject-1',
+                        credentialDid: 'did:test:credential-1',
+                        schemaDid: 'did:test:schema-1',
+                        issuerDid: 'did:test:issuer-1',
+                        subjectDid: 'did:test:subject-1',
+                        revealed: true,
+                        updatedAt: '2026-04-02T09:05:00.000Z',
+                    }],
+                };
+            }
+            if (text.includes("WHERE doc::text LIKE '%' || $1 || '%'")) {
+                return { rowCount: 1, rows: [{ did: 'did:test:search-1' }] };
+            }
+            if (text.includes('JOIN LATERAL jsonb_array_elements') && text.includes('elem.value = expected.value::jsonb')) {
+                return { rowCount: 1, rows: [{ did: 'did:test:array-tail' }] };
+            }
+            if (text.includes('JOIN LATERAL jsonb_array_elements') && text.includes('elem.value #> $2::text[] = expected.value::jsonb')) {
+                return { rowCount: 1, rows: [{ did: 'did:test:array-mid' }] };
+            }
+            if (text.includes('JOIN LATERAL jsonb_each') && text.includes('member.key = ANY($2::text[])')) {
+                return { rowCount: 1, rows: [{ did: 'did:test:key-wildcard' }] };
+            }
+            if (text.includes('JOIN LATERAL jsonb_each') && text.includes('member.value #> $2::text[] = expected.value::jsonb')) {
+                return { rowCount: 1, rows: [{ did: 'did:test:value-wildcard' }] };
+            }
+            if (text.includes('WHERE EXISTS (') && text.includes('did_docs.doc #> $1::text[] = expected.value::jsonb')) {
+                return { rowCount: 1, rows: [{ did: 'did:test:plain-path' }] };
+            }
+            if (text === 'DELETE FROM did_docs' || text === 'DELETE FROM published_credentials' || text === 'DELETE FROM config') {
+                return { rowCount: 1, rows: [] };
+            }
+
+            return { rowCount: 0, rows: [] };
+        });
+        const mockClient = {
+            query: jest.fn(),
+            release: jest.fn(),
+        };
+        const mockPool = {
+            query: poolQuery,
+            connect: jest.fn().mockResolvedValue(mockClient),
+            end: jest.fn().mockResolvedValue(undefined),
+        };
+        const Postgres = await loadPostgresModule();
+        const db = new Postgres('postgresql://example');
+        (db as any).pool = mockPool;
+
+        expect(await db.loadUpdatedAfter()).toBeNull();
+        expect(await db.saveUpdatedAfter('2026-04-02T09:00:00.000Z')).toBeUndefined();
+        expect(await db.loadUpdatedAfter()).toBe('2026-04-02T09:00:00.000Z');
+        expect(await db.storeDID('did:test:doc-1', { stored: true })).toBeUndefined();
+        expect(await db.getDID('did:test:doc-1')).toStrictEqual({ stored: true });
+        expect(await db.getDID('did:test:doc-2')).toStrictEqual({ stored: 'object' });
+        expect(await db.getDID('did:test:doc-3')).toBeNull();
+        expect(await db.getPublishedCredentialCountsBySchema()).toStrictEqual([
+            { schemaDid: 'did:test:schema-1', count: 2 },
+        ]);
+        expect(await db.listPublishedCredentials({
+            credentialDid: 'did:test:credential-1',
+            schemaDid: 'did:test:schema-1',
+            issuerDid: 'did:test:issuer-1',
+            subjectDid: 'did:test:subject-1',
+            revealed: true,
+            limit: 5,
+            offset: 10,
+        })).toStrictEqual({
+            total: 1,
+            credentials: [{
+                holderDid: 'did:test:subject-1',
+                credentialDid: 'did:test:credential-1',
+                schemaDid: 'did:test:schema-1',
+                issuerDid: 'did:test:issuer-1',
+                subjectDid: 'did:test:subject-1',
+                revealed: true,
+                updatedAt: '2026-04-02T09:05:00.000Z',
+            }],
+        });
+        expect(await db.searchDocs('search')).toStrictEqual(['did:test:search-1']);
+
+        expect(await db.queryDocs({})).toStrictEqual([]);
+        await expect(db.queryDocs({ '$.didDocument.id': {} } as any)).rejects.toThrow('Only {$in:[…]} supported');
+        expect(await db.queryDocs({ '$.didDocument.id': { $in: [] } })).toStrictEqual([]);
+        expect(await db.queryDocs({ '$.didDocumentData.tags[*]': { $in: ['tag', undefined] } })).toStrictEqual(['did:test:array-tail']);
+        expect(await db.queryDocs({ '$.didDocumentData.nested[*].kind': { $in: ['shared'] } })).toStrictEqual(['did:test:array-mid']);
+        expect(await db.queryDocs({ '$.didDocumentData.manifest.*': { $in: ['cred'] } })).toStrictEqual(['did:test:key-wildcard']);
+        expect(await db.queryDocs({ '$.didDocumentData.manifest.*.issuer': { $in: ['issuer'] } })).toStrictEqual(['did:test:value-wildcard']);
+        expect(await db.queryDocs({ '$.didDocument.id': { $in: ['did:test:plain-path'] } })).toStrictEqual(['did:test:plain-path']);
+
+        await db.wipeDb();
+        await db.disconnect();
+        await db.disconnect();
+
+        expect(mockPool.end).toHaveBeenCalledTimes(1);
+
+        const arrayTailCall = poolQuery.mock.calls.find(([sql]) =>
+            String(sql).includes('elem.value = expected.value::jsonb')
+        );
+        const defaultPathCall = poolQuery.mock.calls.find(([sql]) =>
+            String(sql).includes('did_docs.doc #> $1::text[] = expected.value::jsonb')
+        );
+
+        expect(arrayTailCall?.[1]).toStrictEqual([
+            ['didDocumentData', 'tags'],
+            ['"tag"', 'null'],
+        ]);
+        expect(defaultPathCall?.[1]).toStrictEqual([
+            ['didDocument', 'id'],
+            ['"did:test:plain-path"'],
+        ]);
+    });
+
+    it('throws when disconnected and rolls back failed replacements', async () => {
+        const clientError = new Error('insert failed');
+        const mockClient = {
+            query: jest.fn()
+                .mockResolvedValueOnce(undefined)
+                .mockResolvedValueOnce(undefined)
+                .mockRejectedValueOnce(clientError)
+                .mockResolvedValueOnce(undefined),
+            release: jest.fn(),
+        };
+        const mockPool = {
+            query: jest.fn().mockResolvedValue({ rowCount: 0, rows: [] }),
+            connect: jest.fn().mockResolvedValue(mockClient),
+            end: jest.fn().mockResolvedValue(undefined),
+        };
+        const Postgres = await loadPostgresModule();
+        const disconnectedDb = new Postgres('postgresql://example');
+
+        await expect(disconnectedDb.loadUpdatedAfter()).rejects.toThrow('Postgres DB not connected');
+
+        const db = new Postgres('postgresql://example');
+        (db as any).pool = mockPool;
+
+        await expect(db.replacePublishedCredentials('did:test:subject-1', [
+            {
+                holderDid: 'did:test:subject-1',
+                credentialDid: 'did:test:credential-1',
+                schemaDid: 'did:test:schema-1',
+                issuerDid: 'did:test:issuer-1',
+                subjectDid: 'did:test:subject-1',
+                revealed: false,
+                updatedAt: '2026-04-02T09:05:00.000Z',
+            },
+        ])).rejects.toThrow(clientError);
+
+        expect(mockClient.query).toHaveBeenNthCalledWith(1, 'BEGIN');
+        expect(mockClient.query).toHaveBeenNthCalledWith(
+            2,
+            'DELETE FROM published_credentials WHERE holder_did = $1',
+            ['did:test:subject-1']
+        );
+        expect(mockClient.query).toHaveBeenNthCalledWith(4, 'ROLLBACK');
+        expect(mockClient.release).toHaveBeenCalledTimes(1);
     });
 });
 
@@ -759,5 +1181,120 @@ describe('DidIndexer published credential indexing', () => {
                 },
             ],
         });
+    });
+
+    it('skips refresh work when gatekeeper is not ready', async () => {
+        const db = {
+            loadUpdatedAfter: jest.fn(),
+            storeDID: jest.fn(),
+            replacePublishedCredentials: jest.fn(),
+            saveUpdatedAfter: jest.fn(),
+        };
+        const gatekeeper = {
+            isReady: jest.fn().mockResolvedValue(false),
+        };
+        const indexer = new DidIndexer(gatekeeper as any, db as any, { intervalMs: 60_000 });
+
+        await (indexer as any).refreshIndex();
+
+        expect(db.loadUpdatedAfter).not.toHaveBeenCalled();
+        expect(db.saveUpdatedAfter).not.toHaveBeenCalled();
+    });
+
+    it('skips overlapping refresh calls while one is already in progress', async () => {
+        let resolveGetDIDs: ((value: string[]) => void) | null = null;
+        const getDIDsPromise = new Promise<string[]>((resolve) => {
+            resolveGetDIDs = resolve;
+        });
+        const db = {
+            loadUpdatedAfter: jest.fn().mockResolvedValue(null),
+            storeDID: jest.fn(),
+            replacePublishedCredentials: jest.fn(),
+            saveUpdatedAfter: jest.fn(),
+        };
+        const gatekeeper = {
+            isReady: jest.fn().mockResolvedValue(true),
+            getDIDs: jest.fn().mockReturnValue(getDIDsPromise),
+            resolveDID: jest.fn(),
+        };
+        const indexer = new DidIndexer(gatekeeper as any, db as any, { intervalMs: 60_000 });
+
+        const firstRefresh = (indexer as any).refreshIndex();
+        await Promise.resolve();
+        await (indexer as any).refreshIndex();
+
+        expect(gatekeeper.getDIDs).toHaveBeenCalledTimes(1);
+
+        resolveGetDIDs!([]);
+        await firstRefresh;
+    });
+
+    it('logs refresh errors and resets state for later runs', async () => {
+        const logger = createLogger();
+        setLogger(logger as any);
+
+        const db = {
+            loadUpdatedAfter: jest.fn().mockResolvedValue(null),
+            storeDID: jest.fn(),
+            replacePublishedCredentials: jest.fn(),
+            saveUpdatedAfter: jest.fn(),
+        };
+        const error = new Error('boom');
+        const gatekeeper = {
+            isReady: jest.fn().mockResolvedValue(true),
+            getDIDs: jest.fn().mockRejectedValueOnce(error).mockResolvedValueOnce([]),
+            resolveDID: jest.fn(),
+        };
+        const indexer = new DidIndexer(gatekeeper as any, db as any, { intervalMs: 60_000 });
+
+        await (indexer as any).refreshIndex();
+        await (indexer as any).refreshIndex();
+
+        expect(logger.error).toHaveBeenCalledWith({ error }, 'Error in refreshIndex');
+        expect(db.saveUpdatedAfter).toHaveBeenCalledTimes(1);
+    });
+
+    it('logs rejected interval refreshes from the timer callback', async () => {
+        const logger = createLogger();
+        setLogger(logger as any);
+
+        const db = {
+            loadUpdatedAfter: jest.fn().mockResolvedValue(null),
+            storeDID: jest.fn(),
+            replacePublishedCredentials: jest.fn(),
+            saveUpdatedAfter: jest.fn(),
+        };
+        const gatekeeper = {
+            isReady: jest.fn().mockResolvedValue(true),
+            getDIDs: jest.fn().mockResolvedValue([]),
+            resolveDID: jest.fn(),
+        };
+        const setIntervalSpy = jest.spyOn(global, 'setInterval');
+        const clearIntervalSpy = jest.spyOn(global, 'clearInterval').mockImplementation(() => undefined as any);
+        let intervalCallback: (() => Promise<void>) | undefined;
+
+        setIntervalSpy.mockImplementation(((callback: () => Promise<void>) => {
+            intervalCallback = callback;
+            return {} as NodeJS.Timeout;
+        }) as any);
+
+        try {
+            const indexer = new DidIndexer(gatekeeper as any, db as any, { intervalMs: 60_000 });
+            await indexer.startIndexing();
+            (indexer as any).refreshIndex = jest.fn().mockRejectedValue(new Error('timer boom'));
+
+            await intervalCallback!();
+
+            expect(logger.error).toHaveBeenCalledWith(
+                { error: expect.any(Error) },
+                'refreshIndex error'
+            );
+
+            indexer.stopIndexing();
+        }
+        finally {
+            setIntervalSpy.mockRestore();
+            clearIntervalSpy.mockRestore();
+        }
     });
 });
