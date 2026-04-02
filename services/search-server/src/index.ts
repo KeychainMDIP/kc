@@ -94,6 +94,33 @@ function shouldSkipRateLimitPath(req: express.Request, skipPaths: string[]): boo
         pathOnly === skipPath || pathOnly.startsWith(`${skipPath}/`));
 }
 
+function parseNonNegativeInteger(value: unknown, fallback: number): number {
+    const parsed = Number.parseInt(String(value ?? ''), 10);
+
+    if (Number.isInteger(parsed) && parsed >= 0) {
+        return parsed;
+    }
+
+    return fallback;
+}
+
+function parseOptionalBoolean(value: unknown): boolean | undefined {
+    if (typeof value !== 'string') {
+        return undefined;
+    }
+
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true') {
+        return true;
+    }
+
+    if (normalized === 'false') {
+        return false;
+    }
+
+    return undefined;
+}
+
 async function main() {
     const app = express();
     const v1router = express.Router();
@@ -235,6 +262,42 @@ async function main() {
         } catch (err) {
             log.error({ error: err }, '/query error');
             res.status(500).json({ error: String(err) });
+        }
+    });
+
+    v1router.get("/metrics/schemas/published", async (req, res) => {
+        try {
+            const schemas = await didDb.getPublishedCredentialCountsBySchema();
+            res.json({ schemas });
+        } catch (error) {
+            log.error({ error }, '/metrics/schemas/published error');
+            res.status(500).json({ error: String(error) });
+        }
+    });
+
+    v1router.get("/metrics/credentials/published", async (req, res) => {
+        try {
+            const credentialDid = req.query.credentialDid?.toString();
+            const schemaDid = req.query.schemaDid?.toString();
+            const issuerDid = req.query.issuerDid?.toString();
+            const subjectDid = req.query.subjectDid?.toString();
+            const revealed = parseOptionalBoolean(req.query.revealed);
+            const limit = parseNonNegativeInteger(req.query.limit, 50);
+            const offset = parseNonNegativeInteger(req.query.offset, 0);
+            const result = await didDb.listPublishedCredentials({
+                credentialDid,
+                schemaDid,
+                issuerDid,
+                subjectDid,
+                revealed,
+                limit,
+                offset,
+            });
+
+            res.json(result);
+        } catch (error) {
+            log.error({ error }, '/metrics/credentials/published error');
+            res.status(500).json({ error: String(error) });
         }
     });
 

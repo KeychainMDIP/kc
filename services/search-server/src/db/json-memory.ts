@@ -1,10 +1,17 @@
-import { DIDsDb } from "../types.js";
+import {
+    DIDsDb,
+    PublishedCredentialListOptions,
+    PublishedCredentialListResult,
+    PublishedCredentialRecord,
+    PublishedCredentialSchemaCount,
+} from "../types.js";
 
 type JSONObject = Record<string, unknown>;
 
 export default class DIDsDbMemory implements DIDsDb {
     private docs = new Map<string, JSONObject>();
     private config = new Map<string, string>();
+    private publishedCredentials = new Map<string, PublishedCredentialRecord[]>();
     private static readonly ARRAY_WILDCARD_END = /\[\*]$/;
     private static readonly ARRAY_WILDCARD_MID = /\[\*]\./;
 
@@ -23,9 +30,66 @@ export default class DIDsDbMemory implements DIDsDb {
         this.docs.set(did, JSON.parse(JSON.stringify(doc)) as JSONObject);
     }
 
+    async replacePublishedCredentials(holderDid: string, records: PublishedCredentialRecord[]): Promise<void> {
+        const uniqueRecords = new Map<string, PublishedCredentialRecord>();
+
+        for (const record of records) {
+            uniqueRecords.set(
+                `${record.holderDid}\u0000${record.credentialDid}`,
+                { ...record }
+            );
+        }
+
+        this.publishedCredentials.set(holderDid, Array.from(uniqueRecords.values()));
+    }
+
     async getDID(did: string): Promise<object | null> {
         const v = this.docs.get(did);
         return v ? JSON.parse(JSON.stringify(v)) : null;
+    }
+
+    async getPublishedCredentialCountsBySchema(): Promise<PublishedCredentialSchemaCount[]> {
+        const counts = new Map<string, number>();
+
+        for (const record of this.flattenPublishedCredentials()) {
+            counts.set(record.schemaDid, (counts.get(record.schemaDid) ?? 0) + 1);
+        }
+
+        return Array.from(counts.entries())
+            .map(([schemaDid, count]) => ({ schemaDid, count }))
+            .sort((a, b) => b.count - a.count || a.schemaDid.localeCompare(b.schemaDid));
+    }
+
+    async listPublishedCredentials(
+        options: PublishedCredentialListOptions = {}
+    ): Promise<PublishedCredentialListResult> {
+        const {
+            credentialDid,
+            schemaDid,
+            issuerDid,
+            subjectDid,
+            revealed,
+            limit = 50,
+            offset = 0,
+        } = options;
+
+        const filtered = this.flattenPublishedCredentials()
+            .filter(record => !credentialDid || record.credentialDid === credentialDid)
+            .filter(record => !schemaDid || record.schemaDid === schemaDid)
+            .filter(record => !issuerDid || record.issuerDid === issuerDid)
+            .filter(record => !subjectDid || record.subjectDid === subjectDid)
+            .filter(record => typeof revealed !== 'boolean' || record.revealed === revealed)
+            .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.credentialDid.localeCompare(b.credentialDid));
+
+        const normalizedLimit = Math.max(0, limit);
+        const normalizedOffset = Math.max(0, offset);
+
+        return {
+            total: filtered.length,
+            credentials: filtered
+                .slice(normalizedOffset, normalizedOffset + normalizedLimit)
+                .map(record => ({ ...record })),
+        };
     }
 
     async searchDocs(q: string): Promise<string[]> {
@@ -99,6 +163,13 @@ export default class DIDsDbMemory implements DIDsDb {
     async wipeDb(): Promise<void> {
         this.docs.clear();
         this.config.clear();
+        this.publishedCredentials.clear();
+    }
+
+    private flattenPublishedCredentials(): PublishedCredentialRecord[] {
+        return Array.from(this.publishedCredentials.values()).flatMap(records =>
+            records.map(record => ({ ...record }))
+        );
     }
 
     private getPath(root: unknown, path: string): unknown {

@@ -272,7 +272,7 @@ function JsonViewer(
                                         sx={{
                                             fontFamily: "Courier, monospace",
                                             textDecoration: "underline",
-                                            color: "blue",
+                                            color: "primary.main",
                                             cursor: "pointer",
                                             maxWidth: 700,
                                             overflow: "hidden",
@@ -454,4 +454,3 @@ function JsonViewer(
 }
 
 export default JsonViewer;
-

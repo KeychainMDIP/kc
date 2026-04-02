@@ -1,6 +1,7 @@
-import React, {useEffect, useMemo, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import JsonViewer from "./components/JsonViewer.js";
 import Events from "./components/Events.js";
+import Credentials from "./components/Credentials.js";
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import { createTheme, ThemeProvider } from "@mui/material/styles";
 import {
@@ -54,14 +55,14 @@ function App() {
         navigate(`/search?did=${encodeURIComponent(did)}`);
     }
 
-    const setError = (error: any) => {
+    const setError = useCallback((error: any) => {
         const errorMessage = error.error || error.message || String(error);
         setSnackbar({
             open: true,
             message: errorMessage,
             severity: "error",
         });
-    };
+    }, []);
 
     const theme = useMemo(() => createTheme({
         palette: {
@@ -201,54 +202,66 @@ function App() {
                         </Alert>
                     </Snackbar>
 
-                    {isReady &&
-                        <Box>
-                            <Header
-                                handleThemeToggle={handleThemeToggle}
-                                darkMode={darkMode}
+                    <Box>
+                        <Header
+                            handleThemeToggle={handleThemeToggle}
+                            darkMode={darkMode}
+                        />
+                        <Routes>
+                            <Route
+                                path="/"
+                                element={<Navigate to="/search" replace />}
                             />
-                            <Routes>
-                                <Route
-                                    path="/"
-                                    element={<Navigate to="/search" replace />}
-                                />
-                                <Route
-                                    path="/search"
-                                    element={
-                                        <JsonViewer
-                                            gatekeeper={gatekeeper}
-                                            setError={setError}
-                                        />
-                                    }
-                                />
-                                <Route
-                                    path="/events"
-                                    element={
-                                        <Events
-                                            events={events}
-                                            eventCount={eventCount}
-                                            page={page}
-                                            dateFrom={dateFrom}
-                                            dateTo={dateTo}
-                                            registry={registry}
-                                            totalPages={totalPages}
-                                            setEventCount={setEventCount}
-                                            setPage={setPage}
-                                            setRegistry={setRegistry}
-                                            setDateFrom={setDateFrom}
-                                            setDateTo={setDateTo}
-                                            onDidClick={handleViewDid}
-                                            setError={setError}
-                                        />
-                                    }
-                                />
-                                <Route
-                                    path="*"
-                                    element={<Typography>404 Not Found</Typography>}
-                                />
-                            </Routes>
-                        </Box>
-                    }
+                            <Route
+                                path="/search"
+                                element={isReady ? (
+                                    <JsonViewer
+                                        gatekeeper={gatekeeper}
+                                        setError={setError}
+                                    />
+                                ) : (
+                                    <Typography sx={{ mt: 3 }}>Waiting for Gatekeeper...</Typography>
+                                )}
+                            />
+                            <Route
+                                path="/events"
+                                element={isReady ? (
+                                    <Events
+                                        events={events}
+                                        eventCount={eventCount}
+                                        page={page}
+                                        dateFrom={dateFrom}
+                                        dateTo={dateTo}
+                                        registry={registry}
+                                        totalPages={totalPages}
+                                        setEventCount={setEventCount}
+                                        setPage={setPage}
+                                        setRegistry={setRegistry}
+                                        setDateFrom={setDateFrom}
+                                        setDateTo={setDateTo}
+                                        onDidClick={handleViewDid}
+                                        setError={setError}
+                                    />
+                                ) : (
+                                    <Typography sx={{ mt: 3 }}>Waiting for Gatekeeper...</Typography>
+                                )}
+                            />
+                            <Route
+                                path="/credentials"
+                                element={
+                                    <Credentials
+                                        gatekeeper={gatekeeper}
+                                        isReady={isReady}
+                                        setError={setError}
+                                    />
+                                }
+                            />
+                            <Route
+                                path="*"
+                                element={<Typography>404 Not Found</Typography>}
+                            />
+                        </Routes>
+                    </Box>
                 </Box>
             </Box>
         </ThemeProvider>
