@@ -39,6 +39,16 @@ interface PublishedCredentialRow {
     updatedAt: string;
 }
 
+function getDidPrefix(did: string): string {
+    const parts = did.split(":");
+
+    if (parts.length < 2) {
+        return did;
+    }
+
+    return `${parts[0]}:${parts[1]}`;
+}
+
 function parsePositiveInteger(value: string | null, fallback: number): number {
     const parsed = Number.parseInt(value ?? "", 10);
 
@@ -186,6 +196,47 @@ function DidRow(
     );
 }
 
+function SummaryCard(
+    {
+        label,
+        value,
+        minWidth = 280,
+    }: {
+        label: string;
+        value: number;
+        minWidth?: number;
+    }
+) {
+    return (
+        <Box
+            sx={{
+                border: "1px solid",
+                borderColor: "divider",
+                borderRadius: 1,
+                p: 2,
+                minWidth,
+                flex: `1 1 ${minWidth}px`,
+            }}
+        >
+            <Box sx={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 2, whiteSpace: "nowrap" }}>
+                <Typography
+                    sx={{
+                        fontSize: "0.95rem",
+                        fontWeight: 500,
+                        letterSpacing: "0.08em",
+                        textTransform: "uppercase",
+                    }}
+                >
+                    {label}
+                </Typography>
+                <Typography variant="h4" sx={{ fontSize: "2.1rem", lineHeight: 1 }}>
+                    {value}
+                </Typography>
+            </Box>
+        </Box>
+    );
+}
+
 function Credentials(
     {
         gatekeeper,
@@ -210,12 +261,28 @@ function Credentials(
 
     const schemaDid = searchParams.get("schemaDid") ?? "";
     const selectedDetailDid = searchParams.get("detailDid") ?? "";
+    const schemaPrefix = searchParams.get("schemaPrefix") ?? "";
     const pageSize = parsePositiveInteger(searchParams.get("pageSize"), 25);
     const page = parseNonNegativeInteger(searchParams.get("page"), 0);
 
-    const totalPublished = useMemo(
-        () => schemaCounts.reduce((sum, row) => sum + row.count, 0),
+    const availableSchemaPrefixes = useMemo(
+        () => Array.from(new Set(schemaCounts.map(row => getDidPrefix(row.schemaDid)))).sort(),
         [schemaCounts]
+    );
+
+    const hasMultipleSchemaPrefixes = availableSchemaPrefixes.length > 1;
+
+    const filteredSchemaCounts = useMemo(() => {
+        if (!schemaPrefix) {
+            return schemaCounts;
+        }
+
+        return schemaCounts.filter(row => getDidPrefix(row.schemaDid) === schemaPrefix);
+    }, [schemaCounts, schemaPrefix]);
+
+    const totalPublished = useMemo(
+        () => filteredSchemaCounts.reduce((sum, row) => sum + row.count, 0),
+        [filteredSchemaCounts]
     );
 
     const selectedSchemaCount = useMemo(
@@ -224,13 +291,13 @@ function Credentials(
     );
 
     const totalPages = Math.max(1, Math.ceil(credentialTotal / pageSize));
-    const schemaTotalPages = Math.max(1, Math.ceil(schemaCounts.length / schemaPageSize));
+    const schemaTotalPages = Math.max(1, Math.ceil(filteredSchemaCounts.length / schemaPageSize));
     const pagedSchemaCounts = useMemo(() => {
         const from = schemaPage * schemaPageSize;
         const to = from + schemaPageSize;
 
-        return schemaCounts.slice(from, to);
-    }, [schemaCounts, schemaPage, schemaPageSize]);
+        return filteredSchemaCounts.slice(from, to);
+    }, [filteredSchemaCounts, schemaPage, schemaPageSize]);
 
     const listDetailRecord = useMemo(
         () => credentials.find(row => row.credentialDid === selectedDetailDid) ?? null,
@@ -288,6 +355,13 @@ function Credentials(
             pageSize: value.toString(),
             page: "0",
         });
+    }
+
+    function handleSchemaPrefixChange(value: string) {
+        updateParams({
+            schemaPrefix: value || null,
+        });
+        setSchemaPage(0);
     }
 
     function handleSchemaPageSizeChange(value: number) {
@@ -366,12 +440,20 @@ function Credentials(
     }, [page, pageSize, schemaDid, setError, updateParams]);
 
     useEffect(() => {
-        const maxPage = Math.max(0, Math.ceil(schemaCounts.length / schemaPageSize) - 1);
+        const maxPage = Math.max(0, Math.ceil(filteredSchemaCounts.length / schemaPageSize) - 1);
 
         if (schemaPage > maxPage) {
             setSchemaPage(maxPage);
         }
-    }, [schemaCounts.length, schemaPage, schemaPageSize]);
+    }, [filteredSchemaCounts.length, schemaPage, schemaPageSize]);
+
+    useEffect(() => {
+        if (schemaPrefix && !availableSchemaPrefixes.includes(schemaPrefix)) {
+            updateParams({
+                schemaPrefix: null,
+            }, { replace: true });
+        }
+    }, [availableSchemaPrefixes, schemaPrefix, updateParams]);
 
     useEffect(() => {
         if (selectedDetailDid && detailRecord && !schemaDid) {
@@ -545,17 +627,28 @@ function Credentials(
             ) : !schemaDid ? (
                 <>
                     <Box sx={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", mb: 2, gap: 2, flexWrap: "wrap" }}>
-                        <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
-                            <Box sx={{ border: "1px solid", borderColor: "divider", borderRadius: 1, p: 2, minWidth: 220 }}>
-                                <Typography variant="overline">Total Published</Typography>
-                                <Typography variant="h4">{totalPublished}</Typography>
-                            </Box>
-                            <Box sx={{ border: "1px solid", borderColor: "divider", borderRadius: 1, p: 2, minWidth: 220 }}>
-                                <Typography variant="overline">Schemas In Use</Typography>
-                                <Typography variant="h4">{schemaCounts.length}</Typography>
-                            </Box>
+                        <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", flex: "1 1 620px" }}>
+                            <SummaryCard label="Total Published" value={totalPublished} />
+                            <SummaryCard label="Schemas In Use" value={filteredSchemaCounts.length} />
                         </Box>
                         <Box sx={{ display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap", ml: "auto" }}>
+                            {hasMultipleSchemaPrefixes && (
+                                <FormControl size="small" sx={{ minWidth: 140 }}>
+                                    <Select
+                                        value={schemaPrefix}
+                                        displayEmpty
+                                        onChange={(event) => handleSchemaPrefixChange(event.target.value as string)}
+                                    >
+                                        <MenuItem value="">All</MenuItem>
+                                        {availableSchemaPrefixes.map((prefix) => (
+                                            <MenuItem key={prefix} value={prefix}>
+                                                {prefix}
+                                            </MenuItem>
+                                        ))}
+                                    </Select>
+                                </FormControl>
+                            )}
+
                             <FormControl size="small" sx={{ minWidth: 120 }}>
                                 <Select
                                     value={schemaPageSize}
@@ -593,7 +686,7 @@ function Credentials(
                         </Box>
                     </Box>
 
-                    {schemaCounts.length === 0 ? (
+                    {filteredSchemaCounts.length === 0 ? (
                         <Typography>No published credentials found.</Typography>
                     ) : (
                         <TableContainer sx={{ border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
@@ -648,10 +741,7 @@ function Credentials(
                     </Box>
 
                     <Box sx={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 2, mb: 2, flexWrap: "wrap" }}>
-                        <Box sx={{ border: "1px solid", borderColor: "divider", borderRadius: 1, p: 2, minWidth: 220 }}>
-                            <Typography variant="overline">Published Credentials</Typography>
-                            <Typography variant="h4">{selectedSchemaCount}</Typography>
-                        </Box>
+                        <SummaryCard label="Published Credentials" value={selectedSchemaCount} minWidth={320} />
                         <Box sx={{ display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap", ml: "auto" }}>
                             <FormControl size="small" sx={{ minWidth: 100 }}>
                                 <Select
