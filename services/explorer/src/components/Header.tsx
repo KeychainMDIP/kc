@@ -18,7 +18,14 @@ const Header = (
     const navigate = useNavigate();
     const location = useLocation();
 
-    const currentTab = location.pathname.startsWith("/events") ? "events" : "search";
+    let currentTab = "search";
+
+    if (location.pathname.startsWith("/events")) {
+        currentTab = "events";
+    }
+    else if (location.pathname.startsWith("/credentials")) {
+        currentTab = "credentials";
+    }
 
     const handleTabChange = (event: React.SyntheticEvent, newValue: string) => {
         navigate("/" + newValue);
@@ -42,7 +49,12 @@ const Header = (
                     component="img"
                     src={iconInverted}
                     alt="MDIP"
-                    sx={{ width: 32, height: 32 }}
+                    sx={{
+                        width: 32,
+                        height: 32,
+                        filter: darkMode ? "invert(1)" : "none",
+                        transition: "filter 150ms ease-in-out",
+                    }}
                 />
             </Box>
 
@@ -54,6 +66,7 @@ const Header = (
             >
                 <Tab label="Search" value="search" />
                 <Tab label="Events" value="events" />
+                <Tab label="Credentials" value="credentials" />
             </Tabs>
 
             <Box sx={{ ml: "auto", display: "flex", alignItems: "center" }}>

@@ -1,5 +1,11 @@
 import { Pool } from 'pg';
-import { DIDsDb } from '../types.js';
+import {
+    DIDsDb,
+    PublishedCredentialListOptions,
+    PublishedCredentialListResult,
+    PublishedCredentialRecord,
+    PublishedCredentialSchemaCount,
+} from '../types.js';
 
 interface ConfigRow {
     value: string;
@@ -13,14 +19,21 @@ interface DidRow {
     did: string;
 }
 
+interface CountRow {
+    total: number;
+}
+
 export default class Postgres implements DIDsDb {
     private readonly url: string;
     private pool: Pool | null = null;
     private static readonly ARRAY_WILDCARD_END = /\[\*]$/;
     private static readonly ARRAY_WILDCARD_MID = /\[\*]\./;
 
-    static async create(url: string): Promise<DIDsDb> {
-        const db = new Postgres(url);
+    static async create<T extends DIDsDb>(
+        this: new (url: string) => T,
+        url: string
+    ): Promise<T> {
+        const db = new this(url);
         await db.connect();
         return db;
     }
@@ -34,7 +47,7 @@ export default class Postgres implements DIDsDb {
             return;
         }
 
-        this.pool = new Pool({ connectionString: this.url });
+        this.pool = this.createPool();
 
         await this.pool.query(`
             CREATE TABLE IF NOT EXISTS did_docs (
@@ -42,10 +55,40 @@ export default class Postgres implements DIDsDb {
                 doc JSONB NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS published_credentials (
+                holder_did TEXT NOT NULL,
+                credential_did TEXT NOT NULL,
+                schema_did TEXT NOT NULL,
+                issuer_did TEXT NOT NULL,
+                subject_did TEXT NOT NULL,
+                revealed BOOLEAN,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (holder_did, credential_did)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_published_credentials_schema
+                ON published_credentials (schema_did);
+
+            CREATE INDEX IF NOT EXISTS idx_published_credentials_schema_issuer
+                ON published_credentials (schema_did, issuer_did);
+
+            CREATE INDEX IF NOT EXISTS idx_published_credentials_schema_subject
+                ON published_credentials (schema_did, subject_did);
+
             CREATE TABLE IF NOT EXISTS config (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
+        `);
+
+        await this.pool.query(`
+            ALTER TABLE published_credentials
+            ADD COLUMN IF NOT EXISTS revealed BOOLEAN
+        `);
+
+        await this.pool.query(`
+            CREATE INDEX IF NOT EXISTS idx_published_credentials_schema_revealed
+                ON published_credentials (schema_did, revealed)
         `);
     }
 
@@ -88,6 +131,57 @@ export default class Postgres implements DIDsDb {
         );
     }
 
+    async replacePublishedCredentials(holderDid: string, records: PublishedCredentialRecord[]): Promise<void> {
+        const pool = this.getPool();
+        const client = await pool.connect();
+
+        try {
+            await client.query('BEGIN');
+            await client.query(
+                'DELETE FROM published_credentials WHERE holder_did = $1',
+                [holderDid]
+            );
+
+            for (const record of records) {
+                await client.query(
+                    `INSERT INTO published_credentials (
+                        holder_did,
+                        credential_did,
+                        schema_did,
+                        issuer_did,
+                        subject_did,
+                        revealed,
+                        updated_at
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    ON CONFLICT (holder_did, credential_did) DO UPDATE SET
+                        schema_did = EXCLUDED.schema_did,
+                        issuer_did = EXCLUDED.issuer_did,
+                        subject_did = EXCLUDED.subject_did,
+                        revealed = EXCLUDED.revealed,
+                        updated_at = EXCLUDED.updated_at`,
+                    [
+                        record.holderDid,
+                        record.credentialDid,
+                        record.schemaDid,
+                        record.issuerDid,
+                        record.subjectDid,
+                        record.revealed,
+                        record.updatedAt,
+                    ]
+                );
+            }
+
+            await client.query('COMMIT');
+        }
+        catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        }
+        finally {
+            client.release();
+        }
+    }
+
     async getDID(did: string): Promise<object | null> {
         const pool = this.getPool();
         const result = await pool.query<DocRow>(
@@ -105,6 +199,94 @@ export default class Postgres implements DIDsDb {
         }
 
         return doc;
+    }
+
+    async getPublishedCredentialCountsBySchema(): Promise<PublishedCredentialSchemaCount[]> {
+        const pool = this.getPool();
+        const result = await pool.query<PublishedCredentialSchemaCount>(
+            `SELECT schema_did AS "schemaDid", COUNT(*)::int AS count
+             FROM published_credentials
+             GROUP BY schema_did
+             ORDER BY count DESC, "schemaDid" ASC`
+        );
+
+        return result.rows;
+    }
+
+    async listPublishedCredentials(
+        options: PublishedCredentialListOptions = {}
+    ): Promise<PublishedCredentialListResult> {
+        const pool = this.getPool();
+        const {
+            credentialDid,
+            schemaDid,
+            issuerDid,
+            subjectDid,
+            revealed,
+            limit = 50,
+            offset = 0,
+        } = options;
+
+        const clauses: string[] = [];
+        const params: unknown[] = [];
+        let index = 1;
+
+        if (credentialDid) {
+            clauses.push(`credential_did = $${index++}`);
+            params.push(credentialDid);
+        }
+
+        if (schemaDid) {
+            clauses.push(`schema_did = $${index++}`);
+            params.push(schemaDid);
+        }
+
+        if (issuerDid) {
+            clauses.push(`issuer_did = $${index++}`);
+            params.push(issuerDid);
+        }
+
+        if (subjectDid) {
+            clauses.push(`subject_did = $${index++}`);
+            params.push(subjectDid);
+        }
+
+        if (typeof revealed === 'boolean') {
+            clauses.push(`revealed = $${index++}`);
+            params.push(revealed);
+        }
+
+        const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+        const totalResult = await pool.query<CountRow>(
+            `SELECT COUNT(*)::int AS total
+             FROM published_credentials
+             ${where}`,
+            params
+        );
+
+        const pageParams = [...params, Math.max(0, limit), Math.max(0, offset)];
+        const limitParam = `$${pageParams.length - 1}`;
+        const offsetParam = `$${pageParams.length}`;
+        const result = await pool.query<PublishedCredentialRecord>(
+            `SELECT
+                holder_did AS "holderDid",
+                credential_did AS "credentialDid",
+                schema_did AS "schemaDid",
+                issuer_did AS "issuerDid",
+                subject_did AS "subjectDid",
+                revealed AS "revealed",
+                updated_at AS "updatedAt"
+             FROM published_credentials
+             ${where}
+             ORDER BY updated_at DESC, credential_did ASC
+             LIMIT ${limitParam} OFFSET ${offsetParam}`,
+            pageParams
+        );
+
+        return {
+            total: totalResult.rows[0]?.total ?? 0,
+            credentials: result.rows,
+        };
     }
 
     async searchDocs(q: string): Promise<string[]> {
@@ -236,6 +418,7 @@ export default class Postgres implements DIDsDb {
     async wipeDb(): Promise<void> {
         const pool = this.getPool();
         await pool.query('DELETE FROM did_docs');
+        await pool.query('DELETE FROM published_credentials');
         await pool.query('DELETE FROM config');
     }
 
@@ -245,6 +428,10 @@ export default class Postgres implements DIDsDb {
         }
 
         return this.pool;
+    }
+
+    protected createPool(): Pool {
+        return new Pool({ connectionString: this.url });
     }
 
     private toJsonLiterals(values: unknown[]): string[] {
@@ -271,7 +458,9 @@ export default class Postgres implements DIDsDb {
         while (match) {
             if (match[1]) {
                 tokens.push(match[1]);
-            } else if (match[2]) {
+            }
+
+            if (match[2]) {
                 tokens.push(match[2]);
             }
             match = re.exec(normalized);
