@@ -8,6 +8,7 @@ import Sqlite from '../../services/search-server/src/db/sqlite.ts';
 import DidIndexer from '../../services/search-server/src/DidIndexer.ts';
 import { extractPublishedCredentials } from '../../services/search-server/src/published-credentials.ts';
 import type {
+    DIDsDb,
     PublishedCredentialRecord,
     PublishedCredentialSchemaCount,
 } from '../../services/search-server/src/types.ts';
@@ -58,6 +59,75 @@ function createSubjectDoc(
         },
     };
 }
+
+function createQueryableDoc(
+    did: string,
+    {
+        name,
+        tags,
+        nestedKinds,
+        manifest,
+        coordinates,
+    }: {
+        name: string;
+        tags: string[];
+        nestedKinds: string[];
+        manifest: Record<string, { issuer: string }>;
+        coordinates: string[];
+    }
+) {
+    return {
+        didDocument: {
+            id: did,
+        },
+        didDocumentData: {
+            profile: {
+                name,
+            },
+            tags,
+            nested: nestedKinds.map(kind => ({ kind })),
+            coordinates,
+            manifest,
+        },
+    };
+}
+
+type DbHarness = {
+    db: DIDsDb;
+    cleanup: () => Promise<void>;
+};
+
+const adapterFactories = [
+    {
+        name: 'memory',
+        create: async (): Promise<DbHarness> => {
+            const db = new DIDsDbMemory();
+            await db.connect();
+
+            return {
+                db,
+                cleanup: async () => {
+                    await db.disconnect();
+                },
+            };
+        },
+    },
+    {
+        name: 'sqlite',
+        create: async (): Promise<DbHarness> => {
+            const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'search-server-query-'));
+            const db = await Sqlite.create('query.db', tempDir);
+
+            return {
+                db,
+                cleanup: async () => {
+                    await db.disconnect();
+                    fs.rmSync(tempDir, { recursive: true, force: true });
+                },
+            };
+        },
+    },
+] as const;
 
 beforeEach(() => {
     const logger = {
@@ -502,6 +572,148 @@ describe('published credential aggregation', () => {
             expect(await db.getPublishedCredentialCountsBySchema()).toStrictEqual([
                 { schemaDid: 'did:test:schema-2', count: 1 },
             ]);
+        }
+        finally {
+            await db.disconnect();
+            fs.rmSync(tempDir, { recursive: true, force: true });
+        }
+    });
+});
+
+describe.each(adapterFactories)('$name query and utility behavior', ({ create }) => {
+    it('round-trips config and docs, supports search and query variants, and wipes all state', async () => {
+        const { db, cleanup } = await create();
+
+        try {
+            const did1 = 'did:test:query-1';
+            const did2 = 'did:test:query-2';
+            const doc1 = createQueryableDoc(did1, {
+                name: 'Needle Alpha',
+                tags: ['alpha', 'shared'],
+                nestedKinds: ['first', 'shared'],
+                coordinates: ['zero', 'one'],
+                manifest: {
+                    'did:test:credential-a': { issuer: 'did:test:issuer-1' },
+                    'did:test:credential-b': { issuer: 'did:test:issuer-2' },
+                },
+            });
+            const doc2 = createQueryableDoc(did2, {
+                name: 'Haystack Beta',
+                tags: ['beta'],
+                nestedKinds: ['second'],
+                coordinates: ['left', 'right'],
+                manifest: {
+                    'did:test:credential-c': { issuer: 'did:test:issuer-3' },
+                },
+            });
+
+            expect(await db.loadUpdatedAfter()).toBeNull();
+
+            await db.saveUpdatedAfter('2026-04-01T12:34:00.000Z');
+            expect(await db.loadUpdatedAfter()).toBe('2026-04-01T12:34:00.000Z');
+
+            await db.storeDID(did1, doc1);
+            await db.storeDID(did2, doc2);
+
+            const storedDoc = await db.getDID(did1) as Record<string, any>;
+            expect(storedDoc).toStrictEqual(doc1);
+            storedDoc.didDocumentData.profile.name = 'Mutated';
+            expect((await db.getDID(did1) as any).didDocumentData.profile.name).toBe('Needle Alpha');
+            expect(await db.getDID('did:test:missing')).toBeNull();
+
+            await db.replacePublishedCredentials(did1, [
+                {
+                    holderDid: did1,
+                    credentialDid: 'did:test:credential-a',
+                    schemaDid: 'did:test:schema-a',
+                    issuerDid: 'did:test:issuer-1',
+                    subjectDid: did1,
+                    revealed: true,
+                    updatedAt: '2026-04-01T12:35:00.000Z',
+                },
+            ]);
+
+            expect(await db.searchDocs('Needle')).toStrictEqual([did1]);
+            expect(await db.queryDocs({
+                '$.didDocument.id': { $in: [did1] },
+            })).toStrictEqual([did1]);
+            expect(await db.queryDocs({
+                'didDocumentData.tags[*]': { $in: ['shared'] },
+            })).toStrictEqual([did1]);
+            expect(await db.queryDocs({
+                'didDocumentData.nested[*].kind': { $in: ['shared'] },
+            })).toStrictEqual([did1]);
+            expect(await db.queryDocs({
+                'didDocumentData.manifest.*': { $in: ['did:test:credential-b'] },
+            })).toStrictEqual([did1]);
+            expect(await db.queryDocs({
+                'didDocumentData.manifest.*.issuer': { $in: ['did:test:issuer-3'] },
+            })).toStrictEqual([did2]);
+
+            await expect(db.queryDocs({
+                'didDocument.id': {},
+            } as any)).rejects.toThrow('Only {$in:[…]} supported');
+
+            await db.wipeDb();
+
+            expect(await db.loadUpdatedAfter()).toBeNull();
+            expect(await db.searchDocs('Needle')).toStrictEqual([]);
+            expect(await db.getDID(did1)).toBeNull();
+            expect(await db.getPublishedCredentialCountsBySchema()).toStrictEqual([]);
+            expect(await db.listPublishedCredentials({ limit: 10, offset: 0 })).toStrictEqual({
+                total: 0,
+                credentials: [],
+            });
+        }
+        finally {
+            await cleanup();
+        }
+    });
+});
+
+describe('memory adapter query edge cases', () => {
+    it('returns no matches for an empty where clause and supports numeric array path segments', async () => {
+        const db = new DIDsDbMemory();
+        const did = 'did:test:memory-query-1';
+
+        await db.connect();
+        await db.storeDID(did, createQueryableDoc(did, {
+            name: 'Indexed Value',
+            tags: ['memory'],
+            nestedKinds: ['only'],
+            coordinates: ['zero', 'one'],
+            manifest: {
+                'did:test:credential-memory': { issuer: 'did:test:issuer-memory' },
+            },
+        }));
+
+        expect(await db.queryDocs({})).toStrictEqual([]);
+        expect(await db.queryDocs({
+            '$.didDocumentData.coordinates.1': { $in: ['one'] },
+        })).toStrictEqual([did]);
+
+        await db.disconnect();
+    });
+});
+
+describe('sqlite adapter disconnected behavior', () => {
+    it('throws consistent errors when used before connect', async () => {
+        const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'search-server-sqlite-disconnected-'));
+        const db = new Sqlite('disconnected.db', tempDir);
+
+        try {
+            await expect(db.loadUpdatedAfter()).rejects.toThrow('DB not connected');
+            await expect(db.saveUpdatedAfter('2026-04-01T12:00:00.000Z')).rejects.toThrow('DB not connected');
+            await expect(db.storeDID('did:test:doc', {})).rejects.toThrow('DB not connected');
+            await expect(db.replacePublishedCredentials('did:test:doc', [])).rejects.toThrow('DB not connected');
+            await expect(db.getDID('did:test:doc')).rejects.toThrow('DB not connected');
+            await expect(db.getPublishedCredentialCountsBySchema()).rejects.toThrow('DB not connected');
+            await expect(db.listPublishedCredentials()).rejects.toThrow('DB not connected');
+            await expect(db.searchDocs('doc')).rejects.toThrow('DB not connected');
+            await expect(db.queryDocs({
+                'didDocument.id': { $in: ['did:test:doc'] },
+            })).rejects.toThrow('DB not connected');
+            await expect(db.wipeDb()).rejects.toThrow('DB not connected');
         }
         finally {
             await db.disconnect();
