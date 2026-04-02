@@ -1142,6 +1142,85 @@ describe('postgres adapter with mocked pool', () => {
         expect(mockClient.query).toHaveBeenNthCalledWith(4, 'ROLLBACK');
         expect(mockClient.release).toHaveBeenCalledTimes(1);
     });
+
+    it('covers static create plus real connect and disconnect branches with spied pool methods', async () => {
+        const Postgres = await loadPostgresModule();
+        const mockPool = {
+            query: jest.fn().mockResolvedValue({ rowCount: 0, rows: [] }),
+            end: jest.fn().mockResolvedValue(undefined),
+        };
+
+        class TestPostgres extends Postgres {
+            static mockPool = mockPool;
+
+            protected createPool(): any {
+                return TestPostgres.mockPool;
+            }
+        }
+
+        const db = await TestPostgres.create('postgresql://example');
+
+        await (db as any).connect();
+        await db.disconnect();
+        await db.disconnect();
+
+        expect(mockPool.query).toHaveBeenCalledTimes(3);
+        expect(mockPool.end).toHaveBeenCalledTimes(1);
+
+        const disconnectedDb = new TestPostgres('postgresql://example');
+        await disconnectedDb.disconnect();
+    });
+
+    it('commits successful replacements and covers path helper fallbacks', async () => {
+        const mockClient = {
+            query: jest.fn().mockResolvedValue(undefined),
+            release: jest.fn(),
+        };
+        const mockPool = {
+            query: jest.fn().mockResolvedValue({ rowCount: 0, rows: [] }),
+            connect: jest.fn().mockResolvedValue(mockClient),
+            end: jest.fn().mockResolvedValue(undefined),
+        };
+        const Postgres = await loadPostgresModule();
+        const db = new Postgres('postgresql://example');
+        (db as any).pool = mockPool;
+
+        await db.replacePublishedCredentials('did:test:subject-1', [
+            {
+                holderDid: 'did:test:subject-1',
+                credentialDid: 'did:test:credential-1',
+                schemaDid: 'did:test:schema-1',
+                issuerDid: 'did:test:issuer-1',
+                subjectDid: 'did:test:subject-1',
+                revealed: true,
+                updatedAt: '2026-04-02T09:05:00.000Z',
+            },
+        ]);
+
+        expect(mockClient.query).toHaveBeenNthCalledWith(1, 'BEGIN');
+        expect(mockClient.query).toHaveBeenNthCalledWith(4, 'COMMIT');
+        expect(mockClient.release).toHaveBeenCalledTimes(1);
+
+        expect((db as any).normalizePath('$')).toBe('');
+        expect((db as any).normalizePath('$.profile.name')).toBe('profile.name');
+        expect((db as any).normalizePath('$profile.name')).toBe('profile.name');
+        expect((db as any).toPathTokens('$')).toStrictEqual([]);
+        expect((db as any).toPathTokens('$.items[0].name')).toStrictEqual(['items', '0', 'name']);
+        expect((db as any).toJsonLiterals([undefined, Symbol('x'), 'text'])).toStrictEqual([
+            'null',
+            'null',
+            '"text"',
+        ]);
+    });
+
+    it('constructs a real pool instance in createPool without connecting', async () => {
+        const Postgres = await loadPostgresModule();
+        const db = new Postgres('postgresql://example');
+        const pool = (db as any).createPool();
+
+        expect(pool).toBeTruthy();
+        await pool.end();
+    });
 });
 
 describe('DidIndexer published credential indexing', () => {

@@ -29,8 +29,11 @@ export default class Postgres implements DIDsDb {
     private static readonly ARRAY_WILDCARD_END = /\[\*]$/;
     private static readonly ARRAY_WILDCARD_MID = /\[\*]\./;
 
-    static async create(url: string): Promise<DIDsDb> {
-        const db = new Postgres(url);
+    static async create<T extends DIDsDb>(
+        this: new (url: string) => T,
+        url: string
+    ): Promise<T> {
+        const db = new this(url);
         await db.connect();
         return db;
     }
@@ -44,7 +47,7 @@ export default class Postgres implements DIDsDb {
             return;
         }
 
-        this.pool = new Pool({ connectionString: this.url });
+        this.pool = this.createPool();
 
         await this.pool.query(`
             CREATE TABLE IF NOT EXISTS did_docs (
@@ -425,6 +428,10 @@ export default class Postgres implements DIDsDb {
         }
 
         return this.pool;
+    }
+
+    protected createPool(): Pool {
+        return new Pool({ connectionString: this.url });
     }
 
     private toJsonLiterals(values: unknown[]): string[] {
