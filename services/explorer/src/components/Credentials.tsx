@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import ArrowBackIosNewIcon from "@mui/icons-material/ArrowBackIosNew";
 import axios from "axios";
 import JsonView from "@uiw/react-json-view";
@@ -237,10 +237,10 @@ function Credentials(
         [credentials, selectedDetailDid]
     );
 
-    function updateParams(
+    const updateParams = useCallback((
         updates: Record<string, string | null | undefined>,
         options?: { replace?: boolean }
-    ) {
+    ) => {
         const next = new URLSearchParams(searchParams);
 
         for (const [key, value] of Object.entries(updates)) {
@@ -253,7 +253,7 @@ function Credentials(
         }
 
         setSearchParams(next, options);
-    }
+    }, [searchParams, setSearchParams]);
 
     function handleSelectSchema(nextSchemaDid: string) {
         updateParams({
@@ -363,7 +363,7 @@ function Credentials(
         return () => {
             ignore = true;
         };
-    }, [schemaDid, page, pageSize, setError]);
+    }, [page, pageSize, schemaDid, setError, updateParams]);
 
     useEffect(() => {
         const maxPage = Math.max(0, Math.ceil(schemaCounts.length / schemaPageSize) - 1);
@@ -379,7 +379,7 @@ function Credentials(
                 schemaDid: detailRecord.schemaDid,
             }, { replace: true });
         }
-    }, [detailRecord, schemaDid, selectedDetailDid]);
+    }, [detailRecord, schemaDid, selectedDetailDid, updateParams]);
 
     useEffect(() => {
         let ignore = false;

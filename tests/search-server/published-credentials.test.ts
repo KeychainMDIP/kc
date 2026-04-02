@@ -1151,10 +1151,10 @@ describe('postgres adapter with mocked pool', () => {
         };
 
         class TestPostgres extends Postgres {
-            static mockPool = mockPool;
+            static readonly sharedPool = mockPool;
 
             protected createPool(): any {
-                return TestPostgres.mockPool;
+                return TestPostgres.sharedPool;
             }
         }
 
