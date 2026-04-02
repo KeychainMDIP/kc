@@ -1204,13 +1204,54 @@ describe('postgres adapter with mocked pool', () => {
         expect((db as any).normalizePath('$')).toBe('');
         expect((db as any).normalizePath('$.profile.name')).toBe('profile.name');
         expect((db as any).normalizePath('$profile.name')).toBe('profile.name');
+        expect((db as any).normalizePath('profile.name')).toBe('profile.name');
         expect((db as any).toPathTokens('$')).toStrictEqual([]);
         expect((db as any).toPathTokens('$.items[0].name')).toStrictEqual(['items', '0', 'name']);
+        expect((db as any).toPathTokens('[0]')).toStrictEqual(['0']);
         expect((db as any).toJsonLiterals([undefined, Symbol('x'), 'text'])).toStrictEqual([
             'null',
             'null',
             '"text"',
         ]);
+    });
+
+    it('uses default list filters and falls back total to zero when the count query is empty', async () => {
+        const poolQuery = jest.fn(async (sql: string, params?: unknown[]) => {
+            const text = String(sql);
+
+            if (text.includes('COUNT(*)::int AS total')) {
+                return { rowCount: 0, rows: [] };
+            }
+
+            if (text.includes('holder_did AS "holderDid"')) {
+                return { rowCount: 0, rows: [] };
+            }
+
+            return { rowCount: 0, rows: [] };
+        });
+        const mockPool = {
+            query: poolQuery,
+            end: jest.fn().mockResolvedValue(undefined),
+        };
+        const Postgres = await loadPostgresModule();
+        const db = new Postgres('postgresql://example');
+        (db as any).pool = mockPool;
+
+        expect(await db.listPublishedCredentials()).toStrictEqual({
+            total: 0,
+            credentials: [],
+        });
+
+        const totalCall = poolQuery.mock.calls.find(([sql]) =>
+            String(sql).includes('COUNT(*)::int AS total')
+        );
+        const rowsCall = poolQuery.mock.calls.find(([sql]) =>
+            String(sql).includes('holder_did AS "holderDid"')
+        );
+
+        expect(totalCall?.[0]).not.toContain('WHERE');
+        expect(totalCall?.[1]).toStrictEqual([]);
+        expect(rowsCall?.[1]).toStrictEqual([50, 0]);
     });
 
     it('constructs a real pool instance in createPool without connecting', async () => {

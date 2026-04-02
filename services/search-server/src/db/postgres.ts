@@ -458,7 +458,9 @@ export default class Postgres implements DIDsDb {
         while (match) {
             if (match[1]) {
                 tokens.push(match[1]);
-            } else if (match[2]) {
+            }
+
+            if (match[2]) {
                 tokens.push(match[2]);
             }
             match = re.exec(normalized);
