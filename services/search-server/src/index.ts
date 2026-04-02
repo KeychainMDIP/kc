@@ -188,7 +188,7 @@ async function main() {
     app.use(express.json({ limit: config.jsonLimit }));
 
     let didDb: DIDsDb;
-    log.info(`Search Server persisting to (${config.db})`);
+    log.info(`Search Server persisting to ${config.db}`);
 
     if (config.db === 'sqlite') {
         didDb = await DIDsSQLite.create();
