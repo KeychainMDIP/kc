@@ -219,6 +219,8 @@ Another important file controlling the behavior of an MDIP node is the `kc/docke
 
 Operators wanting to operate MDIP in a Kubernetes or similar virtualized environment will find the environment variable dependencies for each MDIP component in the `kc/docker-compose.yml` file.
 
+MDIP services support the same configuration model in container orchestration environments without custom wrapper scripts. Operators can either inject environment variables directly, mount a shared `.env` file at `/app/.env`, or mount a file elsewhere and set `KC_ENV_FILE` to the mounted path.
+
 #### Gatekeeper Service
 
 Below is the MDIP `gatekeeper` definition.
@@ -753,4 +755,3 @@ server {
         allow all;
     }
 ```
-

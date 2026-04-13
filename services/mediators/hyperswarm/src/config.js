@@ -1,6 +1,6 @@
-import dotenv from 'dotenv';
+import { loadEnv } from '@mdip/common/env';
 
-dotenv.config();
+loadEnv();
 
 function parsePositiveIntEnv(varName, defaultValue, options = {}) {
     const allowZero = options.allowZero === true;

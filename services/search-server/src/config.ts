@@ -1,6 +1,6 @@
-import dotenv from "dotenv";
+import { loadEnv } from "@mdip/common/env";
 
-dotenv.config();
+loadEnv();
 
 const DEFAULT_RATE_LIMIT_SKIP_PATHS = ['/api/v1/ready'];
 
