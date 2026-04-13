@@ -39,6 +39,14 @@ A Keychain MDIP node includes several interoperating microservices. If you follo
 
 Customize your node in the kc/.env file. Environment variables are documented for each service in the READMEs linked in the Overview above.
 
+When running the services outside `./start-node`, the supported configuration methods are:
+
+- inject environment variables directly with Docker Compose or Kubernetes
+- mount a shared `.env` file at `/app/.env` inside the container
+- mount a `.env` file anywhere and set `KC_ENV_FILE` to that path
+
+This matches local startup and avoids custom entrypoint wrappers just to source env files.
+
 ```
 KC_UID=1000                                        # Docker host UID
 KC_GID=1002                                        # Docker host GID

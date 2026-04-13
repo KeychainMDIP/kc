@@ -14,6 +14,7 @@ const config = {
     moduleNameMapper: {
         '^@mdip/cipher/node$': '<rootDir>/packages/cipher/src/cipher-node.ts',
         '^@mdip/cipher/types': '<rootDir>/packages/cipher/src/types.ts',
+        '^@mdip/common/env$': '<rootDir>/packages/common/src/env.ts',
         '^@mdip/common/errors$': '<rootDir>/packages/common/src/errors.ts',
         '^@mdip/common/utils$': '<rootDir>/packages/common/src/utils.ts',
         '^@mdip/common/logger': '<rootDir>/packages/common/src/logger.ts',
