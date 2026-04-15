@@ -1,8 +1,8 @@
-import { StoredWallet, WalletBase } from '../types.js';
+import { KeymasterStore, StoredWallet } from '../types.js';
 import sqlite3 from 'sqlite3';
 import { open, Database } from 'sqlite';
 
-export default class WalletSQLite implements WalletBase {
+export default class WalletSQLite implements KeymasterStore {
     private readonly walletName: string;
     private db: Database | null;
 

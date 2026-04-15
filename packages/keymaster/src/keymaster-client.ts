@@ -21,6 +21,7 @@ import {
     IssueCredentialsOptions,
     KeymasterClientOptions,
     KeymasterInterface,
+    MdipWalletBundle,
     NoticeMessage,
     Poll,
     StoredWallet,
@@ -28,7 +29,6 @@ import {
     ViewPollResult,
     WaitUntilReadyOptions,
     WalletFile,
-    WalletEncFile,
 } from './types.js'
 
 import { Buffer } from 'buffer';
@@ -158,19 +158,49 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     }
 
-    async backupWallet(): Promise<boolean> {
+    async decryptMnemonic(): Promise<string> {
         try {
-            const response = await axios.post(`${this.API}/wallet/backup`);
-            return response.data.ok;
+            const response = await axios.get(`${this.API}/wallet/mnemonic`);
+            return response.data.mnemonic;
         }
         catch (error) {
             throwError(error);
         }
     }
 
-    async recoverWallet(): Promise<WalletFile> {
+    async backupWallet(): Promise<string> {
         try {
-            const response = await axios.post(`${this.API}/wallet/recover`);
+            const response = await axios.post(`${this.API}/wallet/backup`);
+            return response.data.did;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async recoverWallet(did?: string): Promise<WalletFile> {
+        try {
+            const response = await axios.post(`${this.API}/wallet/recover`, { did });
+            return response.data.wallet;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async exportWalletBundle(): Promise<MdipWalletBundle> {
+        try {
+            const response = await axios.get(`${this.API}/wallet/bundle`);
+            return response.data.bundle;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async importWalletBundle(bundle: MdipWalletBundle): Promise<WalletFile> {
+        try {
+            const response = await axios.put(`${this.API}/wallet/bundle`, { bundle });
             return response.data.wallet;
         }
         catch (error) {
@@ -192,16 +222,6 @@ export default class KeymasterClient implements KeymasterInterface {
         try {
             const response = await axios.post(`${this.API}/wallet/fix`);
             return response.data.fix;
-        }
-        catch (error) {
-            throwError(error);
-        }
-    }
-
-    async decryptMnemonic(): Promise<string> {
-        try {
-            const response = await axios.get(`${this.API}/wallet/mnemonic`);
-            return response.data.mnemonic;
         }
         catch (error) {
             throwError(error);
@@ -1405,16 +1425,6 @@ export default class KeymasterClient implements KeymasterInterface {
         try {
             const response = await axios.post(`${this.API}/notices/refresh`);
             return response.data.ok;
-        }
-        catch (error) {
-            throwError(error);
-        }
-    }
-
-    async exportEncryptedWallet(): Promise<WalletEncFile> {
-        try {
-            const response = await axios.get(`${this.API}/export/wallet/encrypted`);
-            return response.data.wallet;
         }
         catch (error) {
             throwError(error);

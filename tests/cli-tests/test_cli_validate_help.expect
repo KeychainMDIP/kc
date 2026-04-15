@@ -41,8 +41,8 @@ Commands:
   add-group-vault-member <id> <member>     Add a member to a group vault
   add-name <name> <did>                    Add a name for a DID
   backup-id                                Backup the current ID to its registry
-  backup-wallet-did                        Backup wallet to encrypted DID and seed bank
-  backup-wallet-file <file>                Backup wallet to file
+  backup-wallet-did                        Backup wallet metadata to DID
+  backup-wallet-file <file>                Backup wallet bundle to file
   bind-credential <schema> <subject>       Create bound credential for a user
   check-wallet                             Validate DIDs in wallet
   clone-asset [options] <id>               Clone an asset
@@ -89,7 +89,7 @@ Commands:
   publish-credential <did>                 Publish the existence of a credential to the current user manifest
   publish-poll <poll>                      Publish results to poll, hiding ballots
   recover-id <did>                         Recovers the ID from the DID
-  recover-wallet-did [did]                 Recover wallet from seed bank or encrypted DID
+  recover-wallet-did [did]                 Recover wallet metadata from backup DID
   remove-group-member <group> <member>     Remove a member from a group
   remove-group-vault-item <id> <item>      Remove an item from a group vault
   remove-group-vault-member <id> <member>  Remove a member from a group vault
@@ -99,7 +99,7 @@ Commands:
   resolve-did <did> [confirm]              Return document associated with DID
   resolve-did-version <did> <version>      Return specified version of document associated with DID
   resolve-id                               Resolves the current ID
-  restore-wallet-file <file>               Restore wallet from backup file
+  restore-wallet-file <file>               Restore wallet bundle from backup file
   reveal-credential <did>                  Reveal a credential to the current user manifest
   reveal-poll <poll>                       Publish results to poll, revealing ballots
   revoke-credential <did>                  Revokes a verifiable credential

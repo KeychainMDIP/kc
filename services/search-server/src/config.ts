@@ -57,23 +57,23 @@ function parseCsv(value: string | undefined): string[] {
         .filter(Boolean);
 }
 
-const configuredSkipPaths = parseCsv(process.env.SEARCH_SERVER_RATE_LIMIT_SKIP_PATHS);
+const configuredSkipPaths = parseCsv(process.env.KC_SEARCH_SERVER_RATE_LIMIT_SKIP_PATHS);
 
 const config = {
-    port: parsePositiveInteger(process.env.SEARCH_SERVER_PORT, 4002),
-    gatekeeperURL: process.env.SEARCH_SERVER_GATEKEEPER_URL || 'http://localhost:4224',
-    refreshIntervalMs: parsePositiveInteger(process.env.SEARCH_SERVER_REFRESH_INTERVAL_MS, 5000),
-    db: process.env.SEARCH_SERVER_DB || 'sqlite',
-    postgresURL: process.env.SEARCH_SERVER_POSTGRES_URL
+    port: parsePositiveInteger(process.env.KC_SEARCH_SERVER_PORT, 4002),
+    gatekeeperURL: process.env.KC_SEARCH_SERVER_GATEKEEPER_URL || 'http://localhost:4224',
+    refreshIntervalMs: parsePositiveInteger(process.env.KC_SEARCH_SERVER_REFRESH_INTERVAL_MS, 5000),
+    db: process.env.KC_SEARCH_SERVER_DB || 'sqlite',
+    postgresURL: process.env.KC_SEARCH_SERVER_POSTGRES_URL
         || process.env.KC_POSTGRES_URL
         || 'postgresql://mdip:mdip@localhost:5432/mdip',
-    trustProxy: parseBoolean(process.env.SEARCH_SERVER_TRUST_PROXY, false),
+    trustProxy: parseBoolean(process.env.KC_SEARCH_SERVER_TRUST_PROXY, false),
     jsonLimit: '2mb',
-    rateLimitEnabled: parseBoolean(process.env.SEARCH_SERVER_RATE_LIMIT_ENABLED, false),
-    rateLimitWindowValue: parsePositiveInteger(process.env.SEARCH_SERVER_RATE_LIMIT_WINDOW_VALUE, 1),
-    rateLimitWindowUnit: parseWindowUnit(process.env.SEARCH_SERVER_RATE_LIMIT_WINDOW_UNIT),
-    rateLimitMaxRequests: parsePositiveInteger(process.env.SEARCH_SERVER_RATE_LIMIT_MAX_REQUESTS, 600),
-    rateLimitWhitelist: parseCsv(process.env.SEARCH_SERVER_RATE_LIMIT_WHITELIST),
+    rateLimitEnabled: parseBoolean(process.env.KC_SEARCH_SERVER_RATE_LIMIT_ENABLED, false),
+    rateLimitWindowValue: parsePositiveInteger(process.env.KC_SEARCH_SERVER_RATE_LIMIT_WINDOW_VALUE, 1),
+    rateLimitWindowUnit: parseWindowUnit(process.env.KC_SEARCH_SERVER_RATE_LIMIT_WINDOW_UNIT),
+    rateLimitMaxRequests: parsePositiveInteger(process.env.KC_SEARCH_SERVER_RATE_LIMIT_MAX_REQUESTS, 600),
+    rateLimitWhitelist: parseCsv(process.env.KC_SEARCH_SERVER_RATE_LIMIT_WHITELIST),
     rateLimitSkipPaths: configuredSkipPaths.length > 0 ? configuredSkipPaths : DEFAULT_RATE_LIMIT_SKIP_PATHS,
 };
 

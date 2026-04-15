@@ -73,11 +73,6 @@
       "require": "./dist/cjs/db/postgres.cjs",
       "types": "./dist/types/db/postgres.d.ts"
     },
-    "./wallet/cache": {
-      "import": "./dist/esm/db/cache.js",
-      "require": "./dist/cjs/db/cache.cjs",
-      "types": "./dist/types/db/cache.d.ts"
-    },
     "./wallet/web": {
       "import": "./dist/esm/db/web.js",
       "require": "./dist/cjs/db/web.cjs",
@@ -87,6 +82,10 @@
       "import": "./dist/esm/db/chrome.js",
       "require": "./dist/cjs/db/chrome.cjs",
       "types": "./dist/types/db/chrome.d.ts"
+    },
+    "./wallet/mnemonic-hd": {
+      "import": "./dist/esm/provider/mnemonic-hd.js",
+      "types": "./dist/types/provider/mnemonic-hd.d.ts"
     },
     "./wallet/typeGuards": {
       "import": "./dist/esm/db/typeGuards.js",
@@ -126,14 +125,14 @@
       "wallet/postgres": [
         "./dist/types/db/postgres.d.ts"
       ],
-      "wallet/cache": [
-        "./dist/types/db/cache.d.ts"
-      ],
       "wallet/web": [
         "./dist/types/db/web.d.ts"
       ],
       "wallet/chrome": [
         "./dist/types/db/chrome.d.ts"
+      ],
+      "wallet/mnemonic-hd": [
+        "./dist/types/provider/mnemonic-hd.d.ts"
       ],
       "wallet/typeGuards": [
         "./dist/types/db/typeGuards.d.ts"

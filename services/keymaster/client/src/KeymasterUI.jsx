@@ -96,7 +96,16 @@ const DmailTags = {
     UNREAD: 'unread',
 };
 
-function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
+function KeymasterUI({
+    keymaster,
+    title,
+    challengeDID,
+    onWalletUpload,
+    onShowMnemonic,
+    onCreateWallet,
+    onImportMnemonic,
+    onWalletDownload,
+}) {
     const [tab, setTab] = useState(null);
     const [currentId, setCurrentId] = useState('');
     const [saveId, setSaveId] = useState('');
@@ -293,14 +302,13 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
         try {
             const currentId = await keymaster.getCurrentId();
             const registries = await keymaster.listRegistries();
+            const idList = await keymaster.listIds();
             setRegistries(registries);
+            setIdList(idList);
 
             if (currentId) {
                 setCurrentId(currentId);
                 setSelectedId(currentId);
-
-                const idList = await keymaster.listIds();
-                setIdList(idList);
 
                 const docs = await keymaster.resolveDID(currentId);
                 setCurrentDID(docs.didDocument.id);
@@ -325,6 +333,14 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
                 setCurrentId('');
                 setSelectedId('');
                 setCurrentDID('');
+                setManifest(null);
+                setDocsString(null);
+                setDocsVersion(1);
+                setDocsVersionMax(1);
+                setNameList(null);
+                setHeldList(null);
+                setIssuedList(null);
+                setDmailList([]);
                 setTab('create');
             }
 
@@ -1616,7 +1632,9 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
 
     async function showMnemonic() {
         try {
-            const response = await keymaster.decryptMnemonic();
+            const response = onShowMnemonic
+                ? await onShowMnemonic()
+                : await keymaster.decryptMnemonic();
             setMnemonicString(response);
         } catch (error) {
             showError(error);
@@ -1630,7 +1648,13 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
     async function newWallet() {
         try {
             if (window.confirm(`Overwrite wallet with new one?`)) {
-                await keymaster.newWallet(null, true);
+                if (onCreateWallet) {
+                    await onCreateWallet();
+                    return;
+                }
+                else {
+                    await keymaster.newWallet(undefined, true);
+                }
                 refreshAll();
             }
         } catch (error) {
@@ -1640,11 +1664,18 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
 
     async function importWallet() {
         try {
-            const mnenomic = window.prompt("Overwrite wallet with mnemonic:");
+            const mnemonic = window.prompt("Overwrite wallet with mnemonic:");
 
-            if (mnenomic) {
-                await keymaster.newWallet(mnenomic, true);
-                await keymaster.recoverWallet();
+            if (mnemonic) {
+                if (onImportMnemonic) {
+                    await onImportMnemonic(mnemonic);
+                    refreshAll();
+                    return;
+                }
+                else {
+                    await keymaster.newWallet(mnemonic, true);
+                    await keymaster.recoverWallet();
+                }
                 refreshAll();
             }
         } catch (error) {
@@ -1654,8 +1685,8 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
 
     async function backupWallet() {
         try {
-            await keymaster.backupWallet();
-            showSuccess('Wallet backup successful')
+            const did = await keymaster.backupWallet();
+            showSuccess(`Wallet backup DID:\n${did}`);
 
         } catch (error) {
             showError(error);
@@ -1713,40 +1744,39 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
             fileInput.accept = 'application/json';
 
             fileInput.onchange = async (event) => {
-                const file = event.target.files[0];
-                if (!file) {
-                    return;
-                }
-
-                const text = await file.text();
-                let wallet;
                 try {
-                    wallet = JSON.parse(text);
-                } catch {
-                    showError("Invalid JSON file.");
-                }
+                    const file = event.target.files[0];
+                    if (!file) {
+                        return;
+                    }
 
-                if (!window.confirm('Overwrite wallet with upload?')) {
-                    return;
-                }
-
-                if (onWalletUpload) {
-                    await onWalletUpload(wallet);
-                    await refreshAll();
-                    return;
-                }
-
-                const backupWallet = await keymaster.exportEncryptedWallet();
-
-                try {
-                    await keymaster.saveWallet(wallet, true);
-                    await keymaster.loadWallet();
-                    refreshAll();
-                } catch (e) {
+                    const text = await file.text();
+                    let wallet;
                     try {
-                        await keymaster.saveWallet(backupWallet, true);
-                    } catch { }
-                    window.alert('Upload rejected: the server could not decrypt the wallet with its configured passphrase.');
+                        wallet = JSON.parse(text);
+                    } catch {
+                        showError("Invalid JSON file.");
+                        return;
+                    }
+
+                    if (!window.confirm('Overwrite wallet with upload?')) {
+                        return;
+                    }
+
+                    if (onWalletUpload) {
+                        await onWalletUpload(wallet);
+                        await refreshAll();
+                        return;
+                    }
+
+                    if (wallet?.type === 'mdip-wallet-bundle' && wallet?.version === 1) {
+                        await keymaster.importWalletBundle(wallet);
+                    } else {
+                        await keymaster.saveWallet(wallet, true);
+                    }
+                    await refreshAll();
+                } catch (error) {
+                    showError(error);
                 }
             };
 
@@ -1759,14 +1789,19 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
 
     async function downloadWallet() {
         try {
-            const wallet = await keymaster.exportEncryptedWallet();
-            const walletJSON = JSON.stringify(wallet, null, 4);
+            if (onWalletDownload) {
+                await onWalletDownload();
+                return;
+            }
+
+            const bundle = await keymaster.exportWalletBundle();
+            const walletJSON = JSON.stringify(bundle, null, 4);
             const blob = new Blob([walletJSON], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
 
             const link = document.createElement('a');
             link.href = url;
-            link.download = 'mdip-wallet.json';
+            link.download = 'mdip-wallet-bundle.json';
             link.click();
 
             // The URL.revokeObjectURL() method releases an existing object URL which was previously created by calling URL.createObjectURL().

@@ -1,17 +1,18 @@
-import { KeymasterStore, StoredWallet } from '../types.js';
+import { MnemonicHdWalletState, WalletProviderStore } from '../types.js';
 
-export default class WalletJsonMemory implements KeymasterStore {
+export default class WalletProviderJsonMemory implements WalletProviderStore {
     walletCache: string | null = null;
 
-    async saveWallet(wallet: StoredWallet, overwrite: boolean = false): Promise<boolean> {
+    async saveWallet(wallet: MnemonicHdWalletState, overwrite: boolean = false): Promise<boolean> {
         if (this.walletCache && !overwrite) {
             return false;
         }
+
         this.walletCache = JSON.stringify(wallet);
         return true;
     }
 
-    async loadWallet(): Promise<StoredWallet | null> {
+    async loadWallet(): Promise<MnemonicHdWalletState | null> {
         if (!this.walletCache) {
             return null;
         }
