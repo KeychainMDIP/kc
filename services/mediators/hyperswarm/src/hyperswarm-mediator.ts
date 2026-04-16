@@ -14,7 +14,7 @@ import { Operation } from '@mdip/gatekeeper/types';
 import CipherNode from '@mdip/cipher/node';
 import { childLogger } from '@mdip/common/logger';
 import config from './config.js';
-import type { OperationSyncStore } from './db/types.js';
+import type { OperationSyncStore, SyncStoreCursor } from './db/types.js';
 import SqliteOperationSyncStore from './db/sqlite.js';
 import PostgresOperationSyncStore from './db/postgres.js';
 import NegentropyAdapter, {
@@ -59,6 +59,10 @@ import {
     filterIndexRejectedOperations,
     mapAcceptedOperationsToSyncRecords,
 } from './sync-persistence.js';
+import {
+    MDIP_EPOCH_SECONDS,
+    mapOperationToSyncKey,
+} from './sync-mapping.js';
 import { exit } from 'process';
 import path from 'path';
 import { pathToFileURL } from 'url';
@@ -97,6 +101,10 @@ interface NegOpenMessage extends HyperMessageBase {
         toTs: number;
         maxRecords: number;
         order: number;
+        after?: {
+            ts: number;
+            id: string;
+        };
     };
     round: number;
     frame: NegentropyFrame;
@@ -192,6 +200,8 @@ interface PeerSyncSession {
     maxRounds: number;
     reconciliationComplete: boolean;
     localClosed: boolean;
+    receivedPushIds: Set<string>;
+    receivedPushMaxCursor: SyncStoreCursor | null;
 }
 
 interface MediatorSyncStats {
@@ -254,7 +264,7 @@ EventEmitter.defaultMaxListeners = 100;
 
 const REGISTRY = 'hyperswarm';
 const BATCH_SIZE = 100;
-const NEGENTROPY_VERSION = 1;
+const NEGENTROPY_VERSION = 2;
 const NEG_SESSION_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
 const NEG_MAX_IDS_PER_OPS_REQ = 1_000;
 const NEG_MAX_IDS_PER_LOOKUP = 1_000;
@@ -481,6 +491,8 @@ function createPeerSession(peerKey: string, mode: SyncMode, initiator: boolean, 
         maxRounds: config.negentropyMaxRoundsPerSession,
         reconciliationComplete: false,
         localClosed: false,
+        receivedPushIds: new Set<string>(),
+        receivedPushMaxCursor: null,
     };
     peerSessions.set(peerKey, session);
     connectionInfo[peerKey].syncMode = mode;
@@ -761,21 +773,42 @@ function markNegentropyAdapterDirty(): void {
     adapterChangeSeq += 1;
 }
 
+function cloneCursor(cursor?: SyncStoreCursor | null): SyncStoreCursor | null {
+    if (!cursor) {
+        return null;
+    }
+
+    return {
+        ts: cursor.ts,
+        id: cursor.id,
+    };
+}
+
+function compareSyncCursor(a: SyncStoreCursor, b: SyncStoreCursor): number {
+    if (a.ts !== b.ts) {
+        return a.ts - b.ts;
+    }
+
+    return a.id.localeCompare(b.id);
+}
+
 function cloneWindowStats(stats: NegentropyWindowStats | null): NegentropyWindowStats | null {
     return stats
         ? {
             ...stats,
+            lastCursor: cloneCursor(stats.lastCursor),
         }
         : null;
 }
 
-function buildFullHistoryWindow(): ReconciliationWindow {
+function buildBootstrapPageWindow(after?: SyncStoreCursor | null, order = 0): ReconciliationWindow {
     return {
-        name: 'full_history',
-        fromTs: Number.MIN_SAFE_INTEGER,
+        name: 'bootstrap_full_history',
+        fromTs: MDIP_EPOCH_SECONDS,
         toTs: Number.MAX_SAFE_INTEGER,
-        maxRecords: Number.MAX_SAFE_INTEGER,
-        order: 0,
+        maxRecords: config.negentropyMaxRecordsPerWindow,
+        order,
+        after: cloneCursor(after) ?? undefined,
     };
 }
 
@@ -784,11 +817,13 @@ function currentSyncTimestampSec(): number {
 }
 
 function makeWindowId(window: ReconciliationWindow): string {
-    return `${window.order}:${window.name}:${window.fromTs}:${window.toTs}:${window.maxRecords}`;
+    const after = window.after ? `${window.after.ts}:${window.after.id}` : 'none';
+    return `${window.order}:${window.name}:${window.fromTs}:${window.toTs}:${window.maxRecords}:${after}`;
 }
 
 function windowLabel(window: ReconciliationWindow): string {
-    return `${window.name}[${window.fromTs},${window.toTs}]`;
+    const suffix = window.after ? ` after=${window.after.ts}:${window.after.id}` : '';
+    return `${window.name}[${window.fromTs},${window.toTs}]${suffix}`;
 }
 
 function getSessionWindow(session: PeerSyncSession): ReconciliationWindow | null {
@@ -819,12 +854,28 @@ function parseRemoteWindow(raw: NegOpenMessage['window']): ReconciliationWindow 
         return null;
     }
 
+    let after: SyncStoreCursor | undefined;
+    if (raw.after !== undefined) {
+        const afterTs = Number(raw.after?.ts);
+        const afterId = String(raw.after?.id ?? '').toLowerCase();
+
+        if (!Number.isInteger(afterTs) || !NEG_SYNC_ID_RE.test(afterId)) {
+            return null;
+        }
+
+        after = {
+            ts: afterTs,
+            id: afterId,
+        };
+    }
+
     return {
         name: String(raw.name || `window_${order}`),
         fromTs,
         toTs,
         order,
         maxRecords,
+        after,
     };
 }
 
@@ -838,6 +889,8 @@ function initializeSessionWindowState(
     session.pendingHaveIds = new Set<string>();
     session.pendingNeedIds = new Set<string>();
     session.reconciliationComplete = false;
+    session.receivedPushIds = new Set<string>();
+    session.receivedPushMaxCursor = null;
     session.currentWindowStats = {
         ...windowStats,
         windowName: window.name,
@@ -885,7 +938,7 @@ async function planRuntimeWindows(): Promise<ReconciliationWindow[]> {
         return windows;
     }
 
-    return [buildFullHistoryWindow()];
+    return [buildBootstrapPageWindow()];
 }
 
 function maybeStartBackgroundPrebuild(reason: string): void {
@@ -1018,6 +1071,12 @@ async function startNextNegentropyWindow(peerKey: string, session: PeerSyncSessi
             toTs: window.toTs,
             maxRecords: window.maxRecords,
             order: window.order,
+            after: window.after
+                ? {
+                    ts: window.after.ts,
+                    id: window.after.id,
+                }
+                : undefined,
         },
         round: session.rounds,
         frame: encodeNegentropyFrame(firstFrame),
@@ -1045,6 +1104,32 @@ async function maybeAdvanceToOlderWindow(peerKey: string, session: PeerSyncSessi
     }
 
     session.windowIndex += 1;
+    await startNextNegentropyWindow(peerKey, session);
+    return true;
+}
+
+function shouldContinueBootstrapPaging(session: PeerSyncSession): boolean {
+    const window = getSessionWindow(session);
+    if (!window || window.name !== 'bootstrap_full_history') {
+        return false;
+    }
+
+    return session.receivedPushIds.size >= window.maxRecords && !!session.receivedPushMaxCursor;
+}
+
+async function maybeContinueBootstrapPaging(peerKey: string, session: PeerSyncSession): Promise<boolean> {
+    if (!shouldContinueBootstrapPaging(session)) {
+        return false;
+    }
+
+    const currentWindow = getSessionWindow(session);
+    if (!currentWindow || !session.receivedPushMaxCursor) {
+        return false;
+    }
+
+    const nextWindow = buildBootstrapPageWindow(session.receivedPushMaxCursor, currentWindow.order + 1);
+    session.windows.push(nextWindow);
+    session.windowIndex = session.windows.length - 1;
     await startNextNegentropyWindow(peerKey, session);
     return true;
 }
@@ -1189,6 +1274,34 @@ async function reconcileNegentropyFrame(
     };
 }
 
+function trackReceivedWindowOperations(session: PeerSyncSession, operations: Operation[]): void {
+    const window = getSessionWindow(session);
+    if (!window || window.name !== 'bootstrap_full_history') {
+        return;
+    }
+
+    for (const operation of operations) {
+        const mapped = mapOperationToSyncKey(operation);
+        if (!mapped.ok) {
+            continue;
+        }
+
+        if (session.receivedPushIds.has(mapped.value.idHex)) {
+            continue;
+        }
+
+        session.receivedPushIds.add(mapped.value.idHex);
+        const cursor: SyncStoreCursor = {
+            ts: mapped.value.tsSec,
+            id: mapped.value.idHex,
+        };
+
+        if (!session.receivedPushMaxCursor || compareSyncCursor(cursor, session.receivedPushMaxCursor) > 0) {
+            session.receivedPushMaxCursor = cursor;
+        }
+    }
+}
+
 async function maybeFinalizeInitiatorSession(peerKey: string, session: PeerSyncSession): Promise<void> {
     if (!session.initiator) {
         return;
@@ -1199,6 +1312,11 @@ async function maybeFinalizeInitiatorSession(peerKey: string, session: PeerSyncS
     }
 
     if (session.pendingNeedIds.size > 0) {
+        return;
+    }
+
+    const continued = await maybeContinueBootstrapPaging(peerKey, session);
+    if (continued) {
         return;
     }
 
@@ -1818,6 +1936,7 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
         const batch = Array.isArray(msg.data) ? msg.data : [];
         if (batch.length > 0) {
             syncStats.negentropyOpsPushReceived += batch.length;
+            trackReceivedWindowOperations(session, batch);
             const pushedIds = new Set(extractOperationHashes(batch));
             for (const id of pushedIds) {
                 session.pendingNeedIds.delete(id);

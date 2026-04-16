@@ -327,6 +327,56 @@ describe('NegentropyAdapter', () => {
         expect(stats.windowName).toBe('recent');
     });
 
+    it('supports cursor-based pagination for capped windows', async () => {
+        const store = new InMemoryOperationSyncStore();
+        const baseTs = toEpochSeconds('2026-02-09T00:00:00.000Z');
+        await seedNumericRange(store, 0, 5, baseTs);
+
+        const adapter = await NegentropyAdapter.create({
+            syncStore: store,
+            frameSizeLimit: 0,
+            deferInitialBuild: true,
+        });
+
+        const first = await adapter.rebuildForWindow({
+            name: 'bootstrap_full_history',
+            fromTs: baseTs,
+            toTs: baseTs + 10,
+            maxRecords: 2,
+            order: 0,
+        });
+
+        expect(first.loaded).toBe(2);
+        expect(first.cappedByRecords).toBe(true);
+        expect(first.lastCursor).toStrictEqual({ ts: baseTs + 1, id: idFromNum(1) });
+
+        const second = await adapter.rebuildForWindow({
+            name: 'bootstrap_full_history',
+            fromTs: baseTs,
+            toTs: baseTs + 10,
+            maxRecords: 2,
+            order: 1,
+            after: first.lastCursor ?? undefined,
+        });
+
+        expect(second.loaded).toBe(2);
+        expect(second.cappedByRecords).toBe(true);
+        expect(second.lastCursor).toStrictEqual({ ts: baseTs + 3, id: idFromNum(3) });
+
+        const third = await adapter.rebuildForWindow({
+            name: 'bootstrap_full_history',
+            fromTs: baseTs,
+            toTs: baseTs + 10,
+            maxRecords: 2,
+            order: 2,
+            after: second.lastCursor ?? undefined,
+        });
+
+        expect(third.loaded).toBe(1);
+        expect(third.cappedByRecords).toBe(false);
+        expect(third.lastCursor).toStrictEqual({ ts: baseTs + 4, id: idFromNum(4) });
+    });
+
     it('applies maxRoundsPerSession cap in windowed sessions', async () => {
         const storeA = new InMemoryOperationSyncStore();
         const storeB = new InMemoryOperationSyncStore();

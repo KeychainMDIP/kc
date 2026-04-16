@@ -55,6 +55,7 @@ export interface ReconciliationWindow {
     toTs: number;
     maxRecords: number;
     order: number;
+    after?: SyncStoreCursor;
 }
 
 export interface NegentropyReconcileResult {
@@ -78,6 +79,7 @@ export interface NegentropyWindowStats extends NegentropyAdapterStats {
     completed: boolean;
     cappedByRecords: boolean;
     cappedByRounds: boolean;
+    lastCursor: SyncStoreCursor | null;
 }
 
 export interface NegentropySessionStats {
@@ -93,6 +95,17 @@ export interface NegentropyWindowSessionOptions {
     nowTs?: number;
     nowMs?: number;
     maxRoundsPerSession?: number;
+}
+
+function cloneCursor(cursor?: SyncStoreCursor | null): SyncStoreCursor | null {
+    if (!cursor) {
+        return null;
+    }
+
+    return {
+        ts: cursor.ts,
+        id: cursor.id,
+    };
 }
 
 export default class NegentropyAdapter {
@@ -297,7 +310,12 @@ export default class NegentropyAdapter {
     }
 
     getLastWindowStats(): NegentropyWindowStats | null {
-        return this.lastWindowStats ? { ...this.lastWindowStats } : null;
+        return this.lastWindowStats
+            ? {
+                ...this.lastWindowStats,
+                lastCursor: cloneCursor(this.lastWindowStats.lastCursor),
+            }
+            : null;
     }
 
     getLastSessionStats(): NegentropySessionStats | null {
@@ -307,7 +325,10 @@ export default class NegentropyAdapter {
 
         return {
             ...this.lastSessionStats,
-            windows: this.lastSessionStats.windows.map(window => ({ ...window })),
+            windows: this.lastSessionStats.windows.map(window => ({
+                ...window,
+                lastCursor: cloneCursor(window.lastCursor),
+            })),
         };
     }
 
@@ -340,7 +361,8 @@ export default class NegentropyAdapter {
         let skipped = 0;
         let processed = 0;
         let cappedByRecords = false;
-        let after: SyncStoreCursor | undefined;
+        let after = cloneCursor(window.after) ?? undefined;
+        let lastCursor = cloneCursor(window.after);
 
         while (true) {
             const rows = await this.syncStore.iterateSorted({
@@ -361,6 +383,7 @@ export default class NegentropyAdapter {
                 }
 
                 processed += 1;
+                lastCursor = cloneCursor({ ts: row.ts, id: row.id });
                 if (!isValidSyncId(row.id) || !Number.isFinite(row.ts)) {
                     skipped += 1;
                     continue;
@@ -401,6 +424,7 @@ export default class NegentropyAdapter {
             completed: true,
             cappedByRecords,
             cappedByRounds: false,
+            lastCursor,
         };
 
         this.lastWindowStats = windowStats;
