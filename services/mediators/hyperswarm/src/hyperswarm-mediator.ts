@@ -610,11 +610,6 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
         return;
     }
 
-    if (source === 'connect' && mode === 'negentropy' && importQueue.length() > 0) {
-        setTimeout(() => void maybeStartPeerSync(peerKey, source), 1_000);
-        return;
-    }
-
     if (source === 'connect') {
         syncStats.modeSelectionsTotal += 1;
         if (mode === 'legacy') {
