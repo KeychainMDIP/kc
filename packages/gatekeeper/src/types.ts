@@ -1,5 +1,6 @@
 import { EcdsaJwkPublic } from '@mdip/cipher/types';
 import { IPFSClient } from "@mdip/ipfs/types";
+import type { GatekeeperProfiler } from './profile.js';
 
 export interface JsonDbFile {
     dids: Record<string, GatekeeperEvent[]>
@@ -100,6 +101,7 @@ export interface GatekeeperOptions {
     maxQueueSize?: number,
     registries?: string[],
     ipfsEnabled?: boolean,
+    profile?: GatekeeperProfiler,
 }
 
 export interface CheckDIDsOptions {
