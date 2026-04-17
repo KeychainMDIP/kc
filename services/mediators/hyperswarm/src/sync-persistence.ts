@@ -72,10 +72,43 @@ export function mapAcceptedOperationsToSyncRecords(operations: Operation[]): Map
 
         records.push({
             id: mapped.value.idHex,
-            ts: mapped.value.tsSec,
+            ts: mapped.value.tsMs,
             operation,
         });
     }
 
     return { records, invalid };
+}
+
+export function sortOperationsBySyncKey(operations: Operation[]): Operation[] {
+    if (!Array.isArray(operations) || operations.length <= 1) {
+        return Array.isArray(operations) ? [...operations] : [];
+    }
+
+    return operations
+        .map((operation, index) => ({
+            operation,
+            index,
+            mapped: mapOperationToSyncKey(operation),
+        }))
+        .sort((a, b) => {
+            if (a.mapped.ok && b.mapped.ok) {
+                if (a.mapped.value.tsMs !== b.mapped.value.tsMs) {
+                    return a.mapped.value.tsMs - b.mapped.value.tsMs;
+                }
+
+                if (a.mapped.value.idHex < b.mapped.value.idHex) {
+                    return -1;
+                }
+
+                if (a.mapped.value.idHex > b.mapped.value.idHex) {
+                    return 1;
+                }
+            } else if (a.mapped.ok !== b.mapped.ok) {
+                return a.mapped.ok ? -1 : 1;
+            }
+
+            return a.index - b.index;
+        })
+        .map(item => item.operation);
 }

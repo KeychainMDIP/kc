@@ -58,9 +58,10 @@ import {
     filterOperationsByAcceptedHashes,
     filterIndexRejectedOperations,
     mapAcceptedOperationsToSyncRecords,
+    sortOperationsBySyncKey,
 } from './sync-persistence.js';
 import {
-    MDIP_EPOCH_SECONDS,
+    MDIP_EPOCH_MS,
     mapOperationToSyncKey,
 } from './sync-mapping.js';
 import { exit } from 'process';
@@ -799,7 +800,7 @@ function cloneWindowStats(stats: NegentropyWindowStats | null): NegentropyWindow
 function buildBootstrapPageWindow(after?: SyncStoreCursor | null, order = 0): ReconciliationWindow {
     return {
         name: 'bootstrap_full_history',
-        fromTs: MDIP_EPOCH_SECONDS,
+        fromTs: MDIP_EPOCH_MS,
         toTs: Number.MAX_SAFE_INTEGER,
         maxRecords: config.negentropyMaxRecordsPerWindow,
         order,
@@ -807,8 +808,8 @@ function buildBootstrapPageWindow(after?: SyncStoreCursor | null, order = 0): Re
     };
 }
 
-function currentSyncTimestampSec(): number {
-    return Math.floor(Date.now() / 1000);
+function currentSyncTimestampMs(): number {
+    return Date.now();
 }
 
 function makeWindowId(window: ReconciliationWindow): string {
@@ -928,7 +929,7 @@ async function planRuntimeWindows(): Promise<ReconciliationWindow[]> {
         throw new Error('negentropy adapter unavailable');
     }
 
-    const windows = await negentropyAdapter.planWindows(currentSyncTimestampSec());
+    const windows = await negentropyAdapter.planWindows(currentSyncTimestampMs());
     if (windows.length > 0) {
         return windows;
     }
@@ -1179,7 +1180,22 @@ async function sendOpsPushForIds(peerKey: string, session: PeerSyncSession, ids:
     const idLookupBatches = chunkIds(normalized, NEG_MAX_IDS_PER_LOOKUP);
 
     for (const idBatch of idLookupBatches) {
-        const rows = await syncStore.getByIds(idBatch);
+        const rows = (await syncStore.getByIds(idBatch))
+            .sort((a, b) => {
+                if (a.ts !== b.ts) {
+                    return a.ts - b.ts;
+                }
+
+                if (a.id < b.id) {
+                    return -1;
+                }
+
+                if (a.id > b.id) {
+                    return 1;
+                }
+
+                return 0;
+            });
         const operations = rows.map(row => row.operation);
         if (operations.length === 0) {
             continue;
@@ -1287,7 +1303,7 @@ function trackReceivedWindowOperations(session: PeerSyncSession, operations: Ope
 
         session.receivedPushIds.add(mapped.value.idHex);
         const cursor: SyncStoreCursor = {
-            ts: mapped.value.tsSec,
+            ts: mapped.value.tsMs,
             id: mapped.value.idHex,
         };
 
@@ -1928,7 +1944,7 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
             return;
         }
 
-        const batch = Array.isArray(msg.data) ? msg.data : [];
+        const batch = sortOperationsBySyncKey(Array.isArray(msg.data) ? msg.data : []);
         if (batch.length > 0) {
             syncStats.negentropyOpsPushReceived += batch.length;
             trackReceivedWindowOperations(session, batch);

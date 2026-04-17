@@ -11,7 +11,7 @@ const DEFAULT_RECENT_WINDOW_DAYS = 7;
 const DEFAULT_OLDER_WINDOW_DAYS = 30;
 const DEFAULT_MAX_RECORDS_PER_WINDOW = 25_000;
 const DEFAULT_MAX_ROUNDS_PER_SESSION = 64;
-const DAY_SECONDS = 24 * 60 * 60;
+const DAY_MS = 24 * 60 * 60 * 1000;
 const require = createRequire(import.meta.url);
 
 type NegentropyFrameValue = string | Uint8Array;
@@ -179,7 +179,7 @@ export default class NegentropyAdapter {
         return this.rebuildWindowAdapter(window);
     }
 
-    async planWindows(nowTs: number = currentEpochSeconds(), earliestTsOverride?: number): Promise<ReconciliationWindow[]> {
+    async planWindows(nowTs: number = currentEpochMs(), earliestTsOverride?: number): Promise<ReconciliationWindow[]> {
         if (!Number.isFinite(nowTs)) {
             throw new Error('nowTs must be a finite timestamp');
         }
@@ -193,8 +193,8 @@ export default class NegentropyAdapter {
         }
 
         const windows: ReconciliationWindow[] = [];
-        const recentSpanTs = this.recentWindowDays * DAY_SECONDS;
-        const olderSpanTs = this.olderWindowDays * DAY_SECONDS;
+        const recentSpanTs = this.recentWindowDays * DAY_MS;
+        const olderSpanTs = this.olderWindowDays * DAY_MS;
         const recentStart = Math.max(earliestTs, nowTs - recentSpanTs);
 
         windows.push({
@@ -228,7 +228,7 @@ export default class NegentropyAdapter {
         options: NegentropyWindowSessionOptions = {},
     ): Promise<NegentropySessionStats> {
         const startedAt = Date.now();
-        const sessionNowTs = options.nowTs ?? options.nowMs ?? currentEpochSeconds();
+        const sessionNowTs = options.nowTs ?? options.nowMs ?? currentEpochMs();
         const maxRoundsPerSession = options.maxRoundsPerSession ?? this.maxRoundsPerSession;
         assertPositiveInteger(maxRoundsPerSession, 'maxRoundsPerSession');
 
@@ -482,8 +482,8 @@ export default class NegentropyAdapter {
     }
 }
 
-function currentEpochSeconds(): number {
-    return Math.floor(Date.now() / 1000);
+function currentEpochMs(): number {
+    return Date.now();
 }
 
 function isValidSyncId(id: string): boolean {
