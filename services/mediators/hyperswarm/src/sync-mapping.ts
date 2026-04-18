@@ -1,16 +1,16 @@
 import { Operation } from '@mdip/gatekeeper/types';
 
 // - id = operation.signature.hash (64 hex chars => 32 bytes)
-// - timestamp = Date.parse(operation.signature.signed) in epoch milliseconds
+// - timestamp = Date.parse(operation.signature.signed) in epoch seconds
 // - if timestamp is before MDIP epoch, clamp it to MDIP epoch (2024-01-01T00:00:00Z)
 export const SYNC_ID_HEX_LEN = 64;
 export const SYNC_ID_BYTES_LEN = 32;
-export const MDIP_EPOCH_MS = 1_704_067_200_000; // 2024-01-01T00:00:00Z
+export const MDIP_EPOCH_SECONDS = 1_704_067_200; // 2024-01-01T00:00:00Z
 
 export interface SyncMappedOperation {
     idHex: string;
     idBytes: Buffer;
-    tsMs: number;
+    ts: number;
     operation: Operation;
 }
 
@@ -75,7 +75,8 @@ export function mapOperationToSyncKey(operation: Operation): SyncMappingResult {
     if (!Number.isFinite(parsedSigned)) {
         return fail('invalid_signature_signed_value', 'operation.signature.signed must be parseable by Date.parse');
     }
-    const normalizedTsMs = parsedSigned < MDIP_EPOCH_MS ? MDIP_EPOCH_MS : parsedSigned;
+    const parsedSignedSeconds = Math.floor(parsedSigned / 1000);
+    const normalizedTs = parsedSignedSeconds < MDIP_EPOCH_SECONDS ? MDIP_EPOCH_SECONDS : parsedSignedSeconds;
 
     const idBytes = Buffer.from(idHex, 'hex');
     if (idBytes.length !== SYNC_ID_BYTES_LEN) {
@@ -90,7 +91,7 @@ export function mapOperationToSyncKey(operation: Operation): SyncMappingResult {
         value: {
             idHex,
             idBytes,
-            tsMs: normalizedTsMs,
+            ts: normalizedTs,
             operation,
         },
     };

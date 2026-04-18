@@ -72,7 +72,7 @@ export function mapAcceptedOperationsToSyncRecords(operations: Operation[]): Map
 
         records.push({
             id: mapped.value.idHex,
-            ts: mapped.value.tsMs,
+            ts: mapped.value.ts,
             operation,
         });
     }
@@ -93,8 +93,8 @@ export function sortOperationsBySyncKey(operations: Operation[]): Operation[] {
         }))
         .sort((a, b) => {
             if (a.mapped.ok && b.mapped.ok) {
-                if (a.mapped.value.tsMs !== b.mapped.value.tsMs) {
-                    return a.mapped.value.tsMs - b.mapped.value.tsMs;
+                if (a.mapped.value.ts !== b.mapped.value.ts) {
+                    return a.mapped.value.ts - b.mapped.value.ts;
                 }
 
                 if (a.mapped.value.idHex < b.mapped.value.idHex) {

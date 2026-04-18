@@ -7,15 +7,15 @@ import {
 
 describe('hyperswarm mediator window helpers', () => {
     const after: SyncStoreCursor = {
-        ts: 1704067200123,
+        ts: 1704067200,
         id: 'a'.repeat(64),
     };
 
     it('splits a round-capped window by halving maxRecords and preserving coverage', () => {
         const window = {
             name: 'older_1',
-            fromTs: 1704067200000,
-            toTs: 1706659200000,
+            fromTs: 1704067200,
+            toTs: 1706659200,
             maxRecords: 5000,
             order: 3,
             after,
@@ -25,8 +25,8 @@ describe('hyperswarm mediator window helpers', () => {
 
         expect(split).toStrictEqual({
             name: 'older_1',
-            fromTs: 1704067200000,
-            toTs: 1706659200000,
+            fromTs: 1704067200,
+            toTs: 1706659200,
             maxRecords: 2500,
             order: 3,
             after,
@@ -36,8 +36,8 @@ describe('hyperswarm mediator window helpers', () => {
     it('does not split a window that cannot be reduced further', () => {
         const window = {
             name: 'older_1',
-            fromTs: 1704067200000,
-            toTs: 1706659200000,
+            fromTs: 1704067200,
+            toTs: 1706659200,
             maxRecords: 1,
             order: 3,
         };
@@ -48,7 +48,7 @@ describe('hyperswarm mediator window helpers', () => {
     it('preserves reduced maxRecords when continuing a split bootstrap window', () => {
         const splitBootstrap = buildBootstrapPageWindow(2500, after, 4);
         const continuation = buildContinuationWindow(splitBootstrap, {
-            ts: 1705000000000,
+            ts: 1705000000,
             id: 'b'.repeat(64),
         }, 5);
 
@@ -59,7 +59,7 @@ describe('hyperswarm mediator window helpers', () => {
             maxRecords: 2500,
             order: 5,
             after: {
-                ts: 1705000000000,
+                ts: 1705000000,
                 id: 'b'.repeat(64),
             },
         });

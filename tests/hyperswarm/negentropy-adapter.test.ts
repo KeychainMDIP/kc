@@ -3,11 +3,11 @@ import NegentropyAdapter from '../../services/mediators/hyperswarm/src/negentrop
 import { Operation } from '@mdip/gatekeeper/types';
 import type { OperationSyncStore, SyncOperationRecord, SyncStoreListOptions } from '../../services/mediators/hyperswarm/src/db/types.ts';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+const DAY_SECONDS = 24 * 60 * 60;
 const h = (c: string) => c.repeat(64);
 const idFromNum = (n: number) => n.toString(16).padStart(64, '0');
-const toEpochMs = (iso: string) => Date.parse(iso);
-const toISOFromEpochMs = (ts: number) => new Date(ts).toISOString();
+const toEpochSeconds = (iso: string) => Math.floor(Date.parse(iso) / 1000);
+const toISOFromEpochSeconds = (ts: number) => new Date(ts * 1000).toISOString();
 
 function makeOp(hashChar: string, signed: string): Operation {
     return {
@@ -56,7 +56,7 @@ async function seedNumericRange(
         records.push({
             id,
             ts: baseTs + i,
-            op: makeOpFromHash(id, toISOFromEpochMs(baseTs + i)),
+            op: makeOpFromHash(id, toISOFromEpochSeconds(baseTs + i)),
         });
     }
     await seedStore(store, records);
@@ -227,12 +227,12 @@ describe('NegentropyAdapter', () => {
         });
 
         await expect(adapter.planWindows(Number.NaN)).rejects.toThrow('nowTs must be a finite timestamp');
-        await expect(adapter.planWindows(Date.now())).resolves.toStrictEqual([]);
+        await expect(adapter.planWindows(Math.floor(Date.now() / 1000))).resolves.toStrictEqual([]);
     });
 
     it('skips invalid sync rows when rebuilding a window', async () => {
         const validId = h('a');
-        const validTs = toEpochMs('2026-02-13T00:00:00.000Z');
+        const validTs = toEpochSeconds('2026-02-13T00:00:00.000Z');
         const validOp = makeOp('a', '2026-02-13T00:00:00.000Z');
         const rows: SyncOperationRecord[] = [
             { id: 'invalid-id', ts: validTs, operation: validOp, insertedAt: 1 },
@@ -277,10 +277,10 @@ describe('NegentropyAdapter', () => {
     it('plans recent window first then older windows in descending recency', async () => {
         const store = new InMemoryOperationSyncStore();
         // eslint-disable-next-line sonarjs/no-duplicate-string
-        const nowTs = toEpochMs('2026-02-10T00:00:00.000Z');
+        const nowTs = toEpochSeconds('2026-02-10T00:00:00.000Z');
         await seedStore(store, [
-            { id: h('a'), ts: nowTs - (10 * DAY_MS), op: makeOp('a', '2026-01-31T00:00:00.000Z') },
-            { id: h('b'), ts: nowTs - (2 * DAY_MS), op: makeOp('b', '2026-02-08T00:00:00.000Z') },
+            { id: h('a'), ts: nowTs - (10 * DAY_SECONDS), op: makeOp('a', '2026-01-31T00:00:00.000Z') },
+            { id: h('b'), ts: nowTs - (2 * DAY_SECONDS), op: makeOp('b', '2026-02-08T00:00:00.000Z') },
         ]);
 
         const adapter = await NegentropyAdapter.create({
@@ -329,7 +329,7 @@ describe('NegentropyAdapter', () => {
 
     it('supports cursor-based pagination for capped windows', async () => {
         const store = new InMemoryOperationSyncStore();
-        const baseTs = toEpochMs('2026-02-09T00:00:00.000Z');
+        const baseTs = toEpochSeconds('2026-02-09T00:00:00.000Z');
         await seedNumericRange(store, 0, 5, baseTs);
 
         const adapter = await NegentropyAdapter.create({
@@ -380,8 +380,8 @@ describe('NegentropyAdapter', () => {
     it('applies maxRoundsPerSession cap in windowed sessions', async () => {
         const storeA = new InMemoryOperationSyncStore();
         const storeB = new InMemoryOperationSyncStore();
-        const baseTs = toEpochMs('2026-02-01T00:00:00.000Z');
-        const nowTs = toEpochMs('2026-02-10T00:00:00.000Z');
+        const baseTs = toEpochSeconds('2026-02-01T00:00:00.000Z');
+        const nowTs = toEpochSeconds('2026-02-10T00:00:00.000Z');
 
         await seedNumericRange(storeA, 0, 2000, baseTs);
         await seedNumericRange(storeB, 1000, 3000, baseTs);
@@ -414,7 +414,7 @@ describe('NegentropyAdapter', () => {
     });
 
     it('returns cloned session stats snapshots', async () => {
-        const nowTs = toEpochMs('2026-02-10T00:00:00.000Z');
+        const nowTs = toEpochSeconds('2026-02-10T00:00:00.000Z');
         const storeA = new InMemoryOperationSyncStore();
         const storeB = new InMemoryOperationSyncStore();
 
@@ -448,7 +448,7 @@ describe('NegentropyAdapter', () => {
     });
 
     it('completes a window when peer responds with null', async () => {
-        const nowTs = toEpochMs('2026-02-10T00:00:00.000Z');
+        const nowTs = toEpochSeconds('2026-02-10T00:00:00.000Z');
         const storeA = new InMemoryOperationSyncStore();
         const storeB = new InMemoryOperationSyncStore();
 
@@ -506,22 +506,22 @@ describe('NegentropyAdapter', () => {
     });
 
     it('continues into older windows when a newer window hits record cap', async () => {
-        const nowTs = toEpochMs('2026-02-10T00:00:00.000Z');
+        const nowTs = toEpochSeconds('2026-02-10T00:00:00.000Z');
         const storeA = new InMemoryOperationSyncStore();
         const storeB = new InMemoryOperationSyncStore();
 
-        const recentA = nowTs - (6 * 60 * 60 * 1000);
-        const recentB = nowTs - (8 * 60 * 60 * 1000);
-        const older = nowTs - (2 * DAY_MS);
+        const recentA = nowTs - (6 * 60 * 60);
+        const recentB = nowTs - (8 * 60 * 60);
+        const older = nowTs - (2 * DAY_SECONDS);
 
         await seedStore(storeA, [
-            { id: h('a'), ts: recentA, op: makeOp('a', toISOFromEpochMs(recentA)) },
-            { id: h('b'), ts: recentB, op: makeOp('b', toISOFromEpochMs(recentB)) },
-            { id: h('c'), ts: older, op: makeOp('c', toISOFromEpochMs(older)) },
+            { id: h('a'), ts: recentA, op: makeOp('a', toISOFromEpochSeconds(recentA)) },
+            { id: h('b'), ts: recentB, op: makeOp('b', toISOFromEpochSeconds(recentB)) },
+            { id: h('c'), ts: older, op: makeOp('c', toISOFromEpochSeconds(older)) },
         ]);
         await seedStore(storeB, [
-            { id: h('d'), ts: recentA, op: makeOp('d', toISOFromEpochMs(recentA)) },
-            { id: h('e'), ts: older, op: makeOp('e', toISOFromEpochMs(older)) },
+            { id: h('d'), ts: recentA, op: makeOp('d', toISOFromEpochSeconds(recentA)) },
+            { id: h('e'), ts: older, op: makeOp('e', toISOFromEpochSeconds(older)) },
         ]);
 
         const adapterA = await NegentropyAdapter.create({
