@@ -53,6 +53,11 @@ import {
     chunkIds,
     chunkOperationsForPush,
 } from './negentropy/transfer.js';
+import {
+    buildBootstrapPageWindow,
+    buildContinuationWindow,
+    buildRoundCapSplitWindow,
+} from './negentropy/windows.js';
 import { bootstrapSyncStoreIfEmpty } from './bootstrap.js';
 import {
     filterOperationsByAcceptedHashes,
@@ -61,7 +66,6 @@ import {
     sortOperationsBySyncKey,
 } from './sync-persistence.js';
 import {
-    MDIP_EPOCH_MS,
     mapOperationToSyncKey,
 } from './sync-mapping.js';
 import { exit } from 'process';
@@ -815,17 +819,6 @@ function cloneWindowStats(stats: NegentropyWindowStats | null): NegentropyWindow
         : null;
 }
 
-function buildBootstrapPageWindow(after?: SyncStoreCursor | null, order = 0): ReconciliationWindow {
-    return {
-        name: 'bootstrap_full_history',
-        fromTs: MDIP_EPOCH_MS,
-        toTs: Number.MAX_SAFE_INTEGER,
-        maxRecords: config.negentropyMaxRecordsPerWindow,
-        order,
-        after: cloneCursor(after) ?? undefined,
-    };
-}
-
 function currentSyncTimestampMs(): number {
     return Date.now();
 }
@@ -954,7 +947,7 @@ async function planRuntimeWindows(): Promise<ReconciliationWindow[]> {
         return windows;
     }
 
-    return [buildBootstrapPageWindow()];
+    return [buildBootstrapPageWindow(config.negentropyMaxRecordsPerWindow)];
 }
 
 function maybeStartBackgroundPrebuild(reason: string): void {
@@ -1212,21 +1205,6 @@ function getNextWindowOrder(session: PeerSyncSession): number {
     return maxOrder + 1;
 }
 
-function buildContinuationWindow(window: ReconciliationWindow, after: SyncStoreCursor, order: number): ReconciliationWindow {
-    if (window.name === 'bootstrap_full_history') {
-        return buildBootstrapPageWindow(after, order);
-    }
-
-    return {
-        name: window.name,
-        fromTs: window.fromTs,
-        toTs: window.toTs,
-        maxRecords: window.maxRecords,
-        order,
-        after: cloneCursor(after) ?? undefined,
-    };
-}
-
 function getContinuationCursor(session: PeerSyncSession): SyncStoreCursor | null {
     const window = getSessionWindow(session);
     if (!window) {
@@ -1273,6 +1251,38 @@ async function maybeContinueCappedWindowPaging(peerKey: string, session: PeerSyn
     const nextWindow = buildContinuationWindow(currentWindow, cursor, getNextWindowOrder(session));
     session.windows.splice(session.windowIndex + 1, 0, nextWindow);
     session.windowIndex += 1;
+    await startNextNegentropyWindow(peerKey, session);
+    return true;
+}
+
+async function maybeSplitWindowOnRoundCap(
+    peerKey: string,
+    session: PeerSyncSession,
+    reason: 'local_max_rounds_reached' | 'remote_max_rounds_reached',
+): Promise<boolean> {
+    const currentWindow = getSessionWindow(session);
+    if (!currentWindow) {
+        return false;
+    }
+
+    const splitWindow = buildRoundCapSplitWindow(currentWindow);
+    if (!splitWindow) {
+        return false;
+    }
+
+    session.windows[session.windowIndex] = splitWindow;
+    log.debug(
+        {
+            peer: shortName(peerKey),
+            sessionId: session.sessionId,
+            reason,
+            previousWindow: windowLabel(currentWindow),
+            previousMaxRecords: currentWindow.maxRecords,
+            splitWindow: windowLabel(splitWindow),
+            splitMaxRecords: splitWindow.maxRecords,
+        },
+        'negentropy window split after round cap'
+    );
     await startNextNegentropyWindow(peerKey, session);
     return true;
 }
@@ -1415,6 +1425,12 @@ async function reconcileNegentropyFrame(
     const windowRounds = session.currentWindowStats?.rounds ?? 0;
     if (windowRounds >= session.maxRounds) {
         finalizeCurrentWindowStats(session, { completed: false, cappedByRounds: true });
+        if (session.initiator) {
+            const split = await maybeSplitWindowOnRoundCap(peerKey, session, 'local_max_rounds_reached');
+            if (split) {
+                return null;
+            }
+        }
         sendNegClose(peerKey, session, 'max_rounds_reached');
         closePeerSession(peerKey, 'max_rounds_reached');
         return null;
@@ -2121,6 +2137,13 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
             trackRemoteWindowProgress(session, msg.windowProgress);
         }
         if (session && session.sessionId === msg.sessionId && (!session.windowId || msg.windowId === session.windowId)) {
+            if (session.initiator && msg.reason === 'max_rounds_reached') {
+                finalizeCurrentWindowStats(session, { completed: false, cappedByRounds: true });
+                const split = await maybeSplitWindowOnRoundCap(peerKey, session, 'remote_max_rounds_reached');
+                if (split) {
+                    return;
+                }
+            }
             closePeerSession(peerKey, msg.reason || 'remote_closed');
         }
         return;
