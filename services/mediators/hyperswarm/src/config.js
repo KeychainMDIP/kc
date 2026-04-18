@@ -72,7 +72,7 @@ const config = {
     negentropyEnabled: parseBooleanEnv('KC_HYPR_NEGENTROPY_ENABLE', true),
     negentropyFrameSizeLimit: parseFrameSizeLimit(),
     negentropyWindowDays: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_WINDOW_DAYS', 30),
-    negentropyMaxRecordsPerWindow: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW', 5000),
+    negentropyMaxRecordsPerWindow: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW', 25000),
     negentropyMaxRoundsPerSession: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_MAX_ROUNDS_PER_SESSION', 64),
     negentropyIntervalSeconds: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_INTERVAL', 300),
     legacySyncEnabled: parseBooleanEnv('KC_HYPR_LEGACY_SYNC_ENABLE', true),
