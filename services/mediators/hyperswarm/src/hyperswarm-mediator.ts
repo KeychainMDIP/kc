@@ -117,6 +117,13 @@ interface NegMsgMessage extends HyperMessageBase {
     windowId: string;
     round: number;
     frame: NegentropyFrame;
+    windowProgress?: {
+        cappedByRecords: boolean;
+        lastCursor?: {
+            ts: number;
+            id: string;
+        };
+    };
 }
 
 interface NegCloseMessage extends HyperMessageBase {
@@ -125,6 +132,13 @@ interface NegCloseMessage extends HyperMessageBase {
     windowId: string;
     round: number;
     reason?: string;
+    windowProgress?: {
+        cappedByRecords: boolean;
+        lastCursor?: {
+            ts: number;
+            id: string;
+        };
+    };
 }
 
 interface OpsReqMessage extends HyperMessageBase {
@@ -203,6 +217,8 @@ interface PeerSyncSession {
     localClosed: boolean;
     receivedPushIds: Set<string>;
     receivedPushMaxCursor: SyncStoreCursor | null;
+    remoteWindowCappedByRecords: boolean;
+    remoteWindowLastCursor: SyncStoreCursor | null;
 }
 
 interface MediatorSyncStats {
@@ -494,6 +510,8 @@ function createPeerSession(peerKey: string, mode: SyncMode, initiator: boolean, 
         localClosed: false,
         receivedPushIds: new Set<string>(),
         receivedPushMaxCursor: null,
+        remoteWindowCappedByRecords: false,
+        remoteWindowLastCursor: null,
     };
     peerSessions.set(peerKey, session);
     connectionInfo[peerKey].syncMode = mode;
@@ -887,6 +905,8 @@ function initializeSessionWindowState(
     session.reconciliationComplete = false;
     session.receivedPushIds = new Set<string>();
     session.receivedPushMaxCursor = null;
+    session.remoteWindowCappedByRecords = false;
+    session.remoteWindowLastCursor = null;
     session.currentWindowStats = {
         ...windowStats,
         windowName: window.name,
@@ -1104,28 +1124,155 @@ async function maybeAdvanceToOlderWindow(peerKey: string, session: PeerSyncSessi
     return true;
 }
 
-function shouldContinueBootstrapPaging(session: PeerSyncSession): boolean {
-    const window = getSessionWindow(session);
-    if (!window || window.name !== 'bootstrap_full_history') {
-        return false;
+function buildWindowProgress(session: PeerSyncSession): NegMsgMessage['windowProgress'] | undefined {
+    const stats = session.currentWindowStats;
+    if (!stats) {
+        return undefined;
     }
 
-    return session.receivedPushIds.size >= window.maxRecords && !!session.receivedPushMaxCursor;
+    return {
+        cappedByRecords: stats.cappedByRecords,
+        lastCursor: stats.lastCursor
+            ? {
+                ts: stats.lastCursor.ts,
+                id: stats.lastCursor.id,
+            }
+            : undefined,
+    };
 }
 
-async function maybeContinueBootstrapPaging(peerKey: string, session: PeerSyncSession): Promise<boolean> {
-    if (!shouldContinueBootstrapPaging(session)) {
-        return false;
+function parseWindowProgress(raw: NegMsgMessage['windowProgress'] | NegCloseMessage['windowProgress']): {
+    cappedByRecords: boolean;
+    lastCursor: SyncStoreCursor | null;
+} | null {
+    if (!raw || typeof raw !== 'object') {
+        return null;
     }
 
+    const cappedByRecords = raw.cappedByRecords === true;
+    const lastCursor = raw.lastCursor;
+
+    if (!lastCursor) {
+        return {
+            cappedByRecords,
+            lastCursor: null,
+        };
+    }
+
+    const ts = Number(lastCursor.ts);
+    const id = String(lastCursor.id ?? '').toLowerCase();
+    if (!Number.isInteger(ts) || !NEG_SYNC_ID_RE.test(id)) {
+        return null;
+    }
+
+    return {
+        cappedByRecords,
+        lastCursor: {
+            ts,
+            id,
+        },
+    };
+}
+
+function trackRemoteWindowProgress(
+    session: PeerSyncSession,
+    raw: NegMsgMessage['windowProgress'] | NegCloseMessage['windowProgress'],
+): void {
+    const progress = parseWindowProgress(raw);
+    if (!progress) {
+        return;
+    }
+
+    session.remoteWindowCappedByRecords = progress.cappedByRecords;
+    session.remoteWindowLastCursor = cloneCursor(progress.lastCursor);
+}
+
+function minCursor(a: SyncStoreCursor | null, b: SyncStoreCursor | null): SyncStoreCursor | null {
+    if (!a) {
+        return cloneCursor(b);
+    }
+
+    if (!b) {
+        return cloneCursor(a);
+    }
+
+    return compareSyncCursor(a, b) <= 0
+        ? cloneCursor(a)
+        : cloneCursor(b);
+}
+
+function getNextWindowOrder(session: PeerSyncSession): number {
+    let maxOrder = -1;
+    for (const window of session.windows) {
+        if (window.order > maxOrder) {
+            maxOrder = window.order;
+        }
+    }
+
+    return maxOrder + 1;
+}
+
+function buildContinuationWindow(window: ReconciliationWindow, after: SyncStoreCursor, order: number): ReconciliationWindow {
+    if (window.name === 'bootstrap_full_history') {
+        return buildBootstrapPageWindow(after, order);
+    }
+
+    return {
+        name: window.name,
+        fromTs: window.fromTs,
+        toTs: window.toTs,
+        maxRecords: window.maxRecords,
+        order,
+        after: cloneCursor(after) ?? undefined,
+    };
+}
+
+function getContinuationCursor(session: PeerSyncSession): SyncStoreCursor | null {
+    const window = getSessionWindow(session);
+    if (!window) {
+        return null;
+    }
+
+    let cursor: SyncStoreCursor | null = null;
+    const localStats = session.currentWindowStats;
+
+    if (localStats?.cappedByRecords && localStats.lastCursor) {
+        cursor = cloneCursor(localStats.lastCursor);
+    }
+
+    if (session.remoteWindowCappedByRecords && session.remoteWindowLastCursor) {
+        cursor = minCursor(cursor, session.remoteWindowLastCursor);
+    }
+
+    if (!cursor && window.name === 'bootstrap_full_history' && session.receivedPushIds.size >= window.maxRecords) {
+        cursor = cloneCursor(session.receivedPushMaxCursor);
+    }
+
+    if (!cursor) {
+        return null;
+    }
+
+    if (window.after && compareSyncCursor(cursor, window.after) <= 0) {
+        return null;
+    }
+
+    return cursor;
+}
+
+async function maybeContinueCappedWindowPaging(peerKey: string, session: PeerSyncSession): Promise<boolean> {
     const currentWindow = getSessionWindow(session);
-    if (!currentWindow || !session.receivedPushMaxCursor) {
+    if (!currentWindow) {
         return false;
     }
 
-    const nextWindow = buildBootstrapPageWindow(session.receivedPushMaxCursor, currentWindow.order + 1);
-    session.windows.push(nextWindow);
-    session.windowIndex = session.windows.length - 1;
+    const cursor = getContinuationCursor(session);
+    if (!cursor) {
+        return false;
+    }
+
+    const nextWindow = buildContinuationWindow(currentWindow, cursor, getNextWindowOrder(session));
+    session.windows.splice(session.windowIndex + 1, 0, nextWindow);
+    session.windowIndex += 1;
     await startNextNegentropyWindow(peerKey, session);
     return true;
 }
@@ -1231,6 +1378,7 @@ function sendNegMsg(peerKey: string, session: PeerSyncSession, frame: string | U
         windowId: getExpectedWindowId(session),
         round: session.rounds,
         frame: encodeNegentropyFrame(frame),
+        windowProgress: buildWindowProgress(session),
     };
 
     return sendToPeer(peerKey, msg);
@@ -1245,6 +1393,7 @@ function sendNegClose(peerKey: string, session: PeerSyncSession, reason: string)
         windowId,
         round: session.rounds,
         reason,
+        windowProgress: buildWindowProgress(session),
     };
 
     return sendToPeer(peerKey, closeMsg);
@@ -1286,11 +1435,6 @@ async function reconcileNegentropyFrame(
 }
 
 function trackReceivedWindowOperations(session: PeerSyncSession, operations: Operation[]): void {
-    const window = getSessionWindow(session);
-    if (!window || window.name !== 'bootstrap_full_history') {
-        return;
-    }
-
     for (const operation of operations) {
         const mapped = mapOperationToSyncKey(operation);
         if (!mapped.ok) {
@@ -1326,7 +1470,7 @@ async function maybeFinalizeInitiatorSession(peerKey: string, session: PeerSyncS
         return;
     }
 
-    const continued = await maybeContinueBootstrapPaging(peerKey, session);
+    const continued = await maybeContinueCappedWindowPaging(peerKey, session);
     if (continued) {
         return;
     }
@@ -1906,6 +2050,7 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
             return;
         }
 
+        trackRemoteWindowProgress(session, msg.windowProgress);
         touchPeerSession(peerKey);
         if (session.initiator) {
             await handleNegentropyRoundAsInitiator(peerKey, session, decodeNegentropyFrame(msg.frame));
@@ -1972,6 +2117,9 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
 
     if (msg.type === 'neg_close') {
         const session = peerSessions.get(peerKey);
+        if (session) {
+            trackRemoteWindowProgress(session, msg.windowProgress);
+        }
         if (session && session.sessionId === msg.sessionId && (!session.windowId || msg.windowId === session.windowId)) {
             closePeerSession(peerKey, msg.reason || 'remote_closed');
         }
