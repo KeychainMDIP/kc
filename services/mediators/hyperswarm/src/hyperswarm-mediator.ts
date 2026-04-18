@@ -2133,10 +2133,8 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
 
     if (msg.type === 'neg_close') {
         const session = peerSessions.get(peerKey);
-        if (session) {
-            trackRemoteWindowProgress(session, msg.windowProgress);
-        }
         if (session && session.sessionId === msg.sessionId && (!session.windowId || msg.windowId === session.windowId)) {
+            trackRemoteWindowProgress(session, msg.windowProgress);
             if (session.initiator && msg.reason === 'max_rounds_reached') {
                 finalizeCurrentWindowStats(session, { completed: false, cappedByRounds: true });
                 const split = await maybeSplitWindowOnRoundCap(peerKey, session, 'remote_max_rounds_reached');
@@ -2403,6 +2401,127 @@ export async function runMediator(options: MediatorMainOptions = {}): Promise<vo
 
     return main();
 }
+
+function resetSyncStatsForTests(): void {
+    syncStats.modeSelectionsTotal = 0;
+    syncStats.modeSelectionsLegacy = 0;
+    syncStats.modeSelectionsNegentropy = 0;
+    syncStats.modeSelectionsLegacyMissingCapabilities = 0;
+    syncStats.modeSelectionsLegacyNegentropyDisabled = 0;
+    syncStats.modeSelectionsLegacyVersionMismatch = 0;
+    syncStats.modeSelectionsNoModeLegacyDisabled = 0;
+    syncStats.queueOpsRelayed = 0;
+    syncStats.queueOpsImported = 0;
+    syncStats.queueDelayMs = createAggregateMetric();
+    syncStats.negentropySessionsStarted = 0;
+    syncStats.negentropySessionsClosed = 0;
+    syncStats.negentropySessionsCompleted = 0;
+    syncStats.negentropySessionsFailed = 0;
+    syncStats.negentropyRounds = 0;
+    syncStats.negentropyHaveIds = 0;
+    syncStats.negentropyNeedIds = 0;
+    syncStats.negentropyOpsReqSent = 0;
+    syncStats.negentropyOpsReqReceived = 0;
+    syncStats.negentropyOpsPushSent = 0;
+    syncStats.negentropyOpsPushReceived = 0;
+    syncStats.opsApplied = 0;
+    syncStats.opsRejected = 0;
+    syncStats.bytesSent = 0;
+    syncStats.bytesReceived = 0;
+    syncStats.syncDurationMs = createAggregateMetric();
+}
+
+export const __testHooks: {
+    resetMediatorState(): Promise<void>;
+    initNegentropyAdapter(): Promise<void>;
+    addConnection(peerKey: string, write?: (chunk: string) => void): { negentropySynced: boolean };
+    createPeerSession(peerKey: string, mode: SyncMode, initiator: boolean, sessionId?: string): any;
+    startNextNegentropyWindow(peerKey: string, session: any): Promise<void>;
+    maybeFinalizeInitiatorSession(peerKey: string, session: any): Promise<void>;
+    receiveMsg(peerKey: string, msg: any): Promise<void>;
+    getPeerSession(peerKey: string): any;
+} = {
+    async resetMediatorState(): Promise<void> {
+        peerSessions.clear();
+        for (const key of Object.keys(connectionInfo)) {
+            delete connectionInfo[key];
+        }
+        for (const key of Object.keys(knownNodes)) {
+            delete knownNodes[key];
+        }
+        for (const key of Object.keys(knownPeers)) {
+            delete knownPeers[key];
+        }
+        for (const key of Object.keys(addedPeers)) {
+            delete addedPeers[key];
+        }
+        for (const key of Object.keys(badPeers)) {
+            delete badPeers[key];
+        }
+        nodeKey = 'test-node-key';
+        nodeInfo = {
+            name: 'test-node',
+            ipfs: null,
+        };
+        negentropyAdapter = null;
+        adapterChangeSeq = 0;
+        adapterBuiltSeq = -1;
+        adapterBuiltAt = 0;
+        adapterBuiltWindowId = null;
+        adapterBuiltWindowStats = null;
+        rebuildPromise = null;
+        backgroundPrebuildQueued = false;
+        resetSyncStatsForTests();
+        await syncStore.stop().catch(() => undefined);
+    },
+    async initNegentropyAdapter(): Promise<void> {
+        await initNegentropyAdapter();
+    },
+    addConnection(peerKey: string, write: (chunk: string) => void = () => undefined): { negentropySynced: boolean } {
+        const conn = {
+            write,
+        } as unknown as HyperswarmConnection;
+        const info: ConnectionInfo = {
+            connection: conn,
+            key: peerKey,
+            peerName: shortName(peerKey),
+            nodeName: 'test-peer',
+            did: '',
+            lastSeen: Date.now(),
+            capabilities: {
+                advertised: true,
+                negentropy: true,
+                version: NEGENTROPY_VERSION,
+            },
+            syncMode: 'unknown',
+            syncStarted: false,
+            lastNegentropyAttemptAt: 0,
+            negentropySynced: false,
+        };
+        connectionInfo[peerKey] = info;
+        return info;
+    },
+    createPeerSession(peerKey: string, mode: SyncMode, initiator: boolean, sessionId?: string): any {
+        return createPeerSession(peerKey, mode, initiator, sessionId);
+    },
+    async startNextNegentropyWindow(peerKey: string, session: any): Promise<void> {
+        await startNextNegentropyWindow(peerKey, session);
+    },
+    async maybeFinalizeInitiatorSession(peerKey: string, session: any): Promise<void> {
+        await maybeFinalizeInitiatorSession(peerKey, session);
+    },
+    async receiveMsg(peerKey: string, msg: any): Promise<void> {
+        if (typeof msg === 'string' || Buffer.isBuffer(msg)) {
+            await receiveMsg(peerKey, msg);
+            return;
+        }
+
+        await receiveMsg(peerKey, JSON.stringify(msg));
+    },
+    getPeerSession(peerKey: string): any {
+        return peerSessions.get(peerKey) ?? null;
+    },
+};
 
 const isDirectRun = !!process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
 if (isDirectRun) {
