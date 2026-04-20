@@ -156,6 +156,33 @@ describe('bootstrapSyncStoreFromGatekeeper', () => {
         expect(gatekeeper.exportBatch).toHaveBeenCalledTimes(1);
     });
 
+    it('resets and completes without exporting when gatekeeper has no DIDs', async () => {
+        const store = new InMemoryOperationSyncStore();
+        await store.start();
+        await store.upsertMany([{
+            id: h('z'),
+            ts: Math.floor(Date.parse('2026-02-10T09:00:00.000Z') / 1000),
+            operation: makeOperation('z', '2026-02-10T09:00:00.000Z'),
+        }]);
+
+        const gatekeeper = {
+            getDIDs: jest.fn(async () => []),
+            exportBatch: jest.fn(async () => []),
+        };
+
+        const result = await bootstrapSyncStoreFromGatekeeper(store, gatekeeper as any);
+
+        expect(result.countBefore).toBe(1);
+        expect(result.countAfter).toBe(0);
+        expect(result.exported).toBe(0);
+        expect(result.mapped).toBe(0);
+        expect(result.invalid).toBe(0);
+        expect(result.inserted).toBe(0);
+        expect(gatekeeper.getDIDs).toHaveBeenCalledTimes(1);
+        expect(gatekeeper.exportBatch).not.toHaveBeenCalled();
+        expect(await store.count()).toBe(0);
+    });
+
     it('exports in DID batches to avoid loading the full export in one payload', async () => {
         const store = new InMemoryOperationSyncStore();
         await store.start();
