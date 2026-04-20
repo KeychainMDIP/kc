@@ -60,7 +60,7 @@ import {
     buildRoundCapSplitWindow,
     MDIP_EPOCH_SECONDS,
 } from './negentropy/windows.js';
-import { bootstrapSyncStoreIfEmpty } from './bootstrap.js';
+import { bootstrapSyncStoreFromGatekeeper } from './bootstrap.js';
 import {
     filterOperationsByAcceptedHashes,
     filterIndexRejectedOperations,
@@ -2269,7 +2269,7 @@ async function main(): Promise<void> {
         chatty: true,
     });
 
-    const bootstrap = await bootstrapSyncStoreIfEmpty(syncStore, gatekeeper);
+    const bootstrap = await bootstrapSyncStoreFromGatekeeper(syncStore, gatekeeper);
     log.info({ bootstrap }, 'sync-store bootstrap complete');
 
     await initNegentropyAdapter();
