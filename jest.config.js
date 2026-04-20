@@ -31,6 +31,7 @@ const config = {
         '^@mdip/keymaster/wallet/(.*)$': '<rootDir>/packages/keymaster/src/db/$1',
         '^@mdip/keymaster/encryption': '<rootDir>/packages/keymaster/src/encryption.ts',
         '^@mdip/inscription': '<rootDir>/packages/inscription/src/inscription.ts',
+        '^b4a$': '<rootDir>/tests/common/b4a.mock.ts',
         '^pino$': '<rootDir>/tests/common/pino.mock.ts',
         '^\\.\\/typeGuards\\.js$': '<rootDir>/packages/keymaster/src/db/typeGuards.ts',
         '^\\.\\/db\\/typeGuards\\.js$': '<rootDir>/packages/keymaster/src/db/typeGuards.ts',
