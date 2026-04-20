@@ -1,15 +1,9 @@
-import Hyperswarm, { HyperswarmConnection } from 'hyperswarm';
-import goodbye from 'graceful-goodbye';
-import b4a from 'b4a';
-import { randomBytes } from 'crypto';
-import { sha256 } from '@noble/hashes/sha2.js';
-import { utf8ToBytes } from '@noble/hashes/utils.js';
+import { createHash, randomBytes } from 'crypto';
 import asyncLib from 'async';
 import { EventEmitter } from 'events';
 
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import KeymasterClient from '@mdip/keymaster/client';
-import KuboClient from '@mdip/ipfs/kubo';
 import { Operation } from '@mdip/gatekeeper/types';
 import { childLogger } from '@mdip/common/logger';
 import canonicalizeModule from 'canonicalize';
@@ -181,7 +175,7 @@ interface ImportQueueTask {
 interface ExportQueueTask {
     name: string;
     msg: SyncMessage;
-    conn: HyperswarmConnection;
+    conn: SwarmConnection;
 }
 
 interface NodeInfo {
@@ -190,7 +184,7 @@ interface NodeInfo {
 }
 
 interface ConnectionInfo {
-    connection: HyperswarmConnection;
+    connection: SwarmConnection;
     key: string;
     peerName: string;
     nodeName: string;
@@ -260,13 +254,47 @@ export interface MediatorMainOptions {
     startLoops?: boolean;
 }
 
+interface SwarmConnection {
+    remotePublicKey: ArrayLike<number>;
+    write(data: string | Buffer): void;
+    once(event: string, callback: (...args: any[]) => void): void;
+    on(event: string, callback: (...args: any[]) => void): void;
+    end?(): void;
+    destroy?(): void;
+}
+
+interface SwarmInstance {
+    keyPair: { publicKey: ArrayLike<number>; secretKey?: ArrayLike<number> };
+    join(topic: Buffer, opts: { client: boolean; server: boolean }): { flushed(): Promise<void> };
+    on(event: 'connection', listener: (conn: SwarmConnection) => void): void;
+    destroy(): void | Promise<void>;
+}
+
+interface IpfsClient {
+    connect(options: { url: string; waitUntilReady: boolean; intervalSeconds: number; chatty: boolean }): Promise<void>;
+    resetPeeringPeers(): Promise<void>;
+    getPeerID(): Promise<string>;
+    getAddresses(): Promise<string[]>;
+    addPeeringPeer(id: string, addresses: string[]): Promise<void>;
+    getPeeringPeers(): Promise<Array<{ ID: string }>>;
+}
+
 const gatekeeper = new GatekeeperClient();
 const keymaster = new KeymasterClient();
-const ipfs = new KuboClient();
 const canonicalize = canonicalizeModule as unknown as (input: unknown) => string;
+let ipfs: IpfsClient | null = null;
+let shutdownRegistered = false;
 
 function hashJSON(input: unknown): string {
-    return Buffer.from(sha256(utf8ToBytes(canonicalize(input)))).toString('hex');
+    return createHash('sha256').update(canonicalize(input)).digest('hex');
+}
+
+function createProtocolTopic(protocol: string): Buffer {
+    return createHash('sha256').update(protocol, 'utf8').digest();
+}
+
+function bytesToHex(input: ArrayLike<number>): string {
+    return Buffer.from(input as Uint8Array).toString('hex');
 }
 function createConfiguredSyncStore(): OperationSyncStore {
     if (config.db === 'postgres') {
@@ -334,46 +362,58 @@ const syncStats: MediatorSyncStats = {
     syncDurationMs: createAggregateMetric(),
 };
 
-let swarm: Hyperswarm | null = null;
+let swarm: SwarmInstance | null = null;
 let nodeKey = '';
 let nodeInfo: NodeInfo;
 
-goodbye(async () => {
-    if (swarm) {
-        try {
-            await Promise.resolve(swarm.destroy());
-        } catch (error) {
-            log.error({ error }, 'swarm destroy error');
-        } finally {
-            swarm = null;
-        }
+async function ensureShutdownHandlerRegistered(): Promise<void> {
+    if (shutdownRegistered) {
+        return;
     }
 
-    try {
-        await syncStore.stop();
-    } catch (error) {
-        log.error({ error }, 'syncStore stop error');
-    }
-});
+    const { default: goodbye } = await import('graceful-goodbye');
+
+    goodbye(async () => {
+        if (swarm) {
+            try {
+                await Promise.resolve(swarm.destroy());
+            } catch (error) {
+                log.error({ error }, 'swarm destroy error');
+            } finally {
+                swarm = null;
+            }
+        }
+
+        try {
+            await syncStore.stop();
+        } catch (error) {
+            log.error({ error }, 'syncStore stop error');
+        }
+    });
+
+    shutdownRegistered = true;
+}
 
 async function createSwarm(): Promise<void> {
     if (swarm) {
-        swarm.destroy();
+        await Promise.resolve(swarm.destroy());
     }
 
-    swarm = new Hyperswarm();
-    nodeKey = b4a.toString(swarm.keyPair.publicKey, 'hex');
+    const { default: Hyperswarm } = await import('hyperswarm');
+    const SwarmCtor = Hyperswarm as unknown as new () => SwarmInstance;
+    swarm = new SwarmCtor();
+    nodeKey = bytesToHex(swarm.keyPair.publicKey);
 
     swarm.on('connection', conn => addConnection(conn));
 
     const discovery = swarm.join(topic, { client: true, server: true });
     await discovery.flushed();
 
-    const shortTopic = shortName(b4a.toString(topic, 'hex'));
+    const shortTopic = shortName(bytesToHex(topic));
     log.info(`new hyperswarm peer id: ${shortName(nodeKey)} (${config.nodeName}) joined topic: ${shortTopic} using protocol: ${config.protocol}`);
 }
 
-let syncQueue = asyncLib.queue<HyperswarmConnection, asyncLib.ErrorCallback>(
+let syncQueue = asyncLib.queue<SwarmConnection, asyncLib.ErrorCallback>(
     async function (conn, callback) {
         try {
             // Wait until the importQueue is empty
@@ -399,8 +439,8 @@ let syncQueue = asyncLib.queue<HyperswarmConnection, asyncLib.ErrorCallback>(
         callback();
     }, 1); // concurrency is 1
 
-function addConnection(conn: HyperswarmConnection): void {
-    const peerKey = b4a.toString(conn.remotePublicKey, 'hex');
+function addConnection(conn: SwarmConnection): void {
+    const peerKey = bytesToHex(conn.remotePublicKey);
     const peerName = shortName(peerKey);
 
     conn.once('close', () => closeConnection(peerKey));
@@ -1875,6 +1915,12 @@ async function addPeer(did: string): Promise<void> {
         return;
     }
 
+    const ipfsClient = ipfs;
+    if (!ipfsClient) {
+        log.warn({ did }, 'skipping peer add because IPFS client is not initialized');
+        return;
+    }
+
     // Check peer suffix to avoid duplicate DID aliases
     const suffix = did.split(':').pop() || '';
 
@@ -1901,7 +1947,7 @@ async function addPeer(did: string): Promise<void> {
 
         if (id !== nodeInfo.ipfs.id) {
             // A node should never add itself as a peer node
-            await ipfs.addPeeringPeer(id, addresses);
+            await ipfsClient.addPeeringPeer(id, addresses);
         }
 
         knownNodes[did] = {
@@ -2229,10 +2275,15 @@ async function connectionLoop(): Promise<void> {
         log.debug({ syncStats: buildSyncStatsSnapshot() }, 'hyperswarm sync stats');
 
         if (config.ipfsEnabled) {
-            const peeringPeers = await ipfs.getPeeringPeers();
-            console.log(`IPFS peers: ${peeringPeers.length}`);
-            for (const peer of peeringPeers) {
-                log.debug(`* peer ${peer.ID} (${knownPeers[peer.ID]})`);
+            const ipfsClient = ipfs;
+            if (!ipfsClient) {
+                log.warn('skipping peering peer inspection because IPFS client is not initialized');
+            } else {
+                const peeringPeers = await ipfsClient.getPeeringPeers();
+                console.log(`IPFS peers: ${peeringPeers.length}`);
+                for (const peer of peeringPeers) {
+                    log.debug(`* peer ${peer.ID} (${knownPeers[peer.ID]})`);
+                }
             }
         }
 
@@ -2258,11 +2309,10 @@ process.stdin.on('data', d => {
 });
 
 // Join a common topic
-const hash = sha256(utf8ToBytes(config.protocol));
-const networkID = Buffer.from(hash).toString('hex');
-const topic = Buffer.from(b4a.from(networkID, 'hex'));
+const topic = createProtocolTopic(config.protocol);
 
 async function main(): Promise<void> {
+    await ensureShutdownHandlerRegistered();
     log.info({ db: config.db }, 'sync-store backend selected');
     await syncStore.start();
 
@@ -2307,16 +2357,20 @@ async function main(): Promise<void> {
 
         log.info(`Using nodeID: ${config.nodeID} (${nodeDID})`);
 
-        await ipfs.connect({
+        const { default: KuboClient } = await import('@mdip/ipfs/kubo');
+        const ipfsClient = new (KuboClient as unknown as new () => IpfsClient)();
+        ipfs = ipfsClient;
+
+        await ipfsClient.connect({
             url: config.ipfsURL,
             waitUntilReady: true,
             intervalSeconds: 5,
             chatty: true,
         });
-        await ipfs.resetPeeringPeers();
+        await ipfsClient.resetPeeringPeers();
 
-        const ipfsID = await ipfs.getPeerID();
-        const ipfsAddresses = await ipfs.getAddresses();
+        const ipfsID = await ipfsClient.getPeerID();
+        const ipfsAddresses = await ipfsClient.getAddresses();
         log.info(`Using IPFS nodeID: ${JSON.stringify(ipfsID, null, 4)}`);
 
         nodeInfo = {
@@ -2330,6 +2384,7 @@ async function main(): Promise<void> {
         knownNodes[nodeDID] = nodeInfo;
         await keymaster.updateAsset(nodeDID, { node: nodeInfo });
     } else {
+        ipfs = null;
         nodeInfo = {
             name: config.nodeName,
             ipfs: null,
@@ -2448,6 +2503,8 @@ export const __testHooks: {
         for (const key of Object.keys(badPeers)) {
             delete badPeers[key];
         }
+        ipfs = null;
+        swarm = null;
         nodeKey = 'test-node-key';
         nodeInfo = {
             name: 'test-node',
@@ -2470,7 +2527,7 @@ export const __testHooks: {
     addConnection(peerKey: string, write: (chunk: string) => void = () => undefined): { negentropySynced: boolean } {
         const conn = {
             write,
-        } as unknown as HyperswarmConnection;
+        } as SwarmConnection;
         const info: ConnectionInfo = {
             connection: conn,
             key: peerKey,
