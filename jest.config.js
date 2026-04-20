@@ -47,6 +47,7 @@ const config = {
         '^\\.\\/negentropy\\/protocol\\.js$': '<rootDir>/services/mediators/hyperswarm/src/negentropy/protocol.ts',
         '^\\.\\/negentropy\\/transfer\\.js$': '<rootDir>/services/mediators/hyperswarm/src/negentropy/transfer.ts',
         '^\\.\\/negentropy\\/windows\\.js$': '<rootDir>/services/mediators/hyperswarm/src/negentropy/windows.ts',
+        '^\\.\\/windows\\.js$': '<rootDir>/services/mediators/hyperswarm/src/negentropy/windows.ts',
         '^\\.\\/abstract-json\\.js$': '<rootDir>/packages/gatekeeper/src/db/abstract-json.ts',
         '^\\.\\/published-credentials\\.js$': '<rootDir>/services/search-server/src/published-credentials.ts',
         '^\\.\\/cipher-base\\.js$': '<rootDir>/packages/cipher/src/cipher-base.ts',

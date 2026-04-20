@@ -54,9 +54,10 @@ import {
     chunkOperationsForPush,
 } from './negentropy/transfer.js';
 import {
-    buildBootstrapPageWindow,
-    buildContinuationWindow,
+    buildInitialHistoryWindow,
+    buildNextHistoryPage,
     buildRoundCapSplitWindow,
+    MDIP_EPOCH_SECONDS,
 } from './negentropy/windows.js';
 import { bootstrapSyncStoreIfEmpty } from './bootstrap.js';
 import {
@@ -210,7 +211,6 @@ interface PeerSyncSession {
     windowIndex: number;
     windowId: string | null;
     currentWindowStats: NegentropyWindowStats | null;
-    completedWindows: NegentropyWindowStats[];
     startedAt: number;
     lastActivity: number;
     pendingHaveIds: Set<string>;
@@ -503,7 +503,6 @@ function createPeerSession(peerKey: string, mode: SyncMode, initiator: boolean, 
         windowIndex: 0,
         windowId: null,
         currentWindowStats: null,
-        completedWindows: [],
         startedAt: now,
         lastActivity: now,
         pendingHaveIds: new Set<string>(),
@@ -700,9 +699,8 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
     }
 
     const session = createPeerSession(peerKey, 'negentropy', initiator);
-    session.windows = await planRuntimeWindows();
+    session.windows = [await buildInitialHistoryWindowForSession()];
     session.windowIndex = 0;
-    session.completedWindows = [];
     log.info(
         {
             peer: shortName(peerKey),
@@ -928,26 +926,20 @@ function finalizeCurrentWindowStats(
         return session.currentWindowStats;
     }
     session.currentWindowStats = finished;
-    session.completedWindows.push({ ...finished });
     return finished;
 }
 
-function shouldAdvanceToOlderWindow(session: PeerSyncSession): boolean {
-    return session.windowIndex + 1 < session.windows.length;
-}
-
-async function planRuntimeWindows(): Promise<ReconciliationWindow[]> {
+async function buildInitialHistoryWindowForSession(): Promise<ReconciliationWindow> {
     if (!negentropyAdapter) {
-        // eslint-disable-next-line sonarjs/no-duplicate-string
         throw new Error('negentropy adapter unavailable');
     }
 
-    const windows = await negentropyAdapter.planWindows(currentSyncTimestampSeconds());
-    if (windows.length > 0) {
-        return windows;
-    }
-
-    return [buildBootstrapPageWindow(config.negentropyMaxRecordsPerWindow)];
+    const earliestTs = await negentropyAdapter.getEarliestTimestamp();
+    return buildInitialHistoryWindow(
+        earliestTs ?? MDIP_EPOCH_SECONDS,
+        currentSyncTimestampSeconds(),
+        config.negentropyMaxRecordsPerWindow,
+    );
 }
 
 function maybeStartBackgroundPrebuild(reason: string): void {
@@ -970,9 +962,8 @@ function maybeStartBackgroundPrebuild(reason: string): void {
 
     backgroundPrebuildQueued = false;
     (async () => {
-        const windows = await planRuntimeWindows();
-        const recentWindow = windows[0];
-        await ensureWindowAdapterFresh(recentWindow, `background_${reason}`);
+        const window = await buildInitialHistoryWindowForSession();
+        await ensureWindowAdapterFresh(window, `background_${reason}`);
     })()
         .catch(error => {
             log.error({ error, reason }, 'background negentropy prebuild failed');
@@ -1107,16 +1098,6 @@ async function startNextNegentropyWindow(peerKey: string, session: PeerSyncSessi
     );
 }
 
-async function maybeAdvanceToOlderWindow(peerKey: string, session: PeerSyncSession): Promise<boolean> {
-    if (!shouldAdvanceToOlderWindow(session)) {
-        return false;
-    }
-
-    session.windowIndex += 1;
-    await startNextNegentropyWindow(peerKey, session);
-    return true;
-}
-
 function buildWindowProgress(session: PeerSyncSession): NegMsgMessage['windowProgress'] | undefined {
     const stats = session.currentWindowStats;
     if (!stats) {
@@ -1222,7 +1203,7 @@ function getContinuationCursor(session: PeerSyncSession): SyncStoreCursor | null
         cursor = minCursor(cursor, session.remoteWindowLastCursor);
     }
 
-    if (!cursor && window.name === 'bootstrap_full_history' && session.receivedPushIds.size >= window.maxRecords) {
+    if (!cursor && window.name === 'history_paged' && session.receivedPushIds.size >= window.maxRecords) {
         cursor = cloneCursor(session.receivedPushMaxCursor);
     }
 
@@ -1248,7 +1229,7 @@ async function maybeContinueCappedWindowPaging(peerKey: string, session: PeerSyn
         return false;
     }
 
-    const nextWindow = buildContinuationWindow(currentWindow, cursor, getNextWindowOrder(session));
+    const nextWindow = buildNextHistoryPage(currentWindow, cursor, getNextWindowOrder(session));
     session.windows.splice(session.windowIndex + 1, 0, nextWindow);
     session.windowIndex += 1;
     await startNextNegentropyWindow(peerKey, session);
@@ -1488,11 +1469,6 @@ async function maybeFinalizeInitiatorSession(peerKey: string, session: PeerSyncS
 
     const continued = await maybeContinueCappedWindowPaging(peerKey, session);
     if (continued) {
-        return;
-    }
-
-    const advanced = await maybeAdvanceToOlderWindow(peerKey, session);
-    if (advanced) {
         return;
     }
 
@@ -2364,8 +2340,6 @@ async function initNegentropyAdapter(): Promise<void> {
     negentropyAdapter = await NegentropyAdapter.create({
         syncStore,
         frameSizeLimit: config.negentropyFrameSizeLimit,
-        recentWindowDays: config.negentropyWindowDays,
-        olderWindowDays: config.negentropyWindowDays,
         maxRecordsPerWindow: config.negentropyMaxRecordsPerWindow,
         maxRoundsPerSession: config.negentropyMaxRoundsPerSession,
         deferInitialBuild: true,
@@ -2380,7 +2354,6 @@ async function initNegentropyAdapter(): Promise<void> {
     log.info(
         {
             stats: negentropyAdapter.getStats(),
-            windowDays: config.negentropyWindowDays,
             maxRecordsPerWindow: config.negentropyMaxRecordsPerWindow,
             maxRoundsPerSession: config.negentropyMaxRoundsPerSession,
             frameSizeLimit: config.negentropyFrameSizeLimit,

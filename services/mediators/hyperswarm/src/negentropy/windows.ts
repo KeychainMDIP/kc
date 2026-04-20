@@ -1,7 +1,7 @@
 import type { SyncStoreCursor } from '../db/types.js';
 import type { ReconciliationWindow } from './adapter.js';
 
-const MDIP_EPOCH_SECONDS = 1_704_067_200; // 2024-01-01T00:00:00Z
+export const MDIP_EPOCH_SECONDS = 1_704_067_200; // 2024-01-01T00:00:00Z
 
 function cloneCursor(cursor?: SyncStoreCursor | null): SyncStoreCursor | null {
     if (!cursor) {
@@ -14,26 +14,24 @@ function cloneCursor(cursor?: SyncStoreCursor | null): SyncStoreCursor | null {
     };
 }
 
-export function buildBootstrapPageWindow(
+export function buildInitialHistoryWindow(
+    fromTs: number,
+    toTs: number,
     maxRecords: number,
     after?: SyncStoreCursor | null,
     order = 0,
 ): ReconciliationWindow {
     return {
-        name: 'bootstrap_full_history',
-        fromTs: MDIP_EPOCH_SECONDS,
-        toTs: Number.MAX_SAFE_INTEGER,
+        name: 'history_paged',
+        fromTs,
+        toTs,
         maxRecords,
         order,
         after: cloneCursor(after) ?? undefined,
     };
 }
 
-export function buildContinuationWindow(window: ReconciliationWindow, after: SyncStoreCursor, order: number): ReconciliationWindow {
-    if (window.name === 'bootstrap_full_history') {
-        return buildBootstrapPageWindow(window.maxRecords, after, order);
-    }
-
+export function buildNextHistoryPage(window: ReconciliationWindow, after: SyncStoreCursor, order: number): ReconciliationWindow {
     return {
         name: window.name,
         fromTs: window.fromTs,

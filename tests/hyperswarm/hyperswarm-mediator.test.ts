@@ -4,9 +4,10 @@ import {
     runMediator,
 } from '../../services/mediators/hyperswarm/src/hyperswarm-mediator.ts';
 import {
-    buildBootstrapPageWindow,
-    buildContinuationWindow,
+    buildInitialHistoryWindow,
+    buildNextHistoryPage,
     buildRoundCapSplitWindow,
+    MDIP_EPOCH_SECONDS,
 } from '../../services/mediators/hyperswarm/src/negentropy/windows.ts';
 import type { SyncStoreCursor } from '../../services/mediators/hyperswarm/src/db/types.ts';
 import type { Operation } from '@mdip/gatekeeper/types';
@@ -47,19 +48,12 @@ describe('hyperswarm mediator window helpers', () => {
     };
 
     it('splits a round-capped window by halving maxRecords and preserving coverage', () => {
-        const window = {
-            name: 'older_1',
-            fromTs: 1704067200,
-            toTs: 1706659200,
-            maxRecords: 5000,
-            order: 3,
-            after,
-        };
+        const window = buildInitialHistoryWindow(1704067200, 1706659200, 5000, after, 3);
 
         const split = buildRoundCapSplitWindow(window);
 
         expect(split).toStrictEqual({
-            name: 'older_1',
+            name: 'history_paged',
             fromTs: 1704067200,
             toTs: 1706659200,
             maxRecords: 2500,
@@ -70,7 +64,7 @@ describe('hyperswarm mediator window helpers', () => {
 
     it('does not split a window that cannot be reduced further', () => {
         const window = {
-            name: 'older_1',
+            name: 'history_paged',
             fromTs: 1704067200,
             toTs: 1706659200,
             maxRecords: 1,
@@ -80,17 +74,17 @@ describe('hyperswarm mediator window helpers', () => {
         expect(buildRoundCapSplitWindow(window)).toBeNull();
     });
 
-    it('preserves reduced maxRecords when continuing a split bootstrap window', () => {
-        const splitBootstrap = buildBootstrapPageWindow(2500, after, 4);
-        const continuation = buildContinuationWindow(splitBootstrap, {
+    it('preserves reduced maxRecords when continuing a split history page', () => {
+        const splitHistoryPage = buildInitialHistoryWindow(MDIP_EPOCH_SECONDS, 1706659200, 2500, after, 4);
+        const continuation = buildNextHistoryPage(splitHistoryPage, {
             ts: 1705000000,
             id: 'b'.repeat(64),
         }, 5);
 
         expect(continuation).toStrictEqual({
-            name: 'bootstrap_full_history',
-            fromTs: splitBootstrap.fromTs,
-            toTs: splitBootstrap.toTs,
+            name: 'history_paged',
+            fromTs: splitHistoryPage.fromTs,
+            toTs: splitHistoryPage.toTs,
             maxRecords: 2500,
             order: 5,
             after: {
@@ -120,7 +114,7 @@ describe('hyperswarm mediator negentropy session flow', () => {
         __testHooks.addConnection(peerKeyA);
 
         const session = __testHooks.createPeerSession(peerKeyA, 'negentropy', true, 'current-session') as any;
-        session.windows = [buildBootstrapPageWindow(4)];
+        session.windows = [buildInitialHistoryWindow(MDIP_EPOCH_SECONDS, Number.MAX_SAFE_INTEGER, 4)];
         session.windowIndex = 0;
 
         await __testHooks.startNextNegentropyWindow(peerKeyA, session);
@@ -177,7 +171,7 @@ describe('hyperswarm mediator negentropy session flow', () => {
         const writes: string[] = [];
         const connInfo = __testHooks.addConnection(peerKeyB, chunk => writes.push(chunk));
         const session = __testHooks.createPeerSession(peerKeyB, 'negentropy', true, 'split-session') as any;
-        session.windows = [buildBootstrapPageWindow(4)];
+        session.windows = [buildInitialHistoryWindow(1704067200, Number.MAX_SAFE_INTEGER, 4)];
         session.windowIndex = 0;
 
         await __testHooks.startNextNegentropyWindow(peerKeyB, session);
@@ -219,7 +213,7 @@ describe('hyperswarm mediator negentropy session flow', () => {
         const continuationSession = __testHooks.getPeerSession(peerKeyB) as any;
         expect(continuationSession.windowIndex).toBe(1);
         expect(continuationSession.windows[1]).toStrictEqual({
-            name: 'bootstrap_full_history',
+            name: 'history_paged',
             fromTs: 1704067200,
             toTs: Number.MAX_SAFE_INTEGER,
             maxRecords: 2,
