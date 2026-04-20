@@ -1,3 +1,5 @@
+import Hyperswarm, { HyperswarmConnection } from 'hyperswarm';
+import goodbye from 'graceful-goodbye';
 import { createHash, randomBytes } from 'crypto';
 import asyncLib from 'async';
 import { EventEmitter } from 'events';
@@ -176,7 +178,7 @@ interface ImportQueueTask {
 interface ExportQueueTask {
     name: string;
     msg: SyncMessage;
-    conn: SwarmConnection;
+    conn: HyperswarmConnection;
 }
 
 interface NodeInfo {
@@ -185,7 +187,7 @@ interface NodeInfo {
 }
 
 interface ConnectionInfo {
-    connection: SwarmConnection;
+    connection: HyperswarmConnection;
     key: string;
     peerName: string;
     nodeName: string;
@@ -255,22 +257,6 @@ export interface MediatorMainOptions {
     startLoops?: boolean;
 }
 
-interface SwarmConnection {
-    remotePublicKey: ArrayLike<number>;
-    write(data: string | Buffer): void;
-    once(event: string, callback: (...args: any[]) => void): void;
-    on(event: string, callback: (...args: any[]) => void): void;
-    end?(): void;
-    destroy?(): void;
-}
-
-interface SwarmInstance {
-    keyPair: { publicKey: ArrayLike<number>; secretKey?: ArrayLike<number> };
-    join(topic: Buffer, opts: { client: boolean; server: boolean }): { flushed(): Promise<void> };
-    on(event: 'connection', listener: (conn: SwarmConnection) => void): void;
-    destroy(): void | Promise<void>;
-}
-
 interface IpfsClient {
     connect(options: { url: string; waitUntilReady: boolean; intervalSeconds: number; chatty: boolean }): Promise<void>;
     resetPeeringPeers(): Promise<void>;
@@ -284,7 +270,6 @@ const gatekeeper = new GatekeeperClient();
 const keymaster = new KeymasterClient();
 const canonicalize = canonicalizeModule as unknown as (input: unknown) => string;
 let ipfs: IpfsClient | null = null;
-let shutdownRegistered = false;
 
 function hashJSON(input: unknown): string {
     return createHash('sha256').update(canonicalize(input)).digest('hex');
@@ -367,46 +352,34 @@ const syncStats: MediatorSyncStats = {
     syncDurationMs: createAggregateMetric(),
 };
 
-let swarm: SwarmInstance | null = null;
+let swarm: Hyperswarm | null = null;
 let nodeKey = '';
 let nodeInfo: NodeInfo;
 
-async function ensureShutdownHandlerRegistered(): Promise<void> {
-    if (shutdownRegistered) {
-        return;
+goodbye(async () => {
+    if (swarm) {
+        try {
+            await Promise.resolve(swarm.destroy());
+        } catch (error) {
+            log.error({ error }, 'swarm destroy error');
+        } finally {
+            swarm = null;
+        }
     }
 
-    const { default: goodbye } = await import('graceful-goodbye');
-
-    goodbye(async () => {
-        if (swarm) {
-            try {
-                await Promise.resolve(swarm.destroy());
-            } catch (error) {
-                log.error({ error }, 'swarm destroy error');
-            } finally {
-                swarm = null;
-            }
-        }
-
-        try {
-            await syncStore.stop();
-        } catch (error) {
-            log.error({ error }, 'syncStore stop error');
-        }
-    });
-
-    shutdownRegistered = true;
-}
+    try {
+        await syncStore.stop();
+    } catch (error) {
+        log.error({ error }, 'syncStore stop error');
+    }
+});
 
 async function createSwarm(): Promise<void> {
     if (swarm) {
         await Promise.resolve(swarm.destroy());
     }
 
-    const { default: Hyperswarm } = await import('hyperswarm');
-    const SwarmCtor = Hyperswarm as unknown as new () => SwarmInstance;
-    swarm = new SwarmCtor();
+    swarm = new Hyperswarm();
     nodeKey = bytesToHex(swarm.keyPair.publicKey);
 
     swarm.on('connection', conn => addConnection(conn));
@@ -418,7 +391,7 @@ async function createSwarm(): Promise<void> {
     log.info(`new hyperswarm peer id: ${shortName(nodeKey)} (${config.nodeName}) joined topic: ${shortTopic} using protocol: ${config.protocol}`);
 }
 
-let syncQueue = asyncLib.queue<SwarmConnection, asyncLib.ErrorCallback>(
+let syncQueue = asyncLib.queue<HyperswarmConnection, asyncLib.ErrorCallback>(
     async function (conn, callback) {
         try {
             // Wait until the importQueue is empty
@@ -444,7 +417,7 @@ let syncQueue = asyncLib.queue<SwarmConnection, asyncLib.ErrorCallback>(
         callback();
     }, 1); // concurrency is 1
 
-function addConnection(conn: SwarmConnection): void {
+function addConnection(conn: HyperswarmConnection): void {
     const peerKey = bytesToHex(conn.remotePublicKey);
     const peerName = shortName(peerKey);
 
@@ -1651,7 +1624,7 @@ async function handleNegentropyRoundAsResponder(
     }
 }
 
-function sendBatch(conn: SwarmConnection, batch: Operation[]): number {
+function sendBatch(conn: HyperswarmConnection, batch: Operation[]): number {
     const limit = 8 * 1024 * 1014; // 8 MB limit
 
     const msg: BatchMessage = {
@@ -1689,7 +1662,7 @@ function isStringArray(arr: any[]): arr is string[] {
     return arr.every(item => typeof item === 'string');
 }
 
-async function shareDb(conn: SwarmConnection): Promise<void> {
+async function shareDb(conn: HyperswarmConnection): Promise<void> {
     const startTimeMs = Date.now();
     try {
         const batchSize = 1000; // export DIDs in batches of 1000 for scalability
@@ -2317,7 +2290,6 @@ process.stdin.on('data', d => {
 const topic = createProtocolTopic(config.protocol);
 
 async function main(): Promise<void> {
-    await ensureShutdownHandlerRegistered();
     log.info({ db: config.db }, 'sync-store backend selected');
     await syncStore.start();
 
@@ -2532,7 +2504,7 @@ export const __testHooks: {
     addConnection(peerKey: string, write: (chunk: string) => void = () => undefined): { negentropySynced: boolean } {
         const conn = {
             write,
-        } as SwarmConnection;
+        } as unknown as HyperswarmConnection;
         const info: ConnectionInfo = {
             connection: conn,
             key: peerKey,
