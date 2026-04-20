@@ -1,4 +1,5 @@
 import { Operation } from '@mdip/gatekeeper/types';
+import { jest } from '@jest/globals';
 import {
     MDIP_EPOCH_SECONDS,
     SYNC_ID_BYTES_LEN,
@@ -82,6 +83,29 @@ describe('sync-mapping', () => {
 
     it('rejects invalid signature hash format', () => {
         expectFailure(makeOp({ hash: 'xyz' }), 'invalid_signature_hash_format');
+    });
+
+    it('rejects hash values that do not decode to 32 bytes', () => {
+        const op = makeOp();
+        const originalFrom = Buffer.from;
+        const bufferFromSpy = jest.spyOn(Buffer, 'from').mockImplementation(((...args: unknown[]) => {
+            if (args[0] === op.signature?.hash && args[1] === 'hex') {
+                return Buffer.alloc(SYNC_ID_BYTES_LEN - 1);
+            }
+
+            return originalFrom(...args as Parameters<typeof Buffer.from>);
+        }) as typeof Buffer.from);
+        try {
+            const result = mapOperationToSyncKey(op);
+
+            expect(result.ok).toBe(false);
+            if (!result.ok) {
+                expect(result.code).toBe('invalid_signature_hash_format');
+                expect(result.reason).toBe(`operation.signature.hash must decode to ${SYNC_ID_BYTES_LEN} bytes`);
+            }
+        } finally {
+            bufferFromSpy.mockRestore();
+        }
     });
 
     it('rejects missing signature signed', () => {
