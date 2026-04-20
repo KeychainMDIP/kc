@@ -1,4 +1,6 @@
-function toBuffer(value: string | Uint8Array | Buffer, encoding?: BufferEncoding): Buffer {
+type B4aInput = string | Uint8Array | Buffer;
+
+function toBuffer(value: B4aInput, encoding?: BufferEncoding): Buffer {
     if (typeof value === 'string') {
         return Buffer.from(value, encoding);
     }
@@ -7,10 +9,10 @@ function toBuffer(value: string | Uint8Array | Buffer, encoding?: BufferEncoding
 }
 
 const b4a = {
-    from(value: string | Uint8Array | Buffer, encoding?: BufferEncoding): Buffer {
+    from(value: B4aInput, encoding?: BufferEncoding): Buffer {
         return toBuffer(value, encoding);
     },
-    toString(value: string | Uint8Array | Buffer, encoding?: BufferEncoding): string {
+    toString(value: B4aInput, encoding?: BufferEncoding): string {
         return toBuffer(value).toString(encoding);
     },
 };
