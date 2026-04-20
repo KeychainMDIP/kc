@@ -9,6 +9,7 @@ import { childLogger } from '@mdip/common/logger';
 import canonicalizeModule from 'canonicalize';
 import config from './config.js';
 import type { OperationSyncStore, SyncStoreCursor } from './db/types.js';
+import InMemoryOperationSyncStore from './db/memory.js';
 import SqliteOperationSyncStore from './db/sqlite.js';
 import PostgresOperationSyncStore from './db/postgres.js';
 import NegentropyAdapter, {
@@ -297,6 +298,10 @@ function bytesToHex(input: ArrayLike<number>): string {
     return Buffer.from(input as Uint8Array).toString('hex');
 }
 function createConfiguredSyncStore(): OperationSyncStore {
+    if (config.db === 'memory') {
+        return new InMemoryOperationSyncStore();
+    }
+
     if (config.db === 'postgres') {
         return new PostgresOperationSyncStore(config.postgresURL);
     }

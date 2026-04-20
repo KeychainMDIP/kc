@@ -102,13 +102,20 @@ describe('hyperswarm config', () => {
 
         await expect(importConfigIsolated())
             .rejects
-            .toThrow('Missing KC_HYPR_DB; expected sqlite or postgres');
+            .toThrow('Missing KC_HYPR_DB; expected memory, sqlite, or postgres');
 
         process.env.KC_HYPR_DB = '   ';
 
         await expect(importConfigIsolated())
             .rejects
-            .toThrow('Missing KC_HYPR_DB; expected sqlite or postgres');
+            .toThrow('Missing KC_HYPR_DB; expected memory, sqlite, or postgres');
+    });
+
+    it('accepts memory sync DB', async () => {
+        process.env.KC_HYPR_DB = 'memory';
+
+        const config = await importConfigIsolated();
+        expect(config.db).toBe('memory');
     });
 
     it('accepts postgres sync DB and uses service postgres URL before shared URL', async () => {
@@ -138,6 +145,6 @@ describe('hyperswarm config', () => {
             jest.isolateModulesAsync(async () => {
                 await import(CONFIG_PATH);
             })
-        ).rejects.toThrow('Invalid KC_HYPR_DB; expected sqlite or postgres');
+        ).rejects.toThrow('Invalid KC_HYPR_DB; expected memory, sqlite, or postgres');
     });
 });

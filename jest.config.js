@@ -10,6 +10,7 @@ const config = {
     },
     extensionsToTreatAsEsm: ['.ts'],
     testEnvironment: 'node',
+    setupFiles: ['<rootDir>/tests/common/jest-env.ts'],
     moduleFileExtensions: ['ts', 'js', 'mjs'],
     moduleNameMapper: {
         '^@mdip/cipher/node$': '<rootDir>/packages/cipher/src/cipher-node.ts',
