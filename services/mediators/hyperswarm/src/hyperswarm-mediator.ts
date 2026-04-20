@@ -29,6 +29,7 @@ import {
     extractOperationHashes,
     normalizeNegentropyIds,
     normalizePeerCapabilities,
+    supportsPeerNegentropy,
     type ConnectSyncModeReason,
     type NegentropyFrame,
     type NegotiatedPeerCapabilities,
@@ -1992,6 +1993,18 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
     if (msg.type === 'neg_open') {
         if (!negentropyAdapter) {
             log.warn('neg_open ignored because adapter is unavailable');
+            return;
+        }
+        if (!supportsPeerNegentropy(conn.capabilities, NEGENTROPY_VERSION)) {
+            log.warn(
+                {
+                    peer: shortName(peerKey),
+                    sessionId: msg.sessionId,
+                    peerVersion: conn.capabilities.version,
+                    requiredVersion: NEGENTROPY_VERSION,
+                },
+                'ignoring neg_open from incompatible negentropy version'
+            );
             return;
         }
 

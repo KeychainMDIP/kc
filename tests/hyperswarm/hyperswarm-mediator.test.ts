@@ -107,6 +107,40 @@ describe('hyperswarm mediator negentropy session flow', () => {
         await __testHooks.resetMediatorState();
     });
 
+    it('ignores neg_open from a peer advertising an incompatible negentropy version', async () => {
+        const store = new InMemoryOperationSyncStore();
+        await runMediator({ syncStore: store, startLoops: false });
+        await __testHooks.initNegentropyAdapter();
+
+        const writes: string[] = [];
+        const connInfo = __testHooks.addConnection(peerKeyA, chunk => writes.push(chunk)) as any;
+        connInfo.capabilities.version = 1;
+
+        await __testHooks.receiveMsg(peerKeyA, {
+            type: 'neg_open',
+            time: new Date().toISOString(),
+            node: 'peer',
+            relays: [],
+            sessionId: 'mismatch-session',
+            windowId: 'history_paged:0:100:4:none',
+            window: {
+                name: 'history_paged',
+                fromTs: MDIP_EPOCH_SECONDS,
+                toTs: 1706659200,
+                maxRecords: 4,
+                order: 0,
+            },
+            round: 1,
+            frame: {
+                encoding: 'utf8',
+                data: '',
+            },
+        });
+
+        expect(__testHooks.getPeerSession(peerKeyA)).toBeNull();
+        expect(writes).toStrictEqual([]);
+    });
+
     it('ignores stale neg_close progress from an older session or window', async () => {
         const store = new InMemoryOperationSyncStore();
         await runMediator({ syncStore: store, startLoops: false });
