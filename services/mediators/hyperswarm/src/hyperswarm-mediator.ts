@@ -1,17 +1,20 @@
 import Hyperswarm, { HyperswarmConnection } from 'hyperswarm';
 import goodbye from 'graceful-goodbye';
-import { createHash, randomBytes } from 'crypto';
+import b4a from 'b4a';
+import { randomBytes } from 'crypto';
+import { sha256 } from '@noble/hashes/sha2.js';
+import { utf8ToBytes } from '@noble/hashes/utils.js';
 import asyncLib from 'async';
 import { EventEmitter } from 'events';
 
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import KeymasterClient from '@mdip/keymaster/client';
+import KuboClient from '@mdip/ipfs/kubo';
 import { Operation } from '@mdip/gatekeeper/types';
+import CipherNode from '@mdip/cipher/node';
 import { childLogger } from '@mdip/common/logger';
-import canonicalizeModule from 'canonicalize';
 import config from './config.js';
 import type { OperationSyncStore, SyncStoreCursor } from './db/types.js';
-import InMemoryOperationSyncStore from './db/memory.js';
 import SqliteOperationSyncStore from './db/sqlite.js';
 import PostgresOperationSyncStore from './db/postgres.js';
 import NegentropyAdapter, {
@@ -257,36 +260,12 @@ export interface MediatorMainOptions {
     startLoops?: boolean;
 }
 
-interface IpfsClient {
-    connect(options: { url: string; waitUntilReady: boolean; intervalSeconds: number; chatty: boolean }): Promise<void>;
-    resetPeeringPeers(): Promise<void>;
-    getPeerID(): Promise<string>;
-    getAddresses(): Promise<string[]>;
-    addPeeringPeer(id: string, addresses: string[]): Promise<void>;
-    getPeeringPeers(): Promise<Array<{ ID: string }>>;
-}
-
 const gatekeeper = new GatekeeperClient();
 const keymaster = new KeymasterClient();
-const canonicalize = canonicalizeModule as unknown as (input: unknown) => string;
-let ipfs: IpfsClient | null = null;
+const ipfs = new KuboClient();
+const cipher = new CipherNode();
 
-function hashJSON(input: unknown): string {
-    return createHash('sha256').update(canonicalize(input)).digest('hex');
-}
-
-function createProtocolTopic(protocol: string): Buffer {
-    return createHash('sha256').update(protocol, 'utf8').digest();
-}
-
-function bytesToHex(input: ArrayLike<number>): string {
-    return Buffer.from(input as Uint8Array).toString('hex');
-}
 function createConfiguredSyncStore(): OperationSyncStore {
-    if (config.db === 'memory') {
-        return new InMemoryOperationSyncStore();
-    }
-
     if (config.db === 'postgres') {
         return new PostgresOperationSyncStore(config.postgresURL);
     }
@@ -380,14 +359,14 @@ async function createSwarm(): Promise<void> {
     }
 
     swarm = new Hyperswarm();
-    nodeKey = bytesToHex(swarm.keyPair.publicKey);
+    nodeKey = b4a.toString(swarm.keyPair.publicKey, 'hex');
 
     swarm.on('connection', conn => addConnection(conn));
 
     const discovery = swarm.join(topic, { client: true, server: true });
     await discovery.flushed();
 
-    const shortTopic = shortName(bytesToHex(topic));
+    const shortTopic = shortName(b4a.toString(topic, 'hex'));
     log.info(`new hyperswarm peer id: ${shortName(nodeKey)} (${config.nodeName}) joined topic: ${shortTopic} using protocol: ${config.protocol}`);
 }
 
@@ -418,7 +397,7 @@ let syncQueue = asyncLib.queue<HyperswarmConnection, asyncLib.ErrorCallback>(
     }, 1); // concurrency is 1
 
 function addConnection(conn: HyperswarmConnection): void {
-    const peerKey = bytesToHex(conn.remotePublicKey);
+    const peerKey = b4a.toString(conn.remotePublicKey, 'hex');
     const peerName = shortName(peerKey);
 
     conn.once('close', () => closeConnection(peerKey));
@@ -1729,7 +1708,7 @@ async function importBatch(batch: Operation[]): Promise<Operation[]> {
     // The batch we receive from other hyperswarm nodes includes just operations.
     // We have to wrap the operations in new events before submitting to our gatekeeper for importing
     try {
-        const hash = hashJSON(batch);
+        const hash = cipher.hashJSON(batch);
         const events = [];
         const now = new Date();
         const isoTime = now.toISOString();
@@ -1878,7 +1857,7 @@ let exportQueue = asyncLib.queue<ExportQueueTask, asyncLib.ErrorCallback>(
 const batchesSeen: Record<string, boolean> = {};
 
 function newBatch(batch: Operation[]): boolean {
-    const hash = hashJSON(batch);
+    const hash = cipher.hashJSON(batch);
 
     if (!batchesSeen[hash]) {
         batchesSeen[hash] = true;
@@ -1890,12 +1869,6 @@ function newBatch(batch: Operation[]): boolean {
 
 async function addPeer(did: string): Promise<void> {
     if (!config.ipfsEnabled) {
-        return;
-    }
-
-    const ipfsClient = ipfs;
-    if (!ipfsClient) {
-        log.warn({ did }, 'skipping peer add because IPFS client is not initialized');
         return;
     }
 
@@ -1925,7 +1898,7 @@ async function addPeer(did: string): Promise<void> {
 
         if (id !== nodeInfo.ipfs.id) {
             // A node should never add itself as a peer node
-            await ipfsClient.addPeeringPeer(id, addresses);
+            await ipfs.addPeeringPeer(id, addresses);
         }
 
         knownNodes[did] = {
@@ -2253,15 +2226,10 @@ async function connectionLoop(): Promise<void> {
         log.debug({ syncStats: buildSyncStatsSnapshot() }, 'hyperswarm sync stats');
 
         if (config.ipfsEnabled) {
-            const ipfsClient = ipfs;
-            if (!ipfsClient) {
-                log.warn('skipping peering peer inspection because IPFS client is not initialized');
-            } else {
-                const peeringPeers = await ipfsClient.getPeeringPeers();
-                console.log(`IPFS peers: ${peeringPeers.length}`);
-                for (const peer of peeringPeers) {
-                    log.debug(`* peer ${peer.ID} (${knownPeers[peer.ID]})`);
-                }
+            const peeringPeers = await ipfs.getPeeringPeers();
+            console.log(`IPFS peers: ${peeringPeers.length}`);
+            for (const peer of peeringPeers) {
+                log.debug(`* peer ${peer.ID} (${knownPeers[peer.ID]})`);
             }
         }
 
@@ -2287,7 +2255,9 @@ process.stdin.on('data', d => {
 });
 
 // Join a common topic
-const topic = createProtocolTopic(config.protocol);
+const hash = sha256(utf8ToBytes(config.protocol));
+const networkID = Buffer.from(hash).toString('hex');
+const topic = Buffer.from(b4a.from(networkID, 'hex'));
 
 async function main(): Promise<void> {
     log.info({ db: config.db }, 'sync-store backend selected');
@@ -2334,20 +2304,16 @@ async function main(): Promise<void> {
 
         log.info(`Using nodeID: ${config.nodeID} (${nodeDID})`);
 
-        const { default: KuboClient } = await import('@mdip/ipfs/kubo');
-        const ipfsClient = new (KuboClient as unknown as new () => IpfsClient)();
-        ipfs = ipfsClient;
-
-        await ipfsClient.connect({
+        await ipfs.connect({
             url: config.ipfsURL,
             waitUntilReady: true,
             intervalSeconds: 5,
             chatty: true,
         });
-        await ipfsClient.resetPeeringPeers();
+        await ipfs.resetPeeringPeers();
 
-        const ipfsID = await ipfsClient.getPeerID();
-        const ipfsAddresses = await ipfsClient.getAddresses();
+        const ipfsID = await ipfs.getPeerID();
+        const ipfsAddresses = await ipfs.getAddresses();
         log.info(`Using IPFS nodeID: ${JSON.stringify(ipfsID, null, 4)}`);
 
         nodeInfo = {
@@ -2361,7 +2327,6 @@ async function main(): Promise<void> {
         knownNodes[nodeDID] = nodeInfo;
         await keymaster.updateAsset(nodeDID, { node: nodeInfo });
     } else {
-        ipfs = null;
         nodeInfo = {
             name: config.nodeName,
             ipfs: null,
@@ -2423,129 +2388,6 @@ export async function runMediator(options: MediatorMainOptions = {}): Promise<vo
 
     return main();
 }
-
-function resetSyncStatsForTests(): void {
-    syncStats.modeSelectionsTotal = 0;
-    syncStats.modeSelectionsLegacy = 0;
-    syncStats.modeSelectionsNegentropy = 0;
-    syncStats.modeSelectionsLegacyMissingCapabilities = 0;
-    syncStats.modeSelectionsLegacyNegentropyDisabled = 0;
-    syncStats.modeSelectionsLegacyVersionMismatch = 0;
-    syncStats.modeSelectionsNoModeLegacyDisabled = 0;
-    syncStats.queueOpsRelayed = 0;
-    syncStats.queueOpsImported = 0;
-    syncStats.queueDelayMs = createAggregateMetric();
-    syncStats.negentropySessionsStarted = 0;
-    syncStats.negentropySessionsClosed = 0;
-    syncStats.negentropySessionsCompleted = 0;
-    syncStats.negentropySessionsFailed = 0;
-    syncStats.negentropyRounds = 0;
-    syncStats.negentropyHaveIds = 0;
-    syncStats.negentropyNeedIds = 0;
-    syncStats.negentropyOpsReqSent = 0;
-    syncStats.negentropyOpsReqReceived = 0;
-    syncStats.negentropyOpsPushSent = 0;
-    syncStats.negentropyOpsPushReceived = 0;
-    syncStats.opsApplied = 0;
-    syncStats.opsRejected = 0;
-    syncStats.bytesSent = 0;
-    syncStats.bytesReceived = 0;
-    syncStats.syncDurationMs = createAggregateMetric();
-}
-
-export const __testHooks: {
-    resetMediatorState(): Promise<void>;
-    initNegentropyAdapter(): Promise<void>;
-    addConnection(peerKey: string, write?: (chunk: string) => void): { negentropySynced: boolean };
-    createPeerSession(peerKey: string, mode: SyncMode, initiator: boolean, sessionId?: string): any;
-    startNextNegentropyWindow(peerKey: string, session: any): Promise<void>;
-    maybeFinalizeInitiatorSession(peerKey: string, session: any): Promise<void>;
-    receiveMsg(peerKey: string, msg: any): Promise<void>;
-    getPeerSession(peerKey: string): any;
-} = {
-    async resetMediatorState(): Promise<void> {
-        peerSessions.clear();
-        for (const key of Object.keys(connectionInfo)) {
-            delete connectionInfo[key];
-        }
-        for (const key of Object.keys(knownNodes)) {
-            delete knownNodes[key];
-        }
-        for (const key of Object.keys(knownPeers)) {
-            delete knownPeers[key];
-        }
-        for (const key of Object.keys(addedPeers)) {
-            delete addedPeers[key];
-        }
-        for (const key of Object.keys(badPeers)) {
-            delete badPeers[key];
-        }
-        ipfs = null;
-        swarm = null;
-        nodeKey = 'test-node-key';
-        nodeInfo = {
-            name: 'test-node',
-            ipfs: null,
-        };
-        negentropyAdapter = null;
-        adapterChangeSeq = 0;
-        adapterBuiltSeq = -1;
-        adapterBuiltAt = 0;
-        adapterBuiltWindowId = null;
-        adapterBuiltWindowStats = null;
-        rebuildPromise = null;
-        backgroundPrebuildQueued = false;
-        resetSyncStatsForTests();
-        await syncStore.stop().catch(() => undefined);
-    },
-    async initNegentropyAdapter(): Promise<void> {
-        await initNegentropyAdapter();
-    },
-    addConnection(peerKey: string, write: (chunk: string) => void = () => undefined): { negentropySynced: boolean } {
-        const conn = {
-            write,
-        } as unknown as HyperswarmConnection;
-        const info: ConnectionInfo = {
-            connection: conn,
-            key: peerKey,
-            peerName: shortName(peerKey),
-            nodeName: 'test-peer',
-            did: '',
-            lastSeen: Date.now(),
-            capabilities: {
-                advertised: true,
-                negentropy: true,
-                version: NEGENTROPY_VERSION,
-            },
-            syncMode: 'unknown',
-            syncStarted: false,
-            lastNegentropyAttemptAt: 0,
-            negentropySynced: false,
-        };
-        connectionInfo[peerKey] = info;
-        return info;
-    },
-    createPeerSession(peerKey: string, mode: SyncMode, initiator: boolean, sessionId?: string): any {
-        return createPeerSession(peerKey, mode, initiator, sessionId);
-    },
-    async startNextNegentropyWindow(peerKey: string, session: any): Promise<void> {
-        await startNextNegentropyWindow(peerKey, session);
-    },
-    async maybeFinalizeInitiatorSession(peerKey: string, session: any): Promise<void> {
-        await maybeFinalizeInitiatorSession(peerKey, session);
-    },
-    async receiveMsg(peerKey: string, msg: any): Promise<void> {
-        if (typeof msg === 'string' || Buffer.isBuffer(msg)) {
-            await receiveMsg(peerKey, msg);
-            return;
-        }
-
-        await receiveMsg(peerKey, JSON.stringify(msg));
-    },
-    getPeerSession(peerKey: string): any {
-        return peerSessions.get(peerKey) ?? null;
-    },
-};
 
 const isDirectRun = !!process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
 if (isDirectRun) {

@@ -49,14 +49,14 @@ function parseBooleanEnv(varName, defaultValue) {
 function parseSyncDbEnv() {
     const normalized = process.env.KC_HYPR_DB?.trim().toLowerCase();
     if (!normalized) {
-        throw new Error('Missing KC_HYPR_DB; expected memory, sqlite, or postgres');
+        throw new Error('Missing KC_HYPR_DB; expected sqlite or postgres');
     }
 
-    if (normalized === 'memory' || normalized === 'sqlite' || normalized === 'postgres') {
+    if (normalized === 'sqlite' || normalized === 'postgres') {
         return normalized;
     }
 
-    throw new Error('Invalid KC_HYPR_DB; expected memory, sqlite, or postgres');
+    throw new Error('Invalid KC_HYPR_DB; expected sqlite or postgres');
 }
 
 const config = {
