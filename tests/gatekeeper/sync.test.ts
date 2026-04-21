@@ -796,6 +796,38 @@ describe('processEvents', () => {
         expect(doc2.didDocumentMetadata!.timestamp).toStrictEqual(expectedTimestamp);
     });
 
+    it('should reuse persisted event opids when resolving a did', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await helper.createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        const updateOp = await helper.createUpdateOp(keypair, did, doc);
+        await gatekeeper.updateDID(updateOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        ops[0].opid = await gatekeeper.generateCID(ops[0].operation);
+        ops[1].opid = await gatekeeper.generateCID(ops[1].operation);
+
+        await gatekeeper.resetDb();
+        await gatekeeper.importBatch(ops);
+        await gatekeeper.processEvents();
+
+        const originalGenerateCid = gatekeeper.generateCID.bind(gatekeeper);
+        // @ts-expect-error test shim
+        gatekeeper.generateCID = async () => {
+            throw new Error('unexpected generateCID');
+        };
+
+        try {
+            const resolved = await gatekeeper.resolveDID(did);
+
+            expect(resolved.didDocumentMetadata!.versionId).toBe(ops[1].opid);
+            expect(resolved.didDocumentMetadata!.version).toBe('2');
+        } finally {
+            gatekeeper.generateCID = originalGenerateCid;
+        }
+    });
+
     it('should not overwrite events when verified DID is later synced from another registry', async () => {
         const keypair = cipher.generateRandomJwk();
         const agentOp = await helper.createAgentOp(keypair, { version: 1, registry: 'TFTC' });
@@ -949,6 +981,113 @@ describe('processEvents', () => {
         const response = await gatekeeper.processEvents();
         expect(response.added).toBe(2);
         expect(response.pending).toBe(2);
+    });
+
+    it('should import agent updates without resolving the did again', async () => {
+        const gk = new Gatekeeper({ db, ipfs, console: mockConsole, registries: ['local', 'hyperswarm', 'TFTC'] });
+        const localHelper = new TestHelper(gk, cipher);
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await localHelper.createAgentOp(keypair);
+        const agentDID = await gk.createDID(agentOp);
+        const agentDoc = await gk.resolveDID(agentDID);
+        const updateOp = await localHelper.createUpdateOp(keypair, agentDID, agentDoc);
+        const originalResolveDid = gk.resolveDID.bind(gk);
+        let resolveCalls = 0;
+        // @ts-expect-error test shim
+        gk.resolveDID = async (...args) => {
+            resolveCalls += 1;
+            return originalResolveDid(...args);
+        };
+
+        await gk.importBatch([{
+            registry: 'local',
+            time: new Date().toISOString(),
+            ordinal: [0],
+            operation: updateOp,
+        }]);
+
+        const response = await gk.processEvents();
+
+        expect(response.added).toBe(1);
+        expect(resolveCalls).toBe(0);
+    });
+
+    it('should import asset updates using the current confirmed controller doc when safe', async () => {
+        const gk = new Gatekeeper({ db, ipfs, console: mockConsole, registries: ['local', 'hyperswarm', 'TFTC'] });
+        const localHelper = new TestHelper(gk, cipher);
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await localHelper.createAgentOp(keypair);
+        const agentDID = await gk.createDID(agentOp);
+        const assetOp = await localHelper.createAssetOp(agentDID, keypair);
+        const assetDID = await gk.createDID(assetOp);
+        const assetDoc = await gk.resolveDID(assetDID);
+        const updateOp = await localHelper.createUpdateOp(keypair, assetDID, assetDoc);
+        await gk.updateDID(updateOp);
+
+        const events = (await gk.exportDIDs([agentDID, assetDID])).flat();
+        await gk.resetDb();
+
+        const originalResolveDid = gk.resolveDID.bind(gk);
+        let controllerResolves = 0;
+        let controllerVersionTimeResolves = 0;
+        // @ts-expect-error test shim
+        gk.resolveDID = async (did, options) => {
+            if (did === agentDID && options?.confirm) {
+                controllerResolves += 1;
+                if (options.versionTime) {
+                    controllerVersionTimeResolves += 1;
+                }
+            }
+            return originalResolveDid(did, options);
+        };
+
+        await gk.importBatch(events);
+        const response = await gk.processEvents();
+
+        expect(response.added).toBe(events.length);
+        expect(controllerResolves).toBeGreaterThan(0);
+        expect(controllerVersionTimeResolves).toBe(0);
+    });
+
+    it('should fall back to historical controller resolution when the controller changed after an asset update was signed', async () => {
+        const gk = new Gatekeeper({ db, ipfs, console: mockConsole, registries: ['local', 'hyperswarm', 'TFTC'] });
+        const localHelper = new TestHelper(gk, cipher);
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await localHelper.createAgentOp(keypair);
+        const agentDID = await gk.createDID(agentOp);
+        const assetOp = await localHelper.createAssetOp(agentDID, keypair);
+        const assetDID = await gk.createDID(assetOp);
+        const assetDoc = await gk.resolveDID(assetDID);
+        const assetUpdateOp = await localHelper.createUpdateOp(keypair, assetDID, assetDoc);
+        await gk.updateDID(assetUpdateOp);
+
+        const agentDoc = await gk.resolveDID(agentDID);
+        const updatedAgentDoc = copyJSON(agentDoc);
+        updatedAgentDoc.didDocumentData = { controllerUpdate: true };
+        const controllerUpdateOp = await localHelper.createUpdateOp(keypair, agentDID, updatedAgentDoc);
+        controllerUpdateOp.signature!.signed = new Date(
+            Date.parse(assetUpdateOp.signature!.signed) + 1000
+        ).toISOString();
+        await gk.updateDID(controllerUpdateOp);
+
+        const events = (await gk.exportDIDs([agentDID, assetDID])).flat();
+        await gk.resetDb();
+
+        const originalResolveDid = gk.resolveDID.bind(gk);
+        let controllerVersionTimeResolves = 0;
+        // @ts-expect-error test shim
+        gk.resolveDID = async (did, options) => {
+            if (did === agentDID && options?.confirm && options.versionTime) {
+                controllerVersionTimeResolves += 1;
+            }
+            return originalResolveDid(did, options);
+        };
+
+        await gk.importBatch(events);
+        const response = await gk.processEvents();
+
+        expect(response.added).toBe(events.length);
+        expect(controllerVersionTimeResolves).toBeGreaterThan(0);
     });
 
     it('should reject events with duplicate previd property', async () => {
