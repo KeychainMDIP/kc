@@ -62,6 +62,7 @@ import {
 } from './negentropy/windows.js';
 import { bootstrapSyncStoreFromGatekeeper } from './bootstrap.js';
 import {
+    filterKnownOperations,
     filterOperationsByAcceptedHashes,
     filterIndexRejectedOperations,
     mapAcceptedOperationsToSyncRecords,
@@ -1820,9 +1821,31 @@ let importQueue = asyncLib.queue<ImportQueueTask, asyncLib.ErrorCallback>(
                     }
                 }
 
+                const filtered = await filterKnownOperations(batch, syncStore, BATCH_SIZE);
+                if (filtered.known > 0) {
+                    log.debug(
+                        {
+                            peer: shortName(name),
+                            node: msg.node || 'anon',
+                            received: batch.length,
+                            forwarded: filtered.operations.length,
+                            knownDropped: filtered.known,
+                            mapped: filtered.mapped,
+                            invalid: filtered.invalid,
+                        },
+                        'filtered inbound operations against sync-store'
+                    );
+                }
+
+                if (filtered.operations.length === 0) {
+                    return;
+                }
+
                 const nodeName = msg.node || 'anon';
-                log.debug(`* merging batch (${batch.length} events) from: ${shortName(name)} (${nodeName}) *`);
-                await mergeBatch(batch);
+                log.debug(
+                    `* merging batch (${filtered.operations.length}/${batch.length} events) from: ${shortName(name)} (${nodeName}) *`
+                );
+                await mergeBatch(filtered.operations);
             }
         }
         catch (error) {

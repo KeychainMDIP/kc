@@ -1,6 +1,8 @@
 import { Operation } from '@mdip/gatekeeper/types';
 import { jest } from '@jest/globals';
+import InMemoryOperationSyncStore from '../../services/mediators/hyperswarm/src/db/memory.ts';
 import {
+    filterKnownOperations,
     filterOperationsByAcceptedHashes,
     filterIndexRejectedOperations,
     mapAcceptedOperationsToSyncRecords,
@@ -251,5 +253,52 @@ describe('sync-persistence helpers', () => {
     it('returns empty when operations input is empty or not an array', () => {
         expect(filterOperationsByAcceptedHashes([], [h('a')])).toStrictEqual([]);
         expect(filterOperationsByAcceptedHashes('not-an-array' as unknown as Operation[], [h('a')])).toStrictEqual([]);
+    });
+
+    it('filters operations already present in the local sync-store', async () => {
+        const store = new InMemoryOperationSyncStore();
+        await store.start();
+        await store.reset();
+
+        const known = makeCreateOp('a', '2026-02-10T10:00:00.000Z');
+        const unknown = makeCreateOp('b', '2026-02-10T11:00:00.000Z');
+        const invalid = makeCreateOp('c', 'not-a-date');
+
+        const persisted = mapAcceptedOperationsToSyncRecords([known]);
+        await store.upsertMany(persisted.records);
+
+        const filtered = await filterKnownOperations([known, unknown, invalid], store, 1);
+
+        expect(filtered.operations).toStrictEqual([unknown, invalid]);
+        expect(filtered.mapped).toBe(2);
+        expect(filtered.known).toBe(1);
+        expect(filtered.invalid).toBe(1);
+    });
+
+    it('drops repeated known operations while only looking up each id once', async () => {
+        const known = makeCreateOp('a', '2026-02-10T10:00:00.000Z');
+        const unknown = makeCreateOp('b', '2026-02-10T11:00:00.000Z');
+
+        const getByIds = jest.fn(async (ids: string[]) => ids.includes(h('a'))
+            ? [{
+                id: h('a'),
+                ts: Math.floor(Date.parse(known.signature!.signed) / 1000),
+                operation: known,
+                insertedAt: 1,
+            }]
+            : []);
+
+        const filtered = await filterKnownOperations(
+            [known, unknown, known],
+            { getByIds },
+            10,
+        );
+
+        expect(filtered.operations).toStrictEqual([unknown]);
+        expect(filtered.mapped).toBe(3);
+        expect(filtered.known).toBe(2);
+        expect(filtered.invalid).toBe(0);
+        expect(getByIds).toHaveBeenCalledTimes(1);
+        expect(getByIds).toHaveBeenCalledWith([h('a'), h('b')]);
     });
 });
