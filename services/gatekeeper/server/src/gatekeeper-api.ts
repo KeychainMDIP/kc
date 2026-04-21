@@ -6,7 +6,10 @@ import { fileURLToPath } from 'url';
 import { EventEmitter } from 'events';
 import rateLimit from 'express-rate-limit';
 
-import Gatekeeper from '@mdip/gatekeeper';
+import Gatekeeper, {
+    createProfiledGatekeeperDb,
+    GatekeeperProfiler,
+} from '@mdip/gatekeeper';
 import DbJsonCache from '@mdip/gatekeeper/db/json-cache';
 import DbRedis from '@mdip/gatekeeper/db/redis';
 import DbSqlite from '@mdip/gatekeeper/db/sqlite';
@@ -53,7 +56,7 @@ function logRequest(req: express.Request, res: express.Response, next: express.N
 }
 
 const dbName = 'mdip';
-const db = (() => {
+const rawDb = (() => {
     switch (config.db) {
     case 'sqlite': return new DbSqlite(dbName);
     case 'mongodb': return new DbMongo(dbName);
@@ -65,9 +68,18 @@ const db = (() => {
     }
 })();
 
-if (!db) {
+if (!rawDb) {
     throw new Error(`Unsupported DB type: ${config.db}`);
 }
+
+const profiler = new GatekeeperProfiler({
+    enabled: config.profileEnabled,
+    topN: config.profileTopN,
+    meta: {
+        service: 'gatekeeper-server',
+    },
+});
+const db = createProfiledGatekeeperDb(rawDb, profiler);
 
 await db.start();
 
@@ -96,6 +108,7 @@ const gatekeeper = new Gatekeeper({
     registries: config.registries,
     maxOpBytes: config.maxOpBytes,
     ipfsEnabled: config.ipfsEnabled,
+    profile: config.profileEnabled ? profiler : undefined,
 });
 const startTime = new Date();
 const app = express();
@@ -389,6 +402,33 @@ v1router.get('/status', async (req, res) => {
         const status = await getStatus();
         res.json(status);
     } catch (error: any) {
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.get('/debug/profile/summary', async (_req, res) => {
+    try {
+        res.json(profiler.snapshot({
+            db: config.db,
+            ipfsEnabled: config.ipfsEnabled,
+            profileEnabled: config.profileEnabled,
+        }));
+    } catch (error: any) {
+        log.error({ error }, 'Profile summary error');
+        res.status(500).send(error.toString());
+    }
+});
+
+v1router.post('/debug/profile/reset', async (_req, res) => {
+    try {
+        profiler.reset();
+        res.json(profiler.snapshot({
+            db: config.db,
+            ipfsEnabled: config.ipfsEnabled,
+            profileEnabled: config.profileEnabled,
+        }));
+    } catch (error: any) {
+        log.error({ error }, 'Profile reset error');
         res.status(500).send(error.toString());
     }
 });
@@ -1452,13 +1492,20 @@ v1router.post('/batch/export', async (req, res) => {
  *               type: string
  */
 v1router.post('/batch/import', async (req, res) => {
+    const batch = req.body;
+    const span = profiler.startSpan('api.batchImport.request', {
+        batchSize: Array.isArray(batch) ? batch.length : -1,
+    });
     try {
-        const batch = req.body;
         const response = await gatekeeper.importBatch(batch);
         res.json(response);
     } catch (error: any) {
         log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
+    } finally {
+        span.end({
+            batchSize: Array.isArray(batch) ? batch.length : -1,
+        });
     }
 });
 
@@ -1771,11 +1818,14 @@ v1router.get('/db/verify', async (req, res) => {
  *               type: string
  */
 v1router.post('/events/process', async (req, res) => {
+    const span = profiler.startSpan('api.eventsProcess.request');
     try {
         const response = await gatekeeper.processEvents();
         res.json(response);
     } catch (error: any) {
         res.status(500).send(error.toString());
+    } finally {
+        span.end();
     }
 });
 

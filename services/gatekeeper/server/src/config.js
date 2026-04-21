@@ -79,6 +79,8 @@ const config = {
     rateLimitMaxRequests: parsePositiveInteger(process.env.KC_GATEKEEPER_RATE_LIMIT_MAX_REQUESTS, 600),
     rateLimitWhitelist: parseCsv(process.env.KC_GATEKEEPER_RATE_LIMIT_WHITELIST),
     rateLimitSkipPaths: configuredSkipPaths.length > 0 ? configuredSkipPaths : DEFAULT_RATE_LIMIT_SKIP_PATHS,
+    profileEnabled: parseBoolean(process.env.KC_GATEKEEPER_PROFILE, false),
+    profileTopN: parsePositiveInteger(process.env.KC_GATEKEEPER_PROFILE_TOPN, 20),
 };
 
 export default config;

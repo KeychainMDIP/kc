@@ -536,6 +536,40 @@ describe('importBatch', () => {
         expect(response.rejectedIndices).toStrictEqual([0, 2]);
     });
 
+    it('should log the DID for early importBatch rejections', async () => {
+        const debugLogs: unknown[][] = [];
+        const logConsole = {
+            debug: (...args: unknown[]) => {
+                debugLogs.push(args);
+            },
+            log: (): void => { },
+            error: (): void => { },
+            info: (): void => { },
+            warn: (): void => { },
+            time: (): void => { },
+            timeEnd: (): void => { },
+        } as unknown as typeof console;
+        const gk = new Gatekeeper({ db, ipfs, console: logConsole, registries: ['local', 'hyperswarm', 'TFTC'] });
+        const localHelper = new TestHelper(gk, cipher);
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await localHelper.createAgentOp(keypair, { registry: 'hyperswarm' });
+        const did = await gk.generateDID(agentOp);
+        const event = {
+            registry: 'hyperswarm',
+            time: 'invalid',
+            operation: agentOp,
+        } as any;
+
+        const response = await gk.importBatch([event]);
+
+        expect(response.rejected).toBe(1);
+        expect(
+            debugLogs.some(args => args.some(
+                arg => typeof arg === 'string' && arg.includes(`importBatch: rejected event for ${did}`)
+            ))
+        ).toBe(true);
+    });
+
     it('should report an error on invalid update operation missing did', async () => {
         const keypair = cipher.generateRandomJwk();
         const agentOp = await helper.createAgentOp(keypair);
