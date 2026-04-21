@@ -51,6 +51,7 @@ import {
     type AggregateMetric,
 } from './negentropy/observability.js';
 import {
+    collectNewIds,
     chunkIds,
     chunkOperationsForPush,
 } from './negentropy/transfer.js';
@@ -1493,22 +1494,14 @@ async function handleNegentropyRoundAsInitiator(
         return;
     }
 
-    for (const id of outcome.haveIds) {
-        session.pendingHaveIds.add(id);
-    }
-    const newNeedIds: string[] = [];
-    for (const id of outcome.needIds) {
-        if (!session.pendingNeedIds.has(id)) {
-            session.pendingNeedIds.add(id);
-            newNeedIds.push(id);
-        }
-    }
+    const newHaveIds = collectNewIds(outcome.haveIds, session.pendingHaveIds);
+    const newNeedIds = collectNewIds(outcome.needIds, session.pendingNeedIds);
     syncStats.negentropyRounds += 1;
     syncStats.negentropyHaveIds += outcome.haveIds.length;
     syncStats.negentropyNeedIds += outcome.needIds.length;
 
-    if (outcome.haveIds.length > 0) {
-        await sendOpsPushForIds(peerKey, session, outcome.haveIds);
+    if (newHaveIds.length > 0) {
+        await sendOpsPushForIds(peerKey, session, newHaveIds);
     }
 
     if (newNeedIds.length > 0) {

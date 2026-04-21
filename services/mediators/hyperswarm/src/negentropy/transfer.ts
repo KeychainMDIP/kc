@@ -22,6 +22,24 @@ export function chunkIds(ids: string[], maxPerChunk: number): string[][] {
     return chunks;
 }
 
+export function collectNewIds(ids: string[], seen: Set<string>): string[] {
+    if (!Array.isArray(ids) || ids.length === 0) {
+        return [];
+    }
+
+    const fresh: string[] = [];
+    for (const id of ids) {
+        if (seen.has(id)) {
+            continue;
+        }
+
+        seen.add(id);
+        fresh.push(id);
+    }
+
+    return fresh;
+}
+
 export function chunkOperationsForPush(
     operations: Operation[],
     options: OpsPushBatchingOptions,
