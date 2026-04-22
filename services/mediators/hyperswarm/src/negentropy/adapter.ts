@@ -365,13 +365,13 @@ export default class NegentropyAdapter {
                     break;
                 }
 
-                processed += 1;
-                lastCursor = cloneCursor({ ts: row.ts, id: row.id });
                 if (!isValidSyncId(row.id) || !Number.isFinite(row.ts)) {
                     skipped += 1;
                     continue;
                 }
 
+                processed += 1;
+                lastCursor = cloneCursor({ ts: row.ts, id: row.id });
                 storage.insert(row.ts, row.id);
                 loaded += 1;
             }

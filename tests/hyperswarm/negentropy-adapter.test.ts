@@ -346,6 +346,51 @@ describe('NegentropyAdapter', () => {
         expect(stats.windowName).toBe('history_paged');
     });
 
+    it('does not let skipped rows consume capped window capacity', async () => {
+        const rows = [
+            { id: 'not-a-sync-id', ts: 1000, operation: makeOp('a', '2026-02-09T10:00:00.000Z'), insertedAt: 0 },
+            { id: h('b'), ts: 2000, operation: makeOp('b', '2026-02-09T11:00:00.000Z'), insertedAt: 0 },
+            { id: h('c'), ts: Number.NaN, operation: makeOp('c', '2026-02-09T12:00:00.000Z'), insertedAt: 0 },
+            { id: h('d'), ts: 4000, operation: makeOp('d', '2026-02-09T13:00:00.000Z'), insertedAt: 0 },
+            { id: h('e'), ts: 5000, operation: makeOp('e', '2026-02-09T14:00:00.000Z'), insertedAt: 0 },
+        ];
+
+        const stubStore: OperationSyncStore = {
+            async start() {},
+            async stop() {},
+            async reset() {},
+            async upsertMany() { return 0; },
+            async getByIds() { return []; },
+            async has() { return false; },
+            async count() { return rows.length; },
+            async iterateSorted(options: SyncStoreListOptions = {}) {
+                if (options.after) {
+                    return [];
+                }
+                return rows;
+            },
+        };
+
+        const adapter = await NegentropyAdapter.create({
+            syncStore: stubStore,
+            frameSizeLimit: 0,
+            deferInitialBuild: true,
+        });
+
+        const stats = await adapter.rebuildForWindow({
+            name: 'history_paged',
+            fromTs: 0,
+            toTs: 6000,
+            maxRecords: 2,
+            order: 0,
+        });
+
+        expect(stats.loaded).toBe(2);
+        expect(stats.skipped).toBe(2);
+        expect(stats.cappedByRecords).toBe(true);
+        expect(stats.lastCursor).toStrictEqual({ ts: 4000, id: h('d') });
+    });
+
     it('supports cursor-based pagination for capped windows', async () => {
         const store = new InMemoryOperationSyncStore();
         const baseTs = toEpochSeconds('2026-02-09T00:00:00.000Z');
