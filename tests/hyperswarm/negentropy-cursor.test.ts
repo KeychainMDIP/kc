@@ -1,4 +1,7 @@
-import { compareSyncCursor } from '../../services/mediators/hyperswarm/src/negentropy/cursor.ts';
+import {
+    compareSyncCursor,
+    getContinuationCursorDecision,
+} from '../../services/mediators/hyperswarm/src/negentropy/cursor.ts';
 
 describe('compareSyncCursor', () => {
     it('orders by timestamp before id', () => {
@@ -23,5 +26,59 @@ describe('compareSyncCursor', () => {
     it('treats identical cursors as equal', () => {
         const cursor = { ts: 10, id: 'a'.repeat(64) };
         expect(compareSyncCursor(cursor, cursor)).toBe(0);
+    });
+
+    it('advances to the remote cursor when a capped overlap was already known locally', () => {
+        const decision = getContinuationCursorDecision({
+            windowName: 'history_paged',
+            windowAfter: null,
+            windowMaxRecords: 25000,
+            localCappedByRecords: true,
+            localLastCursor: { ts: 10, id: 'a'.repeat(64) },
+            remoteCappedByRecords: true,
+            remoteLastCursor: { ts: 11, id: '0'.repeat(64) },
+            receivedPushCount: 2,
+            receivedKnownPushCount: 2,
+            receivedPushMaxCursor: { ts: 11, id: '0'.repeat(64) },
+        });
+
+        expect(decision.blockedByAfter).toBe(false);
+        expect(decision.chosenCursor).toStrictEqual({ ts: 11, id: '0'.repeat(64) });
+    });
+
+    it('keeps the conservative earlier cursor when received pushes were not already known', () => {
+        const decision = getContinuationCursorDecision({
+            windowName: 'history_paged',
+            windowAfter: null,
+            windowMaxRecords: 25000,
+            localCappedByRecords: true,
+            localLastCursor: { ts: 10, id: 'a'.repeat(64) },
+            remoteCappedByRecords: true,
+            remoteLastCursor: { ts: 11, id: '0'.repeat(64) },
+            receivedPushCount: 2,
+            receivedKnownPushCount: 0,
+            receivedPushMaxCursor: { ts: 11, id: '0'.repeat(64) },
+        });
+
+        expect(decision.blockedByAfter).toBe(false);
+        expect(decision.chosenCursor).toStrictEqual({ ts: 10, id: 'a'.repeat(64) });
+    });
+
+    it('blocks a cursor that does not advance beyond the prior window boundary', () => {
+        const decision = getContinuationCursorDecision({
+            windowName: 'history_paged',
+            windowAfter: { ts: 10, id: 'a'.repeat(64) },
+            windowMaxRecords: 25000,
+            localCappedByRecords: true,
+            localLastCursor: { ts: 10, id: 'a'.repeat(64) },
+            remoteCappedByRecords: false,
+            remoteLastCursor: null,
+            receivedPushCount: 0,
+            receivedKnownPushCount: 0,
+            receivedPushMaxCursor: null,
+        });
+
+        expect(decision.blockedByAfter).toBe(true);
+        expect(decision.chosenCursor).toBeNull();
     });
 });

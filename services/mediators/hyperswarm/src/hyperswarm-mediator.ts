@@ -55,7 +55,10 @@ import {
     chunkIds,
     chunkOperationsForPush,
 } from './negentropy/transfer.js';
-import { compareSyncCursor } from './negentropy/cursor.js';
+import {
+    compareSyncCursor,
+    getContinuationCursorDecision,
+} from './negentropy/cursor.js';
 import {
     buildInitialHistoryWindow,
     buildNextHistoryPage,
@@ -224,6 +227,7 @@ interface PeerSyncSession {
     reconciliationComplete: boolean;
     localClosed: boolean;
     receivedPushIds: Set<string>;
+    receivedKnownPushIds: Set<string>;
     receivedPushMaxCursor: SyncStoreCursor | null;
     remoteWindowCappedByRecords: boolean;
     remoteWindowLastCursor: SyncStoreCursor | null;
@@ -298,7 +302,6 @@ const NEG_MAX_OPS_PER_PUSH = 256;
 const NEG_MAX_BYTES_PER_PUSH = 512 * 1024;
 const NEG_REPAIR_INTERVAL_MS = config.negentropyIntervalSeconds * 1000;
 const NEG_ADAPTER_MAX_AGE_MS = 60 * 1000;
-
 const connectionInfo: Record<string, ConnectionInfo> = {};
 const knownNodes: Record<string, NodeInfo> = {};
 const knownPeers: Record<string, string> = {};
@@ -517,6 +520,7 @@ function createPeerSession(peerKey: string, mode: SyncMode, initiator: boolean, 
         reconciliationComplete: false,
         localClosed: false,
         receivedPushIds: new Set<string>(),
+        receivedKnownPushIds: new Set<string>(),
         receivedPushMaxCursor: null,
         remoteWindowCappedByRecords: false,
         remoteWindowLastCursor: null,
@@ -892,6 +896,7 @@ function initializeSessionWindowState(
     session.pendingNeedIds = new Set<string>();
     session.reconciliationComplete = false;
     session.receivedPushIds = new Set<string>();
+    session.receivedKnownPushIds = new Set<string>();
     session.receivedPushMaxCursor = null;
     session.remoteWindowCappedByRecords = false;
     session.remoteWindowLastCursor = null;
@@ -1158,20 +1163,6 @@ function trackRemoteWindowProgress(
     session.remoteWindowLastCursor = cloneCursor(progress.lastCursor);
 }
 
-function minCursor(a: SyncStoreCursor | null, b: SyncStoreCursor | null): SyncStoreCursor | null {
-    if (!a) {
-        return cloneCursor(b);
-    }
-
-    if (!b) {
-        return cloneCursor(a);
-    }
-
-    return compareSyncCursor(a, b) <= 0
-        ? cloneCursor(a)
-        : cloneCursor(b);
-}
-
 function getNextWindowOrder(session: PeerSyncSession): number {
     let maxOrder = -1;
     for (const window of session.windows) {
@@ -1183,36 +1174,67 @@ function getNextWindowOrder(session: PeerSyncSession): number {
     return maxOrder + 1;
 }
 
-function getContinuationCursor(session: PeerSyncSession): SyncStoreCursor | null {
+function getSessionContinuationDecision(session: PeerSyncSession): {
+    windowAfter: SyncStoreCursor | null;
+    localCappedByRecords: boolean;
+    localLastCursor: SyncStoreCursor | null;
+    remoteCappedByRecords: boolean;
+    remoteLastCursor: SyncStoreCursor | null;
+    receivedPushCount: number;
+    receivedKnownPushCount: number;
+    receivedPushMaxCursor: SyncStoreCursor | null;
+    chosenCursor: SyncStoreCursor | null;
+    blockedByAfter: boolean;
+} {
     const window = getSessionWindow(session);
     if (!window) {
-        return null;
+        return {
+            windowAfter: null,
+            localCappedByRecords: false,
+            localLastCursor: null,
+            remoteCappedByRecords: false,
+            remoteLastCursor: null,
+            receivedPushCount: 0,
+            receivedKnownPushCount: 0,
+            receivedPushMaxCursor: null,
+            chosenCursor: null,
+            blockedByAfter: false,
+        };
     }
 
-    let cursor: SyncStoreCursor | null = null;
     const localStats = session.currentWindowStats;
+    const localCappedByRecords = localStats?.cappedByRecords === true;
+    const localLastCursor = cloneCursor(localStats?.lastCursor);
+    const remoteCappedByRecords = session.remoteWindowCappedByRecords;
+    const remoteLastCursor = cloneCursor(session.remoteWindowLastCursor);
+    const receivedPushCount = session.receivedPushIds.size;
+    const receivedKnownPushCount = session.receivedKnownPushIds.size;
+    const receivedPushMaxCursor = cloneCursor(session.receivedPushMaxCursor);
+    const decision = getContinuationCursorDecision({
+        windowName: window.name,
+        windowAfter: cloneCursor(window.after),
+        windowMaxRecords: window.maxRecords,
+        localCappedByRecords,
+        localLastCursor,
+        remoteCappedByRecords,
+        remoteLastCursor,
+        receivedPushCount,
+        receivedKnownPushCount,
+        receivedPushMaxCursor,
+    });
 
-    if (localStats?.cappedByRecords && localStats.lastCursor) {
-        cursor = cloneCursor(localStats.lastCursor);
-    }
-
-    if (session.remoteWindowCappedByRecords && session.remoteWindowLastCursor) {
-        cursor = minCursor(cursor, session.remoteWindowLastCursor);
-    }
-
-    if (!cursor && window.name === 'history_paged' && session.receivedPushIds.size >= window.maxRecords) {
-        cursor = cloneCursor(session.receivedPushMaxCursor);
-    }
-
-    if (!cursor) {
-        return null;
-    }
-
-    if (window.after && compareSyncCursor(cursor, window.after) <= 0) {
-        return null;
-    }
-
-    return cursor;
+    return {
+        windowAfter: cloneCursor(window.after),
+        localCappedByRecords,
+        localLastCursor,
+        remoteCappedByRecords,
+        remoteLastCursor,
+        receivedPushCount,
+        receivedKnownPushCount,
+        receivedPushMaxCursor,
+        chosenCursor: decision.chosenCursor,
+        blockedByAfter: decision.blockedByAfter,
+    };
 }
 
 async function maybeContinueCappedWindowPaging(peerKey: string, session: PeerSyncSession): Promise<boolean> {
@@ -1221,7 +1243,9 @@ async function maybeContinueCappedWindowPaging(peerKey: string, session: PeerSyn
         return false;
     }
 
-    const cursor = getContinuationCursor(session);
+    const decision = getSessionContinuationDecision(session);
+    const cursor = decision.chosenCursor;
+
     if (!cursor) {
         return false;
     }
@@ -1448,6 +1472,40 @@ function trackReceivedWindowOperations(session: PeerSyncSession, operations: Ope
         if (!session.receivedPushMaxCursor || compareSyncCursor(cursor, session.receivedPushMaxCursor) > 0) {
             session.receivedPushMaxCursor = cursor;
         }
+    }
+}
+
+async function trackRequestedKnownOpsPush(session: PeerSyncSession, operations: Operation[]): Promise<void> {
+    if (!session.initiator || session.pendingNeedIds.size === 0 || operations.length === 0) {
+        return;
+    }
+
+    const candidateIds: string[] = [];
+
+    for (const operation of operations) {
+        const mapped = mapOperationToSyncKey(operation);
+        if (!mapped.ok || !session.pendingNeedIds.has(mapped.value.idHex)) {
+            continue;
+        }
+
+        if (session.receivedKnownPushIds.has(mapped.value.idHex)) {
+            continue;
+        }
+
+        candidateIds.push(mapped.value.idHex);
+    }
+
+    if (candidateIds.length === 0) {
+        return;
+    }
+
+    const rows = await syncStore.getByIds(candidateIds);
+    if (rows.length === 0) {
+        return;
+    }
+
+    for (const row of rows) {
+        session.receivedKnownPushIds.add(row.id);
     }
 }
 
@@ -2108,6 +2166,7 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
         if (batch.length > 0) {
             syncStats.negentropyOpsPushReceived += batch.length;
             trackReceivedWindowOperations(session, batch);
+            await trackRequestedKnownOpsPush(session, batch);
             const pushedIds = new Set(extractOperationHashes(batch));
             for (const id of pushedIds) {
                 session.pendingNeedIds.delete(id);
