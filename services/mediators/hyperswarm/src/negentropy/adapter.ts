@@ -242,11 +242,6 @@ export default class NegentropyAdapter {
                 continue;
             }
 
-            if (!roundsResult.completed) {
-                window = null;
-                continue;
-            }
-
             const continuationCursor = getHistoryContinuationCursor(localWindowStats, peerWindowStats);
             if (!continuationCursor) {
                 window = null;
@@ -461,22 +456,18 @@ function currentEpochSeconds(): number {
     return Math.floor(Date.now() / 1000);
 }
 
-function minCursor(a: SyncStoreCursor | null, b: SyncStoreCursor | null): SyncStoreCursor | null {
+function minCursor(a: SyncStoreCursor | null, b: SyncStoreCursor): SyncStoreCursor {
     if (!a) {
-        return cloneCursor(b);
-    }
-
-    if (!b) {
-        return cloneCursor(a);
+        return cloneCursor(b)!;
     }
 
     if (a.ts !== b.ts) {
-        return a.ts < b.ts ? cloneCursor(a) : cloneCursor(b);
+        return a.ts < b.ts ? cloneCursor(a)! : cloneCursor(b)!;
     }
 
     return a.id.localeCompare(b.id) <= 0
-        ? cloneCursor(a)
-        : cloneCursor(b);
+        ? cloneCursor(a)!
+        : cloneCursor(b)!;
 }
 
 function getHistoryContinuationCursor(

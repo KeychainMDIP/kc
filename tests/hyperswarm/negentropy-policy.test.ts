@@ -67,6 +67,26 @@ describe('negentropy sync policy', () => {
         })).toBe(false);
     });
 
+    it('defers legacy while an active negentropy session is still within fallback timeout', () => {
+        const base = {
+            syncMode: 'legacy' as const,
+            legacySyncEnabled: true,
+            hasActiveNegentropySession: true,
+            pendingNegentropyPeers: 0,
+            pendingCapabilityPeers: 0,
+            peerConnectedAtMs: 1_000,
+            nowMs: 10_000,
+            capabilityGraceMs: 5_000,
+            fallbackTimeoutMs: 60_000,
+        };
+
+        expect(shouldDeferLegacySync(base)).toBe(true);
+        expect(shouldDeferLegacySync({
+            ...base,
+            nowMs: base.peerConnectedAtMs + base.fallbackTimeoutMs + 1,
+        })).toBe(false);
+    });
+
     it('defers legacy briefly while peer capabilities are still unknown', () => {
         const base = {
             syncMode: 'legacy' as const,
@@ -88,6 +108,17 @@ describe('negentropy sync policy', () => {
     });
 
     it('does not defer legacy when there is no negentropy pressure', () => {
+        expect(shouldDeferLegacySync({
+            syncMode: 'legacy',
+            legacySyncEnabled: false,
+            hasActiveNegentropySession: true,
+            pendingNegentropyPeers: 1,
+            pendingCapabilityPeers: 1,
+            peerConnectedAtMs: 1_000,
+            nowMs: 2_000,
+            capabilityGraceMs: 5_000,
+            fallbackTimeoutMs: 60_000,
+        })).toBe(false);
         expect(shouldDeferLegacySync({
             syncMode: 'legacy',
             legacySyncEnabled: true,

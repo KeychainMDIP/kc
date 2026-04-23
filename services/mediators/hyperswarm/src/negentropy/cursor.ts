@@ -27,32 +27,24 @@ function cloneCursor(cursor?: SyncStoreCursor | null): SyncStoreCursor | null {
     };
 }
 
-function minCursor(a: SyncStoreCursor | null, b: SyncStoreCursor | null): SyncStoreCursor | null {
+function minCursor(a: SyncStoreCursor | null, b: SyncStoreCursor): SyncStoreCursor {
     if (!a) {
-        return cloneCursor(b);
-    }
-
-    if (!b) {
-        return cloneCursor(a);
+        return cloneCursor(b)!;
     }
 
     return compareSyncCursor(a, b) <= 0
-        ? cloneCursor(a)
-        : cloneCursor(b);
+        ? cloneCursor(a)!
+        : cloneCursor(b)!;
 }
 
-function maxCursor(a: SyncStoreCursor | null, b: SyncStoreCursor | null): SyncStoreCursor | null {
+function maxCursor(a: SyncStoreCursor | null, b: SyncStoreCursor): SyncStoreCursor {
     if (!a) {
-        return cloneCursor(b);
-    }
-
-    if (!b) {
-        return cloneCursor(a);
+        return cloneCursor(b)!;
     }
 
     return compareSyncCursor(a, b) >= 0
-        ? cloneCursor(a)
-        : cloneCursor(b);
+        ? cloneCursor(a)!
+        : cloneCursor(b)!;
 }
 
 export interface ContinuationCursorDecisionInput {

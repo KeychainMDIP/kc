@@ -64,6 +64,114 @@ describe('compareSyncCursor', () => {
         expect(decision.chosenCursor).toStrictEqual({ ts: 10, id: 'a'.repeat(64) });
     });
 
+    it('chooses the remote earlier cursor when it precedes the local cursor', () => {
+        const decision = getContinuationCursorDecision({
+            windowName: 'history_paged',
+            windowAfter: null,
+            windowMaxRecords: 25000,
+            localCappedByRecords: true,
+            localLastCursor: { ts: 11, id: 'b'.repeat(64) },
+            remoteCappedByRecords: true,
+            remoteLastCursor: { ts: 10, id: 'a'.repeat(64) },
+            receivedPushCount: 2,
+            receivedKnownPushCount: 0,
+            receivedPushMaxCursor: { ts: 11, id: 'b'.repeat(64) },
+        });
+
+        expect(decision.blockedByAfter).toBe(false);
+        expect(decision.chosenCursor).toStrictEqual({ ts: 10, id: 'a'.repeat(64) });
+    });
+
+    it('uses the remote cursor when only the remote side capped the page', () => {
+        const decision = getContinuationCursorDecision({
+            windowName: 'history_paged',
+            windowAfter: null,
+            windowMaxRecords: 25000,
+            localCappedByRecords: false,
+            localLastCursor: null,
+            remoteCappedByRecords: true,
+            remoteLastCursor: { ts: 11, id: '0'.repeat(64) },
+            receivedPushCount: 2,
+            receivedKnownPushCount: 0,
+            receivedPushMaxCursor: { ts: 11, id: '0'.repeat(64) },
+        });
+
+        expect(decision.blockedByAfter).toBe(false);
+        expect(decision.chosenCursor).toStrictEqual({ ts: 11, id: '0'.repeat(64) });
+    });
+
+    it('uses the remote cursor for known-overlap pages when only the remote side capped', () => {
+        const decision = getContinuationCursorDecision({
+            windowName: 'history_paged',
+            windowAfter: null,
+            windowMaxRecords: 25000,
+            localCappedByRecords: false,
+            localLastCursor: null,
+            remoteCappedByRecords: true,
+            remoteLastCursor: { ts: 12, id: 'f'.repeat(64) },
+            receivedPushCount: 2,
+            receivedKnownPushCount: 2,
+            receivedPushMaxCursor: { ts: 12, id: 'f'.repeat(64) },
+        });
+
+        expect(decision.blockedByAfter).toBe(false);
+        expect(decision.chosenCursor).toStrictEqual({ ts: 12, id: 'f'.repeat(64) });
+    });
+
+    it('keeps the local later cursor for known-overlap pages when it sorts after the remote cursor', () => {
+        const decision = getContinuationCursorDecision({
+            windowName: 'history_paged',
+            windowAfter: null,
+            windowMaxRecords: 25000,
+            localCappedByRecords: true,
+            localLastCursor: { ts: 12, id: 'f'.repeat(64) },
+            remoteCappedByRecords: true,
+            remoteLastCursor: { ts: 11, id: '0'.repeat(64) },
+            receivedPushCount: 2,
+            receivedKnownPushCount: 2,
+            receivedPushMaxCursor: { ts: 12, id: 'f'.repeat(64) },
+        });
+
+        expect(decision.blockedByAfter).toBe(false);
+        expect(decision.chosenCursor).toStrictEqual({ ts: 12, id: 'f'.repeat(64) });
+    });
+
+    it('falls back to the received push max cursor for full history pages', () => {
+        const decision = getContinuationCursorDecision({
+            windowName: 'history_paged',
+            windowAfter: null,
+            windowMaxRecords: 2,
+            localCappedByRecords: false,
+            localLastCursor: null,
+            remoteCappedByRecords: false,
+            remoteLastCursor: null,
+            receivedPushCount: 2,
+            receivedKnownPushCount: 0,
+            receivedPushMaxCursor: { ts: 12, id: 'f'.repeat(64) },
+        });
+
+        expect(decision.blockedByAfter).toBe(false);
+        expect(decision.chosenCursor).toStrictEqual({ ts: 12, id: 'f'.repeat(64) });
+    });
+
+    it('returns no continuation cursor when the fallback max cursor is missing', () => {
+        const decision = getContinuationCursorDecision({
+            windowName: 'history_paged',
+            windowAfter: null,
+            windowMaxRecords: 2,
+            localCappedByRecords: false,
+            localLastCursor: null,
+            remoteCappedByRecords: false,
+            remoteLastCursor: null,
+            receivedPushCount: 2,
+            receivedKnownPushCount: 0,
+            receivedPushMaxCursor: null,
+        });
+
+        expect(decision.blockedByAfter).toBe(false);
+        expect(decision.chosenCursor).toBeNull();
+    });
+
     it('blocks a cursor that does not advance beyond the prior window boundary', () => {
         const decision = getContinuationCursorDecision({
             windowName: 'history_paged',
