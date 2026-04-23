@@ -105,6 +105,15 @@ interface SyncMessage extends HyperMessageBase {
     type: 'sync';
 }
 
+type NegentropySessionRole = 'initiator' | 'responder';
+type NativeNegentropyFrame = string | Uint8Array;
+
+interface NegentropyRoundOutcome {
+    nextMsg: NativeNegentropyFrame | null;
+    haveIds: string[];
+    needIds: string[];
+}
+
 interface NegOpenMessage extends HyperMessageBase {
     type: 'neg_open';
     sessionId: string;
@@ -1639,18 +1648,34 @@ function sendNegClose(peerKey: string, session: PeerSyncSession, reason: string)
 async function reconcileNegentropyFrame(
     peerKey: string,
     session: PeerSyncSession,
-    frame: string | Uint8Array,
-): Promise<{
-    nextMsg: string | Uint8Array | null;
-    haveIds: string[];
-    needIds: string[];
-} | null> {
+    frame: NativeNegentropyFrame,
+): Promise<NegentropyRoundOutcome | null> {
     if (!negentropyAdapter) {
         throw new Error('negentropy adapter unavailable');
     }
 
     const windowRounds = session.currentWindowStats?.rounds ?? 0;
     if (windowRounds >= session.maxRounds) {
+        log.debug(
+            {
+                peer: shortName(peerKey),
+                sessionId: session.sessionId,
+                role: session.initiator ? 'initiator' : 'responder',
+                round: session.rounds,
+                maxRounds: session.maxRounds,
+                windowId: session.windowId,
+                localWindowCappedByRecords: session.currentWindowStats?.cappedByRecords ?? false,
+                localWindowLastCursor: session.currentWindowStats?.lastCursor ?? null,
+                remoteWindowCappedByRecords: session.remoteWindowCappedByRecords,
+                remoteWindowLastCursor: session.remoteWindowLastCursor,
+                pendingHave: session.pendingHaveIds.size,
+                pendingNeed: session.pendingNeedIds.size,
+                receivedPushCount: session.receivedPushIds.size,
+                receivedKnownPushCount: session.receivedKnownPushIds.size,
+                receivedPushMaxCursor: session.receivedPushMaxCursor,
+            },
+            'negentropy local round cap reached'
+        );
         finalizeCurrentWindowStats(session, { completed: false, cappedByRounds: true });
         if (session.initiator) {
             const split = await maybeSplitWindowOnRoundCap(peerKey, session, 'local_max_rounds_reached');
@@ -1698,6 +1723,61 @@ function trackReceivedWindowOperations(session: PeerSyncSession, operations: Ope
             session.receivedPushMaxCursor = cursor;
         }
     }
+}
+
+function getNegentropyFrameBytes(frame: NativeNegentropyFrame | null): number | null {
+    if (frame === null) {
+        return null;
+    }
+
+    return typeof frame === 'string'
+        ? Buffer.byteLength(frame)
+        : frame.byteLength;
+}
+
+function getNegentropyFrameHash(frame: NativeNegentropyFrame | null): string | null {
+    if (frame === null) {
+        return null;
+    }
+
+    const bytes = typeof frame === 'string'
+        ? utf8ToBytes(frame)
+        : frame;
+
+    return Buffer.from(sha256(bytes)).toString('hex').slice(0, 12);
+}
+
+function logZeroDiffNegentropyContinuation(
+    role: NegentropySessionRole,
+    peerKey: string,
+    session: PeerSyncSession,
+    incomingFrame: NativeNegentropyFrame,
+    outcome: NegentropyRoundOutcome,
+): void {
+    if (outcome.nextMsg === null || outcome.haveIds.length > 0 || outcome.needIds.length > 0) {
+        return;
+    }
+
+    log.debug(
+        {
+            peer: shortName(peerKey),
+            sessionId: session.sessionId,
+            role,
+            round: session.rounds,
+            windowId: session.windowId,
+            localWindowCappedByRecords: session.currentWindowStats?.cappedByRecords ?? false,
+            localWindowLastCursor: session.currentWindowStats?.lastCursor ?? null,
+            remoteWindowCappedByRecords: session.remoteWindowCappedByRecords,
+            remoteWindowLastCursor: session.remoteWindowLastCursor,
+            pendingHave: session.pendingHaveIds.size,
+            pendingNeed: session.pendingNeedIds.size,
+            incomingFrameBytes: getNegentropyFrameBytes(incomingFrame),
+            incomingFrameHash: getNegentropyFrameHash(incomingFrame),
+            outgoingFrameBytes: getNegentropyFrameBytes(outcome.nextMsg),
+            outgoingFrameHash: getNegentropyFrameHash(outcome.nextMsg),
+        },
+        'negentropy zero-diff continuation'
+    );
 }
 
 async function trackRequestedKnownOpsPush(session: PeerSyncSession, operations: Operation[]): Promise<void> {
@@ -1795,6 +1875,7 @@ async function handleNegentropyRoundAsInitiator(
         },
         'negentropy initiator round'
     );
+    logZeroDiffNegentropyContinuation('initiator', peerKey, session, frame, outcome);
 
     if (outcome.nextMsg !== null) {
         if (!sendNegMsg(peerKey, session, outcome.nextMsg)) {
@@ -1846,6 +1927,7 @@ async function handleNegentropyRoundAsResponder(
         },
         'negentropy responder round'
     );
+    logZeroDiffNegentropyContinuation('responder', peerKey, session, frame, outcome);
 
     if (outcome.nextMsg !== null) {
         if (!sendNegMsg(peerKey, session, outcome.nextMsg)) {
