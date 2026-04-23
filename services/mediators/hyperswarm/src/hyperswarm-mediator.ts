@@ -133,6 +133,7 @@ interface NegOpenMessage extends HyperMessageBase {
     };
     round: number;
     frame: NegentropyFrame;
+    windowDebug?: NegentropyWindowDebugMessage;
 }
 
 interface NegMsgMessage extends HyperMessageBase {
@@ -148,6 +149,7 @@ interface NegMsgMessage extends HyperMessageBase {
             id: string;
         };
     };
+    windowDebug?: NegentropyWindowDebugMessage;
 }
 
 interface NegCloseMessage extends HyperMessageBase {
@@ -163,6 +165,23 @@ interface NegCloseMessage extends HyperMessageBase {
             id: string;
         };
     };
+}
+
+interface NegentropyWindowDebugMessage {
+    loaded: number;
+    skipped: number;
+    cappedByRecords: boolean;
+    firstCursor?: {
+        ts: number;
+        id: string;
+    };
+    lastCursor?: {
+        ts: number;
+        id: string;
+    };
+    pageHash: string;
+    headSample: string[];
+    tailSample: string[];
 }
 
 interface OpsReqMessage extends HyperMessageBase {
@@ -1073,8 +1092,133 @@ function cloneWindowSnapshot(snapshot: NegentropyWindowSnapshot | null): Negentr
     return {
         window: cloneWindow(snapshot.window),
         stats: cloneWindowStats(snapshot.stats)!,
+        debug: {
+            ...snapshot.debug,
+            firstCursor: cloneCursor(snapshot.debug.firstCursor),
+            lastCursor: cloneCursor(snapshot.debug.lastCursor),
+            headSample: [...snapshot.debug.headSample],
+            tailSample: [...snapshot.debug.tailSample],
+        },
         storage: snapshot.storage,
     };
+}
+
+function buildWindowDebugPayload(snapshot: NegentropyWindowSnapshot | null): NegentropyWindowDebugMessage | undefined {
+    if (!snapshot) {
+        return undefined;
+    }
+
+    return {
+        loaded: snapshot.debug.loaded,
+        skipped: snapshot.debug.skipped,
+        cappedByRecords: snapshot.debug.cappedByRecords,
+        firstCursor: snapshot.debug.firstCursor
+            ? {
+                ts: snapshot.debug.firstCursor.ts,
+                id: snapshot.debug.firstCursor.id,
+            }
+            : undefined,
+        lastCursor: snapshot.debug.lastCursor
+            ? {
+                ts: snapshot.debug.lastCursor.ts,
+                id: snapshot.debug.lastCursor.id,
+            }
+            : undefined,
+        pageHash: snapshot.debug.pageHash,
+        headSample: [...snapshot.debug.headSample],
+        tailSample: [...snapshot.debug.tailSample],
+    };
+}
+
+function parseWindowDebugPayload(raw: unknown): NegentropyWindowDebugMessage | null {
+    if (!raw || typeof raw !== 'object') {
+        return null;
+    }
+
+    const candidate = raw as Partial<NegentropyWindowDebugMessage>;
+    const loaded = Number(candidate.loaded);
+    const skipped = Number(candidate.skipped);
+    const pageHash = String(candidate.pageHash ?? '');
+    const headSample = Array.isArray(candidate.headSample)
+        ? candidate.headSample.map(value => String(value))
+        : null;
+    const tailSample = Array.isArray(candidate.tailSample)
+        ? candidate.tailSample.map(value => String(value))
+        : null;
+
+    if (!Number.isInteger(loaded) || loaded < 0 || !Number.isInteger(skipped) || skipped < 0) {
+        return null;
+    }
+
+    if (!/^[a-f0-9]{64}$/i.test(pageHash) || !headSample || !tailSample) {
+        return null;
+    }
+
+    const parseCursor = (cursor: NegentropyWindowDebugMessage['firstCursor']) => {
+        if (!cursor) {
+            return undefined;
+        }
+
+        const ts = Number(cursor.ts);
+        const id = String(cursor.id ?? '').toLowerCase();
+        if (!Number.isInteger(ts) || !NEG_SYNC_ID_RE.test(id)) {
+            return undefined;
+        }
+
+        return { ts, id };
+    };
+
+    return {
+        loaded,
+        skipped,
+        cappedByRecords: candidate.cappedByRecords === true,
+        firstCursor: parseCursor(candidate.firstCursor),
+        lastCursor: parseCursor(candidate.lastCursor),
+        pageHash: pageHash.toLowerCase(),
+        headSample,
+        tailSample,
+    };
+}
+
+function logWindowDebugComparison(
+    peerKey: string,
+    sessionId: string,
+    windowId: string,
+    messageType: NegOpenMessage['type'] | NegMsgMessage['type'],
+    remoteDebugRaw: unknown,
+    localSnapshot: NegentropyWindowSnapshot | null,
+): void {
+    const remoteDebug = parseWindowDebugPayload(remoteDebugRaw);
+    if (!remoteDebug || !localSnapshot) {
+        return;
+    }
+
+    const localDebug = localSnapshot.debug;
+    log.debug(
+        {
+            peer: shortName(peerKey),
+            sessionId,
+            windowId,
+            messageType,
+            pageHashMatch: localDebug.pageHash === remoteDebug.pageHash,
+            loadedMatch: localDebug.loaded === remoteDebug.loaded,
+            cappedByRecordsMatch: localDebug.cappedByRecords === remoteDebug.cappedByRecords,
+            firstCursorMatch: JSON.stringify(localDebug.firstCursor) === JSON.stringify(remoteDebug.firstCursor ?? null),
+            lastCursorMatch: JSON.stringify(localDebug.lastCursor) === JSON.stringify(remoteDebug.lastCursor ?? null),
+            local: {
+                loaded: localDebug.loaded,
+                skipped: localDebug.skipped,
+                cappedByRecords: localDebug.cappedByRecords,
+                firstCursor: localDebug.firstCursor,
+                lastCursor: localDebug.lastCursor,
+                pageHash: localDebug.pageHash,
+                headSample: localDebug.headSample,
+                tailSample: localDebug.tailSample,
+            },
+            remote: remoteDebug,
+        },
+        'negentropy window debug compare'
+    );
 }
 
 function currentSyncTimestampSeconds(): number {
@@ -1345,6 +1489,7 @@ async function startNextNegentropyWindow(peerKey: string, session: PeerSyncSessi
         },
         round: session.rounds,
         frame: encodeNegentropyFrame(firstFrame),
+        windowDebug: buildWindowDebugPayload(session.currentWindowSnapshot),
     };
 
     if (!sendToPeer(peerKey, msg)) {
@@ -1654,6 +1799,9 @@ function sendNegMsg(peerKey: string, session: PeerSyncSession, frame: string | U
         round: session.rounds,
         frame: encodeNegentropyFrame(frame),
         windowProgress: buildWindowProgress(session),
+        windowDebug: session.currentWindowStats?.rounds === 1
+            ? buildWindowDebugPayload(session.currentWindowSnapshot)
+            : undefined,
     };
 
     return sendToPeer(peerKey, msg);
@@ -2459,6 +2607,7 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
         initializeSessionWindowState(session, window, msg.windowId, cloneWindowStats(snapshot.stats)!);
         session.currentWindowSnapshot = snapshot;
         session.currentWindowEngine = negentropyAdapter.createEngineForSnapshot(snapshot);
+        logWindowDebugComparison(peerKey, session.sessionId, msg.windowId, msg.type, msg.windowDebug, snapshot);
         touchPeerSession(peerKey);
         await handleNegentropyRoundAsResponder(peerKey, session, decodeNegentropyFrame(msg.frame));
         return;
@@ -2475,6 +2624,14 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
         }
 
         trackRemoteWindowProgress(session, msg.windowProgress);
+        logWindowDebugComparison(
+            peerKey,
+            session.sessionId,
+            msg.windowId,
+            msg.type,
+            msg.windowDebug,
+            session.currentWindowSnapshot,
+        );
         touchPeerSession(peerKey);
         if (session.initiator) {
             await handleNegentropyRoundAsInitiator(peerKey, session, decodeNegentropyFrame(msg.frame));
