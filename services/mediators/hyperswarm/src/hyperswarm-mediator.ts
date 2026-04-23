@@ -18,6 +18,8 @@ import type { OperationSyncStore, SyncStoreCursor } from './db/types.js';
 import SqliteOperationSyncStore from './db/sqlite.js';
 import PostgresOperationSyncStore from './db/postgres.js';
 import NegentropyAdapter, {
+    NegentropyWindowEngine,
+    type NegentropyWindowSnapshot,
     type NegentropyWindowStats,
     type ReconciliationWindow,
 } from './negentropy/adapter.js';
@@ -234,6 +236,8 @@ interface PeerSyncSession {
     windowIndex: number;
     windowId: string | null;
     currentWindowStats: NegentropyWindowStats | null;
+    currentWindowSnapshot: NegentropyWindowSnapshot | null;
+    currentWindowEngine: NegentropyWindowEngine | null;
     startedAt: number;
     lastActivity: number;
     pendingHaveIds: Set<string>;
@@ -306,7 +310,7 @@ let adapterChangeSeq = 0;
 let adapterBuiltSeq = -1;
 let adapterBuiltAt = 0;
 let adapterBuiltWindowId: string | null = null;
-let adapterBuiltWindowStats: NegentropyWindowStats | null = null;
+let adapterBuiltSnapshot: NegentropyWindowSnapshot | null = null;
 let rebuildPromise: Promise<void> | null = null;
 let backgroundPrebuildQueued = false;
 
@@ -541,6 +545,8 @@ function createPeerSession(peerKey: string, mode: SyncMode, initiator: boolean, 
         windowIndex: 0,
         windowId: null,
         currentWindowStats: null,
+        currentWindowSnapshot: null,
+        currentWindowEngine: null,
         startedAt: now,
         lastActivity: now,
         pendingHaveIds: new Set<string>(),
@@ -1052,6 +1058,25 @@ function cloneWindowStats(stats: NegentropyWindowStats | null): NegentropyWindow
         : null;
 }
 
+function cloneWindow(window: ReconciliationWindow): ReconciliationWindow {
+    return {
+        ...window,
+        after: cloneCursor(window.after) ?? undefined,
+    };
+}
+
+function cloneWindowSnapshot(snapshot: NegentropyWindowSnapshot | null): NegentropyWindowSnapshot | null {
+    if (!snapshot) {
+        return null;
+    }
+
+    return {
+        window: cloneWindow(snapshot.window),
+        stats: cloneWindowStats(snapshot.stats)!,
+        storage: snapshot.storage,
+    };
+}
+
 function currentSyncTimestampSeconds(): number {
     return Math.floor(Date.now() / 1000);
 }
@@ -1134,6 +1159,8 @@ function initializeSessionWindowState(
     session.receivedPushMaxCursor = null;
     session.remoteWindowCappedByRecords = false;
     session.remoteWindowLastCursor = null;
+    session.currentWindowSnapshot = null;
+    session.currentWindowEngine = null;
     session.currentWindowStats = {
         ...windowStats,
         windowName: window.name,
@@ -1216,7 +1243,7 @@ function maybeStartBackgroundPrebuild(reason: string): void {
         });
 }
 
-async function ensureWindowAdapterFresh(window: ReconciliationWindow, reason: string): Promise<NegentropyWindowStats> {
+async function ensureWindowAdapterFresh(window: ReconciliationWindow, reason: string): Promise<NegentropyWindowSnapshot> {
     if (!negentropyAdapter) {
         throw new Error('negentropy adapter unavailable');
     }
@@ -1227,7 +1254,7 @@ async function ensureWindowAdapterFresh(window: ReconciliationWindow, reason: st
     const sameWindow = adapterBuiltWindowId === targetWindowId;
 
     if (!isNegentropyAdapterDirty() && recentlyBuilt && sameWindow) {
-        const cached = cloneWindowStats(adapterBuiltWindowStats ?? negentropyAdapter.getLastWindowStats());
+        const cached = cloneWindowSnapshot(adapterBuiltSnapshot);
         if (cached) {
             return cached;
         }
@@ -1238,7 +1265,7 @@ async function ensureWindowAdapterFresh(window: ReconciliationWindow, reason: st
         const recentAfterWait = adapterBuiltAt > 0 && (Date.now() - adapterBuiltAt) <= NEG_ADAPTER_MAX_AGE_MS;
         const sameWindowAfterWait = adapterBuiltWindowId === targetWindowId;
         if (!isNegentropyAdapterDirty() && recentAfterWait && sameWindowAfterWait) {
-            const cached = cloneWindowStats(adapterBuiltWindowStats ?? negentropyAdapter.getLastWindowStats());
+            const cached = cloneWindowSnapshot(adapterBuiltSnapshot);
             if (cached) {
                 return cached;
             }
@@ -1248,11 +1275,11 @@ async function ensureWindowAdapterFresh(window: ReconciliationWindow, reason: st
     const rebuildStartSeq = adapterChangeSeq;
     const rebuildStartedAt = Date.now();
     const currentRebuildPromise = (async () => {
-        const windowStats = await negentropyAdapter!.rebuildForWindow(window);
+        const snapshot = await negentropyAdapter!.buildSnapshotForWindow(window);
         adapterBuiltSeq = rebuildStartSeq;
         adapterBuiltAt = Date.now();
         adapterBuiltWindowId = targetWindowId;
-        adapterBuiltWindowStats = cloneWindowStats(windowStats);
+        adapterBuiltSnapshot = cloneWindowSnapshot(snapshot);
         log.debug(
             {
                 reason,
@@ -1276,9 +1303,9 @@ async function ensureWindowAdapterFresh(window: ReconciliationWindow, reason: st
         }
     }
 
-    const refreshed = cloneWindowStats(adapterBuiltWindowStats ?? negentropyAdapter.getLastWindowStats());
+    const refreshed = cloneWindowSnapshot(adapterBuiltSnapshot);
     if (!refreshed) {
-        throw new Error(`negentropy window stats unavailable after rebuild (${targetWindowId})`);
+        throw new Error(`negentropy window snapshot unavailable after rebuild (${targetWindowId})`);
     }
     return refreshed;
 }
@@ -1294,9 +1321,11 @@ async function startNextNegentropyWindow(peerKey: string, session: PeerSyncSessi
     }
 
     const windowId = makeWindowId(window);
-    const windowStats = await ensureWindowAdapterFresh(window, 'session_open_initiator');
-    initializeSessionWindowState(session, window, windowId, windowStats);
-    const firstFrame = await negentropyAdapter.initiate();
+    const snapshot = await ensureWindowAdapterFresh(window, 'session_open_initiator');
+    initializeSessionWindowState(session, window, windowId, cloneWindowStats(snapshot.stats)!);
+    session.currentWindowSnapshot = snapshot;
+    session.currentWindowEngine = negentropyAdapter.createEngineForSnapshot(snapshot);
+    const firstFrame = await session.currentWindowEngine.initiate();
     const msg: NegOpenMessage = {
         ...createBaseMessage('neg_open'),
         sessionId: session.sessionId,
@@ -1688,7 +1717,9 @@ async function reconcileNegentropyFrame(
         return null;
     }
 
-    const result = await negentropyAdapter.reconcile(frame);
+    const result = session.currentWindowEngine
+        ? await session.currentWindowEngine.reconcile(frame)
+        : await negentropyAdapter.reconcile(frame);
     session.rounds += 1;
     if (session.currentWindowStats) {
         session.currentWindowStats.rounds += 1;
@@ -2424,8 +2455,10 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
             session.windows.push(window);
             session.windowIndex = session.windows.length - 1;
         }
-        const windowStats = await ensureWindowAdapterFresh(window, 'session_open_responder');
-        initializeSessionWindowState(session, window, msg.windowId, windowStats);
+        const snapshot = await ensureWindowAdapterFresh(window, 'session_open_responder');
+        initializeSessionWindowState(session, window, msg.windowId, cloneWindowStats(snapshot.stats)!);
+        session.currentWindowSnapshot = snapshot;
+        session.currentWindowEngine = negentropyAdapter.createEngineForSnapshot(snapshot);
         touchPeerSession(peerKey);
         await handleNegentropyRoundAsResponder(peerKey, session, decodeNegentropyFrame(msg.frame));
         return;
@@ -2731,7 +2764,7 @@ async function initNegentropyAdapter(): Promise<void> {
         adapterBuiltSeq = -1;
         adapterBuiltAt = 0;
         adapterBuiltWindowId = null;
-        adapterBuiltWindowStats = null;
+        adapterBuiltSnapshot = null;
         rebuildPromise = null;
         backgroundPrebuildQueued = false;
         log.info('negentropy disabled via KC_HYPR_NEGENTROPY_ENABLE; using legacy sync mode when available');
@@ -2749,7 +2782,7 @@ async function initNegentropyAdapter(): Promise<void> {
     adapterBuiltSeq = -1;
     adapterBuiltAt = 0;
     adapterBuiltWindowId = null;
-    adapterBuiltWindowStats = null;
+    adapterBuiltSnapshot = null;
     rebuildPromise = null;
     backgroundPrebuildQueued = false;
     log.info(

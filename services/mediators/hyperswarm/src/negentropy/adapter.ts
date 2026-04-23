@@ -83,6 +83,12 @@ export interface NegentropyWindowStats extends NegentropyAdapterStats {
     lastCursor: SyncStoreCursor | null;
 }
 
+export interface NegentropyWindowSnapshot {
+    window: ReconciliationWindow;
+    stats: NegentropyWindowStats;
+    storage: NegentropyStorageVectorInstance;
+}
+
 export interface NegentropySessionStats {
     windowCount: number;
     rounds: number;
@@ -109,6 +115,54 @@ function cloneCursor(cursor?: SyncStoreCursor | null): SyncStoreCursor | null {
     };
 }
 
+function cloneWindow(window: ReconciliationWindow): ReconciliationWindow {
+    return {
+        ...window,
+        after: cloneCursor(window.after) ?? undefined,
+    };
+}
+
+function cloneWindowStats(stats: NegentropyWindowStats): NegentropyWindowStats {
+    return {
+        ...stats,
+        lastCursor: cloneCursor(stats.lastCursor),
+    };
+}
+
+export class NegentropyWindowEngine {
+    private readonly ne: NegentropyInstance;
+
+    constructor(
+        mod: NegentropyModule,
+        snapshot: NegentropyWindowSnapshot,
+        frameSizeLimit: number,
+        wantUint8ArrayOutput: boolean,
+    ) {
+        this.ne = new mod.Negentropy(snapshot.storage, frameSizeLimit);
+        if (wantUint8ArrayOutput) {
+            this.ne.wantUint8ArrayOutput = true;
+        }
+    }
+
+    getInstance(): NegentropyInstance {
+        return this.ne;
+    }
+
+    async initiate(): Promise<NegentropyFrameValue> {
+        return this.ne.initiate();
+    }
+
+    async reconcile(msg: NegentropyFrameValue): Promise<NegentropyReconcileResult> {
+        const [nextMsg, haveIds, needIds] = await this.ne.reconcile(msg);
+        return { nextMsg, haveIds, needIds };
+    }
+
+    async respond(msg: NegentropyFrameValue): Promise<NegentropyFrameValue | null> {
+        const result = await this.reconcile(msg);
+        return result.nextMsg;
+    }
+}
+
 export default class NegentropyAdapter {
     private readonly syncStore: OperationSyncStore;
     private readonly frameSizeLimit: number;
@@ -117,7 +171,8 @@ export default class NegentropyAdapter {
     private readonly maxRecordsPerWindow: number;
     private readonly maxRoundsPerSession: number;
     private readonly mod: NegentropyModule;
-    private ne: NegentropyInstance | null = null;
+    private currentSnapshot: NegentropyWindowSnapshot | null = null;
+    private currentEngine: NegentropyWindowEngine | null = null;
     private stats: NegentropyAdapterStats = {
         loaded: 0,
         skipped: 0,
@@ -154,13 +209,16 @@ export default class NegentropyAdapter {
     }
 
     async rebuildFromStore(): Promise<NegentropyAdapterStats> {
-        const stats = await this.rebuildWindowAdapter({
+        const snapshot = await this.buildWindowSnapshot({
             name: 'full_history',
             fromTs: Number.MIN_SAFE_INTEGER,
             toTs: Number.MAX_SAFE_INTEGER,
             maxRecords: Number.MAX_SAFE_INTEGER,
             order: 0,
         });
+        this.useSnapshot(snapshot);
+
+        const stats = snapshot.stats;
 
         return {
             loaded: stats.loaded,
@@ -171,7 +229,51 @@ export default class NegentropyAdapter {
     }
 
     async rebuildForWindow(window: ReconciliationWindow): Promise<NegentropyWindowStats> {
-        return this.rebuildWindowAdapter(window);
+        const snapshot = await this.buildWindowSnapshot(window);
+        this.useSnapshot(snapshot);
+        return cloneWindowStats(snapshot.stats);
+    }
+
+    async buildSnapshotForWindow(window: ReconciliationWindow): Promise<NegentropyWindowSnapshot> {
+        return this.buildWindowSnapshot(window);
+    }
+
+    createEngineForSnapshot(snapshot: NegentropyWindowSnapshot): NegentropyWindowEngine {
+        return new NegentropyWindowEngine(
+            this.mod,
+            snapshot,
+            this.frameSizeLimit,
+            this.wantUint8ArrayOutput,
+        );
+    }
+
+    getCurrentSnapshot(): NegentropyWindowSnapshot | null {
+        if (!this.currentSnapshot) {
+            return null;
+        }
+
+        return {
+            window: cloneWindow(this.currentSnapshot.window),
+            stats: cloneWindowStats(this.currentSnapshot.stats),
+            storage: this.currentSnapshot.storage,
+        };
+    }
+
+    useSnapshot(snapshot: NegentropyWindowSnapshot): NegentropyWindowEngine {
+        this.currentSnapshot = {
+            window: cloneWindow(snapshot.window),
+            stats: cloneWindowStats(snapshot.stats),
+            storage: snapshot.storage,
+        };
+        this.currentEngine = this.createEngineForSnapshot(snapshot);
+        this.stats = {
+            loaded: snapshot.stats.loaded,
+            skipped: snapshot.stats.skipped,
+            durationMs: snapshot.stats.durationMs,
+            frameSizeLimit: snapshot.stats.frameSizeLimit,
+        };
+        this.lastWindowStats = cloneWindowStats(snapshot.stats);
+        return this.currentEngine;
     }
 
     async runWindowedSessionWithPeer(
@@ -205,10 +307,16 @@ export default class NegentropyAdapter {
         );
 
         while (window) {
-            const localWindowStats = await this.rebuildForWindow(window);
-            const peerWindowStats = await peer.rebuildForWindow(window);
+            const localSnapshot = await this.buildSnapshotForWindow(window);
+            const peerSnapshot = await peer.buildSnapshotForWindow(window);
+            const localWindowStats = cloneWindowStats(localSnapshot.stats);
+            const peerWindowStats = cloneWindowStats(peerSnapshot.stats);
 
-            const roundsResult = await this.reconcileWindowWithPeer(peer, maxRoundsPerSession);
+            const roundsResult = await this.reconcileWindowWithPeer(
+                this.createEngineForSnapshot(localSnapshot),
+                peer.createEngineForSnapshot(peerSnapshot),
+                maxRoundsPerSession,
+            );
             const mergedStats: NegentropyWindowStats = {
                 ...localWindowStats,
                 rounds: roundsResult.rounds,
@@ -289,10 +397,7 @@ export default class NegentropyAdapter {
 
     getLastWindowStats(): NegentropyWindowStats | null {
         return this.lastWindowStats
-            ? {
-                ...this.lastWindowStats,
-                lastCursor: cloneCursor(this.lastWindowStats.lastCursor),
-            }
+            ? cloneWindowStats(this.lastWindowStats)
             : null;
     }
 
@@ -311,19 +416,17 @@ export default class NegentropyAdapter {
     }
 
     async initiate(): Promise<string | Uint8Array> {
-        if (!this.ne) {
+        if (!this.currentEngine) {
             throw new Error('negentropy adapter not initialized');
         }
-        return this.ne.initiate();
+        return this.currentEngine.initiate();
     }
 
     async reconcile(msg: string | Uint8Array): Promise<NegentropyReconcileResult> {
-        if (!this.ne) {
+        if (!this.currentEngine) {
             throw new Error('negentropy adapter not initialized');
         }
-
-        const [nextMsg, haveIds, needIds] = await this.ne.reconcile(msg);
-        return { nextMsg, haveIds, needIds };
+        return this.currentEngine.reconcile(msg);
     }
 
     async respond(msg: string | Uint8Array): Promise<string | Uint8Array | null> {
@@ -331,7 +434,7 @@ export default class NegentropyAdapter {
         return result.nextMsg;
     }
 
-    private async rebuildWindowAdapter(window: ReconciliationWindow): Promise<NegentropyWindowStats> {
+    private async buildWindowSnapshot(window: ReconciliationWindow): Promise<NegentropyWindowSnapshot> {
         const startedAt = Date.now();
         const storage = new this.mod.NegentropyStorageVector();
 
@@ -380,13 +483,9 @@ export default class NegentropyAdapter {
         }
 
         storage.seal();
-        this.ne = new this.mod.Negentropy(storage, this.frameSizeLimit);
-        if (this.wantUint8ArrayOutput) {
-            this.ne.wantUint8ArrayOutput = true;
-        }
 
         const durationMs = Date.now() - startedAt;
-        this.stats = {
+        const stats: NegentropyAdapterStats = {
             loaded,
             skipped,
             durationMs,
@@ -394,7 +493,7 @@ export default class NegentropyAdapter {
         };
 
         const windowStats: NegentropyWindowStats = {
-            ...this.stats,
+            ...stats,
             windowName: window.name,
             fromTs: window.fromTs,
             toTs: window.toTs,
@@ -404,8 +503,6 @@ export default class NegentropyAdapter {
             cappedByRounds: false,
             lastCursor,
         };
-
-        this.lastWindowStats = windowStats;
 
         (log as any).debug?.(
             {
@@ -423,25 +520,30 @@ export default class NegentropyAdapter {
             'negentropy adapter rebuilt'
         );
 
-        return windowStats;
+        return {
+            window: cloneWindow(window),
+            stats: cloneWindowStats(windowStats),
+            storage,
+        };
     }
 
     private async reconcileWindowWithPeer(
-        peer: NegentropyAdapter,
+        localEngine: NegentropyWindowEngine,
+        peerEngine: NegentropyWindowEngine,
         maxRounds: number,
     ): Promise<{ rounds: number; completed: boolean; cappedByRounds: boolean }> {
-        let msg: string | Uint8Array | null = await this.initiate();
+        let msg: string | Uint8Array | null = await localEngine.initiate();
         let rounds = 0;
 
         while (msg !== null && rounds < maxRounds) {
             rounds += 1;
-            const response = await peer.respond(msg);
+            const response = await peerEngine.respond(msg);
             if (response === null) {
                 msg = null;
                 break;
             }
 
-            const reconcileResult = await this.reconcile(response);
+            const reconcileResult = await localEngine.reconcile(response);
             msg = reconcileResult.nextMsg;
         }
 

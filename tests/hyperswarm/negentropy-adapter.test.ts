@@ -123,7 +123,11 @@ describe('NegentropyAdapter', () => {
             wantUint8ArrayOutput: true,
         });
 
-        expect((adapter as any).ne.wantUint8ArrayOutput).toBe(true);
+        const snapshot = adapter.getCurrentSnapshot();
+        expect(snapshot).not.toBeNull();
+        const engine = adapter.createEngineForSnapshot(snapshot!);
+
+        expect(engine.getInstance().wantUint8ArrayOutput).toBe(true);
     });
 
     it('reconciles two stores and reports have/need ids', async () => {
@@ -475,6 +479,121 @@ describe('NegentropyAdapter', () => {
         expect(third.loaded).toBe(1);
         expect(third.cappedByRecords).toBe(false);
         expect(third.lastCursor).toStrictEqual({ ts: baseTs + 4, id: idFromNum(4) });
+    });
+
+    it('keeps a window engine stable when another snapshot is built on the same adapter', async () => {
+        const storeA = new InMemoryOperationSyncStore();
+        const storeB = new InMemoryOperationSyncStore();
+        const baseTs = toEpochSeconds('2026-02-09T00:00:00.000Z');
+        await seedNumericRange(storeA, 0, 3, baseTs);
+        await seedNumericRange(storeB, 0, 3, baseTs);
+
+        const adapterA = await NegentropyAdapter.create({
+            syncStore: storeA,
+            frameSizeLimit: 0,
+            deferInitialBuild: true,
+        });
+        const adapterB = await NegentropyAdapter.create({
+            syncStore: storeB,
+            frameSizeLimit: 0,
+            deferInitialBuild: true,
+        });
+
+        const windowA = {
+            name: 'history_paged',
+            fromTs: baseTs,
+            toTs: baseTs + 10,
+            maxRecords: 10,
+            order: 0,
+        } as const;
+        const windowB = {
+            name: 'history_paged',
+            fromTs: baseTs + 1,
+            toTs: baseTs + 10,
+            maxRecords: 10,
+            order: 1,
+        } as const;
+
+        const localSnapshot = await adapterA.buildSnapshotForWindow(windowA);
+        const remoteSnapshot = await adapterB.buildSnapshotForWindow(windowA);
+        const localEngine = adapterA.createEngineForSnapshot(localSnapshot);
+        const remoteEngine = adapterB.createEngineForSnapshot(remoteSnapshot);
+
+        const firstMsg = await localEngine.initiate();
+        const response = await remoteEngine.respond(firstMsg);
+        expect(response).not.toBeNull();
+
+        const otherSnapshot = await adapterA.buildSnapshotForWindow(windowB);
+        const otherEngine = adapterA.createEngineForSnapshot(otherSnapshot);
+        await expect(otherEngine.initiate()).resolves.not.toBeNull();
+
+        const round = await localEngine.reconcile(response!);
+        expect(round.nextMsg).toBeNull();
+        expect(round.haveIds).toHaveLength(0);
+        expect(round.needIds).toHaveLength(0);
+    });
+
+    it('supports interleaved engines for different windows on the same adapter', async () => {
+        const storeA = new InMemoryOperationSyncStore();
+        const storeB = new InMemoryOperationSyncStore();
+        const baseTs = toEpochSeconds('2026-02-09T00:00:00.000Z');
+        await seedNumericRange(storeA, 0, 4, baseTs);
+        await seedNumericRange(storeB, 0, 4, baseTs);
+
+        const adapterA = await NegentropyAdapter.create({
+            syncStore: storeA,
+            frameSizeLimit: 0,
+            deferInitialBuild: true,
+        });
+        const adapterB = await NegentropyAdapter.create({
+            syncStore: storeB,
+            frameSizeLimit: 0,
+            deferInitialBuild: true,
+        });
+
+        const windowA = {
+            name: 'history_paged',
+            fromTs: baseTs,
+            toTs: baseTs + 10,
+            maxRecords: 10,
+            order: 0,
+        } as const;
+        const windowB = {
+            name: 'history_paged',
+            fromTs: baseTs + 1,
+            toTs: baseTs + 10,
+            maxRecords: 10,
+            order: 1,
+        } as const;
+
+        const localSnapshotA = await adapterA.buildSnapshotForWindow(windowA);
+        const localSnapshotB = await adapterA.buildSnapshotForWindow(windowB);
+        const remoteSnapshotA = await adapterB.buildSnapshotForWindow(windowA);
+        const remoteSnapshotB = await adapterB.buildSnapshotForWindow(windowB);
+
+        const localEngineA = adapterA.createEngineForSnapshot(localSnapshotA);
+        const localEngineB = adapterA.createEngineForSnapshot(localSnapshotB);
+        const remoteEngineA = adapterB.createEngineForSnapshot(remoteSnapshotA);
+        const remoteEngineB = adapterB.createEngineForSnapshot(remoteSnapshotB);
+
+        const firstMsgA = await localEngineA.initiate();
+        const firstMsgB = await localEngineB.initiate();
+
+        const responseB = await remoteEngineB.respond(firstMsgB);
+        const responseA = await remoteEngineA.respond(firstMsgA);
+
+        expect(responseA).not.toBeNull();
+        expect(responseB).not.toBeNull();
+
+        const roundB = await localEngineB.reconcile(responseB!);
+        const roundA = await localEngineA.reconcile(responseA!);
+
+        expect(roundA.nextMsg).toBeNull();
+        expect(roundA.haveIds).toHaveLength(0);
+        expect(roundA.needIds).toHaveLength(0);
+        expect(roundB.nextMsg).toBeNull();
+        expect(roundB.haveIds).toHaveLength(0);
+        expect(roundB.needIds).toHaveLength(0);
     });
 
     it('applies maxRoundsPerSession cap in windowed sessions', async () => {
