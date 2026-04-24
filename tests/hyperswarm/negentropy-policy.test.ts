@@ -1,5 +1,6 @@
 import {
     shouldAcceptLegacySync,
+    shouldAcceptInboundLegacySync,
     shouldDeferLegacySync,
     shouldSchedulePeriodicRepair,
     shouldStartConnectTimeNegentropy,
@@ -12,6 +13,15 @@ describe('negentropy sync policy', () => {
         expect(shouldAcceptLegacySync('unknown', true)).toBe(false);
         expect(shouldAcceptLegacySync('negentropy', true)).toBe(false);
         expect(shouldAcceptLegacySync('legacy', false)).toBe(false);
+    });
+
+    it('accepts inbound pre-ping legacy sync only on legacy transport compatibility path', () => {
+        expect(shouldAcceptInboundLegacySync('legacy', 'legacy', true)).toBe(true);
+        expect(shouldAcceptInboundLegacySync('unknown', 'legacy', true)).toBe(true);
+        expect(shouldAcceptInboundLegacySync('unknown', 'unknown', true)).toBe(false);
+        expect(shouldAcceptInboundLegacySync('unknown', 'framed', true)).toBe(false);
+        expect(shouldAcceptInboundLegacySync('unknown', 'legacy', false)).toBe(false);
+        expect(shouldAcceptInboundLegacySync('negentropy', 'legacy', true)).toBe(false);
     });
 
     it('starts connect-time negentropy only for initiator without active session', () => {

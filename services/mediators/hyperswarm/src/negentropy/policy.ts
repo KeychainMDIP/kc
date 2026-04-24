@@ -36,6 +36,23 @@ export function shouldAcceptLegacySync(
     return syncMode === 'legacy' && !deferredByPriority;
 }
 
+export function shouldAcceptInboundLegacySync(
+    syncMode: SyncMode | 'unknown',
+    transportMode: 'unknown' | 'legacy' | 'framed',
+    legacySyncEnabled: boolean,
+    deferredByPriority = false,
+): boolean {
+    if (shouldAcceptLegacySync(syncMode, legacySyncEnabled, deferredByPriority)) {
+        return true;
+    }
+
+    if (!legacySyncEnabled) {
+        return false;
+    }
+
+    return syncMode === 'unknown' && transportMode === 'legacy';
+}
+
 export function shouldStartConnectTimeNegentropy(
     syncMode: SyncMode | 'unknown',
     hasActiveSession: boolean,

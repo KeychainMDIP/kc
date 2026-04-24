@@ -39,7 +39,7 @@ import {
     type SyncMode,
 } from './negentropy/protocol.js';
 import {
-    shouldAcceptLegacySync,
+    shouldAcceptInboundLegacySync,
     shouldDeferLegacySync,
     shouldSchedulePeriodicRepair,
     shouldStartConnectTimeNegentropy,
@@ -49,7 +49,6 @@ import {
     averageAggregate,
     collectQueueDelaySamples,
     createAggregateMetric,
-    messageBytes,
     safeRate,
     type AggregateMetric,
 } from './negentropy/observability.js';
@@ -79,6 +78,13 @@ import {
 import {
     mapOperationToSyncKey,
 } from './sync-mapping.js';
+import {
+    DEFAULT_MAX_FRAMED_MESSAGE_BYTES,
+    decodeFramedMessages,
+    decodeLegacyJsonMessages,
+    encodeFramedMessage,
+    supportsLegacyRawTransportMessage,
+} from './transport-framing.js';
 import { exit } from 'process';
 import path from 'path';
 import { pathToFileURL } from 'url';
@@ -96,6 +102,7 @@ interface PingMessage extends HyperMessageBase {
     type: 'ping';
     peers: string[];
     capabilities?: PeerCapabilities;
+    transportFramingVersion?: number;
 }
 
 interface BatchMessage extends HyperMessageBase {
@@ -244,6 +251,10 @@ interface ConnectionInfo {
     legacyOutboundDeferred: boolean;
     legacyInboundDeferred: DeferredLegacyInboundTask | null;
     legacyFallbackNoted: boolean;
+    transportMode: 'unknown' | 'legacy' | 'framed';
+    peerTransportFramingVersion: number | null;
+    inboundBuffer: Buffer;
+    inboundReceiveChain: Promise<void>;
 }
 
 interface PeerSyncSession {
@@ -338,6 +349,8 @@ EventEmitter.defaultMaxListeners = 100;
 const REGISTRY = 'hyperswarm';
 const BATCH_SIZE = 100;
 const NEGENTROPY_VERSION = 2;
+const TRANSPORT_FRAMING_VERSION = 1;
+const MAX_FRAMED_MESSAGE_BYTES = DEFAULT_MAX_FRAMED_MESSAGE_BYTES;
 const NEG_SESSION_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
 const NEG_MAX_IDS_PER_OPS_REQ = 1_000;
 const NEG_MAX_IDS_PER_LOOKUP = 1_000;
@@ -441,9 +454,8 @@ let syncQueue = asyncLib.queue<HyperswarmConnection, asyncLib.ErrorCallback>(
                 relays: [],
             };
 
-            const json = JSON.stringify(msg);
-            syncStats.bytesSent += messageBytes(json);
-            conn.write(json);
+            const peerKey = b4a.toString(conn.remotePublicKey, 'hex');
+            sendToPeer(peerKey, msg);
         }
         catch (error) {
             log.error({ error }, 'sync error');
@@ -456,7 +468,7 @@ function addConnection(conn: HyperswarmConnection): void {
     const peerName = shortName(peerKey);
 
     conn.once('close', () => closeConnection(peerKey));
-    conn.on('data', data => receiveMsg(peerKey, data));
+    conn.on('data', data => queueInboundPeerData(peerKey, data));
 
     log.info(`received connection from: ${peerName}`);
 
@@ -480,6 +492,10 @@ function addConnection(conn: HyperswarmConnection): void {
         legacyOutboundDeferred: false,
         legacyInboundDeferred: null,
         legacyFallbackNoted: false,
+        transportMode: 'unknown',
+        peerTransportFramingVersion: null,
+        inboundBuffer: Buffer.alloc(0),
+        inboundReceiveChain: Promise.resolve(),
     };
 
     const peerNames = Object.values(connectionInfo).map(info => info.peerName);
@@ -497,6 +513,27 @@ function closeConnection(peerKey: string): void {
 
     delete connectionInfo[peerKey];
     closePeerSession(peerKey, 'connection_closed');
+}
+
+function terminatePeerConnection(peerKey: string, reason: string): void {
+    const conn = connectionInfo[peerKey];
+    if (!conn) {
+        return;
+    }
+
+    closePeerSession(peerKey, reason);
+
+    try {
+        if (typeof conn.connection.destroy === 'function') {
+            conn.connection.destroy();
+        } else {
+            closeConnection(peerKey);
+        }
+    }
+    catch (error) {
+        log.warn({ error, peer: shortName(peerKey), reason }, 'failed to destroy peer connection');
+        closeConnection(peerKey);
+    }
 }
 
 function shortName(peerKey: string): string {
@@ -527,6 +564,40 @@ function createBaseMessage<T extends HyperMessage['type']>(type: T): Omit<HyperM
     };
 }
 
+function writeLegacyJson(conn: HyperswarmConnection, json: string): number {
+    const bytes = Buffer.byteLength(json, 'utf8');
+    syncStats.bytesSent += bytes;
+    conn.write(json);
+    return bytes;
+}
+
+function writeFramedJson(conn: HyperswarmConnection, json: string): number {
+    const framed = encodeFramedMessage(json, MAX_FRAMED_MESSAGE_BYTES);
+    syncStats.bytesSent += framed.length;
+    conn.write(framed);
+    return framed.length;
+}
+
+function setPeerTransportMode(
+    peerKey: string,
+    transportMode: ConnectionInfo['transportMode'],
+    reason: string,
+): void {
+    const conn = connectionInfo[peerKey];
+    if (!conn || conn.transportMode === transportMode) {
+        return;
+    }
+
+    const previousMode = conn.transportMode;
+    conn.transportMode = transportMode;
+    log.debug({
+        peer: shortName(peerKey),
+        previousMode,
+        transportMode,
+        reason,
+    }, 'updated hyperswarm transport mode');
+}
+
 function buildPingMessage(): PingMessage {
     const capabilities = config.negentropyEnabled
         ? {
@@ -541,6 +612,7 @@ function buildPingMessage(): PingMessage {
         ...createBaseMessage('ping'),
         peers: Object.keys(knownNodes),
         capabilities,
+        transportFramingVersion: TRANSPORT_FRAMING_VERSION,
     };
 }
 
@@ -550,10 +622,22 @@ function sendToPeer(peerKey: string, msg: HyperMessage): boolean {
         return false;
     }
 
-    const json = JSON.stringify(msg);
-    syncStats.bytesSent += messageBytes(json);
-    conn.connection.write(json);
-    return true;
+    try {
+        const json = JSON.stringify(msg);
+        if (conn.transportMode === 'framed') {
+            writeFramedJson(conn.connection, json);
+        } else if (supportsLegacyRawTransportMessage(msg.type)) {
+            writeLegacyJson(conn.connection, json);
+        } else {
+            log.debug({ peer: shortName(peerKey), type: msg.type }, 'deferring hyperswarm message until transport negotiation completes');
+            return false;
+        }
+        return true;
+    }
+    catch (error) {
+        log.error({ error, peer: shortName(peerKey), type: msg.type, transportMode: conn.transportMode }, 'failed to send hyperswarm message');
+        return false;
+    }
 }
 
 async function sendPingToPeer(peerKey: string): Promise<void> {
@@ -2199,6 +2283,7 @@ async function handleNegentropyRoundAsResponder(
 
 function sendBatch(conn: HyperswarmConnection, batch: Operation[]): number {
     const limit = 8 * 1024 * 1014; // 8 MB limit
+    const peerKey = b4a.toString(conn.remotePublicKey, 'hex');
 
     const msg: BatchMessage = {
         type: 'batch',
@@ -2211,10 +2296,11 @@ function sendBatch(conn: HyperswarmConnection, batch: Operation[]): number {
     const json = JSON.stringify(msg);
 
     if (json.length < limit) {
-        syncStats.bytesSent += messageBytes(json);
-        conn.write(json);
-        log.debug(` * sent ${batch.length} ops in ${json.length} bytes`);
-        return batch.length;
+        if (sendToPeer(peerKey, msg)) {
+            log.debug(` * sent ${batch.length} ops in ${json.length} bytes`);
+            return batch.length;
+        }
+        return 0;
     }
     else {
         if (batch.length < 2) {
@@ -2274,8 +2360,6 @@ async function shareDb(conn: HyperswarmConnection): Promise<void> {
 }
 
 async function relayMsg(msg: HyperMessage): Promise<void> {
-    const json = JSON.stringify(msg);
-
     const connectionsCount = Object.keys(connectionInfo).length;
     log.debug(`Connected nodes: ${connectionsCount}`);
     log.debug(`* sending ${msg.type} from: ${shortName(nodeKey)} (${config.nodeName}) *`);
@@ -2288,9 +2372,11 @@ async function relayMsg(msg: HyperMessage): Promise<void> {
         const lastSeen = `last seen ${minutesSinceLastSeen} minutes ago ${last.toISOString()}`;
 
         if (!msg.relays.includes(peerKey)) {
-            syncStats.bytesSent += messageBytes(json);
-            conn.connection.write(json);
-            log.debug(`* relaying to: ${conn.peerName} (${conn.nodeName}) ${lastSeen} *`);
+            if (sendToPeer(peerKey, msg)) {
+                log.debug(`* relaying to: ${conn.peerName} (${conn.nodeName}) ${lastSeen} *`);
+            } else {
+                log.debug(`* deferring relay to: ${conn.peerName} (${conn.nodeName}) ${lastSeen} *`);
+            }
         }
         else {
             log.debug(`* skipping relay to: ${conn.peerName} (${conn.nodeName}) ${lastSeen} *`);
@@ -2455,12 +2541,13 @@ let exportQueue = asyncLib.queue<ExportQueueTask, asyncLib.ErrorCallback>(
 
             if (ready) {
                 const mode = connectionInfo[name]?.syncMode ?? 'unknown';
+                const transportMode = connectionInfo[name]?.transportMode ?? 'unknown';
                 const deferLegacy = shouldDeferLegacyForPeer(name);
-                if (!shouldAcceptLegacySync(mode, config.legacySyncEnabled, deferLegacy)) {
+                if (!shouldAcceptInboundLegacySync(mode, transportMode, config.legacySyncEnabled, deferLegacy)) {
                     if (mode === 'legacy' && config.legacySyncEnabled && deferLegacy) {
                         deferLegacyInbound(name, { name, msg, conn });
                     } else {
-                        log.debug({ peer: shortName(name), mode }, 'shareDb skipped by sync mode policy');
+                        log.debug({ peer: shortName(name), mode, transportMode }, 'shareDb skipped by sync mode policy');
                     }
                     return;
                 }
@@ -2486,6 +2573,97 @@ function newBatch(batch: Operation[]): boolean {
     }
 
     return false;
+}
+
+function queueInboundPeerData(peerKey: string, chunk: Buffer | string): void {
+    const conn = connectionInfo[peerKey];
+    if (!conn) {
+        return;
+    }
+
+    const incoming = typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : Buffer.from(chunk);
+    conn.inboundReceiveChain = conn.inboundReceiveChain
+        .then(() => processInboundPeerData(peerKey, incoming))
+        .catch(error => {
+            log.error({ error, peer: shortName(peerKey) }, 'inbound hyperswarm message processing failed');
+            terminatePeerConnection(peerKey, 'inbound_processing_failed');
+        });
+}
+
+async function processInboundPeerData(peerKey: string, chunk: Buffer): Promise<void> {
+    const conn = connectionInfo[peerKey];
+    if (!conn) {
+        return;
+    }
+
+    syncStats.bytesReceived += chunk.length;
+    conn.inboundBuffer = conn.inboundBuffer.length === 0
+        ? chunk
+        : Buffer.concat([conn.inboundBuffer, chunk]);
+
+    while (conn.inboundBuffer.length > 0) {
+        if (conn.transportMode === 'framed') {
+            const parsed = decodeFramedMessages(conn.inboundBuffer, MAX_FRAMED_MESSAGE_BYTES);
+            if (parsed.error) {
+                log.warn(
+                    {
+                        peer: shortName(peerKey),
+                        pendingBytes: conn.inboundBuffer.length,
+                        error: parsed.error,
+                    },
+                    'received malformed framed hyperswarm message'
+                );
+                terminatePeerConnection(peerKey, 'malformed_framed_message');
+                return;
+            }
+
+            if (parsed.messages.length === 0) {
+                conn.inboundBuffer = parsed.remaining;
+                return;
+            }
+
+            conn.inboundBuffer = parsed.remaining;
+            for (const message of parsed.messages) {
+                await receiveMsg(peerKey, message.toString('utf8'));
+                if (!connectionInfo[peerKey]) {
+                    return;
+                }
+            }
+            continue;
+        }
+
+        const parsed = decodeLegacyJsonMessages(
+            conn.inboundBuffer,
+            MAX_FRAMED_MESSAGE_BYTES,
+            conn.capabilities.advertised ? Number.MAX_SAFE_INTEGER : 1,
+        );
+        if (parsed.error) {
+            log.warn(
+                {
+                    peer: shortName(peerKey),
+                    transportMode: conn.transportMode,
+                    pendingBytes: conn.inboundBuffer.length,
+                    error: parsed.error,
+                },
+                'received malformed legacy hyperswarm message'
+            );
+            terminatePeerConnection(peerKey, 'malformed_legacy_message');
+            return;
+        }
+
+        if (parsed.messages.length === 0) {
+            conn.inboundBuffer = parsed.remaining;
+            return;
+        }
+
+        conn.inboundBuffer = parsed.remaining;
+        for (const message of parsed.messages) {
+            await receiveMsg(peerKey, message.toString('utf8'));
+            if (!connectionInfo[peerKey]) {
+                return;
+            }
+        }
+    }
 }
 
 async function addPeer(did: string): Promise<void> {
@@ -2551,14 +2729,14 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
 
     let msg: HyperMessage;
     const payload = typeof json === 'string' ? json : json.toString('utf8');
-    syncStats.bytesReceived += messageBytes(payload);
 
     try {
         msg = JSON.parse(payload);
     }
     catch {
         const jsonPreview = payload.length > 80 ? `${payload.slice(0, 40)}...${payload.slice(-40)}` : payload;
-        log.warn(`received invalid message from: ${conn.peerName}, JSON: ${jsonPreview}`);
+        log.warn({ peer: conn.peerName, transportMode: conn.transportMode, jsonPreview }, 'received invalid hyperswarm JSON message');
+        terminatePeerConnection(peerKey, 'invalid_hyperswarm_json_message');
         return;
     }
 
@@ -2566,6 +2744,10 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
 
     log.debug(`received ${msg.type} from: ${shortName(peerKey)} (${nodeName})`);
     connectionInfo[peerKey].lastSeen = new Date().getTime();
+
+    if (msg.type !== 'ping' && conn.transportMode === 'unknown') {
+        setPeerTransportMode(peerKey, 'legacy', 'received_raw_message_before_ping');
+    }
 
     if (msg.type === 'batch') {
         if (Array.isArray(msg.data) && newBatch(msg.data)) {
@@ -2588,12 +2770,21 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
 
     if (msg.type === 'sync') {
         const deferLegacy = shouldDeferLegacyForPeer(peerKey);
-        if (!shouldAcceptLegacySync(connectionInfo[peerKey].syncMode, config.legacySyncEnabled, deferLegacy)) {
+        if (!shouldAcceptInboundLegacySync(
+            connectionInfo[peerKey].syncMode,
+            connectionInfo[peerKey].transportMode,
+            config.legacySyncEnabled,
+            deferLegacy,
+        )) {
             if (connectionInfo[peerKey].syncMode === 'legacy' && config.legacySyncEnabled && deferLegacy) {
                 deferLegacyInbound(peerKey, { name: peerKey, msg, conn: conn.connection });
             } else {
                 log.debug(
-                    { peer: shortName(peerKey), mode: connectionInfo[peerKey].syncMode },
+                    {
+                        peer: shortName(peerKey),
+                        mode: connectionInfo[peerKey].syncMode,
+                        transportMode: connectionInfo[peerKey].transportMode,
+                    },
                     'ignoring legacy sync request'
                 );
             }
@@ -2606,6 +2797,15 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
     if (msg.type === 'ping') {
         connectionInfo[peerKey].nodeName = nodeName;
         connectionInfo[peerKey].capabilities = normalizePeerCapabilities(msg.capabilities);
+        const peerTransportFramingVersion = Number.isInteger(msg.transportFramingVersion)
+            ? Number(msg.transportFramingVersion)
+            : null;
+        connectionInfo[peerKey].peerTransportFramingVersion = peerTransportFramingVersion;
+        setPeerTransportMode(
+            peerKey,
+            peerTransportFramingVersion === TRANSPORT_FRAMING_VERSION ? 'framed' : 'legacy',
+            'ping_capability_exchange',
+        );
 
         if (Array.isArray(msg.peers)) {
             for (const did of msg.peers) {
