@@ -503,6 +503,21 @@ function shortName(peerKey: string): string {
     return peerKey.slice(0, 4) + '-' + peerKey.slice(-4);
 }
 
+function summarizeSyncIds(ids: Iterable<string>, maxSample = 10): {
+    count: number;
+    sample: string[];
+    first: string | null;
+    last: string | null;
+} {
+    const list = Array.from(ids);
+    return {
+        count: list.length,
+        sample: list.slice(0, maxSample),
+        first: list[0] ?? null,
+        last: list[list.length - 1] ?? null,
+    };
+}
+
 function createBaseMessage<T extends HyperMessage['type']>(type: T): Omit<HyperMessageBase, 'type'> & { type: T } {
     return {
         type,
@@ -1765,6 +1780,16 @@ async function sendOpsPushForIds(peerKey: string, session: PeerSyncSession, ids:
             });
         const operations = rows.map(row => row.operation);
         if (operations.length === 0) {
+            log.debug(
+                {
+                    peer: shortName(peerKey),
+                    sessionId: session.sessionId,
+                    windowId: session.windowId,
+                    round: session.rounds,
+                    requestedIds: summarizeSyncIds(idBatch),
+                },
+                'negentropy ops_push lookup returned no operations'
+            );
             continue;
         }
 
@@ -1774,6 +1799,7 @@ async function sendOpsPushForIds(peerKey: string, session: PeerSyncSession, ids:
         });
 
         for (const opBatch of opBatches) {
+            const opIds = extractOperationHashes(opBatch);
             const msg: OpsPushMessage = {
                 ...createBaseMessage('ops_push'),
                 sessionId: session.sessionId,
@@ -1781,6 +1807,19 @@ async function sendOpsPushForIds(peerKey: string, session: PeerSyncSession, ids:
                 round: session.rounds,
                 data: opBatch,
             };
+
+            log.debug(
+                {
+                    peer: shortName(peerKey),
+                    sessionId: session.sessionId,
+                    windowId: session.windowId,
+                    round: session.rounds,
+                    requestedIds: summarizeSyncIds(idBatch),
+                    pushedIds: summarizeSyncIds(opIds),
+                    opCount: opBatch.length,
+                },
+                'sending negentropy ops_push'
+            );
 
             if (!sendToPeer(peerKey, msg)) {
                 closePeerSession(peerKey, 'send_ops_push_failed');
@@ -2011,6 +2050,20 @@ async function maybeFinalizeInitiatorSession(peerKey: string, session: PeerSyncS
         return;
     }
 
+    if (session.pendingHaveIds.size > 0) {
+        log.debug(
+            {
+                peer: shortName(peerKey),
+                sessionId: session.sessionId,
+                windowId: session.windowId,
+                round: session.rounds,
+                pendingHaveIds: summarizeSyncIds(session.pendingHaveIds),
+                pendingNeedIds: summarizeSyncIds(session.pendingNeedIds),
+            },
+            'negentropy initiator finalizing with pending have ids'
+        );
+    }
+
     if (!sendNegClose(peerKey, session, 'complete')) {
         closePeerSession(peerKey, 'send_neg_close_failed');
         return;
@@ -2036,6 +2089,16 @@ async function handleNegentropyRoundAsInitiator(
     syncStats.negentropyNeedIds += outcome.needIds.length;
 
     if (newHaveIds.length > 0) {
+        log.debug(
+            {
+                peer: shortName(peerKey),
+                sessionId: session.sessionId,
+                windowId: session.windowId,
+                round: session.rounds,
+                haveIds: summarizeSyncIds(newHaveIds),
+            },
+            'negentropy initiator discovered have ids'
+        );
         await sendOpsPushForIds(peerKey, session, newHaveIds);
     }
 
@@ -2675,10 +2738,26 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
             syncStats.negentropyOpsPushReceived += batch.length;
             trackReceivedWindowOperations(session, batch);
             await trackRequestedKnownOpsPush(session, batch);
-            const pushedIds = new Set(extractOperationHashes(batch));
+            const pendingNeedBefore = session.pendingNeedIds.size;
+            const pushedIdList = extractOperationHashes(batch);
+            const pushedIds = new Set(pushedIdList);
+            const matchedPendingNeedIds = pushedIdList.filter(id => session.pendingNeedIds.has(id));
             for (const id of pushedIds) {
                 session.pendingNeedIds.delete(id);
             }
+            log.debug(
+                {
+                    peer: shortName(peerKey),
+                    sessionId: session.sessionId,
+                    windowId: session.windowId,
+                    round: msg.round,
+                    pushedIds: summarizeSyncIds(pushedIdList),
+                    matchedPendingNeedIds: summarizeSyncIds(matchedPendingNeedIds),
+                    pendingNeedBefore,
+                    pendingNeedAfter: session.pendingNeedIds.size,
+                },
+                'received negentropy ops_push payload'
+            );
 
             if (newBatch(batch)) {
                 importQueue.push({
