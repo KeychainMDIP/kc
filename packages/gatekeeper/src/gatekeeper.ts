@@ -63,8 +63,6 @@ export default class Gatekeeper implements GatekeeperInterface {
     private readonly ipfsEnabled: boolean;
     supportedRegistries: string[];
     private didLocks = new Map<string, Promise<void>>();
-    private readonly confirmedDidCache = new Map<string, MdipDocument>();
-
     constructor(options: GatekeeperOptions) {
         if (!options || !options.db) {
             throw new InvalidParameterError('missing options.db');
@@ -101,72 +99,6 @@ export default class Gatekeeper implements GatekeeperInterface {
         }
     }
 
-    private clearDidResolutionCaches(): void {
-        this.confirmedDidCache.clear();
-    }
-
-    private invalidateDidResolutionCache(did?: string): void {
-        if (!did) {
-            return;
-        }
-
-        this.confirmedDidCache.delete(did);
-    }
-
-    private getDidLastUpdatedAt(doc?: MdipDocument): string | undefined {
-        return doc?.didDocumentMetadata?.updated ?? doc?.didDocumentMetadata?.created;
-    }
-
-    private canUseCurrentDocForSignedOperation(doc: MdipDocument, signed?: string): boolean {
-        if (!signed) {
-            return true;
-        }
-
-        const didLastUpdatedAt = this.getDidLastUpdatedAt(doc);
-        if (!didLastUpdatedAt) {
-            return false;
-        }
-
-        const signedAt = Date.parse(signed);
-        const updatedAt = Date.parse(didLastUpdatedAt);
-
-        if (Number.isNaN(signedAt) || Number.isNaN(updatedAt)) {
-            return false;
-        }
-
-        return updatedAt <= signedAt;
-    }
-
-    private async getConfirmedDidDocCached(did: string): Promise<MdipDocument> {
-        const cached = this.confirmedDidCache.get(did);
-        if (cached) {
-            return cached;
-        }
-
-        const doc = await this.resolveDID(did, { confirm: true });
-        if (!doc.didResolutionMetadata?.error) {
-            this.confirmedDidCache.set(did, doc);
-        }
-
-        return doc;
-    }
-
-    private async resolveControllerDocForSignedOperation(controllerDid: string, signed?: string): Promise<MdipDocument> {
-        const currentDoc = await this.getConfirmedDidDocCached(controllerDid);
-
-        if (currentDoc.didResolutionMetadata?.error) {
-            return currentDoc;
-        }
-
-        if (this.canUseCurrentDocForSignedOperation(currentDoc, signed)) {
-            return currentDoc;
-        }
-
-        return this.resolveDID(controllerDid, {
-            confirm: true,
-            versionTime: signed,
-        });
-    }
     private async withDidLock<T>(did: string, fn: () => Promise<T>): Promise<T> {
         const prev = this.didLocks.get(did) ?? Promise.resolve();
         let release: () => void = () => { };
@@ -215,7 +147,6 @@ export default class Gatekeeper implements GatekeeperInterface {
                 }
                 invalid += 1;
                 await this.db.deleteEvents(did);
-                this.invalidateDidResolutionCache(did);
                 continue;
             }
 
@@ -228,7 +159,6 @@ export default class Gatekeeper implements GatekeeperInterface {
                         this.log.warn(`removing ${n}/${total} ${did} expired`);
                     }
                     await this.db.deleteEvents(did);
-                    this.invalidateDidResolutionCache(did);
                     expired += 1;
                 }
                 else {
@@ -346,7 +276,6 @@ export default class Gatekeeper implements GatekeeperInterface {
         await this.db.resetDb();
         this.verifiedDIDs = {};
         this.eventsQueue = [];
-        this.clearDidResolutionCaches();
         return true;
     }
 
@@ -482,10 +411,10 @@ export default class Gatekeeper implements GatekeeperInterface {
                 throw new InvalidOperationError('signer is not controller');
             }
 
-            const doc = await this.resolveControllerDocForSignedOperation(
-                controllerDid,
-                operation.signature!.signed,
-            );
+            const doc = await this.resolveDID(controllerDid, {
+                confirm: true,
+                versionTime: operation.signature!.signed,
+            });
 
             if (doc.mdip && doc.mdip.registry === 'local' && operation.mdip.registry !== 'local') {
                 throw new InvalidOperationError(`non-local registry=${operation.mdip.registry}`);
@@ -527,10 +456,10 @@ export default class Gatekeeper implements GatekeeperInterface {
 
         if (doc.didDocument.controller) {
             // This DID is an asset, verify with controller's keys
-            const controllerDoc = await this.resolveControllerDocForSignedOperation(
-                doc.didDocument.controller,
-                operation.signature!.signed,
-            );
+            const controllerDoc = await this.resolveDID(doc.didDocument.controller, {
+                confirm: true,
+                versionTime: operation.signature!.signed,
+            });
             return this.verifyUpdateOperation(operation, controllerDoc);
         }
 
@@ -606,7 +535,6 @@ export default class Gatekeeper implements GatekeeperInterface {
                 operation,
                 did
             });
-            this.invalidateDidResolutionCache(did);
 
             await this.queueOperation(registry, operation);
             return did;
@@ -683,36 +611,6 @@ export default class Gatekeeper implements GatekeeperInterface {
         }
 
         return doc;
-    }
-
-    private async getCurrentDidDocForImport(did: string, currentEvents: GatekeeperEvent[]): Promise<MdipDocument> {
-        if (currentEvents.length === 0) {
-            return {
-                didResolutionMetadata: {
-                    error: 'notFound',
-                },
-                didDocument: {},
-                didDocumentMetadata: {},
-            };
-        }
-
-        const lastEvent = currentEvents[currentEvents.length - 1];
-
-        if (lastEvent.operation.type === 'update') {
-            return lastEvent.operation.doc || {};
-        }
-
-        if (lastEvent.operation.type === 'delete') {
-            return {
-                didDocument: { id: did },
-                didDocumentData: {},
-                didDocumentMetadata: {
-                    deactivated: true,
-                },
-            };
-        }
-
-        return this.generateDoc(lastEvent.operation, did);
     }
 
     async resolveDID(
@@ -929,7 +827,6 @@ export default class Gatekeeper implements GatekeeperInterface {
                 operation,
                 did: operation.did
             });
-            this.invalidateDidResolutionCache(operation.did);
 
             await this.queueOperation(registry, operation);
 
@@ -1017,7 +914,6 @@ export default class Gatekeeper implements GatekeeperInterface {
 
         for (const did of dids) {
             await this.db.deleteEvents(did);
-            this.invalidateDidResolutionCache(did);
         }
 
         return true;
@@ -1069,22 +965,12 @@ export default class Gatekeeper implements GatekeeperInterface {
                         const index = currentEvents.indexOf(opMatch);
                         currentEvents[index] = event;
                         await this.db.setEvents(lockedDid, currentEvents);
-                        this.invalidateDidResolutionCache(lockedDid);
                         return ImportStatus.ADDED;
                     }
 
                     return ImportStatus.MERGED;
                 } else {
-                    const canVerifyAgainstCurrentEvents =
-                        currentEvents.length > 0 &&
-                        event.operation.did === lockedDid &&
-                        (event.operation.type === 'update' || event.operation.type === 'delete');
-                    const ok = canVerifyAgainstCurrentEvents
-                        ? await this.verifyUpdateOperation(
-                            event.operation,
-                            await this.getCurrentDidDocForImport(lockedDid, currentEvents)
-                        )
-                        : await this.verifyOperation(event.operation);
+                    const ok = await this.verifyOperation(event.operation);
 
                     if (!ok) {
                         return ImportStatus.REJECTED;
@@ -1092,14 +978,12 @@ export default class Gatekeeper implements GatekeeperInterface {
 
                     if (currentEvents.length === 0) {
                         await this.db.addEvent(lockedDid, event);
-                        this.invalidateDidResolutionCache(lockedDid);
                         return ImportStatus.ADDED;
                     }
 
                     // TEMP during did:test, operation.previd is optional
                     if (!event.operation.previd) {
                         await this.db.addEvent(lockedDid, event);
-                        this.invalidateDidResolutionCache(lockedDid);
                         return ImportStatus.ADDED;
                     }
 
@@ -1113,7 +997,6 @@ export default class Gatekeeper implements GatekeeperInterface {
 
                     if (index === currentEvents.length - 1) {
                         await this.db.addEvent(lockedDid, event);
-                        this.invalidateDidResolutionCache(lockedDid);
                         return ImportStatus.ADDED;
                     }
 
@@ -1128,7 +1011,6 @@ export default class Gatekeeper implements GatekeeperInterface {
                             // reorg event, discard the rest of the operation sequence and replace with this event
                             const newSequence = [...currentEvents.slice(0, index + 1), event];
                             await this.db.setEvents(lockedDid, newSequence);
-                            this.invalidateDidResolutionCache(lockedDid);
                             return ImportStatus.ADDED;
                         }
                     }
