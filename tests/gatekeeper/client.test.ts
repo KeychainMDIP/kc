@@ -26,7 +26,6 @@ const Endpoints = {
         import: '/api/v1/batch/import',
     },
     events: {
-        export: '/api/v1/events/export',
         process: '/api/v1/events/process',
     },
     registries: '/api/v1/registries',
@@ -528,6 +527,17 @@ describe('exportBatch', () => {
         expect(ops).toStrictEqual([]);
     });
 
+    it('should return exported batch by hashes', async () => {
+        nock(GatekeeperURL)
+            .post(Endpoints.batch.export, { hashes: ['a'.repeat(64)] })
+            .reply(200, []);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        const ops = await gatekeeper.exportBatch(undefined, ['a'.repeat(64)]);
+
+        expect(ops).toStrictEqual([]);
+    });
+
     it('should throw exception on exportBatch server error', async () => {
         nock(GatekeeperURL)
             .post(Endpoints.batch.export)
@@ -574,46 +584,6 @@ describe('importBatch', () => {
         try {
             // @ts-expect-error Testing without arguments
             await gatekeeper.importBatch();
-            throw new ExpectedExceptionError();
-        }
-        catch (error: any) {
-            expect(error.message).toBe(ServerError.message);
-        }
-    });
-});
-
-describe('exportEvents', () => {
-    it('should return exported events by hash', async () => {
-        nock(GatekeeperURL)
-            .post(Endpoints.events.export)
-            .reply(200, []);
-
-        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
-        const events = await gatekeeper.exportEvents(['a'.repeat(64)]);
-
-        expect(events).toStrictEqual([]);
-    });
-
-    it('should return exported events when hashes are omitted', async () => {
-        nock(GatekeeperURL)
-            .post(Endpoints.events.export)
-            .reply(200, []);
-
-        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
-        const events = await gatekeeper.exportEvents();
-
-        expect(events).toStrictEqual([]);
-    });
-
-    it('should throw exception on exportEvents server error', async () => {
-        nock(GatekeeperURL)
-            .post(Endpoints.events.export)
-            .reply(500, ServerError);
-
-        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
-
-        try {
-            await gatekeeper.exportEvents(['a'.repeat(64)]);
             throw new ExpectedExceptionError();
         }
         catch (error: any) {

@@ -1351,19 +1351,9 @@ v1router.post('/dids/import', async (req, res) => {
  */
 v1router.post('/batch/export', async (req, res) => {
     try {
-        const { dids } = req.body;
-        const response = await gatekeeper.exportBatch(dids);
-        res.json(response);
-    } catch (error: any) {
-        log.error({ error }, 'Request error');
-        res.status(500).send(error.toString());
-    }
-});
-
-v1router.post('/events/export', async (req, res) => {
-    try {
+        const dids = req.body?.dids;
         const hashes = req.body?.hashes;
-        const response = await gatekeeper.exportEvents(hashes);
+        const response = await gatekeeper.exportBatch(dids, hashes);
         res.json(response);
     } catch (error: any) {
         log.error({ error }, 'Request error');

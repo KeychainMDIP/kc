@@ -1240,7 +1240,57 @@ export default class Gatekeeper implements GatekeeperInterface {
         };
     }
 
-    async exportBatch(dids?: string[]): Promise<GatekeeperEvent[]> {
+    async exportBatch(dids?: string[], hashes?: string[]): Promise<GatekeeperEvent[]> {
+        if (Array.isArray(hashes) && hashes.length > 0) {
+            const pending = new Set(
+                hashes
+                    .filter((hash): hash is string => typeof hash === 'string' && hash !== '')
+                    .map(hash => hash.toLowerCase())
+            );
+
+            if (pending.size === 0) {
+                return this.exportBatch(dids);
+            }
+
+            const allDids = await this.getDIDs();
+            if (!Array.isArray(allDids)) {
+                return [];
+            }
+
+            const matches: GatekeeperEvent[] = [];
+
+            for (const did of allDids) {
+                if (pending.size === 0) {
+                    break;
+                }
+
+                if (typeof did !== 'string') {
+                    continue;
+                }
+
+                const events = await this.exportDID(did);
+                for (const event of events) {
+                    const hash = event.operation?.signature?.hash;
+                    if (typeof hash !== 'string' || hash === '') {
+                        continue;
+                    }
+
+                    const normalized = hash.toLowerCase();
+                    if (!pending.has(normalized)) {
+                        continue;
+                    }
+
+                    matches.push(event);
+                    pending.delete(normalized);
+                    if (pending.size === 0) {
+                        break;
+                    }
+                }
+            }
+
+            return matches;
+        }
+
         const allDIDs = await this.exportDIDs(dids);
         const nonlocalDIDs = allDIDs.filter(events => {
             if (events.length > 0) {
@@ -1253,60 +1303,6 @@ export default class Gatekeeper implements GatekeeperInterface {
 
         const events = nonlocalDIDs.flat();
         return events.sort((a, b) => new Date(a.operation.signature?.signed ?? 0).getTime() - new Date(b.operation.signature?.signed ?? 0).getTime());
-    }
-
-    async exportEvents(hashes?: string[]): Promise<GatekeeperEvent[]> {
-        if (!Array.isArray(hashes) || hashes.length === 0) {
-            return this.exportBatch();
-        }
-
-        const pending = new Set(
-            hashes
-                .filter((hash): hash is string => typeof hash === 'string' && hash !== '')
-                .map(hash => hash.toLowerCase())
-        );
-
-        if (pending.size === 0) {
-            return this.exportBatch();
-        }
-
-        const dids = await this.getDIDs();
-        if (!Array.isArray(dids)) {
-            return [];
-        }
-
-        const matches: GatekeeperEvent[] = [];
-
-        for (const did of dids) {
-            if (pending.size === 0) {
-                break;
-            }
-
-            if (typeof did !== 'string') {
-                continue;
-            }
-
-            const events = await this.exportDID(did);
-            for (const event of events) {
-                const hash = event.operation?.signature?.hash;
-                if (typeof hash !== 'string' || hash === '') {
-                    continue;
-                }
-
-                const normalized = hash.toLowerCase();
-                if (!pending.has(normalized)) {
-                    continue;
-                }
-
-                matches.push(event);
-                pending.delete(normalized);
-                if (pending.size === 0) {
-                    break;
-                }
-            }
-        }
-
-        return matches;
     }
 
     async getQueue(registry: string): Promise<Operation[]> {
