@@ -1,4 +1,3 @@
-import { createHash } from 'crypto';
 import { createRequire } from 'module';
 import { childLogger } from '@mdip/common/logger';
 import type { SyncStoreCursor } from '../db/types.js';
@@ -84,21 +83,9 @@ export interface NegentropyWindowStats extends NegentropyAdapterStats {
     lastCursor: SyncStoreCursor | null;
 }
 
-export interface NegentropyWindowDebugInfo {
-    loaded: number;
-    skipped: number;
-    cappedByRecords: boolean;
-    firstCursor: SyncStoreCursor | null;
-    lastCursor: SyncStoreCursor | null;
-    pageHash: string;
-    headSample: string[];
-    tailSample: string[];
-}
-
 export interface NegentropyWindowSnapshot {
     window: ReconciliationWindow;
     stats: NegentropyWindowStats;
-    debug: NegentropyWindowDebugInfo;
     storage: NegentropyStorageVectorInstance;
 }
 
@@ -140,20 +127,6 @@ function cloneWindowStats(stats: NegentropyWindowStats): NegentropyWindowStats {
         ...stats,
         lastCursor: cloneCursor(stats.lastCursor),
     };
-}
-
-function cloneWindowDebugInfo(debug: NegentropyWindowDebugInfo): NegentropyWindowDebugInfo {
-    return {
-        ...debug,
-        firstCursor: cloneCursor(debug.firstCursor),
-        lastCursor: cloneCursor(debug.lastCursor),
-        headSample: [...debug.headSample],
-        tailSample: [...debug.tailSample],
-    };
-}
-
-function formatWindowDebugEntry(ts: number, id: string): string {
-    return `${ts}:${id}`;
 }
 
 export class NegentropyWindowEngine {
@@ -282,7 +255,6 @@ export default class NegentropyAdapter {
         return {
             window: cloneWindow(this.currentSnapshot.window),
             stats: cloneWindowStats(this.currentSnapshot.stats),
-            debug: cloneWindowDebugInfo(this.currentSnapshot.debug),
             storage: this.currentSnapshot.storage,
         };
     }
@@ -291,7 +263,6 @@ export default class NegentropyAdapter {
         this.currentSnapshot = {
             window: cloneWindow(snapshot.window),
             stats: cloneWindowStats(snapshot.stats),
-            debug: cloneWindowDebugInfo(snapshot.debug),
             storage: snapshot.storage,
         };
         this.currentEngine = this.createEngineForSnapshot(snapshot);
@@ -466,17 +437,13 @@ export default class NegentropyAdapter {
     private async buildWindowSnapshot(window: ReconciliationWindow): Promise<NegentropyWindowSnapshot> {
         const startedAt = Date.now();
         const storage = new this.mod.NegentropyStorageVector();
-        const pageHasher = createHash('sha256');
 
         let loaded = 0;
         let skipped = 0;
         let processed = 0;
         let cappedByRecords = false;
         let after = cloneCursor(window.after) ?? undefined;
-        let firstCursor: SyncStoreCursor | null = null;
         let lastCursor = cloneCursor(window.after);
-        const headSample: string[] = [];
-        const tailSample: string[] = [];
 
         while (true) {
             const rows = await this.syncStore.iterateSorted({
@@ -502,20 +469,8 @@ export default class NegentropyAdapter {
                 }
 
                 processed += 1;
-                const cursor = cloneCursor({ ts: row.ts, id: row.id });
-                firstCursor ??= cloneCursor(cursor);
-                lastCursor = cursor;
+                lastCursor = cloneCursor({ ts: row.ts, id: row.id });
                 storage.insert(row.ts, row.id);
-                pageHasher.update(formatWindowDebugEntry(row.ts, row.id));
-                pageHasher.update('\n');
-                const sampleEntry = formatWindowDebugEntry(row.ts, row.id);
-                if (headSample.length < 5) {
-                    headSample.push(sampleEntry);
-                }
-                tailSample.push(sampleEntry);
-                if (tailSample.length > 5) {
-                    tailSample.shift();
-                }
                 loaded += 1;
             }
 
@@ -549,32 +504,15 @@ export default class NegentropyAdapter {
             lastCursor,
         };
 
-        const debug: NegentropyWindowDebugInfo = {
-            loaded,
-            skipped,
-            cappedByRecords,
-            firstCursor,
-            lastCursor,
-            pageHash: pageHasher.digest('hex'),
-            headSample,
-            tailSample,
-        };
-
         (log as any).debug?.(
             {
                 windowName: window.name,
                 fromTs: window.fromTs,
                 toTs: window.toTs,
-                windowAfter: cloneCursor(window.after),
                 loaded,
                 skipped,
                 durationMs,
                 cappedByRecords,
-                firstCursor,
-                lastCursor,
-                pageHash: debug.pageHash,
-                headSample,
-                tailSample,
                 frameSizeLimit: this.frameSizeLimit,
             },
             'negentropy adapter rebuilt'
@@ -583,7 +521,6 @@ export default class NegentropyAdapter {
         return {
             window: cloneWindow(window),
             stats: cloneWindowStats(windowStats),
-            debug: cloneWindowDebugInfo(debug),
             storage,
         };
     }
