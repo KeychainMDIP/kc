@@ -143,7 +143,7 @@ export interface GatekeeperInterface {
     importDIDs(dids: GatekeeperEvent[][]): Promise<ImportBatchResult>;
     removeDIDs(dids: string[]): Promise<boolean>;
     exportBatch(dids?: string[]): Promise<GatekeeperEvent[]>;
-    exportEventsByHashes(hashes: string[]): Promise<GatekeeperEvent[]>;
+    exportEvents(hashes?: string[]): Promise<GatekeeperEvent[]>;
     importBatch(batch: GatekeeperEvent[]): Promise<ImportBatchResult>;
     processEvents(): Promise<ProcessEventsResult>;
     getQueue(registry: string): Promise<Operation[]>;

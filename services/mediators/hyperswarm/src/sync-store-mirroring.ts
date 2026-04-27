@@ -5,7 +5,7 @@ import {
     filterOperationsByAcceptedHashes,
 } from './sync-persistence.js';
 
-type AcceptedEventLookup = Pick<GatekeeperInterface, 'exportEventsByHashes'>;
+type AcceptedEventLookup = Pick<GatekeeperInterface, 'exportEvents'>;
 
 function toOperations(events: GatekeeperEvent[]): Operation[] {
     return events
@@ -25,7 +25,7 @@ export async function resolveAcceptedOperationsToPersist(
         return acceptedFromCandidates;
     }
 
-    const acceptedDeferredEvents = await gatekeeper.exportEventsByHashes(missingAcceptedHashes);
+    const acceptedDeferredEvents = await gatekeeper.exportEvents(missingAcceptedHashes);
     const acceptedDeferredOperations = toOperations(acceptedDeferredEvents);
 
     return dedupeOperationsByHash([

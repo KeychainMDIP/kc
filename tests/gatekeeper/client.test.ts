@@ -582,19 +582,30 @@ describe('importBatch', () => {
     });
 });
 
-describe('exportEventsByHashes', () => {
+describe('exportEvents', () => {
     it('should return exported events by hash', async () => {
         nock(GatekeeperURL)
             .post(Endpoints.events.export)
             .reply(200, []);
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
-        const events = await gatekeeper.exportEventsByHashes(['a'.repeat(64)]);
+        const events = await gatekeeper.exportEvents(['a'.repeat(64)]);
 
         expect(events).toStrictEqual([]);
     });
 
-    it('should throw exception on exportEventsByHashes server error', async () => {
+    it('should return exported events when hashes are omitted', async () => {
+        nock(GatekeeperURL)
+            .post(Endpoints.events.export)
+            .reply(200, []);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        const events = await gatekeeper.exportEvents();
+
+        expect(events).toStrictEqual([]);
+    });
+
+    it('should throw exception on exportEvents server error', async () => {
         nock(GatekeeperURL)
             .post(Endpoints.events.export)
             .reply(500, ServerError);
@@ -602,7 +613,7 @@ describe('exportEventsByHashes', () => {
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
 
         try {
-            await gatekeeper.exportEventsByHashes(['a'.repeat(64)]);
+            await gatekeeper.exportEvents(['a'.repeat(64)]);
             throw new ExpectedExceptionError();
         }
         catch (error: any) {

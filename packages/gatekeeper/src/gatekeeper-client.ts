@@ -256,7 +256,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
         }
     }
 
-    async exportEventsByHashes(hashes: string[]): Promise<GatekeeperEvent[]> {
+    async exportEvents(hashes?: string[]): Promise<GatekeeperEvent[]> {
         try {
             const response = await this.axios.post(`${this.API}/events/export`, { hashes });
             return response.data;

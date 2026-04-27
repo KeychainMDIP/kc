@@ -1255,9 +1255,9 @@ export default class Gatekeeper implements GatekeeperInterface {
         return events.sort((a, b) => new Date(a.operation.signature?.signed ?? 0).getTime() - new Date(b.operation.signature?.signed ?? 0).getTime());
     }
 
-    async exportEventsByHashes(hashes: string[]): Promise<GatekeeperEvent[]> {
+    async exportEvents(hashes?: string[]): Promise<GatekeeperEvent[]> {
         if (!Array.isArray(hashes) || hashes.length === 0) {
-            return [];
+            return this.exportBatch();
         }
 
         const pending = new Set(
@@ -1267,7 +1267,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         );
 
         if (pending.size === 0) {
-            return [];
+            return this.exportBatch();
         }
 
         const dids = await this.getDIDs();

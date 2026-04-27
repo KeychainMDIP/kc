@@ -1137,7 +1137,7 @@ describe('processEvents', () => {
             assetCreate.signature!.hash.toLowerCase(),
         ]));
 
-        const exported = await gatekeeper.exportEventsByHashes([
+        const exported = await gatekeeper.exportEvents([
             controllerCreate.signature!.hash,
             assetCreate.signature!.hash,
         ]);
@@ -1147,6 +1147,17 @@ describe('processEvents', () => {
             .sort();
 
         expect(exportedHashes).toStrictEqual([
+            assetCreate.signature!.hash.toLowerCase(),
+            controllerCreate.signature!.hash.toLowerCase(),
+        ].sort());
+
+        const exportedAll = await gatekeeper.exportEvents();
+        const exportedAllHashes = exportedAll
+            .map(event => event.operation.signature?.hash?.toLowerCase())
+            .filter((hash): hash is string => !!hash)
+            .sort();
+
+        expect(exportedAllHashes).toStrictEqual([
             assetCreate.signature!.hash.toLowerCase(),
             controllerCreate.signature!.hash.toLowerCase(),
         ].sort());

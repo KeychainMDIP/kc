@@ -1362,8 +1362,8 @@ v1router.post('/batch/export', async (req, res) => {
 
 v1router.post('/events/export', async (req, res) => {
     try {
-        const { hashes } = req.body;
-        const response = await gatekeeper.exportEventsByHashes(hashes);
+        const hashes = req.body?.hashes;
+        const response = await gatekeeper.exportEvents(hashes);
         res.json(response);
     } catch (error: any) {
         log.error({ error }, 'Request error');
