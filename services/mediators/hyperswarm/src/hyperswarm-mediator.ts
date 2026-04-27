@@ -10,7 +10,7 @@ import { EventEmitter } from 'events';
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import KeymasterClient from '@mdip/keymaster/client';
 import KuboClient from '@mdip/ipfs/kubo';
-import { Operation } from '@mdip/gatekeeper/types';
+import { GatekeeperEvent, Operation } from '@mdip/gatekeeper/types';
 import CipherNode from '@mdip/cipher/node';
 import { childLogger } from '@mdip/common/logger';
 import config from './config.js';
@@ -2073,7 +2073,7 @@ async function shareDb(conn: HyperswarmConnection): Promise<void> {
             const exports = await gatekeeper.exportBatch(didBatch);
 
             // hyperswarm distributes only operations
-            const batch = exports.map(event => event.operation);
+            const batch: Operation[] = exports.map((event: GatekeeperEvent) => event.operation);
             log.debug(`${batch.length} operations fetched`);
 
             if (!batch || batch.length === 0) {
@@ -2207,14 +2207,15 @@ async function mergeBatch(batch: Operation[]): Promise<void> {
     log.debug({ durationMs: processDurationMs }, 'processEvents');
     const processSummary = { ...response };
     delete processSummary.acceptedHashes;
+    delete processSummary.acceptedEvents;
     log.debug(`mergeBatch: ${JSON.stringify(processSummary)}`);
     syncStats.opsApplied += (response.added ?? 0) + (response.merged ?? 0);
     syncStats.opsRejected += response.rejected ?? 0;
 
-    const acceptedToPersist = await resolveAcceptedOperationsToPersist(
+    const acceptedToPersist = resolveAcceptedOperationsToPersist(
         acceptedCandidates,
         response.acceptedHashes,
-        gatekeeper,
+        response.acceptedEvents,
     );
     await persistAcceptedOperations(acceptedToPersist, 'mergeBatch');
 }
@@ -2731,7 +2732,7 @@ async function flushQueue(): Promise<void> {
         };
 
         const hashes = batch
-            .map(op => op.signature?.hash)
+            .map((op: Operation) => op.signature?.hash)
             .filter((hash): hash is string => !!hash);
         await gatekeeper.clearQueue(REGISTRY, hashes);
         await relayMsg(msg);

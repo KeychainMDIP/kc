@@ -1037,6 +1037,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         let merged = 0;
         let rejected = 0;
         const acceptedHashes: string[] = [];
+        const acceptedEvents: GatekeeperEvent[] = [];
 
         this.eventsQueue = [];
 
@@ -1050,6 +1051,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                 if (event.operation.signature?.hash) {
                     acceptedHashes.push(event.operation.signature.hash.toLowerCase());
                 }
+                acceptedEvents.push(event);
                 this.log.debug(`import ${i}/${total}: added event for ${event.did}`);
             }
             else if (status === ImportStatus.MERGED) {
@@ -1057,6 +1059,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                 if (event.operation.signature?.hash) {
                     acceptedHashes.push(event.operation.signature.hash.toLowerCase());
                 }
+                acceptedEvents.push(event);
                 this.log.debug(`import ${i}/${total}: merged event for ${event.did}`);
             }
             else if (status === ImportStatus.REJECTED) {
@@ -1071,7 +1074,7 @@ export default class Gatekeeper implements GatekeeperInterface {
             event = tempQueue.shift();
         }
 
-        return { added, merged, rejected, acceptedHashes };
+        return { added, merged, rejected, acceptedHashes, acceptedEvents };
     }
 
     async processEvents(): Promise<ProcessEventsResult> {
@@ -1084,6 +1087,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         let rejected = 0;
         let done = false;
         const acceptedHashes = new Set<string>();
+        const acceptedEventsByHash = new Map<string, GatekeeperEvent>();
 
         try {
             this.isProcessingEvents = true;
@@ -1096,6 +1100,12 @@ export default class Gatekeeper implements GatekeeperInterface {
                 rejected += response.rejected;
                 for (const hash of response.acceptedHashes) {
                     acceptedHashes.add(hash);
+                }
+                for (const event of response.acceptedEvents) {
+                    const hash = event.operation.signature?.hash?.toLowerCase();
+                    if (hash && !acceptedEventsByHash.has(hash)) {
+                        acceptedEventsByHash.set(hash, event);
+                    }
                 }
 
                 done = (response.added === 0 && response.merged === 0);
@@ -1116,9 +1126,15 @@ export default class Gatekeeper implements GatekeeperInterface {
             rejected,
             pending,
             acceptedHashes: Array.from(acceptedHashes),
+            acceptedEvents: Array.from(acceptedEventsByHash.values()),
         };
 
-        this.log.debug(`processEvents: ${JSON.stringify(response)}`);
+        const { acceptedEvents, ...logResponseBase } = response;
+        const logResponse = {
+            ...logResponseBase,
+            acceptedEventsCount: acceptedEvents.length,
+        };
+        this.log.debug(`processEvents: ${JSON.stringify(logResponse)}`);
 
         return response;
     }
@@ -1240,57 +1256,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         };
     }
 
-    async exportBatch(dids?: string[], hashes?: string[]): Promise<GatekeeperEvent[]> {
-        if (Array.isArray(hashes) && hashes.length > 0) {
-            const pending = new Set(
-                hashes
-                    .filter((hash): hash is string => typeof hash === 'string' && hash !== '')
-                    .map(hash => hash.toLowerCase())
-            );
-
-            if (pending.size === 0) {
-                return this.exportBatch(dids);
-            }
-
-            const allDids = await this.getDIDs();
-            if (!Array.isArray(allDids)) {
-                return [];
-            }
-
-            const matches: GatekeeperEvent[] = [];
-
-            for (const did of allDids) {
-                if (pending.size === 0) {
-                    break;
-                }
-
-                if (typeof did !== 'string') {
-                    continue;
-                }
-
-                const events = await this.exportDID(did);
-                for (const event of events) {
-                    const hash = event.operation?.signature?.hash;
-                    if (typeof hash !== 'string' || hash === '') {
-                        continue;
-                    }
-
-                    const normalized = hash.toLowerCase();
-                    if (!pending.has(normalized)) {
-                        continue;
-                    }
-
-                    matches.push(event);
-                    pending.delete(normalized);
-                    if (pending.size === 0) {
-                        break;
-                    }
-                }
-            }
-
-            return matches;
-        }
-
+    async exportBatch(dids?: string[]): Promise<GatekeeperEvent[]> {
         const allDIDs = await this.exportDIDs(dids);
         const nonlocalDIDs = allDIDs.filter(events => {
             if (events.length > 0) {

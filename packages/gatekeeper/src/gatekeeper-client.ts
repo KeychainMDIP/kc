@@ -246,9 +246,9 @@ export default class GatekeeperClient implements GatekeeperInterface {
         }
     }
 
-    async exportBatch(dids?: string[], hashes?: string[]): Promise<GatekeeperEvent[]> {
+    async exportBatch(dids?: string[]): Promise<GatekeeperEvent[]> {
         try {
-            const response = await this.axios.post(`${this.API}/batch/export`, { dids, hashes });
+            const response = await this.axios.post(`${this.API}/batch/export`, { dids });
             return response.data;
         }
         catch (error) {

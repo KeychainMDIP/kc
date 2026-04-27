@@ -42,10 +42,10 @@ async function mirrorCurrentMediatorMergeBatch(
     const imported = await gatekeeper.importBatch(events);
     const acceptedCandidates = filterIndexRejectedOperations(batch, imported.rejectedIndices);
     const processed = await gatekeeper.processEvents();
-    const acceptedToPersist = await resolveAcceptedOperationsToPersist(
+    const acceptedToPersist = resolveAcceptedOperationsToPersist(
         acceptedCandidates,
         processed.acceptedHashes,
-        gatekeeper,
+        processed.acceptedEvents,
     );
     const { records } = mapAcceptedOperationsToSyncRecords(acceptedToPersist);
     await syncStore.upsertMany(records);

@@ -1352,8 +1352,7 @@ v1router.post('/dids/import', async (req, res) => {
 v1router.post('/batch/export', async (req, res) => {
     try {
         const dids = req.body?.dids;
-        const hashes = req.body?.hashes;
-        const response = await gatekeeper.exportBatch(dids, hashes);
+        const response = await gatekeeper.exportBatch(dids);
         res.json(response);
     } catch (error: any) {
         log.error({ error }, 'Request error');

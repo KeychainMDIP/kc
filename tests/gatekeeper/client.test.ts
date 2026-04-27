@@ -527,17 +527,6 @@ describe('exportBatch', () => {
         expect(ops).toStrictEqual([]);
     });
 
-    it('should return exported batch by hashes', async () => {
-        nock(GatekeeperURL)
-            .post(Endpoints.batch.export, { hashes: ['a'.repeat(64)] })
-            .reply(200, []);
-
-        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
-        const ops = await gatekeeper.exportBatch(undefined, ['a'.repeat(64)]);
-
-        expect(ops).toStrictEqual([]);
-    });
-
     it('should throw exception on exportBatch server error', async () => {
         nock(GatekeeperURL)
             .post(Endpoints.batch.export)
@@ -664,12 +653,12 @@ describe('processEvents', () => {
     it('should return process status', async () => {
         nock(GatekeeperURL)
             .post(Endpoints.events.process)
-            .reply(200, { added: 0, merged: 0, pending: 0, acceptedHashes: [] });
+            .reply(200, { added: 0, merged: 0, pending: 0, acceptedHashes: [], acceptedEvents: [] });
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
         const status = await gatekeeper.processEvents();
 
-        expect(status).toStrictEqual({ added: 0, merged: 0, pending: 0, acceptedHashes: [] });
+        expect(status).toStrictEqual({ added: 0, merged: 0, pending: 0, acceptedHashes: [], acceptedEvents: [] });
     });
 
     it('should throw exception on processEvents server error', async () => {

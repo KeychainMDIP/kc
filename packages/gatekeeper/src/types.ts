@@ -23,6 +23,7 @@ export interface ProcessEventsResult {
     rejected?: number;
     pending?: number;
     acceptedHashes?: string[];
+    acceptedEvents?: GatekeeperEvent[];
 }
 
 export interface VerifyDbResult {
@@ -112,6 +113,7 @@ export interface ImportEventsResult {
     merged: number;
     rejected: number;
     acceptedHashes: string[];
+    acceptedEvents: GatekeeperEvent[];
 }
 
 export interface GatekeeperClientOptions {
@@ -142,7 +144,7 @@ export interface GatekeeperInterface {
     exportDIDs(dids?: string[]): Promise<GatekeeperEvent[][]>;
     importDIDs(dids: GatekeeperEvent[][]): Promise<ImportBatchResult>;
     removeDIDs(dids: string[]): Promise<boolean>;
-    exportBatch(dids?: string[], hashes?: string[]): Promise<GatekeeperEvent[]>;
+    exportBatch(dids?: string[]): Promise<GatekeeperEvent[]>;
     importBatch(batch: GatekeeperEvent[]): Promise<ImportBatchResult>;
     processEvents(): Promise<ProcessEventsResult>;
     getQueue(registry: string): Promise<Operation[]>;
