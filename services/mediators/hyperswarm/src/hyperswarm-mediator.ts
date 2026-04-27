@@ -70,11 +70,11 @@ import {
 import { bootstrapSyncStoreFromGatekeeper } from './bootstrap.js';
 import {
     filterKnownOperations,
-    filterOperationsByAcceptedHashes,
     filterIndexRejectedOperations,
     mapAcceptedOperationsToSyncRecords,
     sortOperationsBySyncKey,
 } from './sync-persistence.js';
+import { resolveAcceptedOperationsToPersist } from './sync-store-mirroring.js';
 import {
     mapOperationToSyncKey,
 } from './sync-mapping.js';
@@ -2211,7 +2211,11 @@ async function mergeBatch(batch: Operation[]): Promise<void> {
     syncStats.opsApplied += (response.added ?? 0) + (response.merged ?? 0);
     syncStats.opsRejected += response.rejected ?? 0;
 
-    const acceptedToPersist = filterOperationsByAcceptedHashes(acceptedCandidates, response.acceptedHashes);
+    const acceptedToPersist = await resolveAcceptedOperationsToPersist(
+        acceptedCandidates,
+        response.acceptedHashes,
+        gatekeeper,
+    );
     await persistAcceptedOperations(acceptedToPersist, 'mergeBatch');
 }
 

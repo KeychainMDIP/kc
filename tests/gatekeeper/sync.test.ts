@@ -1106,6 +1106,52 @@ describe('processEvents', () => {
         expect(assetDoc3.didDocumentMetadata!.confirmed).toBe(true);
     });
 
+    it('should export accepted deferred asset creates by signature hash', async () => {
+        const controllerKeys = cipher.generateRandomJwk();
+        const controllerCreate = await helper.createAgentOp(controllerKeys, { version: 1, registry: 'TFTC' });
+        const controllerDid = await gatekeeper.createDID(controllerCreate);
+
+        const assetCreate = await helper.createAssetOp(controllerDid, controllerKeys, { registry: 'TFTC' });
+        await gatekeeper.createDID(assetCreate);
+
+        await gatekeeper.resetDb();
+
+        await gatekeeper.importBatch([{
+            registry: 'hyperswarm',
+            time: new Date().toISOString(),
+            ordinal: [1],
+            operation: assetCreate,
+        }]);
+        const first = await gatekeeper.processEvents();
+        expect(first.acceptedHashes).toStrictEqual([]);
+
+        await gatekeeper.importBatch([{
+            registry: 'hyperswarm',
+            time: new Date().toISOString(),
+            ordinal: [2],
+            operation: controllerCreate,
+        }]);
+        const second = await gatekeeper.processEvents();
+        expect(second.acceptedHashes).toEqual(expect.arrayContaining([
+            controllerCreate.signature!.hash.toLowerCase(),
+            assetCreate.signature!.hash.toLowerCase(),
+        ]));
+
+        const exported = await gatekeeper.exportEventsByHashes([
+            controllerCreate.signature!.hash,
+            assetCreate.signature!.hash,
+        ]);
+        const exportedHashes = exported
+            .map(event => event.operation.signature?.hash?.toLowerCase())
+            .filter((hash): hash is string => !!hash)
+            .sort();
+
+        expect(exportedHashes).toStrictEqual([
+            assetCreate.signature!.hash.toLowerCase(),
+            controllerCreate.signature!.hash.toLowerCase(),
+        ].sort());
+    });
+
     it('should reject events with bad signatures', async () => {
         const keypair1 = cipher.generateRandomJwk();
         const agentOp1 = await helper.createAgentOp(keypair1);

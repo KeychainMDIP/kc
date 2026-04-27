@@ -1255,6 +1255,60 @@ export default class Gatekeeper implements GatekeeperInterface {
         return events.sort((a, b) => new Date(a.operation.signature?.signed ?? 0).getTime() - new Date(b.operation.signature?.signed ?? 0).getTime());
     }
 
+    async exportEventsByHashes(hashes: string[]): Promise<GatekeeperEvent[]> {
+        if (!Array.isArray(hashes) || hashes.length === 0) {
+            return [];
+        }
+
+        const pending = new Set(
+            hashes
+                .filter((hash): hash is string => typeof hash === 'string' && hash !== '')
+                .map(hash => hash.toLowerCase())
+        );
+
+        if (pending.size === 0) {
+            return [];
+        }
+
+        const dids = await this.getDIDs();
+        if (!Array.isArray(dids)) {
+            return [];
+        }
+
+        const matches: GatekeeperEvent[] = [];
+
+        for (const did of dids) {
+            if (pending.size === 0) {
+                break;
+            }
+
+            if (typeof did !== 'string') {
+                continue;
+            }
+
+            const events = await this.exportDID(did);
+            for (const event of events) {
+                const hash = event.operation?.signature?.hash;
+                if (typeof hash !== 'string' || hash === '') {
+                    continue;
+                }
+
+                const normalized = hash.toLowerCase();
+                if (!pending.has(normalized)) {
+                    continue;
+                }
+
+                matches.push(event);
+                pending.delete(normalized);
+                if (pending.size === 0) {
+                    break;
+                }
+            }
+        }
+
+        return matches;
+    }
+
     async getQueue(registry: string): Promise<Operation[]> {
         if (!ValidRegistries.includes(registry)) {
             throw new InvalidParameterError(`registry=${registry}`);

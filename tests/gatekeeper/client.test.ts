@@ -25,11 +25,12 @@ const Endpoints = {
         export: '/api/v1/batch/export',
         import: '/api/v1/batch/import',
     },
-    registries: '/api/v1/registries',
-    queue: '/api/v1/queue',
     events: {
+        export: '/api/v1/events/export',
         process: '/api/v1/events/process',
     },
+    registries: '/api/v1/registries',
+    queue: '/api/v1/queue',
     cas: {
         json: '/api/v1/cas/json',
         text: '/api/v1/cas/text',
@@ -573,6 +574,35 @@ describe('importBatch', () => {
         try {
             // @ts-expect-error Testing without arguments
             await gatekeeper.importBatch();
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('exportEventsByHashes', () => {
+    it('should return exported events by hash', async () => {
+        nock(GatekeeperURL)
+            .post(Endpoints.events.export)
+            .reply(200, []);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        const events = await gatekeeper.exportEventsByHashes(['a'.repeat(64)]);
+
+        expect(events).toStrictEqual([]);
+    });
+
+    it('should throw exception on exportEventsByHashes server error', async () => {
+        nock(GatekeeperURL)
+            .post(Endpoints.events.export)
+            .reply(500, ServerError);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+
+        try {
+            await gatekeeper.exportEventsByHashes(['a'.repeat(64)]);
             throw new ExpectedExceptionError();
         }
         catch (error: any) {

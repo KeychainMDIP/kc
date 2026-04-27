@@ -67,6 +67,73 @@ export function filterOperationsByAcceptedHashes(
     });
 }
 
+export function collectMissingAcceptedHashes(
+    operations: Operation[],
+    acceptedHashes: string[] = [],
+): string[] {
+    if (!Array.isArray(acceptedHashes) || acceptedHashes.length === 0) {
+        return [];
+    }
+
+    const operationHashSet = new Set<string>();
+    if (Array.isArray(operations)) {
+        for (const operation of operations) {
+            const hash = operation?.signature?.hash;
+            if (typeof hash === 'string' && hash !== '') {
+                operationHashSet.add(hash.toLowerCase());
+            }
+        }
+    }
+
+    const missing: string[] = [];
+    const seen = new Set<string>();
+
+    for (const hash of acceptedHashes) {
+        if (typeof hash !== 'string' || hash === '') {
+            continue;
+        }
+
+        const normalized = hash.toLowerCase();
+        if (seen.has(normalized)) {
+            continue;
+        }
+        seen.add(normalized);
+
+        if (!operationHashSet.has(normalized)) {
+            missing.push(normalized);
+        }
+    }
+
+    return missing;
+}
+
+export function dedupeOperationsByHash(operations: Operation[]): Operation[] {
+    if (!Array.isArray(operations) || operations.length === 0) {
+        return [];
+    }
+
+    const unique: Operation[] = [];
+    const seen = new Set<string>();
+
+    for (const operation of operations) {
+        const hash = operation?.signature?.hash;
+        if (typeof hash !== 'string' || hash === '') {
+            unique.push(operation);
+            continue;
+        }
+
+        const normalized = hash.toLowerCase();
+        if (seen.has(normalized)) {
+            continue;
+        }
+
+        seen.add(normalized);
+        unique.push(operation);
+    }
+
+    return unique;
+}
+
 export function mapAcceptedOperationsToSyncRecords(operations: Operation[]): MapAcceptedResult {
     const records: SyncPersistenceRecord[] = [];
     let invalid = 0;

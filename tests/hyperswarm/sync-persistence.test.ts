@@ -2,6 +2,8 @@ import { Operation } from '@mdip/gatekeeper/types';
 import { jest } from '@jest/globals';
 import InMemoryOperationSyncStore from '../../services/mediators/hyperswarm/src/db/memory.ts';
 import {
+    collectMissingAcceptedHashes,
+    dedupeOperationsByHash,
     filterKnownOperations,
     filterOperationsByAcceptedHashes,
     filterIndexRejectedOperations,
@@ -253,6 +255,35 @@ describe('sync-persistence helpers', () => {
     it('returns empty when operations input is empty or not an array', () => {
         expect(filterOperationsByAcceptedHashes([], [h('a')])).toStrictEqual([]);
         expect(filterOperationsByAcceptedHashes('not-an-array' as unknown as Operation[], [h('a')])).toStrictEqual([]);
+    });
+
+    it('collects accepted hashes that are not present in the current operation list', () => {
+        const a = makeCreateOp('a', '2026-02-10T10:00:00.000Z');
+
+        const missing = collectMissingAcceptedHashes([a], [h('a').toUpperCase(), h('b'), h('b'), '' as unknown as string]);
+
+        expect(missing).toStrictEqual([h('b')]);
+    });
+
+    it('returns empty missing accepted hash list when accepted hashes are empty', () => {
+        const a = makeCreateOp('a', '2026-02-10T10:00:00.000Z');
+        expect(collectMissingAcceptedHashes([a])).toStrictEqual([]);
+        expect(collectMissingAcceptedHashes([a], [])).toStrictEqual([]);
+    });
+
+    it('de-duplicates operations by signature hash while preserving first occurrence order', () => {
+        const a = makeCreateOp('a', '2026-02-10T10:00:00.000Z');
+        const b = makeCreateOp('b', '2026-02-10T11:00:00.000Z');
+        const duplicateA = {
+            ...a,
+            signature: {
+                ...a.signature!,
+                value: 'sig-a-duplicate',
+            },
+        };
+
+        expect(dedupeOperationsByHash([a, b, duplicateA])).toStrictEqual([a, b]);
+        expect(dedupeOperationsByHash([])).toStrictEqual([]);
     });
 
     it('filters operations already present in the local sync-store', async () => {
