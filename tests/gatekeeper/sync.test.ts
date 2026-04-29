@@ -279,6 +279,22 @@ describe('importBatch', () => {
         expect(response.processed).toBe(1);
     });
 
+    it('should queue an already-seen event again after resetDb', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await helper.createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        await gatekeeper.importBatch(ops);
+        await gatekeeper.processEvents();
+        await gatekeeper.resetDb();
+
+        const response = await gatekeeper.importBatch(ops);
+
+        expect(response.queued).toBe(1);
+        expect(response.processed).toBe(0);
+    });
+
     it('should throw an exception on undefined', async () => {
         try {
             // @ts-expect-error Testing invalid usage
