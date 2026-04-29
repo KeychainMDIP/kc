@@ -1,10 +1,9 @@
 import { Pool, PoolClient } from 'pg';
 import { InvalidDIDError } from '@mdip/common/errors';
-import { childLogger } from '@mdip/common/logger';
 import { GatekeeperDb, GatekeeperEvent, Operation, BlockId, BlockInfo } from '../types.js';
 
-interface EventsRow {
-    events: GatekeeperEvent[] | string | null;
+interface EventRow {
+    event: GatekeeperEvent | string | null;
 }
 
 interface QueueRow {
@@ -21,8 +20,20 @@ interface LengthRow {
     length: number | string;
 }
 
+interface CountRow {
+    count: number | string;
+}
+
+interface SeqRow {
+    seq: number | string;
+}
+
+interface ValueRow {
+    value: string | null;
+}
+
 const POSTGRES_NOT_STARTED_ERROR = 'Postgres DB not started. Call start() first.';
-const log = childLogger({ service: 'gatekeeper-db', module: 'postgres' });
+const SCHEMA_VERSION = '2';
 
 export default class DbPostgres implements GatekeeperDb {
     private readonly dbName: string;
@@ -94,6 +105,22 @@ export default class DbPostgres implements GatekeeperDb {
         return value as T[];
     }
 
+    private parseObject<T>(value: unknown): T {
+        if (value == null) {
+            throw new Error('Expected object value');
+        }
+
+        if (typeof value === 'string') {
+            return JSON.parse(value) as T;
+        }
+
+        return value as T;
+    }
+
+    private parseEvent(value: unknown): GatekeeperEvent {
+        return this.parseObject<GatekeeperEvent>(value);
+    }
+
     private toNumber(value: number | string): number {
         if (typeof value === 'number') {
             return value;
@@ -101,21 +128,32 @@ export default class DbPostgres implements GatekeeperDb {
         return parseInt(value, 10);
     }
 
-    async start(): Promise<void> {
-        if (this.pool) {
-            return;
-        }
+    private async ensureSchema(client: PoolClient): Promise<void> {
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS gatekeeper_meta (
+                namespace TEXT NOT NULL,
+                key TEXT NOT NULL,
+                value TEXT NOT NULL,
+                PRIMARY KEY (namespace, key)
+            );
 
-        this.pool = new Pool({ connectionString: this.url });
-
-        const pool = this.getPool();
-        await pool.query(`
             CREATE TABLE IF NOT EXISTS gatekeeper_dids (
                 namespace TEXT NOT NULL,
                 id TEXT NOT NULL,
                 events JSONB NOT NULL DEFAULT '[]'::jsonb,
                 PRIMARY KEY (namespace, id)
             );
+
+            CREATE TABLE IF NOT EXISTS gatekeeper_events (
+                namespace TEXT NOT NULL,
+                id TEXT NOT NULL,
+                seq INTEGER NOT NULL,
+                event JSONB NOT NULL,
+                PRIMARY KEY (namespace, id, seq)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_gatekeeper_events_ns_id_seq_desc
+                ON gatekeeper_events (namespace, id, seq DESC);
 
             CREATE TABLE IF NOT EXISTS gatekeeper_queue (
                 namespace TEXT NOT NULL,
@@ -140,6 +178,134 @@ export default class DbPostgres implements GatekeeperDb {
         `);
     }
 
+    private async getSchemaVersion(client: PoolClient): Promise<string | null> {
+        const result = await client.query<ValueRow>(
+            `SELECT value
+             FROM gatekeeper_meta
+             WHERE namespace = $1 AND key = 'schema_version'
+             LIMIT 1`,
+            [this.dbName]
+        );
+
+        if (result.rowCount === 0) {
+            return null;
+        }
+
+        return result.rows[0].value;
+    }
+
+    private async setSchemaVersion(client: PoolClient, version: string): Promise<void> {
+        await client.query(
+            `INSERT INTO gatekeeper_meta (namespace, key, value)
+             VALUES ($1, 'schema_version', $2)
+             ON CONFLICT (namespace, key)
+             DO UPDATE SET value = EXCLUDED.value`,
+            [this.dbName, version]
+        );
+    }
+
+    private async legacyDidTableExists(client: PoolClient): Promise<boolean> {
+        const result = await client.query<{ exists: string | null }>(
+            `SELECT to_regclass('public.gatekeeper_dids') AS exists`
+        );
+
+        return !!result.rows[0]?.exists;
+    }
+
+    private async migrateLegacySchema(client: PoolClient): Promise<boolean> {
+        if (!(await this.legacyDidTableExists(client))) {
+            return false;
+        }
+
+        const legacyCount = await client.query<CountRow>(
+            `SELECT COALESCE(SUM(jsonb_array_length(events)), 0) AS count
+             FROM gatekeeper_dids
+             WHERE namespace = $1`,
+            [this.dbName]
+        );
+        const expectedRows = this.toNumber(legacyCount.rows[0].count);
+
+        if (expectedRows === 0) {
+            return false;
+        }
+
+        await client.query(
+            `DELETE FROM gatekeeper_events
+             WHERE namespace = $1`,
+            [this.dbName]
+        );
+
+        await client.query(
+            `INSERT INTO gatekeeper_events (namespace, id, seq, event)
+             SELECT dids.namespace, dids.id, element.ordinality - 1, element.event
+             FROM gatekeeper_dids AS dids
+             CROSS JOIN LATERAL jsonb_array_elements(dids.events) WITH ORDINALITY AS element(event, ordinality)
+             WHERE dids.namespace = $1`,
+            [this.dbName]
+        );
+
+        const migratedCount = await client.query<CountRow>(
+            `SELECT COUNT(*) AS count
+             FROM gatekeeper_events
+             WHERE namespace = $1`,
+            [this.dbName]
+        );
+        const actualRows = this.toNumber(migratedCount.rows[0].count);
+
+        if (actualRows !== expectedRows) {
+            throw new Error(`Legacy migration count mismatch: expected ${expectedRows}, got ${actualRows}`);
+        }
+
+        await client.query(
+            `DELETE FROM gatekeeper_dids
+             WHERE namespace = $1`,
+            [this.dbName]
+        );
+
+        return true;
+    }
+
+    private async insertEventRows(client: PoolClient, id: string, events: GatekeeperEvent[]): Promise<number> {
+        if (events.length === 0) {
+            return 0;
+        }
+
+        const values: string[] = [];
+        const params: Array<string | number> = [];
+
+        for (let i = 0; i < events.length; i += 1) {
+            const base = params.length;
+            values.push(`($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}::jsonb)`);
+            params.push(this.dbName, id, i, JSON.stringify(events[i]));
+        }
+
+        const result = await client.query(
+            `INSERT INTO gatekeeper_events (namespace, id, seq, event)
+             VALUES ${values.join(', ')}`,
+            params
+        );
+
+        return result.rowCount ?? 0;
+    }
+
+    async start(): Promise<void> {
+        if (this.pool) {
+            return;
+        }
+
+        this.pool = new Pool({ connectionString: this.url });
+        await this.withTx(async client => {
+            await this.ensureSchema(client);
+            const version = await this.getSchemaVersion(client);
+            if (version === SCHEMA_VERSION) {
+                return;
+            }
+
+            await this.migrateLegacySchema(client);
+            await this.setSchemaVersion(client, SCHEMA_VERSION);
+        });
+    }
+
     async stop(): Promise<void> {
         if (this.pool) {
             await this.pool.end();
@@ -149,6 +315,8 @@ export default class DbPostgres implements GatekeeperDb {
 
     async resetDb(): Promise<void> {
         await this.withTx(async client => {
+            await client.query('DELETE FROM gatekeeper_meta WHERE namespace = $1', [this.dbName]);
+            await client.query('DELETE FROM gatekeeper_events WHERE namespace = $1', [this.dbName]);
             await client.query('DELETE FROM gatekeeper_dids WHERE namespace = $1', [this.dbName]);
             await client.query('DELETE FROM gatekeeper_queue WHERE namespace = $1', [this.dbName]);
             await client.query('DELETE FROM gatekeeper_blocks WHERE namespace = $1', [this.dbName]);
@@ -157,32 +325,37 @@ export default class DbPostgres implements GatekeeperDb {
 
     async addEvent(did: string, event: GatekeeperEvent): Promise<number> {
         const id = this.splitSuffix(did);
-        const pool = this.getPool();
 
-        const result = await pool.query(
-            `INSERT INTO gatekeeper_dids (namespace, id, events)
-             VALUES ($1, $2, $3::jsonb)
-             ON CONFLICT (namespace, id)
-             DO UPDATE SET events = COALESCE(gatekeeper_dids.events, '[]'::jsonb) || EXCLUDED.events`,
-            [this.dbName, id, JSON.stringify([event])]
-        );
+        return this.withTx(async client => {
+            const nextSeq = await client.query<SeqRow>(
+                `SELECT COALESCE(MAX(seq), -1) + 1 AS seq
+                 FROM gatekeeper_events
+                 WHERE namespace = $1 AND id = $2`,
+                [this.dbName, id]
+            );
 
-        return result.rowCount ?? 0;
+            const result = await client.query(
+                `INSERT INTO gatekeeper_events (namespace, id, seq, event)
+                 VALUES ($1, $2, $3, $4::jsonb)`,
+                [this.dbName, id, this.toNumber(nextSeq.rows[0].seq), JSON.stringify(event)]
+            );
+
+            return result.rowCount ?? 0;
+        });
     }
 
     async setEvents(did: string, events: GatekeeperEvent[]): Promise<number> {
         const id = this.splitSuffix(did);
-        const pool = this.getPool();
 
-        const result = await pool.query(
-            `INSERT INTO gatekeeper_dids (namespace, id, events)
-             VALUES ($1, $2, $3::jsonb)
-             ON CONFLICT (namespace, id)
-             DO UPDATE SET events = EXCLUDED.events`,
-            [this.dbName, id, JSON.stringify(events)]
-        );
+        return this.withTx(async client => {
+            await client.query(
+                `DELETE FROM gatekeeper_events
+                 WHERE namespace = $1 AND id = $2`,
+                [this.dbName, id]
+            );
 
-        return result.rowCount ?? 0;
+            return this.insertEventRows(client, id, events);
+        });
     }
 
     async getEvents(did: string): Promise<GatekeeperEvent[]> {
@@ -190,19 +363,15 @@ export default class DbPostgres implements GatekeeperDb {
 
         try {
             const id = this.splitSuffix(did);
-            const result = await pool.query<EventsRow>(
-                `SELECT events
-                 FROM gatekeeper_dids
+            const result = await pool.query<EventRow>(
+                `SELECT event
+                 FROM gatekeeper_events
                  WHERE namespace = $1 AND id = $2
-                 LIMIT 1`,
+                 ORDER BY seq ASC`,
                 [this.dbName, id]
             );
 
-            if (result.rowCount === 0) {
-                return [];
-            }
-
-            return this.parseArray<GatekeeperEvent>(result.rows[0].events);
+            return result.rows.map(row => this.parseEvent(row.event));
         } catch {
             return [];
         }
@@ -213,7 +382,7 @@ export default class DbPostgres implements GatekeeperDb {
         const pool = this.getPool();
 
         const result = await pool.query(
-            `DELETE FROM gatekeeper_dids
+            `DELETE FROM gatekeeper_events
              WHERE namespace = $1 AND id = $2`,
             [this.dbName, id]
         );
@@ -224,9 +393,10 @@ export default class DbPostgres implements GatekeeperDb {
     async getAllKeys(): Promise<string[]> {
         const pool = this.getPool();
         const result = await pool.query<{ id: string }>(
-            `SELECT id
-             FROM gatekeeper_dids
-             WHERE namespace = $1`,
+            `SELECT DISTINCT id
+             FROM gatekeeper_events
+             WHERE namespace = $1
+             ORDER BY id ASC`,
             [this.dbName]
         );
 
@@ -309,8 +479,7 @@ export default class DbPostgres implements GatekeeperDb {
             });
 
             return true;
-        } catch (error) {
-            log.error({ error }, 'Postgres clearQueue error');
+        } catch {
             return false;
         }
     }

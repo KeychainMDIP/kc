@@ -63,7 +63,6 @@ export default class Gatekeeper implements GatekeeperInterface {
     private readonly ipfsEnabled: boolean;
     supportedRegistries: string[];
     private didLocks = new Map<string, Promise<void>>();
-
     constructor(options: GatekeeperOptions) {
         if (!options || !options.db) {
             throw new InvalidParameterError('missing options.db');
@@ -97,6 +96,12 @@ export default class Gatekeeper implements GatekeeperInterface {
             if (!ValidRegistries.includes(registry)) {
                 throw new InvalidParameterError(`registry=${registry}`);
             }
+        }
+    }
+
+    private clearEventsSeen(): void {
+        for (const key of Object.keys(this.eventsSeen)) {
+            delete this.eventsSeen[key];
         }
     }
 
@@ -275,7 +280,9 @@ export default class Gatekeeper implements GatekeeperInterface {
     // For testing purposes
     async resetDb(): Promise<boolean> {
         await this.db.resetDb();
+        this.clearEventsSeen();
         this.verifiedDIDs = {};
+        this.eventsQueue = [];
         return true;
     }
 
@@ -402,11 +409,19 @@ export default class Gatekeeper implements GatekeeperInterface {
         }
 
         if (operation.mdip.type === 'asset') {
-            if (operation.controller !== operation.signature?.signer) {
+            const controllerDid = operation.signature?.signer;
+            if (!controllerDid) {
+                throw new InvalidOperationError('signature.signer');
+            }
+
+            if (operation.controller !== controllerDid) {
                 throw new InvalidOperationError('signer is not controller');
             }
 
-            const doc = await this.resolveDID(operation.signature!.signer, { confirm: true, versionTime: operation.signature!.signed });
+            const doc = await this.resolveDID(controllerDid, {
+                confirm: true,
+                versionTime: operation.signature!.signed,
+            });
 
             if (doc.mdip && doc.mdip.registry === 'local' && operation.mdip.registry !== 'local') {
                 throw new InvalidOperationError(`non-local registry=${operation.mdip.registry}`);
@@ -448,7 +463,10 @@ export default class Gatekeeper implements GatekeeperInterface {
 
         if (doc.didDocument.controller) {
             // This DID is an asset, verify with controller's keys
-            const controllerDoc = await this.resolveDID(doc.didDocument.controller, { confirm: true, versionTime: operation.signature!.signed });
+            const controllerDoc = await this.resolveDID(doc.didDocument.controller, {
+                confirm: true,
+                versionTime: operation.signature!.signed,
+            });
             return this.verifyUpdateOperation(operation, controllerDoc);
         }
 
@@ -607,7 +625,6 @@ export default class Gatekeeper implements GatekeeperInterface {
         options?: ResolveDIDOptions
     ): Promise<MdipDocument> {
         const { versionTime, versionSequence, confirm = false, verify = false } = options || {};
-
         if (!did || !isValidDID(did)) {
             return {
                 didResolutionMetadata: {
@@ -639,17 +656,16 @@ export default class Gatekeeper implements GatekeeperInterface {
 
         function generateStandardDatetime(time: any): string {
             const date = new Date(time);
-            // Remove milliseconds for standardization
             return date.toISOString().replace(/\.\d{3}Z$/, 'Z');
         }
 
         const created = generateStandardDatetime(doc.didDocumentMetadata?.created);
         const canonicalId = doc.didDocumentMetadata?.canonicalId;
-        let versionNum = 1; // initial version is version 1 by definition
-        let confirmed = true; // create event is always confirmed by definition
+        let versionNum = 1;
+        let confirmed = true;
 
-        for (const { time, operation, registry, blockchain } of events) {
-            const versionId = await this.generateCID(operation);
+        for (const { time, operation, registry, blockchain, opid } of events) {
+            const versionId = opid || await this.generateCID(operation);
             const updated = generateStandardDatetime(time);
             let timestamp;
 
@@ -713,7 +729,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                     version: versionNum.toString(),
                     confirmed,
                     timestamp,
-                }
+                };
                 continue;
             }
 
@@ -738,7 +754,6 @@ export default class Gatekeeper implements GatekeeperInterface {
                     throw new InvalidOperationError('signature');
                 }
 
-                // TEMP during did:test, operation.previd is optional
                 if (operation.previd && operation.previd !== doc.didDocumentMetadata?.versionId) {
                     throw new InvalidOperationError('previd');
                 }
@@ -756,7 +771,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                     version: versionNum.toString(),
                     confirmed,
                     timestamp,
-                }
+                };
                 continue;
             }
 
@@ -774,21 +789,19 @@ export default class Gatekeeper implements GatekeeperInterface {
                     version: versionNum.toString(),
                     confirmed,
                     timestamp,
-                }
+                };
             }
         }
 
         doc.didResolutionMetadata = {
-            // We'll deliberately use millisecond precision here to avoid intermittent unit test failures
             retrieved: new Date().toISOString(),
         };
 
-        // Remove deprecated fields
         delete (doc as any)['@context'];
 
         if (doc.mdip) {
-            delete doc.mdip.opid // Replaced by didDocumentMetadata.versionId
-            delete doc.mdip.registration // Replaced by didDocumentMetadata.timestamp
+            delete doc.mdip.opid;
+            delete doc.mdip.registration;
         }
 
         return copyJSON(doc);
@@ -925,9 +938,13 @@ export default class Gatekeeper implements GatekeeperInterface {
             }
 
             const did = event.did;
+            if (!did) {
+                return ImportStatus.REJECTED;
+            }
 
             return await this.withDidLock(did, async () => {
-                const currentEvents = await this.db.getEvents(did);
+                const lockedDid = did;
+                const currentEvents = await this.db.getEvents(lockedDid);
 
                 for (const e of currentEvents) {
                     if (!e.opid) {
@@ -954,7 +971,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                         // If this import is on the native registry, replace the current one
                         const index = currentEvents.indexOf(opMatch);
                         currentEvents[index] = event;
-                        await this.db.setEvents(did, currentEvents);
+                        await this.db.setEvents(lockedDid, currentEvents);
                         return ImportStatus.ADDED;
                     }
 
@@ -967,13 +984,13 @@ export default class Gatekeeper implements GatekeeperInterface {
                     }
 
                     if (currentEvents.length === 0) {
-                        await this.db.addEvent(did, event);
+                        await this.db.addEvent(lockedDid, event);
                         return ImportStatus.ADDED;
                     }
 
                     // TEMP during did:test, operation.previd is optional
                     if (!event.operation.previd) {
-                        await this.db.addEvent(did, event);
+                        await this.db.addEvent(lockedDid, event);
                         return ImportStatus.ADDED;
                     }
 
@@ -986,7 +1003,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                     const index = currentEvents.indexOf(idMatch);
 
                     if (index === currentEvents.length - 1) {
-                        await this.db.addEvent(did, event);
+                        await this.db.addEvent(lockedDid, event);
                         return ImportStatus.ADDED;
                     }
 
@@ -1000,7 +1017,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                             (event.ordinal && nextEvent.ordinal && compareOrdinals(event.ordinal, nextEvent.ordinal) < 0)) {
                             // reorg event, discard the rest of the operation sequence and replace with this event
                             const newSequence = [...currentEvents.slice(0, index + 1), event];
-                            await this.db.setEvents(did, newSequence);
+                            await this.db.setEvents(lockedDid, newSequence);
                             return ImportStatus.ADDED;
                         }
                     }
@@ -1027,6 +1044,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         let merged = 0;
         let rejected = 0;
         const acceptedHashes: string[] = [];
+        const acceptedEvents: GatekeeperEvent[] = [];
 
         this.eventsQueue = [];
 
@@ -1040,6 +1058,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                 if (event.operation.signature?.hash) {
                     acceptedHashes.push(event.operation.signature.hash.toLowerCase());
                 }
+                acceptedEvents.push(event);
                 this.log.debug(`import ${i}/${total}: added event for ${event.did}`);
             }
             else if (status === ImportStatus.MERGED) {
@@ -1047,6 +1066,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                 if (event.operation.signature?.hash) {
                     acceptedHashes.push(event.operation.signature.hash.toLowerCase());
                 }
+                acceptedEvents.push(event);
                 this.log.debug(`import ${i}/${total}: merged event for ${event.did}`);
             }
             else if (status === ImportStatus.REJECTED) {
@@ -1061,7 +1081,7 @@ export default class Gatekeeper implements GatekeeperInterface {
             event = tempQueue.shift();
         }
 
-        return { added, merged, rejected, acceptedHashes };
+        return { added, merged, rejected, acceptedHashes, acceptedEvents };
     }
 
     async processEvents(): Promise<ProcessEventsResult> {
@@ -1074,6 +1094,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         let rejected = 0;
         let done = false;
         const acceptedHashes = new Set<string>();
+        const acceptedEventsByHash = new Map<string, GatekeeperEvent>();
 
         try {
             this.isProcessingEvents = true;
@@ -1086,6 +1107,12 @@ export default class Gatekeeper implements GatekeeperInterface {
                 rejected += response.rejected;
                 for (const hash of response.acceptedHashes) {
                     acceptedHashes.add(hash);
+                }
+                for (const event of response.acceptedEvents) {
+                    const hash = event.operation.signature?.hash?.toLowerCase();
+                    if (hash && !acceptedEventsByHash.has(hash)) {
+                        acceptedEventsByHash.set(hash, event);
+                    }
                 }
 
                 done = (response.added === 0 && response.merged === 0);
@@ -1106,9 +1133,15 @@ export default class Gatekeeper implements GatekeeperInterface {
             rejected,
             pending,
             acceptedHashes: Array.from(acceptedHashes),
+            acceptedEvents: Array.from(acceptedEventsByHash.values()),
         };
 
-        this.log.debug(`processEvents: ${JSON.stringify(response)}`);
+        const { acceptedEvents, ...logResponseBase } = response;
+        const logResponse = {
+            ...logResponseBase,
+            acceptedEventsCount: acceptedEvents.length,
+        };
+        this.log.debug(`processEvents: ${JSON.stringify(logResponse)}`);
 
         return response;
     }

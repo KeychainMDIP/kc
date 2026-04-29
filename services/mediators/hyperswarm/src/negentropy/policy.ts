@@ -12,15 +12,45 @@ export interface RepairSchedulingInput {
     syncCompleted: boolean;
 }
 
+export interface LegacySyncPriorityInput {
+    syncMode: SyncMode | 'unknown';
+    legacySyncEnabled: boolean;
+    hasActiveNegentropySession: boolean;
+    pendingNegentropyPeers: number;
+    pendingCapabilityPeers: number;
+    peerConnectedAtMs: number;
+    nowMs: number;
+    capabilityGraceMs: number;
+    fallbackTimeoutMs: number;
+}
+
 export function shouldAcceptLegacySync(
     syncMode: SyncMode | 'unknown',
     legacySyncEnabled: boolean,
+    deferredByPriority = false,
 ): boolean {
     if (!legacySyncEnabled) {
         return false;
     }
 
-    return syncMode === 'legacy';
+    return syncMode === 'legacy' && !deferredByPriority;
+}
+
+export function shouldAcceptInboundLegacySync(
+    syncMode: SyncMode | 'unknown',
+    transportMode: 'unknown' | 'legacy' | 'framed',
+    legacySyncEnabled: boolean,
+    deferredByPriority = false,
+): boolean {
+    if (shouldAcceptLegacySync(syncMode, legacySyncEnabled, deferredByPriority)) {
+        return true;
+    }
+
+    if (!legacySyncEnabled) {
+        return false;
+    }
+
+    return syncMode === 'unknown' && transportMode === 'legacy';
 }
 
 export function shouldStartConnectTimeNegentropy(
@@ -61,4 +91,30 @@ export function shouldSchedulePeriodicRepair(input: RepairSchedulingInput): bool
     }
 
     return (input.nowMs - input.lastAttemptAtMs) >= input.repairIntervalMs;
+}
+
+export function shouldDeferLegacySync(input: LegacySyncPriorityInput): boolean {
+    if (!input.legacySyncEnabled) {
+        return false;
+    }
+
+    if (input.syncMode !== 'legacy') {
+        return false;
+    }
+
+    const waitAgeMs = Math.max(0, input.nowMs - input.peerConnectedAtMs);
+
+    if (input.hasActiveNegentropySession) {
+        return waitAgeMs < input.fallbackTimeoutMs;
+    }
+
+    if (input.pendingCapabilityPeers > 0 && waitAgeMs < input.capabilityGraceMs) {
+        return true;
+    }
+
+    if (input.pendingNegentropyPeers > 0) {
+        return waitAgeMs < input.fallbackTimeoutMs;
+    }
+
+    return false;
 }

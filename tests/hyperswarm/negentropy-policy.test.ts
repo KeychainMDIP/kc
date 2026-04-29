@@ -1,5 +1,7 @@
 import {
     shouldAcceptLegacySync,
+    shouldAcceptInboundLegacySync,
+    shouldDeferLegacySync,
     shouldSchedulePeriodicRepair,
     shouldStartConnectTimeNegentropy,
 } from '../../services/mediators/hyperswarm/src/negentropy/policy.ts';
@@ -7,9 +9,19 @@ import {
 describe('negentropy sync policy', () => {
     it('accepts legacy sync only when enabled and mode is explicitly legacy', () => {
         expect(shouldAcceptLegacySync('legacy', true)).toBe(true);
+        expect(shouldAcceptLegacySync('legacy', true, true)).toBe(false);
         expect(shouldAcceptLegacySync('unknown', true)).toBe(false);
         expect(shouldAcceptLegacySync('negentropy', true)).toBe(false);
         expect(shouldAcceptLegacySync('legacy', false)).toBe(false);
+    });
+
+    it('accepts inbound pre-ping legacy sync only on legacy transport compatibility path', () => {
+        expect(shouldAcceptInboundLegacySync('legacy', 'legacy', true)).toBe(true);
+        expect(shouldAcceptInboundLegacySync('unknown', 'legacy', true)).toBe(true);
+        expect(shouldAcceptInboundLegacySync('unknown', 'unknown', true)).toBe(false);
+        expect(shouldAcceptInboundLegacySync('unknown', 'framed', true)).toBe(false);
+        expect(shouldAcceptInboundLegacySync('unknown', 'legacy', false)).toBe(false);
+        expect(shouldAcceptInboundLegacySync('negentropy', 'legacy', true)).toBe(false);
     });
 
     it('starts connect-time negentropy only for initiator without active session', () => {
@@ -42,6 +54,102 @@ describe('negentropy sync policy', () => {
         expect(shouldSchedulePeriodicRepair({
             ...base,
             lastAttemptAtMs: base.nowMs - 10_000,
+        })).toBe(false);
+    });
+
+    it('defers legacy while negentropy peers are pending, but allows fallback after timeout', () => {
+        const base = {
+            syncMode: 'legacy' as const,
+            legacySyncEnabled: true,
+            hasActiveNegentropySession: false,
+            pendingNegentropyPeers: 1,
+            pendingCapabilityPeers: 0,
+            peerConnectedAtMs: 1_000,
+            nowMs: 10_000,
+            capabilityGraceMs: 5_000,
+            fallbackTimeoutMs: 60_000,
+        };
+
+        expect(shouldDeferLegacySync(base)).toBe(true);
+        expect(shouldDeferLegacySync({
+            ...base,
+            nowMs: base.peerConnectedAtMs + base.fallbackTimeoutMs + 1,
+        })).toBe(false);
+    });
+
+    it('defers legacy while an active negentropy session is still within fallback timeout', () => {
+        const base = {
+            syncMode: 'legacy' as const,
+            legacySyncEnabled: true,
+            hasActiveNegentropySession: true,
+            pendingNegentropyPeers: 0,
+            pendingCapabilityPeers: 0,
+            peerConnectedAtMs: 1_000,
+            nowMs: 10_000,
+            capabilityGraceMs: 5_000,
+            fallbackTimeoutMs: 60_000,
+        };
+
+        expect(shouldDeferLegacySync(base)).toBe(true);
+        expect(shouldDeferLegacySync({
+            ...base,
+            nowMs: base.peerConnectedAtMs + base.fallbackTimeoutMs + 1,
+        })).toBe(false);
+    });
+
+    it('defers legacy briefly while peer capabilities are still unknown', () => {
+        const base = {
+            syncMode: 'legacy' as const,
+            legacySyncEnabled: true,
+            hasActiveNegentropySession: false,
+            pendingNegentropyPeers: 0,
+            pendingCapabilityPeers: 1,
+            peerConnectedAtMs: 1_000,
+            nowMs: 2_000,
+            capabilityGraceMs: 5_000,
+            fallbackTimeoutMs: 60_000,
+        };
+
+        expect(shouldDeferLegacySync(base)).toBe(true);
+        expect(shouldDeferLegacySync({
+            ...base,
+            nowMs: base.peerConnectedAtMs + base.capabilityGraceMs + 1,
+        })).toBe(false);
+    });
+
+    it('does not defer legacy when there is no negentropy pressure', () => {
+        expect(shouldDeferLegacySync({
+            syncMode: 'legacy',
+            legacySyncEnabled: false,
+            hasActiveNegentropySession: true,
+            pendingNegentropyPeers: 1,
+            pendingCapabilityPeers: 1,
+            peerConnectedAtMs: 1_000,
+            nowMs: 2_000,
+            capabilityGraceMs: 5_000,
+            fallbackTimeoutMs: 60_000,
+        })).toBe(false);
+        expect(shouldDeferLegacySync({
+            syncMode: 'legacy',
+            legacySyncEnabled: true,
+            hasActiveNegentropySession: false,
+            pendingNegentropyPeers: 0,
+            pendingCapabilityPeers: 0,
+            peerConnectedAtMs: 1_000,
+            nowMs: 2_000,
+            capabilityGraceMs: 5_000,
+            fallbackTimeoutMs: 60_000,
+        })).toBe(false);
+        expect(shouldDeferLegacySync({
+            syncMode: 'unknown',
+            legacySyncEnabled: true,
+            hasActiveNegentropySession: true,
+            pendingNegentropyPeers: 1,
+            pendingCapabilityPeers: 1,
+            peerConnectedAtMs: 1_000,
+            nowMs: 2_000,
+            capabilityGraceMs: 5_000,
+            fallbackTimeoutMs: 60_000,
         })).toBe(false);
     });
 });

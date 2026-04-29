@@ -40,6 +40,18 @@ describe('negentropy observability helpers', () => {
         expect(averageAggregate(metric)).toBe(15);
     });
 
+    it('does not reduce the aggregate max when a smaller sample is added', () => {
+        const metric = createAggregateMetric();
+        addAggregateSample(metric, 20);
+        addAggregateSample(metric, 5);
+
+        expect(metric).toStrictEqual({
+            count: 2,
+            total: 25,
+            max: 20,
+        });
+    });
+
     it('collects queue delay samples from signed operations', () => {
         const now = Date.parse('2026-02-13T10:00:00.000Z');
         const samples = collectQueueDelaySamples([

@@ -139,7 +139,6 @@ services:
       - KC_HYPR_EXPORT_INTERVAL=${KC_HYPR_EXPORT_INTERVAL}
       - KC_HYPR_NEGENTROPY_ENABLE=${KC_HYPR_NEGENTROPY_ENABLE}
       - KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT=${KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT}
-      - KC_HYPR_NEGENTROPY_WINDOW_DAYS=${KC_HYPR_NEGENTROPY_WINDOW_DAYS}
       - KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW=${KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW}
       - KC_HYPR_NEGENTROPY_MAX_ROUNDS_PER_SESSION=${KC_HYPR_NEGENTROPY_MAX_ROUNDS_PER_SESSION}
       - KC_HYPR_NEGENTROPY_INTERVAL=${KC_HYPR_NEGENTROPY_INTERVAL}
@@ -161,7 +160,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.satoshi
-    image: keychainmdip/satoshi-mediator
+    image: keychainmdip/tftc-mediator
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
       - KC_KEYMASTER_URL=http://keymaster:4226
@@ -205,7 +204,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.satoshi-inscription
-    image: keychainmdip/inscription-mediator
+    image: keychainmdip/btc-inscription-mediator
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
       - KC_KEYMASTER_URL=http://keymaster:4226
@@ -247,7 +246,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.satoshi
-    image: keychainmdip/satoshi-mediator
+    image: keychainmdip/tbtc-mediator
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
       - KC_KEYMASTER_URL=http://keymaster:4226
@@ -291,7 +290,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.satoshi
-    image: keychainmdip/satoshi-mediator
+    image: keychainmdip/signet-mediator
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
       - KC_KEYMASTER_URL=http://keymaster:4226
@@ -328,7 +327,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.satoshi-inscription
-    image: keychainmdip/inscription-mediator
+    image: keychainmdip/signet-inscription-mediator
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
       - KC_KEYMASTER_URL=http://keymaster:4226

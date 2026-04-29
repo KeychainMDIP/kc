@@ -25,11 +25,11 @@ const Endpoints = {
         export: '/api/v1/batch/export',
         import: '/api/v1/batch/import',
     },
-    registries: '/api/v1/registries',
-    queue: '/api/v1/queue',
     events: {
         process: '/api/v1/events/process',
     },
+    registries: '/api/v1/registries',
+    queue: '/api/v1/queue',
     cas: {
         json: '/api/v1/cas/json',
         text: '/api/v1/cas/text',
@@ -653,12 +653,12 @@ describe('processEvents', () => {
     it('should return process status', async () => {
         nock(GatekeeperURL)
             .post(Endpoints.events.process)
-            .reply(200, { added: 0, merged: 0, pending: 0, acceptedHashes: [] });
+            .reply(200, { added: 0, merged: 0, pending: 0, acceptedHashes: [], acceptedEvents: [] });
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
         const status = await gatekeeper.processEvents();
 
-        expect(status).toStrictEqual({ added: 0, merged: 0, pending: 0, acceptedHashes: [] });
+        expect(status).toStrictEqual({ added: 0, merged: 0, pending: 0, acceptedHashes: [], acceptedEvents: [] });
     });
 
     it('should throw exception on processEvents server error', async () => {
