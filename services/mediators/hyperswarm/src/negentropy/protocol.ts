@@ -52,33 +52,33 @@ export function normalizePeerCapabilities(capabilities?: PeerCapabilities): Nego
 
 export function supportsPeerNegentropy(
     capabilities: NegotiatedPeerCapabilities,
-    minVersion: number
+    requiredVersion: number
 ): boolean {
     return capabilities.advertised
         && capabilities.negentropy
-        && (capabilities.version == null || capabilities.version >= minVersion);
+        && capabilities.version === requiredVersion;
 }
 
 export function chooseSyncMode(
     capabilities: NegotiatedPeerCapabilities,
-    minVersion: number
+    requiredVersion: number
 ): SyncMode | null {
     if (!capabilities.advertised) {
         return null;
     }
 
-    return supportsPeerNegentropy(capabilities, minVersion)
+    return supportsPeerNegentropy(capabilities, requiredVersion)
         ? 'negentropy'
         : 'legacy';
 }
 
 export function chooseConnectSyncMode(
     capabilities: NegotiatedPeerCapabilities,
-    minVersion: number,
+    requiredVersion: number,
     legacySyncEnabled: boolean,
     negentropyEnabled = true,
 ): ConnectSyncModeDecision {
-    if (negentropyEnabled && supportsPeerNegentropy(capabilities, minVersion)) {
+    if (negentropyEnabled && supportsPeerNegentropy(capabilities, requiredVersion)) {
         return { mode: 'negentropy', reason: 'negentropy_supported' };
     }
 

@@ -97,7 +97,7 @@ export default class PostgresOperationSyncStore implements OperationSyncStore {
 
         await this.runExclusive(async () => {
             await this.withTx(async (client) => {
-                await client.query('DELETE FROM hyperswarm_sync_operations');
+                await client.query('TRUNCATE TABLE hyperswarm_sync_operations');
             });
         });
     }

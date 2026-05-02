@@ -35,6 +35,7 @@ const config = {
         '^\\.\\/db\\/typeGuards\\.js$': '<rootDir>/packages/keymaster/src/db/typeGuards.ts',
         '^\\.\\/sync-mapping\\.js$': '<rootDir>/services/mediators/hyperswarm/src/sync-mapping.ts',
         '^\\.\\/sync-persistence\\.js$': '<rootDir>/services/mediators/hyperswarm/src/sync-persistence.ts',
+        '^\\.\\/windows\\.js$': '<rootDir>/services/mediators/hyperswarm/src/negentropy/windows.ts',
         '^\\.\\/abstract-json\\.js$': '<rootDir>/packages/gatekeeper/src/db/abstract-json.ts',
         '^\\.\\/published-credentials\\.js$': '<rootDir>/services/search-server/src/published-credentials.ts',
         '^\\.\\/cipher-base\\.js$': '<rootDir>/packages/cipher/src/cipher-base.ts',
