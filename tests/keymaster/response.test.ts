@@ -9,8 +9,6 @@ import { InvalidDIDError, ExpectedExceptionError, UnknownIDError } from '@mdip/c
 import HeliaClient from '@mdip/ipfs/helia';
 import { mockSchema } from './helper.ts';
 
-const ChallengeResponseCommitmentType = 'mdip.challenge.response.commitment.v1';
-
 let ipfs: HeliaClient;
 let gatekeeper: Gatekeeper;
 let wallet: WalletJsonMemory;
@@ -458,7 +456,6 @@ describe('challenge receipts', () => {
         const verification = await keymaster.verifyResponse(responseDID);
         const verifiedAt = '2026-01-01T00:00:00.000Z';
         const responseCommitment = cipher.hashJSON({
-            type: ChallengeResponseCommitmentType,
             responseDid: responseDID,
             responseNonce: verification.responseNonce,
         });

@@ -95,8 +95,6 @@ export enum NoticeTags {
     CREDENTIAL = "credential",
 }
 
-const ChallengeResponseCommitmentType = 'mdip.challenge.response.commitment.v1';
-
 export default class Keymaster implements KeymasterInterface {
     private readonly passphrase: string;
     private gatekeeper: GatekeeperInterface;
@@ -2152,7 +2150,6 @@ export default class Keymaster implements KeymasterInterface {
 
     private createResponseCommitment(responseDID: string, responseNonce: string): string {
         return this.cipher.hashJSON({
-            type: ChallengeResponseCommitmentType,
             responseDid: responseDID,
             responseNonce,
         });
