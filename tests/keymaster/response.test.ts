@@ -473,7 +473,7 @@ describe('challenge receipts', () => {
             },
         ]);
 
-        const receipt = receipts[0] as ChallengeReceipt & Record<string, unknown>;
+        const receipt = receipts[0];
         expect(receipt).not.toHaveProperty('holderDid');
         expect(receipt).not.toHaveProperty('credentialDid');
         expect(receipt).not.toHaveProperty('vpDid');
