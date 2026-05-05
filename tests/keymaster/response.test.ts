@@ -1,6 +1,7 @@
 import Gatekeeper from '@mdip/gatekeeper';
 import Keymaster from '@mdip/keymaster';
 import { ChallengeReceipt, ChallengeResponse } from '@mdip/keymaster/types';
+import { jest } from '@jest/globals';
 import CipherNode from '@mdip/cipher/node';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory';
 import WalletJsonMemory from '@mdip/keymaster/wallet/json-memory';
@@ -528,6 +529,172 @@ describe('challenge receipts', () => {
         catch (error: any) {
             expect(error.message).toBe('Invalid parameter: verification.match');
         }
+    });
+
+    it('should reject malformed receipt inputs', async () => {
+        const victor = await keymaster.createId('Victor');
+        const schemaDid = await keymaster.createSchema(mockSchema);
+        const challengeDID = await keymaster.createChallenge({
+            credentials: [
+                {
+                    schema: schemaDid,
+                },
+            ],
+        });
+        const emptyChallengeDID = await keymaster.createChallenge();
+        const verification: ChallengeResponse = {
+            challenge: challengeDID,
+            credentials: [],
+            requested: 1,
+            fulfilled: 1,
+            match: true,
+            responseNonce: 'mock-nonce',
+            vps: [],
+        };
+
+        try {
+            await keymaster.buildChallengeReceipts('did:mock:response', {
+                verification: {
+                    ...verification,
+                    responseNonce: undefined,
+                },
+            });
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: response.responseNonce');
+        }
+
+        try {
+            await keymaster.buildChallengeReceipts('did:mock:response', {
+                verification,
+                verifiedAt: 'not-a-date',
+            });
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: options.verifiedAt');
+        }
+
+        const resolveDID = jest.spyOn(keymaster, 'resolveDID')
+            .mockResolvedValueOnce({ didDocument: {} } as any);
+        try {
+            await keymaster.buildChallengeReceipts('did:mock:response', { verification });
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: requesterDid');
+        }
+        resolveDID.mockRestore();
+
+        const resolveAsset = jest.spyOn(keymaster, 'resolveAsset')
+            .mockResolvedValueOnce(null);
+        try {
+            await keymaster.buildChallengeReceipts('did:mock:response', { verification });
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: challengeDID');
+        }
+        resolveAsset.mockRestore();
+
+        try {
+            await keymaster.buildChallengeReceipts('did:mock:response', {
+                verification: {
+                    ...verification,
+                    vps: undefined,
+                },
+            });
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: verification.vps');
+        }
+
+        try {
+            await keymaster.buildChallengeReceipts('did:mock:response', {
+                verification: {
+                    challenge: emptyChallengeDID,
+                    credentials: [],
+                    requested: 0,
+                    fulfilled: 0,
+                    match: true,
+                    responseNonce: 'mock-nonce',
+                    vps: [{} as any],
+                },
+            });
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: verification.vps');
+        }
+
+        try {
+            await keymaster.buildChallengeReceipts('did:mock:response', {
+                verification: {
+                    challenge: emptyChallengeDID,
+                    credentials: [],
+                    requested: 0,
+                    fulfilled: 0,
+                    match: true,
+                    responseNonce: 'mock-nonce',
+                    vps: [
+                        {
+                            '@context': [],
+                            type: ['VerifiableCredential'],
+                            issuer: victor,
+                            validFrom: '2026-01-01T00:00:00.000Z',
+                            credentialSubject: {
+                                id: victor,
+                            },
+                        },
+                    ],
+                },
+            });
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: verification.vps.type');
+        }
+    });
+
+    it('should reject invalid receipt publish options', async () => {
+        const receipt: ChallengeReceipt = {
+            version: 1,
+            attesterDid: 'did:mock:attester',
+            schemaDid: 'did:mock:schema',
+            requesterDid: 'did:mock:requester',
+            verifiedAt: '2026-01-01T00:00:00.000Z',
+            responseCommitment: 'mock-commitment',
+        };
+
+        try {
+            await keymaster.publishChallengeReceipts('did:mock:response', {
+                controller: 'did:mock:controller',
+            });
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: options.controller');
+        }
+
+        const buildReceipts = jest.spyOn(keymaster, 'buildChallengeReceipts')
+            .mockResolvedValueOnce([
+                receipt,
+                {
+                    ...receipt,
+                    schemaDid: 'did:mock:schema2',
+                },
+            ]);
+
+        try {
+            await keymaster.publishChallengeReceipts('did:mock:response', { name: 'mock-receipt' });
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: options.name');
+        }
+        buildReceipts.mockRestore();
     });
 
     it('should only allow the challenge requester to build receipts', async () => {
