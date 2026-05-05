@@ -14,6 +14,7 @@ import {
     FormLabel,
     Grid,
     IconButton,
+    InputAdornment,
     MenuItem,
     Paper,
     Radio,
@@ -107,6 +108,8 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
     const [docsVersionMax, setDocsVersionMax] = useState(1);
     const [idList, setIdList] = useState(null);
     const [challenge, setChallenge] = useState(null);
+    const [challengeSchema, setChallengeSchema] = useState('');
+    const [challengeAttester, setChallengeAttester] = useState('');
     const [callback, setCallback] = useState(null);
     const [widget, setWidget] = useState(false);
     const [response, setResponse] = useState(null);
@@ -155,6 +158,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
     const [manifest, setManifest] = useState(null);
     const [checkingWallet, setCheckingWallet] = useState(false);
     const [disableSendResponse, setDisableSendResponse] = useState(true);
+    const [disableSendReceipt, setDisableSendReceipt] = useState(true);
     const [authDID, setAuthDID] = useState('');
     const [authString, setAuthString] = useState('');
     const [dmailTab, setDmailTab] = useState('');
@@ -474,9 +478,23 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
 
     async function newChallenge() {
         try {
-            const challenge = await keymaster.createChallenge();
-            setChallenge(challenge);
-            resolveChallenge(challenge);
+            const challengeData = {};
+
+            if (challengeSchema) {
+                const credential = {
+                    schema: await resolveInputDID(challengeSchema),
+                };
+
+                if (challengeAttester) {
+                    credential.issuers = [await resolveInputDID(challengeAttester)];
+                }
+
+                challengeData.credentials = [credential];
+            }
+
+            const challengeDID = await keymaster.createChallenge(challengeData);
+            setChallenge(challengeDID);
+            resolveChallenge(challengeDID);
         } catch (error) {
             showError(error);
         }
@@ -516,6 +534,23 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
         setChallenge('');
     }
 
+    async function resolveInputDID(id) {
+        const input = id.trim();
+
+        if (input.startsWith('did:')) {
+            return input;
+        }
+
+        const doc = await keymaster.resolveDID(input);
+        const did = doc.didDocument?.id;
+
+        if (!did) {
+            throw new Error(`Cannot resolve DID: ${input}`);
+        }
+
+        return did;
+    }
+
     async function decryptResponse(did) {
         try {
             const decrypted = await keymaster.decryptJSON(did);
@@ -533,10 +568,12 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
             if (verify.match) {
                 showError("Response is VALID");
                 setAccessGranted(true);
+                setDisableSendReceipt(false);
             }
             else {
                 showError("Response is NOT VALID");
                 setAccessGranted(false);
+                setDisableSendReceipt(true);
             }
         } catch (error) {
             showError(error);
@@ -546,12 +583,40 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
     async function clearResponse() {
         setResponse('');
         setAccessGranted(false);
+        setDisableSendReceipt(true);
     }
 
     async function sendResponse() {
         try {
             setDisableSendResponse(true);
             axios.post(callback, { response });
+        } catch (error) {
+            showError(error);
+        }
+    }
+
+    function updateResponse(did) {
+        setResponse(did.trim());
+        setAccessGranted(false);
+        setDisableSendReceipt(true);
+    }
+
+    async function sendReceipt() {
+        try {
+            setDisableSendReceipt(true);
+            const receiptDIDs = await keymaster.publishChallengeReceipts(response);
+            setAuthDID(response);
+            setAuthString(JSON.stringify({ receiptDIDs }, null, 4));
+
+            if (receiptDIDs.length === 0) {
+                showAlert("No receipts to send");
+            }
+            else if (receiptDIDs.length === 1) {
+                showSuccess(`Receipt sent: ${receiptDIDs[0]}`);
+            }
+            else {
+                showSuccess(`Receipts sent: ${receiptDIDs.length}`);
+            }
         } catch (error) {
             showError(error);
         }
@@ -644,9 +709,17 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
             setSelectedSchema(null);
         }
 
+        if (!schemaList.includes(challengeSchema)) {
+            setChallengeSchema('');
+        }
+
         if (!schemaList.includes(credentialSchema)) {
             setCredentialSchema('');
             setCredentialString('');
+        }
+
+        if (!agentList.includes(challengeAttester)) {
+            setChallengeAttester('');
         }
 
         setImageList(imageList);
@@ -5007,7 +5080,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
                             <Table style={{ width: '800px' }}>
                                 <TableBody>
                                     <TableRow>
-                                        <TableCell style={{ width: '20%' }}>Challenge</TableCell>
+                                        <TableCell style={{ width: '20%', verticalAlign: 'top', paddingTop: '34px' }}>Challenge</TableCell>
                                         <TableCell style={{ width: '80%' }}>
                                             <TextField
                                                 label=""
@@ -5015,15 +5088,97 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
                                                 onChange={(e) => setChallenge(e.target.value.trim())}
                                                 fullWidth
                                                 margin="normal"
-                                                inputProps={{ maxLength: 85, style: { fontFamily: 'Courier', fontSize: '0.8em' } }}
+                                                slotProps={{
+                                                    htmlInput: { maxLength: 85, style: { fontFamily: 'Courier', fontSize: '0.8em' } },
+                                                    input: {
+                                                        endAdornment: (
+                                                            <InputAdornment position="end" sx={{ mr: '-14px', height: 56, maxHeight: 'none' }}>
+                                                                <Button
+                                                                    variant="contained"
+                                                                    color="primary"
+                                                                    onClick={clearChallenge}
+                                                                    disabled={!challenge}
+                                                                    sx={{
+                                                                        borderTopLeftRadius: 0,
+                                                                        borderBottomLeftRadius: 0,
+                                                                        boxShadow: 'none',
+                                                                        height: 56,
+                                                                    }}
+                                                                >
+                                                                    Clear
+                                                                </Button>
+                                                            </InputAdornment>
+                                                        ),
+                                                    },
+                                                }}
                                             />
                                             <br />
+                                            <Box sx={{ display: 'flex', alignItems: 'stretch', mt: 1, mb: 2 }}>
+                                                <Select
+                                                    style={{ width: '300px' }}
+                                                    value={challengeSchema}
+                                                    displayEmpty
+                                                    onChange={(event) => {
+                                                        setChallengeSchema(event.target.value);
+                                                        if (!event.target.value) {
+                                                            setChallengeAttester('');
+                                                        }
+                                                    }}
+                                                    sx={{
+                                                        '& .MuiOutlinedInput-notchedOutline': {
+                                                            borderTopRightRadius: 0,
+                                                            borderBottomRightRadius: 0,
+                                                        },
+                                                    }}
+                                                >
+                                                    <MenuItem value="">
+                                                        <em>No credential schema</em>
+                                                    </MenuItem>
+                                                    {(schemaList || []).map((name, index) => (
+                                                        <MenuItem value={name} key={index}>
+                                                            {name}
+                                                        </MenuItem>
+                                                    ))}
+                                                </Select>
+                                                <Select
+                                                    style={{ width: '300px' }}
+                                                    value={challengeAttester}
+                                                    displayEmpty
+                                                    disabled={!challengeSchema}
+                                                    onChange={(event) => setChallengeAttester(event.target.value)}
+                                                    sx={{
+                                                        ml: '-1px',
+                                                        '& .MuiOutlinedInput-notchedOutline': {
+                                                            borderRadius: 0,
+                                                        },
+                                                    }}
+                                                >
+                                                    <MenuItem value="">
+                                                        <em>Any attester</em>
+                                                    </MenuItem>
+                                                    {(agentList || []).map((name, index) => (
+                                                        <MenuItem value={name} key={index}>
+                                                            {name}
+                                                        </MenuItem>
+                                                    ))}
+                                                </Select>
+                                                <Button
+                                                    variant="contained"
+                                                    color="primary"
+                                                    onClick={newChallenge}
+                                                    sx={{
+                                                        height: 56,
+                                                        ml: '-1px',
+                                                        minWidth: 110,
+                                                        borderTopLeftRadius: 0,
+                                                        borderBottomLeftRadius: 0,
+                                                        boxShadow: 3,
+                                                    }}
+                                                >
+                                                    New
+                                                </Button>
+                                            </Box>
                                             <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
-                                                <Grid item>
-                                                    <Button variant="contained" color="primary" onClick={newChallenge}>
-                                                        New
-                                                    </Button>
-                                                </Grid>
                                                 <Grid item>
                                                     <Button variant="contained" color="primary" onClick={() => resolveChallenge(challenge)} disabled={!challenge || challenge === authDID}>
                                                         Resolve
@@ -5034,24 +5189,41 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
                                                         Respond
                                                     </Button>
                                                 </Grid>
-                                                <Grid item>
-                                                    <Button variant="contained" color="primary" onClick={clearChallenge} disabled={!challenge}>
-                                                        Clear
-                                                    </Button>
-                                                </Grid>
                                             </Grid>
                                         </TableCell>
                                     </TableRow>
                                     <TableRow>
-                                        <TableCell style={{ width: '20%' }}>Response</TableCell>
+                                        <TableCell style={{ width: '20%', verticalAlign: 'top', paddingTop: '34px' }}>Response</TableCell>
                                         <TableCell style={{ width: '80%' }}>
                                             <TextField
                                                 label=""
                                                 value={response}
-                                                onChange={(e) => setResponse(e.target.value.trim())}
+                                                onChange={(e) => updateResponse(e.target.value)}
                                                 fullWidth
                                                 margin="normal"
-                                                inputProps={{ maxLength: 85, style: { fontFamily: 'Courier', fontSize: '0.8em' } }}
+                                                slotProps={{
+                                                    htmlInput: { maxLength: 85, style: { fontFamily: 'Courier', fontSize: '0.8em' } },
+                                                    input: {
+                                                        endAdornment: (
+                                                            <InputAdornment position="end" sx={{ mr: '-14px', height: 56, maxHeight: 'none' }}>
+                                                                <Button
+                                                                    variant="contained"
+                                                                    color="primary"
+                                                                    onClick={clearResponse}
+                                                                    disabled={!response}
+                                                                    sx={{
+                                                                        borderTopLeftRadius: 0,
+                                                                        borderBottomLeftRadius: 0,
+                                                                        boxShadow: 'none',
+                                                                        height: 56,
+                                                                    }}
+                                                                >
+                                                                    Clear
+                                                                </Button>
+                                                            </InputAdornment>
+                                                        ),
+                                                    },
+                                                }}
                                             />
                                             <br />
                                             <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
@@ -5067,12 +5239,12 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }) {
                                                 </Grid>
                                                 <Grid item>
                                                     <Button variant="contained" color="primary" onClick={sendResponse} disabled={disableSendResponse}>
-                                                        Send
+                                                        Send Response
                                                     </Button>
                                                 </Grid>
                                                 <Grid item>
-                                                    <Button variant="contained" color="primary" onClick={clearResponse} disabled={!response}>
-                                                        Clear
+                                                    <Button variant="contained" color="primary" onClick={sendReceipt} disabled={disableSendReceipt}>
+                                                        Send Receipt
                                                     </Button>
                                                 </Grid>
                                             </Grid>
