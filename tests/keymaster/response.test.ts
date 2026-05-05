@@ -495,6 +495,14 @@ describe('challenge receipts', () => {
         const receiptDoc = await keymaster.resolveDID(receiptDIDs[0]);
         expect(receiptDoc.didDocument?.controller).toBe(victor);
 
+        const defaultBuildReceipts = await keymaster.buildChallengeReceipts(responseDID);
+        expect(defaultBuildReceipts).toHaveLength(1);
+        expect(defaultBuildReceipts[0]).toStrictEqual({
+            ...receipts[0],
+            verifiedAt: expect.any(String),
+        });
+        expect(new Date(defaultBuildReceipts[0].verifiedAt).getTime()).not.toBeNaN();
+
         const defaultReceiptDIDs = await keymaster.publishChallengeReceipts(responseDID);
         expect(defaultReceiptDIDs).toHaveLength(1);
 
@@ -558,6 +566,18 @@ describe('challenge receipts', () => {
             responseNonce: 'mock-nonce',
             vps: [],
         };
+        const emptyVerification: ChallengeResponse = {
+            challenge: emptyChallengeDID,
+            credentials: [],
+            requested: 0,
+            fulfilled: 0,
+            match: true,
+            responseNonce: 'mock-nonce',
+        };
+
+        await expect(keymaster.buildChallengeReceipts('did:mock:response', {
+            verification: emptyVerification,
+        })).resolves.toStrictEqual([]);
 
         try {
             await keymaster.buildChallengeReceipts('did:mock:response', {
