@@ -30,7 +30,8 @@ function hasWorkspaceRootMarker(dir: string): boolean {
         const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as { workspaces?: unknown };
         return Array.isArray(packageJson.workspaces) || Boolean(packageJson.workspaces);
     } catch {
-        return false;
+        // Do not cross a package boundary when its package metadata cannot be trusted.
+        return true;
     }
 }
 

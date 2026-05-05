@@ -494,6 +494,16 @@ describe('challenge receipts', () => {
 
         const receiptDoc = await keymaster.resolveDID(receiptDIDs[0]);
         expect(receiptDoc.didDocument?.controller).toBe(victor);
+
+        const defaultReceiptDIDs = await keymaster.publishChallengeReceipts(responseDID);
+        expect(defaultReceiptDIDs).toHaveLength(1);
+
+        const defaultReceiptAsset = await keymaster.resolveAsset(defaultReceiptDIDs[0]) as { challengeReceipt: ChallengeReceipt };
+        expect(defaultReceiptAsset.challengeReceipt).toStrictEqual({
+            ...receipts[0],
+            verifiedAt: expect.any(String),
+        });
+        expect(new Date(defaultReceiptAsset.challengeReceipt.verifiedAt).getTime()).not.toBeNaN();
     });
 
     it('should reject receipts for unsuccessful challenge responses', async () => {
