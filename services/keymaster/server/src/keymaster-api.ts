@@ -1884,6 +1884,38 @@ v1router.post('/response/verify', async (req, res) => {
 
 /**
  * @swagger
+ * /response/receipts/build:
+ *   post:
+ *     summary: Build challenge usage receipts for a verified response without publishing them.
+ */
+v1router.post('/response/receipts/build', async (req, res) => {
+    try {
+        const { response, options } = req.body;
+        const receipts = await keymaster.buildChallengeReceipts(response, options);
+        res.json({ receipts });
+    } catch (error: any) {
+        res.status(400).send({ error: error.toString() });
+    }
+});
+
+/**
+ * @swagger
+ * /response/receipts:
+ *   post:
+ *     summary: Publish challenge usage receipts for a verified response.
+ */
+v1router.post('/response/receipts', async (req, res) => {
+    try {
+        const { response, options } = req.body;
+        const dids = await keymaster.publishChallengeReceipts(response, options);
+        res.json({ dids });
+    } catch (error: any) {
+        res.status(400).send({ error: error.toString() });
+    }
+});
+
+/**
+ * @swagger
  * /groups:
  *   get:
  *     summary: List all group DIDs owned by (or associated with) a specific ID.

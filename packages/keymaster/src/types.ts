@@ -128,7 +128,8 @@ export interface ChallengeResponse {
     requested: number;
     fulfilled: number;
     match: boolean;
-    vps?: unknown[];
+    responseNonce?: string;
+    vps?: VerifiableCredential[];
     responder?: string;
 }
 
@@ -138,6 +139,24 @@ export interface CreateResponseOptions {
     retries?: number;
     delay?: number;
 }
+
+export interface ChallengeReceipt {
+    version: 1;
+    attesterDid: string;
+    schemaDid: string;
+    requesterDid: string;
+    verifiedAt: string;
+    responseCommitment: string;
+}
+
+export interface BuildChallengeReceiptOptions {
+    verification?: ChallengeResponse;
+    verifiedAt?: string;
+    retries?: number;
+    delay?: number;
+}
+
+export interface PublishChallengeReceiptOptions extends BuildChallengeReceiptOptions, CreateAssetOptions {}
 
 export interface PollResults {
     tally: Array<{
@@ -384,6 +403,8 @@ export interface KeymasterInterface {
     createChallenge(challenge?: Challenge, options?: { registry?: string; validUntil?: string }): Promise<string>;
     createResponse(challengeDid: string, options?: CreateResponseOptions): Promise<string>;
     verifyResponse(responseDid: string, options?: { retries?: number; delay?: number }): Promise<ChallengeResponse>;
+    buildChallengeReceipts(responseDid: string, options?: BuildChallengeReceiptOptions): Promise<ChallengeReceipt[]>;
+    publishChallengeReceipts(responseDid: string, options?: PublishChallengeReceiptOptions): Promise<string[]>;
 
     // Polls
     pollTemplate(): Promise<Poll>;

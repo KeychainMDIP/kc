@@ -1,12 +1,14 @@
 import Gatekeeper from '@mdip/gatekeeper';
 import Keymaster from '@mdip/keymaster';
-import { ChallengeResponse } from '@mdip/keymaster/types';
+import { ChallengeReceipt, ChallengeResponse } from '@mdip/keymaster/types';
 import CipherNode from '@mdip/cipher/node';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory';
 import WalletJsonMemory from '@mdip/keymaster/wallet/json-memory';
 import { InvalidDIDError, ExpectedExceptionError, UnknownIDError } from '@mdip/common/errors';
 import HeliaClient from '@mdip/ipfs/helia';
 import { mockSchema } from './helper.ts';
+
+const ChallengeResponseCommitmentType = 'mdip.challenge.response.commitment.v1';
 
 let ipfs: HeliaClient;
 let gatekeeper: Gatekeeper;
@@ -73,6 +75,10 @@ describe('createResponse', () => {
         expect(response.challenge).toBe(challengeDID);
         expect(response.credentials.length).toBe(1);
         expect(response.credentials[0].vc).toBe(vcDid);
+        expect(response.responseNonce).toEqual(expect.any(String));
+
+        const publicAsset = await keymaster.resolveAsset(responseDID) as Record<string, unknown>;
+        expect(publicAsset).not.toHaveProperty('response');
     });
 
     it('should throw an exception on invalid challenge', async () => {
@@ -141,6 +147,7 @@ describe('verifyResponse', () => {
             requested: 0,
             fulfilled: 0,
             match: true,
+            responseNonce: expect.any(String),
             vps: [],
             responder: bob,
         };
@@ -415,6 +422,151 @@ describe('verifyResponse', () => {
         }
         catch (error: any) {
             expect(error.type).toBe(InvalidDIDError.type);
+        }
+    });
+});
+
+describe('challenge receipts', () => {
+    it('should build and publish receipts for successful challenge responses', async () => {
+        const alice = await keymaster.createId('Alice');
+        const carol = await keymaster.createId('Carol');
+        const victor = await keymaster.createId('Victor');
+
+        await keymaster.setCurrentId('Alice');
+        const schemaDid = await keymaster.createSchema(mockSchema);
+        const credential = await keymaster.bindCredential(schemaDid, carol);
+        const vcDid = await keymaster.issueCredential(credential);
+
+        await keymaster.setCurrentId('Carol');
+        await keymaster.acceptCredential(vcDid);
+
+        await keymaster.setCurrentId('Victor');
+        const challengeDID = await keymaster.createChallenge({
+            credentials: [
+                {
+                    schema: schemaDid,
+                    issuers: [alice],
+                },
+            ],
+        });
+
+        await keymaster.setCurrentId('Carol');
+        const responseDID = await keymaster.createResponse(challengeDID);
+
+        await keymaster.setCurrentId('Victor');
+        const verification = await keymaster.verifyResponse(responseDID);
+        const verifiedAt = '2026-01-01T00:00:00.000Z';
+        const responseCommitment = cipher.hashJSON({
+            type: ChallengeResponseCommitmentType,
+            responseDid: responseDID,
+            responseNonce: verification.responseNonce,
+        });
+
+        const receipts = await keymaster.buildChallengeReceipts(responseDID, { verification, verifiedAt });
+
+        expect(receipts).toStrictEqual([
+            {
+                version: 1,
+                attesterDid: alice,
+                schemaDid,
+                requesterDid: victor,
+                verifiedAt,
+                responseCommitment,
+            },
+        ]);
+
+        const receipt = receipts[0] as ChallengeReceipt & Record<string, unknown>;
+        expect(receipt).not.toHaveProperty('holderDid');
+        expect(receipt).not.toHaveProperty('credentialDid');
+        expect(receipt).not.toHaveProperty('vpDid');
+        expect(receipt).not.toHaveProperty('responseDid');
+        expect(receipt).not.toHaveProperty('responseNonce');
+        expect(receipt).not.toHaveProperty('credential');
+
+        const receiptDIDs = await keymaster.publishChallengeReceipts(responseDID, {
+            verification,
+            verifiedAt,
+            registry: 'local',
+        });
+
+        expect(receiptDIDs).toHaveLength(1);
+
+        const receiptAsset = await keymaster.resolveAsset(receiptDIDs[0]) as { challengeReceipt: ChallengeReceipt };
+        expect(receiptAsset.challengeReceipt).toStrictEqual(receipts[0]);
+
+        const receiptDoc = await keymaster.resolveDID(receiptDIDs[0]);
+        expect(receiptDoc.didDocument?.controller).toBe(victor);
+    });
+
+    it('should reject receipts for unsuccessful challenge responses', async () => {
+        await keymaster.createId('Alice');
+        await keymaster.createId('Carol');
+        await keymaster.createId('Victor');
+
+        await keymaster.setCurrentId('Alice');
+        const schemaDid = await keymaster.createSchema(mockSchema);
+
+        await keymaster.setCurrentId('Victor');
+        const challengeDID = await keymaster.createChallenge({
+            credentials: [
+                {
+                    schema: schemaDid,
+                },
+            ],
+        });
+
+        await keymaster.setCurrentId('Carol');
+        const responseDID = await keymaster.createResponse(challengeDID);
+
+        await keymaster.setCurrentId('Victor');
+        const verification = await keymaster.verifyResponse(responseDID);
+
+        try {
+            await keymaster.buildChallengeReceipts(responseDID, { verification });
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: verification.match');
+        }
+    });
+
+    it('should only allow the challenge requester to build receipts', async () => {
+        const alice = await keymaster.createId('Alice');
+        const carol = await keymaster.createId('Carol');
+        await keymaster.createId('Victor');
+
+        await keymaster.setCurrentId('Alice');
+        const schemaDid = await keymaster.createSchema(mockSchema);
+        const credential = await keymaster.bindCredential(schemaDid, carol);
+        const vcDid = await keymaster.issueCredential(credential);
+
+        await keymaster.setCurrentId('Carol');
+        await keymaster.acceptCredential(vcDid);
+
+        await keymaster.setCurrentId('Victor');
+        const challengeDID = await keymaster.createChallenge({
+            credentials: [
+                {
+                    schema: schemaDid,
+                    issuers: [alice],
+                },
+            ],
+        });
+
+        await keymaster.setCurrentId('Carol');
+        const responseDID = await keymaster.createResponse(challengeDID);
+
+        await keymaster.setCurrentId('Victor');
+        const verification = await keymaster.verifyResponse(responseDID);
+
+        await keymaster.setCurrentId('Carol');
+
+        try {
+            await keymaster.buildChallengeReceipts(responseDID, { verification });
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: requesterDid');
         }
     });
 });
