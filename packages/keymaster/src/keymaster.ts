@@ -15,11 +15,13 @@ import {
 } from '@mdip/gatekeeper/types';
 import {
     Challenge,
+    ChallengeReceipt,
     ChallengeResponse,
     CheckWalletResult,
     CreateAssetOptions,
     EncryptedMessage,
     FileAssetOptions,
+    BuildChallengeReceiptOptions,
     CreateResponseOptions,
     DmailItem,
     DmailMessage,
@@ -37,6 +39,7 @@ import {
     NoticeMessage,
     Poll,
     PollResults,
+    PublishChallengeReceiptOptions,
     PossiblySigned,
     Signature,
     StoredWallet,
@@ -2035,13 +2038,15 @@ export default class Keymaster implements KeymasterInterface {
         const requested = challenge.credentials?.length ?? 0;
         const fulfilled = matches.length;
         const match = (requested === fulfilled);
+        const responseNonce = this.cipher.generateRandomSalt();
 
         const response = {
             challenge: challengeDID,
             credentials: pairs,
             requested: requested,
             fulfilled: fulfilled,
-            match: match
+            match: match,
+            responseNonce
         };
 
         return await this.encryptJSON({ response }, requestor!, options);
@@ -2085,7 +2090,7 @@ export default class Keymaster implements KeymasterInterface {
             throw new InvalidParameterError('challengeDID');
         }
 
-        const vps: unknown[] = [];
+        const vps: VerifiableCredential[] = [];
 
         for (let credential of response.credentials) {
             const vcData = await this.resolveAsset(credential.vc);
@@ -2141,6 +2146,104 @@ export default class Keymaster implements KeymasterInterface {
         response.responder = responseDoc.didDocument?.controller;
 
         return response;
+    }
+
+    private createResponseCommitment(responseDID: string, responseNonce: string): string {
+        return this.cipher.hashJSON({
+            responseDid: responseDID,
+            responseNonce,
+        });
+    }
+
+    async buildChallengeReceipts(
+        responseDID: string,
+        options: BuildChallengeReceiptOptions = {}
+    ): Promise<ChallengeReceipt[]> {
+        const { verification, verifiedAt, retries, delay } = options;
+        const response = verification ?? await this.verifyResponse(responseDID, { retries, delay });
+
+        if (!response.match) {
+            throw new InvalidParameterError('verification.match');
+        }
+
+        if (!response.responseNonce) {
+            throw new InvalidParameterError('response.responseNonce');
+        }
+
+        if (verifiedAt && isNaN(new Date(verifiedAt).getTime())) {
+            throw new InvalidParameterError('options.verifiedAt');
+        }
+
+        const challengeDoc = await this.resolveDID(response.challenge);
+        const requesterDid = challengeDoc.didDocument?.controller;
+        if (!requesterDid) {
+            throw new InvalidParameterError('requesterDid');
+        }
+
+        const id = await this.fetchIdInfo();
+        if (id.did !== requesterDid) {
+            throw new InvalidParameterError('requesterDid');
+        }
+
+        const result = await this.resolveAsset(response.challenge);
+        const challenge = (result as { challenge?: Challenge } | null)?.challenge;
+        if (!challenge) {
+            throw new InvalidParameterError('challengeDID');
+        }
+
+        const expectedCredentials = challenge?.credentials?.length ?? 0;
+        if (expectedCredentials > 0 && !response.vps) {
+            throw new InvalidParameterError('verification.vps');
+        }
+
+        const timestamp = verifiedAt ?? new Date().toISOString();
+        const responseCommitment = this.createResponseCommitment(responseDID, response.responseNonce);
+        const receipts: ChallengeReceipt[] = [];
+
+        for (const vp of response.vps ?? []) {
+            if (!this.isVerifiableCredential(vp)) {
+                throw new InvalidParameterError('verification.vps');
+            }
+
+            const schemaDid = vp.type[1];
+            if (!schemaDid || !schemaDid.startsWith('did:')) {
+                throw new InvalidParameterError('verification.vps.type');
+            }
+
+            receipts.push({
+                version: 1,
+                attesterDid: vp.issuer,
+                schemaDid,
+                requesterDid,
+                verifiedAt: timestamp,
+                responseCommitment,
+            });
+        }
+
+        return receipts;
+    }
+
+    async publishChallengeReceipts(
+        responseDID: string,
+        options: PublishChallengeReceiptOptions = {}
+    ): Promise<string[]> {
+        const { registry, validUntil, name, ...receiptOptions } = options;
+
+        const receipts = await this.buildChallengeReceipts(responseDID, receiptOptions);
+        if (name && receipts.length !== 1) {
+            throw new InvalidParameterError('options.name');
+        }
+
+        const receiptDIDs: string[] = [];
+        for (const challengeReceipt of receipts) {
+            const receiptDID = await this.createAsset(
+                { challengeReceipt },
+                { registry, validUntil, name }
+            );
+            receiptDIDs.push(receiptDID);
+        }
+
+        return receiptDIDs;
     }
 
     async createGroup(

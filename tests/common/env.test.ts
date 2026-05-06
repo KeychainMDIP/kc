@@ -101,6 +101,23 @@ describe('loadEnv', () => {
         expect(resolveEnvFiles()).toEqual([workspaceEnvFile]);
     });
 
+    test('does not cross an unparseable package boundary to an outer workspace marker', () => {
+        const workspaceDir = path.join(tempDir, 'repo');
+        const serviceDir = path.join(workspaceDir, 'services', 'search-server', 'dist');
+        const workspaceEnvFile = path.join(workspaceDir, '.env');
+        const outsideEnvFile = path.join(tempDir, '.env');
+
+        fs.mkdirSync(serviceDir, { recursive: true });
+        fs.mkdirSync(path.join(tempDir, '.git'));
+        fs.writeFileSync(path.join(workspaceDir, 'package.json'), '{ not-valid-json');
+        fs.writeFileSync(workspaceEnvFile, 'ROOT_ONLY=root\n');
+        fs.writeFileSync(outsideEnvFile, 'OUTSIDE=outside\n');
+
+        process.chdir(serviceDir);
+
+        expect(resolveEnvFiles()).toEqual([workspaceEnvFile]);
+    });
+
     test('stops searching when docker-compose.yml marks the workspace root', () => {
         const workspaceDir = path.join(tempDir, 'repo');
         const serviceDir = path.join(workspaceDir, 'services', 'search-server', 'dist');
