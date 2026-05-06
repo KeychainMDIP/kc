@@ -695,16 +695,6 @@ describe('challenge receipts', () => {
             responseCommitment: 'mock-commitment',
         };
 
-        try {
-            await keymaster.publishChallengeReceipts('did:mock:response', {
-                controller: 'did:mock:controller',
-            });
-            throw new ExpectedExceptionError();
-        }
-        catch (error: any) {
-            expect(error.message).toBe('Invalid parameter: options.controller');
-        }
-
         const buildReceipts = jest.spyOn(keymaster, 'buildChallengeReceipts')
             .mockResolvedValueOnce([
                 receipt,

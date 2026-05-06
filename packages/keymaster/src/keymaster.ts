@@ -2227,11 +2227,7 @@ export default class Keymaster implements KeymasterInterface {
         responseDID: string,
         options: PublishChallengeReceiptOptions = {}
     ): Promise<string[]> {
-        const { registry, validUntil, name, controller, ...receiptOptions } = options;
-
-        if (controller) {
-            throw new InvalidParameterError('options.controller');
-        }
+        const { registry, validUntil, name, ...receiptOptions } = options;
 
         const receipts = await this.buildChallengeReceipts(responseDID, receiptOptions);
         if (name && receipts.length !== 1) {

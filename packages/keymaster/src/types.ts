@@ -156,7 +156,11 @@ export interface BuildChallengeReceiptOptions {
     delay?: number;
 }
 
-export interface PublishChallengeReceiptOptions extends BuildChallengeReceiptOptions, CreateAssetOptions {}
+export interface PublishChallengeReceiptOptions extends BuildChallengeReceiptOptions {
+    registry?: string;
+    validUntil?: string;
+    name?: string;
+}
 
 export interface PollResults {
     tally: Array<{
