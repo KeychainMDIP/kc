@@ -2,6 +2,7 @@ import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import JsonViewer from "./components/JsonViewer.js";
 import Events from "./components/Events.js";
 import Credentials from "./components/Credentials.js";
+import ChallengeReceipts from "./components/ChallengeReceipts.js";
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import { createTheme, ThemeProvider } from "@mui/material/styles";
 import {
@@ -252,6 +253,14 @@ function App() {
                                     <Credentials
                                         gatekeeper={gatekeeper}
                                         isReady={isReady}
+                                        setError={setError}
+                                    />
+                                }
+                            />
+                            <Route
+                                path="/receipts"
+                                element={
+                                    <ChallengeReceipts
                                         setError={setError}
                                     />
                                 }

@@ -1,5 +1,10 @@
 import { Pool } from 'pg';
 import {
+    ChallengeReceiptListOptions,
+    ChallengeReceiptListResult,
+    ChallengeReceiptRecord,
+    ChallengeReceiptUsageOptions,
+    ChallengeReceiptUsageResult,
     DIDsDb,
     PublishedCredentialListOptions,
     PublishedCredentialListResult,
@@ -74,6 +79,31 @@ export default class Postgres implements DIDsDb {
 
             CREATE INDEX IF NOT EXISTS idx_published_credentials_schema_subject
                 ON published_credentials (schema_did, subject_did);
+
+            CREATE TABLE IF NOT EXISTS challenge_receipts (
+                receipt_did TEXT PRIMARY KEY,
+                attester_did TEXT NOT NULL,
+                schema_did TEXT NOT NULL,
+                requester_did TEXT NOT NULL,
+                verified_at TEXT NOT NULL,
+                response_commitment TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_challenge_receipts_attester
+                ON challenge_receipts (attester_did);
+
+            CREATE INDEX IF NOT EXISTS idx_challenge_receipts_schema
+                ON challenge_receipts (schema_did);
+
+            CREATE INDEX IF NOT EXISTS idx_challenge_receipts_requester
+                ON challenge_receipts (requester_did);
+
+            CREATE INDEX IF NOT EXISTS idx_challenge_receipts_verified
+                ON challenge_receipts (verified_at);
+
+            CREATE INDEX IF NOT EXISTS idx_challenge_receipts_commitment
+                ON challenge_receipts (response_commitment);
 
             CREATE TABLE IF NOT EXISTS config (
                 key TEXT PRIMARY KEY,
@@ -166,6 +196,58 @@ export default class Postgres implements DIDsDb {
                         record.issuerDid,
                         record.subjectDid,
                         record.revealed,
+                        record.updatedAt,
+                    ]
+                );
+            }
+
+            await client.query('COMMIT');
+        }
+        catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        }
+        finally {
+            client.release();
+        }
+    }
+
+    async replaceChallengeReceipts(receiptDid: string, records: ChallengeReceiptRecord[]): Promise<void> {
+        const pool = this.getPool();
+        const client = await pool.connect();
+
+        try {
+            await client.query('BEGIN');
+            await client.query(
+                'DELETE FROM challenge_receipts WHERE receipt_did = $1',
+                [receiptDid]
+            );
+
+            for (const record of records) {
+                await client.query(
+                    `INSERT INTO challenge_receipts (
+                        receipt_did,
+                        attester_did,
+                        schema_did,
+                        requester_did,
+                        verified_at,
+                        response_commitment,
+                        updated_at
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    ON CONFLICT (receipt_did) DO UPDATE SET
+                        attester_did = EXCLUDED.attester_did,
+                        schema_did = EXCLUDED.schema_did,
+                        requester_did = EXCLUDED.requester_did,
+                        verified_at = EXCLUDED.verified_at,
+                        response_commitment = EXCLUDED.response_commitment,
+                        updated_at = EXCLUDED.updated_at`,
+                    [
+                        record.receiptDid,
+                        record.attesterDid,
+                        record.schemaDid,
+                        record.requesterDid,
+                        record.verifiedAt,
+                        record.responseCommitment,
                         record.updatedAt,
                     ]
                 );
@@ -286,6 +368,97 @@ export default class Postgres implements DIDsDb {
         return {
             total: totalResult.rows[0]?.total ?? 0,
             credentials: result.rows,
+        };
+    }
+
+    async listChallengeReceipts(
+        options: ChallengeReceiptListOptions = {}
+    ): Promise<ChallengeReceiptListResult> {
+        const pool = this.getPool();
+        const {
+            limit = 50,
+            offset = 0,
+        } = options;
+        const { where, params } = this.buildChallengeReceiptWhere(options);
+        const totalResult = await pool.query<CountRow>(
+            `SELECT COUNT(*)::int AS total
+             FROM challenge_receipts
+             ${where}`,
+            params
+        );
+        const pageParams = [...params, Math.max(0, limit), Math.max(0, offset)];
+        const limitParam = `$${pageParams.length - 1}`;
+        const offsetParam = `$${pageParams.length}`;
+        const result = await pool.query<ChallengeReceiptRecord>(
+            `SELECT
+                receipt_did AS "receiptDid",
+                attester_did AS "attesterDid",
+                schema_did AS "schemaDid",
+                requester_did AS "requesterDid",
+                verified_at AS "verifiedAt",
+                response_commitment AS "responseCommitment",
+                updated_at AS "updatedAt"
+             FROM challenge_receipts
+             ${where}
+             ORDER BY verified_at DESC, receipt_did ASC
+             LIMIT ${limitParam} OFFSET ${offsetParam}`,
+            pageParams
+        );
+
+        return {
+            total: totalResult.rows[0]?.total ?? 0,
+            receipts: result.rows,
+        };
+    }
+
+    async getChallengeReceiptUsage(
+        options: ChallengeReceiptUsageOptions = {}
+    ): Promise<ChallengeReceiptUsageResult> {
+        const pool = this.getPool();
+        const {
+            limit = 50,
+            offset = 0,
+        } = options;
+        const { where, params } = this.buildChallengeReceiptWhere(options);
+        const totalResult = await pool.query<CountRow>(
+            `SELECT COUNT(*)::int AS total
+             FROM (
+                SELECT 1
+                FROM challenge_receipts
+                ${where}
+                GROUP BY attester_did, schema_did, requester_did
+             ) AS grouped`,
+            params
+        );
+        const pageParams = [...params, Math.max(0, limit), Math.max(0, offset)];
+        const limitParam = `$${pageParams.length - 1}`;
+        const offsetParam = `$${pageParams.length}`;
+        const result = await pool.query<{
+            attesterDid: string;
+            schemaDid: string;
+            requesterDid: string;
+            count: number;
+            firstVerifiedAt: string;
+            lastVerifiedAt: string;
+        }>(
+            `SELECT
+                attester_did AS "attesterDid",
+                schema_did AS "schemaDid",
+                requester_did AS "requesterDid",
+                COUNT(DISTINCT response_commitment)::int AS count,
+                MIN(verified_at) AS "firstVerifiedAt",
+                MAX(verified_at) AS "lastVerifiedAt"
+             FROM challenge_receipts
+             ${where}
+             GROUP BY attester_did, schema_did, requester_did
+             ORDER BY count DESC, schema_did ASC, requester_did ASC
+             LIMIT ${limitParam} OFFSET ${offsetParam}`,
+            pageParams
+        );
+
+        return {
+            total: totalResult.rows[0]?.total ?? 0,
+            usage: result.rows,
         };
     }
 
@@ -419,6 +592,7 @@ export default class Postgres implements DIDsDb {
         const pool = this.getPool();
         await pool.query('DELETE FROM did_docs');
         await pool.query('DELETE FROM published_credentials');
+        await pool.query('DELETE FROM challenge_receipts');
         await pool.query('DELETE FROM config');
     }
 
@@ -432,6 +606,56 @@ export default class Postgres implements DIDsDb {
 
     protected createPool(): Pool {
         return new Pool({ connectionString: this.url });
+    }
+
+    private buildChallengeReceiptWhere(
+        options: ChallengeReceiptListOptions | ChallengeReceiptUsageOptions
+    ): { where: string; params: unknown[] } {
+        const clauses: string[] = [];
+        const params: unknown[] = [];
+        let index = 1;
+        const receiptDid = 'receiptDid' in options ? options.receiptDid : undefined;
+        const responseCommitment = 'responseCommitment' in options ? options.responseCommitment : undefined;
+
+        if (receiptDid) {
+            clauses.push(`receipt_did = $${index++}`);
+            params.push(receiptDid);
+        }
+
+        if (options.attesterDid) {
+            clauses.push(`attester_did = $${index++}`);
+            params.push(options.attesterDid);
+        }
+
+        if (options.schemaDid) {
+            clauses.push(`schema_did = $${index++}`);
+            params.push(options.schemaDid);
+        }
+
+        if (options.requesterDid) {
+            clauses.push(`requester_did = $${index++}`);
+            params.push(options.requesterDid);
+        }
+
+        if (responseCommitment) {
+            clauses.push(`response_commitment = $${index++}`);
+            params.push(responseCommitment);
+        }
+
+        if (options.verifiedAfter) {
+            clauses.push(`verified_at >= $${index++}`);
+            params.push(options.verifiedAfter);
+        }
+
+        if (options.verifiedBefore) {
+            clauses.push(`verified_at <= $${index++}`);
+            params.push(options.verifiedBefore);
+        }
+
+        return {
+            where: clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '',
+            params,
+        };
     }
 
     private toJsonLiterals(values: unknown[]): string[] {

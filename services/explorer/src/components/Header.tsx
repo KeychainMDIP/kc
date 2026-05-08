@@ -26,6 +26,9 @@ const Header = (
     else if (location.pathname.startsWith("/credentials")) {
         currentTab = "credentials";
     }
+    else if (location.pathname.startsWith("/receipts")) {
+        currentTab = "receipts";
+    }
 
     const handleTabChange = (event: React.SyntheticEvent, newValue: string) => {
         navigate("/" + newValue);
@@ -67,6 +70,7 @@ const Header = (
                 <Tab label="Search" value="search" />
                 <Tab label="Events" value="events" />
                 <Tab label="Credentials" value="credentials" />
+                <Tab label="Receipts" value="receipts" />
             </Tabs>
 
             <Box sx={{ ml: "auto", display: "flex", alignItems: "center" }}>

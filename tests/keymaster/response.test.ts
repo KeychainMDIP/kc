@@ -512,6 +512,12 @@ describe('challenge receipts', () => {
             verifiedAt: expect.any(String),
         });
         expect(new Date(defaultReceiptAsset.challengeReceipt.verifiedAt).getTime()).not.toBeNaN();
+
+        const normalizedReceipts = await keymaster.buildChallengeReceipts(responseDID, {
+            verification,
+            verifiedAt: 'January 1, 2026 00:00:00 UTC',
+        });
+        expect(normalizedReceipts[0].verifiedAt).toBe('2026-01-01T00:00:00.000Z');
     });
 
     it('should reject receipts for unsuccessful challenge responses', async () => {

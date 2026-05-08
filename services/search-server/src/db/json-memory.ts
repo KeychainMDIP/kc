@@ -1,4 +1,10 @@
 import {
+    ChallengeReceiptListOptions,
+    ChallengeReceiptListResult,
+    ChallengeReceiptRecord,
+    ChallengeReceiptUsageOptions,
+    ChallengeReceiptUsageRecord,
+    ChallengeReceiptUsageResult,
     DIDsDb,
     PublishedCredentialListOptions,
     PublishedCredentialListResult,
@@ -12,6 +18,7 @@ export default class DIDsDbMemory implements DIDsDb {
     private docs = new Map<string, JSONObject>();
     private config = new Map<string, string>();
     private publishedCredentials = new Map<string, PublishedCredentialRecord[]>();
+    private challengeReceipts = new Map<string, ChallengeReceiptRecord[]>();
     private static readonly ARRAY_WILDCARD_END = /\[\*]$/;
     private static readonly ARRAY_WILDCARD_MID = /\[\*]\./;
 
@@ -41,6 +48,16 @@ export default class DIDsDbMemory implements DIDsDb {
         }
 
         this.publishedCredentials.set(holderDid, Array.from(uniqueRecords.values()));
+    }
+
+    async replaceChallengeReceipts(receiptDid: string, records: ChallengeReceiptRecord[]): Promise<void> {
+        const uniqueRecords = new Map<string, ChallengeReceiptRecord>();
+
+        for (const record of records) {
+            uniqueRecords.set(record.receiptDid, { ...record });
+        }
+
+        this.challengeReceipts.set(receiptDid, Array.from(uniqueRecords.values()));
     }
 
     async getDID(did: string): Promise<object | null> {
@@ -89,6 +106,83 @@ export default class DIDsDbMemory implements DIDsDb {
             credentials: filtered
                 .slice(normalizedOffset, normalizedOffset + normalizedLimit)
                 .map(record => ({ ...record })),
+        };
+    }
+
+    async listChallengeReceipts(
+        options: ChallengeReceiptListOptions = {}
+    ): Promise<ChallengeReceiptListResult> {
+        const {
+            limit = 50,
+            offset = 0,
+        } = options;
+        const filtered = this.filterChallengeReceipts(options)
+            .sort((a, b) => b.verifiedAt.localeCompare(a.verifiedAt) || a.receiptDid.localeCompare(b.receiptDid));
+        const normalizedLimit = Math.max(0, limit);
+        const normalizedOffset = Math.max(0, offset);
+
+        return {
+            total: filtered.length,
+            receipts: filtered
+                .slice(normalizedOffset, normalizedOffset + normalizedLimit)
+                .map(record => ({ ...record })),
+        };
+    }
+
+    async getChallengeReceiptUsage(
+        options: ChallengeReceiptUsageOptions = {}
+    ): Promise<ChallengeReceiptUsageResult> {
+        const {
+            limit = 50,
+            offset = 0,
+        } = options;
+        const groups = new Map<string, {
+            commitments: Set<string>;
+            record: ChallengeReceiptUsageRecord;
+        }>();
+
+        for (const record of this.filterChallengeReceipts(options)) {
+            const key = `${record.attesterDid}\u0000${record.schemaDid}\u0000${record.requesterDid}`;
+            const existing = groups.get(key);
+
+            if (!existing) {
+                groups.set(key, {
+                    commitments: new Set([record.responseCommitment]),
+                    record: {
+                        attesterDid: record.attesterDid,
+                        schemaDid: record.schemaDid,
+                        requesterDid: record.requesterDid,
+                        count: 1,
+                        firstVerifiedAt: record.verifiedAt,
+                        lastVerifiedAt: record.verifiedAt,
+                    },
+                });
+                continue;
+            }
+
+            existing.commitments.add(record.responseCommitment);
+            existing.record.count = existing.commitments.size;
+            if (record.verifiedAt < existing.record.firstVerifiedAt) {
+                existing.record.firstVerifiedAt = record.verifiedAt;
+            }
+            if (record.verifiedAt > existing.record.lastVerifiedAt) {
+                existing.record.lastVerifiedAt = record.verifiedAt;
+            }
+        }
+
+        const usage = Array.from(groups.values())
+            .map(group => group.record)
+            .sort((a, b) =>
+                b.count - a.count ||
+                a.schemaDid.localeCompare(b.schemaDid) ||
+                a.requesterDid.localeCompare(b.requesterDid)
+            );
+        const normalizedLimit = Math.max(0, limit);
+        const normalizedOffset = Math.max(0, offset);
+
+        return {
+            total: usage.length,
+            usage: usage.slice(normalizedOffset, normalizedOffset + normalizedLimit),
         };
     }
 
@@ -164,12 +258,42 @@ export default class DIDsDbMemory implements DIDsDb {
         this.docs.clear();
         this.config.clear();
         this.publishedCredentials.clear();
+        this.challengeReceipts.clear();
     }
 
     private flattenPublishedCredentials(): PublishedCredentialRecord[] {
         return Array.from(this.publishedCredentials.values()).flatMap(records =>
             records.map(record => ({ ...record }))
         );
+    }
+
+    private flattenChallengeReceipts(): ChallengeReceiptRecord[] {
+        return Array.from(this.challengeReceipts.values()).flatMap(records =>
+            records.map(record => ({ ...record }))
+        );
+    }
+
+    private filterChallengeReceipts(
+        options: ChallengeReceiptListOptions | ChallengeReceiptUsageOptions
+    ): ChallengeReceiptRecord[] {
+        const {
+            attesterDid,
+            schemaDid,
+            requesterDid,
+            verifiedAfter,
+            verifiedBefore,
+        } = options;
+        const receiptDid = 'receiptDid' in options ? options.receiptDid : undefined;
+        const responseCommitment = 'responseCommitment' in options ? options.responseCommitment : undefined;
+
+        return this.flattenChallengeReceipts()
+            .filter(record => !receiptDid || record.receiptDid === receiptDid)
+            .filter(record => !attesterDid || record.attesterDid === attesterDid)
+            .filter(record => !schemaDid || record.schemaDid === schemaDid)
+            .filter(record => !requesterDid || record.requesterDid === requesterDid)
+            .filter(record => !responseCommitment || record.responseCommitment === responseCommitment)
+            .filter(record => !verifiedAfter || record.verifiedAt >= verifiedAfter)
+            .filter(record => !verifiedBefore || record.verifiedAt <= verifiedBefore);
     }
 
     private getPath(root: unknown, path: string): unknown {
