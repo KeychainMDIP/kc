@@ -287,6 +287,165 @@ describe.each(adapterFactories)('$name challenge receipt storage', ({ create }) 
     });
 });
 
+describe('memory challenge receipt ordering', () => {
+    it('sorts receipts and grouped usage deterministically', async () => {
+        const db = new DIDsDbMemory();
+        await db.connect();
+
+        const rows: ChallengeReceiptRecord[] = [
+            {
+                receiptDid: 'did:test:receipt-3',
+                attesterDid: 'did:test:attester-1',
+                schemaDid: 'did:test:schema-b',
+                requesterDid: 'did:test:requester-b',
+                verifiedAt: '2026-04-01T10:00:00.000Z',
+                responseCommitment: 'mock-commitment-b-b',
+                updatedAt: '2026-04-01T10:01:00.000Z',
+            },
+            {
+                receiptDid: 'did:test:receipt-2',
+                attesterDid: 'did:test:attester-1',
+                schemaDid: 'did:test:schema-b',
+                requesterDid: 'did:test:requester-a',
+                verifiedAt: '2026-04-01T10:00:00.000Z',
+                responseCommitment: 'mock-commitment-b-a',
+                updatedAt: '2026-04-01T10:01:00.000Z',
+            },
+            {
+                receiptDid: 'did:test:receipt-1',
+                attesterDid: 'did:test:attester-1',
+                schemaDid: 'did:test:schema-a',
+                requesterDid: 'did:test:requester-a',
+                verifiedAt: '2026-04-01T10:00:00.000Z',
+                responseCommitment: 'mock-commitment-a-a-late',
+                updatedAt: '2026-04-01T10:01:00.000Z',
+            },
+            {
+                receiptDid: 'did:test:receipt-0',
+                attesterDid: 'did:test:attester-1',
+                schemaDid: 'did:test:schema-a',
+                requesterDid: 'did:test:requester-a',
+                verifiedAt: '2026-04-01T09:00:00.000Z',
+                responseCommitment: 'mock-commitment-a-a-early',
+                updatedAt: '2026-04-01T09:01:00.000Z',
+            },
+        ];
+
+        try {
+            for (const row of rows) {
+                await db.replaceChallengeReceipts(row.receiptDid, [row]);
+            }
+
+            expect((await db.listChallengeReceipts({
+                attesterDid: 'did:test:attester-1',
+                limit: 10,
+                offset: 0,
+            })).receipts.map(row => row.receiptDid)).toStrictEqual([
+                'did:test:receipt-1',
+                'did:test:receipt-2',
+                'did:test:receipt-3',
+                'did:test:receipt-0',
+            ]);
+
+            expect(await db.getChallengeReceiptUsage({
+                attesterDid: 'did:test:attester-1',
+                limit: 10,
+                offset: 0,
+            })).toStrictEqual({
+                total: 3,
+                usage: [
+                    {
+                        attesterDid: 'did:test:attester-1',
+                        schemaDid: 'did:test:schema-a',
+                        requesterDid: 'did:test:requester-a',
+                        count: 2,
+                        firstVerifiedAt: '2026-04-01T09:00:00.000Z',
+                        lastVerifiedAt: '2026-04-01T10:00:00.000Z',
+                    },
+                    {
+                        attesterDid: 'did:test:attester-1',
+                        schemaDid: 'did:test:schema-b',
+                        requesterDid: 'did:test:requester-a',
+                        count: 1,
+                        firstVerifiedAt: '2026-04-01T10:00:00.000Z',
+                        lastVerifiedAt: '2026-04-01T10:00:00.000Z',
+                    },
+                    {
+                        attesterDid: 'did:test:attester-1',
+                        schemaDid: 'did:test:schema-b',
+                        requesterDid: 'did:test:requester-b',
+                        count: 1,
+                        firstVerifiedAt: '2026-04-01T10:00:00.000Z',
+                        lastVerifiedAt: '2026-04-01T10:00:00.000Z',
+                    },
+                ] satisfies ChallengeReceiptUsageRecord[],
+            });
+        }
+        finally {
+            await db.disconnect();
+        }
+    });
+});
+
+describe('sqlite challenge receipt adapter errors', () => {
+    it('rejects challenge receipt calls when disconnected', async () => {
+        const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'search-server-receipts-'));
+        const db = await Sqlite.create('receipts.db', tempDir);
+        await db.disconnect();
+
+        try {
+            await expect(db.replaceChallengeReceipts('did:test:receipt-1', []))
+                .rejects.toThrow('DB not connected');
+            await expect(db.listChallengeReceipts())
+                .rejects.toThrow('DB not connected');
+            await expect(db.getChallengeReceiptUsage())
+                .rejects.toThrow('DB not connected');
+        }
+        finally {
+            fs.rmSync(tempDir, { recursive: true, force: true });
+        }
+    });
+
+    it('rolls back failed challenge receipt replacements', async () => {
+        const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'search-server-receipts-'));
+        const db = await Sqlite.create('receipts.db', tempDir);
+        const record: ChallengeReceiptRecord = {
+            receiptDid: 'did:test:receipt-1',
+            attesterDid: 'did:test:attester-1',
+            schemaDid: 'did:test:schema-1',
+            requesterDid: 'did:test:requester-1',
+            verifiedAt: '2026-04-01T10:00:00.000Z',
+            responseCommitment: 'mock-commitment-1',
+            updatedAt: '2026-04-01T10:01:00.000Z',
+        };
+        const sqliteDb = (db as any).db;
+        const failure = new Error('mock insert failure');
+        const runSpy = jest.spyOn(sqliteDb, 'run')
+            .mockResolvedValueOnce(undefined as never)
+            .mockRejectedValueOnce(failure as never);
+
+        try {
+            await expect(db.replaceChallengeReceipts(record.receiptDid, [record]))
+                .rejects.toThrow('mock insert failure');
+            runSpy.mockRestore();
+
+            expect(await db.listChallengeReceipts({
+                receiptDid: record.receiptDid,
+                limit: 10,
+                offset: 0,
+            })).toStrictEqual({
+                total: 0,
+                receipts: [],
+            });
+        }
+        finally {
+            runSpy.mockRestore();
+            await db.disconnect();
+            fs.rmSync(tempDir, { recursive: true, force: true });
+        }
+    });
+});
+
 describe('postgres challenge receipt adapter with mocked pool', () => {
     async function loadPostgresModule() {
         jest.resetModules();
@@ -417,6 +576,52 @@ describe('postgres challenge receipt adapter with mocked pool', () => {
             ]
         );
         expect(poolQuery).toHaveBeenCalledWith('DELETE FROM challenge_receipts');
+        expect(mockPool.end).toHaveBeenCalledTimes(1);
+    });
+
+    it('rolls back and releases the client when replacement fails', async () => {
+        const record: ChallengeReceiptRecord = {
+            receiptDid: 'did:test:receipt-1',
+            attesterDid: 'did:test:attester-1',
+            schemaDid: 'did:test:schema-1',
+            requesterDid: 'did:test:requester-1',
+            verifiedAt: '2026-04-01T10:00:00.000Z',
+            responseCommitment: 'mock-commitment-1',
+            updatedAt: '2026-04-01T10:01:00.000Z',
+        };
+        const failure = new Error('mock insert failure');
+        const mockClient = {
+            query: jest.fn(async (sql: string) => {
+                if (String(sql).includes('INSERT INTO challenge_receipts')) {
+                    throw failure;
+                }
+
+                return { rowCount: 0, rows: [] };
+            }),
+            release: jest.fn(),
+        };
+        const mockPool = {
+            query: jest.fn().mockResolvedValue({ rowCount: 0, rows: [] } as never),
+            connect: jest.fn().mockResolvedValue(mockClient as never),
+            end: jest.fn().mockResolvedValue(undefined as never),
+        };
+        const Postgres = await loadPostgresModule();
+
+        class TestPostgres extends Postgres {
+            protected createPool(): any {
+                return mockPool;
+            }
+        }
+
+        const db = new TestPostgres('postgresql://example');
+        await db.connect();
+
+        await expect(db.replaceChallengeReceipts(record.receiptDid, [record]))
+            .rejects.toThrow('mock insert failure');
+        await db.disconnect();
+
+        expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
+        expect(mockClient.release).toHaveBeenCalledTimes(1);
         expect(mockPool.end).toHaveBeenCalledTimes(1);
     });
 });
