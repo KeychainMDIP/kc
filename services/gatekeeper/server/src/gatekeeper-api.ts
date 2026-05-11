@@ -1351,7 +1351,7 @@ v1router.post('/dids/import', async (req, res) => {
  */
 v1router.post('/batch/export', async (req, res) => {
     try {
-        const { dids } = req.body;
+        const dids = req.body?.dids;
         const response = await gatekeeper.exportBatch(dids);
         res.json(response);
     } catch (error: any) {

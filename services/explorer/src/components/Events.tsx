@@ -183,7 +183,7 @@ function Events(
                                     <Typography
                                         sx={{
                                             textDecoration: "underline",
-                                            color: "blue",
+                                            color: "primary.main",
                                             cursor: "pointer",
                                             maxWidth: 500,
                                             overflow: "hidden",

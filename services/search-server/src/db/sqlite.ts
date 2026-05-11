@@ -1,6 +1,12 @@
 import sqlite3 from 'sqlite3';
 import { open, Database } from 'sqlite';
-import { DIDsDb } from "../types.js";
+import {
+    DIDsDb,
+    PublishedCredentialListOptions,
+    PublishedCredentialListResult,
+    PublishedCredentialRecord,
+    PublishedCredentialSchemaCount,
+} from "../types.js";
 
 export default class Sqlite implements DIDsDb {
     private readonly dbFile: string;
@@ -34,10 +40,47 @@ export default class Sqlite implements DIDsDb {
                                                     doc TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS published_credentials (
+                holder_did TEXT NOT NULL,
+                credential_did TEXT NOT NULL,
+                schema_did TEXT NOT NULL,
+                issuer_did TEXT NOT NULL,
+                subject_did TEXT NOT NULL,
+                revealed INTEGER,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (holder_did, credential_did)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_published_credentials_schema
+                ON published_credentials (schema_did);
+
+            CREATE INDEX IF NOT EXISTS idx_published_credentials_schema_issuer
+                ON published_credentials (schema_did, issuer_did);
+
+            CREATE INDEX IF NOT EXISTS idx_published_credentials_schema_subject
+                ON published_credentials (schema_did, subject_did);
+
             CREATE TABLE IF NOT EXISTS config (
                                                   key TEXT PRIMARY KEY,
                                                   value TEXT NOT NULL
             );
+        `);
+
+        const columns = await this.db.all<{ name: string }[]>(
+            `PRAGMA table_info('published_credentials')`
+        );
+        const hasRevealed = columns.some(column => column.name === 'revealed');
+
+        if (!hasRevealed) {
+            await this.db.exec(`
+                ALTER TABLE published_credentials
+                ADD COLUMN revealed INTEGER
+            `);
+        }
+
+        await this.db.exec(`
+            CREATE INDEX IF NOT EXISTS idx_published_credentials_schema_revealed
+                ON published_credentials (schema_did, revealed)
         `);
     }
 
@@ -81,6 +124,55 @@ export default class Sqlite implements DIDsDb {
         `, [did, docString]);
     }
 
+    async replacePublishedCredentials(holderDid: string, records: PublishedCredentialRecord[]): Promise<void> {
+        if (!this.db) {
+            throw new Error('DB not connected');
+        }
+
+        await this.db.exec('BEGIN');
+
+        try {
+            await this.db.run(
+                'DELETE FROM published_credentials WHERE holder_did = ?',
+                [holderDid]
+            );
+
+            for (const record of records) {
+                await this.db.run(`
+                    INSERT INTO published_credentials (
+                        holder_did,
+                        credential_did,
+                        schema_did,
+                        issuer_did,
+                        subject_did,
+                        revealed,
+                        updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(holder_did, credential_did) DO UPDATE SET
+                        schema_did = excluded.schema_did,
+                        issuer_did = excluded.issuer_did,
+                        subject_did = excluded.subject_did,
+                        revealed = excluded.revealed,
+                        updated_at = excluded.updated_at
+                `, [
+                    record.holderDid,
+                    record.credentialDid,
+                    record.schemaDid,
+                    record.issuerDid,
+                    record.subjectDid,
+                    record.revealed ? 1 : 0,
+                    record.updatedAt,
+                ]);
+            }
+
+            await this.db.exec('COMMIT');
+        }
+        catch (error) {
+            await this.db.exec('ROLLBACK');
+            throw error;
+        }
+    }
+
     async getDID(did: string): Promise<object | null> {
         if (!this.db) {
             throw new Error('DB not connected');
@@ -90,6 +182,114 @@ export default class Sqlite implements DIDsDb {
             return null;
         }
         return JSON.parse(row.doc);
+    }
+
+    async getPublishedCredentialCountsBySchema(): Promise<PublishedCredentialSchemaCount[]> {
+        if (!this.db) {
+            throw new Error('DB not connected');
+        }
+
+        const rows = await this.db.all<PublishedCredentialSchemaCount[]>(`
+            SELECT schema_did AS schemaDid, COUNT(*) AS count
+            FROM published_credentials
+            GROUP BY schema_did
+            ORDER BY count DESC, schemaDid ASC
+        `);
+
+        return rows.map(row => ({
+            schemaDid: row.schemaDid,
+            count: Number(row.count),
+        }));
+    }
+
+    async listPublishedCredentials(
+        options: PublishedCredentialListOptions = {}
+    ): Promise<PublishedCredentialListResult> {
+        if (!this.db) {
+            throw new Error('DB not connected');
+        }
+
+        const {
+            credentialDid,
+            schemaDid,
+            issuerDid,
+            subjectDid,
+            revealed,
+            limit = 50,
+            offset = 0,
+        } = options;
+
+        const clauses: string[] = [];
+        const params: unknown[] = [];
+
+        if (credentialDid) {
+            clauses.push('credential_did = ?');
+            params.push(credentialDid);
+        }
+
+        if (schemaDid) {
+            clauses.push('schema_did = ?');
+            params.push(schemaDid);
+        }
+
+        if (issuerDid) {
+            clauses.push('issuer_did = ?');
+            params.push(issuerDid);
+        }
+
+        if (subjectDid) {
+            clauses.push('subject_did = ?');
+            params.push(subjectDid);
+        }
+
+        if (typeof revealed === 'boolean') {
+            clauses.push('revealed = ?');
+            params.push(revealed ? 1 : 0);
+        }
+
+        const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+
+        const totalRow = await this.db.get<{ total: number | string }>(
+            `SELECT COUNT(*) AS total FROM published_credentials ${where}`,
+            params
+        );
+
+        const rows = await this.db.all<{
+            holderDid: string;
+            credentialDid: string;
+            schemaDid: string;
+            issuerDid: string;
+            subjectDid: string;
+            revealed: number | null;
+            updatedAt: string;
+        }[]>(
+            `SELECT
+                holder_did AS holderDid,
+                credential_did AS credentialDid,
+                schema_did AS schemaDid,
+                issuer_did AS issuerDid,
+                subject_did AS subjectDid,
+                revealed AS revealed,
+                updated_at AS updatedAt
+             FROM published_credentials
+             ${where}
+             ORDER BY updated_at DESC, credential_did ASC
+             LIMIT ? OFFSET ?`,
+            [...params, Math.max(0, limit), Math.max(0, offset)]
+        );
+
+        return {
+            total: Number(totalRow?.total ?? 0),
+            credentials: rows.map(row => ({
+                holderDid: row.holderDid,
+                credentialDid: row.credentialDid,
+                schemaDid: row.schemaDid,
+                issuerDid: row.issuerDid,
+                subjectDid: row.subjectDid,
+                revealed: row.revealed === 1,
+                updatedAt: row.updatedAt,
+            })),
+        };
     }
 
     async searchDocs(q: string): Promise<string[]> {
@@ -193,6 +393,7 @@ export default class Sqlite implements DIDsDb {
         }
         await this.db.exec(`
             DELETE FROM did_docs;
+            DELETE FROM published_credentials;
             DELETE FROM config;
         `);
     }

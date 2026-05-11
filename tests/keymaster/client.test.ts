@@ -29,6 +29,8 @@ const Endpoints = {
     challenge: '/api/v1/challenge',
     response: '/api/v1/response',
     response_verify: '/api/v1/response/verify',
+    response_receipts: '/api/v1/response/receipts',
+    response_receipts_build: '/api/v1/response/receipts/build',
     groups: '/api/v1/groups',
     schemas: '/api/v1/schemas',
     agents: '/api/v1/agents',
@@ -1455,6 +1457,77 @@ describe('verifyResponse', () => {
 
         try {
             await keymaster.verifyResponse(mockResponse);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('buildChallengeReceipts', () => {
+    const mockResponse = 'mockResponse';
+    const mockReceipt = {
+        version: 1,
+        attesterDid: 'did:mock:attester',
+        schemaDid: 'did:mock:schema',
+        requesterDid: 'did:mock:requester',
+        verifiedAt: '2026-01-01T00:00:00.000Z',
+        responseCommitment: 'mockCommitment',
+    };
+
+    it('should build challenge receipts', async () => {
+        nock(KeymasterURL)
+            .post(Endpoints.response_receipts_build)
+            .reply(200, { receipts: [mockReceipt] });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const receipts = await keymaster.buildChallengeReceipts(mockResponse);
+
+        expect(receipts).toStrictEqual([mockReceipt]);
+    });
+
+    it('should throw exception on buildChallengeReceipts server error', async () => {
+        nock(KeymasterURL)
+            .post(Endpoints.response_receipts_build)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.buildChallengeReceipts(mockResponse);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('publishChallengeReceipts', () => {
+    const mockResponse = 'mockResponse';
+    const mockReceiptDIDs = ['did:mock:receipt'];
+
+    it('should publish challenge receipts', async () => {
+        nock(KeymasterURL)
+            .post(Endpoints.response_receipts)
+            .reply(200, { dids: mockReceiptDIDs });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const receiptDIDs = await keymaster.publishChallengeReceipts(mockResponse);
+
+        expect(receiptDIDs).toStrictEqual(mockReceiptDIDs);
+    });
+
+    it('should throw exception on publishChallengeReceipts server error', async () => {
+        nock(KeymasterURL)
+            .post(Endpoints.response_receipts)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.publishChallengeReceipts(mockResponse);
             throw new ExpectedExceptionError();
         }
         catch (error: any) {

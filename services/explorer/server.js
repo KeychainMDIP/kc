@@ -1,10 +1,10 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import dotenv from 'dotenv';
+import { loadEnv } from '@mdip/common/env';
 import { childLogger } from '@mdip/common/logger';
 
-dotenv.config();
+loadEnv();
 const log = childLogger({ service: 'explorer-server' });
 
 const __filename = fileURLToPath(import.meta.url);

@@ -19,6 +19,11 @@
       "import": "./dist/esm/index.js",
       "require": "./dist/cjs/index.cjs"
     },
+    "./env": {
+      "import": "./dist/esm/env.js",
+      "require": "./dist/cjs/env.cjs",
+      "types": "./dist/types/env.d.ts"
+    },
     "./utils": {
       "types": "./dist/types/utils.d.ts",
       "import": "./dist/esm/utils.js",
@@ -38,6 +43,9 @@
   },
   "typesVersions": {
     "*": {
+      "env": [
+        "./dist/types/env.d.ts"
+      ],
       "utils": [
         "./dist/types/utils.d.ts"
       ],
@@ -59,6 +67,7 @@
   "author": "David McFadzean <davidmc@gmail.com>",
   "license": "MIT",
   "dependencies": {
+    "dotenv": "^17.3.1",
     "pino": "^10.3.1",
     "pino-pretty": "^13.1.3"
   },

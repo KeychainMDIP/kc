@@ -1,0 +1,1420 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { jest } from '@jest/globals';
+import sqlite3 from 'sqlite3';
+import { open } from 'sqlite';
+import { setLogger } from '../../packages/common/src/logger.ts';
+import DIDsDbMemory from '../../services/search-server/src/db/json-memory.ts';
+import Sqlite from '../../services/search-server/src/db/sqlite.ts';
+import DidIndexer from '../../services/search-server/src/DidIndexer.ts';
+import { extractPublishedCredentials } from '../../services/search-server/src/published-credentials.ts';
+import type {
+    DIDsDb,
+    PublishedCredentialRecord,
+    PublishedCredentialSchemaCount,
+} from '../../services/search-server/src/types.ts';
+
+function createPublishedCredential(
+    schemaDid: string,
+    issuerDid: string,
+    subjectDid: string,
+    options: { reveal?: boolean; signed?: string } = {}
+) {
+    const {
+        reveal = false,
+        signed = '2026-03-31T10:30:00.000Z',
+    } = options;
+
+    return {
+        "@context": [
+            "https://www.w3.org/ns/credentials/v2",
+            "https://www.w3.org/ns/credentials/examples/v2"
+        ],
+        type: ['VerifiableCredential', schemaDid],
+        issuer: issuerDid,
+        validFrom: '2026-03-31T10:00:00.000Z',
+        credentialSubject: {
+            id: subjectDid,
+        },
+        signature: {
+            signed,
+        },
+        credential: reveal ? { score: 100 } : null,
+    };
+}
+
+function createSubjectDoc(
+    holderDid: string,
+    manifest: Record<string, unknown>,
+    updatedAt = '2026-03-31T11:00:00.000Z'
+) {
+    return {
+        didDocument: {
+            id: holderDid,
+        },
+        didDocumentData: {
+            manifest,
+        },
+        didDocumentMetadata: {
+            updated: updatedAt,
+        },
+    };
+}
+
+function createQueryableDoc(
+    did: string,
+    {
+        name,
+        tags,
+        nestedKinds,
+        manifest,
+        coordinates,
+    }: {
+        name: string;
+        tags: string[];
+        nestedKinds: string[];
+        manifest: Record<string, { issuer: string }>;
+        coordinates: string[];
+    }
+) {
+    return {
+        didDocument: {
+            id: did,
+        },
+        didDocumentData: {
+            profile: {
+                name,
+            },
+            tags,
+            nested: nestedKinds.map(kind => ({ kind })),
+            coordinates,
+            manifest,
+        },
+    };
+}
+
+type DbHarness = {
+    db: DIDsDb;
+    cleanup: () => Promise<void>;
+};
+
+const adapterFactories = [
+    {
+        name: 'memory',
+        create: async (): Promise<DbHarness> => {
+            const db = new DIDsDbMemory();
+            await db.connect();
+
+            return {
+                db,
+                cleanup: async () => {
+                    await db.disconnect();
+                },
+            };
+        },
+    },
+    {
+        name: 'sqlite',
+        create: async (): Promise<DbHarness> => {
+            const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'search-server-query-'));
+            const db = await Sqlite.create('query.db', tempDir);
+
+            return {
+                db,
+                cleanup: async () => {
+                    await db.disconnect();
+                    fs.rmSync(tempDir, { recursive: true, force: true });
+                },
+            };
+        },
+    },
+] as const;
+
+beforeEach(() => {
+    const logger = {
+        child: jest.fn(),
+        debug: jest.fn(),
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+    };
+
+    logger.child.mockReturnValue(logger);
+    setLogger(logger as any);
+});
+
+function createLogger() {
+    const logger = {
+        child: jest.fn(),
+        debug: jest.fn(),
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+    };
+
+    logger.child.mockReturnValue(logger);
+    return logger;
+}
+
+describe('extractPublishedCredentials', () => {
+    it('extracts normalized rows from a valid manifest using signature.signed as the published timestamp', () => {
+        const holderDid = 'did:test:subject-1';
+        const schemaDid = 'did:test:schema-1';
+        const issuerDid = 'did:test:issuer-1';
+        const credentialDid = 'did:test:credential-1';
+        const signedAt = '2026-03-31T10:41:22.000Z';
+        const doc = createSubjectDoc(holderDid, {
+            [credentialDid]: createPublishedCredential(schemaDid, issuerDid, holderDid, {
+                signed: signedAt,
+            }),
+        });
+
+        expect(extractPublishedCredentials(holderDid, doc)).toStrictEqual<PublishedCredentialRecord[]>([
+            {
+                holderDid,
+                credentialDid,
+                schemaDid,
+                issuerDid,
+                subjectDid: holderDid,
+                revealed: false,
+                updatedAt: signedAt,
+            },
+        ]);
+    });
+
+    it('falls back to the subject DID document timestamp when signature.signed is missing', () => {
+        const holderDid = 'did:test:subject-1';
+        const credentialDid = 'did:test:credential-1';
+        const doc = createSubjectDoc(holderDid, {
+            [credentialDid]: {
+                "@context": [
+                    "https://www.w3.org/ns/credentials/v2",
+                    "https://www.w3.org/ns/credentials/examples/v2"
+                ],
+                type: ['VerifiableCredential', 'did:test:schema-1'],
+                issuer: 'did:test:issuer-1',
+                credentialSubject: {
+                    id: holderDid,
+                },
+                credential: null,
+            },
+        }, '2026-03-31T11:00:00.000Z');
+
+        expect(extractPublishedCredentials(holderDid, doc)).toStrictEqual<PublishedCredentialRecord[]>([
+            {
+                holderDid,
+                credentialDid,
+                schemaDid: 'did:test:schema-1',
+                issuerDid: 'did:test:issuer-1',
+                subjectDid: holderDid,
+                revealed: false,
+                updatedAt: '2026-03-31T11:00:00.000Z',
+            },
+        ]);
+    });
+
+    it('ignores malformed or mismatched manifest entries', () => {
+        const holderDid = 'did:test:subject-1';
+        const doc = createSubjectDoc(holderDid, {
+            'did:test:not-vc': {
+                type: ['NotVC', 'did:test:schema-1'],
+                issuer: 'did:test:issuer-1',
+                credentialSubject: { id: holderDid },
+            },
+            'did:test:mismatch': createPublishedCredential(
+                'did:test:schema-2',
+                'did:test:issuer-2',
+                'did:test:someone-else'
+            ),
+            'not-a-did': createPublishedCredential(
+                'did:test:schema-3',
+                'did:test:issuer-3',
+                holderDid
+            ),
+        });
+
+        expect(extractPublishedCredentials(holderDid, doc)).toStrictEqual([]);
+    });
+
+    it('counts reveal=false and reveal=true manifests equally', () => {
+        const holderDid = 'did:test:subject-1';
+        const doc = createSubjectDoc(holderDid, {
+            'did:test:credential-1': createPublishedCredential(
+                'did:test:schema-1',
+                'did:test:issuer-1',
+                holderDid
+            ),
+            'did:test:credential-2': createPublishedCredential(
+                'did:test:schema-1',
+                'did:test:issuer-2',
+                holderDid,
+                { reveal: true }
+            ),
+        });
+
+        const rows = extractPublishedCredentials(holderDid, doc);
+        expect(rows).toHaveLength(2);
+        expect(rows.map(row => ({ schemaDid: row.schemaDid, revealed: row.revealed }))).toStrictEqual([
+            { schemaDid: 'did:test:schema-1', revealed: false },
+            { schemaDid: 'did:test:schema-1', revealed: true },
+        ]);
+    });
+
+    it('returns an empty list when the manifest is missing or invalid', () => {
+        expect(extractPublishedCredentials('did:test:subject-1', {})).toStrictEqual([]);
+        expect(extractPublishedCredentials('did:test:subject-1', {
+            didDocumentData: {
+                manifest: [],
+            },
+        })).toStrictEqual([]);
+    });
+
+    it('falls back to the default holder DID and created timestamp when needed', () => {
+        const defaultHolderDid = 'did:test:subject-1';
+        const credentialDid = 'did:test:credential-1';
+        const schemaDid = 'did:test:schema-1';
+        const issuerDid = 'did:test:issuer-1';
+        const createdAt = '2026-03-31T09:59:00.000Z';
+
+        expect(extractPublishedCredentials(defaultHolderDid, {
+            didDocument: {
+                id: 'not-a-did',
+            },
+            didDocumentData: {
+                manifest: {
+                    [credentialDid]: {
+                        type: ['VerifiableCredential', schemaDid],
+                        issuer: issuerDid,
+                        credentialSubject: {
+                            id: defaultHolderDid,
+                        },
+                    },
+                },
+            },
+            didDocumentMetadata: {
+                created: createdAt,
+            },
+        })).toStrictEqual<PublishedCredentialRecord[]>([
+            {
+                holderDid: defaultHolderDid,
+                credentialDid,
+                schemaDid,
+                issuerDid,
+                subjectDid: defaultHolderDid,
+                revealed: false,
+                updatedAt: createdAt,
+            },
+        ]);
+    });
+});
+
+describe('published credential aggregation', () => {
+    it('deduplicates duplicate published credential rows when replacing holder rows', async () => {
+        const db = new DIDsDbMemory();
+
+        await db.replacePublishedCredentials('did:test:subject-1', [
+            {
+                holderDid: 'did:test:subject-1',
+                credentialDid: 'did:test:credential-1',
+                schemaDid: 'did:test:schema-1',
+                issuerDid: 'did:test:issuer-1',
+                subjectDid: 'did:test:subject-1',
+                revealed: false,
+                updatedAt: '2026-03-31T11:05:00.000Z',
+            },
+            {
+                holderDid: 'did:test:subject-1',
+                credentialDid: 'did:test:credential-1',
+                schemaDid: 'did:test:schema-1',
+                issuerDid: 'did:test:issuer-1',
+                subjectDid: 'did:test:subject-1',
+                revealed: false,
+                updatedAt: '2026-03-31T11:05:00.000Z',
+            },
+        ]);
+
+        expect(await db.listPublishedCredentials({
+            schemaDid: 'did:test:schema-1',
+            limit: 10,
+            offset: 0,
+        })).toStrictEqual({
+            total: 1,
+            credentials: [
+                {
+                    holderDid: 'did:test:subject-1',
+                    credentialDid: 'did:test:credential-1',
+                    schemaDid: 'did:test:schema-1',
+                    issuerDid: 'did:test:issuer-1',
+                    subjectDid: 'did:test:subject-1',
+                    revealed: false,
+                    updatedAt: '2026-03-31T11:05:00.000Z',
+                },
+            ],
+        });
+    });
+
+    it('aggregates counts in memory and supports replacing holder rows', async () => {
+        const db = new DIDsDbMemory();
+        const subject1Doc = createSubjectDoc('did:test:subject-1', {
+            'did:test:credential-1': createPublishedCredential(
+                'did:test:schema-1',
+                'did:test:issuer-1',
+                'did:test:subject-1',
+                { reveal: true }
+            ),
+            'did:test:credential-2': createPublishedCredential(
+                'did:test:schema-1',
+                'did:test:issuer-2',
+                'did:test:subject-1'
+            ),
+        }, '2026-03-31T11:05:00.000Z');
+        const subject2Doc = createSubjectDoc('did:test:subject-2', {
+            'did:test:credential-3': createPublishedCredential(
+                'did:test:schema-2',
+                'did:test:issuer-1',
+                'did:test:subject-2'
+            ),
+        }, '2026-03-31T11:10:00.000Z');
+
+        await db.storeDID('did:test:subject-1', subject1Doc);
+        await db.storeDID('did:test:subject-2', subject2Doc);
+
+        await db.replacePublishedCredentials('did:test:subject-1', [
+            {
+                holderDid: 'did:test:subject-1',
+                credentialDid: 'did:test:credential-1',
+                schemaDid: 'did:test:schema-1',
+                issuerDid: 'did:test:issuer-1',
+                subjectDid: 'did:test:subject-1',
+                revealed: true,
+                updatedAt: '2026-03-31T11:05:00.000Z',
+            },
+            {
+                holderDid: 'did:test:subject-1',
+                credentialDid: 'did:test:credential-2',
+                schemaDid: 'did:test:schema-1',
+                issuerDid: 'did:test:issuer-2',
+                subjectDid: 'did:test:subject-1',
+                revealed: false,
+                updatedAt: '2026-03-31T11:05:00.000Z',
+            },
+        ]);
+
+        await db.replacePublishedCredentials('did:test:subject-2', [
+            {
+                holderDid: 'did:test:subject-2',
+                credentialDid: 'did:test:credential-3',
+                schemaDid: 'did:test:schema-2',
+                issuerDid: 'did:test:issuer-1',
+                subjectDid: 'did:test:subject-2',
+                revealed: false,
+                updatedAt: '2026-03-31T11:10:00.000Z',
+            },
+        ]);
+
+        expect(await db.getPublishedCredentialCountsBySchema()).toStrictEqual<PublishedCredentialSchemaCount[]>([
+            { schemaDid: 'did:test:schema-1', count: 2 },
+            { schemaDid: 'did:test:schema-2', count: 1 },
+        ]);
+
+        expect(await db.listPublishedCredentials({
+            schemaDid: 'did:test:schema-1',
+            limit: 1,
+            offset: 0,
+        })).toStrictEqual({
+            total: 2,
+            credentials: [
+                {
+                    holderDid: 'did:test:subject-1',
+                    credentialDid: 'did:test:credential-1',
+                    schemaDid: 'did:test:schema-1',
+                    issuerDid: 'did:test:issuer-1',
+                    subjectDid: 'did:test:subject-1',
+                    revealed: true,
+                    updatedAt: '2026-03-31T11:05:00.000Z',
+                },
+            ],
+        });
+
+        expect(await db.listPublishedCredentials({
+            schemaDid: 'did:test:schema-1',
+            revealed: false,
+            limit: 10,
+            offset: 0,
+        })).toStrictEqual({
+            total: 1,
+            credentials: [
+                {
+                    holderDid: 'did:test:subject-1',
+                    credentialDid: 'did:test:credential-2',
+                    schemaDid: 'did:test:schema-1',
+                    issuerDid: 'did:test:issuer-2',
+                    subjectDid: 'did:test:subject-1',
+                    revealed: false,
+                    updatedAt: '2026-03-31T11:05:00.000Z',
+                },
+            ],
+        });
+
+        expect(await db.listPublishedCredentials({
+            credentialDid: 'did:test:credential-3',
+            limit: 10,
+            offset: 0,
+        })).toStrictEqual({
+            total: 1,
+            credentials: [
+                {
+                    holderDid: 'did:test:subject-2',
+                    credentialDid: 'did:test:credential-3',
+                    schemaDid: 'did:test:schema-2',
+                    issuerDid: 'did:test:issuer-1',
+                    subjectDid: 'did:test:subject-2',
+                    revealed: false,
+                    updatedAt: '2026-03-31T11:10:00.000Z',
+                },
+            ],
+        });
+
+        await db.replacePublishedCredentials('did:test:subject-1', []);
+
+        expect(await db.getPublishedCredentialCountsBySchema()).toStrictEqual([
+            { schemaDid: 'did:test:schema-2', count: 1 },
+        ]);
+    });
+
+    it('aggregates counts in sqlite', async () => {
+        const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'search-server-sqlite-'));
+        const db = await Sqlite.create('metrics.db', tempDir) as Sqlite;
+
+        try {
+            const subject1Doc = createSubjectDoc('did:test:subject-1', {
+                'did:test:credential-1': createPublishedCredential(
+                    'did:test:schema-1',
+                    'did:test:issuer-1',
+                    'did:test:subject-1',
+                    { reveal: true }
+                ),
+                'did:test:credential-2': createPublishedCredential(
+                    'did:test:schema-1',
+                    'did:test:issuer-2',
+                    'did:test:subject-1'
+                ),
+            }, '2026-03-31T11:05:00.000Z');
+            const subject2Doc = createSubjectDoc('did:test:subject-2', {
+                'did:test:credential-3': createPublishedCredential(
+                    'did:test:schema-2',
+                    'did:test:issuer-1',
+                    'did:test:subject-2'
+                ),
+            }, '2026-03-31T11:10:00.000Z');
+
+            await db.storeDID('did:test:subject-1', subject1Doc);
+            await db.storeDID('did:test:subject-2', subject2Doc);
+
+            await db.replacePublishedCredentials('did:test:subject-1', [
+                {
+                    holderDid: 'did:test:subject-1',
+                    credentialDid: 'did:test:credential-1',
+                    schemaDid: 'did:test:schema-1',
+                    issuerDid: 'did:test:issuer-1',
+                    subjectDid: 'did:test:subject-1',
+                    revealed: true,
+                    updatedAt: '2026-03-31T11:05:00.000Z',
+                },
+                {
+                    holderDid: 'did:test:subject-1',
+                    credentialDid: 'did:test:credential-2',
+                    schemaDid: 'did:test:schema-1',
+                    issuerDid: 'did:test:issuer-2',
+                    subjectDid: 'did:test:subject-1',
+                    revealed: false,
+                    updatedAt: '2026-03-31T11:05:00.000Z',
+                },
+            ]);
+
+            await db.replacePublishedCredentials('did:test:subject-2', [
+                {
+                    holderDid: 'did:test:subject-2',
+                    credentialDid: 'did:test:credential-3',
+                    schemaDid: 'did:test:schema-2',
+                    issuerDid: 'did:test:issuer-1',
+                    subjectDid: 'did:test:subject-2',
+                    revealed: false,
+                    updatedAt: '2026-03-31T11:10:00.000Z',
+                },
+            ]);
+
+            expect(await db.getPublishedCredentialCountsBySchema()).toStrictEqual([
+                { schemaDid: 'did:test:schema-1', count: 2 },
+                { schemaDid: 'did:test:schema-2', count: 1 },
+            ]);
+
+            expect(await db.listPublishedCredentials({
+                schemaDid: 'did:test:schema-1',
+                issuerDid: 'did:test:issuer-2',
+                limit: 10,
+                offset: 0,
+            })).toStrictEqual({
+                total: 1,
+                credentials: [
+                    {
+                        holderDid: 'did:test:subject-1',
+                        credentialDid: 'did:test:credential-2',
+                        schemaDid: 'did:test:schema-1',
+                        issuerDid: 'did:test:issuer-2',
+                        subjectDid: 'did:test:subject-1',
+                        revealed: false,
+                        updatedAt: '2026-03-31T11:05:00.000Z',
+                    },
+                ],
+            });
+
+            expect(await db.listPublishedCredentials({
+                credentialDid: 'did:test:credential-3',
+                limit: 10,
+                offset: 0,
+            })).toStrictEqual({
+                total: 1,
+                credentials: [
+                    {
+                        holderDid: 'did:test:subject-2',
+                        credentialDid: 'did:test:credential-3',
+                        schemaDid: 'did:test:schema-2',
+                        issuerDid: 'did:test:issuer-1',
+                        subjectDid: 'did:test:subject-2',
+                        revealed: false,
+                        updatedAt: '2026-03-31T11:10:00.000Z',
+                    },
+                ],
+            });
+
+            await db.replacePublishedCredentials('did:test:subject-2', [
+                {
+                    holderDid: 'did:test:subject-2',
+                    credentialDid: 'did:test:credential-3',
+                    schemaDid: 'did:test:schema-2',
+                    issuerDid: 'did:test:issuer-1',
+                    subjectDid: 'did:test:subject-2',
+                    revealed: false,
+                    updatedAt: '2026-03-31T11:10:00.000Z',
+                },
+                {
+                    holderDid: 'did:test:subject-2',
+                    credentialDid: 'did:test:credential-3',
+                    schemaDid: 'did:test:schema-2',
+                    issuerDid: 'did:test:issuer-1',
+                    subjectDid: 'did:test:subject-2',
+                    revealed: false,
+                    updatedAt: '2026-03-31T11:10:00.000Z',
+                },
+            ]);
+
+            expect(await db.listPublishedCredentials({
+                schemaDid: 'did:test:schema-2',
+                limit: 10,
+                offset: 0,
+            })).toStrictEqual({
+                total: 1,
+                credentials: [
+                    {
+                        holderDid: 'did:test:subject-2',
+                        credentialDid: 'did:test:credential-3',
+                        schemaDid: 'did:test:schema-2',
+                        issuerDid: 'did:test:issuer-1',
+                        subjectDid: 'did:test:subject-2',
+                        revealed: false,
+                        updatedAt: '2026-03-31T11:10:00.000Z',
+                    },
+                ],
+            });
+
+            await db.replacePublishedCredentials('did:test:subject-1', []);
+
+            expect(await db.getPublishedCredentialCountsBySchema()).toStrictEqual([
+                { schemaDid: 'did:test:schema-2', count: 1 },
+            ]);
+        }
+        finally {
+            await db.disconnect();
+            fs.rmSync(tempDir, { recursive: true, force: true });
+        }
+    });
+});
+
+describe.each(adapterFactories)('$name query and utility behavior', ({ create }) => {
+    it('round-trips config and docs, supports search and query variants, and wipes all state', async () => {
+        const { db, cleanup } = await create();
+
+        try {
+            const did1 = 'did:test:query-1';
+            const did2 = 'did:test:query-2';
+            const doc1 = createQueryableDoc(did1, {
+                name: 'Needle Alpha',
+                tags: ['alpha', 'shared'],
+                nestedKinds: ['first', 'shared'],
+                coordinates: ['zero', 'one'],
+                manifest: {
+                    'did:test:credential-a': { issuer: 'did:test:issuer-1' },
+                    'did:test:credential-b': { issuer: 'did:test:issuer-2' },
+                },
+            });
+            const doc2 = createQueryableDoc(did2, {
+                name: 'Haystack Beta',
+                tags: ['beta'],
+                nestedKinds: ['second'],
+                coordinates: ['left', 'right'],
+                manifest: {
+                    'did:test:credential-c': { issuer: 'did:test:issuer-3' },
+                },
+            });
+
+            expect(await db.loadUpdatedAfter()).toBeNull();
+
+            await db.saveUpdatedAfter('2026-04-01T12:34:00.000Z');
+            expect(await db.loadUpdatedAfter()).toBe('2026-04-01T12:34:00.000Z');
+
+            await db.storeDID(did1, doc1);
+            await db.storeDID(did2, doc2);
+
+            const storedDoc = await db.getDID(did1) as Record<string, any>;
+            expect(storedDoc).toStrictEqual(doc1);
+            storedDoc.didDocumentData.profile.name = 'Mutated';
+            expect((await db.getDID(did1) as any).didDocumentData.profile.name).toBe('Needle Alpha');
+            expect(await db.getDID('did:test:missing')).toBeNull();
+
+            await db.replacePublishedCredentials(did1, [
+                {
+                    holderDid: did1,
+                    credentialDid: 'did:test:credential-a',
+                    schemaDid: 'did:test:schema-a',
+                    issuerDid: 'did:test:issuer-1',
+                    subjectDid: did1,
+                    revealed: true,
+                    updatedAt: '2026-04-01T12:35:00.000Z',
+                },
+            ]);
+
+            expect(await db.searchDocs('Needle')).toStrictEqual([did1]);
+            expect(await db.queryDocs({
+                '$.didDocument.id': { $in: [did1] },
+            })).toStrictEqual([did1]);
+            expect(await db.queryDocs({
+                'didDocumentData.tags[*]': { $in: ['shared'] },
+            })).toStrictEqual([did1]);
+            expect(await db.queryDocs({
+                'didDocumentData.nested[*].kind': { $in: ['shared'] },
+            })).toStrictEqual([did1]);
+            expect(await db.queryDocs({
+                'didDocumentData.manifest.*': { $in: ['did:test:credential-b'] },
+            })).toStrictEqual([did1]);
+            expect(await db.queryDocs({
+                'didDocumentData.manifest.*.issuer': { $in: ['did:test:issuer-3'] },
+            })).toStrictEqual([did2]);
+
+            await expect(db.queryDocs({
+                'didDocument.id': {},
+            } as any)).rejects.toThrow('Only {$in:[…]} supported');
+
+            await db.wipeDb();
+
+            expect(await db.loadUpdatedAfter()).toBeNull();
+            expect(await db.searchDocs('Needle')).toStrictEqual([]);
+            expect(await db.getDID(did1)).toBeNull();
+            expect(await db.getPublishedCredentialCountsBySchema()).toStrictEqual([]);
+            expect(await db.listPublishedCredentials({ limit: 10, offset: 0 })).toStrictEqual({
+                total: 0,
+                credentials: [],
+            });
+        }
+        finally {
+            await cleanup();
+        }
+    });
+});
+
+describe('memory adapter query edge cases', () => {
+    it('returns no matches for an empty where clause and supports numeric array path segments', async () => {
+        const db = new DIDsDbMemory();
+        const did = 'did:test:memory-query-1';
+
+        await db.connect();
+        await db.storeDID(did, createQueryableDoc(did, {
+            name: 'Indexed Value',
+            tags: ['memory'],
+            nestedKinds: ['only'],
+            coordinates: ['zero', 'one'],
+            manifest: {
+                'did:test:credential-memory': { issuer: 'did:test:issuer-memory' },
+            },
+        }));
+
+        expect(await db.queryDocs({})).toStrictEqual([]);
+        expect(await db.queryDocs({
+            '$.didDocumentData.coordinates.1': { $in: ['one'] },
+        })).toStrictEqual([did]);
+
+        await db.disconnect();
+    });
+
+    it('exposes getPath edge cases through direct calls', () => {
+        const db = new DIDsDbMemory() as any;
+        const root = {
+            profile: {
+                nested: [
+                    {
+                        value: 'found',
+                    },
+                ],
+            },
+        };
+
+        expect(db.getPath(root, '')).toBeUndefined();
+        expect(db.getPath(root, '$')).toBe(root);
+        expect(db.getPath(root, '$.profile.missing.value')).toBeUndefined();
+        expect(db.getPath({ profile: 'text' }, '$.profile.value')).toBeUndefined();
+        expect(db.getPath(root, '$.profile.nested.0.value')).toBe('found');
+    });
+});
+
+describe('sqlite adapter disconnected behavior', () => {
+    it('throws consistent errors when used before connect', async () => {
+        const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'search-server-sqlite-disconnected-'));
+        const db = new Sqlite('disconnected.db', tempDir);
+
+        try {
+            await expect(db.loadUpdatedAfter()).rejects.toThrow('DB not connected');
+            await expect(db.saveUpdatedAfter('2026-04-01T12:00:00.000Z')).rejects.toThrow('DB not connected');
+            await expect(db.storeDID('did:test:doc', {})).rejects.toThrow('DB not connected');
+            await expect(db.replacePublishedCredentials('did:test:doc', [])).rejects.toThrow('DB not connected');
+            await expect(db.getDID('did:test:doc')).rejects.toThrow('DB not connected');
+            await expect(db.getPublishedCredentialCountsBySchema()).rejects.toThrow('DB not connected');
+            await expect(db.listPublishedCredentials()).rejects.toThrow('DB not connected');
+            await expect(db.searchDocs('doc')).rejects.toThrow('DB not connected');
+            await expect(db.queryDocs({
+                'didDocument.id': { $in: ['did:test:doc'] },
+            })).rejects.toThrow('DB not connected');
+            await expect(db.wipeDb()).rejects.toThrow('DB not connected');
+        }
+        finally {
+            await db.disconnect();
+            fs.rmSync(tempDir, { recursive: true, force: true });
+        }
+    });
+
+    it('connects idempotently and migrates legacy schemas without a revealed column', async () => {
+        const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'search-server-sqlite-legacy-'));
+        const dbFile = path.join(tempDir, 'legacy.db');
+        const rawDb = await open({
+            filename: dbFile,
+            driver: sqlite3.Database,
+        });
+
+        try {
+            await rawDb.exec(`
+                CREATE TABLE did_docs (
+                    did TEXT PRIMARY KEY,
+                    doc TEXT NOT NULL
+                );
+
+                CREATE TABLE published_credentials (
+                    holder_did TEXT NOT NULL,
+                    credential_did TEXT NOT NULL,
+                    schema_did TEXT NOT NULL,
+                    issuer_did TEXT NOT NULL,
+                    subject_did TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (holder_did, credential_did)
+                );
+
+                CREATE TABLE config (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                );
+            `);
+        }
+        finally {
+            await rawDb.close();
+        }
+
+        const db = new Sqlite('legacy.db', tempDir);
+
+        try {
+            await db.connect();
+            await db.connect();
+
+            const internalDb = (db as any).db;
+            const columns = await internalDb.all(`PRAGMA table_info('published_credentials')`);
+
+            expect(columns.some((column: { name: string }) => column.name === 'revealed')).toBe(true);
+        }
+        finally {
+            await db.disconnect();
+            fs.rmSync(tempDir, { recursive: true, force: true });
+        }
+    });
+
+    it('rolls back failed replacements and supports subject/revealed filters', async () => {
+        const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'search-server-sqlite-rollback-'));
+        const db = await Sqlite.create('rollback.db', tempDir) as Sqlite;
+
+        try {
+            await db.replacePublishedCredentials('did:test:subject-1', [
+                {
+                    holderDid: 'did:test:subject-1',
+                    credentialDid: 'did:test:credential-1',
+                    schemaDid: 'did:test:schema-1',
+                    issuerDid: 'did:test:issuer-1',
+                    subjectDid: 'did:test:subject-1',
+                    revealed: true,
+                    updatedAt: '2026-03-31T11:05:00.000Z',
+                },
+            ]);
+
+            expect(await db.listPublishedCredentials({
+                subjectDid: 'did:test:subject-1',
+                revealed: true,
+                limit: 10,
+                offset: 0,
+            })).toStrictEqual({
+                total: 1,
+                credentials: [
+                    {
+                        holderDid: 'did:test:subject-1',
+                        credentialDid: 'did:test:credential-1',
+                        schemaDid: 'did:test:schema-1',
+                        issuerDid: 'did:test:issuer-1',
+                        subjectDid: 'did:test:subject-1',
+                        revealed: true,
+                        updatedAt: '2026-03-31T11:05:00.000Z',
+                    },
+                ],
+            });
+
+            await expect(db.replacePublishedCredentials('did:test:subject-1', [
+                {
+                    holderDid: 'did:test:subject-1',
+                    credentialDid: 'did:test:credential-2',
+                    schemaDid: null as any,
+                    issuerDid: 'did:test:issuer-2',
+                    subjectDid: 'did:test:subject-1',
+                    revealed: false,
+                    updatedAt: '2026-03-31T11:06:00.000Z',
+                },
+            ] as any)).rejects.toBeTruthy();
+
+            expect(await db.listPublishedCredentials({
+                subjectDid: 'did:test:subject-1',
+                revealed: true,
+                limit: 10,
+                offset: 0,
+            })).toStrictEqual({
+                total: 1,
+                credentials: [
+                    {
+                        holderDid: 'did:test:subject-1',
+                        credentialDid: 'did:test:credential-1',
+                        schemaDid: 'did:test:schema-1',
+                        issuerDid: 'did:test:issuer-1',
+                        subjectDid: 'did:test:subject-1',
+                        revealed: true,
+                        updatedAt: '2026-03-31T11:05:00.000Z',
+                    },
+                ],
+            });
+        }
+        finally {
+            await db.disconnect();
+            fs.rmSync(tempDir, { recursive: true, force: true });
+        }
+    });
+});
+
+describe('postgres adapter with mocked pool', () => {
+    async function loadPostgresModule() {
+        jest.resetModules();
+        const module = await import('../../services/search-server/src/db/postgres.ts');
+        return module.default;
+    }
+
+    it('covers connect, read/write helpers, query variants, and wipe behavior', async () => {
+        let configReads = 0;
+        let didReads = 0;
+        const poolQuery = jest.fn(async (sql: string, params?: unknown[]) => {
+            const text = String(sql);
+
+            if (text.includes('CREATE TABLE IF NOT EXISTS did_docs')) {
+                return { rowCount: 0, rows: [] };
+            }
+            if (text.includes('ALTER TABLE published_credentials')) {
+                return { rowCount: 0, rows: [] };
+            }
+            if (text.includes('CREATE INDEX IF NOT EXISTS idx_published_credentials_schema_revealed')) {
+                return { rowCount: 0, rows: [] };
+            }
+            if (text.includes('SELECT value FROM config WHERE key = $1 LIMIT 1')) {
+                configReads += 1;
+                if (configReads === 1) {
+                    return { rowCount: 0, rows: [] };
+                }
+
+                return { rowCount: 1, rows: [{ value: '2026-04-02T09:00:00.000Z' }] };
+            }
+            if (text.includes(`INSERT INTO config (key, value) VALUES ('updated_after', $1)`)) {
+                return { rowCount: 1, rows: [] };
+            }
+            if (text.includes('INSERT INTO did_docs (did, doc) VALUES ($1, $2::jsonb)')) {
+                return { rowCount: 1, rows: [] };
+            }
+            if (text.includes('SELECT doc FROM did_docs WHERE did = $1 LIMIT 1')) {
+                didReads += 1;
+                if (didReads === 1) {
+                    return { rowCount: 1, rows: [{ doc: '{"stored":true}' }] };
+                }
+                if (didReads === 2) {
+                    return { rowCount: 1, rows: [{ doc: { stored: 'object' } }] };
+                }
+
+                return { rowCount: 0, rows: [] };
+            }
+            if (text.includes('COUNT(*)::int AS count')) {
+                return { rowCount: 1, rows: [{ schemaDid: 'did:test:schema-1', count: 2 }] };
+            }
+            if (text.includes('COUNT(*)::int AS total')) {
+                return { rowCount: 1, rows: [{ total: 1 }] };
+            }
+            if (text.includes('holder_did AS "holderDid"')) {
+                return {
+                    rowCount: 1,
+                    rows: [{
+                        holderDid: 'did:test:subject-1',
+                        credentialDid: 'did:test:credential-1',
+                        schemaDid: 'did:test:schema-1',
+                        issuerDid: 'did:test:issuer-1',
+                        subjectDid: 'did:test:subject-1',
+                        revealed: true,
+                        updatedAt: '2026-04-02T09:05:00.000Z',
+                    }],
+                };
+            }
+            if (text.includes("WHERE doc::text LIKE '%' || $1 || '%'")) {
+                return { rowCount: 1, rows: [{ did: 'did:test:search-1' }] };
+            }
+            if (text.includes('JOIN LATERAL jsonb_array_elements') && text.includes('elem.value = expected.value::jsonb')) {
+                return { rowCount: 1, rows: [{ did: 'did:test:array-tail' }] };
+            }
+            if (text.includes('JOIN LATERAL jsonb_array_elements') && text.includes('elem.value #> $2::text[] = expected.value::jsonb')) {
+                return { rowCount: 1, rows: [{ did: 'did:test:array-mid' }] };
+            }
+            if (text.includes('JOIN LATERAL jsonb_each') && text.includes('member.key = ANY($2::text[])')) {
+                return { rowCount: 1, rows: [{ did: 'did:test:key-wildcard' }] };
+            }
+            if (text.includes('JOIN LATERAL jsonb_each') && text.includes('member.value #> $2::text[] = expected.value::jsonb')) {
+                return { rowCount: 1, rows: [{ did: 'did:test:value-wildcard' }] };
+            }
+            if (text.includes('WHERE EXISTS (') && text.includes('did_docs.doc #> $1::text[] = expected.value::jsonb')) {
+                return { rowCount: 1, rows: [{ did: 'did:test:plain-path' }] };
+            }
+            if (text === 'DELETE FROM did_docs' || text === 'DELETE FROM published_credentials' || text === 'DELETE FROM config') {
+                return { rowCount: 1, rows: [] };
+            }
+
+            return { rowCount: 0, rows: [] };
+        });
+        const mockClient = {
+            query: jest.fn(),
+            release: jest.fn(),
+        };
+        const mockPool = {
+            query: poolQuery,
+            connect: jest.fn().mockResolvedValue(mockClient),
+            end: jest.fn().mockResolvedValue(undefined),
+        };
+        const Postgres = await loadPostgresModule();
+        const db = new Postgres('postgresql://example');
+        (db as any).pool = mockPool;
+
+        expect(await db.loadUpdatedAfter()).toBeNull();
+        expect(await db.saveUpdatedAfter('2026-04-02T09:00:00.000Z')).toBeUndefined();
+        expect(await db.loadUpdatedAfter()).toBe('2026-04-02T09:00:00.000Z');
+        expect(await db.storeDID('did:test:doc-1', { stored: true })).toBeUndefined();
+        expect(await db.getDID('did:test:doc-1')).toStrictEqual({ stored: true });
+        expect(await db.getDID('did:test:doc-2')).toStrictEqual({ stored: 'object' });
+        expect(await db.getDID('did:test:doc-3')).toBeNull();
+        expect(await db.getPublishedCredentialCountsBySchema()).toStrictEqual([
+            { schemaDid: 'did:test:schema-1', count: 2 },
+        ]);
+        expect(await db.listPublishedCredentials({
+            credentialDid: 'did:test:credential-1',
+            schemaDid: 'did:test:schema-1',
+            issuerDid: 'did:test:issuer-1',
+            subjectDid: 'did:test:subject-1',
+            revealed: true,
+            limit: 5,
+            offset: 10,
+        })).toStrictEqual({
+            total: 1,
+            credentials: [{
+                holderDid: 'did:test:subject-1',
+                credentialDid: 'did:test:credential-1',
+                schemaDid: 'did:test:schema-1',
+                issuerDid: 'did:test:issuer-1',
+                subjectDid: 'did:test:subject-1',
+                revealed: true,
+                updatedAt: '2026-04-02T09:05:00.000Z',
+            }],
+        });
+        expect(await db.searchDocs('search')).toStrictEqual(['did:test:search-1']);
+
+        expect(await db.queryDocs({})).toStrictEqual([]);
+        await expect(db.queryDocs({ '$.didDocument.id': {} } as any)).rejects.toThrow('Only {$in:[…]} supported');
+        expect(await db.queryDocs({ '$.didDocument.id': { $in: [] } })).toStrictEqual([]);
+        expect(await db.queryDocs({ '$.didDocumentData.tags[*]': { $in: ['tag', undefined] } })).toStrictEqual(['did:test:array-tail']);
+        expect(await db.queryDocs({ '$.didDocumentData.nested[*].kind': { $in: ['shared'] } })).toStrictEqual(['did:test:array-mid']);
+        expect(await db.queryDocs({ '$.didDocumentData.manifest.*': { $in: ['cred'] } })).toStrictEqual(['did:test:key-wildcard']);
+        expect(await db.queryDocs({ '$.didDocumentData.manifest.*.issuer': { $in: ['issuer'] } })).toStrictEqual(['did:test:value-wildcard']);
+        expect(await db.queryDocs({ '$.didDocument.id': { $in: ['did:test:plain-path'] } })).toStrictEqual(['did:test:plain-path']);
+
+        await db.wipeDb();
+        await db.disconnect();
+        await db.disconnect();
+
+        expect(mockPool.end).toHaveBeenCalledTimes(1);
+
+        const arrayTailCall = poolQuery.mock.calls.find(([sql]) =>
+            String(sql).includes('elem.value = expected.value::jsonb')
+        );
+        const defaultPathCall = poolQuery.mock.calls.find(([sql]) =>
+            String(sql).includes('did_docs.doc #> $1::text[] = expected.value::jsonb')
+        );
+
+        expect(arrayTailCall?.[1]).toStrictEqual([
+            ['didDocumentData', 'tags'],
+            ['"tag"', 'null'],
+        ]);
+        expect(defaultPathCall?.[1]).toStrictEqual([
+            ['didDocument', 'id'],
+            ['"did:test:plain-path"'],
+        ]);
+    });
+
+    it('throws when disconnected and rolls back failed replacements', async () => {
+        const clientError = new Error('insert failed');
+        const mockClient = {
+            query: jest.fn()
+                .mockResolvedValueOnce(undefined)
+                .mockResolvedValueOnce(undefined)
+                .mockRejectedValueOnce(clientError)
+                .mockResolvedValueOnce(undefined),
+            release: jest.fn(),
+        };
+        const mockPool = {
+            query: jest.fn().mockResolvedValue({ rowCount: 0, rows: [] }),
+            connect: jest.fn().mockResolvedValue(mockClient),
+            end: jest.fn().mockResolvedValue(undefined),
+        };
+        const Postgres = await loadPostgresModule();
+        const disconnectedDb = new Postgres('postgresql://example');
+
+        await expect(disconnectedDb.loadUpdatedAfter()).rejects.toThrow('Postgres DB not connected');
+
+        const db = new Postgres('postgresql://example');
+        (db as any).pool = mockPool;
+
+        await expect(db.replacePublishedCredentials('did:test:subject-1', [
+            {
+                holderDid: 'did:test:subject-1',
+                credentialDid: 'did:test:credential-1',
+                schemaDid: 'did:test:schema-1',
+                issuerDid: 'did:test:issuer-1',
+                subjectDid: 'did:test:subject-1',
+                revealed: false,
+                updatedAt: '2026-04-02T09:05:00.000Z',
+            },
+        ])).rejects.toThrow(clientError);
+
+        expect(mockClient.query).toHaveBeenNthCalledWith(1, 'BEGIN');
+        expect(mockClient.query).toHaveBeenNthCalledWith(
+            2,
+            'DELETE FROM published_credentials WHERE holder_did = $1',
+            ['did:test:subject-1']
+        );
+        expect(mockClient.query).toHaveBeenNthCalledWith(4, 'ROLLBACK');
+        expect(mockClient.release).toHaveBeenCalledTimes(1);
+    });
+
+    it('covers static create plus real connect and disconnect branches with spied pool methods', async () => {
+        const Postgres = await loadPostgresModule();
+        const mockPool = {
+            query: jest.fn().mockResolvedValue({ rowCount: 0, rows: [] }),
+            end: jest.fn().mockResolvedValue(undefined),
+        };
+
+        class TestPostgres extends Postgres {
+            static readonly sharedPool = mockPool;
+
+            protected createPool(): any {
+                return TestPostgres.sharedPool;
+            }
+        }
+
+        const db = await TestPostgres.create('postgresql://example');
+
+        await (db as any).connect();
+        await db.disconnect();
+        await db.disconnect();
+
+        expect(mockPool.query).toHaveBeenCalledTimes(3);
+        expect(mockPool.end).toHaveBeenCalledTimes(1);
+
+        const disconnectedDb = new TestPostgres('postgresql://example');
+        await disconnectedDb.disconnect();
+    });
+
+    it('commits successful replacements and covers path helper fallbacks', async () => {
+        const mockClient = {
+            query: jest.fn().mockResolvedValue(undefined),
+            release: jest.fn(),
+        };
+        const mockPool = {
+            query: jest.fn().mockResolvedValue({ rowCount: 0, rows: [] }),
+            connect: jest.fn().mockResolvedValue(mockClient),
+            end: jest.fn().mockResolvedValue(undefined),
+        };
+        const Postgres = await loadPostgresModule();
+        const db = new Postgres('postgresql://example');
+        (db as any).pool = mockPool;
+
+        await db.replacePublishedCredentials('did:test:subject-1', [
+            {
+                holderDid: 'did:test:subject-1',
+                credentialDid: 'did:test:credential-1',
+                schemaDid: 'did:test:schema-1',
+                issuerDid: 'did:test:issuer-1',
+                subjectDid: 'did:test:subject-1',
+                revealed: true,
+                updatedAt: '2026-04-02T09:05:00.000Z',
+            },
+        ]);
+
+        expect(mockClient.query).toHaveBeenNthCalledWith(1, 'BEGIN');
+        expect(mockClient.query).toHaveBeenNthCalledWith(4, 'COMMIT');
+        expect(mockClient.release).toHaveBeenCalledTimes(1);
+
+        expect((db as any).normalizePath('$')).toBe('');
+        expect((db as any).normalizePath('$.profile.name')).toBe('profile.name');
+        expect((db as any).normalizePath('$profile.name')).toBe('profile.name');
+        expect((db as any).normalizePath('profile.name')).toBe('profile.name');
+        expect((db as any).toPathTokens('$')).toStrictEqual([]);
+        expect((db as any).toPathTokens('$.items[0].name')).toStrictEqual(['items', '0', 'name']);
+        expect((db as any).toPathTokens('[0]')).toStrictEqual(['0']);
+        expect((db as any).toJsonLiterals([undefined, Symbol('x'), 'text'])).toStrictEqual([
+            'null',
+            'null',
+            '"text"',
+        ]);
+    });
+
+    it('uses default list filters and falls back total to zero when the count query is empty', async () => {
+        const poolQuery = jest.fn(async (sql: string, params?: unknown[]) => {
+            const text = String(sql);
+
+            if (text.includes('COUNT(*)::int AS total')) {
+                return { rowCount: 0, rows: [] };
+            }
+
+            if (text.includes('holder_did AS "holderDid"')) {
+                return { rowCount: 0, rows: [] };
+            }
+
+            return { rowCount: 0, rows: [] };
+        });
+        const mockPool = {
+            query: poolQuery,
+            end: jest.fn().mockResolvedValue(undefined),
+        };
+        const Postgres = await loadPostgresModule();
+        const db = new Postgres('postgresql://example');
+        (db as any).pool = mockPool;
+
+        expect(await db.listPublishedCredentials()).toStrictEqual({
+            total: 0,
+            credentials: [],
+        });
+
+        const totalCall = poolQuery.mock.calls.find(([sql]) =>
+            String(sql).includes('COUNT(*)::int AS total')
+        );
+        const rowsCall = poolQuery.mock.calls.find(([sql]) =>
+            String(sql).includes('holder_did AS "holderDid"')
+        );
+
+        expect(totalCall?.[0]).not.toContain('WHERE');
+        expect(totalCall?.[1]).toStrictEqual([]);
+        expect(rowsCall?.[1]).toStrictEqual([50, 0]);
+    });
+
+    it('constructs a real pool instance in createPool without connecting', async () => {
+        const Postgres = await loadPostgresModule();
+        const db = new Postgres('postgresql://example');
+        const pool = (db as any).createPool();
+
+        expect(pool).toBeTruthy();
+        await pool.end();
+    });
+});
+
+describe('DidIndexer published credential indexing', () => {
+    it('stores published credential rows during refresh', async () => {
+        const db = new DIDsDbMemory();
+        const holderDid = 'did:test:subject-1';
+        const schemaDid = 'did:test:schema-1';
+        const issuerDid = 'did:test:issuer-1';
+        const credentialDid = 'did:test:credential-1';
+        const doc = createSubjectDoc(holderDid, {
+            [credentialDid]: createPublishedCredential(schemaDid, issuerDid, holderDid),
+        });
+        const gatekeeper = {
+            isReady: jest.fn().mockResolvedValue(true),
+            getDIDs: jest.fn().mockResolvedValue([holderDid]),
+            resolveDID: jest.fn().mockResolvedValue(doc),
+        };
+        const indexer = new DidIndexer(gatekeeper as any, db, { intervalMs: 60_000 });
+
+        await indexer.startIndexing();
+        indexer.stopIndexing();
+
+        expect(await db.getPublishedCredentialCountsBySchema()).toStrictEqual([
+            { schemaDid, count: 1 },
+        ]);
+        expect(await db.listPublishedCredentials({ schemaDid, limit: 10, offset: 0 })).toStrictEqual({
+            total: 1,
+            credentials: [
+                {
+                    holderDid,
+                    credentialDid,
+                    schemaDid,
+                    issuerDid,
+                    subjectDid: holderDid,
+                    revealed: false,
+                    updatedAt: '2026-03-31T10:30:00.000Z',
+                },
+            ],
+        });
+    });
+
+    it('skips refresh work when gatekeeper is not ready', async () => {
+        const db = {
+            loadUpdatedAfter: jest.fn(),
+            storeDID: jest.fn(),
+            replacePublishedCredentials: jest.fn(),
+            saveUpdatedAfter: jest.fn(),
+        };
+        const gatekeeper = {
+            isReady: jest.fn().mockResolvedValue(false),
+        };
+        const indexer = new DidIndexer(gatekeeper as any, db as any, { intervalMs: 60_000 });
+
+        await (indexer as any).refreshIndex();
+
+        expect(db.loadUpdatedAfter).not.toHaveBeenCalled();
+        expect(db.saveUpdatedAfter).not.toHaveBeenCalled();
+    });
+
+    it('skips overlapping refresh calls while one is already in progress', async () => {
+        let resolveGetDIDs: ((value: string[]) => void) | null = null;
+        const getDIDsPromise = new Promise<string[]>((resolve) => {
+            resolveGetDIDs = resolve;
+        });
+        const db = {
+            loadUpdatedAfter: jest.fn().mockResolvedValue(null),
+            storeDID: jest.fn(),
+            replacePublishedCredentials: jest.fn(),
+            saveUpdatedAfter: jest.fn(),
+        };
+        const gatekeeper = {
+            isReady: jest.fn().mockResolvedValue(true),
+            getDIDs: jest.fn().mockReturnValue(getDIDsPromise),
+            resolveDID: jest.fn(),
+        };
+        const indexer = new DidIndexer(gatekeeper as any, db as any, { intervalMs: 60_000 });
+
+        const firstRefresh = (indexer as any).refreshIndex();
+        await Promise.resolve();
+        await (indexer as any).refreshIndex();
+
+        expect(gatekeeper.getDIDs).toHaveBeenCalledTimes(1);
+
+        resolveGetDIDs!([]);
+        await firstRefresh;
+    });
+
+    it('logs refresh errors and resets state for later runs', async () => {
+        const logger = createLogger();
+        setLogger(logger as any);
+
+        const db = {
+            loadUpdatedAfter: jest.fn().mockResolvedValue(null),
+            storeDID: jest.fn(),
+            replacePublishedCredentials: jest.fn(),
+            saveUpdatedAfter: jest.fn(),
+        };
+        const error = new Error('boom');
+        const gatekeeper = {
+            isReady: jest.fn().mockResolvedValue(true),
+            getDIDs: jest.fn().mockRejectedValueOnce(error).mockResolvedValueOnce([]),
+            resolveDID: jest.fn(),
+        };
+        const indexer = new DidIndexer(gatekeeper as any, db as any, { intervalMs: 60_000 });
+
+        await (indexer as any).refreshIndex();
+        await (indexer as any).refreshIndex();
+
+        expect(logger.error).toHaveBeenCalledWith({ error }, 'Error in refreshIndex');
+        expect(db.saveUpdatedAfter).toHaveBeenCalledTimes(1);
+    });
+
+    it('logs rejected interval refreshes from the timer callback', async () => {
+        const logger = createLogger();
+        setLogger(logger as any);
+
+        const db = {
+            loadUpdatedAfter: jest.fn().mockResolvedValue(null),
+            storeDID: jest.fn(),
+            replacePublishedCredentials: jest.fn(),
+            saveUpdatedAfter: jest.fn(),
+        };
+        const gatekeeper = {
+            isReady: jest.fn().mockResolvedValue(true),
+            getDIDs: jest.fn().mockResolvedValue([]),
+            resolveDID: jest.fn(),
+        };
+        const setIntervalSpy = jest.spyOn(global, 'setInterval');
+        const clearIntervalSpy = jest.spyOn(global, 'clearInterval').mockImplementation(() => undefined as any);
+        let intervalCallback: (() => Promise<void>) | undefined;
+
+        setIntervalSpy.mockImplementation(((callback: () => Promise<void>) => {
+            intervalCallback = callback;
+            return {} as NodeJS.Timeout;
+        }) as any);
+
+        try {
+            const indexer = new DidIndexer(gatekeeper as any, db as any, { intervalMs: 60_000 });
+            await indexer.startIndexing();
+            (indexer as any).refreshIndex = jest.fn().mockRejectedValue(new Error('timer boom'));
+
+            await intervalCallback!();
+
+            expect(logger.error).toHaveBeenCalledWith(
+                { error: expect.any(Error) },
+                'refreshIndex error'
+            );
+
+            indexer.stopIndexing();
+        }
+        finally {
+            setIntervalSpy.mockRestore();
+            clearIntervalSpy.mockRestore();
+        }
+    });
+});

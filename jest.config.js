@@ -14,6 +14,7 @@ const config = {
     moduleNameMapper: {
         '^@mdip/cipher/node$': '<rootDir>/packages/cipher/src/cipher-node.ts',
         '^@mdip/cipher/types': '<rootDir>/packages/cipher/src/types.ts',
+        '^@mdip/common/env$': '<rootDir>/packages/common/src/env.ts',
         '^@mdip/common/errors$': '<rootDir>/packages/common/src/errors.ts',
         '^@mdip/common/utils$': '<rootDir>/packages/common/src/utils.ts',
         '^@mdip/common/logger': '<rootDir>/packages/common/src/logger.ts',
@@ -37,7 +38,9 @@ const config = {
         '^\\.\\./db\\/typeGuards\\.js$': '<rootDir>/packages/keymaster/src/db/typeGuards.ts',
         '^\\.\\/sync-mapping\\.js$': '<rootDir>/services/mediators/hyperswarm/src/sync-mapping.ts',
         '^\\.\\/sync-persistence\\.js$': '<rootDir>/services/mediators/hyperswarm/src/sync-persistence.ts',
+        '^\\.\\/windows\\.js$': '<rootDir>/services/mediators/hyperswarm/src/negentropy/windows.ts',
         '^\\.\\/abstract-json\\.js$': '<rootDir>/packages/gatekeeper/src/db/abstract-json.ts',
+        '^\\.\\/published-credentials\\.js$': '<rootDir>/services/search-server/src/published-credentials.ts',
         '^\\.\\/cipher-base\\.js$': '<rootDir>/packages/cipher/src/cipher-base.ts',
         '^\\.\\/encryption\\.js$': '<rootDir>/packages/keymaster/src/encryption.ts',
     },

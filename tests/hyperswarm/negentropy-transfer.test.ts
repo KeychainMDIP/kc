@@ -1,5 +1,6 @@
 import { Operation } from '@mdip/gatekeeper/types';
 import {
+    collectNewIds,
     chunkIds,
     chunkOperationsForPush,
     estimateOperationBytes,
@@ -44,6 +45,19 @@ describe('negentropy transfer batching helpers', () => {
 
     it('returns empty id chunks when input ids are empty', () => {
         expect(chunkIds([], 2)).toStrictEqual([]);
+    });
+
+    it('collects only ids not already seen in the current session', () => {
+        const seen = new Set<string>(['a', 'c']);
+
+        const fresh = collectNewIds(['a', 'b', 'b', 'c', 'd'], seen);
+
+        expect(fresh).toStrictEqual(['b', 'd']);
+        expect(Array.from(seen)).toStrictEqual(['a', 'c', 'b', 'd']);
+    });
+
+    it('returns empty from collectNewIds when input is empty', () => {
+        expect(collectNewIds([], new Set<string>())).toStrictEqual([]);
     });
 
     it('splits operations by count and bytes', () => {

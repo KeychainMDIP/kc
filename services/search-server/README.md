@@ -67,6 +67,32 @@ KC_LOG_LEVEL=info
 - **Returns**:
     - 200 OK + [] (empty array) if nothing matches, otherwise an array of DID strings.
 
+### Published credential metrics
+
+`search-server` also derives metrics for publicly published credentials by reading
+subject DID manifests. These metrics only cover credentials that have been
+published into a subject DID document; privately held or merely issued
+credentials are not included.
+
+### `GET /api/v1/metrics/schemas/published`
+- **Description**: Returns counts of published credentials grouped by schema DID.
+- **Returns**:
+    - `200 OK` + `{ "schemas": [{ "schemaDid": "...", "count": 42 }] }`
+
+### `GET /api/v1/metrics/credentials/published`
+- **Description**: Returns published credential rows with optional filtering and pagination.
+- **Query Params**:
+    - `credentialDid` (optional)
+    - `schemaDid` (optional)
+    - `issuerDid` (optional)
+    - `subjectDid` (optional)
+    - `limit` (optional, default `50`)
+    - `offset` (optional, default `0`)
+- **Notes**:
+    - `updatedAt` is derived from the credential manifest entry's `signature.signed` when available, with a fallback to the subject DID document timestamp.
+- **Returns**:
+    - `200 OK` + `{ "total": 123, "credentials": [{ "credentialDid": "...", "schemaDid": "...", "issuerDid": "...", "subjectDid": "...", "holderDid": "...", "updatedAt": "..." }] }`
+
 ## Contributing
 
 Feel free to open issues or submit pull requests for improvements and new features.

@@ -1,5 +1,6 @@
 import InMemoryOperationSyncStore from '../../services/mediators/hyperswarm/src/db/memory.ts';
 import NegentropyAdapter from '../../services/mediators/hyperswarm/src/negentropy/adapter.ts';
+import { MDIP_EPOCH_SECONDS } from '../../services/mediators/hyperswarm/src/negentropy/windows.ts';
 import { Operation } from '@mdip/gatekeeper/types';
 import type { OperationSyncStore, SyncOperationRecord, SyncStoreListOptions } from '../../services/mediators/hyperswarm/src/db/types.ts';
 
@@ -97,6 +98,19 @@ describe('NegentropyAdapter', () => {
         expect(stats.durationMs).toBeGreaterThanOrEqual(0);
     });
 
+    it('uses constructor defaults when optional settings are omitted', async () => {
+        const store = new InMemoryOperationSyncStore();
+        await seedStore(store, [
+            { id: h('a'), ts: 1000, op: makeOp('a', '2026-02-09T10:00:00.000Z') },
+        ]);
+
+        const adapter = await NegentropyAdapter.create({
+            syncStore: store,
+        });
+
+        expect(adapter.getStats().frameSizeLimit).toBe(0);
+    });
+
     it('sets wantUint8ArrayOutput on the underlying negentropy instance', async () => {
         const store = new InMemoryOperationSyncStore();
         await seedStore(store, [
@@ -109,7 +123,11 @@ describe('NegentropyAdapter', () => {
             wantUint8ArrayOutput: true,
         });
 
-        expect((adapter as any).ne.wantUint8ArrayOutput).toBe(true);
+        const snapshot = adapter.getCurrentSnapshot();
+        expect(snapshot).not.toBeNull();
+        const engine = adapter.createEngineForSnapshot(snapshot!);
+
+        expect(engine.getInstance().wantUint8ArrayOutput).toBe(true);
     });
 
     it('reconciles two stores and reports have/need ids', async () => {
@@ -180,18 +198,6 @@ describe('NegentropyAdapter', () => {
         await expect(() => NegentropyAdapter.create({
             syncStore: store,
             frameSizeLimit: 0,
-            recentWindowDays: 0,
-        })).rejects.toThrow('recentWindowDays');
-
-        await expect(() => NegentropyAdapter.create({
-            syncStore: store,
-            frameSizeLimit: 0,
-            olderWindowDays: 0,
-        })).rejects.toThrow('olderWindowDays');
-
-        await expect(() => NegentropyAdapter.create({
-            syncStore: store,
-            frameSizeLimit: 0,
             maxRecordsPerWindow: 0,
         })).rejects.toThrow('maxRecordsPerWindow');
 
@@ -216,7 +222,7 @@ describe('NegentropyAdapter', () => {
         await expect(adapter.reconcile('msg')).rejects.toThrow('not initialized');
     });
 
-    it('returns empty windows for empty store and rejects non-finite nowTs', async () => {
+    it('returns null earliest timestamp for an empty store', async () => {
         const store = new InMemoryOperationSyncStore();
         await seedStore(store, []);
 
@@ -226,8 +232,7 @@ describe('NegentropyAdapter', () => {
             deferInitialBuild: true,
         });
 
-        await expect(adapter.planWindows(Number.NaN)).rejects.toThrow('nowTs must be a finite timestamp');
-        await expect(adapter.planWindows(Math.floor(Date.now() / 1000))).resolves.toStrictEqual([]);
+        await expect(adapter.getEarliestTimestamp()).resolves.toBeNull();
     });
 
     it('skips invalid sync rows when rebuilding a window', async () => {
@@ -263,7 +268,7 @@ describe('NegentropyAdapter', () => {
         });
 
         const stats = await adapter.rebuildForWindow({
-            name: 'recent',
+            name: 'history_paged',
             fromTs: Number.MIN_SAFE_INTEGER,
             toTs: Number.MAX_SAFE_INTEGER,
             maxRecords: 100,
@@ -274,29 +279,83 @@ describe('NegentropyAdapter', () => {
         expect(stats.skipped).toBe(2);
     });
 
-    it('plans recent window first then older windows in descending recency', async () => {
+    it('uses MDIP epoch when both peers have empty history', async () => {
         const store = new InMemoryOperationSyncStore();
-        // eslint-disable-next-line sonarjs/no-duplicate-string
         const nowTs = toEpochSeconds('2026-02-10T00:00:00.000Z');
+        const peerStore = new InMemoryOperationSyncStore();
+        await seedStore(store, []);
+        await seedStore(peerStore, []);
+
+        const adapter = await NegentropyAdapter.create({
+            syncStore: store,
+            frameSizeLimit: 0,
+            deferInitialBuild: true,
+        });
+        const peerAdapter = await NegentropyAdapter.create({
+            syncStore: peerStore,
+            frameSizeLimit: 0,
+            deferInitialBuild: true,
+        });
+
+        const session = await adapter.runWindowedSessionWithPeer(peerAdapter, { nowTs });
+        expect(session.windowCount).toBe(1);
+        expect(session.windows[0].windowName).toBe('history_paged');
+        expect(session.windows[0].fromTs).toBe(MDIP_EPOCH_SECONDS);
+        expect(session.windows[0].toTs).toBe(nowTs);
+    });
+
+    it('derives session time from nowMs when nowTs is not provided', async () => {
+        const store = new InMemoryOperationSyncStore();
+        const peerStore = new InMemoryOperationSyncStore();
+        const nowMs = Date.parse('2026-02-10T00:00:00.000Z');
+        await seedStore(store, []);
+        await seedStore(peerStore, []);
+
+        const adapter = await NegentropyAdapter.create({
+            syncStore: store,
+            frameSizeLimit: 0,
+            deferInitialBuild: true,
+        });
+        const peerAdapter = await NegentropyAdapter.create({
+            syncStore: peerStore,
+            frameSizeLimit: 0,
+            deferInitialBuild: true,
+        });
+
+        const session = await adapter.runWindowedSessionWithPeer(peerAdapter, { nowMs });
+        expect(session.windowCount).toBe(1);
+        expect(session.windows[0].toTs).toBe(Math.floor(nowMs / 1000));
+    });
+
+    it('starts paged history at the earliest known timestamp across peers', async () => {
+        const store = new InMemoryOperationSyncStore();
+        const peerStore = new InMemoryOperationSyncStore();
+        const nowTs = toEpochSeconds('2026-02-10T00:00:00.000Z');
+        const earliestTs = nowTs - (10 * DAY_SECONDS);
         await seedStore(store, [
-            { id: h('a'), ts: nowTs - (10 * DAY_SECONDS), op: makeOp('a', '2026-01-31T00:00:00.000Z') },
+            { id: h('a'), ts: earliestTs, op: makeOp('a', '2026-01-31T00:00:00.000Z') },
             { id: h('b'), ts: nowTs - (2 * DAY_SECONDS), op: makeOp('b', '2026-02-08T00:00:00.000Z') },
+        ]);
+        await seedStore(peerStore, [
+            { id: h('c'), ts: nowTs - DAY_SECONDS, op: makeOp('c', '2026-02-09T00:00:00.000Z') },
         ]);
 
         const adapter = await NegentropyAdapter.create({
             syncStore: store,
             frameSizeLimit: 0,
-            recentWindowDays: 3,
-            olderWindowDays: 2,
+            deferInitialBuild: true,
+        });
+        const peerAdapter = await NegentropyAdapter.create({
+            syncStore: peerStore,
+            frameSizeLimit: 0,
             deferInitialBuild: true,
         });
 
-        const windows = await adapter.planWindows(nowTs);
-        expect(windows.length).toBeGreaterThanOrEqual(2);
-        expect(windows[0].name).toBe('recent');
-        expect(windows[0].toTs).toBe(nowTs);
-        expect(windows[1].fromTs).toBeLessThanOrEqual(windows[1].toTs);
-        expect(windows[1].toTs).toBe(windows[0].fromTs - 1);
+        const session = await adapter.runWindowedSessionWithPeer(peerAdapter, { nowTs });
+        expect(session.windowCount).toBeGreaterThan(0);
+        expect(session.windows[0].windowName).toBe('history_paged');
+        expect(session.windows[0].fromTs).toBe(earliestTs);
+        expect(session.windows[0].toTs).toBe(nowTs);
     });
 
     it('caps records per window and emits window stats', async () => {
@@ -314,7 +373,7 @@ describe('NegentropyAdapter', () => {
         });
 
         const stats = await adapter.rebuildForWindow({
-            name: 'recent',
+            name: 'history_paged',
             fromTs: 0,
             toTs: 5000,
             maxRecords: 2,
@@ -324,7 +383,217 @@ describe('NegentropyAdapter', () => {
         expect(stats.loaded).toBe(2);
         expect(stats.skipped).toBe(0);
         expect(stats.cappedByRecords).toBe(true);
-        expect(stats.windowName).toBe('recent');
+        expect(stats.windowName).toBe('history_paged');
+    });
+
+    it('does not let skipped rows consume capped window capacity', async () => {
+        const rows = [
+            { id: 'not-a-sync-id', ts: 1000, operation: makeOp('a', '2026-02-09T10:00:00.000Z'), insertedAt: 0 },
+            { id: h('b'), ts: 2000, operation: makeOp('b', '2026-02-09T11:00:00.000Z'), insertedAt: 0 },
+            { id: h('c'), ts: Number.NaN, operation: makeOp('c', '2026-02-09T12:00:00.000Z'), insertedAt: 0 },
+            { id: h('d'), ts: 4000, operation: makeOp('d', '2026-02-09T13:00:00.000Z'), insertedAt: 0 },
+            { id: h('e'), ts: 5000, operation: makeOp('e', '2026-02-09T14:00:00.000Z'), insertedAt: 0 },
+        ];
+
+        const stubStore: OperationSyncStore = {
+            async start() {},
+            async stop() {},
+            async reset() {},
+            async upsertMany() { return 0; },
+            async getByIds() { return []; },
+            async has() { return false; },
+            async count() { return rows.length; },
+            async iterateSorted(options: SyncStoreListOptions = {}) {
+                if (options.after) {
+                    return [];
+                }
+                return rows;
+            },
+        };
+
+        const adapter = await NegentropyAdapter.create({
+            syncStore: stubStore,
+            frameSizeLimit: 0,
+            deferInitialBuild: true,
+        });
+
+        const stats = await adapter.rebuildForWindow({
+            name: 'history_paged',
+            fromTs: 0,
+            toTs: 6000,
+            maxRecords: 2,
+            order: 0,
+        });
+
+        expect(stats.loaded).toBe(2);
+        expect(stats.skipped).toBe(2);
+        expect(stats.cappedByRecords).toBe(true);
+        expect(stats.lastCursor).toStrictEqual({ ts: 4000, id: h('d') });
+    });
+
+    it('supports cursor-based pagination for capped windows', async () => {
+        const store = new InMemoryOperationSyncStore();
+        const baseTs = toEpochSeconds('2026-02-09T00:00:00.000Z');
+        await seedNumericRange(store, 0, 5, baseTs);
+
+        const adapter = await NegentropyAdapter.create({
+            syncStore: store,
+            frameSizeLimit: 0,
+            deferInitialBuild: true,
+        });
+
+        const first = await adapter.rebuildForWindow({
+            name: 'history_paged',
+            fromTs: baseTs,
+            toTs: baseTs + 10,
+            maxRecords: 2,
+            order: 0,
+        });
+
+        expect(first.loaded).toBe(2);
+        expect(first.cappedByRecords).toBe(true);
+        expect(first.lastCursor).toStrictEqual({ ts: baseTs + 1, id: idFromNum(1) });
+
+        const second = await adapter.rebuildForWindow({
+            name: 'history_paged',
+            fromTs: baseTs,
+            toTs: baseTs + 10,
+            maxRecords: 2,
+            order: 1,
+            after: first.lastCursor ?? undefined,
+        });
+
+        expect(second.loaded).toBe(2);
+        expect(second.cappedByRecords).toBe(true);
+        expect(second.lastCursor).toStrictEqual({ ts: baseTs + 3, id: idFromNum(3) });
+
+        const third = await adapter.rebuildForWindow({
+            name: 'history_paged',
+            fromTs: baseTs,
+            toTs: baseTs + 10,
+            maxRecords: 2,
+            order: 2,
+            after: second.lastCursor ?? undefined,
+        });
+
+        expect(third.loaded).toBe(1);
+        expect(third.cappedByRecords).toBe(false);
+        expect(third.lastCursor).toStrictEqual({ ts: baseTs + 4, id: idFromNum(4) });
+    });
+
+    it('keeps a window engine stable when another snapshot is built on the same adapter', async () => {
+        const storeA = new InMemoryOperationSyncStore();
+        const storeB = new InMemoryOperationSyncStore();
+        const baseTs = toEpochSeconds('2026-02-09T00:00:00.000Z');
+        await seedNumericRange(storeA, 0, 3, baseTs);
+        await seedNumericRange(storeB, 0, 3, baseTs);
+
+        const adapterA = await NegentropyAdapter.create({
+            syncStore: storeA,
+            frameSizeLimit: 0,
+            deferInitialBuild: true,
+        });
+        const adapterB = await NegentropyAdapter.create({
+            syncStore: storeB,
+            frameSizeLimit: 0,
+            deferInitialBuild: true,
+        });
+
+        const windowA = {
+            name: 'history_paged',
+            fromTs: baseTs,
+            toTs: baseTs + 10,
+            maxRecords: 10,
+            order: 0,
+        } as const;
+        const windowB = {
+            name: 'history_paged',
+            fromTs: baseTs + 1,
+            toTs: baseTs + 10,
+            maxRecords: 10,
+            order: 1,
+        } as const;
+
+        const localSnapshot = await adapterA.buildSnapshotForWindow(windowA);
+        const remoteSnapshot = await adapterB.buildSnapshotForWindow(windowA);
+        const localEngine = adapterA.createEngineForSnapshot(localSnapshot);
+        const remoteEngine = adapterB.createEngineForSnapshot(remoteSnapshot);
+
+        const firstMsg = await localEngine.initiate();
+        const response = await remoteEngine.respond(firstMsg);
+        expect(response).not.toBeNull();
+
+        const otherSnapshot = await adapterA.buildSnapshotForWindow(windowB);
+        const otherEngine = adapterA.createEngineForSnapshot(otherSnapshot);
+        await expect(otherEngine.initiate()).resolves.not.toBeNull();
+
+        const round = await localEngine.reconcile(response!);
+        expect(round.nextMsg).toBeNull();
+        expect(round.haveIds).toHaveLength(0);
+        expect(round.needIds).toHaveLength(0);
+    });
+
+    it('supports interleaved engines for different windows on the same adapter', async () => {
+        const storeA = new InMemoryOperationSyncStore();
+        const storeB = new InMemoryOperationSyncStore();
+        const baseTs = toEpochSeconds('2026-02-09T00:00:00.000Z');
+        await seedNumericRange(storeA, 0, 4, baseTs);
+        await seedNumericRange(storeB, 0, 4, baseTs);
+
+        const adapterA = await NegentropyAdapter.create({
+            syncStore: storeA,
+            frameSizeLimit: 0,
+            deferInitialBuild: true,
+        });
+        const adapterB = await NegentropyAdapter.create({
+            syncStore: storeB,
+            frameSizeLimit: 0,
+            deferInitialBuild: true,
+        });
+
+        const windowA = {
+            name: 'history_paged',
+            fromTs: baseTs,
+            toTs: baseTs + 10,
+            maxRecords: 10,
+            order: 0,
+        } as const;
+        const windowB = {
+            name: 'history_paged',
+            fromTs: baseTs + 1,
+            toTs: baseTs + 10,
+            maxRecords: 10,
+            order: 1,
+        } as const;
+
+        const localSnapshotA = await adapterA.buildSnapshotForWindow(windowA);
+        const localSnapshotB = await adapterA.buildSnapshotForWindow(windowB);
+        const remoteSnapshotA = await adapterB.buildSnapshotForWindow(windowA);
+        const remoteSnapshotB = await adapterB.buildSnapshotForWindow(windowB);
+
+        const localEngineA = adapterA.createEngineForSnapshot(localSnapshotA);
+        const localEngineB = adapterA.createEngineForSnapshot(localSnapshotB);
+        const remoteEngineA = adapterB.createEngineForSnapshot(remoteSnapshotA);
+        const remoteEngineB = adapterB.createEngineForSnapshot(remoteSnapshotB);
+
+        const firstMsgA = await localEngineA.initiate();
+        const firstMsgB = await localEngineB.initiate();
+
+        const responseB = await remoteEngineB.respond(firstMsgB);
+        const responseA = await remoteEngineA.respond(firstMsgA);
+
+        expect(responseA).not.toBeNull();
+        expect(responseB).not.toBeNull();
+
+        const roundB = await localEngineB.reconcile(responseB!);
+        const roundA = await localEngineA.reconcile(responseA!);
+
+        expect(roundA.nextMsg).toBeNull();
+        expect(roundA.haveIds).toHaveLength(0);
+        expect(roundA.needIds).toHaveLength(0);
+        expect(roundB.nextMsg).toBeNull();
+        expect(roundB.haveIds).toHaveLength(0);
+        expect(roundB.needIds).toHaveLength(0);
     });
 
     it('applies maxRoundsPerSession cap in windowed sessions', async () => {
@@ -339,16 +608,12 @@ describe('NegentropyAdapter', () => {
         const adapterA = await NegentropyAdapter.create({
             syncStore: storeA,
             frameSizeLimit: 4096,
-            recentWindowDays: 14,
-            olderWindowDays: 14,
             maxRecordsPerWindow: 10000,
             deferInitialBuild: true,
         });
         const adapterB = await NegentropyAdapter.create({
             syncStore: storeB,
             frameSizeLimit: 4096,
-            recentWindowDays: 14,
-            olderWindowDays: 14,
             maxRecordsPerWindow: 10000,
             deferInitialBuild: true,
         });
@@ -395,6 +660,35 @@ describe('NegentropyAdapter', () => {
         const snapshotB = adapterA.getLastSessionStats();
         expect(snapshotB).not.toBeNull();
         expect(snapshotB!.windows[0].windowName).not.toBe('mutated');
+    });
+
+    it('returns cloned last-window stats snapshots after a rebuild', async () => {
+        const store = new InMemoryOperationSyncStore();
+        await seedStore(store, [
+            { id: h('a'), ts: 1000, op: makeOp('a', '2026-02-09T10:00:00.000Z') },
+        ]);
+
+        const adapter = await NegentropyAdapter.create({
+            syncStore: store,
+            frameSizeLimit: 0,
+            deferInitialBuild: true,
+        });
+
+        await adapter.rebuildForWindow({
+            name: 'history_paged',
+            fromTs: 0,
+            toTs: 2000,
+            maxRecords: 10,
+            order: 0,
+        });
+
+        const snapshotA = adapter.getLastWindowStats();
+        expect(snapshotA).not.toBeNull();
+        snapshotA!.windowName = 'mutated';
+
+        const snapshotB = adapter.getLastWindowStats();
+        expect(snapshotB).not.toBeNull();
+        expect(snapshotB!.windowName).toBe('history_paged');
     });
 
     it('completes a window when peer responds with null', async () => {
@@ -455,48 +749,159 @@ describe('NegentropyAdapter', () => {
         })).rejects.toThrow('maxRoundsPerSession');
     });
 
-    it('continues into older windows when a newer window hits record cap', async () => {
+    it('continues paging through history while record-capped pages remain', async () => {
         const nowTs = toEpochSeconds('2026-02-10T00:00:00.000Z');
         const storeA = new InMemoryOperationSyncStore();
         const storeB = new InMemoryOperationSyncStore();
 
-        const recentA = nowTs - (6 * 60 * 60);
-        const recentB = nowTs - (8 * 60 * 60);
-        const older = nowTs - (2 * DAY_SECONDS);
-
         await seedStore(storeA, [
-            { id: h('a'), ts: recentA, op: makeOp('a', toISOFromEpochSeconds(recentA)) },
-            { id: h('b'), ts: recentB, op: makeOp('b', toISOFromEpochSeconds(recentB)) },
-            { id: h('c'), ts: older, op: makeOp('c', toISOFromEpochSeconds(older)) },
+            { id: h('a'), ts: nowTs - 3, op: makeOp('a', toISOFromEpochSeconds(nowTs - 3)) },
+            { id: h('b'), ts: nowTs - 2, op: makeOp('b', toISOFromEpochSeconds(nowTs - 2)) },
+            { id: h('c'), ts: nowTs - 1, op: makeOp('c', toISOFromEpochSeconds(nowTs - 1)) },
         ]);
         await seedStore(storeB, [
-            { id: h('d'), ts: recentA, op: makeOp('d', toISOFromEpochSeconds(recentA)) },
-            { id: h('e'), ts: older, op: makeOp('e', toISOFromEpochSeconds(older)) },
+            { id: h('a'), ts: nowTs - 3, op: makeOp('a', toISOFromEpochSeconds(nowTs - 3)) },
+            { id: h('b'), ts: nowTs - 2, op: makeOp('b', toISOFromEpochSeconds(nowTs - 2)) },
+            { id: h('c'), ts: nowTs - 1, op: makeOp('c', toISOFromEpochSeconds(nowTs - 1)) },
         ]);
 
         const adapterA = await NegentropyAdapter.create({
             syncStore: storeA,
             frameSizeLimit: 0,
-            recentWindowDays: 1,
-            olderWindowDays: 1,
             maxRecordsPerWindow: 1,
             deferInitialBuild: true,
         });
         const adapterB = await NegentropyAdapter.create({
             syncStore: storeB,
             frameSizeLimit: 0,
-            recentWindowDays: 1,
-            olderWindowDays: 1,
             maxRecordsPerWindow: 1,
             deferInitialBuild: true,
         });
 
         const session = await adapterA.runWindowedSessionWithPeer(adapterB, { nowTs });
-        const recent = session.windows.find(window => window.windowName === 'recent');
-        const olderWindow = session.windows.find(window => window.windowName === 'older_1');
+        expect(session.windowCount).toBe(3);
+        expect(session.windows[0].windowName).toBe('history_paged');
+        expect(session.windows[0].cappedByRecords).toBe(true);
+        expect(session.windows[1].cappedByRecords).toBe(true);
+        expect(session.windows[2].cappedByRecords).toBe(false);
+    });
 
-        expect(session.windowCount).toBeGreaterThanOrEqual(2);
-        expect(recent?.cappedByRecords).toBe(true);
-        expect(olderWindow).toBeDefined();
+    it('uses default session options when runWindowedSessionWithPeer is called without overrides', async () => {
+        const storeA = new InMemoryOperationSyncStore();
+        const storeB = new InMemoryOperationSyncStore();
+        await seedStore(storeA, []);
+        await seedStore(storeB, []);
+
+        const adapterA = await NegentropyAdapter.create({
+            syncStore: storeA,
+            frameSizeLimit: 0,
+            deferInitialBuild: true,
+        });
+        const adapterB = await NegentropyAdapter.create({
+            syncStore: storeB,
+            frameSizeLimit: 0,
+            deferInitialBuild: true,
+        });
+
+        const session = await adapterA.runWindowedSessionWithPeer(adapterB);
+        expect(session.windowCount).toBe(1);
+        expect(session.windows[0].windowName).toBe('history_paged');
+    });
+
+    it('continues paging when the local capped cursor sorts before the peer cursor', async () => {
+        const nowTs = toEpochSeconds('2026-02-10T00:00:00.000Z');
+        const storeA = new InMemoryOperationSyncStore();
+        const storeB = new InMemoryOperationSyncStore();
+
+        await seedStore(storeA, [
+            { id: idFromNum(1), ts: nowTs - 3, op: makeOpFromHash(idFromNum(1), toISOFromEpochSeconds(nowTs - 3)) },
+            { id: idFromNum(2), ts: nowTs - 2, op: makeOpFromHash(idFromNum(2), toISOFromEpochSeconds(nowTs - 2)) },
+            { id: idFromNum(3), ts: nowTs - 1, op: makeOpFromHash(idFromNum(3), toISOFromEpochSeconds(nowTs - 1)) },
+        ]);
+        await seedStore(storeB, [
+            { id: idFromNum(2), ts: nowTs - 2, op: makeOpFromHash(idFromNum(2), toISOFromEpochSeconds(nowTs - 2)) },
+            { id: idFromNum(3), ts: nowTs - 1, op: makeOpFromHash(idFromNum(3), toISOFromEpochSeconds(nowTs - 1)) },
+            { id: idFromNum(4), ts: nowTs, op: makeOpFromHash(idFromNum(4), toISOFromEpochSeconds(nowTs)) },
+        ]);
+
+        const adapterA = await NegentropyAdapter.create({
+            syncStore: storeA,
+            frameSizeLimit: 0,
+            maxRecordsPerWindow: 1,
+            deferInitialBuild: true,
+        });
+        const adapterB = await NegentropyAdapter.create({
+            syncStore: storeB,
+            frameSizeLimit: 0,
+            maxRecordsPerWindow: 1,
+            deferInitialBuild: true,
+        });
+
+        const session = await adapterA.runWindowedSessionWithPeer(adapterB, { nowTs });
+        expect(session.windowCount).toBeGreaterThan(1);
+    });
+
+    it('continues paging when the peer capped cursor sorts before the local cursor', async () => {
+        const nowTs = toEpochSeconds('2026-02-10T00:00:00.000Z');
+        const storeA = new InMemoryOperationSyncStore();
+        const storeB = new InMemoryOperationSyncStore();
+
+        await seedStore(storeA, [
+            { id: idFromNum(2), ts: nowTs - 2, op: makeOpFromHash(idFromNum(2), toISOFromEpochSeconds(nowTs - 2)) },
+            { id: idFromNum(3), ts: nowTs - 1, op: makeOpFromHash(idFromNum(3), toISOFromEpochSeconds(nowTs - 1)) },
+            { id: idFromNum(4), ts: nowTs, op: makeOpFromHash(idFromNum(4), toISOFromEpochSeconds(nowTs)) },
+        ]);
+        await seedStore(storeB, [
+            { id: idFromNum(1), ts: nowTs - 3, op: makeOpFromHash(idFromNum(1), toISOFromEpochSeconds(nowTs - 3)) },
+            { id: idFromNum(2), ts: nowTs - 2, op: makeOpFromHash(idFromNum(2), toISOFromEpochSeconds(nowTs - 2)) },
+            { id: idFromNum(3), ts: nowTs - 1, op: makeOpFromHash(idFromNum(3), toISOFromEpochSeconds(nowTs - 1)) },
+        ]);
+
+        const adapterA = await NegentropyAdapter.create({
+            syncStore: storeA,
+            frameSizeLimit: 0,
+            maxRecordsPerWindow: 1,
+            deferInitialBuild: true,
+        });
+        const adapterB = await NegentropyAdapter.create({
+            syncStore: storeB,
+            frameSizeLimit: 0,
+            maxRecordsPerWindow: 1,
+            deferInitialBuild: true,
+        });
+
+        const session = await adapterA.runWindowedSessionWithPeer(adapterB, { nowTs });
+        expect(session.windowCount).toBeGreaterThan(1);
+    });
+
+    it('continues paging when capped cursors share a timestamp but the peer id sorts earlier', async () => {
+        const baseTs = toEpochSeconds('2026-02-10T00:00:00.000Z');
+        const storeA = new InMemoryOperationSyncStore();
+        const storeB = new InMemoryOperationSyncStore();
+
+        await seedStore(storeA, [
+            { id: idFromNum(2), ts: baseTs, op: makeOpFromHash(idFromNum(2), toISOFromEpochSeconds(baseTs)) },
+            { id: idFromNum(4), ts: baseTs + 1, op: makeOpFromHash(idFromNum(4), toISOFromEpochSeconds(baseTs + 1)) },
+        ]);
+        await seedStore(storeB, [
+            { id: idFromNum(1), ts: baseTs, op: makeOpFromHash(idFromNum(1), toISOFromEpochSeconds(baseTs)) },
+            { id: idFromNum(3), ts: baseTs + 1, op: makeOpFromHash(idFromNum(3), toISOFromEpochSeconds(baseTs + 1)) },
+        ]);
+
+        const adapterA = await NegentropyAdapter.create({
+            syncStore: storeA,
+            frameSizeLimit: 0,
+            maxRecordsPerWindow: 1,
+            deferInitialBuild: true,
+        });
+        const adapterB = await NegentropyAdapter.create({
+            syncStore: storeB,
+            frameSizeLimit: 0,
+            maxRecordsPerWindow: 1,
+            deferInitialBuild: true,
+        });
+
+        const session = await adapterA.runWindowedSessionWithPeer(adapterB, { nowTs: baseTs + 2 });
+        expect(session.windowCount).toBeGreaterThan(1);
     });
 });

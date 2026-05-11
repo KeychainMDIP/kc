@@ -49,7 +49,6 @@ The mediator emits periodic structured sync metrics in `connectionLoop` includin
 | `KC_HYPR_POSTGRES_URL`    | postgresql://mdip:mdip@localhost:5432/mdip | Postgres DSN used when `KC_HYPR_DB=postgres` |
 | `KC_HYPR_EXPORT_INTERVAL` | 2                            | Seconds between export cycles |
 | `KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT` | 0                            | Negentropy frame-size limit in KB (0 or >= 4) |
-| `KC_HYPR_NEGENTROPY_WINDOW_DAYS` | 30                           | Reconciliation window size in days for full-sync chunking |
 | `KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW` | 25000                        | Maximum operations loaded into a single window adapter |
 | `KC_HYPR_NEGENTROPY_MAX_ROUNDS_PER_SESSION` | 64                           | Maximum negentropy rounds per window session |
 | `KC_HYPR_NEGENTROPY_INTERVAL` | 300                          | Seconds between retry attempts for peers not yet fully synced |

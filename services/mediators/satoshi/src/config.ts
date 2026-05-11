@@ -1,6 +1,6 @@
-import dotenv from 'dotenv';
+import { loadEnv } from '@mdip/common/env';
 
-dotenv.config();
+loadEnv();
 
 export type NetworkName = 'bitcoin' | 'testnet' | 'regtest';
 export type ChainName = 'BTC' | 'TBTC' | 'Signet' | 'TFTC';

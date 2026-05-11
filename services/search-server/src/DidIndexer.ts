@@ -1,6 +1,7 @@
 import GatekeeperClient from "@mdip/gatekeeper/client";
 import type { DIDsDb } from "./types.js";
 import { childLogger } from "@mdip/common/logger";
+import { extractPublishedCredentials } from "./published-credentials.js";
 
 export interface DidIndexerOptions {
     intervalMs: number;
@@ -60,6 +61,7 @@ export default class DidIndexer {
             for (const did of dids) {
                 const doc = await this.gatekeeper.resolveDID(did);
                 await this.db.storeDID(did, doc);
+                await this.db.replacePublishedCredentials(did, extractPublishedCredentials(did, doc));
             }
 
             await this.db.saveUpdatedAfter(now);
