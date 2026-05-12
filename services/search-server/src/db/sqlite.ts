@@ -1,6 +1,11 @@
 import sqlite3 from 'sqlite3';
 import { open, Database } from 'sqlite';
 import {
+    ChallengeReceiptListOptions,
+    ChallengeReceiptListResult,
+    ChallengeReceiptRecord,
+    ChallengeReceiptUsageOptions,
+    ChallengeReceiptUsageResult,
     DIDsDb,
     PublishedCredentialListOptions,
     PublishedCredentialListResult,
@@ -59,6 +64,31 @@ export default class Sqlite implements DIDsDb {
 
             CREATE INDEX IF NOT EXISTS idx_published_credentials_schema_subject
                 ON published_credentials (schema_did, subject_did);
+
+            CREATE TABLE IF NOT EXISTS challenge_receipts (
+                receipt_did TEXT PRIMARY KEY,
+                attester_did TEXT NOT NULL,
+                schema_did TEXT NOT NULL,
+                requester_did TEXT NOT NULL,
+                verified_at TEXT NOT NULL,
+                response_commitment TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_challenge_receipts_attester
+                ON challenge_receipts (attester_did);
+
+            CREATE INDEX IF NOT EXISTS idx_challenge_receipts_schema
+                ON challenge_receipts (schema_did);
+
+            CREATE INDEX IF NOT EXISTS idx_challenge_receipts_requester
+                ON challenge_receipts (requester_did);
+
+            CREATE INDEX IF NOT EXISTS idx_challenge_receipts_verified
+                ON challenge_receipts (verified_at);
+
+            CREATE INDEX IF NOT EXISTS idx_challenge_receipts_commitment
+                ON challenge_receipts (response_commitment);
 
             CREATE TABLE IF NOT EXISTS config (
                                                   key TEXT PRIMARY KEY,
@@ -161,6 +191,56 @@ export default class Sqlite implements DIDsDb {
                     record.issuerDid,
                     record.subjectDid,
                     record.revealed ? 1 : 0,
+                    record.updatedAt,
+                ]);
+            }
+
+            await this.db.exec('COMMIT');
+        }
+        catch (error) {
+            await this.db.exec('ROLLBACK');
+            throw error;
+        }
+    }
+
+    async replaceChallengeReceipts(receiptDid: string, records: ChallengeReceiptRecord[]): Promise<void> {
+        if (!this.db) {
+            throw new Error('DB not connected');
+        }
+
+        await this.db.exec('BEGIN');
+
+        try {
+            await this.db.run(
+                'DELETE FROM challenge_receipts WHERE receipt_did = ?',
+                [receiptDid]
+            );
+
+            for (const record of records) {
+                await this.db.run(`
+                    INSERT INTO challenge_receipts (
+                        receipt_did,
+                        attester_did,
+                        schema_did,
+                        requester_did,
+                        verified_at,
+                        response_commitment,
+                        updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(receipt_did) DO UPDATE SET
+                        attester_did = excluded.attester_did,
+                        schema_did = excluded.schema_did,
+                        requester_did = excluded.requester_did,
+                        verified_at = excluded.verified_at,
+                        response_commitment = excluded.response_commitment,
+                        updated_at = excluded.updated_at
+                `, [
+                    record.receiptDid,
+                    record.attesterDid,
+                    record.schemaDid,
+                    record.requesterDid,
+                    record.verifiedAt,
+                    record.responseCommitment,
                     record.updatedAt,
                 ]);
             }
@@ -292,6 +372,114 @@ export default class Sqlite implements DIDsDb {
         };
     }
 
+    async listChallengeReceipts(
+        options: ChallengeReceiptListOptions = {}
+    ): Promise<ChallengeReceiptListResult> {
+        if (!this.db) {
+            throw new Error('DB not connected');
+        }
+
+        const {
+            limit = 50,
+            offset = 0,
+        } = options;
+        const { where, params } = this.buildChallengeReceiptWhere(options);
+        const totalRow = await this.db.get<{ total: number | string }>(
+            `SELECT COUNT(*) AS total FROM challenge_receipts ${where}`,
+            params
+        );
+        const rows = await this.db.all<{
+            receiptDid: string;
+            attesterDid: string;
+            schemaDid: string;
+            requesterDid: string;
+            verifiedAt: string;
+            responseCommitment: string;
+            updatedAt: string;
+        }[]>(
+            `SELECT
+                receipt_did AS receiptDid,
+                attester_did AS attesterDid,
+                schema_did AS schemaDid,
+                requester_did AS requesterDid,
+                verified_at AS verifiedAt,
+                response_commitment AS responseCommitment,
+                updated_at AS updatedAt
+             FROM challenge_receipts
+             ${where}
+             ORDER BY verified_at DESC, receipt_did ASC
+             LIMIT ? OFFSET ?`,
+            [...params, Math.max(0, limit), Math.max(0, offset)]
+        );
+
+        return {
+            total: Number(totalRow?.total ?? 0),
+            receipts: rows.map(row => ({
+                receiptDid: row.receiptDid,
+                attesterDid: row.attesterDid,
+                schemaDid: row.schemaDid,
+                requesterDid: row.requesterDid,
+                verifiedAt: row.verifiedAt,
+                responseCommitment: row.responseCommitment,
+                updatedAt: row.updatedAt,
+            })),
+        };
+    }
+
+    async getChallengeReceiptUsage(
+        options: ChallengeReceiptUsageOptions = {}
+    ): Promise<ChallengeReceiptUsageResult> {
+        if (!this.db) {
+            throw new Error('DB not connected');
+        }
+
+        const {
+            limit = 50,
+            offset = 0,
+        } = options;
+        const { where, params } = this.buildChallengeReceiptWhere(options);
+        const totalRow = await this.db.get<{ total: number | string }>(
+            `SELECT COUNT(*) AS total
+             FROM (
+                SELECT 1
+                FROM challenge_receipts
+                ${where}
+                GROUP BY attester_did, schema_did, requester_did
+             )`,
+            params
+        );
+        const rows = await this.db.all<{
+            attesterDid: string;
+            schemaDid: string;
+            requesterDid: string;
+            count: number | string;
+            firstVerifiedAt: string;
+            lastVerifiedAt: string;
+        }[]>(
+            `SELECT
+                attester_did AS attesterDid,
+                schema_did AS schemaDid,
+                requester_did AS requesterDid,
+                COUNT(DISTINCT response_commitment) AS count,
+                MIN(verified_at) AS firstVerifiedAt,
+                MAX(verified_at) AS lastVerifiedAt
+             FROM challenge_receipts
+             ${where}
+             GROUP BY attester_did, schema_did, requester_did
+             ORDER BY count DESC, schema_did ASC, requester_did ASC
+             LIMIT ? OFFSET ?`,
+            [...params, Math.max(0, limit), Math.max(0, offset)]
+        );
+
+        return {
+            total: Number(totalRow?.total ?? 0),
+            usage: rows.map(row => ({
+                ...row,
+                count: Number(row.count),
+            })),
+        };
+    }
+
     async searchDocs(q: string): Promise<string[]> {
         if (!this.db) {
             throw new Error('DB not connected');
@@ -394,7 +582,57 @@ export default class Sqlite implements DIDsDb {
         await this.db.exec(`
             DELETE FROM did_docs;
             DELETE FROM published_credentials;
+            DELETE FROM challenge_receipts;
             DELETE FROM config;
         `);
+    }
+
+    private buildChallengeReceiptWhere(
+        options: ChallengeReceiptListOptions | ChallengeReceiptUsageOptions
+    ): { where: string; params: unknown[] } {
+        const clauses: string[] = [];
+        const params: unknown[] = [];
+        const receiptDid = 'receiptDid' in options ? options.receiptDid : undefined;
+        const responseCommitment = 'responseCommitment' in options ? options.responseCommitment : undefined;
+
+        if (receiptDid) {
+            clauses.push('receipt_did = ?');
+            params.push(receiptDid);
+        }
+
+        if (options.attesterDid) {
+            clauses.push('attester_did = ?');
+            params.push(options.attesterDid);
+        }
+
+        if (options.schemaDid) {
+            clauses.push('schema_did = ?');
+            params.push(options.schemaDid);
+        }
+
+        if (options.requesterDid) {
+            clauses.push('requester_did = ?');
+            params.push(options.requesterDid);
+        }
+
+        if (responseCommitment) {
+            clauses.push('response_commitment = ?');
+            params.push(responseCommitment);
+        }
+
+        if (options.verifiedAfter) {
+            clauses.push('verified_at >= ?');
+            params.push(options.verifiedAfter);
+        }
+
+        if (options.verifiedBefore) {
+            clauses.push('verified_at <= ?');
+            params.push(options.verifiedBefore);
+        }
+
+        return {
+            where: clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '',
+            params,
+        };
     }
 }

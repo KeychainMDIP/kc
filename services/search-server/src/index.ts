@@ -302,6 +302,66 @@ async function main() {
         }
     });
 
+    v1router.get("/metrics/challenge-receipts", async (req, res) => {
+        try {
+            const receiptDid = req.query.receiptDid?.toString();
+            const attesterDid = req.query.attesterDid?.toString();
+            const schemaDid = req.query.schemaDid?.toString();
+            const requesterDid = req.query.requesterDid?.toString();
+            const responseCommitment = req.query.responseCommitment?.toString();
+            const verifiedAfter = req.query.verifiedAfter?.toString();
+            const verifiedBefore = req.query.verifiedBefore?.toString();
+            const limit = parseNonNegativeInteger(req.query.limit, 50);
+            const offset = parseNonNegativeInteger(req.query.offset, 0);
+            const result = await didDb.listChallengeReceipts({
+                receiptDid,
+                attesterDid,
+                schemaDid,
+                requesterDid,
+                responseCommitment,
+                verifiedAfter,
+                verifiedBefore,
+                limit,
+                offset,
+            });
+
+            res.json(result);
+        } catch (error) {
+            log.error({ error }, '/metrics/challenge-receipts error');
+            res.status(500).json({ error: String(error) });
+        }
+    });
+
+    v1router.get("/metrics/challenge-receipts/usage", async (req, res) => {
+        try {
+            const attesterDid = req.query.attesterDid?.toString();
+            if (!attesterDid) {
+                return res.status(400).json({ error: 'attesterDid is required' });
+            }
+
+            const schemaDid = req.query.schemaDid?.toString();
+            const requesterDid = req.query.requesterDid?.toString();
+            const verifiedAfter = req.query.verifiedAfter?.toString();
+            const verifiedBefore = req.query.verifiedBefore?.toString();
+            const limit = parseNonNegativeInteger(req.query.limit, 50);
+            const offset = parseNonNegativeInteger(req.query.offset, 0);
+            const result = await didDb.getChallengeReceiptUsage({
+                attesterDid,
+                schemaDid,
+                requesterDid,
+                verifiedAfter,
+                verifiedBefore,
+                limit,
+                offset,
+            });
+
+            res.json(result);
+        } catch (error) {
+            log.error({ error }, '/metrics/challenge-receipts/usage error');
+            res.status(500).json({ error: String(error) });
+        }
+    });
+
     if (apiRateLimiter) {
         app.use('/api', apiRateLimiter);
     }

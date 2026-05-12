@@ -2196,7 +2196,9 @@ export default class Keymaster implements KeymasterInterface {
             throw new InvalidParameterError('verification.vps');
         }
 
-        const timestamp = verifiedAt ?? new Date().toISOString();
+        const timestamp = verifiedAt
+            ? new Date(verifiedAt).toISOString()
+            : new Date().toISOString();
         const responseCommitment = this.createResponseCommitment(responseDID, response.responseNonce);
         const receipts: ChallengeReceipt[] = [];
 

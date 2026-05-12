@@ -28,6 +28,57 @@ export interface PublishedCredentialListResult {
     credentials: PublishedCredentialRecord[];
 }
 
+export interface ChallengeReceiptRecord {
+    receiptDid: string;
+    attesterDid: string;
+    schemaDid: string;
+    requesterDid: string;
+    verifiedAt: string;
+    responseCommitment: string;
+    updatedAt: string;
+}
+
+export interface ChallengeReceiptListOptions {
+    receiptDid?: string;
+    attesterDid?: string;
+    schemaDid?: string;
+    requesterDid?: string;
+    responseCommitment?: string;
+    verifiedAfter?: string;
+    verifiedBefore?: string;
+    limit?: number;
+    offset?: number;
+}
+
+export interface ChallengeReceiptListResult {
+    total: number;
+    receipts: ChallengeReceiptRecord[];
+}
+
+export interface ChallengeReceiptUsageOptions {
+    attesterDid?: string;
+    schemaDid?: string;
+    requesterDid?: string;
+    verifiedAfter?: string;
+    verifiedBefore?: string;
+    limit?: number;
+    offset?: number;
+}
+
+export interface ChallengeReceiptUsageRecord {
+    attesterDid: string;
+    schemaDid: string;
+    requesterDid: string;
+    count: number;
+    firstVerifiedAt: string;
+    lastVerifiedAt: string;
+}
+
+export interface ChallengeReceiptUsageResult {
+    total: number;
+    usage: ChallengeReceiptUsageRecord[];
+}
+
 export interface DIDsDb {
     connect(): Promise<void>;
     disconnect(): Promise<void>;
@@ -37,9 +88,12 @@ export interface DIDsDb {
 
     storeDID(did: string, doc: object): Promise<void>;
     replacePublishedCredentials(holderDid: string, records: PublishedCredentialRecord[]): Promise<void>;
+    replaceChallengeReceipts(receiptDid: string, records: ChallengeReceiptRecord[]): Promise<void>;
     getDID(did: string): Promise<object | null>;
     getPublishedCredentialCountsBySchema(): Promise<PublishedCredentialSchemaCount[]>;
     listPublishedCredentials(options?: PublishedCredentialListOptions): Promise<PublishedCredentialListResult>;
+    listChallengeReceipts(options?: ChallengeReceiptListOptions): Promise<ChallengeReceiptListResult>;
+    getChallengeReceiptUsage(options?: ChallengeReceiptUsageOptions): Promise<ChallengeReceiptUsageResult>;
     searchDocs(q: string): Promise<string[]>;
     queryDocs(where: Record<string, unknown>): Promise<string[]>;
     wipeDb(): Promise<void>;
