@@ -1,11 +1,10 @@
 import pino, { type Logger, type LoggerOptions, type ChildLoggerOptions } from 'pino';
-import pinoPretty from 'pino-pretty';
 
 export type LogLevel = 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace' | 'silent';
 export type LoggerLike = Pick<Logger, 'debug' | 'info' | 'warn' | 'error'>;
 
 const DEFAULT_LEVEL: LogLevel = 'info';
-const DEFAULT_PRETTY = true;
+const DEFAULT_PRETTY = false;
 const LEVEL_ALIASES: Record<string, LogLevel> = {
     warning: 'warn',
 };
@@ -90,18 +89,7 @@ export function createLogger(
         level: resolvedLevel,
     };
 
-    if (options.transport) {
-        return pino(loggerOptions);
-    }
-
-    const stream = pinoPretty({
-        colorize: false,
-        translateTime: 'SYS:standard',
-        ignore: 'pid,hostname,service',
-        singleLine: true,
-    });
-
-    return pino(loggerOptions, stream);
+    return pino(loggerOptions);
 }
 
 export let logger = createLogger();

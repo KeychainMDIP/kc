@@ -17,6 +17,10 @@ function hasNameOption(args) {
     return args.some(arg => NAME_OPTIONS.has(arg) || arg.startsWith('--name='));
 }
 
+function isLegacyV0(obj) {
+    return !!obj && !obj.version && !!obj.seed?.hdkey && typeof obj.seed.mnemonic === 'string';
+}
+
 function splitCommandArgs(args) {
     const options = [];
     const operands = [];
@@ -161,7 +165,8 @@ program
     .description('Create new wallet from a recovery phrase')
     .action(async (recoveryPhrase) => {
         try {
-            const wallet = await keymaster.newWallet(recoveryPhrase);
+            await keymaster.newWallet(recoveryPhrase, true);
+            const wallet = await keymaster.recoverWallet();
             console.log(JSON.stringify(wallet, null, 4));
         }
         catch (error) {
@@ -184,11 +189,11 @@ program
 
 program
     .command('backup-wallet-file <file>')
-    .description('Backup wallet to file')
+    .description('Backup wallet bundle to file')
     .action(async (file) => {
         try {
-            const wallet = await keymaster.exportEncryptedWallet();
-            fs.writeFileSync(file, JSON.stringify(wallet, null, 4));
+            const bundle = await keymaster.exportWalletBundle();
+            fs.writeFileSync(file, JSON.stringify(bundle, null, 4));
             console.log(UPDATE_OK);
         }
         catch (error) {
@@ -198,11 +203,22 @@ program
 
 program
     .command('restore-wallet-file <file>')
-    .description('Restore wallet from backup file')
+    .description('Restore wallet bundle from backup file')
     .action(async (file) => {
         try {
             const contents = fs.readFileSync(file).toString();
             const wallet = JSON.parse(contents);
+
+            if (wallet?.type === 'mdip-wallet-bundle' && wallet?.version === 1) {
+                await keymaster.importWalletBundle(wallet);
+                console.log(UPDATE_OK);
+                return;
+            }
+
+            if (!isLegacyV0(wallet) && wallet?.version !== 1) {
+                throw new Error('Unsupported wallet backup format. Expected an mdip-wallet-bundle or legacy v0/v1 wallet.');
+            }
+
             const ok = await keymaster.saveWallet(wallet, true);
             console.log(ok ? UPDATE_OK : UPDATE_FAILED);
         }
@@ -216,8 +232,8 @@ program
     .description('Show recovery phrase for wallet')
     .action(async () => {
         try {
-            const mnenomic = await keymaster.decryptMnemonic();
-            console.log(mnenomic);
+            const mnemonic = await keymaster.decryptMnemonic();
+            console.log(mnemonic);
         }
         catch (error) {
             console.error(error.error || error);
@@ -226,7 +242,7 @@ program
 
 program
     .command('backup-wallet-did')
-    .description('Backup wallet to encrypted DID and seed bank')
+    .description('Backup wallet metadata to DID')
     .action(async () => {
         try {
             const did = await keymaster.backupWallet();
@@ -239,7 +255,7 @@ program
 
 program
     .command('recover-wallet-did [did]')
-    .description('Recover wallet from seed bank or encrypted DID')
+    .description('Recover wallet metadata from backup DID')
     .action(async (did) => {
         try {
             const wallet = await keymaster.recoverWallet(did);

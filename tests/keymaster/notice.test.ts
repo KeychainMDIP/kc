@@ -5,7 +5,8 @@ import DbJsonMemory from '@mdip/gatekeeper/db/json-memory';
 import WalletJsonMemory from '@mdip/keymaster/wallet/json-memory';
 import { ExpectedExceptionError } from '@mdip/common/errors';
 import HeliaClient from '@mdip/ipfs/helia';
-import { NoticeMessage, SearchEngine } from '@mdip/keymaster/types';
+import { NoticeMessage, SearchEngine, WalletProviderStore } from '@mdip/keymaster/types';
+import { createTestKeymaster } from './testUtils.ts';
 
 class MockSearch implements SearchEngine {
     private results: string[] = [];
@@ -30,7 +31,8 @@ class MockSearch implements SearchEngine {
 
 let ipfs: HeliaClient;
 let gatekeeper: Gatekeeper;
-let wallet: WalletJsonMemory;
+let store: WalletJsonMemory;
+let providerStore: WalletProviderStore;
 let cipher: CipherNode;
 let keymaster: Keymaster;
 let search: MockSearch;
@@ -49,10 +51,9 @@ afterAll(async () => {
 beforeEach(() => {
     const db = new DbJsonMemory('test');
     gatekeeper = new Gatekeeper({ db, ipfs, registries: ['local', 'hyperswarm', 'TFTC'] });
-    wallet = new WalletJsonMemory();
     cipher = new CipherNode();
     search = new MockSearch();
-    keymaster = new Keymaster({ gatekeeper, wallet, cipher, search, passphrase: 'passphrase' });
+    ({ keymaster, store, providerStore } = createTestKeymaster(gatekeeper, cipher, { search }));
 });
 
 describe('verifyNotice', () => {
@@ -418,7 +419,7 @@ describe('searchNotices', () => {
     });
 
     it('should return false if search engine not configured', async () => {
-        keymaster = new Keymaster({ gatekeeper, wallet, cipher, passphrase: 'passphrase' });
+        ({ keymaster } = createTestKeymaster(gatekeeper, cipher, { store, providerStore }));
         await keymaster.createId('Alice');
 
         const ok = await keymaster.searchNotices();

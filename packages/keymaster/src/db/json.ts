@@ -1,7 +1,7 @@
 import fs from 'fs';
-import { StoredWallet, WalletBase } from '../types.js';
+import { KeymasterStore, StoredWallet } from '../types.js';
 
-export default class WalletJson implements WalletBase {
+export default class WalletJson implements KeymasterStore {
     private readonly dataFolder: string;
     walletName: string;
 

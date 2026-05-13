@@ -128,18 +128,16 @@ def backup_wallet():
         "POST",
         f"{_keymaster_api}/wallet/backup",
     )
-    return response["ok"]
+    return response["did"]
 
 
-def recover_wallet():
-    response = proxy_request(
-        "POST",
-        f"{_keymaster_api}/wallet/recover",
-    )
+def recover_wallet(did=None):
+    payload = {"did": did} if did else {}
+    response = proxy_request("POST", f"{_keymaster_api}/wallet/recover", json=payload)
     return response["wallet"]
 
 
-def new_wallet(mnemonic, overwrite=False):
+def new_wallet(mnemonic=None, overwrite=False):
     response = proxy_request(
         "POST",
         f"{_keymaster_api}/wallet/new",
@@ -165,11 +163,10 @@ def fix_wallet():
 
 
 def decrypt_mnemonic():
-    response = proxy_request(
-        "GET",
-        f"{_keymaster_api}/wallet/mnemonic",
+    raise KeymasterError(
+        "decrypt_mnemonic is no longer available through the generic keymaster API. "
+        "Mnemonic access now belongs to the mnemonic wallet provider."
     )
-    return response["mnemonic"]
 
 
 def list_registries():

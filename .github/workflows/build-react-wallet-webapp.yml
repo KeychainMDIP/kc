@@ -4,7 +4,7 @@ on:
   push:
 
 jobs:
-  build-android-webapp:
+  build-react-wallet-webapp:
     runs-on: ubuntu-latest
 
     steps:
@@ -22,13 +22,14 @@ jobs:
       - name: Compile TypeScript
         run: npm run build
 
-      - name: Install dependencies
-        run: |
-          cd ./apps/react-wallet
-          npm ci
+      - name: Install react-wallet dependencies
+        working-directory: ./apps/react-wallet
+        run: npm ci
 
-      - name: Build extension
-        run: |
-          cd ./apps/react-wallet
-          npm run build
+      - name: Typecheck react-wallet webapp
+        working-directory: ./apps/react-wallet
+        run: npm run typecheck
 
+      - name: Build react-wallet webapp
+        working-directory: ./apps/react-wallet
+        run: npm run build

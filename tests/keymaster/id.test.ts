@@ -5,12 +5,15 @@ import DbJsonMemory from '@mdip/gatekeeper/db/json-memory';
 import WalletJsonMemory from '@mdip/keymaster/wallet/json-memory';
 import { InvalidDIDError, ExpectedExceptionError, UnknownIDError, InvalidParameterError } from '@mdip/common/errors';
 import HeliaClient from '@mdip/ipfs/helia';
+import MnemonicHdWalletProvider from '../../packages/keymaster/src/provider/mnemonic-hd.ts';
+import { createTestKeymaster } from './testUtils.ts';
 
 let ipfs: HeliaClient;
 let gatekeeper: Gatekeeper;
-let wallet: WalletJsonMemory;
+let store: WalletJsonMemory;
 let cipher: CipherNode;
 let keymaster: Keymaster;
+let walletProvider: MnemonicHdWalletProvider;
 
 beforeAll(async () => {
     ipfs = new HeliaClient();
@@ -26,9 +29,9 @@ afterAll(async () => {
 beforeEach(() => {
     const db = new DbJsonMemory('test');
     gatekeeper = new Gatekeeper({ db, ipfs, registries: ['local', 'hyperswarm', 'TFTC'] });
-    wallet = new WalletJsonMemory();
+    store = new WalletJsonMemory();
     cipher = new CipherNode();
-    keymaster = new Keymaster({ gatekeeper, wallet, cipher, passphrase: 'passphrase' });
+    ({ keymaster, walletProvider } = createTestKeymaster(gatekeeper, cipher, { store }));
 });
 
 describe('createId', () => {
@@ -60,11 +63,11 @@ describe('createId', () => {
 
     it('should create a new ID on customized default registry', async () => {
         const defaultRegistry = 'TFTC';
-        const keymaster = new Keymaster({ gatekeeper, wallet, cipher, defaultRegistry, passphrase: 'passphrase' });
+        const { keymaster: customKeymaster } = createTestKeymaster(gatekeeper, cipher, { store, defaultRegistry });
 
         const name = 'Bob';
-        const did = await keymaster.createId(name);
-        const doc = await keymaster.resolveDID(did);
+        const did = await customKeymaster.createId(name);
+        const doc = await customKeymaster.resolveDID(did);
 
         expect(doc.mdip!.registry).toBe(defaultRegistry);
     });
@@ -185,7 +188,7 @@ describe('createIdOperation', () => {
     it('should create operation with custom registry', async () => {
         const name = 'Alice';
         const registry = 'TFTC';
-        const operation = await keymaster.createIdOperation(name, 0, { registry });
+        const operation = await keymaster.createIdOperation(name, { registry });
 
         expect(operation.mdip!.registry).toBe(registry);
         expect(operation.type).toBe('create');
@@ -196,7 +199,7 @@ describe('createIdOperation', () => {
     it('should create operation with local registry', async () => {
         const name = 'Charlie';
         const registry = 'local';
-        const operation = await keymaster.createIdOperation(name, 0, { registry });
+        const operation = await keymaster.createIdOperation(name, { registry });
 
         expect(operation.mdip!.registry).toBe(registry);
         expect(operation.type).toBe('create');
@@ -207,12 +210,10 @@ describe('createIdOperation', () => {
     it('should create operation without modifying wallet', async () => {
         const name = 'Dave';
         const walletBefore = await keymaster.loadWallet();
-        const counterBefore = walletBefore.counter;
 
         await keymaster.createIdOperation(name);
 
         const walletAfter = await keymaster.loadWallet();
-        expect(walletAfter.counter).toBe(counterBefore);
         expect(walletAfter.ids[name]).toBeUndefined();
         expect(walletAfter.current).toBe(walletBefore.current);
     });
@@ -286,13 +287,7 @@ describe('createIdOperation', () => {
 
     it('should use customized default registry when none specified', async () => {
         const defaultRegistry = 'local';
-        const customKeymaster = new Keymaster({
-            gatekeeper,
-            wallet,
-            cipher,
-            defaultRegistry,
-            passphrase: 'passphrase'
-        });
+        const { keymaster: customKeymaster } = createTestKeymaster(gatekeeper, cipher, { store, defaultRegistry });
 
         const name = 'Henry';
         const operation = await customKeymaster.createIdOperation(name);
@@ -406,7 +401,17 @@ describe('backupId', () => {
         const vault = await keymaster.resolveDID((doc.didDocumentData! as { vault: string }).vault);
 
         expect(ok).toBe(true);
-        expect((vault.didDocumentData as { backup: string }).backup.length > 0).toBe(true);
+        expect(vault.didDocumentData).toEqual(
+            expect.objectContaining({
+                backup: expect.objectContaining({
+                    name: 'Bob',
+                    id: expect.objectContaining({
+                        did: expect.any(String),
+                        keyRef: expect.any(String),
+                    }),
+                }),
+            })
+        );
     });
 
     it('should backup a non-current ID', async () => {
@@ -418,7 +423,17 @@ describe('backupId', () => {
         const vault = await keymaster.resolveDID((doc.didDocumentData! as { vault: string }).vault);
 
         expect(ok).toBe(true);
-        expect((vault.didDocumentData as { backup: string }).backup.length > 0).toBe(true);
+        expect(vault.didDocumentData).toEqual(
+            expect.objectContaining({
+                backup: expect.objectContaining({
+                    name: 'Alice',
+                    id: expect.objectContaining({
+                        did: aliceDid,
+                        keyRef: expect.any(String),
+                    }),
+                }),
+            })
+        );
     });
 });
 
@@ -428,20 +443,20 @@ describe('recoverId', () => {
         const did = await keymaster.createId(name);
         let wallet = await keymaster.loadWallet();
         const bob = JSON.parse(JSON.stringify(wallet.ids['Bob']));
-        const mnemonic = await keymaster.decryptMnemonic();
+        const providerBackup = await walletProvider.backupWallet();
 
         await keymaster.backupId();
 
         // reset wallet
-        await keymaster.newWallet(mnemonic, true);
+        await keymaster.newWallet(undefined, true);
         wallet = await keymaster.loadWallet();
         expect(wallet.ids).toStrictEqual({});
 
+        await walletProvider.saveWallet(providerBackup, true);
         await keymaster.recoverId(did);
         wallet = await keymaster.loadWallet();
         expect(wallet.ids[name]).toStrictEqual(bob);
         expect(wallet.current).toBe(name);
-        expect(wallet.counter).toBe(1);
     });
 
     it('should not overwrite an id with the same name', async () => {
@@ -454,22 +469,6 @@ describe('recoverId', () => {
         }
         catch (error: any) {
             expect(error.message).toBe('Keymaster: Bob already exists in wallet');
-        }
-    });
-
-    it('should not recover an id to a different wallet', async () => {
-        const did = await keymaster.createId('Bob');
-        await keymaster.backupId();
-
-        // reset to a different wallet
-        await keymaster.newWallet(undefined, true);
-
-        try {
-            await keymaster.recoverId(did);
-            throw new ExpectedExceptionError();
-        }
-        catch (error: any) {
-            expect(error.message).toBe(InvalidDIDError.type);
         }
     });
 });

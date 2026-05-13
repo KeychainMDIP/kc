@@ -6,14 +6,14 @@ import WalletJsonMemory from '@mdip/keymaster/wallet/json-memory';
 import { ExpectedExceptionError, UnknownIDError } from '@mdip/common/errors';
 import HeliaClient from '@mdip/ipfs/helia';
 import { MdipDocument } from "@mdip/gatekeeper/types";
+import { createTestKeymaster } from './testUtils.ts';
 
 let ipfs: HeliaClient;
 let gatekeeper: Gatekeeper;
-let wallet: WalletJsonMemory;
+let store: WalletJsonMemory;
+let walletProvider: any;
 let cipher: CipherNode;
 let keymaster: Keymaster;
-
-const PASSPHRASE = 'passphrase';
 
 beforeAll(async () => {
     ipfs = new HeliaClient();
@@ -29,9 +29,8 @@ afterAll(async () => {
 beforeEach(() => {
     const db = new DbJsonMemory('test');
     gatekeeper = new Gatekeeper({ db, ipfs, registries: ['local', 'hyperswarm', 'TFTC'] });
-    wallet = new WalletJsonMemory();
     cipher = new CipherNode();
-    keymaster = new Keymaster({ gatekeeper, wallet, cipher, passphrase: PASSPHRASE });
+    ({ keymaster, store, walletProvider } = createTestKeymaster(gatekeeper, cipher));
 });
 
 describe('constructor', () => {
@@ -48,7 +47,7 @@ describe('constructor', () => {
 
         try {
             // @ts-expect-error Testing invalid usage, missing gatekeeper arg
-            new Keymaster({ wallet, cipher, passphrase: PASSPHRASE });
+            new Keymaster({ store, walletProvider, cipher });
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
@@ -56,17 +55,17 @@ describe('constructor', () => {
         }
 
         try {
-            // @ts-expect-error Testing invalid usage, missing wallet arg
-            new Keymaster({ gatekeeper, cipher, passphrase: PASSPHRASE });
+            // @ts-expect-error Testing invalid usage, missing store arg
+            new Keymaster({ gatekeeper, walletProvider, cipher });
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
-            expect(error.message).toBe('Invalid parameter: options.wallet');
+            expect(error.message).toBe('Invalid parameter: options.store');
         }
 
         try {
             // @ts-expect-error Testing invalid usage, missing cipher arg
-            new Keymaster({ gatekeeper, wallet, passphrase: PASSPHRASE });
+            new Keymaster({ gatekeeper, store, walletProvider });
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
@@ -75,7 +74,7 @@ describe('constructor', () => {
 
         try {
             // @ts-expect-error Testing invalid usage, invalid gatekeeper arg
-            new Keymaster({ gatekeeper: {}, wallet, cipher, passphrase: PASSPHRASE });
+            new Keymaster({ gatekeeper: {}, store, walletProvider, cipher });
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
@@ -83,17 +82,26 @@ describe('constructor', () => {
         }
 
         try {
-            // @ts-expect-error Testing invalid usage, invalid wallet arg
-            new Keymaster({ gatekeeper, wallet: {}, cipher, passphrase: PASSPHRASE });
+            // @ts-expect-error Testing invalid usage, invalid store arg
+            new Keymaster({ gatekeeper, store: {}, walletProvider, cipher });
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
-            expect(error.message).toBe('Invalid parameter: options.wallet');
+            expect(error.message).toBe('Invalid parameter: options.store');
+        }
+
+        try {
+            // @ts-expect-error Testing invalid usage, invalid walletProvider arg
+            new Keymaster({ gatekeeper, store, walletProvider: {}, cipher });
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: options.walletProvider');
         }
 
         try {
             // @ts-expect-error Testing invalid usage, invalid cipher arg
-            new Keymaster({ gatekeeper, wallet, cipher: {}, passphrase: PASSPHRASE });
+            new Keymaster({ gatekeeper, store, walletProvider, cipher: {} });
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
@@ -102,25 +110,16 @@ describe('constructor', () => {
 
         try {
             // @ts-expect-error Testing invalid usage, invalid search arg
-            new Keymaster({ gatekeeper, wallet, cipher, search: {}, passphrase: PASSPHRASE });
+            new Keymaster({ gatekeeper, store, walletProvider, cipher, search: {} });
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
             expect(error.message).toBe('Invalid parameter: options.search');
         }
 
-        try {
-            // @ts-expect-error Testing invalid usage, missing passphrase arg
-            new Keymaster({ gatekeeper, wallet, cipher });
-            throw new ExpectedExceptionError();
-        }
-        catch (error: any) {
-            expect(error.message).toBe('Invalid parameter: options.passphrase');
-        }
-
         // Cover the ExpectedExceptionError class for completeness
         try {
-            new Keymaster({ gatekeeper, wallet, cipher, passphrase: PASSPHRASE });
+            new Keymaster({ gatekeeper, store, walletProvider, cipher });
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
