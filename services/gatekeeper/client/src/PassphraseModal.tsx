@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import type { FormEvent } from "react";
 import {
     Dialog,
     DialogTitle,
@@ -10,6 +11,19 @@ import {
     Box,
     CircularProgress,
 } from "@mui/material";
+
+type PassphraseModalProps = {
+    isOpen: boolean;
+    title: string;
+    errorText?: string;
+    onSubmit: (passphrase: string) => void | Promise<void>;
+    onClose?: () => void;
+    encrypt: boolean;
+    showCancel?: boolean;
+    upload?: boolean;
+    onStartReset?: () => void;
+    onStartRecover?: () => void;
+};
 
 const PassphraseModal = (
     {
@@ -23,18 +37,18 @@ const PassphraseModal = (
         upload = false,
         onStartReset,
         onStartRecover,
-    }) => {
-    const [passphrase, setPassphrase] = useState("");
-    const [confirmPassphrase, setConfirmPassphrase] = useState("");
-    const [localError, setLocalError] = useState("");
-    const [submitting, setSubmitting] = useState(false);
+    }: PassphraseModalProps) => {
+    const [passphrase, setPassphrase] = useState<string>("");
+    const [confirmPassphrase, setConfirmPassphrase] = useState<string>("");
+    const [localError, setLocalError] = useState<string>("");
+    const [submitting, setSubmitting] = useState<boolean>(false);
     const combinedError = localError || errorText || "";
 
     if (!isOpen) {
         return null;
     }
 
-    async function handleSubmit(e) {
+    async function handleSubmit(e: FormEvent<HTMLFormElement>) {
         e.preventDefault();
         if (submitting) {
             return;
@@ -64,7 +78,7 @@ const PassphraseModal = (
         }
     };
 
-    function checkPassphraseMismatch(newPass, newConfirm) {
+    function checkPassphraseMismatch(newPass: string, newConfirm: string) {
         if (!encrypt) {
             return;
         }
@@ -81,12 +95,12 @@ const PassphraseModal = (
         }
     }
 
-    function handlePassphraseChange(newValue) {
+    function handlePassphraseChange(newValue: string) {
         setPassphrase(newValue);
         checkPassphraseMismatch(newValue, confirmPassphrase);
     }
 
-    function handleConfirmChange(newValue) {
+    function handleConfirmChange(newValue: string) {
         setConfirmPassphrase(newValue);
         checkPassphraseMismatch(passphrase, newValue);
     }

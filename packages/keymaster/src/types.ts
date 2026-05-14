@@ -334,6 +334,10 @@ export interface KeymasterInterface {
     fixWallet(): Promise<FixWalletResult>;
     decryptMnemonic(): Promise<string>;
     exportEncryptedWallet(): Promise<WalletEncFile>;
+    rotateKeys(): Promise<boolean>;
+
+    // Registry
+    listRegistries(): Promise<string[]>;
 
     // IDs
     listIds(): Promise<string[]>;
@@ -353,12 +357,15 @@ export interface KeymasterInterface {
 
     // DID resolution
     resolveDID(did: string, options?: ResolveDIDOptions): Promise<MdipDocument>;
+    revokeDID(id: string): Promise<boolean>;
 
     // Assets
     createAsset(data: unknown, options?: CreateAssetOptions): Promise<string>;
+    cloneAsset(id: string, options?: CreateAssetOptions): Promise<string>;
     listAssets(owner?: string): Promise<string[]>;
     resolveAsset(did: string, options?: ResolveDIDOptions): Promise<unknown | null>;
     updateAsset(did: string, data: Record<string, unknown>): Promise<boolean>;
+    transferAsset(id: string, controller: string): Promise<boolean>;
 
     // Encryption
     encryptMessage(msg: string, receiver: string, options?: EncryptOptions): Promise<string>;
@@ -438,6 +445,7 @@ export interface KeymasterInterface {
     testGroupVault(vaultId: string, options?: ResolveDIDOptions): Promise<boolean>;
     addGroupVaultMember(vaultId: string, memberId: string): Promise<boolean>;
     removeGroupVaultMember(vaultId: string, memberId: string): Promise<boolean>;
+    listGroupVaultMembers(vaultId: string): Promise<Record<string, any>>;
     addGroupVaultItem(vaultId: string, name: string, buffer: Buffer): Promise<boolean>;
     removeGroupVaultItem(vaultId: string, name: string): Promise<boolean>;
     listGroupVaultItems(vaultId: string, options?: ResolveDIDOptions): Promise<Record<string, any>>;

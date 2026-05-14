@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import type { FormEvent } from "react";
 import {
     Dialog,
     DialogTitle,
@@ -9,13 +10,20 @@ import {
     TextField,
 } from "@mui/material";
 
-const MnemonicModal = ({ isOpen, onSubmit, onClose, errorText }) => {
-    const [mnemonic, setMnemonic] = useState("");
+type MnemonicModalProps = {
+    isOpen: boolean;
+    onSubmit: (mnemonic: string) => void | Promise<void>;
+    onClose: () => void;
+    errorText?: string;
+};
+
+const MnemonicModal = ({ isOpen, onSubmit, onClose, errorText }: MnemonicModalProps) => {
+    const [mnemonic, setMnemonic] = useState<string>("");
 
     const words = mnemonic.trim().split(/\s+/).filter(Boolean);
     const canConfirm = words.length === 12;
 
-    const handleSubmit = (event) => {
+    const handleSubmit = (event: FormEvent<HTMLButtonElement>) => {
         event.preventDefault();
         onSubmit(mnemonic);
         setMnemonic("");

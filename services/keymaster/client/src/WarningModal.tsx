@@ -1,4 +1,5 @@
 import React from "react";
+import type { FormEvent } from "react";
 import {
     Dialog,
     DialogTitle,
@@ -8,10 +9,18 @@ import {
     DialogContentText,
 } from "@mui/material";
 
-const WarningModal = ({ isOpen, title, warningText, onSubmit, onClose }) => {
+type WarningModalProps = {
+    isOpen: boolean;
+    title: string;
+    warningText: string;
+    onSubmit: () => void | Promise<void>;
+    onClose: () => void;
+};
+
+const WarningModal = ({ isOpen, title, warningText, onSubmit, onClose }: WarningModalProps) => {
     if (!isOpen) return null;
 
-    function handleSubmit(e) {
+    function handleSubmit(e: FormEvent<HTMLFormElement>) {
         e.preventDefault();
         onSubmit();
     }
