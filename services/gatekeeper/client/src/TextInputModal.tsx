@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import type { FormEvent } from "react";
 import {
     Dialog,
     DialogTitle,
@@ -9,18 +10,29 @@ import {
     TextField,
 } from "@mui/material";
 
+type TextInputModalProps = {
+    isOpen: boolean;
+    title: string;
+    description?: string;
+    label?: string;
+    confirmText?: string;
+    defaultValue?: string;
+    onSubmit: (value: string) => void | Promise<void>;
+    onClose: () => void;
+};
+
 const TextInputModal = (
     {
         isOpen,
         title,
-        description,
+        description = "",
         label = "Name",
         confirmText = "Confirm",
         defaultValue = "",
         onSubmit,
         onClose,
-    }) => {
-    const [value, setValue] = useState(defaultValue);
+    }: TextInputModalProps) => {
+    const [value, setValue] = useState<string>(defaultValue);
 
     useEffect(() => {
         if (isOpen) {
@@ -28,7 +40,7 @@ const TextInputModal = (
         }
     }, [isOpen, defaultValue]);
 
-    const handleConfirm = (e) => {
+    const handleConfirm = (e: FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         onSubmit(value.trim());
     };

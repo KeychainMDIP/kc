@@ -9,6 +9,7 @@ import WalletWeb from '@mdip/keymaster/wallet/web';
 import WalletCache from '@mdip/keymaster/wallet/cache';
 import WalletJsonMemory from "@mdip/keymaster/wallet/json-memory";
 import { isV1WithEnc, isLegacyV0 } from '@mdip/keymaster/wallet/typeGuards';
+import type { KeymasterInterface, StoredWallet, WalletBase } from '@mdip/keymaster/types';
 import KeymasterUI from './KeymasterUI';
 import PassphraseModal from './PassphraseModal';
 import WarningModal from './WarningModal';
@@ -21,26 +22,29 @@ globalThis.Buffer = Buffer;
 const gatekeeper = new GatekeeperClient();
 const cipher = new CipherWeb();
 
-async function createSearchClient() {
+type ModalAction = 'set-passphrase' | 'decrypt' | null;
+type UploadAction = 'upload-plain-v0' | 'upload-enc-v1' | null;
+
+async function createSearchClient(): Promise<SearchClient> {
     const { protocol, hostname } = window.location;
     return SearchClient.create({ url: `${protocol}//${hostname}:4002` });
 }
 
 function App() {
-    const [isReady, setIsReady] = useState(false);
-    const [modalAction, setModalAction] = useState(null);
-    const [passphraseErrorText, setPassphraseErrorText] = useState("");
-    const [keymaster, setKeymaster] = useState(null);
-    const [kmEpoch, setKmEpoch] = useState(0);
-    const [uploadAction, setUploadAction] = useState(null);
-    const [pendingWallet, setPendingWallet] = useState(null);
-    const [showResetConfirm, setShowResetConfirm] = useState(false);
-    const [showResetSetup, setShowResetSetup] = useState(false);
-    const [showRecoverMnemonic, setShowRecoverMnemonic] = useState(false);
-    const [mnemonicErrorText, setMnemonicErrorText] = useState("");
-    const [recoveredMnemonic, setRecoveredMnemonic] = useState("");
-    const [showRecoverSetup, setShowRecoverSetup] = useState(false);
-    const [searchClient, setSearchClient] = useState(null);
+    const [isReady, setIsReady] = useState<boolean>(false);
+    const [modalAction, setModalAction] = useState<ModalAction>(null);
+    const [passphraseErrorText, setPassphraseErrorText] = useState<string>("");
+    const [keymaster, setKeymaster] = useState<KeymasterInterface | null>(null);
+    const [kmEpoch, setKmEpoch] = useState<number>(0);
+    const [uploadAction, setUploadAction] = useState<UploadAction>(null);
+    const [pendingWallet, setPendingWallet] = useState<StoredWallet>(null);
+    const [showResetConfirm, setShowResetConfirm] = useState<boolean>(false);
+    const [showResetSetup, setShowResetSetup] = useState<boolean>(false);
+    const [showRecoverMnemonic, setShowRecoverMnemonic] = useState<boolean>(false);
+    const [mnemonicErrorText, setMnemonicErrorText] = useState<string>("");
+    const [recoveredMnemonic, setRecoveredMnemonic] = useState<string>("");
+    const [showRecoverSetup, setShowRecoverSetup] = useState<boolean>(false);
+    const [searchClient, setSearchClient] = useState<SearchClient | null>(null);
     const [searchParams] = useSearchParams();
     const challengeDID = searchParams.get('challenge');
 
@@ -67,7 +71,7 @@ function App() {
         void init();
     }, []);
 
-    const getSearchClient = async () => {
+    const getSearchClient = async (): Promise<SearchClient> => {
         if (searchClient) {
             return searchClient;
         }
@@ -77,7 +81,7 @@ function App() {
         return created;
     };
 
-    const buildKeymaster = async (wallet, passphrase) => {
+    const buildKeymaster = async (wallet: WalletBase, passphrase: string) => {
         const search = await getSearchClient();
         const instance = new Keymaster({gatekeeper, wallet, cipher, search, passphrase});
 
@@ -98,13 +102,13 @@ function App() {
         setIsReady(true);
     };
 
-    async function rebuildKeymaster(passphrase) {
+    async function rebuildKeymaster(passphrase: string) {
         const walletWeb = new WalletWeb();
         const walletCached = new WalletCache(walletWeb);
         await buildKeymaster(walletCached, passphrase);
     }
 
-    async function handlePassphraseSubmit(passphrase) {
+    async function handlePassphraseSubmit(passphrase: string) {
         setPassphraseErrorText("");
 
         const walletWeb = new WalletWeb();
@@ -158,7 +162,7 @@ function App() {
         setShowResetConfirm(false);
     }
 
-    async function handleResetPassphraseSubmit(newPassphrase) {
+    async function handleResetPassphraseSubmit(newPassphrase: string) {
         try {
             const walletWeb = new WalletWeb();
             const search = await getSearchClient();
@@ -171,13 +175,13 @@ function App() {
         }
     }
 
-    async function handleWalletUploadFile(uploaded) {
-        setPendingWallet(uploaded);
-
+    async function handleWalletUploadFile(uploaded: unknown) {
         if (isLegacyV0(uploaded)) {
+            setPendingWallet(uploaded);
             setUploadAction('upload-plain-v0');
             setModalAction('set-passphrase');
         } else if (isV1WithEnc(uploaded)) {
+            setPendingWallet(uploaded);
             setUploadAction('upload-enc-v1');
             setModalAction('decrypt');
         } else {
@@ -191,7 +195,7 @@ function App() {
         setPassphraseErrorText("");
     }
 
-    async function handleRecoverMnemonicSubmit(mnemonic) {
+    async function handleRecoverMnemonicSubmit(mnemonic: string) {
         setMnemonicErrorText("");
         try {
             const walletWeb = new WalletWeb();
@@ -205,6 +209,9 @@ function App() {
             }
 
             const hdkey = cipher.generateHDKey(mnemonic);
+            if (!hdkey.privateKey) {
+                throw new Error('Mnemonic did not produce a private key.');
+            }
             const { publicJwk, privateJwk } = cipher.generateJwk(hdkey.privateKey);
             cipher.decryptMessage(publicJwk, privateJwk, stored.enc);
 
@@ -216,7 +223,7 @@ function App() {
         }
     }
 
-    async function handleRecoverPassphraseSubmit(newPassphrase) {
+    async function handleRecoverPassphraseSubmit(newPassphrase: string) {
         if (!recoveredMnemonic) {
             return;
         }
