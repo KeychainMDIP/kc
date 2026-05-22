@@ -30,8 +30,8 @@ Then edit the `.env` file to set your desired configuration:
 # The port your explorer will run on
 VITE_EXPLORER_PORT=4000
 
-# URL where your Gatekeeper service is running
-VITE_GATEKEEPER_URL=http://localhost:4224
+# URL where your search server is running
+VITE_SEARCH_SERVER=http://localhost:4002
 
 # Logging for the explorer server
 KC_LOG_LEVEL=info
@@ -64,4 +64,3 @@ npm run build
 ## Contributing
 
 Feel free to open issues or submit pull requests for improvements and new features.
-

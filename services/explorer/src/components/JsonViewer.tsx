@@ -15,27 +15,22 @@ import {
     Typography,
     IconButton
 } from "@mui/material";
-import {
-    GatekeeperInterface,
-    MdipDocument
-} from "@mdip/gatekeeper/types";
 import ContentCopy from "@mui/icons-material/ContentCopy";
-import { fetchCachedDid, handleCopyDID } from '../shared/utilities.js';
-import axios from "axios";
+import type { ExplorerDIDDocument } from '../shared/utilities.js';
+import {
+    fetchDIDDocument,
+    handleCopyDID,
+    searchDIDDocuments,
+} from '../shared/utilities.js';
 import { useSearchParams } from "react-router-dom";
-
-const searchServerURL = import.meta.env.VITE_SEARCH_SERVER || "http://localhost:4002";
-const VERSION = '/api/v1';
 
 function JsonViewer(
     {
-        gatekeeper,
         setError,
     }: {
-        gatekeeper: GatekeeperInterface;
         setError: (error: any) => void;
     }) {
-    const [aliasDocs, setAliasDocs] = useState<MdipDocument | undefined>(undefined);
+    const [aliasDocs, setAliasDocs] = useState<ExplorerDIDDocument | undefined>(undefined);
     const [aliasDocsVersion, setAliasDocsVersion] = useState<number>(1);
     const [aliasDocsVersionMax, setAliasDocsVersionMax] = useState<number>(1);
     const [aliasDocsVersions, setAliasDocsVersions] = useState<number[] | undefined>(undefined);
@@ -67,8 +62,12 @@ function JsonViewer(
             setAliasDocs(undefined);
             setFormDid(did);
 
-            const cachedDocs = await fetchCachedDid(did);
-            const docs = (cachedDocs ?? await gatekeeper.resolveDID(did)) as MdipDocument;
+            const docs = await fetchDIDDocument(did);
+            if (!docs) {
+                setError("DID document not found.");
+                return;
+            }
+
             if (!docs.didDocumentMetadata) {
                 setError("Invalid DID");
                 return;
@@ -94,10 +93,7 @@ function JsonViewer(
             setFormDid(query);
             setSearchPage(0);
 
-            const response = await axios.get(`${searchServerURL}${VERSION}/search`, {
-                params: { q: query }
-            });
-            setSearchResults(response.data);
+            setSearchResults(await searchDIDDocuments(query));
         } catch (error: any) {
             setError(error);
         }
@@ -119,9 +115,14 @@ function JsonViewer(
     async function selectAliasDocsVersion(version: number) {
         try {
             setAliasDocsVersion(version);
-            const docs = await gatekeeper.resolveDID(currentDid, {
+            const docs = await fetchDIDDocument(currentDid, {
                 versionSequence: version,
             });
+            if (!docs) {
+                setError("DID version not found.");
+                return;
+            }
+
             setAliasDocs(docs);
         } catch (error: any) {
             setError(error);

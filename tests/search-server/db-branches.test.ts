@@ -6,9 +6,12 @@ import { setLogger } from '../../packages/common/src/logger.ts';
 import DIDsDbMemory from '../../services/search-server/src/db/json-memory.ts';
 import Sqlite from '../../services/search-server/src/db/sqlite.ts';
 import type {
+    BlockInfo,
     ChallengeReceiptRecord,
+    GatekeeperEvent,
     PublishedCredentialRecord,
 } from '../../services/search-server/src/types.ts';
+import { seedBlock, seedDID } from './db-seed.ts';
 
 const publishedCredentialA: PublishedCredentialRecord = {
     holderDid: 'did:test:holder-1',
@@ -40,6 +43,51 @@ const challengeReceipt: ChallengeReceiptRecord = {
     updatedAt: '2026-04-01T10:01:00.000Z',
 };
 
+const eventDid = 'did:test:event-storage';
+const didEventA: GatekeeperEvent = {
+    registry: 'local',
+    time: '2026-04-01T10:00:00.000Z',
+    ordinal: [0],
+    did: eventDid,
+    operation: {
+        type: 'create',
+        created: '2026-04-01T10:00:00.000Z',
+        mdip: {
+            version: 1,
+            type: 'agent',
+            registry: 'local',
+        },
+        publicJwk: {
+            kty: 'EC',
+            crv: 'secp256k1',
+            x: 'mock-x',
+            y: 'mock-y',
+        },
+    },
+};
+const didEventB: GatekeeperEvent = {
+    ...didEventA,
+    time: '2026-04-01T11:00:00.000Z',
+    operation: {
+        type: 'update',
+        did: eventDid,
+        doc: {
+            didDocument: { id: eventDid },
+            didDocumentData: { name: 'updated' },
+        },
+    },
+};
+const blockA: BlockInfo = {
+    height: 100,
+    hash: 'block-a',
+    time: 1775037600,
+};
+const blockB: BlockInfo = {
+    height: 101,
+    hash: 'block-b',
+    time: 1775041200,
+};
+
 beforeEach(() => {
     const logger = {
         child: jest.fn(),
@@ -54,21 +102,105 @@ beforeEach(() => {
 });
 
 describe('search DB branch behavior', () => {
+    async function exerciseSyncStorage(db: DIDsDbMemory | Sqlite): Promise<void> {
+        expect(await db.loadSyncState('cursor')).toBeNull();
+        await db.saveSyncState('cursor', '42');
+        expect(await db.loadSyncState('cursor')).toBe('42');
+        await db.saveSyncState('index.changes.cursor', '2026-04-01T12:00:00.000Z');
+        expect(await db.loadSyncState('index.changes.cursor')).toBe('2026-04-01T12:00:00.000Z');
+        await db.saveSyncState('cursor', null);
+        expect(await db.loadSyncState('cursor')).toBeNull();
+
+        await seedDID(db, eventDid, { events: [didEventA] });
+        expect(await db.getDIDEvents(eventDid)).toStrictEqual([didEventA]);
+        const unchanged = await db.applyIndexPage({
+            dids: [{ did: eventDid, events: [didEventA] }],
+            blocks: [],
+        });
+        expect(unchanged.changedDids).toStrictEqual([]);
+        await seedDID(db, eventDid, { events: [didEventA, didEventB] });
+        expect(await db.getDIDEvents(eventDid)).toStrictEqual([didEventA, didEventB]);
+        expect(await db.listEvents({
+            registry: 'local',
+            updatedAfter: didEventA.time,
+            limit: 1,
+            offset: 0,
+        })).toStrictEqual({
+            total: 1,
+            events: [{
+                did: eventDid,
+                registry: didEventB.registry,
+                time: didEventB.time,
+                event: didEventB,
+            }],
+        });
+
+        await seedBlock(db, 'TFTC', blockA);
+        await seedBlock(db, 'TFTC', blockB);
+        expect(await db.getBlock('TFTC')).toStrictEqual(blockB);
+        expect(await db.getBlock('TFTC', 100)).toStrictEqual(blockA);
+        expect(await db.getBlock('TFTC', 'block-b')).toStrictEqual(blockB);
+        expect(await db.getBlock('TFTC', 'missing')).toBeNull();
+
+        await seedDID(db, eventDid, {
+            doc: { didDocument: { id: eventDid } },
+            publishedCredentials: [{ ...publishedCredentialA, holderDid: eventDid }],
+            challengeReceipts: [{ ...challengeReceipt, receiptDid: eventDid }],
+        });
+        await seedDID(db, eventDid, { removed: true });
+
+        expect(await db.getDID(eventDid)).toBeNull();
+        expect(await db.getDIDEvents(eventDid)).toStrictEqual([]);
+        expect(await db.listPublishedCredentials({ subjectDid: publishedCredentialA.subjectDid })).toStrictEqual({
+            total: 0,
+            credentials: [],
+        });
+        expect(await db.listChallengeReceipts({ receiptDid: eventDid })).toStrictEqual({
+            total: 0,
+            receipts: [],
+        });
+    }
+
+    it('stores sync state, raw events, blocks, and clears projections in memory', async () => {
+        const db = new DIDsDbMemory();
+        await db.connect();
+
+        try {
+            await exerciseSyncStorage(db);
+        }
+        finally {
+            await db.disconnect();
+        }
+    });
+
+    it('stores sync state, raw events, blocks, and clears projections in sqlite', async () => {
+        const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'search-server-sync-storage-'));
+        const db = await Sqlite.create('sync-storage.db', tempDir);
+
+        try {
+            await exerciseSyncStorage(db as Sqlite);
+        }
+        finally {
+            await db.disconnect();
+            fs.rmSync(tempDir, { recursive: true, force: true });
+        }
+    });
+
     it('exercises memory defaults, tie breakers, and non-matching wildcard queries', async () => {
         const db = new DIDsDbMemory();
         await db.connect();
 
         try {
-            await db.replacePublishedCredentials(publishedCredentialA.holderDid, [publishedCredentialA]);
-            await db.replacePublishedCredentials(publishedCredentialB.holderDid, [publishedCredentialB]);
-            await db.replaceChallengeReceipts(challengeReceipt.receiptDid, [challengeReceipt]);
-            await db.storeDID('did:test:wildcards', {
+            await seedDID(db, publishedCredentialA.holderDid, { publishedCredentials: [publishedCredentialA] });
+            await seedDID(db, publishedCredentialB.holderDid, { publishedCredentials: [publishedCredentialB] });
+            await seedDID(db, challengeReceipt.receiptDid, { challengeReceipts: [challengeReceipt] });
+            await seedDID(db, 'did:test:wildcards', { doc: {
                 didDocument: { id: 'did:test:wildcards' },
                 didDocumentData: {
                     notArray: 'value',
                     notObject: ['value'],
                 },
-            });
+            } });
 
             expect(await db.getPublishedCredentialCountsBySchema()).toStrictEqual([
                 { schemaDid: publishedCredentialA.schemaDid, count: 1 },
@@ -117,12 +249,12 @@ describe('search DB branch behavior', () => {
         const db = await Sqlite.create('branches.db', tempDir);
 
         try {
-            await db.replacePublishedCredentials(publishedCredentialA.holderDid, [publishedCredentialA]);
-            await db.replacePublishedCredentials(publishedCredentialB.holderDid, [publishedCredentialB]);
-            await db.replaceChallengeReceipts(challengeReceipt.receiptDid, [challengeReceipt]);
-            await db.storeDID('did:test:path', {
+            await seedDID(db, publishedCredentialA.holderDid, { publishedCredentials: [publishedCredentialA] });
+            await seedDID(db, publishedCredentialB.holderDid, { publishedCredentials: [publishedCredentialB] });
+            await seedDID(db, challengeReceipt.receiptDid, { challengeReceipts: [challengeReceipt] });
+            await seedDID(db, 'did:test:path', { doc: {
                 didDocument: { id: 'did:test:path' },
-            });
+            } });
 
             expect((await db.listPublishedCredentials()).total).toBe(2);
             expect((await db.listPublishedCredentials({ revealed: true })).credentials).toStrictEqual([publishedCredentialA]);

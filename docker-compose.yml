@@ -1,10 +1,17 @@
 services:
   mongodb:
     image: mongo:8.0
+    command: [ "mongod", "--replSet", "rs0", "--bind_ip_all" ]
     volumes:
       - ./data/mongodb:/data/db
     ports:
       - 127.0.0.1:27017:27017
+    healthcheck:
+      test: [ "CMD-SHELL", "mongosh --quiet --eval \"try { if (rs.status().ok === 1) quit(0); } catch (err) { try { rs.initiate({_id: 'rs0', members: [{ _id: 0, host: 'mongodb:27017' }] }); } catch (initErr) {} } try { quit(rs.status().ok === 1 ? 0 : 1); } catch (err) { quit(1); }\"" ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
 
   redis:
     image: redis:8.0.4-alpine
@@ -65,7 +72,7 @@ services:
       - KC_GATEKEEPER_RATE_LIMIT_WHITELIST=${KC_GATEKEEPER_RATE_LIMIT_WHITELIST}
       - KC_GATEKEEPER_RATE_LIMIT_SKIP_PATHS=${KC_GATEKEEPER_RATE_LIMIT_SKIP_PATHS}
       - KC_LOG_LEVEL=${KC_LOG_LEVEL}
-      - KC_MONGODB_URL=mongodb://mongodb:27017
+      - KC_MONGODB_URL=mongodb://mongodb:27017/?replicaSet=rs0
       - KC_REDIS_URL=redis://redis:6379
       - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}:${KC_POSTGRES_PASSWORD:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
       - KC_IPFS_ENABLE=${KC_IPFS_ENABLE}
@@ -78,9 +85,12 @@ services:
     ports:
       - ${KC_GATEKEEPER_PORT}:4224
     depends_on:
-      - mongodb
-      - redis
-      - postgres
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      postgres:
+        condition: service_started
 
   keymaster:
     build:
@@ -106,7 +116,7 @@ services:
       - KC_KEYMASTER_RATE_LIMIT_WHITELIST=${KC_KEYMASTER_RATE_LIMIT_WHITELIST}
       - KC_KEYMASTER_RATE_LIMIT_SKIP_PATHS=${KC_KEYMASTER_RATE_LIMIT_SKIP_PATHS}
       - KC_LOG_LEVEL=${KC_LOG_LEVEL}
-      - KC_MONGODB_URL=mongodb://mongodb:27017
+      - KC_MONGODB_URL=mongodb://mongodb:27017/?replicaSet=rs0
       - KC_REDIS_URL=redis://redis:6379
       - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}:${KC_POSTGRES_PASSWORD:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
     volumes:
@@ -115,11 +125,16 @@ services:
     ports:
       - ${KC_KEYMASTER_PORT}:4226
     depends_on:
-      - gatekeeper
-      - redis
-      - mongodb
-      - postgres
-      - search-server
+      gatekeeper:
+        condition: service_started
+      redis:
+        condition: service_started
+      mongodb:
+        condition: service_healthy
+      postgres:
+        condition: service_started
+      search-server:
+        condition: service_started
 
   hypr-mediator:
     build:
@@ -164,7 +179,7 @@ services:
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
       - KC_KEYMASTER_URL=http://keymaster:4226
-      - KC_MONGODB_URL=mongodb://mongodb:27017
+      - KC_MONGODB_URL=mongodb://mongodb:27017/?replicaSet=rs0
       - KC_REDIS_URL=redis://redis:6379
       - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}:${KC_POSTGRES_PASSWORD:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
       - KC_NODE_ID=${KC_NODE_ID}
@@ -208,7 +223,7 @@ services:
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
       - KC_KEYMASTER_URL=http://keymaster:4226
-      - KC_MONGODB_URL=mongodb://mongodb:27017
+      - KC_MONGODB_URL=mongodb://mongodb:27017/?replicaSet=rs0
       - KC_REDIS_URL=redis://redis:6379
       - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}:${KC_POSTGRES_PASSWORD:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
       - KC_NODE_ID=${KC_NODE_ID}
@@ -250,7 +265,7 @@ services:
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
       - KC_KEYMASTER_URL=http://keymaster:4226
-      - KC_MONGODB_URL=mongodb://mongodb:27017
+      - KC_MONGODB_URL=mongodb://mongodb:27017/?replicaSet=rs0
       - KC_REDIS_URL=redis://redis:6379
       - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}:${KC_POSTGRES_PASSWORD:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
       - KC_NODE_ID=${KC_NODE_ID}
@@ -294,7 +309,7 @@ services:
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
       - KC_KEYMASTER_URL=http://keymaster:4226
-      - KC_MONGODB_URL=mongodb://mongodb:27017
+      - KC_MONGODB_URL=mongodb://mongodb:27017/?replicaSet=rs0
       - KC_REDIS_URL=redis://redis:6379
       - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}:${KC_POSTGRES_PASSWORD:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
       - KC_NODE_ID=${KC_NODE_ID}
@@ -331,7 +346,7 @@ services:
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
       - KC_KEYMASTER_URL=http://keymaster:4226
-      - KC_MONGODB_URL=mongodb://mongodb:27017
+      - KC_MONGODB_URL=mongodb://mongodb:27017/?replicaSet=rs0
       - KC_REDIS_URL=redis://redis:6379
       - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}:${KC_POSTGRES_PASSWORD:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
       - KC_NODE_ID=${KC_NODE_ID}
@@ -384,14 +399,13 @@ services:
     image: keychainmdip/explorer
     environment:
       - VITE_EXPLORER_PORT=4000
-      - VITE_GATEKEEPER_URL=http://localhost:4224
       - VITE_SEARCH_SERVER=http://localhost:${SEARCH_SERVER_PORT:-4002}
       - VITE_OPERATION_NETWORKS=hyperswarm,local,TFTC,TBTC
       - KC_LOG_LEVEL=${KC_LOG_LEVEL}
     ports:
       - "4000:4000"
     depends_on:
-      - gatekeeper
+      - search-server
 
   search-server:
     build:
@@ -410,7 +424,7 @@ services:
       - SEARCH_SERVER_RATE_LIMIT_WINDOW_UNIT=${SEARCH_SERVER_RATE_LIMIT_WINDOW_UNIT:-minute}
       - SEARCH_SERVER_RATE_LIMIT_MAX_REQUESTS=${SEARCH_SERVER_RATE_LIMIT_MAX_REQUESTS:-600}
       - SEARCH_SERVER_RATE_LIMIT_WHITELIST=${SEARCH_SERVER_RATE_LIMIT_WHITELIST:-}
-      - SEARCH_SERVER_RATE_LIMIT_SKIP_PATHS=${SEARCH_SERVER_RATE_LIMIT_SKIP_PATHS:-/api/v1/ready}
+      - SEARCH_SERVER_RATE_LIMIT_SKIP_PATHS=${SEARCH_SERVER_RATE_LIMIT_SKIP_PATHS:-/api/v1/ready,/api/v1/status}
       - KC_LOG_LEVEL=${KC_LOG_LEVEL}
     volumes:
       - ./data:/app/search-server/data

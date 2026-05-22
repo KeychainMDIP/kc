@@ -1,3 +1,17 @@
+import type {
+    BlockId,
+    BlockInfo,
+    GatekeeperEvent,
+    IndexExportBlockRecord,
+} from '@mdip/gatekeeper/types';
+
+export type {
+    BlockId,
+    BlockInfo,
+    GatekeeperEvent,
+    IndexExportBlockRecord,
+};
+
 export interface PublishedCredentialRecord {
     holderDid: string;
     credentialDid: string;
@@ -79,21 +93,64 @@ export interface ChallengeReceiptUsageResult {
     usage: ChallengeReceiptUsageRecord[];
 }
 
+export interface DIDEventRecord {
+    did: string;
+    registry: string;
+    time: string;
+    event: GatekeeperEvent;
+}
+
+export interface DIDEventListOptions {
+    registry?: string;
+    updatedAfter?: string;
+    updatedBefore?: string;
+    limit?: number;
+    offset?: number;
+}
+
+export interface DIDEventListResult {
+    total: number;
+    events: DIDEventRecord[];
+}
+
+export interface DIDProjectionUpdate {
+    did: string;
+    events: GatekeeperEvent[];
+    removed?: boolean;
+    doc?: object;
+    publishedCredentials?: PublishedCredentialRecord[];
+    challengeReceipts?: ChallengeReceiptRecord[];
+}
+
+export interface ApplyIndexPageOptions {
+    dids: DIDProjectionUpdate[];
+    blocks: IndexExportBlockRecord[];
+    syncStateUpdates?: Record<string, string | null>;
+}
+
+export interface ApplyIndexPageResult {
+    changedDids: string[];
+    storedBlocks: number;
+    removedBlocks: number;
+    removedDids: number;
+}
+
 export interface DIDsDb {
     connect(): Promise<void>;
     disconnect(): Promise<void>;
 
-    loadUpdatedAfter(): Promise<string | null>;
-    saveUpdatedAfter(timestamp: string): Promise<void>;
+    loadSyncState(key: string): Promise<string | null>;
+    saveSyncState(key: string, value: string | null): Promise<void>;
 
-    storeDID(did: string, doc: object): Promise<void>;
-    replacePublishedCredentials(holderDid: string, records: PublishedCredentialRecord[]): Promise<void>;
-    replaceChallengeReceipts(receiptDid: string, records: ChallengeReceiptRecord[]): Promise<void>;
+    getDIDEvents(did: string): Promise<GatekeeperEvent[]>;
+    getBlock(registry: string, block?: BlockId): Promise<BlockInfo | null>;
+    applyIndexPage(page: ApplyIndexPageOptions): Promise<ApplyIndexPageResult>;
     getDID(did: string): Promise<object | null>;
     getPublishedCredentialCountsBySchema(): Promise<PublishedCredentialSchemaCount[]>;
     listPublishedCredentials(options?: PublishedCredentialListOptions): Promise<PublishedCredentialListResult>;
     listChallengeReceipts(options?: ChallengeReceiptListOptions): Promise<ChallengeReceiptListResult>;
     getChallengeReceiptUsage(options?: ChallengeReceiptUsageOptions): Promise<ChallengeReceiptUsageResult>;
+    listEvents(options?: DIDEventListOptions): Promise<DIDEventListResult>;
     searchDocs(q: string): Promise<string[]>;
     queryDocs(where: Record<string, unknown>): Promise<string[]>;
     wipeDb(): Promise<void>;

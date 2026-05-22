@@ -12,6 +12,8 @@ import {
     ResolveDIDOptions,
     GetDIDOptions,
     ImportBatchResult,
+    IndexExportRequest,
+    IndexExportResponse,
     ProcessEventsResult,
     VerifyDbResult,
 } from './types.js';
@@ -239,6 +241,16 @@ export default class GatekeeperClient implements GatekeeperInterface {
     async importDIDs(dids: GatekeeperEvent[][]): Promise<ImportBatchResult> {
         try {
             const response = await this.axios.post(`${this.API}/dids/import`, dids);
+            return response.data;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async exportIndex(request: IndexExportRequest): Promise<IndexExportResponse> {
+        try {
+            const response = await this.axios.post(`${this.API}/index/export`, request);
             return response.data;
         }
         catch (error) {

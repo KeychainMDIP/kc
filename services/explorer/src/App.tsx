@@ -3,7 +3,6 @@ import JsonViewer from "./components/JsonViewer.js";
 import Events from "./components/Events.js";
 import Credentials from "./components/Credentials.js";
 import ChallengeReceipts from "./components/ChallengeReceipts.js";
-import GatekeeperClient from '@mdip/gatekeeper/client';
 import { createTheme, ThemeProvider } from "@mui/material/styles";
 import {
     Alert,
@@ -14,10 +13,13 @@ import {
     Typography,
 } from "@mui/material";
 import Header from "./components/Header.js";
-import { GatekeeperEvent } from "@mdip/gatekeeper/types";
 import { Routes, Route, useNavigate, Navigate } from 'react-router-dom';
-
-const gatekeeper = new GatekeeperClient();
+import type { ExplorerDIDEvent } from "./shared/utilities.js";
+import {
+    fetchSearchServerEvents,
+    fetchSearchServerStatus,
+    isSearchServerReady,
+} from "./shared/utilities.js";
 
 interface SnackbarState {
     open: boolean;
@@ -25,17 +27,16 @@ interface SnackbarState {
     severity: AlertColor;
 }
 
-const gatekeeperUrl = import.meta.env.VITE_GATEKEEPER_URL || 'http://localhost:4224';
-
 function App() {
     const [isReady, setIsReady] = useState<boolean>(false);
+    const [readinessMessage, setReadinessMessage] = useState<string>("Waiting for Search Server...");
     const [snackbar, setSnackbar] = useState<SnackbarState>({
         open: false,
         message: "",
         severity: "warning",
     });
     const [darkMode, setDarkMode] = useState<boolean>(false);
-    const [events, setEvents] = useState<GatekeeperEvent[]>([]);
+    const [events, setEvents] = useState<ExplorerDIDEvent[]>([]);
     const [total, setTotal] = useState<number>(0);
     const [eventCount, setEventCount] = useState<number>(50);
     const [page, setPage] = useState<number>(0);
@@ -90,25 +91,49 @@ function App() {
     };
 
     useEffect(() => {
-        let interval: NodeJS.Timeout;
+        let cancelled = false;
+        let interval: ReturnType<typeof setInterval> | undefined;
 
-        async function init() {
-            await gatekeeper.connect({
-                url: gatekeeperUrl,
-                waitUntilReady: true,
-                intervalSeconds: 5,
-                chatty: true,
-            });
+        async function checkReadiness() {
+            try {
+                const status = await fetchSearchServerStatus();
 
-            interval = setInterval(async () => {
-                if (await gatekeeper.isReady()) {
-                    setIsReady(true);
-                    clearInterval(interval);
+                if (cancelled) {
+                    return;
                 }
-            }, 500);
+
+                if (isSearchServerReady(status)) {
+                    setIsReady(true);
+                    if (interval) {
+                        clearInterval(interval);
+                    }
+                    return;
+                }
+
+                setIsReady(false);
+                setReadinessMessage(
+                    status.sync?.lastSyncError
+                        ? "Search Server sync error. Retrying..."
+                        : "Waiting for Search Server sync..."
+                );
+            }
+            catch {
+                if (!cancelled) {
+                    setIsReady(false);
+                    setReadinessMessage("Waiting for Search Server...");
+                }
+            }
         }
 
-        init();
+        checkReadiness();
+        interval = setInterval(checkReadiness, 5000);
+
+        return () => {
+            cancelled = true;
+            if (interval) {
+                clearInterval(interval);
+            }
+        };
     }, []);
 
 
@@ -118,7 +143,7 @@ function App() {
         }
 
         let isMounted = true;
-        let intervalId: NodeJS.Timeout | undefined;
+        let intervalId: ReturnType<typeof setInterval> | undefined;
 
         async function fetchRecent() {
             try {
@@ -135,26 +160,23 @@ function App() {
                     updatedBefore = toDate.toISOString();
                 }
 
-                const dids = (await gatekeeper.getDIDs({
+                const result = await fetchSearchServerEvents({
+                    registry: registry === "All" ? undefined : registry,
                     updatedAfter,
-                    updatedBefore
-                })) as string[];
-                let allEvents = (await gatekeeper.exportDIDs(dids)).flat();
-
-                if (registry !== "All") {
-                    allEvents = allEvents.filter((evt) => evt.registry === registry);
-                }
-
-                allEvents.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
-
-                const from = page * eventCount;
-                const to = from + eventCount;
-                const pageEvents = allEvents.slice(from, to);
-                const totalCount = allEvents.length;
+                    updatedBefore,
+                    limit: eventCount,
+                    offset: page * eventCount,
+                });
+                const pageEvents = result.events.map(({ did, registry, time, event }) => ({
+                    ...event,
+                    did: event.did ?? did,
+                    registry: event.registry ?? registry,
+                    time: event.time ?? time,
+                }));
 
                 if (isMounted) {
                     setEvents(pageEvents);
-                    setTotal(totalCount);
+                    setTotal(result.total);
                 }
             } catch (err: any) {
                 if (isMounted) {
@@ -171,10 +193,10 @@ function App() {
             isMounted = false;
             if (intervalId) clearInterval(intervalId);
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isReady, eventCount, page, registry, dateFrom, dateTo]);
+    }, [isReady, eventCount, page, registry, dateFrom, dateTo, setError]);
 
     const totalPages = Math.ceil(total / eventCount);
+    const waiting = <Typography sx={{ mt: 3 }}>{readinessMessage}</Typography>;
 
     return (
         <ThemeProvider theme={theme}>
@@ -217,11 +239,10 @@ function App() {
                                 path="/search"
                                 element={isReady ? (
                                     <JsonViewer
-                                        gatekeeper={gatekeeper}
                                         setError={setError}
                                     />
                                 ) : (
-                                    <Typography sx={{ mt: 3 }}>Waiting for Gatekeeper...</Typography>
+                                    waiting
                                 )}
                             />
                             <Route
@@ -244,26 +265,28 @@ function App() {
                                         setError={setError}
                                     />
                                 ) : (
-                                    <Typography sx={{ mt: 3 }}>Waiting for Gatekeeper...</Typography>
+                                    waiting
                                 )}
                             />
                             <Route
                                 path="/credentials"
-                                element={
+                                element={isReady ? (
                                     <Credentials
-                                        gatekeeper={gatekeeper}
-                                        isReady={isReady}
                                         setError={setError}
                                     />
-                                }
+                                ) : (
+                                    waiting
+                                )}
                             />
                             <Route
                                 path="/receipts"
-                                element={
+                                element={isReady ? (
                                     <ChallengeReceipts
                                         setError={setError}
                                     />
-                                }
+                                ) : (
+                                    waiting
+                                )}
                             />
                             <Route
                                 path="*"

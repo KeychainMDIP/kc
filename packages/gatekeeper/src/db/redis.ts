@@ -1,7 +1,23 @@
 import { Redis } from 'ioredis';
 import { InvalidDIDError } from '@mdip/common/errors';
 import { childLogger } from '@mdip/common/logger';
-import { GatekeeperDb, GatekeeperEvent, Operation, BlockId, BlockInfo } from '../types.js'
+import {
+    GatekeeperDb,
+    GatekeeperEvent,
+    Operation,
+    BlockId,
+    BlockInfo,
+    IndexChangeRecord,
+    IndexExportSnapshotOptions,
+    IndexExportResponse,
+    IndexExportChangesOptions
+} from '../types.js'
+import {
+    buildIndexChangesResponse,
+    buildIndexSnapshotResponseFromPageKeys,
+    normalizeIndexExportLimit,
+    parseIndexExportCursor
+} from './index-export.js';
 
 const REDIS_NOT_STARTED_ERROR = 'Redis not started. Call start() first.';
 const log = childLogger({ service: 'gatekeeper-db', module: 'redis' });
@@ -9,14 +25,6 @@ const log = childLogger({ service: 'gatekeeper-db', module: 'redis' });
 export default class DbRedis implements GatekeeperDb {
     private readonly dbName: string;
     private redis: Redis | null;
-
-    private _lock: Promise<void> = Promise.resolve();
-    private runExclusive<T>(fn: () => Promise<T> | T): Promise<T> {
-        const run = async () => await fn();
-        const chained = this._lock.then(run, run);
-        this._lock = chained.then(() => undefined, () => undefined);
-        return chained;
-    }
 
     constructor(dbName: string) {
         this.dbName = dbName;
@@ -26,6 +34,20 @@ export default class DbRedis implements GatekeeperDb {
     async start(): Promise<void> {
         const url = process.env.KC_REDIS_URL || 'redis://localhost:6379';
         this.redis = new Redis(url);
+
+        try {
+            await this.ensureDidIndex();
+        }
+        catch (error) {
+            try {
+                await this.redis.quit();
+            }
+            catch {
+                // Preserve the migration error.
+            }
+            this.redis = null;
+            throw error;
+        }
     }
 
     async stop(): Promise<void> {
@@ -57,15 +79,32 @@ export default class DbRedis implements GatekeeperDb {
         return totalDeleted;
     }
 
-    addEvent(did: string, event: GatekeeperEvent): Promise<number> {
+    async addEvent(did: string, event: GatekeeperEvent): Promise<number> {
         if (!this.redis) {
             throw new Error(REDIS_NOT_STARTED_ERROR)
         }
 
         const key = this.didKey(did);
+        const id = this.didId(did);
         const val = JSON.stringify(event);
+        const script = `
+            ${this.checkRedisTypesScript(['list', 'string', 'zset', 'zset'])}
+            local change = cjson.decode(ARGV[2])
+            local seq = redis.call('INCR', KEYS[2])
+            local count = redis.call('RPUSH', KEYS[1], ARGV[1])
+            change.seq = seq
+            redis.call('ZADD', KEYS[3], seq, cjson.encode(change))
+            redis.call('ZADD', KEYS[4], 0, ARGV[3])
+            return count
+        `;
 
-        return this.redis.rpush(key, val);
+        const result = await this.evalAtomicMutation(
+            script,
+            [key, this.indexSeqKey(), this.indexChangesKey(), this.didIndexKey()],
+            [val, JSON.stringify({ kind: 'did', did }), id]
+        );
+
+        return Number(result ?? 0);
     }
 
     async setEvents(did: string, events: GatekeeperEvent[]): Promise<void> {
@@ -74,18 +113,41 @@ export default class DbRedis implements GatekeeperDb {
         }
 
         const key = this.didKey(did);
+        const id = this.didId(did);
         const payloads = events.map(e => JSON.stringify(e));
 
-        await this.runExclusive(async () => {
-            const multi = this.redis!.multi().del(key);
-            if (payloads.length) {
-                multi.rpush(key, ...payloads);
-            }
-            await multi.exec();
-        });
+        const script = `
+            ${this.checkRedisTypesScript(['list', 'string', 'zset', 'zset'])}
+            local count = tonumber(ARGV[1])
+            if count == nil then
+                error('invalid event count')
+            end
+            local change = cjson.decode(ARGV[count + 2])
+            local id = ARGV[count + 3]
+            local seq = redis.call('INCR', KEYS[2])
+            redis.call('DEL', KEYS[1])
+            for i = 1, count do
+                redis.call('RPUSH', KEYS[1], ARGV[i + 1])
+            end
+            change.seq = seq
+            redis.call('ZADD', KEYS[3], seq, cjson.encode(change))
+            redis.call('ZADD', KEYS[4], 0, id)
+            return count
+        `;
+
+        await this.evalAtomicMutation(
+            script,
+            [key, this.indexSeqKey(), this.indexChangesKey(), this.didIndexKey()],
+            [
+                payloads.length.toString(),
+                ...payloads,
+                JSON.stringify({ kind: 'did', did }),
+                id,
+            ]
+        );
     }
 
-    private didKey(did: string): string {
+    private didId(did: string): string {
         if (!did) {
             throw new InvalidDIDError();
         }
@@ -93,7 +155,111 @@ export default class DbRedis implements GatekeeperDb {
         if (!id) {
             throw new InvalidDIDError();
         }
-        return `${this.dbName}/dids/${id}`;
+        return id;
+    }
+
+    private didKey(did: string): string {
+        return `${this.dbName}/dids/${this.didId(did)}`;
+    }
+
+    private indexSeqKey(): string {
+        return `${this.dbName}/index/seq`;
+    }
+
+    private indexChangesKey(): string {
+        return `${this.dbName}/index/changes/zset`;
+    }
+
+    private didIndexKey(): string {
+        return `${this.dbName}/index/dids`;
+    }
+
+    private didIndexRebuildKey(): string {
+        return `${this.didIndexKey()}:rebuild`;
+    }
+
+    private assertStarted(): Redis {
+        if (!this.redis) {
+            throw new Error(REDIS_NOT_STARTED_ERROR);
+        }
+
+        return this.redis;
+    }
+
+    private extractDidIdFromKey(key: string): string | null {
+        const prefix = `${this.dbName}/dids/`;
+
+        if (!key.startsWith(prefix)) {
+            return null;
+        }
+
+        const id = key.slice(prefix.length);
+        return id.length > 0 && !id.includes('/')
+            ? id
+            : null;
+    }
+
+    private async ensureDidIndex(): Promise<void> {
+        const redis = this.assertStarted();
+        const indexKey = this.didIndexKey();
+        const rebuildKey = this.didIndexRebuildKey();
+        const indexType = await redis.type(indexKey);
+
+        if (indexType === 'zset') {
+            return;
+        }
+
+        if (indexType !== 'none') {
+            throw new Error(`Unsupported Redis DID index key type for ${indexKey}: ${indexType}`);
+        }
+
+        await redis.del(rebuildKey);
+
+        let hasDids = false;
+        let cursor = '0';
+        do {
+            const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', `${this.dbName}/dids/*`, 'COUNT', 1000);
+            cursor = nextCursor;
+
+            for (const key of keys) {
+                const id = this.extractDidIdFromKey(key);
+
+                if (id) {
+                    hasDids = true;
+                    await redis.zadd(rebuildKey, 0, id);
+                }
+            }
+        } while (cursor !== '0');
+
+        if (!hasDids) {
+            await redis.del(rebuildKey);
+            return;
+        }
+
+        const published = await redis.renamenx(rebuildKey, indexKey);
+
+        if (published === 0) {
+            await redis.del(rebuildKey);
+
+            const publishedType = await redis.type(indexKey);
+            if (publishedType !== 'zset') {
+                throw new Error(`Unsupported Redis DID index key type for ${indexKey}: ${publishedType}`);
+            }
+        }
+    }
+
+    private async evalAtomicMutation(script: string, keys: string[], args: string[]): Promise<unknown> {
+        const redis = this.assertStarted();
+        return redis.eval(script, keys.length, ...keys, ...args);
+    }
+
+    private checkRedisTypesScript(expectedTypes: string[]): string {
+        return expectedTypes.map((expectedType, index) => `
+            local type${index + 1} = redis.call('TYPE', KEYS[${index + 1}]).ok
+            if type${index + 1} ~= 'none' and type${index + 1} ~= '${expectedType}' then
+                error('WRONGTYPE key ' .. KEYS[${index + 1}] .. ' expected ${expectedType}')
+            end
+        `).join('\n');
     }
 
     async getEvents(did: string): Promise<GatekeeperEvent[]> {
@@ -114,7 +280,27 @@ export default class DbRedis implements GatekeeperDb {
             throw new InvalidDIDError();
         }
 
-        return this.redis.del(this.didKey(did));
+        const script = `
+            ${this.checkRedisTypesScript(['list', 'string', 'zset', 'zset'])}
+            local change = cjson.decode(ARGV[1])
+            local id = ARGV[2]
+            local removed = redis.call('DEL', KEYS[1])
+            redis.call('ZREM', KEYS[4], id)
+            if removed > 0 then
+                local seq = redis.call('INCR', KEYS[2])
+                change.seq = seq
+                redis.call('ZADD', KEYS[3], seq, cjson.encode(change))
+            end
+            return removed
+        `;
+
+        const removed = await this.evalAtomicMutation(
+            script,
+            [this.didKey(did), this.indexSeqKey(), this.indexChangesKey(), this.didIndexKey()],
+            [JSON.stringify({ kind: 'did', did, removed: true }), this.didId(did)]
+        );
+
+        return Number(removed ?? 0);
     }
 
     async getAllKeys(): Promise<string[]> {
@@ -122,9 +308,69 @@ export default class DbRedis implements GatekeeperDb {
             throw new Error(REDIS_NOT_STARTED_ERROR)
         }
 
-        const keys = await this.redis.keys(`${this.dbName}/dids/*`);
-        // Extract the id part from the key
-        return keys.map(key => key.split('/').pop() || '');
+        return this.redis.zrangebylex(this.didIndexKey(), '-', '+');
+    }
+
+    private async getIndexCheckpointCursor(): Promise<string> {
+        if (!this.redis) {
+            throw new Error(REDIS_NOT_STARTED_ERROR)
+        }
+
+        return await this.redis.get(this.indexSeqKey()) ?? '0';
+    }
+
+    async exportIndexSnapshot(_options?: IndexExportSnapshotOptions): Promise<IndexExportResponse> {
+        if (!this.redis) {
+            throw new Error(REDIS_NOT_STARTED_ERROR)
+        }
+
+        const options = _options ?? {};
+        const limit = normalizeIndexExportLimit(options.limit);
+        const cursor = options.cursor ?? null;
+        const checkpointCursor = options.checkpointCursor ?? await this.getIndexCheckpointCursor();
+        const min = cursor ? `(${cursor}` : '-';
+        const ids = await this.redis.zrangebylex(
+            this.didIndexKey(),
+            min,
+            '+',
+            'LIMIT',
+            0,
+            limit + 1
+        );
+
+        return buildIndexSnapshotResponseFromPageKeys(
+            ids,
+            id => this.getEvents(id),
+            options,
+            checkpointCursor
+        );
+    }
+
+    async exportIndexChanges(_options?: IndexExportChangesOptions): Promise<IndexExportResponse> {
+        if (!this.redis) {
+            throw new Error(REDIS_NOT_STARTED_ERROR)
+        }
+
+        const options = _options ?? {};
+        const afterSeq = parseIndexExportCursor(options.cursor);
+        const limit = normalizeIndexExportLimit(options.limit);
+        const payloads = await this.redis.zrangebyscore(
+            this.indexChangesKey(),
+            `(${afterSeq}`,
+            '+inf',
+            'LIMIT',
+            0,
+            limit + 1
+        );
+        const changes = payloads.map(payload => JSON.parse(payload) as IndexChangeRecord);
+        const page = changes.slice(0, limit);
+
+        return buildIndexChangesResponse(
+            page,
+            payloads.length > limit,
+            options,
+            did => this.getEvents(did)
+        );
     }
 
     private queueKey(registry: string): string {
@@ -229,15 +475,49 @@ export default class DbRedis implements GatekeeperDb {
         const blockKey = this.blockKey(registry, hash);
         const heightMapKey = this.heightMapKey(registry);
         const maxHeightKey = this.maxHeightKey(registry);
-        const maxHeight = await this.redis.get(maxHeightKey);
-        const currentMaxHeight = maxHeight ? parseInt(maxHeight) : -1;
 
         try {
-            await this.redis.multi()
-                .set(blockKey, JSON.stringify(blockInfo))
-                .hset(heightMapKey, height.toString(), hash)
-                .set(maxHeightKey, Math.max(height, currentMaxHeight))
-                .exec();
+            const script = `
+                ${this.checkRedisTypesScript(['string', 'hash', 'string', 'string', 'zset'])}
+                local block = cjson.decode(ARGV[1])
+                local height = tonumber(ARGV[2])
+                if height == nil then
+                    error('invalid block height')
+                end
+                local hash = ARGV[3]
+                local change = cjson.decode(ARGV[4])
+                local currentMaxHeight = redis.call('GET', KEYS[3])
+                if currentMaxHeight ~= false and tonumber(currentMaxHeight) == nil then
+                    error('invalid current max height')
+                end
+
+                redis.call('SET', KEYS[1], cjson.encode(block))
+                redis.call('HSET', KEYS[2], ARGV[2], hash)
+
+                if currentMaxHeight == false or height > tonumber(currentMaxHeight) then
+                    redis.call('SET', KEYS[3], ARGV[2])
+                end
+
+                local seq = redis.call('INCR', KEYS[4])
+                change.seq = seq
+                redis.call('ZADD', KEYS[5], seq, cjson.encode(change))
+                return 1
+            `;
+
+            await this.evalAtomicMutation(
+                script,
+                [blockKey, heightMapKey, maxHeightKey, this.indexSeqKey(), this.indexChangesKey()],
+                [
+                    JSON.stringify(blockInfo),
+                    height.toString(),
+                    hash,
+                    JSON.stringify({
+                        kind: 'block',
+                        registry,
+                        block: blockInfo,
+                    }),
+                ]
+            );
         } catch {
             return false
         }

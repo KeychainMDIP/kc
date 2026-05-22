@@ -1,6 +1,5 @@
 import express from 'express';
 import cors from 'cors';
-import { BlockList, isIP } from 'net';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { EventEmitter } from 'events';
@@ -12,45 +11,29 @@ import DbRedis from '@mdip/gatekeeper/db/redis';
 import DbSqlite from '@mdip/gatekeeper/db/sqlite';
 import DbMongo from '@mdip/gatekeeper/db/mongo';
 import DbPostgres from '@mdip/gatekeeper/db/postgres';
-import { CheckDIDsResult, ResolveDIDOptions, Operation } from '@mdip/gatekeeper/types';
+import {
+    CheckDIDsResult,
+    Operation,
+    ResolveDIDOptions,
+} from '@mdip/gatekeeper/types';
 import KuboClient from '@mdip/ipfs/kubo';
 import { childLogger } from '@mdip/common/logger';
 import ClusterClient from '@mdip/ipfs/cluster';
 import config from './config.js';
+import {
+    createWhitelistBlockList,
+    formatBytes,
+    formatDuration,
+    isRateLimitWhitelistedRequest,
+    logRequest,
+    parseIndexExportRequest,
+    rateLimitWindowUnits,
+    shouldSkipRateLimitPath,
+} from './helpers.js';
 
 EventEmitter.defaultMaxListeners = 100;
 
 const log = childLogger({ service: 'gatekeeper-server' });
-const rateLimitWindowUnits = {
-    second: 1000,
-    minute: 60 * 1000,
-    hour: 60 * 60 * 1000,
-} as const;
-
-function logRequest(req: express.Request, res: express.Response, next: express.NextFunction): void {
-    const startTime = process.hrtime.bigint();
-
-    res.on('finish', () => {
-        const durationMs = Number(process.hrtime.bigint() - startTime) / 1e6;
-        const contentLength = res.getHeader('content-length');
-        const size = typeof contentLength === 'number'
-            ? String(contentLength)
-            : (typeof contentLength === 'string' ? contentLength : '-');
-        const msg = `${req.method} ${req.originalUrl} ${res.statusCode} ${durationMs.toFixed(3)} ms - ${size}`;
-
-        if (res.statusCode >= 500) {
-            log.error(msg);
-        }
-        else if (res.statusCode >= 400) {
-            log.warn(msg);
-        }
-        else {
-            log.info(msg);
-        }
-    });
-
-    next();
-}
 
 const dbName = 'mdip';
 const db = (() => {
@@ -105,82 +88,6 @@ if (config.gatekeeperTrustProxy) {
     app.set('trust proxy', true);
 }
 
-function normalizeIp(ip: string): string {
-    const withoutZone = ip.split('%')[0];
-
-    if (withoutZone === '::1') {
-        return '127.0.0.1';
-    }
-
-    if (withoutZone.startsWith('::ffff:')) {
-        return withoutZone.slice(7);
-    }
-
-    return withoutZone;
-}
-
-function detectIpFamily(ip: string): 'ipv4' | 'ipv6' | null {
-    const version = isIP(ip);
-
-    if (version === 4) {
-        return 'ipv4';
-    }
-
-    if (version === 6) {
-        return 'ipv6';
-    }
-
-    return null;
-}
-
-function createWhitelistBlockList(whitelist: string[]): BlockList {
-    const blockList = new BlockList();
-
-    for (const entry of whitelist) {
-        const [rawAddress, rawPrefixLength] = entry.split('/');
-        const address = normalizeIp(rawAddress);
-        const family = detectIpFamily(address);
-
-        if (!family) {
-            log.warn(`Ignoring invalid rate limit whitelist entry: '${entry}'`);
-            continue;
-        }
-
-        if (rawPrefixLength !== undefined) {
-            const prefixLength = Number.parseInt(rawPrefixLength, 10);
-
-            if (!Number.isInteger(prefixLength)) {
-                log.warn(`Ignoring invalid rate limit CIDR entry: '${entry}'`);
-                continue;
-            }
-
-            try {
-                blockList.addSubnet(address, prefixLength, family);
-            }
-            catch {
-                log.warn(`Ignoring invalid rate limit CIDR entry: '${entry}'`);
-            }
-            continue;
-        }
-
-        try {
-            blockList.addAddress(address, family);
-        }
-        catch {
-            log.warn(`Ignoring invalid rate limit whitelist entry: '${entry}'`);
-        }
-    }
-
-    return blockList;
-}
-
-function shouldSkipRateLimitPath(req: express.Request): boolean {
-    const pathOnly = req.originalUrl.split('?')[0];
-
-    return config.rateLimitSkipPaths.some((skipPath: string) =>
-        pathOnly === skipPath || pathOnly.startsWith(`${skipPath}/`));
-}
-
 const whitelistBlockList = createWhitelistBlockList(config.rateLimitWhitelist);
 const rateLimitWindowUnit = config.rateLimitWindowUnit as keyof typeof rateLimitWindowUnits;
 const rateLimitWindowMs = config.rateLimitWindowValue * (rateLimitWindowUnits[rateLimitWindowUnit] ?? rateLimitWindowUnits.minute);
@@ -198,7 +105,7 @@ const apiRateLimiter = config.rateLimitEnabled
                 return true;
             }
 
-            if (shouldSkipRateLimitPath(req)) {
+            if (shouldSkipRateLimitPath(req, config.rateLimitSkipPaths)) {
                 return true;
             }
 
@@ -206,19 +113,7 @@ const apiRateLimiter = config.rateLimitEnabled
                 return false;
             }
 
-            const candidates = [req.ip, req.socket.remoteAddress]
-                .filter((ip): ip is string => typeof ip === 'string' && ip.length > 0);
-
-            for (const candidate of candidates) {
-                const normalizedIp = normalizeIp(candidate);
-                const family = detectIpFamily(normalizedIp);
-
-                if (family && whitelistBlockList.check(normalizedIp, family)) {
-                    return true;
-                }
-            }
-
-            return false;
+            return isRateLimitWhitelistedRequest(req, whitelistBlockList);
         },
     })
     : null;
@@ -1054,6 +949,112 @@ v1router.post('/dids/', async (req, res) => {
     } catch (error: any) {
         log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
+    }
+});
+
+/**
+ * @swagger
+ * /index/export:
+ *   post:
+ *     summary: Export a paginated DID index snapshot or incremental change batch.
+ *
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [ mode ]
+ *             properties:
+ *               mode:
+ *                 type: string
+ *                 enum: [ snapshot, changes ]
+ *               cursor:
+ *                 type: string
+ *                 nullable: true
+ *                 description: Opaque snapshot cursor or incremental change cursor.
+ *               checkpointCursor:
+ *                 type: string
+ *                 nullable: true
+ *                 description: Snapshot-only high-water change cursor returned by the first snapshot page and required on continuation pages.
+ *               limit:
+ *                 type: integer
+ *                 minimum: 1
+ *
+ *     responses:
+ *       200:
+ *         description: Index export page.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - type: object
+ *                   required: [ mode, cursor, checkpointCursor, hasMore, dids, blocks ]
+ *                   properties:
+ *                     mode:
+ *                       type: string
+ *                       enum: [ snapshot ]
+ *                     cursor:
+ *                       type: string
+ *                       nullable: true
+ *                       description: Opaque snapshot page cursor. Clients must store and pass it back without interpretation.
+ *                     checkpointCursor:
+ *                       type: string
+ *                       nullable: true
+ *                       description: Snapshot high-water change cursor returned on every snapshot page.
+ *                     hasMore:
+ *                       type: boolean
+ *                     dids:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                     blocks:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                 - type: object
+ *                   required: [ mode, cursor, hasMore, dids, blocks ]
+ *                   properties:
+ *                     mode:
+ *                       type: string
+ *                       enum: [ changes ]
+ *                     cursor:
+ *                       type: string
+ *                       nullable: true
+ *                       description: Incremental change cursor.
+ *                     hasMore:
+ *                       type: boolean
+ *                     dids:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                     blocks:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *       400:
+ *         description: Invalid request body.
+ *       500:
+ *         description: Internal Server Error.
+ */
+v1router.post('/index/export', async (req, res) => {
+    let request: ReturnType<typeof parseIndexExportRequest>;
+
+    try {
+        request = parseIndexExportRequest(req.body);
+    } catch (error: any) {
+        return res.status(400).json({ error: error.message ?? String(error) });
+    }
+
+    try {
+        const response = request.mode === 'snapshot'
+            ? await db.exportIndexSnapshot(request)
+            : await db.exportIndexChanges(request);
+
+        res.json(response);
+    } catch (error: any) {
+        log.error({ error }, 'Index export error');
+        res.status(500).json({ error: error.toString() });
     }
 });
 
@@ -2303,62 +2304,6 @@ async function reportStatus() {
     log.info(`Uptime: ${status.uptimeSeconds}s (${formatDuration(status.uptimeSeconds)})`);
 
     log.info('------------------------------------');
-}
-
-function formatDuration(seconds: number) {
-    const secPerMin = 60;
-    const secPerHour = secPerMin * 60;
-    const secPerDay = secPerHour * 24;
-
-    const days = Math.floor(seconds / secPerDay);
-    seconds %= secPerDay;
-
-    const hours = Math.floor(seconds / secPerHour);
-    seconds %= secPerHour;
-
-    const minutes = Math.floor(seconds / secPerMin);
-    seconds %= secPerMin;
-
-    let duration = "";
-
-    if (days > 0) {
-        if (days > 1) {
-            duration += `${days} days, `;
-        } else {
-            duration += `1 day, `;
-        }
-    }
-
-    if (hours > 0) {
-        if (hours > 1) {
-            duration += `${hours} hours, `;
-        } else {
-            duration += `1 hour, `;
-        }
-    }
-
-    if (minutes > 0) {
-        if (minutes > 1) {
-            duration += `${minutes} minutes, `;
-        } else {
-            duration += `1 minute, `;
-        }
-    }
-
-    if (seconds === 1) {
-        duration += `1 second`;
-    } else {
-        duration += `${seconds} seconds`;
-    }
-
-    return duration;
-}
-
-function formatBytes(bytes: number) {
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    if (bytes === 0) return '0 Byte';
-    const i = Math.floor(Math.log(bytes) / Math.log(1024));
-    return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
 }
 
 async function main() {

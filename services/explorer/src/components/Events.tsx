@@ -9,8 +9,11 @@ import {
     FormControl,
     TextField
 } from "@mui/material";
-import { GatekeeperEvent } from "@mdip/gatekeeper/types";
-import { getTypeStyle, handleCopyDID } from "../shared/utilities.js";
+import type { ExplorerDIDEvent } from "../shared/utilities.js";
+import {
+    getTypeStyle,
+    handleCopyDID,
+} from "../shared/utilities.js";
 import ContentCopy from "@mui/icons-material/ContentCopy";
 
 const networksEnv = import.meta.env.VITE_OPERATION_NETWORKS || "hyperswarm";
@@ -20,7 +23,7 @@ if (!knownRegistries.includes("local")) {
 }
 
 interface EventsProps {
-    events: GatekeeperEvent[];
+    events: ExplorerDIDEvent[];
     totalPages: number;
     eventCount: number;
     page: number;
