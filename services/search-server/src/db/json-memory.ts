@@ -117,7 +117,7 @@ export default class DIDsDbMemory implements DIDsDb {
             offset = 0,
         } = options;
         const filtered = this.filterChallengeReceipts(options)
-            .sort((a, b) => b.verifiedAt.localeCompare(a.verifiedAt) || a.receiptDid.localeCompare(b.receiptDid));
+            .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.receiptDid.localeCompare(b.receiptDid));
         const normalizedLimit = Math.max(0, limit);
         const normalizedOffset = Math.max(0, offset);
 
@@ -153,8 +153,8 @@ export default class DIDsDbMemory implements DIDsDb {
                         schemaDid: record.schemaDid,
                         requesterDid: record.requesterDid,
                         count: 1,
-                        firstVerifiedAt: record.verifiedAt,
-                        lastVerifiedAt: record.verifiedAt,
+                        firstUpdatedAt: record.updatedAt,
+                        lastUpdatedAt: record.updatedAt,
                     },
                 });
                 continue;
@@ -162,11 +162,11 @@ export default class DIDsDbMemory implements DIDsDb {
 
             existing.commitments.add(record.responseCommitment);
             existing.record.count = existing.commitments.size;
-            if (record.verifiedAt < existing.record.firstVerifiedAt) {
-                existing.record.firstVerifiedAt = record.verifiedAt;
+            if (record.updatedAt < existing.record.firstUpdatedAt) {
+                existing.record.firstUpdatedAt = record.updatedAt;
             }
-            if (record.verifiedAt > existing.record.lastVerifiedAt) {
-                existing.record.lastVerifiedAt = record.verifiedAt;
+            if (record.updatedAt > existing.record.lastUpdatedAt) {
+                existing.record.lastUpdatedAt = record.updatedAt;
             }
         }
 
@@ -280,8 +280,8 @@ export default class DIDsDbMemory implements DIDsDb {
             attesterDid,
             schemaDid,
             requesterDid,
-            verifiedAfter,
-            verifiedBefore,
+            updatedAfter,
+            updatedBefore,
         } = options;
         const receiptDid = 'receiptDid' in options ? options.receiptDid : undefined;
         const responseCommitment = 'responseCommitment' in options ? options.responseCommitment : undefined;
@@ -292,8 +292,8 @@ export default class DIDsDbMemory implements DIDsDb {
             .filter(record => !schemaDid || record.schemaDid === schemaDid)
             .filter(record => !requesterDid || record.requesterDid === requesterDid)
             .filter(record => !responseCommitment || record.responseCommitment === responseCommitment)
-            .filter(record => !verifiedAfter || record.verifiedAt >= verifiedAfter)
-            .filter(record => !verifiedBefore || record.verifiedAt <= verifiedBefore);
+            .filter(record => !updatedAfter || record.updatedAt >= updatedAfter)
+            .filter(record => !updatedBefore || record.updatedAt <= updatedBefore);
     }
 
     private getPath(root: unknown, path: string): unknown {

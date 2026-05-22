@@ -29,8 +29,8 @@ interface ChallengeReceiptUsageRow {
     schemaDid: string;
     requesterDid: string;
     count: number;
-    firstVerifiedAt: string;
-    lastVerifiedAt: string;
+    firstUpdatedAt: string;
+    lastUpdatedAt: string;
 }
 
 interface ChallengeReceiptRow {
@@ -38,7 +38,6 @@ interface ChallengeReceiptRow {
     attesterDid: string;
     schemaDid: string;
     requesterDid: string;
-    verifiedAt: string;
     responseCommitment: string;
     updatedAt: string;
 }
@@ -48,8 +47,8 @@ interface AttesterUsageRow {
     count: number;
     templateCount: number;
     requesterCount: number;
-    firstVerifiedAt: string;
-    lastVerifiedAt: string;
+    firstUpdatedAt: string;
+    lastUpdatedAt: string;
 }
 
 function parsePositiveInteger(value: string | null, fallback: number): number {
@@ -106,8 +105,8 @@ function mapUsageRow(row: any): ChallengeReceiptUsageRow {
         schemaDid: row.schemaDid,
         requesterDid: row.requesterDid,
         count: Number(row.count ?? 0),
-        firstVerifiedAt: row.firstVerifiedAt,
-        lastVerifiedAt: row.lastVerifiedAt,
+        firstUpdatedAt: row.firstUpdatedAt,
+        lastUpdatedAt: row.lastUpdatedAt,
     };
 }
 
@@ -117,7 +116,6 @@ function mapReceiptRow(row: any): ChallengeReceiptRow {
         attesterDid: row.attesterDid,
         schemaDid: row.schemaDid,
         requesterDid: row.requesterDid,
-        verifiedAt: row.verifiedAt,
         responseCommitment: row.responseCommitment,
         updatedAt: row.updatedAt,
     };
@@ -252,8 +250,8 @@ function groupReceiptsByAttester(receipts: ChallengeReceiptRow[]): AttesterUsage
                     count: 1,
                     templateCount: 1,
                     requesterCount: 1,
-                    firstVerifiedAt: receipt.verifiedAt,
-                    lastVerifiedAt: receipt.verifiedAt,
+                    firstUpdatedAt: receipt.updatedAt,
+                    lastUpdatedAt: receipt.updatedAt,
                 },
             });
             continue;
@@ -266,11 +264,11 @@ function groupReceiptsByAttester(receipts: ChallengeReceiptRow[]): AttesterUsage
         existing.row.requesterCount = existing.requesters.size;
         existing.row.templateCount = existing.templates.size;
 
-        if (receipt.verifiedAt < existing.row.firstVerifiedAt) {
-            existing.row.firstVerifiedAt = receipt.verifiedAt;
+        if (receipt.updatedAt < existing.row.firstUpdatedAt) {
+            existing.row.firstUpdatedAt = receipt.updatedAt;
         }
-        if (receipt.verifiedAt > existing.row.lastVerifiedAt) {
-            existing.row.lastVerifiedAt = receipt.verifiedAt;
+        if (receipt.updatedAt > existing.row.lastUpdatedAt) {
+            existing.row.lastUpdatedAt = receipt.updatedAt;
         }
     }
 
@@ -302,8 +300,8 @@ function ChallengeReceipts({ setError }: { setError: (error: any) => void }) {
     const receiptPageSize = parsePositiveInteger(searchParams.get("receiptPageSize"), 25);
     const receiptPage = parseNonNegativeInteger(searchParams.get("receiptPage"), 0);
 
-    const verifiedAfter = useMemo(() => getStartOfDay(dateFrom), [dateFrom]);
-    const verifiedBefore = useMemo(() => getEndOfDay(dateTo), [dateTo]);
+    const updatedAfter = useMemo(() => getStartOfDay(dateFrom), [dateFrom]);
+    const updatedBefore = useMemo(() => getEndOfDay(dateTo), [dateTo]);
 
     const filteredAttesterRows = useMemo(() => {
         const query = draftAttesterDid.trim().toLowerCase();
@@ -443,8 +441,8 @@ function ChallengeReceipts({ setError }: { setError: (error: any) => void }) {
                 do {
                     const response = await axios.get(`${searchServerURL}${VERSION}/metrics/challenge-receipts`, {
                         params: {
-                            verifiedAfter,
-                            verifiedBefore,
+                            updatedAfter,
+                            updatedBefore,
                             limit: receiptBrowseFetchLimit,
                             offset,
                         },
@@ -477,7 +475,7 @@ function ChallengeReceipts({ setError }: { setError: (error: any) => void }) {
         return () => {
             ignore = true;
         };
-    }, [attesterDid, setError, verifiedAfter, verifiedBefore]);
+    }, [attesterDid, setError, updatedAfter, updatedBefore]);
 
     useEffect(() => {
         let ignore = false;
@@ -501,8 +499,8 @@ function ChallengeReceipts({ setError }: { setError: (error: any) => void }) {
                     const response = await axios.get(`${searchServerURL}${VERSION}/metrics/challenge-receipts/usage`, {
                         params: {
                             attesterDid,
-                            verifiedAfter,
-                            verifiedBefore,
+                            updatedAfter,
+                            updatedBefore,
                             limit: usageFetchLimit,
                             offset,
                         },
@@ -535,7 +533,7 @@ function ChallengeReceipts({ setError }: { setError: (error: any) => void }) {
         return () => {
             ignore = true;
         };
-    }, [attesterDid, setError, verifiedAfter, verifiedBefore]);
+    }, [attesterDid, setError, updatedAfter, updatedBefore]);
 
     useEffect(() => {
         const rowCount = attesterDid ? usageRows.length : filteredAttesterRows.length;
@@ -564,8 +562,8 @@ function ChallengeReceipts({ setError }: { setError: (error: any) => void }) {
                         attesterDid,
                         schemaDid: selectedSchemaDid,
                         requesterDid: selectedRequesterDid,
-                        verifiedAfter,
-                        verifiedBefore,
+                        updatedAfter,
+                        updatedBefore,
                         limit: receiptPageSize,
                         offset: receiptPage * receiptPageSize,
                     },
@@ -609,8 +607,8 @@ function ChallengeReceipts({ setError }: { setError: (error: any) => void }) {
         selectedSchemaDid,
         setError,
         updateParams,
-        verifiedAfter,
-        verifiedBefore,
+        updatedAfter,
+        updatedBefore,
     ]);
 
     return (
@@ -702,14 +700,14 @@ function ChallengeReceipts({ setError }: { setError: (error: any) => void }) {
                             <Table size="small">
                                 <TableHead>
                                     <TableRow>
-                                        <TableCell width={180}>Verified</TableCell>
+                                        <TableCell width={180}>Updated</TableCell>
                                         <TableCell>Receipt DID</TableCell>
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>
                                     {receipts.map((row) => (
                                         <TableRow key={row.receiptDid}>
-                                            <TableCell>{formatTimestamp(row.verifiedAt)}</TableCell>
+                                            <TableCell>{formatTimestamp(row.updatedAt)}</TableCell>
                                             <TableCell>
                                                 <DidLink did={row.receiptDid} maxWidth="none" />
                                             </TableCell>
@@ -823,8 +821,8 @@ function ChallengeReceipts({ setError }: { setError: (error: any) => void }) {
                                                 <TableCell width={90}>Uses</TableCell>
                                                 <TableCell width={110}>Templates</TableCell>
                                                 <TableCell width={110}>Requesters</TableCell>
-                                                <TableCell width={170}>First Verified</TableCell>
-                                                <TableCell width={170}>Last Verified</TableCell>
+                                                <TableCell width={170}>First Updated</TableCell>
+                                                <TableCell width={170}>Last Updated</TableCell>
                                             </TableRow>
                                         </TableHead>
                                         <TableBody>
@@ -845,8 +843,8 @@ function ChallengeReceipts({ setError }: { setError: (error: any) => void }) {
                                                     <TableCell>{row.count}</TableCell>
                                                     <TableCell>{row.templateCount}</TableCell>
                                                     <TableCell>{row.requesterCount}</TableCell>
-                                                    <TableCell>{formatTimestamp(row.firstVerifiedAt)}</TableCell>
-                                                    <TableCell>{formatTimestamp(row.lastVerifiedAt)}</TableCell>
+                                                    <TableCell>{formatTimestamp(row.firstUpdatedAt)}</TableCell>
+                                                    <TableCell>{formatTimestamp(row.lastUpdatedAt)}</TableCell>
                                                 </TableRow>
                                             ))}
                                         </TableBody>
@@ -919,8 +917,8 @@ function ChallengeReceipts({ setError }: { setError: (error: any) => void }) {
                                             <TableRow>
                                                 <TableCell>Schema DID</TableCell>
                                                 <TableCell width={90}>Count</TableCell>
-                                                <TableCell width={170}>First Verified</TableCell>
-                                                <TableCell width={170}>Last Verified</TableCell>
+                                                <TableCell width={170}>First Updated</TableCell>
+                                                <TableCell width={170}>Last Updated</TableCell>
                                                 <TableCell width={130}>Receipts</TableCell>
                                             </TableRow>
                                         </TableHead>
@@ -934,8 +932,8 @@ function ChallengeReceipts({ setError }: { setError: (error: any) => void }) {
                                                         <DidLink did={row.schemaDid} maxWidth={260} />
                                                     </TableCell>
                                                     <TableCell>{row.count}</TableCell>
-                                                    <TableCell>{formatTimestamp(row.firstVerifiedAt)}</TableCell>
-                                                    <TableCell>{formatTimestamp(row.lastVerifiedAt)}</TableCell>
+                                                    <TableCell>{formatTimestamp(row.firstUpdatedAt)}</TableCell>
+                                                    <TableCell>{formatTimestamp(row.lastUpdatedAt)}</TableCell>
                                                     <TableCell>
                                                         <Button
                                                             variant="outlined"

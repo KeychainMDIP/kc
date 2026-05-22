@@ -19,7 +19,6 @@ function createReceiptDoc(
         attesterDid = 'did:test:attester-1',
         schemaDid = 'did:test:schema-1',
         requesterDid = 'did:test:requester-1',
-        verifiedAt = '2026-04-01T10:00:00.000Z',
         responseCommitment = 'mock-commitment-1',
         updatedAt = '2026-04-01T10:01:00.000Z',
         challengeReceipt,
@@ -27,7 +26,6 @@ function createReceiptDoc(
         attesterDid?: string;
         schemaDid?: string;
         requesterDid?: string;
-        verifiedAt?: string;
         responseCommitment?: string;
         updatedAt?: string;
         challengeReceipt?: unknown;
@@ -43,7 +41,6 @@ function createReceiptDoc(
                 attesterDid,
                 schemaDid,
                 requesterDid,
-                verifiedAt,
                 responseCommitment,
             },
         },
@@ -114,19 +111,10 @@ describe('extractChallengeReceipts', () => {
                 attesterDid: 'did:test:attester-1',
                 schemaDid: 'did:test:schema-1',
                 requesterDid: 'did:test:requester-1',
-                verifiedAt: '2026-04-01T10:00:00.000Z',
                 responseCommitment: 'mock-commitment-1',
                 updatedAt: '2026-04-01T10:01:00.000Z',
             },
         ]);
-    });
-
-    it('falls back to verifiedAt when DID metadata does not include an update timestamp', () => {
-        const receiptDid = 'did:test:receipt-1';
-        const doc = createReceiptDoc(receiptDid);
-        delete (doc.didDocumentMetadata as { updated?: string }).updated;
-
-        expect(extractChallengeReceipts(receiptDid, doc)[0].updatedAt).toBe('2026-04-01T10:00:00.000Z');
     });
 
     it('ignores malformed receipt assets', () => {
@@ -143,12 +131,8 @@ describe('extractChallengeReceipts', () => {
                 attesterDid: 'did:test:attester-1',
                 schemaDid: 'did:test:schema-1',
                 requesterDid: 'did:test:requester-1',
-                verifiedAt: '2026-04-01T10:00:00.000Z',
                 responseCommitment: 'mock-commitment-1',
             },
-        }))).toStrictEqual([]);
-        expect(extractChallengeReceipts(receiptDid, createReceiptDoc(receiptDid, {
-            verifiedAt: 'not-a-date',
         }))).toStrictEqual([]);
         expect(extractChallengeReceipts(receiptDid, createReceiptDoc(receiptDid, {
             responseCommitment: '',
@@ -167,7 +151,6 @@ describe.each(adapterFactories)('$name challenge receipt storage', ({ create }) 
                     attesterDid: 'did:test:attester-1',
                     schemaDid: 'did:test:schema-1',
                     requesterDid: 'did:test:requester-1',
-                    verifiedAt: '2026-04-01T10:00:00.000Z',
                     responseCommitment: 'mock-commitment-1',
                     updatedAt: '2026-04-01T10:01:00.000Z',
                 },
@@ -176,7 +159,6 @@ describe.each(adapterFactories)('$name challenge receipt storage', ({ create }) 
                     attesterDid: 'did:test:attester-1',
                     schemaDid: 'did:test:schema-1',
                     requesterDid: 'did:test:requester-1',
-                    verifiedAt: '2026-04-01T11:00:00.000Z',
                     responseCommitment: 'mock-commitment-2',
                     updatedAt: '2026-04-01T11:01:00.000Z',
                 },
@@ -185,7 +167,6 @@ describe.each(adapterFactories)('$name challenge receipt storage', ({ create }) 
                     attesterDid: 'did:test:attester-1',
                     schemaDid: 'did:test:schema-2',
                     requesterDid: 'did:test:requester-2',
-                    verifiedAt: '2026-04-02T10:00:00.000Z',
                     responseCommitment: 'mock-commitment-3',
                     updatedAt: '2026-04-02T10:01:00.000Z',
                 },
@@ -194,7 +175,6 @@ describe.each(adapterFactories)('$name challenge receipt storage', ({ create }) 
                     attesterDid: 'did:test:attester-2',
                     schemaDid: 'did:test:schema-1',
                     requesterDid: 'did:test:requester-1',
-                    verifiedAt: '2026-04-03T10:00:00.000Z',
                     responseCommitment: 'mock-commitment-4',
                     updatedAt: '2026-04-03T10:01:00.000Z',
                 },
@@ -203,7 +183,6 @@ describe.each(adapterFactories)('$name challenge receipt storage', ({ create }) 
                     attesterDid: 'did:test:attester-1',
                     schemaDid: 'did:test:schema-1',
                     requesterDid: 'did:test:requester-1',
-                    verifiedAt: '2026-04-01T12:00:00.000Z',
                     responseCommitment: 'mock-commitment-2',
                     updatedAt: '2026-04-01T12:01:00.000Z',
                 },
@@ -217,8 +196,8 @@ describe.each(adapterFactories)('$name challenge receipt storage', ({ create }) 
                 attesterDid: 'did:test:attester-1',
                 schemaDid: 'did:test:schema-1',
                 requesterDid: 'did:test:requester-1',
-                verifiedAfter: '2026-04-01T10:30:00.000Z',
-                verifiedBefore: '2026-04-01T11:30:00.000Z',
+                updatedAfter: '2026-04-01T10:30:00.000Z',
+                updatedBefore: '2026-04-01T11:30:00.000Z',
                 limit: 10,
                 offset: 0,
             })).toStrictEqual({
@@ -247,16 +226,16 @@ describe.each(adapterFactories)('$name challenge receipt storage', ({ create }) 
                         schemaDid: 'did:test:schema-1',
                         requesterDid: 'did:test:requester-1',
                         count: 2,
-                        firstVerifiedAt: '2026-04-01T10:00:00.000Z',
-                        lastVerifiedAt: '2026-04-01T12:00:00.000Z',
+                        firstUpdatedAt: '2026-04-01T10:01:00.000Z',
+                        lastUpdatedAt: '2026-04-01T12:01:00.000Z',
                     },
                     {
                         attesterDid: 'did:test:attester-1',
                         schemaDid: 'did:test:schema-2',
                         requesterDid: 'did:test:requester-2',
                         count: 1,
-                        firstVerifiedAt: '2026-04-02T10:00:00.000Z',
-                        lastVerifiedAt: '2026-04-02T10:00:00.000Z',
+                        firstUpdatedAt: '2026-04-02T10:01:00.000Z',
+                        lastUpdatedAt: '2026-04-02T10:01:00.000Z',
                     },
                 ] satisfies ChallengeReceiptUsageRecord[],
             });
@@ -298,7 +277,6 @@ describe('memory challenge receipt ordering', () => {
                 attesterDid: 'did:test:attester-1',
                 schemaDid: 'did:test:schema-b',
                 requesterDid: 'did:test:requester-b',
-                verifiedAt: '2026-04-01T10:00:00.000Z',
                 responseCommitment: 'mock-commitment-b-b',
                 updatedAt: '2026-04-01T10:01:00.000Z',
             },
@@ -307,7 +285,6 @@ describe('memory challenge receipt ordering', () => {
                 attesterDid: 'did:test:attester-1',
                 schemaDid: 'did:test:schema-b',
                 requesterDid: 'did:test:requester-a',
-                verifiedAt: '2026-04-01T10:00:00.000Z',
                 responseCommitment: 'mock-commitment-b-a',
                 updatedAt: '2026-04-01T10:01:00.000Z',
             },
@@ -316,7 +293,6 @@ describe('memory challenge receipt ordering', () => {
                 attesterDid: 'did:test:attester-1',
                 schemaDid: 'did:test:schema-a',
                 requesterDid: 'did:test:requester-a',
-                verifiedAt: '2026-04-01T10:00:00.000Z',
                 responseCommitment: 'mock-commitment-a-a-late',
                 updatedAt: '2026-04-01T10:01:00.000Z',
             },
@@ -325,7 +301,6 @@ describe('memory challenge receipt ordering', () => {
                 attesterDid: 'did:test:attester-1',
                 schemaDid: 'did:test:schema-a',
                 requesterDid: 'did:test:requester-a',
-                verifiedAt: '2026-04-01T09:00:00.000Z',
                 responseCommitment: 'mock-commitment-a-a-early',
                 updatedAt: '2026-04-01T09:01:00.000Z',
             },
@@ -359,24 +334,24 @@ describe('memory challenge receipt ordering', () => {
                         schemaDid: 'did:test:schema-a',
                         requesterDid: 'did:test:requester-a',
                         count: 2,
-                        firstVerifiedAt: '2026-04-01T09:00:00.000Z',
-                        lastVerifiedAt: '2026-04-01T10:00:00.000Z',
+                        firstUpdatedAt: '2026-04-01T09:01:00.000Z',
+                        lastUpdatedAt: '2026-04-01T10:01:00.000Z',
                     },
                     {
                         attesterDid: 'did:test:attester-1',
                         schemaDid: 'did:test:schema-b',
                         requesterDid: 'did:test:requester-a',
                         count: 1,
-                        firstVerifiedAt: '2026-04-01T10:00:00.000Z',
-                        lastVerifiedAt: '2026-04-01T10:00:00.000Z',
+                        firstUpdatedAt: '2026-04-01T10:01:00.000Z',
+                        lastUpdatedAt: '2026-04-01T10:01:00.000Z',
                     },
                     {
                         attesterDid: 'did:test:attester-1',
                         schemaDid: 'did:test:schema-b',
                         requesterDid: 'did:test:requester-b',
                         count: 1,
-                        firstVerifiedAt: '2026-04-01T10:00:00.000Z',
-                        lastVerifiedAt: '2026-04-01T10:00:00.000Z',
+                        firstUpdatedAt: '2026-04-01T10:01:00.000Z',
+                        lastUpdatedAt: '2026-04-01T10:01:00.000Z',
                     },
                 ] satisfies ChallengeReceiptUsageRecord[],
             });
@@ -414,7 +389,6 @@ describe('sqlite challenge receipt adapter errors', () => {
             attesterDid: 'did:test:attester-1',
             schemaDid: 'did:test:schema-1',
             requesterDid: 'did:test:requester-1',
-            verifiedAt: '2026-04-01T10:00:00.000Z',
             responseCommitment: 'mock-commitment-1',
             updatedAt: '2026-04-01T10:01:00.000Z',
         };
@@ -459,7 +433,6 @@ describe('postgres challenge receipt adapter with mocked pool', () => {
             attesterDid: 'did:test:attester-1',
             schemaDid: 'did:test:schema-1',
             requesterDid: 'did:test:requester-1',
-            verifiedAt: '2026-04-01T10:00:00.000Z',
             responseCommitment: 'mock-commitment-1',
             updatedAt: '2026-04-01T10:01:00.000Z',
         };
@@ -486,8 +459,8 @@ describe('postgres challenge receipt adapter with mocked pool', () => {
                         schemaDid: record.schemaDid,
                         requesterDid: record.requesterDid,
                         count: 1,
-                        firstVerifiedAt: record.verifiedAt,
-                        lastVerifiedAt: record.verifiedAt,
+                        firstUpdatedAt: record.updatedAt,
+                        lastUpdatedAt: record.updatedAt,
                     }],
                 };
             }
@@ -527,8 +500,8 @@ describe('postgres challenge receipt adapter with mocked pool', () => {
             schemaDid: record.schemaDid,
             requesterDid: record.requesterDid,
             responseCommitment: record.responseCommitment,
-            verifiedAfter: '2026-04-01T00:00:00.000Z',
-            verifiedBefore: '2026-04-02T00:00:00.000Z',
+            updatedAfter: '2026-04-01T00:00:00.000Z',
+            updatedBefore: '2026-04-02T00:00:00.000Z',
             limit: 5,
             offset: 10,
         })).toStrictEqual({
@@ -540,8 +513,8 @@ describe('postgres challenge receipt adapter with mocked pool', () => {
             attesterDid: record.attesterDid,
             schemaDid: record.schemaDid,
             requesterDid: record.requesterDid,
-            verifiedAfter: '2026-04-01T00:00:00.000Z',
-            verifiedBefore: '2026-04-02T00:00:00.000Z',
+            updatedAfter: '2026-04-01T00:00:00.000Z',
+            updatedBefore: '2026-04-02T00:00:00.000Z',
             limit: 5,
             offset: 10,
         })).toStrictEqual({
@@ -551,8 +524,8 @@ describe('postgres challenge receipt adapter with mocked pool', () => {
                 schemaDid: record.schemaDid,
                 requesterDid: record.requesterDid,
                 count: 1,
-                firstVerifiedAt: record.verifiedAt,
-                lastVerifiedAt: record.verifiedAt,
+                firstUpdatedAt: record.updatedAt,
+                lastUpdatedAt: record.updatedAt,
             }],
         });
 
@@ -570,7 +543,6 @@ describe('postgres challenge receipt adapter with mocked pool', () => {
                 record.attesterDid,
                 record.schemaDid,
                 record.requesterDid,
-                record.verifiedAt,
                 record.responseCommitment,
                 record.updatedAt,
             ]
@@ -585,7 +557,6 @@ describe('postgres challenge receipt adapter with mocked pool', () => {
             attesterDid: 'did:test:attester-1',
             schemaDid: 'did:test:schema-1',
             requesterDid: 'did:test:requester-1',
-            verifiedAt: '2026-04-01T10:00:00.000Z',
             responseCommitment: 'mock-commitment-1',
             updatedAt: '2026-04-01T10:01:00.000Z',
         };
@@ -652,7 +623,6 @@ describe('DidIndexer challenge receipt indexing', () => {
                 attesterDid: 'did:test:attester-1',
                 schemaDid: 'did:test:schema-1',
                 requesterDid: 'did:test:requester-1',
-                verifiedAt: '2026-04-01T10:00:00.000Z',
                 responseCommitment: 'mock-commitment-1',
                 updatedAt: '2026-04-01T10:01:00.000Z',
             }],

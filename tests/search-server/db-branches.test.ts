@@ -35,7 +35,6 @@ const challengeReceipt: ChallengeReceiptRecord = {
     attesterDid: 'did:test:attester-1',
     schemaDid: 'did:test:schema-1',
     requesterDid: 'did:test:requester-1',
-    verifiedAt: '2026-04-01T10:00:00.000Z',
     responseCommitment: 'mock-commitment-1',
     updatedAt: '2026-04-01T10:01:00.000Z',
 };
@@ -85,8 +84,8 @@ describe('search DB branch behavior', () => {
                 schemaDid: challengeReceipt.schemaDid,
                 requesterDid: challengeReceipt.requesterDid,
                 count: 1,
-                firstVerifiedAt: challengeReceipt.verifiedAt,
-                lastVerifiedAt: challengeReceipt.verifiedAt,
+                firstUpdatedAt: challengeReceipt.updatedAt,
+                lastUpdatedAt: challengeReceipt.updatedAt,
             }]);
 
             expect(await db.queryDocs({ 'didDocumentData.notArray[*]': { $in: ['value'] } })).toStrictEqual([]);
@@ -133,8 +132,8 @@ describe('search DB branch behavior', () => {
                 schemaDid: challengeReceipt.schemaDid,
                 requesterDid: challengeReceipt.requesterDid,
                 count: 1,
-                firstVerifiedAt: challengeReceipt.verifiedAt,
-                lastVerifiedAt: challengeReceipt.verifiedAt,
+                firstUpdatedAt: challengeReceipt.updatedAt,
+                lastUpdatedAt: challengeReceipt.updatedAt,
             }]);
             expect(await db.queryDocs({ 'didDocument.id': { $in: ['did:test:path'] } })).toStrictEqual(['did:test:path']);
             await expect(db.queryDocs({ '$didDocument.id': { $in: ['did:test:path'] } }))
