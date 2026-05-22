@@ -13,6 +13,12 @@ import {
     GatekeeperEvent,
     IndexChangeRecord,
 } from '@mdip/gatekeeper/types';
+import {
+    buildIndexSnapshotResponseFromPageKeys,
+    exportIndexSnapshotFromAllKeysForLocalDb,
+    normalizeIndexExportLimit,
+    parseIndexExportCursor,
+} from '@mdip/gatekeeper/db/index-export.ts';
 import { parseIndexExportRequest } from '../../services/gatekeeper/server/src/helpers.ts';
 
 function createEvent(did: string, time: string, type: 'create' | 'update' = 'create'): GatekeeperEvent {
@@ -149,6 +155,14 @@ function createPostgresFixture(): AdapterFixture {
             const existed = eventsByKey.has(id);
             eventsByKey.delete(id);
             return { rows: [], rowCount: existed ? 1 : 0 };
+        }
+
+        if (text.includes('DELETE FROM gatekeeper_meta') ||
+            text.includes('DELETE FROM gatekeeper_dids') ||
+            text.includes('DELETE FROM gatekeeper_queue') ||
+            text.includes('DELETE FROM gatekeeper_blocks') ||
+            text.includes('DELETE FROM gatekeeper_index_changes')) {
+            return { rows: [], rowCount: 1 };
         }
 
         if (text.includes('INSERT INTO gatekeeper_events')) {
@@ -885,6 +899,106 @@ const adapterFactories: Array<[string, () => Promise<AdapterFixture> | AdapterFi
 const productionAdapterFactories = adapterFactories.filter(([name]) => name !== 'json-memory');
 
 describe('Gatekeeper index export request parsing', () => {
+    it('normalizes index export limits and numeric cursors', () => {
+        expect(normalizeIndexExportLimit()).toBe(500);
+        expect(normalizeIndexExportLimit(0)).toBe(500);
+        expect(normalizeIndexExportLimit(-1)).toBe(500);
+        expect(normalizeIndexExportLimit(25)).toBe(25);
+        expect(normalizeIndexExportLimit(5_001)).toBe(5_000);
+
+        expect(parseIndexExportCursor()).toBe(0);
+        expect(parseIndexExportCursor(null)).toBe(0);
+        expect(parseIndexExportCursor('not-a-number')).toBe(0);
+        expect(parseIndexExportCursor('-1')).toBe(0);
+        expect(parseIndexExportCursor('42')).toBe(42);
+    });
+
+    it('builds snapshot pages from opaque page keys without loading extra keys', async () => {
+        const getEvents = jest.fn(async (key: string) => {
+            if (key === 'storage-z1') {
+                return [{
+                    ...eventA,
+                    did: undefined,
+                    operation: {
+                        type: 'update',
+                        did: didA,
+                    },
+                } as GatekeeperEvent];
+            }
+
+            return [];
+        });
+
+        const page = await buildIndexSnapshotResponseFromPageKeys(
+            ['storage-z1', 'storage-z2'],
+            getEvents,
+            { cursor: 'previous-page', limit: 1 },
+            '7'
+        );
+
+        expect(page).toMatchObject({
+            mode: 'snapshot',
+            cursor: 'storage-z1',
+            checkpointCursor: '7',
+            hasMore: true,
+            blocks: [],
+        });
+        expect(page.dids.map(record => record.did)).toStrictEqual([didA]);
+        expect(getEvents).toHaveBeenCalledWith('storage-z1');
+        expect(getEvents).not.toHaveBeenCalledWith('storage-z2');
+
+        const emptyPage = await buildIndexSnapshotResponseFromPageKeys(
+            [],
+            getEvents,
+            { cursor: 'previous-page', limit: 1 },
+            '7'
+        );
+
+        expect(emptyPage.cursor).toBe('previous-page');
+        expect(emptyPage.dids).toStrictEqual([]);
+    });
+
+    it('keeps the local DB full-scan helper explicitly local and sorted by DID', async () => {
+        const snapshot = await exportIndexSnapshotFromAllKeysForLocalDb(
+            async () => ['storage-z2', 'storage-z1', 'storage-empty'],
+            async (key: string) => {
+                if (key === 'storage-z2') {
+                    return [{
+                        ...eventB,
+                        did: undefined,
+                        operation: {
+                            type: 'update',
+                            did: didB,
+                        },
+                    } as GatekeeperEvent];
+                }
+                if (key === 'storage-z1') {
+                    return [{
+                        ...eventA,
+                        did: undefined,
+                        operation: {
+                            type: 'update',
+                            did: didB,
+                        },
+                    } as GatekeeperEvent];
+                }
+
+                return [];
+            },
+            { limit: 10 },
+            async () => '3'
+        );
+
+        expect(snapshot).toMatchObject({
+            mode: 'snapshot',
+            cursor: 'storage-empty',
+            checkpointCursor: '3',
+            hasMore: false,
+            blocks: [],
+        });
+        expect(snapshot.dids.map(record => record.did)).toStrictEqual([didB, didB, 'storage-empty']);
+    });
+
     it('parses snapshot continuation with an opaque cursor and checkpoint cursor', () => {
         expect(parseIndexExportRequest({
             mode: 'snapshot',
@@ -1421,6 +1535,14 @@ describe('Gatekeeper Redis DID snapshot index', () => {
             mode: 'snapshot',
             hasMore: true,
         });
+        await expect(fixture.db.getAllKeys()).resolves.toStrictEqual(['z1', 'z2']);
+    });
+
+    it('resets Redis by scanning only the configured namespace', async () => {
+        const fixture = createRedisFixture();
+
+        expect(await fixture.db.resetDb()).toBeGreaterThan(0);
+        await expect(fixture.db.getEvents(didA)).resolves.toStrictEqual([]);
     });
 
     it('rebuilds the DID index on start when the index is missing', async () => {
@@ -1507,6 +1629,124 @@ describe('Gatekeeper Redis DID snapshot index', () => {
         jest.resetModules();
     });
 
+    it('skips publishing a rebuilt Redis DID index when no DID keys exist', async () => {
+        const dbName = 'redis-startup-index-empty';
+        const didIndexKey = `${dbName}/index/dids`;
+        const rebuildKey = `${didIndexKey}:rebuild`;
+        const del = jest.fn(async () => 0);
+        const renamenx = jest.fn();
+        const redis = {
+            type: async () => 'none',
+            del,
+            scan: async () => ['0', [
+                `${dbName}/dids/`,
+                `${dbName}/dids/nested/id`,
+                `${dbName}/index/dids`,
+            ]],
+            zadd: jest.fn(),
+            renamenx,
+            quit: async () => undefined,
+        };
+        jest.resetModules();
+        jest.unstable_mockModule('ioredis', () => ({
+            Redis: jest.fn(() => redis),
+        }));
+        const { default: MockedDbRedis } = await import('@mdip/gatekeeper/db/redis.ts');
+        const db = new MockedDbRedis(dbName);
+
+        await db.start();
+        await db.stop();
+
+        expect(del).toHaveBeenCalledWith(rebuildKey);
+        expect(renamenx).not.toHaveBeenCalled();
+
+        jest.dontMock('ioredis');
+        jest.resetModules();
+    });
+
+    it('leaves an existing Redis DID index untouched on startup', async () => {
+        const dbName = 'redis-startup-index-existing';
+        const didIndexKey = `${dbName}/index/dids`;
+        const redis = {
+            type: async (key: string) => key === didIndexKey ? 'zset' : 'none',
+            del: jest.fn(),
+            scan: jest.fn(),
+            renamenx: jest.fn(),
+            quit: async () => undefined,
+        };
+        jest.resetModules();
+        jest.unstable_mockModule('ioredis', () => ({
+            Redis: jest.fn(() => redis),
+        }));
+        const { default: MockedDbRedis } = await import('@mdip/gatekeeper/db/redis.ts');
+        const db = new MockedDbRedis(dbName);
+
+        await db.start();
+        await db.stop();
+
+        expect(redis.scan).not.toHaveBeenCalled();
+        expect(redis.renamenx).not.toHaveBeenCalled();
+
+        jest.dontMock('ioredis');
+        jest.resetModules();
+    });
+
+    it('rejects Redis startup when the existing DID index key has the wrong type', async () => {
+        const dbName = 'redis-startup-index-wrong-type';
+        const redis = {
+            type: async () => 'string',
+            quit: async () => undefined,
+        };
+        jest.resetModules();
+        jest.unstable_mockModule('ioredis', () => ({
+            Redis: jest.fn(() => redis),
+        }));
+        const { default: MockedDbRedis } = await import('@mdip/gatekeeper/db/redis.ts');
+        const db = new MockedDbRedis(dbName);
+
+        await expect(db.start()).rejects.toThrow(
+            `Unsupported Redis DID index key type for ${dbName}/index/dids: string`
+        );
+
+        jest.dontMock('ioredis');
+        jest.resetModules();
+    });
+
+    it('fails Redis startup if another starter publishes an invalid DID index key', async () => {
+        const dbName = 'redis-startup-index-invalid-race';
+        const didIndexKey = `${dbName}/index/dids`;
+        let indexPublished = false;
+        const redis = {
+            type: async (key: string) => {
+                if (key === didIndexKey && indexPublished) {
+                    return 'string';
+                }
+
+                return 'none';
+            },
+            del: async () => 0,
+            scan: async () => ['0', [`${dbName}/dids/z1`]],
+            zadd: async () => 1,
+            renamenx: async () => {
+                indexPublished = true;
+                return 0;
+            },
+            quit: jest.fn(async () => undefined),
+        };
+        jest.resetModules();
+        jest.unstable_mockModule('ioredis', () => ({
+            Redis: jest.fn(() => redis),
+        }));
+        const { default: MockedDbRedis } = await import('@mdip/gatekeeper/db/redis.ts');
+        const db = new MockedDbRedis(dbName);
+
+        await expect(db.start()).rejects.toThrow(`Unsupported Redis DID index key type for ${didIndexKey}: string`);
+        expect(redis.quit).toHaveBeenCalledTimes(1);
+
+        jest.dontMock('ioredis');
+        jest.resetModules();
+    });
+
     it('discards rebuilt Redis DID index if another starter publishes first', async () => {
         const dbName = 'redis-startup-index-race';
         const didIndexKey = `${dbName}/index/dids`;
@@ -1574,5 +1814,116 @@ describe('Gatekeeper Redis DID snapshot index', () => {
         expect(snapshot.hasMore).toBe(false);
         expect(snapshot.dids.map(record => record.did)).toStrictEqual([didB, didC, didD]);
         expect(snapshot.dids.map(record => record.events)).toStrictEqual([[eventB], [eventC], [eventD]]);
+    });
+});
+
+describe('Gatekeeper DB startup and guard behavior', () => {
+    it('resets Postgres index change storage with the rest of the namespace', async () => {
+        const fixture = createPostgresFixture();
+
+        await expect(fixture.db.resetDb()).resolves.toBeUndefined();
+        await fixture.cleanup?.();
+    });
+
+    it('cleans up Mongo startup when transaction support is unavailable', async () => {
+        const close = jest.fn(async () => undefined);
+        const client = {
+            connect: jest.fn(async () => undefined),
+            close,
+            db: jest.fn(() => ({
+                command: jest.fn(async () => ({})),
+            })),
+        };
+        jest.resetModules();
+        jest.unstable_mockModule('mongodb', () => ({
+            MongoClient: jest.fn(() => client),
+        }));
+        const { default: MockedDbMongo } = await import('@mdip/gatekeeper/db/mongo.ts');
+        const db = new MockedDbMongo('mongo-startup-failure');
+
+        await expect(db.start()).rejects.toThrow('MongoDB transactions require a replica set');
+        expect(close).toHaveBeenCalledTimes(1);
+
+        jest.dontMock('mongodb');
+        jest.resetModules();
+    });
+
+    it('starts, resets, and stops Mongo with transaction-capable topology', async () => {
+        const deletedCollections: string[] = [];
+        const createIndex = jest.fn(async () => undefined);
+        const close = jest.fn(async () => undefined);
+        const appDb = {
+            collection: (name: string) => ({
+                createIndex,
+                deleteMany: async () => {
+                    deletedCollections.push(name);
+                    return { deletedCount: 1 };
+                },
+            }),
+        };
+        const adminDb = {
+            command: jest.fn(async () => ({ setName: 'rs0' })),
+        };
+        const client = {
+            connect: jest.fn(async () => undefined),
+            close,
+            db: jest.fn((name: string) => name === 'admin' ? adminDb : appDb),
+        };
+        jest.resetModules();
+        jest.unstable_mockModule('mongodb', () => ({
+            MongoClient: jest.fn(() => client),
+        }));
+        const { default: MockedDbMongo } = await import('@mdip/gatekeeper/db/mongo.ts');
+        const db = new MockedDbMongo('mongo-startup-success');
+
+        await db.start();
+        await db.resetDb();
+        await db.stop();
+
+        expect(createIndex).toHaveBeenCalledTimes(5);
+        expect(deletedCollections).toStrictEqual([
+            'dids',
+            'queue',
+            'blocks',
+            'index_changes',
+            'counters',
+        ]);
+        expect(close).toHaveBeenCalledTimes(1);
+
+        jest.dontMock('mongodb');
+        jest.resetModules();
+    });
+
+    it('rejects index exports before DB adapters are started', async () => {
+        const mongo = new DbMongo('mongo-unstarted');
+        const redis = new DbRedis('redis-unstarted');
+        const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gatekeeper-unstarted-'));
+        const sqlite = new DbSqlite('sqlite', tempDir);
+
+        try {
+            await expect(mongo.exportIndexSnapshot()).rejects.toThrow('Mongo not started');
+            await expect(mongo.exportIndexChanges()).rejects.toThrow('Mongo not started');
+            await expect((mongo as any).verifyTransactionSupport()).rejects.toThrow('Mongo not started');
+            await expect((mongo as any).withTransaction(async () => undefined)).rejects.toThrow('Mongo not started');
+            await expect((mongo as any).nextIndexSeq({})).rejects.toThrow('Mongo not started');
+            await expect((mongo as any).recordIndexChange({ kind: 'did', did: didA }, {}))
+                .rejects.toThrow('Mongo not started');
+            await expect((mongo as any).getIndexCheckpointCursor()).rejects.toThrow('Mongo not started');
+
+            expect(() => (redis as any).assertStarted()).toThrow('Redis not started');
+            await expect(redis.getAllKeys()).rejects.toThrow('Redis not started');
+            await expect(redis.exportIndexSnapshot()).rejects.toThrow('Redis not started');
+            await expect(redis.exportIndexChanges()).rejects.toThrow('Redis not started');
+            await expect((redis as any).getIndexCheckpointCursor()).rejects.toThrow('Redis not started');
+
+            await expect((sqlite as any).recordIndexChangeStrict({ kind: 'did', did: didA }))
+                .rejects.toThrow('SQLite DB not open');
+            await expect((sqlite as any).getIndexCheckpointCursor()).rejects.toThrow('SQLite DB not open');
+            await expect(sqlite.exportIndexSnapshot()).rejects.toThrow('SQLite DB not open');
+            await expect(sqlite.exportIndexChanges()).rejects.toThrow('SQLite DB not open');
+        }
+        finally {
+            fs.rmSync(tempDir, { recursive: true, force: true });
+        }
     });
 });

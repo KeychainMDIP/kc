@@ -110,6 +110,17 @@ describe('search DB branch behavior', () => {
         expect(await db.loadSyncState('index.changes.cursor')).toBe('2026-04-01T12:00:00.000Z');
         await db.saveSyncState('cursor', null);
         expect(await db.loadSyncState('cursor')).toBeNull();
+        await db.saveSyncState('stale-cursor', 'old');
+        await db.applyIndexPage({
+            dids: [],
+            blocks: [],
+            syncStateUpdates: {
+                'stale-cursor': null,
+                'next-cursor': '43',
+            },
+        });
+        expect(await db.loadSyncState('stale-cursor')).toBeNull();
+        expect(await db.loadSyncState('next-cursor')).toBe('43');
 
         await seedDID(db, eventDid, { events: [didEventA] });
         expect(await db.getDIDEvents(eventDid)).toStrictEqual([didEventA]);
@@ -123,6 +134,7 @@ describe('search DB branch behavior', () => {
         expect(await db.listEvents({
             registry: 'local',
             updatedAfter: didEventA.time,
+            updatedBefore: '2026-04-01T12:00:00.000Z',
             limit: 1,
             offset: 0,
         })).toStrictEqual({
@@ -141,6 +153,20 @@ describe('search DB branch behavior', () => {
         expect(await db.getBlock('TFTC', 100)).toStrictEqual(blockA);
         expect(await db.getBlock('TFTC', 'block-b')).toStrictEqual(blockB);
         expect(await db.getBlock('TFTC', 'missing')).toBeNull();
+        expect(await db.applyIndexPage({
+            dids: [],
+            blocks: [{ registry: 'TFTC', block: blockA, removed: true }],
+        })).toMatchObject({
+            removedBlocks: 1,
+        });
+        expect(await db.getBlock('TFTC', 100)).toBeNull();
+        expect(await db.applyIndexPage({
+            dids: [],
+            blocks: [{ registry: 'TFTC', block: blockB, removed: true }],
+        })).toMatchObject({
+            removedBlocks: 1,
+        });
+        expect(await db.getBlock('TFTC')).toBeNull();
 
         await seedDID(db, eventDid, {
             doc: { didDocument: { id: eventDid } },
@@ -240,7 +266,7 @@ describe('search DB branch behavior', () => {
             process.chdir(tempDir);
             const defaultDb = await Sqlite.create();
             await defaultDb.disconnect();
-            new Sqlite();
+            await expect(new Sqlite().listEvents()).rejects.toThrow('DB not connected');
         }
         finally {
             process.chdir(originalCwd);
@@ -323,6 +349,301 @@ describe('search DB branch behavior', () => {
 
         expect(await db.listChallengeReceipts()).toStrictEqual({ total: 0, receipts: [] });
         expect(await db.getChallengeReceiptUsage()).toStrictEqual({ total: 0, usage: [] });
+
+        await db.disconnect();
+        expect(mockPool.end).toHaveBeenCalledTimes(1);
+    });
+
+    it('stores raw events, blocks, sync state, and event filters in postgres', async () => {
+        jest.resetModules();
+        const Postgres = (await import('../../services/search-server/src/db/postgres.ts')).default;
+        const events = new Map<string, GatekeeperEvent[]>();
+        const docs = new Map<string, object>();
+        const blocks = new Map<string, BlockInfo>();
+        const syncState = new Map<string, string>();
+        const publishedCredentials = new Map<string, PublishedCredentialRecord[]>();
+        const challengeReceipts = new Map<string, ChallengeReceiptRecord[]>();
+
+        function blockKey(registry: string, hash: string): string {
+            return `${registry}\u0000${hash}`;
+        }
+
+        function filterEvents(params: unknown[], sql: string) {
+            const rows = Array.from(events.entries())
+                .flatMap(([did, didEvents]) => didEvents.map((event, eventIndex) => ({
+                    did,
+                    eventIndex,
+                    registry: event.registry,
+                    time: event.time,
+                    event,
+                })));
+
+            return rows
+                .filter(row => {
+                    let paramIndex = 0;
+
+                    if (sql.includes('registry =')) {
+                        if (row.registry !== params[paramIndex++]) {
+                            return false;
+                        }
+                    }
+                    if (sql.includes('time >')) {
+                        if (row.time <= String(params[paramIndex++])) {
+                            return false;
+                        }
+                    }
+                    if (sql.includes('time <')) {
+                        if (row.time >= String(params[paramIndex++])) {
+                            return false;
+                        }
+                    }
+                    return true;
+                })
+                .sort((a, b) => b.time.localeCompare(a.time) || a.did.localeCompare(b.did) || a.eventIndex - b.eventIndex);
+        }
+
+        const query = jest.fn(async (sql: string, params: unknown[] = []) => {
+            const text = String(sql);
+
+            if (text.includes('CREATE TABLE') || text.includes('CREATE INDEX') ||
+                text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK') {
+                return { rowCount: 0, rows: [] };
+            }
+
+            if (text.includes('SELECT value FROM sync_state')) {
+                const value = syncState.get(String(params[0]));
+                return value ? { rowCount: 1, rows: [{ value }] } : { rowCount: 0, rows: [] };
+            }
+
+            if (text.includes('DELETE FROM sync_state')) {
+                const deleted = syncState.delete(String(params[0]));
+                return { rowCount: deleted ? 1 : 0, rows: [] };
+            }
+
+            if (text.includes('INSERT INTO sync_state')) {
+                syncState.set(String(params[0]), String(params[1]));
+                return { rowCount: 1, rows: [] };
+            }
+
+            if (text.includes('SELECT event FROM did_events')) {
+                return {
+                    rowCount: events.get(String(params[0]))?.length ?? 0,
+                    rows: (events.get(String(params[0])) ?? [])
+                        .map(event => ({ event: JSON.stringify(event) })),
+                };
+            }
+
+            if (text.includes('SELECT block FROM blocks') && text.includes('ORDER BY height DESC')) {
+                const registry = String(params[0]);
+                const block = Array.from(blocks.entries())
+                    .filter(([key]) => key.startsWith(`${registry}\u0000`))
+                    .map(([, value]) => value)
+                    .sort((a, b) => b.height - a.height)[0];
+                return block
+                    ? { rowCount: 1, rows: [{ block: JSON.stringify(block) }] }
+                    : { rowCount: 0, rows: [] };
+            }
+
+            if (text.includes('SELECT block FROM blocks') && text.includes('height =')) {
+                const registry = String(params[0]);
+                const height = Number(params[1]);
+                const block = Array.from(blocks.entries())
+                    .filter(([key]) => key.startsWith(`${registry}\u0000`))
+                    .map(([, value]) => value)
+                    .find(value => value.height === height);
+                return block ? { rowCount: 1, rows: [{ block }] } : { rowCount: 0, rows: [] };
+            }
+
+            if (text.includes('SELECT block FROM blocks') && text.includes('hash =')) {
+                const block = blocks.get(blockKey(String(params[0]), String(params[1])));
+                return block ? { rowCount: 1, rows: [{ block }] } : { rowCount: 0, rows: [] };
+            }
+
+            if (text.includes('DELETE FROM blocks')) {
+                const deleted = blocks.delete(blockKey(String(params[0]), String(params[1])));
+                return { rowCount: deleted ? 1 : 0, rows: [] };
+            }
+
+            if (text.includes('INSERT INTO blocks')) {
+                const block = JSON.parse(String(params[4])) as BlockInfo;
+                blocks.set(blockKey(String(params[0]), String(params[1])), block);
+                return { rowCount: 1, rows: [] };
+            }
+
+            if (text.includes('DELETE FROM did_events')) {
+                const deleted = events.delete(String(params[0]));
+                return { rowCount: deleted ? 1 : 0, rows: [] };
+            }
+
+            if (text.includes('INSERT INTO did_events')) {
+                const did = String(params[0]);
+                const eventIndex = Number(params[1]);
+                const event = JSON.parse(String(params[4])) as GatekeeperEvent;
+                const didEvents = events.get(did) ?? [];
+                didEvents[eventIndex] = event;
+                events.set(did, didEvents);
+                return { rowCount: 1, rows: [] };
+            }
+
+            if (text.includes('DELETE FROM did_docs')) {
+                const deleted = docs.delete(String(params[0]));
+                return { rowCount: deleted ? 1 : 0, rows: [] };
+            }
+
+            if (text.includes('INSERT INTO did_docs')) {
+                docs.set(String(params[0]), JSON.parse(String(params[1])) as object);
+                return { rowCount: 1, rows: [] };
+            }
+
+            if (text.includes('DELETE FROM published_credentials')) {
+                const deleted = publishedCredentials.delete(String(params[0]));
+                return { rowCount: deleted ? 1 : 0, rows: [] };
+            }
+
+            if (text.includes('INSERT INTO published_credentials')) {
+                const holderDid = String(params[0]);
+                publishedCredentials.set(holderDid, [{
+                    holderDid,
+                    credentialDid: String(params[1]),
+                    schemaDid: String(params[2]),
+                    issuerDid: String(params[3]),
+                    subjectDid: String(params[4]),
+                    revealed: Boolean(params[5]),
+                    updatedAt: String(params[6]),
+                }]);
+                return { rowCount: 1, rows: [] };
+            }
+
+            if (text.includes('DELETE FROM challenge_receipts')) {
+                const deleted = challengeReceipts.delete(String(params[0]));
+                return { rowCount: deleted ? 1 : 0, rows: [] };
+            }
+
+            if (text.includes('INSERT INTO challenge_receipts')) {
+                const receiptDid = String(params[0]);
+                challengeReceipts.set(receiptDid, [{
+                    receiptDid,
+                    attesterDid: String(params[1]),
+                    schemaDid: String(params[2]),
+                    requesterDid: String(params[3]),
+                    verifiedAt: String(params[4]),
+                    responseCommitment: String(params[5]),
+                    updatedAt: String(params[6]),
+                }]);
+                return { rowCount: 1, rows: [] };
+            }
+
+            if (text.includes('SELECT COUNT(*)::int AS total FROM did_events')) {
+                return { rowCount: 1, rows: [{ total: filterEvents(params, text).length }] };
+            }
+
+            if (text.includes('SELECT did, registry, time, event')) {
+                const limit = Number(params[params.length - 2]);
+                const offset = Number(params[params.length - 1]);
+                return {
+                    rowCount: 1,
+                    rows: filterEvents(params.slice(0, -2), text)
+                        .slice(offset, offset + limit)
+                        .map(row => ({
+                            did: row.did,
+                            registry: row.registry,
+                            time: row.time,
+                            event: JSON.stringify(row.event),
+                        })),
+                };
+            }
+
+            throw new Error(`Unexpected postgres query: ${text}`);
+        });
+        const mockPool = {
+            query,
+            connect: jest.fn(async () => ({
+                query,
+                release: jest.fn(),
+            })),
+            end: jest.fn().mockResolvedValue(undefined as never),
+        };
+
+        class TestPostgres extends Postgres {
+            protected createPool(): any {
+                return mockPool;
+            }
+        }
+
+        const db = new TestPostgres('postgresql://example');
+        await db.connect();
+
+        expect(await db.loadSyncState('missing')).toBeNull();
+        await db.saveSyncState('cursor', '42');
+        expect(await db.loadSyncState('cursor')).toBe('42');
+        await db.saveSyncState('cursor', null);
+        expect(await db.loadSyncState('cursor')).toBeNull();
+
+        const stored = await db.applyIndexPage({
+            dids: [{
+                did: eventDid,
+                events: [didEventA, didEventB],
+                doc: { didDocument: { id: eventDid } },
+                publishedCredentials: [{ ...publishedCredentialA, holderDid: eventDid }],
+                challengeReceipts: [{ ...challengeReceipt, receiptDid: eventDid }],
+            }],
+            blocks: [{ registry: 'TFTC', block: blockA }],
+            syncStateUpdates: {
+                old: null,
+                next: '43',
+            },
+        });
+
+        expect(stored).toMatchObject({
+            changedDids: [eventDid],
+            storedBlocks: 1,
+        });
+        expect(await db.getDIDEvents(eventDid)).toStrictEqual([didEventA, didEventB]);
+        expect(await db.getBlock('TFTC')).toStrictEqual(blockA);
+        expect(await db.getBlock('TFTC', 100)).toStrictEqual(blockA);
+        expect(await db.getBlock('TFTC', 'block-a')).toStrictEqual(blockA);
+        expect(await db.getBlock('TFTC', 'missing')).toBeNull();
+        expect(await db.loadSyncState('next')).toBe('43');
+
+        expect(await db.listEvents({
+            registry: 'local',
+            updatedAfter: didEventA.time,
+            updatedBefore: '2026-04-01T12:00:00.000Z',
+            limit: 1,
+            offset: 0,
+        })).toStrictEqual({
+            total: 1,
+            events: [{
+                did: eventDid,
+                registry: 'local',
+                time: didEventB.time,
+                event: didEventB,
+            }],
+        });
+
+        expect(await db.applyIndexPage({
+            dids: [{ did: eventDid, events: [didEventA, didEventB] }],
+            blocks: [],
+        })).toMatchObject({
+            changedDids: [],
+        });
+
+        expect(await db.applyIndexPage({
+            dids: [],
+            blocks: [{ registry: 'TFTC', block: blockA, removed: true }],
+        })).toMatchObject({
+            removedBlocks: 1,
+        });
+        expect(await db.getBlock('TFTC')).toBeNull();
+
+        expect(await db.applyIndexPage({
+            dids: [{ did: eventDid, events: [], removed: true }],
+            blocks: [],
+        })).toMatchObject({
+            changedDids: [eventDid],
+            removedDids: 1,
+        });
+        expect(await db.getDIDEvents(eventDid)).toStrictEqual([]);
 
         await db.disconnect();
         expect(mockPool.end).toHaveBeenCalledTimes(1);
