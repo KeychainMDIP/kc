@@ -43,6 +43,31 @@ interface AdapterFixture {
     cleanup?: () => Promise<void> | void;
 }
 
+function parseStoredEvent(value: unknown): GatekeeperEvent {
+    return typeof value === 'string'
+        ? JSON.parse(value) as GatekeeperEvent
+        : value as GatekeeperEvent;
+}
+
+function cloneJSONMap<T>(source: Map<string, T>): Map<string, T> {
+    return new Map(Array.from(source.entries()).map(([key, value]) => [
+        key,
+        JSON.parse(JSON.stringify(value)) as T,
+    ]));
+}
+
+function requireActiveMap<T>(source: Map<string, T> | null, label: string): Map<string, T> {
+    if (!source) {
+        throw new Error(`Expected active ${label} transaction`);
+    }
+
+    return source;
+}
+
+function fixtureBlockKey(registry: string, hash: string): string {
+    return `${registry}\u0000${hash}`;
+}
+
 async function createMemoryFixture(): Promise<AdapterFixture> {
     const db = new DbJsonMemory('index-export-memory');
     await db.resetDb();
@@ -75,12 +100,6 @@ function createPostgresFixture(): AdapterFixture {
     ]);
     const changes = createIndexChanges();
     let nextChangeSeq = changes.length;
-
-    function parseEvent(value: unknown): GatekeeperEvent {
-        return typeof value === 'string'
-            ? JSON.parse(value) as GatekeeperEvent
-            : value as GatekeeperEvent;
-    }
 
     function recordChange(params: unknown[]) {
         nextChangeSeq += 1;
@@ -137,7 +156,7 @@ function createPostgresFixture(): AdapterFixture {
                 const id = String(params[i + 1]);
                 const seq = Number(params[i + 2]);
                 const events = eventsByKey.get(id) ?? [];
-                events[seq] = parseEvent(params[i + 3]);
+                events[seq] = parseStoredEvent(params[i + 3]);
                 eventsByKey.set(id, events);
             }
 
@@ -420,15 +439,13 @@ function createRedisIndexChangeFailureFixture(): DbRedis {
         [`${dbName}/dids/z1`, [JSON.stringify(eventA)]],
         [`${dbName}/dids/z2`, [JSON.stringify(eventB)]],
     ]);
-    const strings = new Map<string, string>();
-    const hashes = new Map<string, Map<string, string>>();
 
     (db as any).redis = {
         eval: async () => {
             throw new Error('index change insert failed');
         },
-        get: async (key: string) => strings.get(key) ?? null,
-        hget: async (key: string, field: string) => hashes.get(key)?.get(field) ?? null,
+        get: async () => null,
+        hget: async () => null,
         lrange: async (key: string) => lists.get(key) ?? [],
     };
 
@@ -567,48 +584,14 @@ function createMongoIndexChangeFailureFixture(): DbMongo {
     let transactionEvents: Map<string, GatekeeperEvent[]> | null = null;
     let transactionBlocks: Map<string, BlockInfo> | null = null;
 
-    function cloneEvents(source: Map<string, GatekeeperEvent[]>): Map<string, GatekeeperEvent[]> {
-        return new Map(Array.from(source.entries()).map(([key, events]) => [
-            key,
-            JSON.parse(JSON.stringify(events)) as GatekeeperEvent[],
-        ]));
-    }
-
-    function cloneBlocks(source: Map<string, BlockInfo>): Map<string, BlockInfo> {
-        return new Map(Array.from(source.entries()).map(([key, storedBlock]) => [
-            key,
-            JSON.parse(JSON.stringify(storedBlock)) as BlockInfo,
-        ]));
-    }
-
-    function requireTransactionEvents(): Map<string, GatekeeperEvent[]> {
-        if (!transactionEvents) {
-            throw new Error('Expected active transaction');
-        }
-
-        return transactionEvents;
-    }
-
-    function requireTransactionBlocks(): Map<string, BlockInfo> {
-        if (!transactionBlocks) {
-            throw new Error('Expected active transaction');
-        }
-
-        return transactionBlocks;
-    }
-
-    function blockKey(registry: string, hash: string): string {
-        return `${registry}\u0000${hash}`;
-    }
-
     (db as any).client = createMongoTransactionClient(async callback => {
-        transactionEvents = cloneEvents(committedEvents);
-        transactionBlocks = cloneBlocks(committedBlocks);
+        transactionEvents = cloneJSONMap(committedEvents);
+        transactionBlocks = cloneJSONMap(committedBlocks);
 
         try {
             const result = await callback();
-            committedEvents = requireTransactionEvents();
-            committedBlocks = requireTransactionBlocks();
+            committedEvents = requireActiveMap(transactionEvents, 'Mongo events');
+            committedBlocks = requireActiveMap(transactionBlocks, 'Mongo blocks');
             return result;
         }
         finally {
@@ -632,7 +615,7 @@ function createMongoIndexChangeFailureFixture(): DbMongo {
                             $set?: { events: GatekeeperEvent[] };
                         }
                     ) => {
-                        const events = requireTransactionEvents();
+                        const events = requireActiveMap(transactionEvents, 'Mongo events');
                         const existed = events.has(id);
 
                         if (update.$push) {
@@ -651,7 +634,7 @@ function createMongoIndexChangeFailureFixture(): DbMongo {
                         };
                     },
                     deleteOne: async ({ id }: { id: string }) => {
-                        const events = requireTransactionEvents();
+                        const events = requireActiveMap(transactionEvents, 'Mongo events');
                         const deletedCount = events.delete(id) ? 1 : 0;
                         return { deletedCount };
                     },
@@ -664,9 +647,9 @@ function createMongoIndexChangeFailureFixture(): DbMongo {
                         { registry, hash }: { registry: string; hash: string },
                         { $set }: { $set: BlockInfo }
                     ) => {
-                        const blocks = requireTransactionBlocks();
-                        const existed = blocks.has(blockKey(registry, hash));
-                        blocks.set(blockKey(registry, hash), { ...$set });
+                        const blocks = requireActiveMap(transactionBlocks, 'Mongo blocks');
+                        const existed = blocks.has(fixtureBlockKey(registry, hash));
+                        blocks.set(fixtureBlockKey(registry, hash), { ...$set });
 
                         return {
                             modifiedCount: existed ? 1 : 0,
@@ -728,52 +711,12 @@ function createPostgresIndexChangeFailureFixture(): DbPostgres {
     let transactionEvents: Map<string, GatekeeperEvent[]> | null = null;
     let transactionBlocks: Map<string, BlockInfo> | null = null;
 
-    function cloneEvents(source: Map<string, GatekeeperEvent[]>): Map<string, GatekeeperEvent[]> {
-        return new Map(Array.from(source.entries()).map(([key, events]) => [
-            key,
-            JSON.parse(JSON.stringify(events)) as GatekeeperEvent[],
-        ]));
-    }
-
-    function cloneBlocks(source: Map<string, BlockInfo>): Map<string, BlockInfo> {
-        return new Map(Array.from(source.entries()).map(([key, storedBlock]) => [
-            key,
-            JSON.parse(JSON.stringify(storedBlock)) as BlockInfo,
-        ]));
-    }
-
-    function parseEvent(value: unknown): GatekeeperEvent {
-        return typeof value === 'string'
-            ? JSON.parse(value) as GatekeeperEvent
-            : value as GatekeeperEvent;
-    }
-
-    function requireTransactionEvents(): Map<string, GatekeeperEvent[]> {
-        if (!transactionEvents) {
-            throw new Error('Expected active transaction');
-        }
-
-        return transactionEvents;
-    }
-
-    function requireTransactionBlocks(): Map<string, BlockInfo> {
-        if (!transactionBlocks) {
-            throw new Error('Expected active transaction');
-        }
-
-        return transactionBlocks;
-    }
-
-    function blockKey(registry: string, hash: string): string {
-        return `${registry}\u0000${hash}`;
-    }
-
     async function runQuery(sql: string, params: unknown[] = [], transactional = false) {
         const text = String(sql);
 
         if (text === 'BEGIN') {
-            transactionEvents = cloneEvents(committedEvents);
-            transactionBlocks = cloneBlocks(committedBlocks);
+            transactionEvents = cloneJSONMap(committedEvents);
+            transactionBlocks = cloneJSONMap(committedBlocks);
             return { rows: [], rowCount: 0 };
         }
 
@@ -794,27 +737,27 @@ function createPostgresIndexChangeFailureFixture(): DbPostgres {
         if (text.includes('SELECT COALESCE(MAX(seq)')) {
             const id = String(params[1]);
             const events = transactional
-                ? requireTransactionEvents()
+                ? requireActiveMap(transactionEvents, 'Postgres events')
                 : committedEvents;
             return { rows: [{ seq: events.get(id)?.length ?? 0 }], rowCount: 1 };
         }
 
         if (text.includes('DELETE FROM gatekeeper_events')) {
             const id = String(params[1]);
-            const events = requireTransactionEvents();
+            const events = requireActiveMap(transactionEvents, 'Postgres events');
             const rowCount = events.get(id)?.length ?? 0;
             events.delete(id);
             return { rows: [], rowCount };
         }
 
         if (text.includes('INSERT INTO gatekeeper_events')) {
-            const events = requireTransactionEvents();
+            const events = requireActiveMap(transactionEvents, 'Postgres events');
 
             for (let i = 0; i < params.length; i += 4) {
                 const id = String(params[i + 1]);
                 const seq = Number(params[i + 2]);
                 const history = events.get(id) ?? [];
-                history[seq] = parseEvent(params[i + 3]);
+                history[seq] = parseStoredEvent(params[i + 3]);
                 events.set(id, history);
             }
 
@@ -822,11 +765,11 @@ function createPostgresIndexChangeFailureFixture(): DbPostgres {
         }
 
         if (text.includes('INSERT INTO gatekeeper_blocks')) {
-            const blocks = requireTransactionBlocks();
+            const blocks = requireActiveMap(transactionBlocks, 'Postgres blocks');
             const registry = String(params[1]);
             const hash = String(params[2]);
 
-            blocks.set(blockKey(registry, hash), {
+            blocks.set(fixtureBlockKey(registry, hash), {
                 hash,
                 height: Number(params[3]),
                 time: Number(params[4]),
