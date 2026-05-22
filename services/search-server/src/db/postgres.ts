@@ -85,7 +85,6 @@ export default class Postgres implements DIDsDb {
                 attester_did TEXT NOT NULL,
                 schema_did TEXT NOT NULL,
                 requester_did TEXT NOT NULL,
-                verified_at TEXT NOT NULL,
                 response_commitment TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -98,9 +97,6 @@ export default class Postgres implements DIDsDb {
 
             CREATE INDEX IF NOT EXISTS idx_challenge_receipts_requester
                 ON challenge_receipts (requester_did);
-
-            CREATE INDEX IF NOT EXISTS idx_challenge_receipts_verified
-                ON challenge_receipts (verified_at);
 
             CREATE INDEX IF NOT EXISTS idx_challenge_receipts_commitment
                 ON challenge_receipts (response_commitment);
@@ -230,15 +226,13 @@ export default class Postgres implements DIDsDb {
                         attester_did,
                         schema_did,
                         requester_did,
-                        verified_at,
                         response_commitment,
                         updated_at
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    ) VALUES ($1, $2, $3, $4, $5, $6)
                     ON CONFLICT (receipt_did) DO UPDATE SET
                         attester_did = EXCLUDED.attester_did,
                         schema_did = EXCLUDED.schema_did,
                         requester_did = EXCLUDED.requester_did,
-                        verified_at = EXCLUDED.verified_at,
                         response_commitment = EXCLUDED.response_commitment,
                         updated_at = EXCLUDED.updated_at`,
                     [
@@ -246,7 +240,6 @@ export default class Postgres implements DIDsDb {
                         record.attesterDid,
                         record.schemaDid,
                         record.requesterDid,
-                        record.verifiedAt,
                         record.responseCommitment,
                         record.updatedAt,
                     ]
@@ -395,12 +388,11 @@ export default class Postgres implements DIDsDb {
                 attester_did AS "attesterDid",
                 schema_did AS "schemaDid",
                 requester_did AS "requesterDid",
-                verified_at AS "verifiedAt",
                 response_commitment AS "responseCommitment",
                 updated_at AS "updatedAt"
              FROM challenge_receipts
              ${where}
-             ORDER BY verified_at DESC, receipt_did ASC
+             ORDER BY updated_at DESC, receipt_did ASC
              LIMIT ${limitParam} OFFSET ${offsetParam}`,
             pageParams
         );
@@ -438,16 +430,16 @@ export default class Postgres implements DIDsDb {
             schemaDid: string;
             requesterDid: string;
             count: number;
-            firstVerifiedAt: string;
-            lastVerifiedAt: string;
+            firstUpdatedAt: string;
+            lastUpdatedAt: string;
         }>(
             `SELECT
                 attester_did AS "attesterDid",
                 schema_did AS "schemaDid",
                 requester_did AS "requesterDid",
                 COUNT(DISTINCT response_commitment)::int AS count,
-                MIN(verified_at) AS "firstVerifiedAt",
-                MAX(verified_at) AS "lastVerifiedAt"
+                MIN(updated_at) AS "firstUpdatedAt",
+                MAX(updated_at) AS "lastUpdatedAt"
              FROM challenge_receipts
              ${where}
              GROUP BY attester_did, schema_did, requester_did
@@ -642,14 +634,14 @@ export default class Postgres implements DIDsDb {
             params.push(responseCommitment);
         }
 
-        if (options.verifiedAfter) {
-            clauses.push(`verified_at >= $${index++}`);
-            params.push(options.verifiedAfter);
+        if (options.updatedAfter) {
+            clauses.push(`updated_at >= $${index++}`);
+            params.push(options.updatedAfter);
         }
 
-        if (options.verifiedBefore) {
-            clauses.push(`verified_at <= $${index++}`);
-            params.push(options.verifiedBefore);
+        if (options.updatedBefore) {
+            clauses.push(`updated_at <= $${index++}`);
+            params.push(options.updatedBefore);
         }
 
         return {

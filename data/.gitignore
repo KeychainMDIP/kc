@@ -1,5 +1,6 @@
 *.json
 *.db
+*.db-journal
 ipfs/
 mongodb/
 redis/
