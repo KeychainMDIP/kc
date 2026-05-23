@@ -454,13 +454,12 @@ describe('challenge receipts', () => {
 
         await keymaster.setCurrentId('Victor');
         const verification = await keymaster.verifyResponse(responseDID);
-        const verifiedAt = '2026-01-01T00:00:00.000Z';
         const responseCommitment = cipher.hashJSON({
             responseDid: responseDID,
             responseNonce: verification.responseNonce,
         });
 
-        const receipts = await keymaster.buildChallengeReceipts(responseDID, { verification, verifiedAt });
+        const receipts = await keymaster.buildChallengeReceipts(responseDID, { verification });
 
         expect(receipts).toStrictEqual([
             {
@@ -468,7 +467,6 @@ describe('challenge receipts', () => {
                 attesterDid: alice,
                 schemaDid,
                 requesterDid: victor,
-                verifiedAt,
                 responseCommitment,
             },
         ]);
@@ -483,7 +481,6 @@ describe('challenge receipts', () => {
 
         const receiptDIDs = await keymaster.publishChallengeReceipts(responseDID, {
             verification,
-            verifiedAt,
             registry: 'local',
         });
 
@@ -497,27 +494,13 @@ describe('challenge receipts', () => {
 
         const defaultBuildReceipts = await keymaster.buildChallengeReceipts(responseDID);
         expect(defaultBuildReceipts).toHaveLength(1);
-        expect(defaultBuildReceipts[0]).toStrictEqual({
-            ...receipts[0],
-            verifiedAt: expect.any(String),
-        });
-        expect(new Date(defaultBuildReceipts[0].verifiedAt).getTime()).not.toBeNaN();
+        expect(defaultBuildReceipts[0]).toStrictEqual(receipts[0]);
 
         const defaultReceiptDIDs = await keymaster.publishChallengeReceipts(responseDID);
         expect(defaultReceiptDIDs).toHaveLength(1);
 
         const defaultReceiptAsset = await keymaster.resolveAsset(defaultReceiptDIDs[0]) as { challengeReceipt: ChallengeReceipt };
-        expect(defaultReceiptAsset.challengeReceipt).toStrictEqual({
-            ...receipts[0],
-            verifiedAt: expect.any(String),
-        });
-        expect(new Date(defaultReceiptAsset.challengeReceipt.verifiedAt).getTime()).not.toBeNaN();
-
-        const normalizedReceipts = await keymaster.buildChallengeReceipts(responseDID, {
-            verification,
-            verifiedAt: 'January 1, 2026 00:00:00 UTC',
-        });
-        expect(normalizedReceipts[0].verifiedAt).toBe('2026-01-01T00:00:00.000Z');
+        expect(defaultReceiptAsset.challengeReceipt).toStrictEqual(receipts[0]);
     });
 
     it('should reject receipts for unsuccessful challenge responses', async () => {
@@ -596,17 +579,6 @@ describe('challenge receipts', () => {
         }
         catch (error: any) {
             expect(error.message).toBe('Invalid parameter: response.responseNonce');
-        }
-
-        try {
-            await keymaster.buildChallengeReceipts('did:mock:response', {
-                verification,
-                verifiedAt: 'not-a-date',
-            });
-            throw new ExpectedExceptionError();
-        }
-        catch (error: any) {
-            expect(error.message).toBe('Invalid parameter: options.verifiedAt');
         }
 
         const resolveDID = jest.spyOn(keymaster, 'resolveDID')
@@ -697,7 +669,6 @@ describe('challenge receipts', () => {
             attesterDid: 'did:mock:attester',
             schemaDid: 'did:mock:schema',
             requesterDid: 'did:mock:requester',
-            verifiedAt: '2026-01-01T00:00:00.000Z',
             responseCommitment: 'mock-commitment',
         };
 

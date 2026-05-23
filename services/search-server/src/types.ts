@@ -47,7 +47,6 @@ export interface ChallengeReceiptRecord {
     attesterDid: string;
     schemaDid: string;
     requesterDid: string;
-    verifiedAt: string;
     responseCommitment: string;
     updatedAt: string;
 }
@@ -58,8 +57,8 @@ export interface ChallengeReceiptListOptions {
     schemaDid?: string;
     requesterDid?: string;
     responseCommitment?: string;
-    verifiedAfter?: string;
-    verifiedBefore?: string;
+    updatedAfter?: string;
+    updatedBefore?: string;
     limit?: number;
     offset?: number;
 }
@@ -73,8 +72,8 @@ export interface ChallengeReceiptUsageOptions {
     attesterDid?: string;
     schemaDid?: string;
     requesterDid?: string;
-    verifiedAfter?: string;
-    verifiedBefore?: string;
+    updatedAfter?: string;
+    updatedBefore?: string;
     limit?: number;
     offset?: number;
 }
@@ -84,8 +83,8 @@ export interface ChallengeReceiptUsageRecord {
     schemaDid: string;
     requesterDid: string;
     count: number;
-    firstVerifiedAt: string;
-    lastVerifiedAt: string;
+    firstUpdatedAt: string;
+    lastUpdatedAt: string;
 }
 
 export interface ChallengeReceiptUsageResult {

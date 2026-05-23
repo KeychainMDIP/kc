@@ -269,8 +269,8 @@ async function main() {
             const schemaDid = req.query.schemaDid?.toString();
             const requesterDid = req.query.requesterDid?.toString();
             const responseCommitment = req.query.responseCommitment?.toString();
-            const verifiedAfter = req.query.verifiedAfter?.toString();
-            const verifiedBefore = req.query.verifiedBefore?.toString();
+            const updatedAfter = req.query.updatedAfter?.toString();
+            const updatedBefore = req.query.updatedBefore?.toString();
             const limit = parseNonNegativeInteger(req.query.limit, 50);
             const offset = parseNonNegativeInteger(req.query.offset, 0);
             const result = await didDb.listChallengeReceipts({
@@ -279,8 +279,8 @@ async function main() {
                 schemaDid,
                 requesterDid,
                 responseCommitment,
-                verifiedAfter,
-                verifiedBefore,
+                updatedAfter,
+                updatedBefore,
                 limit,
                 offset,
             });
@@ -301,16 +301,16 @@ async function main() {
 
             const schemaDid = req.query.schemaDid?.toString();
             const requesterDid = req.query.requesterDid?.toString();
-            const verifiedAfter = req.query.verifiedAfter?.toString();
-            const verifiedBefore = req.query.verifiedBefore?.toString();
+            const updatedAfter = req.query.updatedAfter?.toString();
+            const updatedBefore = req.query.updatedBefore?.toString();
             const limit = parseNonNegativeInteger(req.query.limit, 50);
             const offset = parseNonNegativeInteger(req.query.offset, 0);
             const result = await didDb.getChallengeReceiptUsage({
                 attesterDid,
                 schemaDid,
                 requesterDid,
-                verifiedAfter,
-                verifiedBefore,
+                updatedAfter,
+                updatedBefore,
                 limit,
                 offset,
             });

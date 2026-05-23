@@ -5,7 +5,6 @@ interface MaybeChallengeReceipt {
     attesterDid?: unknown;
     schemaDid?: unknown;
     requesterDid?: unknown;
-    verifiedAt?: unknown;
     responseCommitment?: unknown;
 }
 
@@ -34,10 +33,10 @@ function isIsoDateString(value: unknown): value is string {
     return typeof value === 'string' && !Number.isNaN(new Date(value).getTime());
 }
 
-function getFallbackUpdatedAt(doc: MaybeMdipDocument, verifiedAt: string): string {
+function getOperationUpdatedAt(doc: MaybeMdipDocument): string | null {
     const updatedAt = doc.didDocumentMetadata?.updated ?? doc.didDocumentMetadata?.created;
 
-    return typeof updatedAt === 'string' ? updatedAt : verifiedAt;
+    return isIsoDateString(updatedAt) ? updatedAt : null;
 }
 
 export function extractChallengeReceipts(
@@ -60,11 +59,13 @@ export function extractChallengeReceipts(
 
     const receipt = value as MaybeChallengeReceipt;
 
+    const updatedAt = getOperationUpdatedAt(mdipDoc);
+
     if (receipt.version !== 1 ||
         !isDid(receipt.attesterDid) ||
         !isDid(receipt.schemaDid) ||
         !isDid(receipt.requesterDid) ||
-        !isIsoDateString(receipt.verifiedAt) ||
+        !updatedAt ||
         !isNonEmptyString(receipt.responseCommitment)) {
         return [];
     }
@@ -75,9 +76,8 @@ export function extractChallengeReceipts(
             attesterDid: receipt.attesterDid,
             schemaDid: receipt.schemaDid,
             requesterDid: receipt.requesterDid,
-            verifiedAt: receipt.verifiedAt,
             responseCommitment: receipt.responseCommitment,
-            updatedAt: getFallbackUpdatedAt(mdipDoc, receipt.verifiedAt),
+            updatedAt,
         },
     ];
 }

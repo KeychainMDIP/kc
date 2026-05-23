@@ -105,7 +105,6 @@ export default class Sqlite implements DIDsDb {
                 attester_did TEXT NOT NULL,
                 schema_did TEXT NOT NULL,
                 requester_did TEXT NOT NULL,
-                verified_at TEXT NOT NULL,
                 response_commitment TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -118,9 +117,6 @@ export default class Sqlite implements DIDsDb {
 
             CREATE INDEX IF NOT EXISTS idx_challenge_receipts_requester
                 ON challenge_receipts (requester_did);
-
-            CREATE INDEX IF NOT EXISTS idx_challenge_receipts_verified
-                ON challenge_receipts (verified_at);
 
             CREATE INDEX IF NOT EXISTS idx_challenge_receipts_commitment
                 ON challenge_receipts (response_commitment);
@@ -462,7 +458,6 @@ export default class Sqlite implements DIDsDb {
             attesterDid: string;
             schemaDid: string;
             requesterDid: string;
-            verifiedAt: string;
             responseCommitment: string;
             updatedAt: string;
         }[]>(
@@ -471,12 +466,11 @@ export default class Sqlite implements DIDsDb {
                 attester_did AS attesterDid,
                 schema_did AS schemaDid,
                 requester_did AS requesterDid,
-                verified_at AS verifiedAt,
                 response_commitment AS responseCommitment,
                 updated_at AS updatedAt
              FROM challenge_receipts
              ${where}
-             ORDER BY verified_at DESC, receipt_did ASC
+             ORDER BY updated_at DESC, receipt_did ASC
              LIMIT ? OFFSET ?`,
             [...params, Math.max(0, limit), Math.max(0, offset)]
         );
@@ -488,7 +482,6 @@ export default class Sqlite implements DIDsDb {
                 attesterDid: row.attesterDid,
                 schemaDid: row.schemaDid,
                 requesterDid: row.requesterDid,
-                verifiedAt: row.verifiedAt,
                 responseCommitment: row.responseCommitment,
                 updatedAt: row.updatedAt,
             })),
@@ -522,16 +515,16 @@ export default class Sqlite implements DIDsDb {
             schemaDid: string;
             requesterDid: string;
             count: number | string;
-            firstVerifiedAt: string;
-            lastVerifiedAt: string;
+            firstUpdatedAt: string;
+            lastUpdatedAt: string;
         }[]>(
             `SELECT
                 attester_did AS attesterDid,
                 schema_did AS schemaDid,
                 requester_did AS requesterDid,
                 COUNT(DISTINCT response_commitment) AS count,
-                MIN(verified_at) AS firstVerifiedAt,
-                MAX(verified_at) AS lastVerifiedAt
+                MIN(updated_at) AS firstUpdatedAt,
+                MAX(updated_at) AS lastUpdatedAt
              FROM challenge_receipts
              ${where}
              GROUP BY attester_did, schema_did, requester_did
@@ -751,14 +744,14 @@ export default class Sqlite implements DIDsDb {
             params.push(responseCommitment);
         }
 
-        if (options.verifiedAfter) {
-            clauses.push('verified_at >= ?');
-            params.push(options.verifiedAfter);
+        if (options.updatedAfter) {
+            clauses.push('updated_at >= ?');
+            params.push(options.updatedAfter);
         }
 
-        if (options.verifiedBefore) {
-            clauses.push('verified_at <= ?');
-            params.push(options.verifiedBefore);
+        if (options.updatedBefore) {
+            clauses.push('updated_at <= ?');
+            params.push(options.updatedBefore);
         }
 
         return {
@@ -821,15 +814,13 @@ export default class Sqlite implements DIDsDb {
                     attester_did,
                     schema_did,
                     requester_did,
-                    verified_at,
                     response_commitment,
                     updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT(receipt_did) DO UPDATE SET
                     attester_did = excluded.attester_did,
                     schema_did = excluded.schema_did,
                     requester_did = excluded.requester_did,
-                    verified_at = excluded.verified_at,
                     response_commitment = excluded.response_commitment,
                     updated_at = excluded.updated_at
             `, [
@@ -837,7 +828,6 @@ export default class Sqlite implements DIDsDb {
                 record.attesterDid,
                 record.schemaDid,
                 record.requesterDid,
-                record.verifiedAt,
                 record.responseCommitment,
                 record.updatedAt,
             ]);

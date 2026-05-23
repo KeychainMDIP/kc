@@ -38,7 +38,6 @@ const challengeReceipt: ChallengeReceiptRecord = {
     attesterDid: 'did:test:attester-1',
     schemaDid: 'did:test:schema-1',
     requesterDid: 'did:test:requester-1',
-    verifiedAt: '2026-04-01T10:00:00.000Z',
     responseCommitment: 'mock-commitment-1',
     updatedAt: '2026-04-01T10:01:00.000Z',
 };
@@ -243,8 +242,8 @@ describe('search DB branch behavior', () => {
                 schemaDid: challengeReceipt.schemaDid,
                 requesterDid: challengeReceipt.requesterDid,
                 count: 1,
-                firstVerifiedAt: challengeReceipt.verifiedAt,
-                lastVerifiedAt: challengeReceipt.verifiedAt,
+                firstUpdatedAt: challengeReceipt.updatedAt,
+                lastUpdatedAt: challengeReceipt.updatedAt,
             }]);
 
             expect(await db.queryDocs({ 'didDocumentData.notArray[*]': { $in: ['value'] } })).toStrictEqual([]);
@@ -291,8 +290,8 @@ describe('search DB branch behavior', () => {
                 schemaDid: challengeReceipt.schemaDid,
                 requesterDid: challengeReceipt.requesterDid,
                 count: 1,
-                firstVerifiedAt: challengeReceipt.verifiedAt,
-                lastVerifiedAt: challengeReceipt.verifiedAt,
+                firstUpdatedAt: challengeReceipt.updatedAt,
+                lastUpdatedAt: challengeReceipt.updatedAt,
             }]);
             expect(await db.queryDocs({ 'didDocument.id': { $in: ['did:test:path'] } })).toStrictEqual(['did:test:path']);
             await expect(db.queryDocs({ '$didDocument.id': { $in: ['did:test:path'] } }))
@@ -526,9 +525,8 @@ describe('search DB branch behavior', () => {
                     attesterDid: String(params[1]),
                     schemaDid: String(params[2]),
                     requesterDid: String(params[3]),
-                    verifiedAt: String(params[4]),
-                    responseCommitment: String(params[5]),
-                    updatedAt: String(params[6]),
+                    responseCommitment: String(params[4]),
+                    updatedAt: String(params[5]),
                 }]);
                 return { rowCount: 1, rows: [] };
             }

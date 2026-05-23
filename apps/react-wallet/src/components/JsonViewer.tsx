@@ -1,10 +1,4 @@
-import React, {
-    CSSProperties,
-    ReactNode,
-    useEffect,
-    useState
-} from "react";
-import JsonView from '@uiw/react-json-view';
+import React, { useEffect, useState } from "react";
 import {
     Box,
     TextField,
@@ -19,11 +13,14 @@ import {
 import { useWalletContext } from "../contexts/WalletProvider";
 import { useUIContext } from "../contexts/UIContext";
 import { useSnackbar } from "../contexts/SnackbarProvider";
-import { MdipDocument } from "@mdip/gatekeeper/types";
 import VersionNavigator from "./VersionNavigator";
+import JsonDocumentView, {
+    JsonDocumentValue,
+    toJsonDocumentValue,
+} from "./JsonDocumentView";
 
 function JsonViewer({ browserTab, browserSubTab, showResolveField = false }: { browserTab: string, browserSubTab?: string, showResolveField?: boolean }) {
-    const [aliasDocs, setAliasDocs] = useState<Record<string, unknown> | undefined>(undefined);
+    const [aliasDocs, setAliasDocs] = useState<JsonDocumentValue | undefined>(undefined);
     const [aliasDocsVersion, setAliasDocsVersion] = useState<number>(1);
     const [aliasDocsVersionMax, setAliasDocsVersionMax] = useState<number>(1);
     const [formDid, setFormDid] = useState<string>("");
@@ -92,7 +89,7 @@ function JsonViewer({ browserTab, browserSubTab, showResolveField = false }: { b
         const populateData = async () => {
             try {
                 if (contents) {
-                    setAliasDocs(contents);
+                    setAliasDocs(toJsonDocumentValue(contents));
                 } else if (did) {
                     await resolveDID(did);
                 }
@@ -250,68 +247,7 @@ function JsonViewer({ browserTab, browserSubTab, showResolveField = false }: { b
 
             {aliasDocs && (
                 <Box sx={{ mt: 1, overflowX: "auto", overflowY: "visible", WebkitOverflowScrolling: "touch" }}>
-                    <JsonView
-                        value={aliasDocs}
-                        shortenTextAfterLength={0}
-                    >
-                        <JsonView.String
-                            render={(
-                                viewRenderProps: {
-                                    children?: ReactNode;
-                                    style?: CSSProperties;
-                                    [key: string]: any;
-                                },
-                                nodeInfo: {
-                                    value?: unknown;
-                                    type: "type" | "value";
-                                    keyName?: string | number;
-                                }
-                            ) => {
-                                const { children, style, ...rest } = viewRenderProps;
-                                const { value, type, keyName } = nodeInfo;
-
-                                if (typeof value === 'string' && value.startsWith('did:') && type === 'value') {
-                                    return (
-                                        <span
-                                            {...rest}
-                                            style={{ ...style, color: 'blue', textDecoration: 'underline', cursor: 'pointer' }}
-                                            onClick={() => handleResolveDID(value)}
-                                        >
-                                            {children}
-                                        </span>
-                                    );
-                                }
-
-                                if (type === 'value' &&
-                                    (aliasDocs as MdipDocument)?.didDocumentMetadata?.timestamp?.chain === "TBTC"
-                                ) {
-                                    const currentKeyString = String(keyName);
-                                    let url = '';
-
-                                    if (currentKeyString === 'blockid') {
-                                        url = `https://mempool.space/testnet4/block/${value}`;
-                                    } else if (currentKeyString === 'txid') {
-                                        url = `https://mempool.space/testnet4/tx/${value}`;
-                                    }
-
-                                    if (url) {
-                                        return (
-                                            <a
-                                                href={url}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                style={{ ...style, color: 'blue', textDecoration: 'underline', cursor: 'pointer' }}
-                                            >
-                                                {children}
-                                            </a>
-                                        );
-                                    }
-                                }
-
-                                return undefined;
-                            }}
-                        />
-                    </JsonView>
+                    <JsonDocumentView value={aliasDocs} onResolveDID={handleResolveDID} />
                 </Box>
             )}
         </Box>

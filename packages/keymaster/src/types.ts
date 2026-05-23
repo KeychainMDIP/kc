@@ -145,13 +145,11 @@ export interface ChallengeReceipt {
     attesterDid: string;
     schemaDid: string;
     requesterDid: string;
-    verifiedAt: string;
     responseCommitment: string;
 }
 
 export interface BuildChallengeReceiptOptions {
     verification?: ChallengeResponse;
-    verifiedAt?: string;
     retries?: number;
     delay?: number;
 }
