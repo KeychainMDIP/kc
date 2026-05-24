@@ -266,7 +266,7 @@ export default class Postgres implements DIDsDb {
                         'DELETE FROM blocks WHERE registry = $1 AND hash = $2',
                         [registry, block.hash]
                     );
-                    if ((deletion.rowCount ?? 0) > 0) {
+                    if (Number(deletion.rowCount) > 0) {
                         result.removedBlocks += 1;
                     }
                     continue;
@@ -285,7 +285,7 @@ export default class Postgres implements DIDsDb {
             }
 
             for (const record of page.dids) {
-                const changed = eventChanges.get(record.did) ?? false;
+                const changed = eventChanges.get(record.did) === true;
 
                 if (!changed && !record.removed) {
                     continue;

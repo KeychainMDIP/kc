@@ -130,6 +130,23 @@ describe('search DB branch behavior', () => {
         expect(unchanged.changedDids).toStrictEqual([]);
         await seedDID(db, eventDid, { events: [didEventA, didEventB] });
         expect(await db.getDIDEvents(eventDid)).toStrictEqual([didEventA, didEventB]);
+        expect(await db.listEvents()).toStrictEqual({
+            total: 2,
+            events: [
+                {
+                    did: eventDid,
+                    registry: 'local',
+                    time: didEventB.time,
+                    event: didEventB,
+                },
+                {
+                    did: eventDid,
+                    registry: 'local',
+                    time: didEventA.time,
+                    event: didEventA,
+                },
+            ],
+        });
         expect(await db.listEvents({
             registry: 'local',
             updatedAfter: didEventA.time,
@@ -152,6 +169,12 @@ describe('search DB branch behavior', () => {
         expect(await db.getBlock('TFTC', 100)).toStrictEqual(blockA);
         expect(await db.getBlock('TFTC', 'block-b')).toStrictEqual(blockB);
         expect(await db.getBlock('TFTC', 'missing')).toBeNull();
+        expect(await db.applyIndexPage({
+            dids: [],
+            blocks: [{ registry: 'TFTC', block: { ...blockA, hash: 'missing' }, removed: true }],
+        })).toMatchObject({
+            removedBlocks: 0,
+        });
         expect(await db.applyIndexPage({
             dids: [],
             blocks: [{ registry: 'TFTC', block: blockA, removed: true }],
@@ -250,6 +273,29 @@ describe('search DB branch behavior', () => {
             expect(await db.queryDocs({ 'didDocumentData.notArray[*].kind': { $in: ['value'] } })).toStrictEqual([]);
             expect(await db.queryDocs({ 'didDocumentData.notObject.*': { $in: ['value'] } })).toStrictEqual([]);
             expect(await db.queryDocs({ 'didDocumentData.notObject.*.kind': { $in: ['value'] } })).toStrictEqual([]);
+            expect(await db.applyIndexPage({
+                dids: [],
+                blocks: [{ registry: 'missing', block: { ...blockA, hash: 'missing' }, removed: true }],
+            })).toMatchObject({
+                removedBlocks: 0,
+            });
+
+            const tieDidA = 'did:test:event-tie-a';
+            const tieDidB = 'did:test:event-tie-b';
+            const tieEventA = { ...didEventA, did: tieDidA };
+            const tieEventB = { ...didEventA, did: tieDidB };
+
+            await seedDID(db, tieDidB, { events: [tieEventB] });
+            await seedDID(db, tieDidA, { events: [tieEventA] });
+
+            expect((await db.listEvents({
+                updatedAfter: '2026-04-01T09:00:00.000Z',
+                updatedBefore: '2026-04-01T10:30:00.000Z',
+                limit: 2,
+            })).events.map(record => record.did)).toStrictEqual([
+                tieDidA,
+                tieDidB,
+            ]);
         }
         finally {
             await db.disconnect();
@@ -264,8 +310,12 @@ describe('search DB branch behavior', () => {
             fs.mkdirSync(path.join(tempDir, 'data'));
             process.chdir(tempDir);
             const defaultDb = await Sqlite.create();
+            await defaultDb.connect();
             await defaultDb.disconnect();
-            await expect(new Sqlite().listEvents()).rejects.toThrow('DB not connected');
+            const disconnected = new Sqlite();
+            await expect(disconnected.getDIDEvents(eventDid)).rejects.toThrow('DB not connected');
+            await expect(disconnected.getBlock('TFTC')).rejects.toThrow('DB not connected');
+            await expect(disconnected.listEvents()).rejects.toThrow('DB not connected');
         }
         finally {
             process.chdir(originalCwd);
@@ -305,6 +355,7 @@ describe('search DB branch behavior', () => {
                 expect(await db.listPublishedCredentials()).toStrictEqual({ total: 0, credentials: [] });
                 expect(await db.listChallengeReceipts()).toStrictEqual({ total: 0, receipts: [] });
                 expect(await db.getChallengeReceiptUsage()).toStrictEqual({ total: 0, usage: [] });
+                expect(await db.listEvents()).toStrictEqual({ total: 0, events: [] });
             }
             finally {
                 getSpy.mockRestore();
@@ -425,6 +476,13 @@ describe('search DB branch behavior', () => {
             }
 
             if (text.includes('SELECT event FROM did_events')) {
+                if (String(params[0]) === 'did:test:object-event') {
+                    return {
+                        rowCount: 1,
+                        rows: [{ event: didEventA }],
+                    };
+                }
+
                 return {
                     rowCount: events.get(String(params[0]))?.length ?? 0,
                     rows: (events.get(String(params[0])) ?? [])
@@ -532,6 +590,10 @@ describe('search DB branch behavior', () => {
             }
 
             if (text.includes('SELECT COUNT(*)::int AS total FROM did_events')) {
+                if (params.length === 0) {
+                    return { rowCount: 0, rows: [] };
+                }
+
                 return { rowCount: 1, rows: [{ total: filterEvents(params, text).length }] };
             }
 
@@ -546,7 +608,7 @@ describe('search DB branch behavior', () => {
                             did: row.did,
                             registry: row.registry,
                             time: row.time,
-                            event: JSON.stringify(row.event),
+                            event: params.length === 2 ? row.event : JSON.stringify(row.event),
                         })),
                 };
             }
@@ -597,11 +659,29 @@ describe('search DB branch behavior', () => {
             storedBlocks: 1,
         });
         expect(await db.getDIDEvents(eventDid)).toStrictEqual([didEventA, didEventB]);
+        expect(await db.getDIDEvents('did:test:object-event')).toStrictEqual([didEventA]);
         expect(await db.getBlock('TFTC')).toStrictEqual(blockA);
         expect(await db.getBlock('TFTC', 100)).toStrictEqual(blockA);
         expect(await db.getBlock('TFTC', 'block-a')).toStrictEqual(blockA);
         expect(await db.getBlock('TFTC', 'missing')).toBeNull();
         expect(await db.loadSyncState('next')).toBe('43');
+        expect(await db.listEvents()).toStrictEqual({
+            total: 0,
+            events: [
+                {
+                    did: eventDid,
+                    registry: 'local',
+                    time: didEventB.time,
+                    event: didEventB,
+                },
+                {
+                    did: eventDid,
+                    registry: 'local',
+                    time: didEventA.time,
+                    event: didEventA,
+                },
+            ],
+        });
 
         expect(await db.listEvents({
             registry: 'local',
@@ -624,6 +704,13 @@ describe('search DB branch behavior', () => {
             blocks: [],
         })).toMatchObject({
             changedDids: [],
+        });
+
+        expect(await db.applyIndexPage({
+            dids: [],
+            blocks: [{ registry: 'TFTC', block: { ...blockA, hash: 'missing' }, removed: true }],
+        })).toMatchObject({
+            removedBlocks: 0,
         });
 
         expect(await db.applyIndexPage({

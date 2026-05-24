@@ -244,7 +244,7 @@ export default class Sqlite implements DIDsDb {
                         'DELETE FROM blocks WHERE registry = ? AND hash = ?',
                         [registry, block.hash]
                     );
-                    if ((deletion.changes ?? 0) > 0) {
+                    if (Number(deletion.changes) > 0) {
                         result.removedBlocks += 1;
                     }
                     continue;
@@ -262,7 +262,7 @@ export default class Sqlite implements DIDsDb {
             }
 
             for (const record of page.dids) {
-                const changed = eventChanges.get(record.did) ?? false;
+                const changed = eventChanges.get(record.did) === true;
 
                 if (!changed && !record.removed) {
                     continue;
