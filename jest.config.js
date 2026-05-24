@@ -54,6 +54,7 @@ const config = {
     ],
     coveragePathIgnorePatterns: [
         "/node_modules/",
+        "/tests/",
         "/services/mediators/hyperswarm/src/negentropy/Negentropy\\.cjs$",
     ]
 };
