@@ -8,6 +8,8 @@ cd "$(git rev-parse --show-toplevel)"
 touch .env
 
 ENV_FILE=".env"
+KC_UID_VALUE="$(id -u)"
+KC_GID_VALUE="$(id -g)"
 
 echo "Generating .env file at project root..."
 
@@ -15,8 +17,8 @@ cat > "$ENV_FILE" <<EOL
 # Auto-generated .env file
 
 # General
-KC_UID=1000
-KC_GID=1000
+KC_UID=${KC_UID_VALUE}
+KC_GID=${KC_GID_VALUE}
 KC_NODE_NAME=mdip-quality
 KC_NODE_ID=mdip-quality
 KC_LOG_LEVEL=info
@@ -59,7 +61,7 @@ KC_KEYMASTER_RATE_LIMIT_SKIP_PATHS=/api/v1/ready
 SEARCH_SERVER_PORT=4002
 SEARCH_SERVER_GATEKEEPER_URL=http://gatekeeper:4224
 SEARCH_SERVER_REFRESH_INTERVAL_MS=5000
-SEARCH_SERVER_DB=sqlite
+KC_SEARCH_SERVER_DB=sqlite
 SEARCH_SERVER_TRUST_PROXY=false
 SEARCH_SERVER_RATE_LIMIT_ENABLED=true
 SEARCH_SERVER_RATE_LIMIT_WINDOW_VALUE=1
