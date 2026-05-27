@@ -1043,7 +1043,8 @@ v1router.post('/index/export', async (req, res) => {
     try {
         request = parseIndexExportRequest(req.body);
     } catch (error: any) {
-        return res.status(400).json({ error: error.message ?? String(error) });
+        res.status(400).json({ error: error.message ?? String(error) });
+        return;
     }
 
     try {
