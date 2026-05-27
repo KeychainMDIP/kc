@@ -149,8 +149,8 @@ function Events(
                     let timePart = "";
 
                     if (timePartWithZ) {
-                        const [hours, minutes] = timePartWithZ.replace("Z", "").split(":");
-                        timePart = `${hours}:${minutes}`;
+                        const [hours, minutes, seconds = "00"] = timePartWithZ.replace("Z", "").split(":");
+                        timePart = `${hours}:${minutes}:${seconds.slice(0, 2)}`;
                     }
 
                     const handleDidClick = () => {

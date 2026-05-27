@@ -18,7 +18,7 @@ import {
     PublishedCredentialSchemaCount,
     GatekeeperEvent,
 } from '../types.js';
-import { stableStringify } from './db-utils.js';
+import { getEventDisplayTime, stableStringify } from './db-utils.js';
 
 interface SyncStateRow {
     value: string;
@@ -305,7 +305,7 @@ export default class Postgres implements DIDsDb {
                 for (const [index, event] of record.events.entries()) {
                     await client.query(
                         'INSERT INTO did_events (did, event_index, registry, time, event) VALUES ($1, $2, $3, $4, $5::jsonb)',
-                        [record.did, index, event.registry, event.time, JSON.stringify(event)]
+                        [record.did, index, event.registry, getEventDisplayTime(event), JSON.stringify(event)]
                     );
                 }
 

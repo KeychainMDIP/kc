@@ -171,7 +171,7 @@ function App() {
                     ...event,
                     did: event.did ?? did,
                     registry: event.registry ?? registry,
-                    time: event.time ?? time,
+                    time: time || event.time,
                 }));
 
                 if (isMounted) {

@@ -19,7 +19,7 @@ import {
     PublishedCredentialSchemaCount,
     GatekeeperEvent,
 } from "../types.js";
-import { stableStringify } from './db-utils.js';
+import { getEventDisplayTime, stableStringify } from './db-utils.js';
 
 export default class Sqlite implements DIDsDb {
     private readonly dbFile: string;
@@ -282,7 +282,7 @@ export default class Sqlite implements DIDsDb {
                 for (const [index, event] of record.events.entries()) {
                     await this.db.run(
                         'INSERT INTO did_events (did, event_index, registry, time, event) VALUES (?, ?, ?, ?, ?)',
-                        [record.did, index, event.registry, event.time, JSON.stringify(event)]
+                        [record.did, index, event.registry, getEventDisplayTime(event), JSON.stringify(event)]
                     );
                 }
 

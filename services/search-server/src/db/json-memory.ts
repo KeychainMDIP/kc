@@ -18,7 +18,7 @@ import {
     PublishedCredentialSchemaCount,
     GatekeeperEvent,
 } from "../types.js";
-import { copyJSON, stableStringify } from "./db-utils.js";
+import { copyJSON, getEventDisplayTime, stableStringify } from "./db-utils.js";
 
 type JSONObject = Record<string, unknown>;
 
@@ -285,7 +285,7 @@ export default class DIDsDbMemory implements DIDsDb {
                 events.map(event => ({
                     did,
                     registry: event.registry,
-                    time: event.time,
+                    time: getEventDisplayTime(event),
                     event: copyJSON(event),
                 }))
             )

@@ -163,6 +163,57 @@ describe('search DB branch behavior', () => {
             }],
         });
 
+        const signedEventDid = 'did:test:signed-event-storage';
+        const envelopeTime = '2026-05-27T11:24:00.000Z';
+        const signedEventA: GatekeeperEvent = {
+            ...didEventA,
+            did: signedEventDid,
+            time: envelopeTime,
+            operation: {
+                ...didEventA.operation,
+                signature: {
+                    signed: '2026-05-01T10:00:00.000Z',
+                    hash: 'signed-event-a',
+                    value: 'mock-signature-a',
+                },
+            },
+        };
+        const signedEventB: GatekeeperEvent = {
+            ...didEventB,
+            did: signedEventDid,
+            time: envelopeTime,
+            operation: {
+                ...didEventB.operation,
+                signature: {
+                    signed: '2026-05-02T10:00:00.000Z',
+                    hash: 'signed-event-b',
+                    value: 'mock-signature-b',
+                },
+            },
+        };
+
+        await seedDID(db, signedEventDid, { events: [signedEventA, signedEventB] });
+        expect(await db.listEvents({
+            updatedAfter: '2026-05-01T00:00:00.000Z',
+            updatedBefore: '2026-05-03T00:00:00.000Z',
+        })).toStrictEqual({
+            total: 2,
+            events: [
+                {
+                    did: signedEventDid,
+                    registry: 'local',
+                    time: signedEventB.operation.signature!.signed,
+                    event: signedEventB,
+                },
+                {
+                    did: signedEventDid,
+                    registry: 'local',
+                    time: signedEventA.operation.signature!.signed,
+                    event: signedEventA,
+                },
+            ],
+        });
+
         await seedBlock(db, 'TFTC', blockA);
         await seedBlock(db, 'TFTC', blockB);
         expect(await db.getBlock('TFTC')).toStrictEqual(blockB);
