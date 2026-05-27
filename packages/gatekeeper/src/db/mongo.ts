@@ -34,6 +34,12 @@ interface CounterDoc {
     value: number;
 }
 
+interface MongoIndexInfo {
+    name?: string;
+    key?: Record<string, unknown>;
+    unique?: boolean;
+}
+
 const MONGO_NOT_STARTED_ERROR = 'Mongo not started. Call start() first.';
 const MONGO_TRANSACTIONS_REQUIRED_ERROR = 'MongoDB transactions require a replica set or sharded cluster. Configure KC_MONGODB_URL to point at a transaction-capable MongoDB deployment.';
 const log = childLogger({ service: 'gatekeeper-db', module: 'mongo' });
@@ -67,11 +73,11 @@ export default class DbMongo implements GatekeeperDb {
             await this.client.connect();
             await this.verifyTransactionSupport();
             this.db = this.client.db(this.dbName);
-            await this.db.collection('dids').createIndex({ id: 1 }, { unique: true });
-            await this.db.collection('blocks').createIndex({ registry: 1, height: -1 });  // for latest and height lookups
-            await this.db.collection('blocks').createIndex({ registry: 1, hash: 1 }, { unique: true });  // for hash lookup
-            await this.db.collection('counters').createIndex({ id: 1 }, { unique: true });
-            await this.db.collection('index_changes').createIndex({ seq: 1 }, { unique: true });
+            await this.ensureIndex('dids', { id: 1 }, { name: 'dids_id_unique', unique: true });
+            await this.ensureIndex('blocks', { registry: 1, height: -1 }, { name: 'blocks_registry_height' });  // for latest and height lookups
+            await this.ensureIndex('blocks', { registry: 1, hash: 1 }, { name: 'blocks_registry_hash_unique', unique: true });  // for hash lookup
+            await this.ensureIndex('counters', { id: 1 }, { name: 'counters_id_unique', unique: true });
+            await this.ensureIndex('index_changes', { seq: 1 }, { name: 'index_changes_seq_unique', unique: true });
         }
         catch (error) {
             await this.client.close();
@@ -99,6 +105,47 @@ export default class DbMongo implements GatekeeperDb {
         await this.db.collection('blocks').deleteMany({});
         await this.db.collection('index_changes').deleteMany({});
         await this.db.collection('counters').deleteMany({});
+    }
+
+    private indexKeyMatches(actual: Record<string, unknown> | undefined, expected: Record<string, 1 | -1>): boolean {
+        if (!actual) {
+            return false;
+        }
+
+        const actualEntries = Object.entries(actual);
+        const expectedEntries = Object.entries(expected);
+
+        return actualEntries.length === expectedEntries.length
+            && expectedEntries.every(([key, value]) => actual[key] === value);
+    }
+
+    private async ensureIndex(
+        collectionName: string,
+        key: Record<string, 1 | -1>,
+        options: { name: string; unique?: boolean }
+    ): Promise<void> {
+        if (!this.db) {
+            throw new Error(MONGO_NOT_STARTED_ERROR);
+        }
+
+        const collection = this.db.collection(collectionName);
+        const indexes = await collection.indexes() as MongoIndexInfo[];
+        const existing = indexes.find(index => this.indexKeyMatches(index.key, key));
+        const unique = options.unique === true;
+
+        if (existing) {
+            if ((existing.unique === true) === unique) {
+                return;
+            }
+
+            if (!existing.name) {
+                throw new Error(`Cannot replace unnamed Mongo index on ${collectionName}`);
+            }
+
+            await collection.dropIndex(existing.name);
+        }
+
+        await collection.createIndex(key, options);
     }
 
     private async verifyTransactionSupport(): Promise<void> {

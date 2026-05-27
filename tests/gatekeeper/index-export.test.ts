@@ -1848,13 +1848,21 @@ describe('Gatekeeper DB startup and guard behavior', () => {
         jest.resetModules();
     });
 
-    it('starts, resets, and stops Mongo with transaction-capable topology', async () => {
+    it('starts, migrates legacy indexes, resets, and stops Mongo with transaction-capable topology', async () => {
         const deletedCollections: string[] = [];
+        const droppedIndexes: { collection: string; index: string }[] = [];
         const createIndex = jest.fn(async () => undefined);
         const close = jest.fn(async () => undefined);
+        const indexesByCollection: Record<string, unknown[]> = {
+            dids: [{ name: 'id_1', key: { id: 1 } }],
+        };
         const appDb = {
             collection: (name: string) => ({
+                indexes: async () => indexesByCollection[name] ?? [],
                 createIndex,
+                dropIndex: async (index: string) => {
+                    droppedIndexes.push({ collection: name, index });
+                },
                 deleteMany: async () => {
                     deletedCollections.push(name);
                     return { deletedCount: 1 };
@@ -1881,6 +1889,11 @@ describe('Gatekeeper DB startup and guard behavior', () => {
         await db.stop();
 
         expect(createIndex).toHaveBeenCalledTimes(5);
+        expect(createIndex).toHaveBeenCalledWith(
+            { id: 1 },
+            { name: 'dids_id_unique', unique: true }
+        );
+        expect(droppedIndexes).toStrictEqual([{ collection: 'dids', index: 'id_1' }]);
         expect(deletedCollections).toStrictEqual([
             'dids',
             'queue',
