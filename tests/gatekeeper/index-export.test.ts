@@ -1858,7 +1858,13 @@ describe('Gatekeeper DB startup and guard behavior', () => {
         };
         const appDb = {
             collection: (name: string) => ({
-                indexes: async () => indexesByCollection[name] ?? [],
+                indexes: async () => {
+                    const indexes = indexesByCollection[name];
+                    if (!indexes) {
+                        throw { code: 26, codeName: 'NamespaceNotFound' };
+                    }
+                    return indexes;
+                },
                 createIndex,
                 dropIndex: async (index: string) => {
                     droppedIndexes.push({ collection: name, index });

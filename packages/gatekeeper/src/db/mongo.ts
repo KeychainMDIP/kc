@@ -40,6 +40,15 @@ interface MongoIndexInfo {
     unique?: boolean;
 }
 
+function isNamespaceNotFoundError(error: unknown): boolean {
+    return typeof error === 'object'
+        && error !== null
+        && (
+            ('code' in error && error.code === 26)
+            || ('codeName' in error && error.codeName === 'NamespaceNotFound')
+        );
+}
+
 const MONGO_NOT_STARTED_ERROR = 'Mongo not started. Call start() first.';
 const MONGO_TRANSACTIONS_REQUIRED_ERROR = 'MongoDB transactions require a replica set or sharded cluster. Configure KC_MONGODB_URL to point at a transaction-capable MongoDB deployment.';
 const log = childLogger({ service: 'gatekeeper-db', module: 'mongo' });
@@ -129,7 +138,18 @@ export default class DbMongo implements GatekeeperDb {
         }
 
         const collection = this.db.collection(collectionName);
-        const indexes = await collection.indexes() as MongoIndexInfo[];
+        let indexes: MongoIndexInfo[];
+
+        try {
+            indexes = await collection.indexes() as MongoIndexInfo[];
+        }
+        catch (error) {
+            if (!isNamespaceNotFoundError(error)) {
+                throw error;
+            }
+            indexes = [];
+        }
+
         const existing = indexes.find(index => this.indexKeyMatches(index.key, key));
         const unique = options.unique === true;
 
