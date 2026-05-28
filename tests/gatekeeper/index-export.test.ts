@@ -1559,6 +1559,9 @@ describe('Gatekeeper Redis DID snapshot index', () => {
         ]);
         const scanMatches: string[] = [];
         const redis = {
+            on: jest.fn(),
+            ping: async () => 'PONG',
+            removeAllListeners: jest.fn(),
             type: async (key: string) => zsets.has(key)
                 ? 'zset'
                 : (strings.has(key) ? 'string' : 'none'),
@@ -1636,6 +1639,9 @@ describe('Gatekeeper Redis DID snapshot index', () => {
         const del = jest.fn(async () => 0);
         const renamenx = jest.fn();
         const redis = {
+            on: jest.fn(),
+            ping: async () => 'PONG',
+            removeAllListeners: jest.fn(),
             type: async () => 'none',
             del,
             scan: async () => ['0', [
@@ -1668,6 +1674,9 @@ describe('Gatekeeper Redis DID snapshot index', () => {
         const dbName = 'redis-startup-index-existing';
         const didIndexKey = `${dbName}/index/dids`;
         const redis = {
+            on: jest.fn(),
+            ping: async () => 'PONG',
+            removeAllListeners: jest.fn(),
             type: async (key: string) => key === didIndexKey ? 'zset' : 'none',
             del: jest.fn(),
             scan: jest.fn(),
@@ -1694,6 +1703,9 @@ describe('Gatekeeper Redis DID snapshot index', () => {
     it('rejects Redis startup when the existing DID index key has the wrong type', async () => {
         const dbName = 'redis-startup-index-wrong-type';
         const redis = {
+            on: jest.fn(),
+            ping: async () => 'PONG',
+            removeAllListeners: jest.fn(),
             type: async () => 'string',
             quit: async () => undefined,
         };
@@ -1717,6 +1729,9 @@ describe('Gatekeeper Redis DID snapshot index', () => {
         const didIndexKey = `${dbName}/index/dids`;
         let indexPublished = false;
         const redis = {
+            on: jest.fn(),
+            ping: async () => 'PONG',
+            removeAllListeners: jest.fn(),
             type: async (key: string) => {
                 if (key === didIndexKey && indexPublished) {
                     return 'string';
@@ -1757,6 +1772,9 @@ describe('Gatekeeper Redis DID snapshot index', () => {
         ]);
         const zsets = new Map<string, Map<string, number>>();
         const redis = {
+            on: jest.fn(),
+            ping: async () => 'PONG',
+            removeAllListeners: jest.fn(),
             type: async (key: string) => zsets.has(key) ? 'zset' : 'none',
             del: async (...keys: string[]) => {
                 let removed = 0;

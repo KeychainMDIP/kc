@@ -25,17 +25,21 @@ const log = childLogger({ service: 'gatekeeper-db', module: 'redis' });
 export default class DbRedis implements GatekeeperDb {
     private readonly dbName: string;
     private redis: Redis | null;
+    private lastRedisErrorLogAt: number;
 
     constructor(dbName: string) {
         this.dbName = dbName;
         this.redis = null;
+        this.lastRedisErrorLogAt = 0;
     }
 
     async start(): Promise<void> {
         const url = process.env.KC_REDIS_URL || 'redis://localhost:6379';
         this.redis = new Redis(url);
+        this.redis.on('error', error => this.logRedisConnectionError(error));
 
         try {
+            await this.redis.ping();
             await this.ensureDidIndex();
         }
         catch (error) {
@@ -45,6 +49,9 @@ export default class DbRedis implements GatekeeperDb {
             catch {
                 // Preserve the migration error.
             }
+            finally {
+                this.redis.removeAllListeners('error');
+            }
             this.redis = null;
             throw error;
         }
@@ -52,9 +59,25 @@ export default class DbRedis implements GatekeeperDb {
 
     async stop(): Promise<void> {
         if (this.redis) {
-            await this.redis.quit()
+            const redis = this.redis;
             this.redis = null
+            try {
+                await redis.quit()
+            }
+            finally {
+                redis.removeAllListeners('error');
+            }
         }
+    }
+
+    private logRedisConnectionError(error: unknown): void {
+        const now = Date.now();
+        if (now - this.lastRedisErrorLogAt < 60_000) {
+            return;
+        }
+
+        this.lastRedisErrorLogAt = now;
+        log.error({ err: error }, 'Redis connection error');
     }
 
     async resetDb(): Promise<number> {

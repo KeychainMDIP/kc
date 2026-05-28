@@ -1054,7 +1054,7 @@ v1router.post('/index/export', async (req, res) => {
 
         res.json(response);
     } catch (error: any) {
-        log.error({ error }, 'Index export error');
+        log.error({ err: error }, 'Index export error');
         res.status(500).json({ error: error.toString() });
     }
 });
