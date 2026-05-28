@@ -30,7 +30,7 @@ Operations come from Keymaster clients such as end-user wallets and network medi
 
 When `KC_GATEKEEPER_DB=mongodb`, Gatekeeper requires MongoDB transactions so DID/block mutations and search-index cursor records commit atomically. MongoDB transactions require a replica set or sharded cluster; a standalone `mongod` is not supported and Gatekeeper will fail during startup.
 
-The repository `docker-compose.yml` starts MongoDB as a single-node replica set named `rs0` and uses `KC_MONGODB_URL=mongodb://mongodb:27017/?replicaSet=rs0` for containers. Existing Mongo-backed deployments should update their MongoDB service to run as a replica set, or move to a managed replica-set/sharded MongoDB deployment, before upgrading to this version.
+The repository `docker-compose.yml` starts MongoDB as a single-node replica set named `rs0` and uses `KC_MONGODB_URL=mongodb://mongodb:27017/?replicaSet=rs0` for containers. Its healthcheck waits until the replica set has a writable primary before starting dependent services. Existing Mongo-backed deployments should update their MongoDB service to run as a replica set with a reachable primary, or move to a managed replica-set/sharded MongoDB deployment, before upgrading to this version.
 
 ## Index export limitation
 

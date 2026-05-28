@@ -7,7 +7,7 @@ services:
     ports:
       - 127.0.0.1:27017:27017
     healthcheck:
-      test: [ "CMD-SHELL", "mongosh --quiet --eval \"try { if (rs.status().ok === 1) quit(0); } catch (err) { try { rs.initiate({_id: 'rs0', members: [{ _id: 0, host: 'mongodb:27017' }] }); } catch (initErr) {} } try { quit(rs.status().ok === 1 ? 0 : 1); } catch (err) { quit(1); }\"" ]
+      test: [ "CMD-SHELL", "mongosh --quiet --eval \"const host = 'mongodb:27017'; try { const cfg = rs.conf(); if (cfg._id !== 'rs0' || cfg.members.length !== 1 || cfg.members[0].host !== host) { cfg._id = 'rs0'; cfg.version = (cfg.version || 1) + 1; cfg.members = [{ _id: 0, host }]; rs.reconfig(cfg, { force: true }); } } catch (err) { try { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host }] }); } catch (initErr) {} } try { quit(db.adminCommand({ hello: 1 }).isWritablePrimary ? 0 : 1); } catch (err) { quit(1); }\"" ]
       interval: 5s
       timeout: 5s
       retries: 30
