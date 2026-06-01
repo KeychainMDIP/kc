@@ -1,4 +1,8 @@
 import {
+    ApplyIndexPageOptions,
+    ApplyIndexPageResult,
+    BlockId,
+    BlockInfo,
     ChallengeReceiptListOptions,
     ChallengeReceiptListResult,
     ChallengeReceiptRecord,
@@ -6,17 +10,23 @@ import {
     ChallengeReceiptUsageRecord,
     ChallengeReceiptUsageResult,
     DIDsDb,
+    DIDEventListOptions,
+    DIDEventListResult,
     PublishedCredentialListOptions,
     PublishedCredentialListResult,
     PublishedCredentialRecord,
     PublishedCredentialSchemaCount,
+    GatekeeperEvent,
 } from "../types.js";
+import { copyJSON, getEventDisplayTime, stableStringify } from "./db-utils.js";
 
 type JSONObject = Record<string, unknown>;
 
 export default class DIDsDbMemory implements DIDsDb {
     private docs = new Map<string, JSONObject>();
-    private config = new Map<string, string>();
+    private syncState = new Map<string, string>();
+    private events = new Map<string, GatekeeperEvent[]>();
+    private blocks = new Map<string, Map<string, BlockInfo>>();
     private publishedCredentials = new Map<string, PublishedCredentialRecord[]>();
     private challengeReceipts = new Map<string, ChallengeReceiptRecord[]>();
     private static readonly ARRAY_WILDCARD_END = /\[\*]$/;
@@ -25,39 +35,115 @@ export default class DIDsDbMemory implements DIDsDb {
     async connect(): Promise<void> {};
     async disconnect(): Promise<void> {};
 
-    async loadUpdatedAfter(): Promise<string | null> {
-        return this.config.get('updated_after') ?? null;
+    async loadSyncState(key: string): Promise<string | null> {
+        return this.syncState.get(key) ?? null;
     }
 
-    async saveUpdatedAfter(timestamp: string): Promise<void> {
-        this.config.set('updated_after', timestamp);
+    async saveSyncState(key: string, value: string | null): Promise<void> {
+        if (value === null) {
+            this.syncState.delete(key);
+            return;
+        }
+
+        this.syncState.set(key, value);
     }
 
-    async storeDID(did: string, doc: object): Promise<void> {
-        this.docs.set(did, JSON.parse(JSON.stringify(doc)) as JSONObject);
+    async getDIDEvents(did: string): Promise<GatekeeperEvent[]> {
+        return copyJSON(this.events.get(did) ?? []);
     }
 
-    async replacePublishedCredentials(holderDid: string, records: PublishedCredentialRecord[]): Promise<void> {
-        const uniqueRecords = new Map<string, PublishedCredentialRecord>();
+    async getBlock(registry: string, blockId?: BlockId): Promise<BlockInfo | null> {
+        const registryBlocks = this.blocks.get(registry);
 
-        for (const record of records) {
-            uniqueRecords.set(
-                `${record.holderDid}\u0000${record.credentialDid}`,
-                { ...record }
+        if (!registryBlocks || registryBlocks.size === 0) {
+            return null;
+        }
+
+        if (blockId === undefined) {
+            const latest = Array.from(registryBlocks.values())
+                .sort((a, b) => b.height - a.height)[0];
+            return copyJSON(latest);
+        }
+
+        if (typeof blockId === 'number') {
+            const block = Array.from(registryBlocks.values())
+                .find(candidate => candidate.height === blockId);
+            return block ? copyJSON(block) : null;
+        }
+
+        const block = registryBlocks.get(blockId);
+        return block ? copyJSON(block) : null;
+    }
+
+    async applyIndexPage(page: ApplyIndexPageOptions): Promise<ApplyIndexPageResult> {
+        const result: ApplyIndexPageResult = {
+            changedDids: [],
+            storedBlocks: 0,
+            removedBlocks: 0,
+            removedDids: 0,
+        };
+
+        for (const { registry, block, removed } of page.blocks) {
+            const registryBlocks = this.blocks.get(registry) ?? new Map<string, BlockInfo>();
+
+            if (removed) {
+                if (registryBlocks.delete(block.hash)) {
+                    result.removedBlocks += 1;
+                }
+            }
+            else {
+                registryBlocks.set(block.hash, copyJSON(block));
+                result.storedBlocks += 1;
+            }
+
+            if (registryBlocks.size > 0) {
+                this.blocks.set(registry, registryBlocks);
+            }
+            else {
+                this.blocks.delete(registry);
+            }
+        }
+
+        for (const record of page.dids) {
+            const oldEvents = this.events.get(record.did) ?? [];
+            const changed = stableStringify(oldEvents) !== stableStringify(record.events);
+
+            if (!changed && !record.removed) {
+                continue;
+            }
+
+            result.changedDids.push(record.did);
+
+            if (record.removed) {
+                this.events.delete(record.did);
+                this.docs.delete(record.did);
+                this.publishedCredentials.delete(record.did);
+                this.challengeReceipts.delete(record.did);
+                result.removedDids += 1;
+                continue;
+            }
+
+            this.events.set(record.did, copyJSON(record.events));
+
+            if (record.doc) {
+                this.docs.set(record.did, copyJSON(record.doc) as JSONObject);
+            }
+
+            this.publishedCredentials.set(
+                record.did,
+                copyJSON(record.publishedCredentials ?? [])
+            );
+            this.challengeReceipts.set(
+                record.did,
+                copyJSON(record.challengeReceipts ?? [])
             );
         }
 
-        this.publishedCredentials.set(holderDid, Array.from(uniqueRecords.values()));
-    }
-
-    async replaceChallengeReceipts(receiptDid: string, records: ChallengeReceiptRecord[]): Promise<void> {
-        const uniqueRecords = new Map<string, ChallengeReceiptRecord>();
-
-        for (const record of records) {
-            uniqueRecords.set(record.receiptDid, { ...record });
+        for (const [key, value] of Object.entries(page.syncStateUpdates ?? {})) {
+            await this.saveSyncState(key, value);
         }
 
-        this.challengeReceipts.set(receiptDid, Array.from(uniqueRecords.values()));
+        return result;
     }
 
     async getDID(did: string): Promise<object | null> {
@@ -186,6 +272,36 @@ export default class DIDsDbMemory implements DIDsDb {
         };
     }
 
+    async listEvents(options: DIDEventListOptions = {}): Promise<DIDEventListResult> {
+        const {
+            registry,
+            updatedAfter,
+            updatedBefore,
+            limit = 50,
+            offset = 0,
+        } = options;
+        const filtered = Array.from(this.events.entries())
+            .flatMap(([did, events]) =>
+                events.map(event => ({
+                    did,
+                    registry: event.registry,
+                    time: getEventDisplayTime(event),
+                    event: copyJSON(event),
+                }))
+            )
+            .filter(record => !registry || record.registry === registry)
+            .filter(record => !updatedAfter || record.time > updatedAfter)
+            .filter(record => !updatedBefore || record.time < updatedBefore)
+            .sort((a, b) => b.time.localeCompare(a.time) || a.did.localeCompare(b.did));
+        const normalizedLimit = Math.max(0, limit);
+        const normalizedOffset = Math.max(0, offset);
+
+        return {
+            total: filtered.length,
+            events: filtered.slice(normalizedOffset, normalizedOffset + normalizedLimit),
+        };
+    }
+
     async searchDocs(q: string): Promise<string[]> {
         const out: string[] = [];
         for (const [did, doc] of this.docs.entries()) {
@@ -256,7 +372,9 @@ export default class DIDsDbMemory implements DIDsDb {
 
     async wipeDb(): Promise<void> {
         this.docs.clear();
-        this.config.clear();
+        this.syncState.clear();
+        this.events.clear();
+        this.blocks.clear();
         this.publishedCredentials.clear();
         this.challengeReceipts.clear();
     }

@@ -37,6 +37,11 @@ const config = {
         '^\\.\\/sync-persistence\\.js$': '<rootDir>/services/mediators/hyperswarm/src/sync-persistence.ts',
         '^\\.\\/windows\\.js$': '<rootDir>/services/mediators/hyperswarm/src/negentropy/windows.ts',
         '^\\.\\/abstract-json\\.js$': '<rootDir>/packages/gatekeeper/src/db/abstract-json.ts',
+        '^\\.\\/db-utils\\.js$': '<rootDir>/services/search-server/src/db/db-utils.ts',
+        '^\\.\\/did-resolver\\.js$': '<rootDir>/packages/gatekeeper/src/did-resolver.ts',
+        '^\\.\\/index-export\\.js$': '<rootDir>/packages/gatekeeper/src/db/index-export.ts',
+        '^\\.\\/index-helpers\\.js$': '<rootDir>/services/search-server/src/index-helpers.ts',
+        '^\\.\\/projections\\.js$': '<rootDir>/services/search-server/src/projections.ts',
         '^\\.\\/published-credentials\\.js$': '<rootDir>/services/search-server/src/published-credentials.ts',
         '^\\.\\/challenge-receipts\\.js$': '<rootDir>/services/search-server/src/challenge-receipts.ts',
         '^\\.\\/cipher-base\\.js$': '<rootDir>/packages/cipher/src/cipher-base.ts',
@@ -49,6 +54,11 @@ const config = {
     ],
     coveragePathIgnorePatterns: [
         "/node_modules/",
+        "/tests/",
+        "/packages/gatekeeper/src/db/mongo\\.ts$",
+        "/packages/gatekeeper/src/db/postgres\\.ts$",
+        "/packages/gatekeeper/src/db/redis\\.ts$",
+        "/packages/gatekeeper/src/db/sqlite\\.ts$",
         "/services/mediators/hyperswarm/src/negentropy/Negentropy\\.cjs$",
     ]
 };

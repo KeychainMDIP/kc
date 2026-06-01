@@ -11,7 +11,9 @@ import type {
     ChallengeReceiptRecord,
     ChallengeReceiptUsageRecord,
     DIDsDb,
+    GatekeeperEvent,
 } from '../../services/search-server/src/types.ts';
+import { seedDID } from './db-seed.ts';
 
 function createReceiptDoc(
     receiptDid: string,
@@ -47,6 +49,44 @@ function createReceiptDoc(
         didDocumentMetadata: {
             updated: updatedAt,
         },
+    };
+}
+
+function createAssetEvent(
+    did: string,
+    data: unknown,
+    created = '2026-04-01T10:01:00.000Z'
+): GatekeeperEvent {
+    return {
+        registry: 'local',
+        time: created,
+        ordinal: [0],
+        did,
+        operation: {
+            type: 'create',
+            created,
+            mdip: {
+                version: 1,
+                type: 'asset',
+                registry: 'local',
+            },
+            controller: did,
+            data,
+        },
+    };
+}
+
+function createSnapshotResponse(did: string, data: unknown) {
+    return {
+        mode: 'snapshot' as const,
+        cursor: did,
+        checkpointCursor: '0',
+        hasMore: false,
+        blocks: [],
+        dids: [{
+            did,
+            events: [createAssetEvent(did, data)],
+        }],
     };
 }
 
@@ -189,7 +229,9 @@ describe.each(adapterFactories)('$name challenge receipt storage', ({ create }) 
             ];
 
             for (const row of rows) {
-                await db.replaceChallengeReceipts(row.receiptDid, [row]);
+                await seedDID(db, row.receiptDid, {
+                    challengeReceipts: [row],
+                });
             }
 
             expect(await db.listChallengeReceipts({
@@ -240,7 +282,9 @@ describe.each(adapterFactories)('$name challenge receipt storage', ({ create }) 
                 ] satisfies ChallengeReceiptUsageRecord[],
             });
 
-            await db.replaceChallengeReceipts('did:test:receipt-2', []);
+            await seedDID(db, 'did:test:receipt-2', {
+                challengeReceipts: [],
+            });
             expect(await db.listChallengeReceipts({
                 receiptDid: 'did:test:receipt-2',
                 limit: 10,
@@ -308,7 +352,9 @@ describe('memory challenge receipt ordering', () => {
 
         try {
             for (const row of rows) {
-                await db.replaceChallengeReceipts(row.receiptDid, [row]);
+                await seedDID(db, row.receiptDid, {
+                    challengeReceipts: [row],
+                });
             }
 
             expect((await db.listChallengeReceipts({
@@ -369,7 +415,14 @@ describe('sqlite challenge receipt adapter errors', () => {
         await db.disconnect();
 
         try {
-            await expect(db.replaceChallengeReceipts('did:test:receipt-1', []))
+            await expect(db.applyIndexPage({
+                dids: [{
+                    did: 'did:test:receipt-1',
+                    events: [createAssetEvent('did:test:receipt-1', {})],
+                    challengeReceipts: [],
+                }],
+                blocks: [],
+            }))
                 .rejects.toThrow('DB not connected');
             await expect(db.listChallengeReceipts())
                 .rejects.toThrow('DB not connected');
@@ -396,10 +449,15 @@ describe('sqlite challenge receipt adapter errors', () => {
         const failure = new Error('mock insert failure');
         const runSpy = jest.spyOn(sqliteDb, 'run')
             .mockResolvedValueOnce(undefined as never)
+            .mockResolvedValueOnce(undefined as never)
+            .mockResolvedValueOnce(undefined as never)
+            .mockResolvedValueOnce(undefined as never)
             .mockRejectedValueOnce(failure as never);
 
         try {
-            await expect(db.replaceChallengeReceipts(record.receiptDid, [record]))
+            await expect(seedDID(db, record.receiptDid, {
+                challengeReceipts: [record],
+            }))
                 .rejects.toThrow('mock insert failure');
             runSpy.mockRestore();
 
@@ -466,8 +524,7 @@ describe('postgres challenge receipt adapter with mocked pool', () => {
             }
             if (text === 'DELETE FROM did_docs' ||
                 text === 'DELETE FROM published_credentials' ||
-                text === 'DELETE FROM challenge_receipts' ||
-                text === 'DELETE FROM config') {
+                text === 'DELETE FROM challenge_receipts') {
                 return { rowCount: 1, rows: [] };
             }
 
@@ -492,7 +549,14 @@ describe('postgres challenge receipt adapter with mocked pool', () => {
 
         const db = new TestPostgres('postgresql://example');
         await db.connect();
-        await db.replaceChallengeReceipts(record.receiptDid, [record]);
+        await db.applyIndexPage({
+            dids: [{
+                did: record.receiptDid,
+                events: [createAssetEvent(record.receiptDid, {})],
+                challengeReceipts: [record],
+            }],
+            blocks: [],
+        });
 
         expect(await db.listChallengeReceipts({
             receiptDid: record.receiptDid,
@@ -587,7 +651,14 @@ describe('postgres challenge receipt adapter with mocked pool', () => {
         const db = new TestPostgres('postgresql://example');
         await db.connect();
 
-        await expect(db.replaceChallengeReceipts(record.receiptDid, [record]))
+        await expect(db.applyIndexPage({
+            dids: [{
+                did: record.receiptDid,
+                events: [createAssetEvent(record.receiptDid, {})],
+                challengeReceipts: [record],
+            }],
+            blocks: [],
+        }))
             .rejects.toThrow('mock insert failure');
         await db.disconnect();
 
@@ -600,18 +671,30 @@ describe('postgres challenge receipt adapter with mocked pool', () => {
 describe('DidIndexer challenge receipt indexing', () => {
     it('stores challenge receipt rows during refresh', async () => {
         const db = new DIDsDbMemory();
-        const receiptDid = 'did:test:receipt-1';
-        const doc = createReceiptDoc(receiptDid);
+        const receiptDid = 'did:test:z3v8AuacbUAvrNRex7q3dm2HJU5hQSpSp7YEcaCUcX1vhCfk5EY';
+        const data = {
+            challengeReceipt: {
+                version: 1,
+                attesterDid: 'did:test:attester-1',
+                schemaDid: 'did:test:schema-1',
+                requesterDid: 'did:test:requester-1',
+                verifiedAt: '2026-04-01T10:00:00.000Z',
+                responseCommitment: 'mock-commitment-1',
+            },
+        };
         const gatekeeper = {
             isReady: jest.fn().mockResolvedValue(true),
-            getDIDs: jest.fn().mockResolvedValue([receiptDid]),
-            resolveDID: jest.fn().mockResolvedValue(doc),
+            exportIndex: jest.fn().mockResolvedValue(createSnapshotResponse(receiptDid, data)),
+            getDIDs: jest.fn(),
+            resolveDID: jest.fn(),
         };
         const indexer = new DidIndexer(gatekeeper as any, db, { intervalMs: 60_000 });
 
         await indexer.startIndexing();
         indexer.stopIndexing();
 
+        expect(gatekeeper.getDIDs).not.toHaveBeenCalled();
+        expect(gatekeeper.resolveDID).not.toHaveBeenCalled();
         expect(await db.listChallengeReceipts({
             attesterDid: 'did:test:attester-1',
             limit: 10,
@@ -624,7 +707,7 @@ describe('DidIndexer challenge receipt indexing', () => {
                 schemaDid: 'did:test:schema-1',
                 requesterDid: 'did:test:requester-1',
                 responseCommitment: 'mock-commitment-1',
-                updatedAt: '2026-04-01T10:01:00.000Z',
+                updatedAt: '2026-04-01T10:01:00Z',
             }],
         });
     });

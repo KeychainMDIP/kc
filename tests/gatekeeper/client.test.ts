@@ -21,6 +21,9 @@ const Endpoints = {
         import: '/api/v1/dids/import',
         remove: '/api/v1/dids/remove',
     },
+    index: {
+        export: '/api/v1/index/export',
+    },
     batch: {
         export: '/api/v1/batch/export',
         import: '/api/v1/batch/import',
@@ -507,6 +510,43 @@ describe('importDIDs', () => {
         try {
             // @ts-expect-error Testing without arguments
             await gatekeeper.importDIDs();
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('exportIndex', () => {
+    it('should return index export response', async () => {
+        const exportResponse = {
+            mode: 'changes',
+            cursor: '1',
+            hasMore: false,
+            dids: [],
+            blocks: [],
+        };
+
+        nock(GatekeeperURL)
+            .post(Endpoints.index.export, { mode: 'changes', cursor: '0' })
+            .reply(200, exportResponse);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        const response = await gatekeeper.exportIndex({ mode: 'changes', cursor: '0' });
+
+        expect(response).toStrictEqual(exportResponse);
+    });
+
+    it('should throw exception on exportIndex server error', async () => {
+        nock(GatekeeperURL)
+            .post(Endpoints.index.export)
+            .reply(500, ServerError);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+
+        try {
+            await gatekeeper.exportIndex({ mode: 'changes' });
             throw new ExpectedExceptionError();
         }
         catch (error: any) {

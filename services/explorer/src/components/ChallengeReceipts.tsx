@@ -13,6 +13,7 @@ import {
     TableContainer,
     TableHead,
     TableRow,
+    TableSortLabel,
     TextField,
     Typography,
 } from "@mui/material";
@@ -23,6 +24,32 @@ const VERSION = "/api/v1";
 const pageSizeOptions = [25, 50, 100];
 const usageFetchLimit = 500;
 const receiptBrowseFetchLimit = 500;
+const receiptTableSx = {
+    tableLayout: "fixed",
+    "& th, & td": {
+        px: 1.25,
+    },
+    "& th": {
+        whiteSpace: "nowrap",
+    },
+};
+const compactNumberColumnSx = {
+    width: 86,
+    textAlign: "right",
+};
+const compactDateColumnSx = {
+    width: 142,
+};
+
+type SortDirection = "asc" | "desc";
+type AttesterSortKey = "attesterDid" | "count" | "templateCount" | "requesterCount" | "firstUpdatedAt" | "lastUpdatedAt";
+type UsageSortKey = "schemaDid" | "requesterDid" | "count" | "firstUpdatedAt" | "lastUpdatedAt";
+type ReceiptSortKey = "updatedAt" | "receiptDid";
+
+interface SortState<Key extends string> {
+    key: Key;
+    direction: SortDirection;
+}
 
 interface ChallengeReceiptUsageRow {
     attesterDid: string;
@@ -81,6 +108,59 @@ function formatTimestamp(value: string): string {
     return `${date.toISOString().replace("T", " ").slice(0, 16)}Z`;
 }
 
+function compareText(a: string, b: string): number {
+    return a.localeCompare(b);
+}
+
+function compareNumber(a: number, b: number): number {
+    return a - b;
+}
+
+function compareTimestamp(a: string, b: string): number {
+    const aTime = Date.parse(a);
+    const bTime = Date.parse(b);
+
+    if (Number.isNaN(aTime) || Number.isNaN(bTime)) {
+        return compareText(a, b);
+    }
+
+    return aTime - bTime;
+}
+
+function applySortDirection(value: number, direction: SortDirection): number {
+    return direction === "asc" ? value : -value;
+}
+
+function SortableHeader<Key extends string>(
+    {
+        label,
+        sortKey,
+        sort,
+        onSort,
+        width,
+        sx,
+    }: {
+        label: string;
+        sortKey: Key;
+        sort: SortState<Key>;
+        onSort: (key: Key) => void;
+        width?: number | string;
+        sx?: object;
+    }
+) {
+    return (
+        <TableCell width={width} sortDirection={sort.key === sortKey ? sort.direction : false} sx={sx}>
+            <TableSortLabel
+                active={sort.key === sortKey}
+                direction={sort.key === sortKey ? sort.direction : "asc"}
+                onClick={() => onSort(sortKey)}
+            >
+                {label}
+            </TableSortLabel>
+        </TableCell>
+    );
+}
+
 function getStartOfDay(value: string): string | undefined {
     if (!value) {
         return undefined;
@@ -124,7 +204,7 @@ function mapReceiptRow(row: any): ChallengeReceiptRow {
 function DidLink(
     {
         did,
-        maxWidth = 420,
+        maxWidth = "100%",
     }: {
         did: string;
         maxWidth?: number | string;
@@ -277,6 +357,69 @@ function groupReceiptsByAttester(receipts: ChallengeReceiptRow[]): AttesterUsage
         .sort((a, b) => b.count - a.count || a.attesterDid.localeCompare(b.attesterDid));
 }
 
+function compareAttesterRows(a: AttesterUsageRow, b: AttesterUsageRow, sort: SortState<AttesterSortKey>): number {
+    let result: number;
+
+    switch (sort.key) {
+    case "count":
+        result = compareNumber(a.count, b.count);
+        break;
+    case "templateCount":
+        result = compareNumber(a.templateCount, b.templateCount);
+        break;
+    case "requesterCount":
+        result = compareNumber(a.requesterCount, b.requesterCount);
+        break;
+    case "firstUpdatedAt":
+        result = compareTimestamp(a.firstUpdatedAt, b.firstUpdatedAt);
+        break;
+    case "lastUpdatedAt":
+        result = compareTimestamp(a.lastUpdatedAt, b.lastUpdatedAt);
+        break;
+    case "attesterDid":
+    default:
+        result = compareText(a.attesterDid, b.attesterDid);
+        break;
+    }
+
+    return applySortDirection(result, sort.direction) || compareText(a.attesterDid, b.attesterDid);
+}
+
+function compareUsageRows(a: ChallengeReceiptUsageRow, b: ChallengeReceiptUsageRow, sort: SortState<UsageSortKey>): number {
+    let result: number;
+
+    switch (sort.key) {
+    case "requesterDid":
+        result = compareText(a.requesterDid, b.requesterDid);
+        break;
+    case "count":
+        result = compareNumber(a.count, b.count);
+        break;
+    case "firstUpdatedAt":
+        result = compareTimestamp(a.firstUpdatedAt, b.firstUpdatedAt);
+        break;
+    case "lastUpdatedAt":
+        result = compareTimestamp(a.lastUpdatedAt, b.lastUpdatedAt);
+        break;
+    case "schemaDid":
+    default:
+        result = compareText(a.schemaDid, b.schemaDid);
+        break;
+    }
+
+    return applySortDirection(result, sort.direction)
+        || compareText(a.schemaDid, b.schemaDid)
+        || compareText(a.requesterDid, b.requesterDid);
+}
+
+function compareReceiptRows(a: ChallengeReceiptRow, b: ChallengeReceiptRow, sort: SortState<ReceiptSortKey>): number {
+    const result = sort.key === "receiptDid"
+        ? compareText(a.receiptDid, b.receiptDid)
+        : compareTimestamp(a.updatedAt, b.updatedAt);
+
+    return applySortDirection(result, sort.direction) || compareText(a.receiptDid, b.receiptDid);
+}
+
 function ChallengeReceipts({ setError }: { setError: (error: any) => void }) {
     const [searchParams, setSearchParams] = useSearchParams();
     const [draftAttesterDid, setDraftAttesterDid] = useState<string>(searchParams.get("attesterDid") ?? "");
@@ -285,10 +428,21 @@ function ChallengeReceipts({ setError }: { setError: (error: any) => void }) {
     const [attesterRows, setAttesterRows] = useState<AttesterUsageRow[]>([]);
     const [usageRows, setUsageRows] = useState<ChallengeReceiptUsageRow[]>([]);
     const [receipts, setReceipts] = useState<ChallengeReceiptRow[]>([]);
-    const [receiptTotal, setReceiptTotal] = useState<number>(0);
     const [isAttesterLoading, setIsAttesterLoading] = useState<boolean>(false);
     const [isUsageLoading, setIsUsageLoading] = useState<boolean>(false);
     const [isReceiptLoading, setIsReceiptLoading] = useState<boolean>(false);
+    const [attesterSort, setAttesterSort] = useState<SortState<AttesterSortKey>>({
+        key: "lastUpdatedAt",
+        direction: "desc",
+    });
+    const [usageSort, setUsageSort] = useState<SortState<UsageSortKey>>({
+        key: "lastUpdatedAt",
+        direction: "desc",
+    });
+    const [receiptSort, setReceiptSort] = useState<SortState<ReceiptSortKey>>({
+        key: "updatedAt",
+        direction: "desc",
+    });
 
     const attesterDid = searchParams.get("attesterDid") ?? "";
     const dateFrom = searchParams.get("dateFrom") ?? "";
@@ -313,21 +467,42 @@ function ChallengeReceipts({ setError }: { setError: (error: any) => void }) {
         return attesterRows.filter(row => row.attesterDid.toLowerCase().includes(query));
     }, [attesterDid, attesterRows, draftAttesterDid]);
 
+    const sortedAttesterRows = useMemo(
+        () => [...filteredAttesterRows].sort((a, b) => compareAttesterRows(a, b, attesterSort)),
+        [attesterSort, filteredAttesterRows]
+    );
+
+    const sortedUsageRows = useMemo(
+        () => [...usageRows].sort((a, b) => compareUsageRows(a, b, usageSort)),
+        [usageRows, usageSort]
+    );
+
+    const sortedReceipts = useMemo(
+        () => [...receipts].sort((a, b) => compareReceiptRows(a, b, receiptSort)),
+        [receipts, receiptSort]
+    );
+
     const totalPages = Math.max(1, Math.ceil(usageRows.length / pageSize));
-    const attesterTotalPages = Math.max(1, Math.ceil(filteredAttesterRows.length / pageSize));
-    const receiptTotalPages = Math.max(1, Math.ceil(receiptTotal / receiptPageSize));
+    const attesterTotalPages = Math.max(1, Math.ceil(sortedAttesterRows.length / pageSize));
+    const receiptTotalPages = Math.max(1, Math.ceil(receipts.length / receiptPageSize));
     const pagedUsageRows = useMemo(() => {
         const from = page * pageSize;
         const to = from + pageSize;
 
-        return usageRows.slice(from, to);
-    }, [page, pageSize, usageRows]);
+        return sortedUsageRows.slice(from, to);
+    }, [page, pageSize, sortedUsageRows]);
     const pagedAttesterRows = useMemo(() => {
         const from = page * pageSize;
         const to = from + pageSize;
 
-        return filteredAttesterRows.slice(from, to);
-    }, [filteredAttesterRows, page, pageSize]);
+        return sortedAttesterRows.slice(from, to);
+    }, [page, pageSize, sortedAttesterRows]);
+    const pagedReceiptRows = useMemo(() => {
+        const from = receiptPage * receiptPageSize;
+        const to = from + receiptPageSize;
+
+        return sortedReceipts.slice(from, to);
+    }, [receiptPage, receiptPageSize, sortedReceipts]);
 
     const selectedUsageRow = useMemo(
         () => usageRows.find(row => row.schemaDid === selectedSchemaDid && row.requesterDid === selectedRequesterDid) ?? null,
@@ -415,6 +590,40 @@ function ChallengeReceipts({ setError }: { setError: (error: any) => void }) {
         }, { replace: true });
     }
 
+    function handleBackFromUsage() {
+        updateParams({
+            attesterDid: null,
+            detailSchemaDid: null,
+            detailRequesterDid: null,
+            page: "0",
+            receiptPage: null,
+        }, { replace: true });
+    }
+
+    function toggleAttesterSort(key: AttesterSortKey) {
+        setAttesterSort((current) => ({
+            key,
+            direction: current.key === key && current.direction === "asc" ? "desc" : "asc",
+        }));
+        updateParams({ page: "0" });
+    }
+
+    function toggleUsageSort(key: UsageSortKey) {
+        setUsageSort((current) => ({
+            key,
+            direction: current.key === key && current.direction === "asc" ? "desc" : "asc",
+        }));
+        updateParams({ page: "0" });
+    }
+
+    function toggleReceiptSort(key: ReceiptSortKey) {
+        setReceiptSort((current) => ({
+            key,
+            direction: current.key === key && current.direction === "asc" ? "desc" : "asc",
+        }));
+        updateParams({ receiptPage: "0" });
+    }
+
     useEffect(() => {
         setDraftAttesterDid(searchParams.get("attesterDid") ?? "");
         setDraftDateFrom(searchParams.get("dateFrom") ?? "");
@@ -484,7 +693,6 @@ function ChallengeReceipts({ setError }: { setError: (error: any) => void }) {
             if (!attesterDid) {
                 setUsageRows([]);
                 setReceipts([]);
-                setReceiptTotal(0);
                 return;
             }
 
@@ -536,13 +744,13 @@ function ChallengeReceipts({ setError }: { setError: (error: any) => void }) {
     }, [attesterDid, setError, updatedAfter, updatedBefore]);
 
     useEffect(() => {
-        const rowCount = attesterDid ? usageRows.length : filteredAttesterRows.length;
+        const rowCount = attesterDid ? sortedUsageRows.length : sortedAttesterRows.length;
         const maxPage = Math.max(0, Math.ceil(rowCount / pageSize) - 1);
 
         if (page > maxPage) {
             updateParams({ page: "0" }, { replace: true });
         }
-    }, [attesterDid, filteredAttesterRows.length, page, pageSize, updateParams, usageRows.length]);
+    }, [attesterDid, page, pageSize, sortedAttesterRows.length, sortedUsageRows.length, updateParams]);
 
     useEffect(() => {
         let ignore = false;
@@ -550,40 +758,46 @@ function ChallengeReceipts({ setError }: { setError: (error: any) => void }) {
         async function fetchReceiptRows() {
             if (!attesterDid || !selectedSchemaDid || !selectedRequesterDid) {
                 setReceipts([]);
-                setReceiptTotal(0);
                 return;
             }
 
             setIsReceiptLoading(true);
 
             try {
-                const response = await axios.get(`${searchServerURL}${VERSION}/metrics/challenge-receipts`, {
-                    params: {
-                        attesterDid,
-                        schemaDid: selectedSchemaDid,
-                        requesterDid: selectedRequesterDid,
-                        updatedAfter,
-                        updatedBefore,
-                        limit: receiptPageSize,
-                        offset: receiptPage * receiptPageSize,
-                    },
-                });
-                const total = response.data.total ?? 0;
+                const allReceipts: ChallengeReceiptRow[] = [];
+                let offset = 0;
+                let total = 0;
+
+                do {
+                    const response = await axios.get(`${searchServerURL}${VERSION}/metrics/challenge-receipts`, {
+                        params: {
+                            attesterDid,
+                            schemaDid: selectedSchemaDid,
+                            requesterDid: selectedRequesterDid,
+                            updatedAfter,
+                            updatedBefore,
+                            limit: receiptBrowseFetchLimit,
+                            offset,
+                        },
+                    });
+
+                    total = response.data.total ?? 0;
+                    allReceipts.push(...(response.data.receipts ?? []).map(mapReceiptRow));
+                    offset += receiptBrowseFetchLimit;
+                } while (offset < total);
 
                 if (!ignore) {
-                    if (total > 0 && receiptPage * receiptPageSize >= total && receiptPage > 0) {
+                    if (allReceipts.length > 0 && receiptPage * receiptPageSize >= allReceipts.length && receiptPage > 0) {
                         updateParams({ receiptPage: "0" });
                         return;
                     }
 
-                    setReceiptTotal(total);
-                    setReceipts((response.data.receipts ?? []).map(mapReceiptRow));
+                    setReceipts(allReceipts);
                 }
             }
             catch (error: any) {
                 if (!ignore) {
                     setReceipts([]);
-                    setReceiptTotal(0);
                     setError(error);
                 }
             }
@@ -649,7 +863,7 @@ function ChallengeReceipts({ setError }: { setError: (error: any) => void }) {
 
                     <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 2, flexWrap: "wrap", mb: 2 }}>
                         <Typography>
-                            {receiptTotal} receipt{receiptTotal === 1 ? "" : "s"}
+                            {receipts.length} receipt{receipts.length === 1 ? "" : "s"}
                         </Typography>
                         <Box sx={{ display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap" }}>
                             <FormControl size="small" sx={{ minWidth: 100 }}>
@@ -697,15 +911,26 @@ function ChallengeReceipts({ setError }: { setError: (error: any) => void }) {
                         <Typography>No receipts found for this usage row.</Typography>
                     ) : (
                         <TableContainer sx={{ border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
-                            <Table size="small">
+                            <Table size="small" sx={receiptTableSx}>
                                 <TableHead>
                                     <TableRow>
-                                        <TableCell width={180}>Updated</TableCell>
-                                        <TableCell>Receipt DID</TableCell>
+                                        <SortableHeader
+                                            label="Updated"
+                                            sortKey="updatedAt"
+                                            sort={receiptSort}
+                                            onSort={toggleReceiptSort}
+                                            sx={compactDateColumnSx}
+                                        />
+                                        <SortableHeader
+                                            label="Receipt DID"
+                                            sortKey="receiptDid"
+                                            sort={receiptSort}
+                                            onSort={toggleReceiptSort}
+                                        />
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>
-                                    {receipts.map((row) => (
+                                    {pagedReceiptRows.map((row) => (
                                         <TableRow key={row.receiptDid}>
                                             <TableCell>{formatTimestamp(row.updatedAt)}</TableCell>
                                             <TableCell>
@@ -814,15 +1039,50 @@ function ChallengeReceipts({ setError }: { setError: (error: any) => void }) {
                                 <Typography>No challenge receipt usage found.</Typography>
                             ) : (
                                 <TableContainer sx={{ border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
-                                    <Table size="small">
+                                    <Table size="small" sx={receiptTableSx}>
                                         <TableHead>
                                             <TableRow>
-                                                <TableCell>Attester DID</TableCell>
-                                                <TableCell width={90}>Uses</TableCell>
-                                                <TableCell width={110}>Templates</TableCell>
-                                                <TableCell width={110}>Requesters</TableCell>
-                                                <TableCell width={170}>First Updated</TableCell>
-                                                <TableCell width={170}>Last Updated</TableCell>
+                                                <SortableHeader
+                                                    label="Attester DID"
+                                                    sortKey="attesterDid"
+                                                    sort={attesterSort}
+                                                    onSort={toggleAttesterSort}
+                                                />
+                                                <SortableHeader
+                                                    label="Uses"
+                                                    sortKey="count"
+                                                    sort={attesterSort}
+                                                    onSort={toggleAttesterSort}
+                                                    sx={compactNumberColumnSx}
+                                                />
+                                                <SortableHeader
+                                                    label="Templates"
+                                                    sortKey="templateCount"
+                                                    sort={attesterSort}
+                                                    onSort={toggleAttesterSort}
+                                                    sx={compactNumberColumnSx}
+                                                />
+                                                <SortableHeader
+                                                    label="Requesters"
+                                                    sortKey="requesterCount"
+                                                    sort={attesterSort}
+                                                    onSort={toggleAttesterSort}
+                                                    sx={compactNumberColumnSx}
+                                                />
+                                                <SortableHeader
+                                                    label="First Updated"
+                                                    sortKey="firstUpdatedAt"
+                                                    sort={attesterSort}
+                                                    onSort={toggleAttesterSort}
+                                                    sx={compactDateColumnSx}
+                                                />
+                                                <SortableHeader
+                                                    label="Last Updated"
+                                                    sortKey="lastUpdatedAt"
+                                                    sort={attesterSort}
+                                                    onSort={toggleAttesterSort}
+                                                    sx={compactDateColumnSx}
+                                                />
                                             </TableRow>
                                         </TableHead>
                                         <TableBody>
@@ -837,12 +1097,11 @@ function ChallengeReceipts({ setError }: { setError: (error: any) => void }) {
                                                         <SelectableDid
                                                             did={row.attesterDid}
                                                             onClick={() => handleSelectAttester(row.attesterDid)}
-                                                            maxWidth={300}
                                                         />
                                                     </TableCell>
-                                                    <TableCell>{row.count}</TableCell>
-                                                    <TableCell>{row.templateCount}</TableCell>
-                                                    <TableCell>{row.requesterCount}</TableCell>
+                                                    <TableCell sx={compactNumberColumnSx}>{row.count}</TableCell>
+                                                    <TableCell sx={compactNumberColumnSx}>{row.templateCount}</TableCell>
+                                                    <TableCell sx={compactNumberColumnSx}>{row.requesterCount}</TableCell>
                                                     <TableCell>{formatTimestamp(row.firstUpdatedAt)}</TableCell>
                                                     <TableCell>{formatTimestamp(row.lastUpdatedAt)}</TableCell>
                                                 </TableRow>
@@ -854,7 +1113,16 @@ function ChallengeReceipts({ setError }: { setError: (error: any) => void }) {
                         </>
                     ) : (
                         <>
-                            <Typography variant="h6" sx={{ mb: 2 }}>Usage</Typography>
+                            <Box sx={{ display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap", mb: 2 }}>
+                                <Button
+                                    variant="outlined"
+                                    onClick={handleBackFromUsage}
+                                    startIcon={<ArrowBackIosNewIcon fontSize="small" />}
+                                >
+                                    Back
+                                </Button>
+                                <Typography variant="h6">Usage</Typography>
+                            </Box>
                             <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", mb: 2 }}>
                                 <SummaryCard label="Successful Uses" value={totalSuccessfulUses} />
                                 <SummaryCard label="Templates Used" value={templateCount} />
@@ -912,14 +1180,43 @@ function ChallengeReceipts({ setError }: { setError: (error: any) => void }) {
                                 <Typography>No challenge receipt usage found.</Typography>
                             ) : (
                                 <TableContainer sx={{ border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
-                                    <Table size="small">
+                                    <Table size="small" sx={receiptTableSx}>
                                         <TableHead>
                                             <TableRow>
-                                                <TableCell>Schema DID</TableCell>
-                                                <TableCell width={90}>Count</TableCell>
-                                                <TableCell width={170}>First Updated</TableCell>
-                                                <TableCell width={170}>Last Updated</TableCell>
-                                                <TableCell width={130}>Receipts</TableCell>
+                                                <SortableHeader
+                                                    label="Schema DID"
+                                                    sortKey="schemaDid"
+                                                    sort={usageSort}
+                                                    onSort={toggleUsageSort}
+                                                />
+                                                <SortableHeader
+                                                    label="Requester DID"
+                                                    sortKey="requesterDid"
+                                                    sort={usageSort}
+                                                    onSort={toggleUsageSort}
+                                                />
+                                                <SortableHeader
+                                                    label="Count"
+                                                    sortKey="count"
+                                                    sort={usageSort}
+                                                    onSort={toggleUsageSort}
+                                                    sx={compactNumberColumnSx}
+                                                />
+                                                <SortableHeader
+                                                    label="First Updated"
+                                                    sortKey="firstUpdatedAt"
+                                                    sort={usageSort}
+                                                    onSort={toggleUsageSort}
+                                                    sx={compactDateColumnSx}
+                                                />
+                                                <SortableHeader
+                                                    label="Last Updated"
+                                                    sortKey="lastUpdatedAt"
+                                                    sort={usageSort}
+                                                    onSort={toggleUsageSort}
+                                                    sx={compactDateColumnSx}
+                                                />
+                                                <TableCell sx={{ width: 96 }}>Receipts</TableCell>
                                             </TableRow>
                                         </TableHead>
                                         <TableBody>
@@ -929,9 +1226,12 @@ function ChallengeReceipts({ setError }: { setError: (error: any) => void }) {
                                                     hover
                                                 >
                                                     <TableCell>
-                                                        <DidLink did={row.schemaDid} maxWidth={260} />
+                                                        <DidLink did={row.schemaDid} />
                                                     </TableCell>
-                                                    <TableCell>{row.count}</TableCell>
+                                                    <TableCell>
+                                                        <DidLink did={row.requesterDid} />
+                                                    </TableCell>
+                                                    <TableCell sx={compactNumberColumnSx}>{row.count}</TableCell>
                                                     <TableCell>{formatTimestamp(row.firstUpdatedAt)}</TableCell>
                                                     <TableCell>{formatTimestamp(row.lastUpdatedAt)}</TableCell>
                                                     <TableCell>

@@ -1,4 +1,10 @@
 export * from './index.js';
+export {
+    generateDIDFromOperation,
+    generateDocFromOperation,
+    generateOperationCID,
+    resolveDIDFromEvents,
+} from './did-resolver.js';
 export { default } from './gatekeeper.js';
 export { default as DbJson } from './db/json.js';
 export { default as DbJsonCache } from './db/json-cache.js';

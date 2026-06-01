@@ -112,6 +112,7 @@ export function loadEnv(options: LoadEnvOptions = {}): string[] {
         const result = dotenv.config({
             path: envFile,
             override: false,
+            quiet: true,
         });
 
         if (result.error) {

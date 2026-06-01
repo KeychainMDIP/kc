@@ -21,6 +21,8 @@ The library must be configured by calling the start function with one of the sup
 - redis - @mdip/gatekeeper/db/redis
 - postgres - @mdip/gatekeeper/db/postgres
 
+The MongoDB adapter requires a replica set or sharded cluster because DID/block writes and index cursor writes are committed in MongoDB transactions. For local Docker Compose usage, the repository starts MongoDB as a single-node replica set named `rs0`; standalone MongoDB deployments must be updated before using the adapter.
+
 ```js
 // Import using subpaths
 import Gatekeeper from '@mdip/gatekeeper';

@@ -38,7 +38,8 @@ while true; do
 
   if [[ "$RETRY_COUNT" -ge "$MAX_RETRIES" ]]; then
     echo "❌ Timed out waiting for containers to be 'Up'"
-    docker compose ps
+    docker compose "${PROFILE_ARGS[@]}" ps -a
+    docker compose "${PROFILE_ARGS[@]}" logs --no-color --tail=200 "${SERVICES[@]}"
     exit 1
   fi
 
