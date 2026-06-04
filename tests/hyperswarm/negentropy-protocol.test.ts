@@ -1,6 +1,7 @@
 import { Operation } from '@mdip/gatekeeper/types';
 import {
     NEG_SYNC_ID_RE,
+    buildOrderedCatchupCapabilities,
     chooseConnectSyncMode,
     chooseSyncMode,
     decodeNegentropyFrame,
@@ -42,6 +43,13 @@ describe('negentropy protocol helpers', () => {
 
     it('normalizes peer capabilities and chooses sync mode', () => {
         const unknown = normalizePeerCapabilities();
+        expect(unknown).toMatchObject({
+            orderedCatchup: false,
+            orderedCatchupVersion: null,
+            orderedCatchupReady: false,
+            operationCount: null,
+            orderedOperationCount: null,
+        });
         expect(chooseSyncMode(unknown, currentNegentropyVersion)).toBeNull();
 
         const legacy = normalizePeerCapabilities({ negentropy: false });
@@ -61,6 +69,94 @@ describe('negentropy protocol helpers', () => {
 
         const newVersion = normalizePeerCapabilities({ negentropy: true, negentropyVersion: 3 });
         expect(chooseSyncMode(newVersion, currentNegentropyVersion)).toBe('legacy');
+    });
+
+    it('normalizes ordered catch-up capability fields', () => {
+        const capabilities = normalizePeerCapabilities({
+            negentropy: true,
+            negentropyVersion: currentNegentropyVersion,
+            orderedCatchup: true,
+            orderedCatchupVersion: 1,
+            orderedCatchupReady: true,
+            operationCount: 25,
+            orderedOperationCount: 25,
+        });
+
+        expect(capabilities).toMatchObject({
+            orderedCatchup: true,
+            orderedCatchupVersion: 1,
+            orderedCatchupReady: true,
+            operationCount: 25,
+            orderedOperationCount: 25,
+        });
+    });
+
+    it('normalizes invalid ordered catch-up counts to null', () => {
+        const capabilities = normalizePeerCapabilities({
+            orderedCatchup: true,
+            orderedCatchupVersion: Number.NaN,
+            orderedCatchupReady: true,
+            operationCount: -1,
+            orderedOperationCount: 1.5,
+        });
+
+        expect(capabilities).toMatchObject({
+            orderedCatchup: true,
+            orderedCatchupVersion: null,
+            orderedCatchupReady: true,
+            operationCount: null,
+            orderedOperationCount: null,
+        });
+    });
+
+    it('builds ordered catch-up readiness only when all operations are ordered', () => {
+        expect(buildOrderedCatchupCapabilities({
+            enabled: true,
+            version: 1,
+            operationCount: 3,
+            orderedOperationCount: 3,
+        })).toStrictEqual({
+            orderedCatchup: true,
+            orderedCatchupVersion: 1,
+            orderedCatchupReady: true,
+            operationCount: 3,
+            orderedOperationCount: 3,
+        });
+
+        expect(buildOrderedCatchupCapabilities({
+            enabled: true,
+            version: 1,
+            operationCount: 3,
+            orderedOperationCount: 2,
+        })).toMatchObject({
+            orderedCatchupReady: false,
+            operationCount: 3,
+            orderedOperationCount: 2,
+        });
+
+        expect(buildOrderedCatchupCapabilities({
+            enabled: true,
+            version: 1,
+            operationCount: 0,
+            orderedOperationCount: 0,
+        })).toMatchObject({
+            orderedCatchupReady: false,
+        });
+    });
+
+    it('builds disabled ordered catch-up capabilities without a protocol version', () => {
+        expect(buildOrderedCatchupCapabilities({
+            enabled: false,
+            version: 1,
+            operationCount: 3,
+            orderedOperationCount: 3,
+        })).toStrictEqual({
+            orderedCatchup: false,
+            orderedCatchupVersion: undefined,
+            orderedCatchupReady: false,
+            operationCount: 3,
+            orderedOperationCount: 3,
+        });
     });
 
     it('chooses connect sync mode with explicit fallback reasons', () => {

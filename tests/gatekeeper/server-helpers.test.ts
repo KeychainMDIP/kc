@@ -157,6 +157,17 @@ describe('gatekeeper server helpers', () => {
             .toThrow('limit must be a positive integer');
     });
 
+    it('parses optional booleans', () => {
+        expect(helpers.parseOptionalBoolean(undefined, 'includeOperations')).toBeUndefined();
+        expect(helpers.parseOptionalBoolean(null, 'includeOperations')).toBeUndefined();
+        expect(helpers.parseOptionalBoolean(true, 'includeOperations')).toBe(true);
+        expect(helpers.parseOptionalBoolean(false, 'includeOperations')).toBe(false);
+        expect(helpers.parseOptionalBoolean('true', 'includeOperations')).toBe(true);
+        expect(helpers.parseOptionalBoolean('false', 'includeOperations')).toBe(false);
+        expect(() => helpers.parseOptionalBoolean('yes', 'includeOperations'))
+            .toThrow('includeOperations must be a boolean');
+    });
+
     it('parses and rejects index export request shapes', () => {
         expect(helpers.parseIndexExportRequest({
             mode: 'snapshot',
@@ -171,10 +182,12 @@ describe('gatekeeper server helpers', () => {
             mode: 'changes',
             cursor: null,
             limit: 2,
+            includeOperations: true,
         })).toStrictEqual({
             mode: 'changes',
             cursor: null,
             limit: 2,
+            includeOperations: true,
         });
         expect(() => helpers.parseIndexExportRequest(null)).toThrow('request body must be an object');
         expect(() => helpers.parseIndexExportRequest([])).toThrow('request body must be an object');
@@ -182,6 +195,8 @@ describe('gatekeeper server helpers', () => {
             .toThrow('mode must be "snapshot" or "changes"');
         expect(() => helpers.parseIndexExportRequest({ mode: 'changes', cursor: 12 }))
             .toThrow('cursor must be a string or null');
+        expect(() => helpers.parseIndexExportRequest({ mode: 'changes', includeOperations: 'yes' }))
+            .toThrow('includeOperations must be a boolean');
         expect(() => helpers.parseIndexExportRequest({ mode: 'snapshot', limit: -1 }))
             .toThrow('limit must be a positive integer');
     });

@@ -78,6 +78,10 @@ export interface GatekeeperEvent {
     blockchain?: MdipRegistration;
 }
 
+export interface SetEventsOptions {
+    operationEvents?: GatekeeperEvent[];
+}
+
 export type GenerateCID = (operation: unknown) => Promise<string>;
 export type GenerateDID = (operation: Operation) => Promise<string>;
 export type GetBlock = (registry: string, block?: BlockId) => Promise<BlockInfo | null>;
@@ -114,6 +118,7 @@ export interface IndexChangeRecord {
     did?: string;
     registry?: string;
     block?: BlockInfo;
+    event?: GatekeeperEvent;
     removed?: boolean;
 }
 
@@ -128,6 +133,7 @@ export interface IndexExportChangesRequest {
     mode: 'changes';
     cursor?: string | null;
     limit?: number;
+    includeOperations?: boolean;
 }
 
 export type IndexExportRequest = IndexExportSnapshotRequest | IndexExportChangesRequest;
@@ -141,6 +147,7 @@ export interface IndexExportSnapshotOptions {
 export interface IndexExportChangesOptions {
     cursor?: string | null;
     limit?: number;
+    includeOperations?: boolean;
 }
 
 export interface IndexExportDIDRecord {
@@ -155,11 +162,19 @@ export interface IndexExportBlockRecord {
     removed?: boolean;
 }
 
+export interface IndexExportOperationRecord {
+    seq: number;
+    did: string;
+    event: GatekeeperEvent;
+    operationHash?: string;
+}
+
 export interface IndexExportBaseResponse {
     cursor: string | null;
     hasMore: boolean;
     dids: IndexExportDIDRecord[];
     blocks: IndexExportBlockRecord[];
+    operations?: IndexExportOperationRecord[];
 }
 
 export interface IndexExportSnapshotResponse extends IndexExportBaseResponse {
@@ -179,7 +194,7 @@ export interface GatekeeperDb {
     resetDb(): Promise<void | number | JsonDbFile>;
     addEvent(did: string, event: GatekeeperEvent): Promise<void | number>;
     getEvents(did: string): Promise<GatekeeperEvent[]>;
-    setEvents(did: string, events: GatekeeperEvent[]): Promise<number | void>;
+    setEvents(did: string, events: GatekeeperEvent[], options?: SetEventsOptions): Promise<number | void>;
     deleteEvents(did: string): Promise<void | number>;
     getAllKeys(): Promise<string[]>;
     queueOperation(registry: string, op: Operation): Promise<number>;

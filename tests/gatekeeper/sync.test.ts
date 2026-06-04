@@ -700,11 +700,25 @@ describe('processEvents', () => {
             "batch": "mock2"
         };
 
+        const checkpoint = await db.exportIndexChanges();
         await gatekeeper.importBatch(ops);
         const response = await gatekeeper.processEvents();
 
         expect(response.added).toBe(3);
         expect(response.merged).toBe(0);
+
+        const changes = await db.exportIndexChanges({
+            cursor: checkpoint.cursor,
+            includeOperations: true,
+        });
+
+        expect(changes.operations).toStrictEqual([]);
+        expect(changes.dids).toHaveLength(1);
+        expect(changes.dids[0].events.map(event => event.registry)).toStrictEqual([
+            'TFTC',
+            'TFTC',
+            'TFTC',
+        ]);
     });
 
     it('should resolve as confirmed when DID is imported from its native registry', async () => {
@@ -1047,6 +1061,7 @@ describe('processEvents', () => {
         const agentDoc2 = await gatekeeper.resolveDID(agentDID);
         // @ts-expect-error Testing invalid usage
         expect(agentDoc2.didDocumentData.mock).toBe(2);
+        const checkpoint = await db.exportIndexChanges();
 
         const event3 = {
             registry: 'TFTC',
@@ -1071,6 +1086,30 @@ describe('processEvents', () => {
         const agentDoc3 = await gatekeeper.resolveDID(agentDID, { confirm: true });
         // @ts-expect-error Testing invalid usage
         expect(agentDoc3.didDocumentData.mock).toBe(1);
+
+        const changes = await db.exportIndexChanges({
+            cursor: checkpoint.cursor,
+            includeOperations: true,
+        });
+
+        expect(changes.operations).toStrictEqual([
+            expect.objectContaining({
+                did: agentDID,
+                event: expect.objectContaining({
+                    registry: 'TFTC',
+                    operation: expect.objectContaining({
+                        signature: expect.objectContaining({
+                            hash: updateOp1.signature!.hash,
+                        }),
+                    }),
+                }),
+            }),
+        ]);
+        expect(changes.dids).toHaveLength(1);
+        expect(changes.dids[0].events.map(event => event.operation.signature?.hash)).toStrictEqual([
+            agentOp.signature!.hash,
+            updateOp1.signature!.hash,
+        ]);
     });
 
     it('should handle deferred operation validation when asset ownership changes', async () => {

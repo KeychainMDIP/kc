@@ -59,6 +59,8 @@ function parseSyncDbEnv() {
     throw new Error('Invalid KC_HYPR_DB; expected sqlite or postgres');
 }
 
+const negentropyMaxRecordsPerWindow = parsePositiveIntEnv('KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW', 25000);
+
 const config = {
     debug: process.env.KC_DEBUG ? process.env.KC_DEBUG === 'true' : false,
     gatekeeperURL: process.env.KC_GATEKEEPER_URL || 'http://localhost:4224',
@@ -71,9 +73,11 @@ const config = {
     exportInterval: parsePositiveIntEnv('KC_HYPR_EXPORT_INTERVAL', 2),
     negentropyEnabled: parseBooleanEnv('KC_HYPR_NEGENTROPY_ENABLE', true),
     negentropyFrameSizeLimit: parseFrameSizeLimit(),
-    negentropyMaxRecordsPerWindow: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW', 25000),
+    negentropyMaxRecordsPerWindow,
     negentropyMaxRoundsPerSession: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_MAX_ROUNDS_PER_SESSION', 64),
     negentropyIntervalSeconds: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_INTERVAL', 300),
+    orderedCatchupEnabled: parseBooleanEnv('KC_HYPR_ORDERED_CATCHUP_ENABLE', true),
+    orderedCatchupThreshold: negentropyMaxRecordsPerWindow,
     legacySyncEnabled: parseBooleanEnv('KC_HYPR_LEGACY_SYNC_ENABLE', true),
     db: parseSyncDbEnv(),
     postgresURL: process.env.KC_HYPR_POSTGRES_URL

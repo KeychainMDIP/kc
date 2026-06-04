@@ -10,7 +10,8 @@ import {
     IndexChangeRecord,
     IndexExportSnapshotOptions,
     IndexExportResponse,
-    IndexExportChangesOptions
+    IndexExportChangesOptions,
+    SetEventsOptions,
 } from '../types.js'
 import {
     buildIndexChangesResponse,
@@ -47,7 +48,7 @@ export default class DbRedis implements GatekeeperDb {
                 await this.redis.quit();
             }
             catch {
-                // Preserve the migration error.
+                // Preserve the startup/bootstrap error.
             }
             finally {
                 this.redis.removeAllListeners('error');
@@ -110,6 +111,11 @@ export default class DbRedis implements GatekeeperDb {
         const key = this.didKey(did);
         const id = this.didId(did);
         const val = JSON.stringify(event);
+        const change = JSON.stringify({
+            kind: 'did',
+            did,
+            event,
+        });
         const script = `
             ${this.checkRedisTypesScript(['list', 'string', 'zset', 'zset'])}
             local change = cjson.decode(ARGV[2])
@@ -124,13 +130,13 @@ export default class DbRedis implements GatekeeperDb {
         const result = await this.evalAtomicMutation(
             script,
             [key, this.indexSeqKey(), this.indexChangesKey(), this.didIndexKey()],
-            [val, JSON.stringify({ kind: 'did', did }), id]
+            [val, change, id]
         );
 
         return Number(result ?? 0);
     }
 
-    async setEvents(did: string, events: GatekeeperEvent[]): Promise<void> {
+    async setEvents(did: string, events: GatekeeperEvent[], options?: SetEventsOptions): Promise<void> {
         if (!this.redis) {
             throw new Error(REDIS_NOT_STARTED_ERROR)
         }
@@ -138,24 +144,42 @@ export default class DbRedis implements GatekeeperDb {
         const key = this.didKey(did);
         const id = this.didId(did);
         const payloads = events.map(e => JSON.stringify(e));
+        const operationEvents = options?.operationEvents ?? [];
+        const changes = operationEvents.length === 0
+            ? [JSON.stringify({ kind: 'did', did })]
+            : operationEvents.map(event => JSON.stringify({
+                kind: 'did',
+                did,
+                event,
+            }));
 
         const script = `
             ${this.checkRedisTypesScript(['list', 'string', 'zset', 'zset'])}
-            local count = tonumber(ARGV[1])
-            if count == nil then
+            local eventCount = tonumber(ARGV[1])
+            local changeCount = tonumber(ARGV[2])
+            if eventCount == nil then
                 error('invalid event count')
             end
-            local change = cjson.decode(ARGV[count + 2])
-            local id = ARGV[count + 3]
-            local seq = redis.call('INCR', KEYS[2])
-            redis.call('DEL', KEYS[1])
-            for i = 1, count do
-                redis.call('RPUSH', KEYS[1], ARGV[i + 1])
+            if changeCount == nil then
+                error('invalid change count')
             end
-            change.seq = seq
-            redis.call('ZADD', KEYS[3], seq, cjson.encode(change))
+            local changes = {}
+            for i = 1, changeCount do
+                changes[i] = cjson.decode(ARGV[2 + eventCount + i])
+            end
+            local id = ARGV[2 + eventCount + changeCount + 1]
+            redis.call('DEL', KEYS[1])
+            for i = 1, eventCount do
+                redis.call('RPUSH', KEYS[1], ARGV[i + 2])
+            end
+            for i = 1, changeCount do
+                local change = changes[i]
+                local seq = redis.call('INCR', KEYS[2])
+                change.seq = seq
+                redis.call('ZADD', KEYS[3], seq, cjson.encode(change))
+            end
             redis.call('ZADD', KEYS[4], 0, id)
-            return count
+            return eventCount
         `;
 
         await this.evalAtomicMutation(
@@ -163,8 +187,9 @@ export default class DbRedis implements GatekeeperDb {
             [key, this.indexSeqKey(), this.indexChangesKey(), this.didIndexKey()],
             [
                 payloads.length.toString(),
+                changes.length.toString(),
                 ...payloads,
-                JSON.stringify({ kind: 'did', did }),
+                ...changes,
                 id,
             ]
         );

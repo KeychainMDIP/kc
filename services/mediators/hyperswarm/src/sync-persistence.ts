@@ -1,12 +1,25 @@
-import { Operation } from '@mdip/gatekeeper/types';
+import {
+    IndexExportOperationRecord,
+    Operation,
+} from '@mdip/gatekeeper/types';
 import type { OperationSyncStore } from './db/types.js';
 import { mapOperationToSyncKey } from './sync-mapping.js';
 
 export interface SyncPersistenceRecord {
     id: string;
+    syncOrder?: number;
+    signedTs: number;
+    // Compatibility alias for the current negentropy cursor/window code.
     ts: number;
     operation: Operation;
 }
+
+export interface AcceptedOperationWithSyncOrder {
+    operation: Operation;
+    syncOrder?: number;
+}
+
+export type AcceptedOperationInput = Operation | AcceptedOperationWithSyncOrder;
 
 export interface MapAcceptedResult {
     records: SyncPersistenceRecord[];
@@ -94,11 +107,27 @@ export function dedupeOperationsByHash(operations: Operation[]): Operation[] {
     return unique;
 }
 
-export function mapAcceptedOperationsToSyncRecords(operations: Operation[]): MapAcceptedResult {
+function normalizeAcceptedOperation(input: AcceptedOperationInput): AcceptedOperationWithSyncOrder {
+    if (input && typeof input === 'object' && 'operation' in input) {
+        return input;
+    }
+
+    return { operation: input as Operation };
+}
+
+function getSyncOrder(input: AcceptedOperationWithSyncOrder): number | undefined {
+    return Number.isSafeInteger(input.syncOrder) && input.syncOrder! >= 0
+        ? input.syncOrder
+        : undefined;
+}
+
+export function mapAcceptedOperationsToSyncRecords(operations: AcceptedOperationInput[]): MapAcceptedResult {
     const records: SyncPersistenceRecord[] = [];
     let invalid = 0;
 
-    for (const operation of operations) {
+    for (const input of operations) {
+        const normalized = normalizeAcceptedOperation(input);
+        const operation = normalized.operation;
         const mapped = mapOperationToSyncKey(operation);
         if (!mapped.ok) {
             invalid += 1;
@@ -107,12 +136,21 @@ export function mapAcceptedOperationsToSyncRecords(operations: Operation[]): Map
 
         records.push({
             id: mapped.value.idHex,
+            syncOrder: getSyncOrder(normalized),
+            signedTs: mapped.value.ts,
             ts: mapped.value.ts,
             operation,
         });
     }
 
     return { records, invalid };
+}
+
+export function mapIndexExportOperationsToSyncRecords(operations: IndexExportOperationRecord[]): MapAcceptedResult {
+    return mapAcceptedOperationsToSyncRecords(operations.map(record => ({
+        operation: record.event.operation,
+        syncOrder: record.seq,
+    })));
 }
 
 export async function filterKnownOperations(

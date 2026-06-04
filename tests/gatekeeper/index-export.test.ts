@@ -34,6 +34,20 @@ function createEvent(did: string, time: string, type: 'create' | 'update' = 'cre
     };
 }
 
+function withOperationHash(event: GatekeeperEvent, hash: string): GatekeeperEvent {
+    return {
+        ...event,
+        operation: {
+            ...event.operation,
+            signature: {
+                signed: event.time,
+                hash,
+                value: `signature-${hash}`,
+            },
+        },
+    };
+}
+
 const didA = 'did:test:z1';
 const didB = 'did:test:z2';
 const eventA = createEvent(didA, '2026-01-01T00:00:01.000Z');
@@ -118,6 +132,9 @@ function createPostgresFixture(): AdapterFixture {
                 ? JSON.parse(params[4] as string) as BlockInfo
                 : undefined,
             removed: params[5] === true,
+            event: params[6]
+                ? parseStoredEvent(params[6])
+                : undefined,
         });
     }
 
@@ -157,9 +174,7 @@ function createPostgresFixture(): AdapterFixture {
             return { rows: [], rowCount: existed ? 1 : 0 };
         }
 
-        if (text.includes('DELETE FROM gatekeeper_meta') ||
-            text.includes('DELETE FROM gatekeeper_dids') ||
-            text.includes('DELETE FROM gatekeeper_queue') ||
+        if (text.includes('DELETE FROM gatekeeper_queue') ||
             text.includes('DELETE FROM gatekeeper_blocks') ||
             text.includes('DELETE FROM gatekeeper_index_changes')) {
             return { rows: [], rowCount: 1 };
@@ -402,15 +417,18 @@ function createRedisFixture(): AdapterFixture {
                 return count;
             }
 
-            if (keyCount === 4 && args.length >= 3 && /^\d+$/.test(args[0])) {
-                const count = Number(args[0]);
+            if (keyCount === 4 && args.length >= 3 && /^\d+$/.test(args[0]) && /^\d+$/.test(args[1])) {
+                const eventCount = Number(args[0]);
+                const changeCount = Number(args[1]);
                 del(keys[0]);
-                if (count > 0) {
-                    rpush(keys[0], ...args.slice(1, 1 + count));
+                if (eventCount > 0) {
+                    rpush(keys[0], ...args.slice(2, 2 + eventCount));
                 }
-                recordChange(JSON.parse(args[count + 1]) as Omit<IndexChangeRecord, 'seq'>);
-                zadd(keys[3], 0, args[count + 2]);
-                return count;
+                for (let i = 0; i < changeCount; i += 1) {
+                    recordChange(JSON.parse(args[2 + eventCount + i]) as Omit<IndexChangeRecord, 'seq'>);
+                }
+                zadd(keys[3], 0, args[2 + eventCount + changeCount]);
+                return eventCount;
             }
 
             if (keyCount === 4 && args.length === 2) {
@@ -868,11 +886,13 @@ function createIndexChanges(): IndexChangeRecord[] {
             seq: 1,
             kind: 'did',
             did: didA,
+            event: eventA,
         },
         {
             seq: 2,
             kind: 'did',
             did: didB,
+            event: eventB,
         },
         {
             seq: 3,
@@ -1056,6 +1076,7 @@ describe('Gatekeeper DB index snapshot export', () => {
         expect(snapshot.dids.map(record => record.did)).toStrictEqual([didA, didB]);
         expect(snapshot.dids[0].events).toHaveLength(1);
         expect(snapshot.dids[1].events).toHaveLength(2);
+        expect(snapshot).not.toHaveProperty('operations');
     });
 
     it('pages snapshots with an opaque cursor and limit', async () => {
@@ -1139,6 +1160,24 @@ describe('Gatekeeper DB index snapshot export', () => {
         expect(changes.dids[0].did).toBe(did);
         expect(changes.dids[0]).not.toHaveProperty('removed');
         expect(changes.dids[0].events).toHaveLength(2);
+        expect(changes).not.toHaveProperty('operations');
+
+        const changesWithOperations = await db.exportIndexChanges({ includeOperations: true });
+
+        expect(changesWithOperations.operations).toStrictEqual([
+            {
+                seq: 1,
+                did,
+                event: createEvent(did, '2026-01-01T00:00:01.000Z'),
+                operationHash: undefined,
+            },
+            {
+                seq: 2,
+                did,
+                event: createEvent(did, '2026-01-01T00:00:02.000Z', 'update'),
+                operationHash: undefined,
+            },
+        ]);
         expect(changes.blocks).toStrictEqual([
             {
                 registry: 'TFTC',
@@ -1451,6 +1490,62 @@ describe.each(adapterFactories)('Gatekeeper DB index export adapter: %s', (_name
         });
     });
 
+    it('exports operation rows in accepted order without block rows', async () => {
+        const checkpoint = await fixture.db.exportIndexChanges();
+        const didC = 'did:test:z3';
+        const firstEvent = withOperationHash(
+            createEvent(didC, '2026-01-01T00:00:03.000Z'),
+            'operation-hash-z3-1'
+        );
+        const secondEvent = createEvent(didC, '2026-01-01T00:00:04.000Z', 'update');
+        const block2: BlockInfo = {
+            height: 8,
+            hash: 'block-8',
+            time: 1775037900,
+        };
+
+        await fixture.db.addEvent(didC, firstEvent);
+        await fixture.db.addEvent(didC, secondEvent);
+        await fixture.db.addBlock('local', block2);
+
+        const changes = await fixture.db.exportIndexChanges({
+            cursor: checkpoint.cursor,
+            limit: 10,
+            includeOperations: true,
+        });
+
+        expect(changes).toMatchObject({
+            mode: 'changes',
+            cursor: '6',
+            hasMore: false,
+        });
+        expect(changes.dids).toStrictEqual([
+            {
+                did: didC,
+                events: [firstEvent, secondEvent],
+            },
+        ]);
+        expect(changes.operations).toStrictEqual([
+            {
+                seq: 4,
+                did: didC,
+                event: firstEvent,
+                operationHash: 'operation-hash-z3-1',
+            },
+            {
+                seq: 5,
+                did: didC,
+                event: secondEvent,
+                operationHash: undefined,
+            },
+        ]);
+        expect(changes.blocks).toHaveLength(1);
+        expect(changes.blocks[0]).toMatchObject({
+            registry: 'local',
+            block: block2,
+        });
+    });
+
     it('records index changes for every accepted mutation type', async () => {
         const checkpoint = await fixture.db.exportIndexChanges();
         const didC = 'did:test:z3';
@@ -1492,11 +1587,62 @@ describe.each(adapterFactories)('Gatekeeper DB index export adapter: %s', (_name
                 removed: true,
             },
         ]);
+        expect(changes).not.toHaveProperty('operations');
+
+        const changesWithOperations = await fixture.db.exportIndexChanges({
+            cursor: checkpoint.cursor,
+            limit: 10,
+            includeOperations: true,
+        });
+
+        expect(changesWithOperations.operations).toStrictEqual([
+            {
+                seq: 4,
+                did: didC,
+                event: eventC,
+                operationHash: undefined,
+            },
+        ]);
         expect(changes.blocks).toHaveLength(1);
         expect(changes.blocks[0]).toMatchObject({
             registry: 'local',
             block: block2,
         });
+    });
+
+    it('records only explicit operation events from setEvents replacements', async () => {
+        const checkpoint = await fixture.db.exportIndexChanges();
+        const eventAUpdate = createEvent(didA, '2026-01-01T00:00:04.000Z', 'update');
+
+        await fixture.db.setEvents(didA, [eventA, eventAUpdate], {
+            operationEvents: [eventAUpdate],
+        });
+
+        const changesWithOperations = await fixture.db.exportIndexChanges({
+            cursor: checkpoint.cursor,
+            limit: 10,
+            includeOperations: true,
+        });
+
+        expect(changesWithOperations).toMatchObject({
+            mode: 'changes',
+            cursor: '4',
+            hasMore: false,
+        });
+        expect(changesWithOperations.dids).toStrictEqual([
+            {
+                did: didA,
+                events: [eventA, eventAUpdate],
+            },
+        ]);
+        expect(changesWithOperations.operations).toStrictEqual([
+            {
+                seq: 4,
+                did: didA,
+                event: eventAUpdate,
+                operationHash: undefined,
+            },
+        ]);
     });
 });
 
@@ -1866,7 +2012,7 @@ describe('Gatekeeper DB startup and guard behavior', () => {
         jest.resetModules();
     });
 
-    it('starts, migrates legacy indexes, resets, and stops Mongo with transaction-capable topology', async () => {
+    it('starts, repairs deployed Mongo indexes, resets, and stops with transaction-capable topology', async () => {
         const deletedCollections: string[] = [];
         const droppedIndexes: { collection: string; index: string }[] = [];
         const createIndex = jest.fn(async () => undefined);

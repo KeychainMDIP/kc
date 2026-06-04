@@ -1,7 +1,10 @@
 import { jest } from '@jest/globals';
-import { GatekeeperEvent, Operation } from '@mdip/gatekeeper/types';
+import type { GatekeeperEvent, IndexExportResponse, Operation } from '@mdip/gatekeeper/types';
 import InMemoryOperationSyncStore from '../../services/mediators/hyperswarm/src/db/memory.ts';
-import { bootstrapSyncStoreFromGatekeeper } from '../../services/mediators/hyperswarm/src/bootstrap.ts';
+import {
+    bootstrapSyncStoreFromGatekeeper,
+    HYPR_INDEX_SYNC_STATE_KEYS,
+} from '../../services/mediators/hyperswarm/src/bootstrap.ts';
 
 const h = (c: string) => c.repeat(64);
 
@@ -16,20 +19,63 @@ function makeOperation(hashChar: string, signed: string): Operation {
     };
 }
 
-function makeEvent(operation: Operation): GatekeeperEvent {
+function makeEvent(operation: Operation, did = `did:test:${operation.signature?.hash?.[0]}`): GatekeeperEvent {
     return {
         registry: 'hyperswarm',
         time: new Date().toISOString(),
+        did,
         operation,
     };
 }
 
-function makeDid(index: number): string {
-    return `did:test:${index}`;
+function snapshotResponse(params: {
+    did: string;
+    events: GatekeeperEvent[];
+    cursor: string | null;
+    checkpointCursor: string | null;
+    hasMore?: boolean;
+}): IndexExportResponse {
+    return {
+        mode: 'snapshot',
+        cursor: params.cursor,
+        checkpointCursor: params.checkpointCursor,
+        hasMore: params.hasMore ?? false,
+        dids: [{
+            did: params.did,
+            events: params.events,
+        }],
+        blocks: [],
+    };
+}
+
+function changesResponse(params: {
+    cursor: string | null;
+    operations?: GatekeeperEvent[];
+    didEvents?: GatekeeperEvent[];
+    hasMore?: boolean;
+}): IndexExportResponse {
+    return {
+        mode: 'changes',
+        cursor: params.cursor,
+        hasMore: params.hasMore ?? false,
+        dids: [{
+            did: 'did:test:fallback',
+            events: params.didEvents ?? [],
+        }],
+        blocks: [],
+        ...(params.operations && {
+            operations: params.operations.map((event, index) => ({
+                seq: index + 1,
+                did: event.did ?? 'did:test:op',
+                event,
+                operationHash: event.operation?.signature?.hash,
+            })),
+        }),
+    };
 }
 
 describe('bootstrapSyncStoreFromGatekeeper', () => {
-    it('resets a populated sync-store before importing gatekeeper operations', async () => {
+    it('hydrates from index snapshot without resetting existing sync-store records', async () => {
         const store = new InMemoryOperationSyncStore();
         await store.start();
         await store.upsertMany([{
@@ -41,167 +87,282 @@ describe('bootstrapSyncStoreFromGatekeeper', () => {
         const opA = makeOperation('a', '2026-02-10T10:00:00.000Z');
         const opB = makeOperation('b', '2026-02-10T11:00:00.000Z');
         const gatekeeper = {
-            getDIDs: jest.fn(async () => [makeDid(1), makeDid(2)]),
-            exportBatch: jest.fn(async () => [makeEvent(opA), makeEvent(opB)]),
+            exportIndex: jest.fn(async () => snapshotResponse({
+                did: 'did:test:a',
+                events: [makeEvent(opA), makeEvent(opB)],
+                cursor: 'did:test:a',
+                checkpointCursor: '7',
+            })),
+            getDIDs: jest.fn(),
+            exportBatch: jest.fn(),
         };
 
         const result = await bootstrapSyncStoreFromGatekeeper(store, gatekeeper);
 
-        expect(result.countBefore).toBe(1);
-        expect(result.countAfter).toBe(2);
-        expect(result.exported).toBe(2);
-        expect(result.mapped).toBe(2);
-        expect(result.invalid).toBe(0);
-        expect(result.inserted).toBe(2);
-        expect(gatekeeper.getDIDs).toHaveBeenCalledTimes(1);
-        expect(gatekeeper.exportBatch).toHaveBeenCalledTimes(1);
-        expect(gatekeeper.exportBatch).toHaveBeenCalledWith([makeDid(1), makeDid(2)]);
-        expect(await store.count()).toBe(2);
-        expect(await store.has(h('z'))).toBe(false);
+        expect(result).toMatchObject({
+            countBefore: 1,
+            countAfter: 3,
+            mode: 'snapshot',
+            pages: 1,
+            exported: 2,
+            mapped: 2,
+            invalid: 0,
+            inserted: 2,
+            updated: 0,
+            snapshotComplete: true,
+        });
+        expect(gatekeeper.exportIndex).toHaveBeenCalledWith({
+            mode: 'snapshot',
+            cursor: null,
+            limit: 500,
+        });
+        expect(gatekeeper.getDIDs).not.toHaveBeenCalled();
+        expect(gatekeeper.exportBatch).not.toHaveBeenCalled();
+        expect(await store.has(h('z'))).toBe(true);
+        await expect(store.getByIds([h('a'), h('b')])).resolves.toMatchObject([
+            {
+                id: h('a'),
+                syncOrder: undefined,
+                signedTs: Math.floor(Date.parse(opA.signature!.signed) / 1000),
+            },
+            {
+                id: h('b'),
+                syncOrder: undefined,
+                signedTs: Math.floor(Date.parse(opB.signature!.signed) / 1000),
+            },
+        ]);
+        expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotComplete)).toBe('true');
+        expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor)).toBe('7');
     });
 
-    it('bootstraps from gatekeeper exportBatch when store is empty', async () => {
+    it('continues snapshot pages with the first checkpoint cursor', async () => {
         const store = new InMemoryOperationSyncStore();
         await store.start();
 
         const opA = makeOperation('a', '2026-02-10T10:00:00.000Z');
         const opB = makeOperation('b', '2026-02-10T11:00:00.000Z');
         const gatekeeper = {
-            getDIDs: jest.fn(async () => [makeDid(1), makeDid(2)]),
-            exportBatch: jest.fn(async () => [makeEvent(opA), makeEvent(opB)]),
+            exportIndex: jest.fn()
+                .mockResolvedValueOnce(snapshotResponse({
+                    did: 'did:test:a',
+                    events: [makeEvent(opA)],
+                    cursor: 'did:test:a',
+                    checkpointCursor: '12',
+                    hasMore: true,
+                }))
+                .mockResolvedValueOnce(snapshotResponse({
+                    did: 'did:test:b',
+                    events: [makeEvent(opB)],
+                    cursor: 'did:test:b',
+                    checkpointCursor: '12',
+                    hasMore: false,
+                })),
         };
 
-        const result = await bootstrapSyncStoreFromGatekeeper(store, gatekeeper);
-        expect(result.countBefore).toBe(0);
-        expect(result.exported).toBe(2);
-        expect(result.mapped).toBe(2);
-        expect(result.invalid).toBe(0);
-        expect(result.inserted).toBe(2);
-        expect(result.countAfter).toBe(2);
-        expect(gatekeeper.getDIDs).toHaveBeenCalledTimes(1);
-        expect(gatekeeper.exportBatch).toHaveBeenCalledTimes(1);
-        expect(gatekeeper.exportBatch).toHaveBeenCalledWith([makeDid(1), makeDid(2)]);
-        expect(await store.count()).toBe(2);
+        const result = await bootstrapSyncStoreFromGatekeeper(store, gatekeeper, { pageLimit: 1 });
+
+        expect(result.pages).toBe(2);
+        expect(gatekeeper.exportIndex).toHaveBeenNthCalledWith(1, {
+            mode: 'snapshot',
+            cursor: null,
+            limit: 1,
+        });
+        expect(gatekeeper.exportIndex).toHaveBeenNthCalledWith(2, {
+            mode: 'snapshot',
+            cursor: 'did:test:a',
+            checkpointCursor: '12',
+            limit: 1,
+        });
+        expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotCursor)).toBe('did:test:b');
+        expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotCheckpointCursor)).toBe('12');
+        expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor)).toBe('12');
     });
 
-    it('throws when gatekeeper exportBatch fails', async () => {
+    it('polls changes from the saved cursor after snapshot is complete', async () => {
         const store = new InMemoryOperationSyncStore();
         await store.start();
+        await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotComplete, 'true');
+        await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor, '12');
 
+        const opA = makeOperation('a', '2026-02-10T10:00:00.000Z');
+        const opB = makeOperation('b', '2026-02-10T11:00:00.000Z');
         const gatekeeper = {
-            getDIDs: jest.fn(async () => [makeDid(1)]),
-            exportBatch: jest.fn(async () => {
-                throw new Error('boom');
-            }),
+            exportIndex: jest.fn(async () => changesResponse({
+                cursor: '13',
+                operations: [makeEvent(opA, 'did:test:a')],
+                didEvents: [makeEvent(opB, 'did:test:b')],
+            })),
         };
 
-        await expect(bootstrapSyncStoreFromGatekeeper(store, gatekeeper)).rejects.toThrow('boom');
+        const result = await bootstrapSyncStoreFromGatekeeper(store, gatekeeper, { pageLimit: 25 });
+
+        expect(result).toMatchObject({
+            mode: 'changes',
+            pages: 1,
+            exported: 1,
+            mapped: 1,
+            inserted: 1,
+            updated: 0,
+        });
+        expect(gatekeeper.exportIndex).toHaveBeenCalledWith({
+            mode: 'changes',
+            cursor: '12',
+            limit: 25,
+            includeOperations: true,
+        });
+        expect(await store.has(h('a'))).toBe(true);
+        expect(await store.has(h('b'))).toBe(false);
+        await expect(store.getByIds([h('a')])).resolves.toMatchObject([{
+            id: h('a'),
+            syncOrder: 1,
+            signedTs: Math.floor(Date.parse(opA.signature!.signed) / 1000),
+        }]);
+        expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor)).toBe('13');
     });
 
-    it('includes non-Error export failures in batch error messages', async () => {
+    it('rejects changes responses without operation records', async () => {
         const store = new InMemoryOperationSyncStore();
         await store.start();
+        await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotComplete, 'true');
+        await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor, '12');
 
+        const opA = makeOperation('a', '2026-02-10T10:00:00.000Z');
         const gatekeeper = {
-            getDIDs: jest.fn(async () => [makeDid(1)]),
-            exportBatch: jest.fn(async () => {
-                throw 'explode';
-            }),
+            exportIndex: jest.fn(async () => changesResponse({
+                cursor: '13',
+                didEvents: [makeEvent(opA, 'did:test:a')],
+            })),
         };
 
         await expect(bootstrapSyncStoreFromGatekeeper(store, gatekeeper))
             .rejects
-            .toThrow('bootstrap exportBatch failed for DID batch 1/1 (1 dids): explode');
+            .toThrow('Changes export response missing operations');
+        await expect(store.getByIds([h('a')])).resolves.toStrictEqual([]);
+        expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor)).toBe('12');
     });
 
-    it('normalizes DID list from mixed DID docs and strings before batching', async () => {
+    it('does not save the next cursor if page persistence fails', async () => {
         const store = new InMemoryOperationSyncStore();
         await store.start();
+        await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotComplete, 'true');
+        await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor, '12');
+        store.applySyncPage = jest.fn(async () => {
+            throw new Error('persist failed');
+        });
+
+        const gatekeeper = {
+            exportIndex: jest.fn(async () => changesResponse({
+                cursor: '13',
+                operations: [makeEvent(makeOperation('a', '2026-02-10T10:00:00.000Z'))],
+            })),
+        };
+
+        await expect(bootstrapSyncStoreFromGatekeeper(store, gatekeeper))
+            .rejects
+            .toThrow('persist failed');
+        expect(store.applySyncPage).toHaveBeenCalledWith({
+            records: [expect.objectContaining({
+                id: h('a'),
+                syncOrder: 1,
+            })],
+            syncStateUpdates: {
+                [HYPR_INDEX_SYNC_STATE_KEYS.changesCursor]: '13',
+            },
+        });
+        expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor)).toBe('12');
+    });
+
+    it('rejects snapshot continuations that change checkpoint cursor', async () => {
+        const store = new InMemoryOperationSyncStore();
+        await store.start();
+        await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotCursor, 'did:test:a');
+        await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotCheckpointCursor, '12');
+
+        const gatekeeper = {
+            exportIndex: jest.fn(async () => snapshotResponse({
+                did: 'did:test:b',
+                events: [],
+                cursor: 'did:test:b',
+                checkpointCursor: '13',
+            })),
+        };
+
+        await expect(bootstrapSyncStoreFromGatekeeper(store, gatekeeper))
+            .rejects
+            .toThrow('Snapshot export checkpoint changed from 12 to 13');
+    });
+
+    it('backfills syncOrder for an existing peer-imported operation during changes sync', async () => {
+        const store = new InMemoryOperationSyncStore();
+        await store.start();
+        await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotComplete, 'true');
+        await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor, '12');
 
         const opA = makeOperation('a', '2026-02-10T10:00:00.000Z');
-        const opB = makeOperation('b', '2026-02-10T11:00:00.000Z');
-        const gatekeeper = {
-            getDIDs: jest.fn(async () => [
-                makeDid(1),
-                { didDocument: { id: makeDid(2) } },
-                { didDocument: { id: '' } },
-                { didDocument: {} },
-                makeDid(1),
-            ]),
-            exportBatch: jest.fn(async () => [makeEvent(opA), makeEvent(opB)]),
-        };
-
-        const result = await bootstrapSyncStoreFromGatekeeper(store, gatekeeper as any);
-        expect(result.mapped).toBe(2);
-        expect(gatekeeper.exportBatch).toHaveBeenCalledTimes(1);
-        expect(gatekeeper.exportBatch).toHaveBeenCalledWith([makeDid(1), makeDid(2)]);
-    });
-
-    it('handles empty/invalid export payload without upserting', async () => {
-        const store = new InMemoryOperationSyncStore();
-        await store.start();
-
-        const gatekeeper = {
-            getDIDs: jest.fn(async () => [makeDid(1)]),
-            exportBatch: jest.fn(async () => [{ registry: 'hyperswarm', time: new Date().toISOString() }]),
-        };
-
-        const result = await bootstrapSyncStoreFromGatekeeper(store, gatekeeper as any);
-        expect(result.exported).toBe(0);
-        expect(result.mapped).toBe(0);
-        expect(result.invalid).toBe(0);
-        expect(result.inserted).toBe(0);
-        expect(result.countAfter).toBe(0);
-        expect(gatekeeper.getDIDs).toHaveBeenCalledTimes(1);
-        expect(gatekeeper.exportBatch).toHaveBeenCalledTimes(1);
-    });
-
-    it('resets and completes without exporting when gatekeeper has no DIDs', async () => {
-        const store = new InMemoryOperationSyncStore();
-        await store.start();
         await store.upsertMany([{
-            id: h('z'),
-            ts: Math.floor(Date.parse('2026-02-10T09:00:00.000Z') / 1000),
-            operation: makeOperation('z', '2026-02-10T09:00:00.000Z'),
+            id: h('a'),
+            signedTs: Math.floor(Date.parse(opA.signature!.signed) / 1000),
+            operation: opA,
+        }]);
+
+        await expect(store.getByIds([h('a')])).resolves.toMatchObject([{
+            id: h('a'),
+            syncOrder: undefined,
+        }]);
+        expect(await store.countOrdered()).toBe(0);
+
+        const gatekeeper = {
+            exportIndex: jest.fn(async () => changesResponse({
+                cursor: '13',
+                operations: [makeEvent(opA, 'did:test:a')],
+            })),
+        };
+
+        const result = await bootstrapSyncStoreFromGatekeeper(store, gatekeeper);
+
+        expect(result).toMatchObject({
+            mode: 'changes',
+            inserted: 0,
+            updated: 1,
+        });
+        await expect(store.getByIds([h('a')])).resolves.toMatchObject([{
+            id: h('a'),
+            syncOrder: 1,
+        }]);
+        expect(await store.countOrdered()).toBe(1);
+    });
+
+    it('does not overwrite an existing syncOrder during changes sync', async () => {
+        const store = new InMemoryOperationSyncStore();
+        await store.start();
+        await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotComplete, 'true');
+        await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor, '12');
+
+        const opA = makeOperation('a', '2026-02-10T10:00:00.000Z');
+        await store.upsertMany([{
+            id: h('a'),
+            syncOrder: 7,
+            signedTs: Math.floor(Date.parse(opA.signature!.signed) / 1000),
+            operation: opA,
         }]);
 
         const gatekeeper = {
-            getDIDs: jest.fn(async () => []),
-            exportBatch: jest.fn(async () => []),
+            exportIndex: jest.fn(async () => changesResponse({
+                cursor: '13',
+                operations: [makeEvent(opA, 'did:test:a')],
+            })),
         };
 
-        const result = await bootstrapSyncStoreFromGatekeeper(store, gatekeeper as any);
+        const result = await bootstrapSyncStoreFromGatekeeper(store, gatekeeper);
 
-        expect(result.countBefore).toBe(1);
-        expect(result.countAfter).toBe(0);
-        expect(result.exported).toBe(0);
-        expect(result.mapped).toBe(0);
-        expect(result.invalid).toBe(0);
-        expect(result.inserted).toBe(0);
-        expect(gatekeeper.getDIDs).toHaveBeenCalledTimes(1);
-        expect(gatekeeper.exportBatch).not.toHaveBeenCalled();
-        expect(await store.count()).toBe(0);
-    });
-
-    it('exports in DID batches to avoid loading the full export in one payload', async () => {
-        const store = new InMemoryOperationSyncStore();
-        await store.start();
-
-        const dids = Array.from({ length: 501 }, (_, index) => makeDid(index + 1));
-        const gatekeeper = {
-            getDIDs: jest.fn(async () => dids),
-            exportBatch: jest.fn(async (batchDids?: string[]) => {
-                return (batchDids ?? []).map((_, index) =>
-                    makeEvent(makeOperation(index % 2 === 0 ? 'a' : 'b', '2026-02-10T10:00:00.000Z'))
-                );
-            }),
-        };
-
-        await bootstrapSyncStoreFromGatekeeper(store, gatekeeper);
-
-        expect(gatekeeper.getDIDs).toHaveBeenCalledTimes(1);
-        expect(gatekeeper.exportBatch).toHaveBeenCalledTimes(2);
-        expect(gatekeeper.exportBatch).toHaveBeenNthCalledWith(1, dids.slice(0, 500));
-        expect(gatekeeper.exportBatch).toHaveBeenNthCalledWith(2, dids.slice(500, 501));
+        expect(result).toMatchObject({
+            mode: 'changes',
+            inserted: 0,
+            updated: 0,
+        });
+        await expect(store.getByIds([h('a')])).resolves.toMatchObject([{
+            id: h('a'),
+            syncOrder: 7,
+        }]);
     });
 });

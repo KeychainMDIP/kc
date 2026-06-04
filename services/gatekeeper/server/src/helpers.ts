@@ -161,6 +161,26 @@ export function parseOptionalPositiveInteger(value: unknown, fieldName: string):
     return parsed;
 }
 
+export function parseOptionalBoolean(value: unknown, fieldName: string): boolean | undefined {
+    if (value === undefined || value === null) {
+        return undefined;
+    }
+
+    if (typeof value === 'boolean') {
+        return value;
+    }
+
+    if (value === 'true') {
+        return true;
+    }
+
+    if (value === 'false') {
+        return false;
+    }
+
+    throw new Error(`${fieldName} must be a boolean`);
+}
+
 export function parseIndexExportRequest(body: unknown): IndexExportRequest {
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
         throw new Error('request body must be an object');
@@ -194,6 +214,7 @@ export function parseIndexExportRequest(body: unknown): IndexExportRequest {
             mode,
             cursor: parseOptionalString(raw.cursor, 'cursor'),
             limit: parseOptionalPositiveInteger(raw.limit, 'limit'),
+            includeOperations: parseOptionalBoolean(raw.includeOperations, 'includeOperations'),
         };
     }
 

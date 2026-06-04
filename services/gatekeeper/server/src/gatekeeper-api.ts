@@ -980,6 +980,9 @@ v1router.post('/dids/', async (req, res) => {
  *               limit:
  *                 type: integer
  *                 minimum: 1
+ *               includeOperations:
+ *                 type: boolean
+ *                 description: Changes-only. Include event-level operation records for consumers that need replay order.
  *
  *     responses:
  *       200:
@@ -1030,6 +1033,11 @@ v1router.post('/dids/', async (req, res) => {
  *                         type: object
  *                     blocks:
  *                       type: array
+ *                       items:
+ *                         type: object
+ *                     operations:
+ *                       type: array
+ *                       description: Optional ordered operation records. Returned only when includeOperations is true.
  *                       items:
  *                         type: object
  *       400:

@@ -9,7 +9,8 @@ import {
     IndexExportChangesOptions,
     IndexExportResponse,
     IndexExportSnapshotOptions,
-    Operation
+    Operation,
+    SetEventsOptions,
 } from '../types.js';
 import {
     buildIndexChangesResponse,
@@ -85,7 +86,11 @@ export abstract class AbstractJson implements GatekeeperDb {
             } else {
                 db.dids[suffix] = [event];
             }
-            this.recordIndexChange(db, { kind: 'did', did });
+            this.recordIndexChange(db, {
+                kind: 'did',
+                did,
+                event,
+            });
             this.writeDb(db);
         });
     }
@@ -101,12 +106,26 @@ export abstract class AbstractJson implements GatekeeperDb {
         }
     }
 
-    async setEvents(did: string, events: GatekeeperEvent[]): Promise<void> {
+    async setEvents(did: string, events: GatekeeperEvent[], options?: SetEventsOptions): Promise<void> {
         const suffix = this.splitSuffix(did);
         return this.runExclusive(async () => {
             const db = this.loadDb();
+            const operationEvents = options?.operationEvents ?? [];
             db.dids[suffix] = events;
-            this.recordIndexChange(db, { kind: 'did', did });
+
+            if (operationEvents.length === 0) {
+                this.recordIndexChange(db, { kind: 'did', did });
+                this.writeDb(db);
+                return;
+            }
+
+            for (const event of operationEvents) {
+                this.recordIndexChange(db, {
+                    kind: 'did',
+                    did,
+                    event,
+                });
+            }
             this.writeDb(db);
         });
     }

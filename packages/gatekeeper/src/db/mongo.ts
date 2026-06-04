@@ -10,7 +10,8 @@ import {
     IndexChangeRecord,
     IndexExportSnapshotOptions,
     IndexExportResponse,
-    IndexExportChangesOptions
+    IndexExportChangesOptions,
+    SetEventsOptions,
 } from '../types.js'
 import {
     buildIndexChangesResponse,
@@ -242,12 +243,16 @@ export default class DbMongo implements GatekeeperDb {
 
             // Return how many docs were modified
             const count = result.modifiedCount + (result.upsertedCount ?? 0);
-            await this.recordIndexChange({ kind: 'did', did }, session);
+            await this.recordIndexChange({
+                kind: 'did',
+                did,
+                event,
+            }, session);
             return count
         });
     }
 
-    async setEvents(did: string, events: GatekeeperEvent[]): Promise<void> {
+    async setEvents(did: string, events: GatekeeperEvent[], options?: SetEventsOptions): Promise<void> {
         if (!this.db) {
             throw new Error(MONGO_NOT_STARTED_ERROR)
         }
@@ -262,7 +267,23 @@ export default class DbMongo implements GatekeeperDb {
                     { $set: { events } },
                     { upsert: true, session }
                 );
-            await this.recordIndexChange({ kind: 'did', did }, session);
+            const operationEvents = options?.operationEvents ?? [];
+
+            if (operationEvents.length === 0) {
+                await this.recordIndexChange({
+                    kind: 'did',
+                    did,
+                }, session);
+                return;
+            }
+
+            for (const event of operationEvents) {
+                await this.recordIndexChange({
+                    kind: 'did',
+                    did,
+                    event,
+                }, session);
+            }
         });
     }
 
