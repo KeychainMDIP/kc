@@ -99,7 +99,7 @@ describe('hyperswarm transport framing', () => {
             node: 'node-a',
             capabilities: {
                 negentropy: true,
-                negentropyVersion: 2,
+                negentropyVersion: 1,
             },
             transportFramingVersion: 1,
         });
