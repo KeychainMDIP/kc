@@ -193,6 +193,14 @@ describe('negentropy protocol helpers', () => {
             mode: 'negentropy',
             reason: 'negentropy_supported',
         });
+        expect(chooseConnectSyncMode(supported, currentNegentropyVersion, true, true, false)).toStrictEqual({
+            mode: 'legacy',
+            reason: 'transport_framing_unsupported',
+        });
+        expect(chooseConnectSyncMode(supported, currentNegentropyVersion, false, true, false)).toStrictEqual({
+            mode: null,
+            reason: 'transport_framing_unsupported',
+        });
         expect(chooseConnectSyncMode(supported, currentNegentropyVersion, true, false)).toStrictEqual({
             mode: 'legacy',
             reason: 'negentropy_disabled',

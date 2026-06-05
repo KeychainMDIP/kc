@@ -842,7 +842,13 @@ function choosePeerSyncMode(peerKey: string): { mode: SyncMode | null; reason: C
         NEGENTROPY_VERSION,
         config.legacySyncEnabled,
         config.negentropyEnabled,
+        conn.peerTransportFramingVersion === TRANSPORT_FRAMING_VERSION,
     );
+}
+
+function supportsPeerNegentropyTransport(conn: ConnectionInfo): boolean {
+    return supportsPeerNegentropy(conn.capabilities, NEGENTROPY_VERSION)
+        && conn.peerTransportFramingVersion === TRANSPORT_FRAMING_VERSION;
 }
 
 function getActiveNegentropySessions(): number {
@@ -871,7 +877,7 @@ function countPendingNegentropyPeers(excludePeerKey?: string): number {
             continue;
         }
 
-        if (supportsPeerNegentropy(conn.capabilities, NEGENTROPY_VERSION)) {
+        if (supportsPeerNegentropyTransport(conn)) {
             count += 1;
         }
     }
@@ -2970,15 +2976,17 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
             log.warn('neg_open ignored because adapter is unavailable');
             return;
         }
-        if (!supportsPeerNegentropy(conn.capabilities, NEGENTROPY_VERSION)) {
+        if (!supportsPeerNegentropyTransport(conn)) {
             log.warn(
                 {
                     peer: shortName(peerKey),
                     sessionId: msg.sessionId,
                     peerVersion: conn.capabilities.version,
                     requiredVersion: NEGENTROPY_VERSION,
+                    peerTransportFramingVersion: conn.peerTransportFramingVersion,
+                    requiredTransportFramingVersion: TRANSPORT_FRAMING_VERSION,
                 },
-                'ignoring neg_open from incompatible negentropy version'
+                'ignoring neg_open from incompatible negentropy transport'
             );
             return;
         }

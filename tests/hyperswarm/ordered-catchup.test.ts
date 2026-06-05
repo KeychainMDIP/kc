@@ -7,7 +7,7 @@ function makePeer(overrides: Partial<NegotiatedPeerCapabilities> = {}): Negotiat
     return {
         advertised: true,
         negentropy: true,
-        version: 2,
+        version: 1,
         orderedCatchup: true,
         orderedCatchupVersion: 1,
         orderedCatchupReady: true,

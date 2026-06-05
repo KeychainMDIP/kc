@@ -37,6 +37,7 @@ export type ConnectSyncModeReason =
     | 'missing_capabilities'
     | 'negentropy_disabled'
     | 'version_mismatch'
+    | 'transport_framing_unsupported'
     | 'legacy_disabled';
 
 export interface ConnectSyncModeDecision {
@@ -127,8 +128,15 @@ export function chooseConnectSyncMode(
     requiredVersion: number,
     legacySyncEnabled: boolean,
     negentropyEnabled = true,
+    transportFramingSupported = true,
 ): ConnectSyncModeDecision {
     if (negentropyEnabled && supportsPeerNegentropy(capabilities, requiredVersion)) {
+        if (!transportFramingSupported) {
+            return {
+                mode: legacySyncEnabled ? 'legacy' : null,
+                reason: 'transport_framing_unsupported',
+            };
+        }
         return { mode: 'negentropy', reason: 'negentropy_supported' };
     }
 
