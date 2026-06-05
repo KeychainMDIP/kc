@@ -1,6 +1,7 @@
 import {
     decodeLegacyJsonMessages,
     decodeFramedMessages,
+    decodeUnknownTransportMessages,
     DEFAULT_MAX_FRAMED_MESSAGE_BYTES,
     encodeFramedMessage,
     FramedMessageParser,
@@ -165,6 +166,47 @@ describe('hyperswarm transport framing', () => {
         expect(framed.error).toBeUndefined();
         expect(framed.messages.map(message => message.toString('utf8'))).toStrictEqual([negClose]);
         expect(framed.remaining.length).toBe(0);
+    });
+
+    it('decodes a framed ping before transport mode is known', () => {
+        const ping = JSON.stringify({
+            type: 'ping',
+            node: 'node-a',
+            transportFramingVersion: 1,
+        });
+        const framed = encodeFramedMessage(ping);
+
+        const decoded = decodeUnknownTransportMessages(framed, DEFAULT_MAX_FRAMED_MESSAGE_BYTES, 1);
+        expect(decoded.error).toBeUndefined();
+        expect(decoded.legacyError).toBe('invalid legacy JSON message prefix byte 0');
+        expect(decoded.transportMode).toBe('framed');
+        expect(decoded.messages.map(message => message.toString('utf8'))).toStrictEqual([ping]);
+        expect(decoded.remaining.length).toBe(0);
+    });
+
+    it('preserves an incomplete framed-first message before transport mode is known', () => {
+        const ping = JSON.stringify({
+            type: 'ping',
+            node: 'node-a',
+            transportFramingVersion: 1,
+        });
+        const framed = encodeFramedMessage(ping);
+
+        const first = decodeUnknownTransportMessages(framed.subarray(0, 3), DEFAULT_MAX_FRAMED_MESSAGE_BYTES, 1);
+        expect(first.error).toBeUndefined();
+        expect(first.legacyError).toBe('invalid legacy JSON message prefix byte 0');
+        expect(first.transportMode).toBeNull();
+        expect(first.messages).toStrictEqual([]);
+
+        const second = decodeUnknownTransportMessages(
+            Buffer.concat([first.remaining, framed.subarray(3)]),
+            DEFAULT_MAX_FRAMED_MESSAGE_BYTES,
+            1,
+        );
+        expect(second.error).toBeUndefined();
+        expect(second.transportMode).toBe('framed');
+        expect(second.messages.map(message => message.toString('utf8'))).toStrictEqual([ping]);
+        expect(second.remaining.length).toBe(0);
     });
 
     it('buffers a message split across multiple chunks', () => {

@@ -94,6 +94,7 @@ import {
     DEFAULT_MAX_FRAMED_MESSAGE_BYTES,
     decodeFramedMessages,
     decodeLegacyJsonMessages,
+    decodeUnknownTransportMessages,
     encodeFramedMessage,
     supportsLegacyRawTransportMessage,
 } from './transport-framing.js';
@@ -2759,11 +2760,10 @@ async function processInboundPeerData(peerKey: string, chunk: Buffer): Promise<v
             continue;
         }
 
-        const parsed = decodeLegacyJsonMessages(
-            conn.inboundBuffer,
-            MAX_FRAMED_MESSAGE_BYTES,
-            conn.capabilities.advertised ? Number.MAX_SAFE_INTEGER : 1,
-        );
+        const maxLegacyMessages = conn.capabilities.advertised ? Number.MAX_SAFE_INTEGER : 1;
+        const parsed = conn.transportMode === 'unknown'
+            ? decodeUnknownTransportMessages(conn.inboundBuffer, MAX_FRAMED_MESSAGE_BYTES, maxLegacyMessages)
+            : decodeLegacyJsonMessages(conn.inboundBuffer, MAX_FRAMED_MESSAGE_BYTES, maxLegacyMessages);
         if (parsed.error) {
             log.warn(
                 {
@@ -2771,6 +2771,8 @@ async function processInboundPeerData(peerKey: string, chunk: Buffer): Promise<v
                     transportMode: conn.transportMode,
                     pendingBytes: conn.inboundBuffer.length,
                     error: parsed.error,
+                    legacyError: 'legacyError' in parsed ? parsed.legacyError : undefined,
+                    framedError: 'framedError' in parsed ? parsed.framedError : undefined,
                 },
                 'received malformed legacy hyperswarm message'
             );
@@ -2784,6 +2786,9 @@ async function processInboundPeerData(peerKey: string, chunk: Buffer): Promise<v
         }
 
         conn.inboundBuffer = parsed.remaining;
+        if (conn.transportMode === 'unknown' && 'transportMode' in parsed && parsed.transportMode === 'framed') {
+            setPeerTransportMode(peerKey, 'framed', 'received_framed_message_before_ping');
+        }
         for (const message of parsed.messages) {
             await receiveMsg(peerKey, message.toString('utf8'));
             if (!connectionInfo[peerKey]) {

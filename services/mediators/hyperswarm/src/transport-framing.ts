@@ -19,6 +19,15 @@ export interface DecodedLegacyJsonMessagesResult {
     error?: string;
 }
 
+export interface DecodedUnknownTransportMessagesResult {
+    transportMode: 'legacy' | 'framed' | null;
+    messages: Buffer[];
+    remaining: Buffer;
+    error?: string;
+    legacyError?: string;
+    framedError?: string;
+}
+
 export function supportsLegacyRawTransportMessage(messageType: string): boolean {
     return messageType === 'ping'
         || messageType === 'sync'
@@ -216,6 +225,40 @@ export function decodeLegacyJsonMessages(
     return {
         messages,
         remaining: offset === buffer.length ? EMPTY_BUFFER : Buffer.from(buffer.subarray(offset)),
+    };
+}
+
+export function decodeUnknownTransportMessages(
+    buffer: Buffer,
+    maxMessageBytes = DEFAULT_MAX_FRAMED_MESSAGE_BYTES,
+    maxLegacyMessages = Number.MAX_SAFE_INTEGER,
+): DecodedUnknownTransportMessagesResult {
+    const legacy = decodeLegacyJsonMessages(buffer, maxMessageBytes, maxLegacyMessages);
+    if (!legacy.error) {
+        return {
+            transportMode: 'legacy',
+            messages: legacy.messages,
+            remaining: legacy.remaining,
+        };
+    }
+
+    const framed = decodeFramedMessages(buffer, maxMessageBytes);
+    if (!framed.error) {
+        return {
+            transportMode: framed.messages.length > 0 ? 'framed' : null,
+            messages: framed.messages,
+            remaining: framed.remaining,
+            legacyError: legacy.error,
+        };
+    }
+
+    return {
+        transportMode: null,
+        messages: [],
+        remaining: EMPTY_BUFFER,
+        error: `invalid unknown transport message: legacy=${legacy.error}; framed=${framed.error}`,
+        legacyError: legacy.error,
+        framedError: framed.error,
     };
 }
 
