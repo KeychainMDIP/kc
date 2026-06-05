@@ -130,33 +130,31 @@ export function chooseConnectSyncMode(
     negentropyEnabled = true,
     transportFramingSupported = true,
 ): ConnectSyncModeDecision {
+    const fallback = (reason: ConnectSyncModeReason): ConnectSyncModeDecision => ({
+        mode: legacySyncEnabled ? 'legacy' : null,
+        reason,
+    });
+
     if (negentropyEnabled && supportsPeerNegentropy(capabilities, requiredVersion)) {
         if (!transportFramingSupported) {
-            return {
-                mode: legacySyncEnabled ? 'legacy' : null,
-                reason: 'transport_framing_unsupported',
-            };
+            return fallback('transport_framing_unsupported');
         }
         return { mode: 'negentropy', reason: 'negentropy_supported' };
     }
 
-    if (!legacySyncEnabled) {
-        return { mode: null, reason: 'legacy_disabled' };
-    }
-
     if (!negentropyEnabled) {
-        return { mode: 'legacy', reason: 'negentropy_disabled' };
+        return fallback('negentropy_disabled');
     }
 
     if (!capabilities.advertised) {
-        return { mode: 'legacy', reason: 'missing_capabilities' };
+        return fallback('missing_capabilities');
     }
 
     if (!capabilities.negentropy) {
-        return { mode: 'legacy', reason: 'negentropy_disabled' };
+        return fallback('negentropy_disabled');
     }
 
-    return { mode: 'legacy', reason: 'version_mismatch' };
+    return fallback('version_mismatch');
 }
 
 export function encodeNegentropyFrame(frame: string | Uint8Array): NegentropyFrame {

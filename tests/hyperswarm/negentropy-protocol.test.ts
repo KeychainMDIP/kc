@@ -164,12 +164,16 @@ describe('negentropy protocol helpers', () => {
         });
         expect(chooseConnectSyncMode(missing, currentNegentropyVersion, false)).toStrictEqual({
             mode: null,
-            reason: 'legacy_disabled',
+            reason: 'missing_capabilities',
         });
 
         const disabled = normalizePeerCapabilities({ negentropy: false, negentropyVersion: 1 });
         expect(chooseConnectSyncMode(disabled, currentNegentropyVersion, true)).toStrictEqual({
             mode: 'legacy',
+            reason: 'negentropy_disabled',
+        });
+        expect(chooseConnectSyncMode(disabled, currentNegentropyVersion, false)).toStrictEqual({
+            mode: null,
             reason: 'negentropy_disabled',
         });
 
@@ -182,6 +186,10 @@ describe('negentropy protocol helpers', () => {
         const futureVersion = normalizePeerCapabilities({ negentropy: true, negentropyVersion: 2 });
         expect(chooseConnectSyncMode(futureVersion, currentNegentropyVersion, true)).toStrictEqual({
             mode: 'legacy',
+            reason: 'version_mismatch',
+        });
+        expect(chooseConnectSyncMode(futureVersion, currentNegentropyVersion, false)).toStrictEqual({
+            mode: null,
             reason: 'version_mismatch',
         });
 

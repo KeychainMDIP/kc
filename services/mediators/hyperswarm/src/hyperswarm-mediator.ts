@@ -309,7 +309,12 @@ interface MediatorSyncStats {
     modeSelectionsLegacyMissingCapabilities: number;
     modeSelectionsLegacyNegentropyDisabled: number;
     modeSelectionsLegacyVersionMismatch: number;
+    modeSelectionsLegacyTransportFramingUnsupported: number;
     modeSelectionsNoModeLegacyDisabled: number;
+    modeSelectionsNoModeMissingCapabilities: number;
+    modeSelectionsNoModeNegentropyDisabled: number;
+    modeSelectionsNoModeVersionMismatch: number;
+    modeSelectionsNoModeTransportFramingUnsupported: number;
     queueOpsRelayed: number;
     queueOpsImported: number;
     queueDelayMs: AggregateMetric;
@@ -400,7 +405,12 @@ const syncStats: MediatorSyncStats = {
     modeSelectionsLegacyMissingCapabilities: 0,
     modeSelectionsLegacyNegentropyDisabled: 0,
     modeSelectionsLegacyVersionMismatch: 0,
+    modeSelectionsLegacyTransportFramingUnsupported: 0,
     modeSelectionsNoModeLegacyDisabled: 0,
+    modeSelectionsNoModeMissingCapabilities: 0,
+    modeSelectionsNoModeNegentropyDisabled: 0,
+    modeSelectionsNoModeVersionMismatch: 0,
+    modeSelectionsNoModeTransportFramingUnsupported: 0,
     queueOpsRelayed: 0,
     queueOpsImported: 0,
     queueDelayMs: createAggregateMetric(),
@@ -851,6 +861,51 @@ function supportsPeerNegentropyTransport(conn: ConnectionInfo): boolean {
         && conn.peerTransportFramingVersion === TRANSPORT_FRAMING_VERSION;
 }
 
+function buildPeerSyncCompatibilityContext(peerKey: string, conn: ConnectionInfo): object {
+    return {
+        peer: shortName(peerKey),
+        node: conn.nodeName || 'anon',
+        capabilities: conn.capabilities,
+        peerTransportFramingVersion: conn.peerTransportFramingVersion,
+        requiredNegentropyVersion: NEGENTROPY_VERSION,
+        requiredTransportFramingVersion: TRANSPORT_FRAMING_VERSION,
+        legacySyncEnabled: config.legacySyncEnabled,
+        negentropyEnabled: config.negentropyEnabled,
+        orderedCatchupEnabled: config.orderedCatchupEnabled,
+    };
+}
+
+function incrementLegacyModeReason(reason: ConnectSyncModeReason | null): void {
+    if (reason === 'missing_capabilities') {
+        syncStats.modeSelectionsLegacyMissingCapabilities += 1;
+    }
+    if (reason === 'negentropy_disabled') {
+        syncStats.modeSelectionsLegacyNegentropyDisabled += 1;
+    }
+    if (reason === 'version_mismatch') {
+        syncStats.modeSelectionsLegacyVersionMismatch += 1;
+    }
+    if (reason === 'transport_framing_unsupported') {
+        syncStats.modeSelectionsLegacyTransportFramingUnsupported += 1;
+    }
+}
+
+function incrementNoModeReason(reason: ConnectSyncModeReason | null): void {
+    syncStats.modeSelectionsNoModeLegacyDisabled += 1;
+    if (reason === 'missing_capabilities') {
+        syncStats.modeSelectionsNoModeMissingCapabilities += 1;
+    }
+    if (reason === 'negentropy_disabled') {
+        syncStats.modeSelectionsNoModeNegentropyDisabled += 1;
+    }
+    if (reason === 'version_mismatch') {
+        syncStats.modeSelectionsNoModeVersionMismatch += 1;
+    }
+    if (reason === 'transport_framing_unsupported') {
+        syncStats.modeSelectionsNoModeTransportFramingUnsupported += 1;
+    }
+}
+
 function getActiveNegentropySessions(): number {
     let count = 0;
     for (const session of peerSessions.values()) {
@@ -1134,8 +1189,16 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
     }
 
     if (!mode || mode === 'unknown') {
-        if (source === 'connect' && modeReason === 'legacy_disabled') {
-            syncStats.modeSelectionsNoModeLegacyDisabled += 1;
+        if (source === 'connect') {
+            incrementNoModeReason(modeReason);
+            log.info(
+                {
+                    ...buildPeerSyncCompatibilityContext(peerKey, conn),
+                    modeReason,
+                    source,
+                },
+                'peer sync mode unavailable'
+            );
         }
         return;
     }
@@ -1144,15 +1207,7 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
         syncStats.modeSelectionsTotal += 1;
         if (mode === 'legacy') {
             syncStats.modeSelectionsLegacy += 1;
-            if (modeReason === 'missing_capabilities') {
-                syncStats.modeSelectionsLegacyMissingCapabilities += 1;
-            }
-            if (modeReason === 'negentropy_disabled') {
-                syncStats.modeSelectionsLegacyNegentropyDisabled += 1;
-            }
-            if (modeReason === 'version_mismatch') {
-                syncStats.modeSelectionsLegacyVersionMismatch += 1;
-            }
+            incrementLegacyModeReason(modeReason);
         } else {
             syncStats.modeSelectionsNegentropy += 1;
         }
@@ -1254,9 +1309,16 @@ function buildSyncStatsSnapshot(): object {
                 missingCapabilities: syncStats.modeSelectionsLegacyMissingCapabilities,
                 negentropyDisabled: syncStats.modeSelectionsLegacyNegentropyDisabled,
                 versionMismatch: syncStats.modeSelectionsLegacyVersionMismatch,
+                transportFramingUnsupported: syncStats.modeSelectionsLegacyTransportFramingUnsupported,
             },
             noMode: {
                 legacyDisabled: syncStats.modeSelectionsNoModeLegacyDisabled,
+                reasons: {
+                    missingCapabilities: syncStats.modeSelectionsNoModeMissingCapabilities,
+                    negentropyDisabled: syncStats.modeSelectionsNoModeNegentropyDisabled,
+                    versionMismatch: syncStats.modeSelectionsNoModeVersionMismatch,
+                    transportFramingUnsupported: syncStats.modeSelectionsNoModeTransportFramingUnsupported,
+                },
             },
         },
         queue: {
@@ -2943,6 +3005,13 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
             peerKey,
             peerTransportFramingVersion === TRANSPORT_FRAMING_VERSION ? 'framed' : 'legacy',
             'ping_capability_exchange',
+        );
+        log.info(
+            {
+                ...buildPeerSyncCompatibilityContext(peerKey, connectionInfo[peerKey]),
+                rawCapabilities: msg.capabilities ?? null,
+            },
+            'peer capabilities received'
         );
 
         if (Array.isArray(msg.peers)) {
