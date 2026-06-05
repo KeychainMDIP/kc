@@ -273,6 +273,16 @@ interface ConnectionInfo {
     inboundReceiveChain: Promise<void>;
 }
 
+interface MalformedPeerState {
+    strikes: number;
+    firstSeenAt: number;
+    lastSeenAt: number;
+    cooldownUntil: number;
+    lastReason: string;
+    rejectedConnections: number;
+    lastRejectLogAt: number;
+}
+
 type PeerSessionMode = SyncMode | 'ordered_catchup';
 
 interface PeerSyncSession {
@@ -344,6 +354,8 @@ interface MediatorSyncStats {
     opsRejected: number;
     bytesSent: number;
     bytesReceived: number;
+    malformedPeerCooldowns: number;
+    malformedPeerConnectionsRejected: number;
     syncDurationMs: AggregateMetric;
 }
 
@@ -392,11 +404,16 @@ const NEG_REPAIR_INTERVAL_MS = config.negentropyIntervalSeconds * 1000;
 const NEG_ADAPTER_MAX_AGE_MS = 60 * 1000;
 const LEGACY_CAPABILITY_GRACE_MS = 5 * 1000;
 const LEGACY_NEGENTROPY_FALLBACK_MS = 60 * 1000;
+const MALFORMED_PEER_STRIKE_WINDOW_MS = 5 * 60 * 1000;
+const MALFORMED_PEER_COOLDOWN_MS = 5 * 60 * 1000;
+const MALFORMED_PEER_REJECT_LOG_INTERVAL_MS = 60 * 1000;
+const MALFORMED_PEER_MAX_STRIKES = 3;
 const connectionInfo: Record<string, ConnectionInfo> = {};
 const knownNodes: Record<string, NodeInfo> = {};
 const knownPeers: Record<string, string> = {};
 const addedPeers: Record<string, number> = {};
 const badPeers: Record<string, number> = {};
+const malformedPeers: Record<string, MalformedPeerState> = {};
 const peerSessions = new Map<string, PeerSyncSession>();
 const syncStats: MediatorSyncStats = {
     modeSelectionsTotal: 0,
@@ -440,6 +457,8 @@ const syncStats: MediatorSyncStats = {
     opsRejected: 0,
     bytesSent: 0,
     bytesReceived: 0,
+    malformedPeerCooldowns: 0,
+    malformedPeerConnectionsRejected: 0,
     syncDurationMs: createAggregateMetric(),
 };
 
@@ -482,6 +501,112 @@ async function createSwarm(): Promise<void> {
     log.info(`new hyperswarm peer id: ${shortName(nodeKey)} (${config.nodeName}) joined topic: ${shortTopic} using protocol: ${config.protocol}`);
 }
 
+function getMalformedPeerCooldown(peerKey: string, nowMs = Date.now()): MalformedPeerState | null {
+    const state = malformedPeers[peerKey];
+    if (!state) {
+        return null;
+    }
+
+    if (state.cooldownUntil <= nowMs) {
+        if ((nowMs - state.lastSeenAt) > MALFORMED_PEER_STRIKE_WINDOW_MS) {
+            delete malformedPeers[peerKey];
+        }
+        return null;
+    }
+
+    return state;
+}
+
+function noteMalformedPeer(peerKey: string, reason: string): void {
+    const nowMs = Date.now();
+    let state = malformedPeers[peerKey];
+    if (!state || (nowMs - state.firstSeenAt) > MALFORMED_PEER_STRIKE_WINDOW_MS) {
+        state = {
+            strikes: 0,
+            firstSeenAt: nowMs,
+            lastSeenAt: nowMs,
+            cooldownUntil: 0,
+            lastReason: reason,
+            rejectedConnections: 0,
+            lastRejectLogAt: 0,
+        };
+        malformedPeers[peerKey] = state;
+    }
+
+    state.strikes += 1;
+    state.lastSeenAt = nowMs;
+    state.lastReason = reason;
+
+    if (state.strikes >= MALFORMED_PEER_MAX_STRIKES && state.cooldownUntil <= nowMs) {
+        state.cooldownUntil = nowMs + MALFORMED_PEER_COOLDOWN_MS;
+        state.rejectedConnections = 0;
+        state.lastRejectLogAt = 0;
+        syncStats.malformedPeerCooldowns += 1;
+        log.warn(
+            {
+                peer: shortName(peerKey),
+                reason,
+                strikes: state.strikes,
+                cooldownMs: MALFORMED_PEER_COOLDOWN_MS,
+            },
+            'peer entered malformed message cooldown'
+        );
+    }
+}
+
+function rejectMalformedPeerIfCoolingDown(peerKey: string, conn: HyperswarmConnection): boolean {
+    const state = getMalformedPeerCooldown(peerKey);
+    if (!state) {
+        return false;
+    }
+
+    const nowMs = Date.now();
+    state.rejectedConnections += 1;
+    syncStats.malformedPeerConnectionsRejected += 1;
+
+    const logPayload = {
+        peer: shortName(peerKey),
+        lastReason: state.lastReason,
+        strikes: state.strikes,
+        rejectedConnections: state.rejectedConnections,
+        remainingMs: state.cooldownUntil - nowMs,
+    };
+    if ((nowMs - state.lastRejectLogAt) >= MALFORMED_PEER_REJECT_LOG_INTERVAL_MS) {
+        state.lastRejectLogAt = nowMs;
+        log.warn(logPayload, 'rejecting hyperswarm peer during malformed message cooldown');
+    } else {
+        log.debug(logPayload, 'rejecting hyperswarm peer during malformed message cooldown');
+    }
+
+    try {
+        if (typeof conn.destroy === 'function') {
+            conn.destroy();
+        }
+    }
+    catch (error) {
+        log.warn({ error, peer: shortName(peerKey) }, 'failed to destroy rejected malformed peer connection');
+    }
+    return true;
+}
+
+function clearMalformedPeer(peerKey: string, reason: string): void {
+    const state = malformedPeers[peerKey];
+    if (!state) {
+        return;
+    }
+
+    delete malformedPeers[peerKey];
+    log.info(
+        {
+            peer: shortName(peerKey),
+            reason,
+            strikes: state.strikes,
+            rejectedConnections: state.rejectedConnections,
+        },
+        'cleared malformed peer cooldown state'
+    );
+}
+
 let syncQueue = asyncLib.queue<HyperswarmConnection, asyncLib.ErrorCallback>(
     async function (conn, callback) {
         try {
@@ -510,6 +635,10 @@ let syncQueue = asyncLib.queue<HyperswarmConnection, asyncLib.ErrorCallback>(
 function addConnection(conn: HyperswarmConnection): void {
     const peerKey = b4a.toString(conn.remotePublicKey, 'hex');
     const peerName = shortName(peerKey);
+
+    if (rejectMalformedPeerIfCoolingDown(peerKey, conn)) {
+        return;
+    }
 
     conn.once('close', () => closeConnection(peerKey));
     conn.on('data', data => queueInboundPeerData(peerKey, data));
@@ -1365,6 +1494,8 @@ function buildSyncStatsSnapshot(): object {
         transport: {
             bytesSent: syncStats.bytesSent,
             bytesReceived: syncStats.bytesReceived,
+            malformedPeerCooldowns: syncStats.malformedPeerCooldowns,
+            malformedPeerConnectionsRejected: syncStats.malformedPeerConnectionsRejected,
         },
         syncDurationMs: {
             avg: averageAggregate(syncStats.syncDurationMs),
@@ -2809,6 +2940,7 @@ async function processInboundPeerData(peerKey: string, chunk: Buffer): Promise<v
                     },
                     'received malformed framed hyperswarm message'
                 );
+                noteMalformedPeer(peerKey, 'malformed_framed_message');
                 terminatePeerConnection(peerKey, 'malformed_framed_message');
                 return;
             }
@@ -2844,6 +2976,7 @@ async function processInboundPeerData(peerKey: string, chunk: Buffer): Promise<v
                 },
                 'received malformed legacy hyperswarm message'
             );
+            noteMalformedPeer(peerKey, 'malformed_legacy_message');
             terminatePeerConnection(peerKey, 'malformed_legacy_message');
             return;
         }
@@ -2936,6 +3069,7 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
     catch {
         const jsonPreview = payload.length > 80 ? `${payload.slice(0, 40)}...${payload.slice(-40)}` : payload;
         log.warn({ peer: conn.peerName, transportMode: conn.transportMode, jsonPreview }, 'received invalid hyperswarm JSON message');
+        noteMalformedPeer(peerKey, 'invalid_hyperswarm_json_message');
         terminatePeerConnection(peerKey, 'invalid_hyperswarm_json_message');
         return;
     }
@@ -2995,6 +3129,7 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
     }
 
     if (msg.type === 'ping') {
+        clearMalformedPeer(peerKey, 'valid_ping');
         connectionInfo[peerKey].nodeName = nodeName;
         connectionInfo[peerKey].capabilities = normalizePeerCapabilities(msg.capabilities);
         const peerTransportFramingVersion = Number.isInteger(msg.transportFramingVersion)
