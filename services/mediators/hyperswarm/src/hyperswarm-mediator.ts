@@ -49,6 +49,7 @@ import {
     shouldDeferLegacySync,
     shouldSchedulePeriodicRepair,
     shouldStartConnectTimeNegentropy,
+    shouldStartPostOrderedCatchupNegentropy,
 } from './negentropy/policy.js';
 import {
     addAggregateSample,
@@ -415,6 +416,7 @@ const addedPeers: Record<string, number> = {};
 const badPeers: Record<string, number> = {};
 const malformedPeers: Record<string, MalformedPeerState> = {};
 const peerSessions = new Map<string, PeerSyncSession>();
+const orderedCatchupPostImportPeers = new Set<string>();
 const syncStats: MediatorSyncStats = {
     modeSelectionsTotal: 0,
     modeSelectionsLegacy: 0,
@@ -2252,7 +2254,7 @@ async function sendOrderedCatchupPage(peerKey: string, msg: OrderedCatchupReqMes
     syncStats.orderedCatchupOpsSent += push.data.length;
 }
 
-async function completeOrderedCatchup(peerKey: string, session: PeerSyncSession, reason: string): Promise<void> {
+function completeOrderedCatchup(peerKey: string, session: PeerSyncSession, reason: string): void {
     const conn = connectionInfo[peerKey];
     if (!conn) {
         return;
@@ -2260,10 +2262,8 @@ async function completeOrderedCatchup(peerKey: string, session: PeerSyncSession,
 
     conn.orderedCatchupAttempted = true;
     session.reconciliationComplete = true;
-    await waitForImportQueueIdle('ordered_catchup_complete');
     closePeerSession(peerKey, reason);
-    markNegentropyAdapterDirty();
-    await startNegentropySessionForPeer(peerKey, 'ordered_catchup_complete', 'ordered_catchup_complete');
+    queueOrderedCatchupPostImport(peerKey, reason);
 }
 
 async function waitForImportQueueIdle(reason: string): Promise<void> {
@@ -2277,6 +2277,65 @@ async function waitForImportQueueIdle(reason: string): Promise<void> {
             'waiting for import queue to drain'
         );
         await new Promise(resolve => setTimeout(resolve, 250));
+    }
+}
+
+function queueOrderedCatchupPostImport(peerKey: string, reason: string): void {
+    if (orderedCatchupPostImportPeers.has(peerKey)) {
+        log.debug({ peer: shortName(peerKey), reason }, 'ordered catch-up post-import continuation already queued');
+        return;
+    }
+
+    orderedCatchupPostImportPeers.add(peerKey);
+    (async () => {
+        await waitForImportQueueIdle('ordered_catchup_complete');
+        await syncGatekeeperIndexToStore('ordered_catchup_complete');
+        markNegentropyAdapterDirty();
+        await maybeStartPostOrderedCatchupNegentropy(peerKey, reason);
+    })()
+        .catch(error => {
+            log.error({ error, peer: shortName(peerKey), reason }, 'ordered catch-up post-import continuation failed');
+        })
+        .finally(() => {
+            orderedCatchupPostImportPeers.delete(peerKey);
+        });
+}
+
+async function maybeStartPostOrderedCatchupNegentropy(peerKey: string, reason: string): Promise<void> {
+    const conn = connectionInfo[peerKey];
+    const shouldStart = shouldStartPostOrderedCatchupNegentropy({
+        syncMode: conn?.syncMode ?? 'unknown',
+        peerConnected: !!conn,
+        peerSupportsNegentropyTransport: conn ? supportsPeerNegentropyTransport(conn) : false,
+        hasActiveSession: peerSessions.has(peerKey),
+        importQueueLength: importQueue.length(),
+        importQueueRunning: importQueue.running(),
+        activeNegentropySessions: getActiveNegentropySessions(),
+        syncCompleted: conn?.negentropySynced ?? false,
+    });
+
+    if (shouldStart) {
+        await maybeStartPeerSync(peerKey, 'periodic');
+    } else {
+        log.debug(
+            {
+                peer: shortName(peerKey),
+                reason,
+                syncMode: conn?.syncMode ?? 'unknown',
+                peerConnected: !!conn,
+                peerSupportsNegentropyTransport: conn ? supportsPeerNegentropyTransport(conn) : false,
+                hasActiveSession: peerSessions.has(peerKey),
+                importQueueLength: importQueue.length(),
+                importQueueRunning: importQueue.running(),
+                activeNegentropySessions: getActiveNegentropySessions(),
+                syncCompleted: conn?.negentropySynced ?? false,
+            },
+            'post ordered catch-up negentropy handoff deferred'
+        );
+    }
+
+    if (getActiveNegentropySessions() === 0) {
+        await maybeSchedulePreferredSyncs(`ordered_catchup_post_import:${reason}`);
     }
 }
 
@@ -2320,7 +2379,7 @@ async function handleOrderedCatchupPush(peerKey: string, msg: OrderedCatchupPush
         return;
     }
 
-    await completeOrderedCatchup(peerKey, session, 'ordered_catchup_complete');
+    completeOrderedCatchup(peerKey, session, 'ordered_catchup_complete');
 }
 
 async function handleOrderedCatchupDone(peerKey: string, msg: OrderedCatchupDoneMessage): Promise<void> {
@@ -2330,7 +2389,7 @@ async function handleOrderedCatchupDone(peerKey: string, msg: OrderedCatchupDone
         return;
     }
 
-    await completeOrderedCatchup(peerKey, session, 'ordered_catchup_done');
+    completeOrderedCatchup(peerKey, session, 'ordered_catchup_done');
 }
 
 function sendNegMsg(peerKey: string, session: PeerSyncSession, frame: string | Uint8Array): boolean {

@@ -12,6 +12,17 @@ export interface RepairSchedulingInput {
     syncCompleted: boolean;
 }
 
+export interface PostOrderedCatchupNegentropyInput {
+    syncMode: SyncMode | 'unknown';
+    peerConnected: boolean;
+    peerSupportsNegentropyTransport: boolean;
+    hasActiveSession: boolean;
+    importQueueLength: number;
+    importQueueRunning: number;
+    activeNegentropySessions: number;
+    syncCompleted: boolean;
+}
+
 export interface LegacySyncPriorityInput {
     syncMode: SyncMode | 'unknown';
     legacySyncEnabled: boolean;
@@ -91,6 +102,38 @@ export function shouldSchedulePeriodicRepair(input: RepairSchedulingInput): bool
     }
 
     return (input.nowMs - input.lastAttemptAtMs) >= input.repairIntervalMs;
+}
+
+export function shouldStartPostOrderedCatchupNegentropy(input: PostOrderedCatchupNegentropyInput): boolean {
+    if (!input.peerConnected) {
+        return false;
+    }
+
+    if (input.syncMode !== 'negentropy') {
+        return false;
+    }
+
+    if (!input.peerSupportsNegentropyTransport) {
+        return false;
+    }
+
+    if (input.hasActiveSession) {
+        return false;
+    }
+
+    if (input.importQueueLength > 0 || input.importQueueRunning > 0) {
+        return false;
+    }
+
+    if (input.activeNegentropySessions > 0) {
+        return false;
+    }
+
+    if (input.syncCompleted) {
+        return false;
+    }
+
+    return true;
 }
 
 export function shouldDeferLegacySync(input: LegacySyncPriorityInput): boolean {

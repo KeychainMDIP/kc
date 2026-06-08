@@ -4,6 +4,7 @@ import {
     shouldDeferLegacySync,
     shouldSchedulePeriodicRepair,
     shouldStartConnectTimeNegentropy,
+    shouldStartPostOrderedCatchupNegentropy,
 } from '../../services/mediators/hyperswarm/src/negentropy/policy.ts';
 
 describe('negentropy sync policy', () => {
@@ -55,6 +56,29 @@ describe('negentropy sync policy', () => {
             ...base,
             lastAttemptAtMs: base.nowMs - 10_000,
         })).toBe(false);
+    });
+
+    it('starts post ordered catch-up negentropy only after import work drains', () => {
+        const base = {
+            syncMode: 'negentropy' as const,
+            peerConnected: true,
+            peerSupportsNegentropyTransport: true,
+            hasActiveSession: false,
+            importQueueLength: 0,
+            importQueueRunning: 0,
+            activeNegentropySessions: 0,
+            syncCompleted: false,
+        };
+
+        expect(shouldStartPostOrderedCatchupNegentropy(base)).toBe(true);
+        expect(shouldStartPostOrderedCatchupNegentropy({ ...base, peerConnected: false })).toBe(false);
+        expect(shouldStartPostOrderedCatchupNegentropy({ ...base, syncMode: 'legacy' })).toBe(false);
+        expect(shouldStartPostOrderedCatchupNegentropy({ ...base, peerSupportsNegentropyTransport: false })).toBe(false);
+        expect(shouldStartPostOrderedCatchupNegentropy({ ...base, hasActiveSession: true })).toBe(false);
+        expect(shouldStartPostOrderedCatchupNegentropy({ ...base, importQueueLength: 1 })).toBe(false);
+        expect(shouldStartPostOrderedCatchupNegentropy({ ...base, importQueueRunning: 1 })).toBe(false);
+        expect(shouldStartPostOrderedCatchupNegentropy({ ...base, activeNegentropySessions: 1 })).toBe(false);
+        expect(shouldStartPostOrderedCatchupNegentropy({ ...base, syncCompleted: true })).toBe(false);
     });
 
     it('defers legacy while negentropy peers are pending, but allows fallback after timeout', () => {
