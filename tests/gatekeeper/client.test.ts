@@ -84,6 +84,17 @@ describe('isReady', () => {
         expect(isReady).toBe(false);
     });
 
+    it('should return false when service is not ready', async () => {
+        nock(GatekeeperURL)
+            .get(Endpoints.ready)
+            .reply(503, 'false');
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        const isReady = await gatekeeper.isReady();
+
+        expect(isReady).toBe(false);
+    });
+
     it('should wait until ready', async () => {
         nock(GatekeeperURL)
             .get(Endpoints.ready)

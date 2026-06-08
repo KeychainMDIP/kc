@@ -191,6 +191,7 @@ export type IndexExportResponse = IndexExportSnapshotResponse | IndexExportChang
 export interface GatekeeperDb {
     start(): Promise<void>;
     stop(): Promise<void>;
+    isReady(): Promise<boolean>;
     resetDb(): Promise<void | number | JsonDbFile>;
     addEvent(did: string, event: GatekeeperEvent): Promise<void | number>;
     getEvents(did: string): Promise<GatekeeperEvent[]>;

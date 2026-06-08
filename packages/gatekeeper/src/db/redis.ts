@@ -19,6 +19,7 @@ import {
     normalizeIndexExportLimit,
     parseIndexExportCursor
 } from './index-export.js';
+import { withHealthCheckTimeout } from './health.js';
 
 const REDIS_NOT_STARTED_ERROR = 'Redis not started. Call start() first.';
 const log = childLogger({ service: 'gatekeeper-db', module: 'redis' });
@@ -68,6 +69,26 @@ export default class DbRedis implements GatekeeperDb {
             finally {
                 redis.removeAllListeners('error');
             }
+        }
+    }
+
+    async isReady(): Promise<boolean> {
+        if (!this.redis) {
+            return false;
+        }
+        if (this.redis.status !== 'ready') {
+            return false;
+        }
+
+        try {
+            const response = await withHealthCheckTimeout(
+                this.redis.ping(),
+                'Redis readiness check timed out'
+            );
+            return response === 'PONG';
+        }
+        catch {
+            return false;
         }
     }
 

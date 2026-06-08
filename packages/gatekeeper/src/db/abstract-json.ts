@@ -66,6 +66,10 @@ export abstract class AbstractJson implements GatekeeperDb {
         return;
     }
 
+    async isReady(): Promise<boolean> {
+        return true;
+    }
+
     private splitSuffix(did: string): string {
         if (!did) {
             throw new InvalidDIDError();

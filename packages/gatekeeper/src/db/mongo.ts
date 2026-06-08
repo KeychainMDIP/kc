@@ -19,6 +19,7 @@ import {
     normalizeIndexExportLimit,
     parseIndexExportCursor
 } from './index-export.js';
+import { DB_HEALTH_TIMEOUT_MS, withHealthCheckTimeout } from './health.js';
 
 interface DidsDoc {
     id: string
@@ -102,6 +103,26 @@ export default class DbMongo implements GatekeeperDb {
             await this.client.close()
             this.client = null
             this.db = null
+        }
+    }
+
+    async isReady(): Promise<boolean> {
+        if (!this.client || !this.db) {
+            return false;
+        }
+
+        try {
+            await withHealthCheckTimeout(
+                this.client.db('admin').command(
+                    { ping: 1 },
+                    { timeoutMS: DB_HEALTH_TIMEOUT_MS }
+                ),
+                'Mongo readiness check timed out'
+            );
+            return true;
+        }
+        catch {
+            return false;
         }
     }
 

@@ -17,6 +17,7 @@ import {
     normalizeIndexExportLimit,
     parseIndexExportCursor
 } from './index-export.js';
+import { withHealthCheckTimeout } from './health.js';
 
 interface EventRow {
     event: GatekeeperEvent | string | null;
@@ -260,6 +261,23 @@ export default class DbPostgres implements GatekeeperDb {
         if (this.pool) {
             await this.pool.end();
             this.pool = null;
+        }
+    }
+
+    async isReady(): Promise<boolean> {
+        if (!this.pool) {
+            return false;
+        }
+
+        try {
+            await withHealthCheckTimeout(
+                this.pool.query('SELECT 1'),
+                'Postgres readiness check timed out'
+            );
+            return true;
+        }
+        catch {
+            return false;
         }
     }
 

@@ -139,6 +139,24 @@ describe('gatekeeper server helpers', () => {
         } as never, ['/api/v1/status'])).toBe(false);
     });
 
+    it('checks database liveness before reporting ready', async () => {
+        const db = {
+            isReady: jest.fn<() => Promise<boolean>>().mockResolvedValue(true),
+        };
+
+        await expect(helpers.isGatekeeperReady(false, db)).resolves.toBe(false);
+        expect(db.isReady).not.toHaveBeenCalled();
+
+        await expect(helpers.isGatekeeperReady(true, db)).resolves.toBe(true);
+        expect(db.isReady).toHaveBeenCalledTimes(1);
+
+        db.isReady.mockResolvedValue(false);
+        await expect(helpers.isGatekeeperReady(true, db)).resolves.toBe(false);
+
+        db.isReady.mockRejectedValue(new Error('db down'));
+        await expect(helpers.isGatekeeperReady(true, db)).resolves.toBe(false);
+    });
+
     it('parses optional strings and positive integers', () => {
         expect(helpers.parseOptionalString(undefined, 'cursor')).toBeUndefined();
         expect(helpers.parseOptionalString(null, 'cursor')).toBeNull();

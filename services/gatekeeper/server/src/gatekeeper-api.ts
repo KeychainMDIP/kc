@@ -25,6 +25,7 @@ import {
     formatBytes,
     formatDuration,
     isRateLimitWhitelistedRequest,
+    isGatekeeperReady,
     logRequest,
     parseIndexExportRequest,
     rateLimitWindowUnits,
@@ -170,7 +171,8 @@ let serverReady = false;
  */
 v1router.get('/ready', async (req, res) => {
     try {
-        res.json(serverReady);
+        const ready = await isGatekeeperReady(serverReady, db);
+        res.status(ready ? 200 : 503).json(ready);
     } catch (error: any) {
         res.status(500).send(error.toString());
     }

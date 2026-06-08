@@ -149,6 +149,20 @@ export default class DbSqlite implements GatekeeperDb {
         }
     }
 
+    async isReady(): Promise<boolean> {
+        if (!this.db) {
+            return false;
+        }
+
+        try {
+            await this.db.get('SELECT 1');
+            return true;
+        }
+        catch {
+            return false;
+        }
+    }
+
 
     async resetDb(): Promise<void> {
         if (!this.db) {

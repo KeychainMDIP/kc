@@ -40,6 +40,7 @@ const config = {
         '^\\.\\/abstract-json\\.js$': '<rootDir>/packages/gatekeeper/src/db/abstract-json.ts',
         '^\\.\\/db-utils\\.js$': '<rootDir>/services/search-server/src/db/db-utils.ts',
         '^\\.\\/did-resolver\\.js$': '<rootDir>/packages/gatekeeper/src/did-resolver.ts',
+        '^\\.\\/health\\.js$': '<rootDir>/packages/gatekeeper/src/db/health.ts',
         '^\\.\\/index-export\\.js$': '<rootDir>/packages/gatekeeper/src/db/index-export.ts',
         '^\\.\\/index-helpers\\.js$': '<rootDir>/services/search-server/src/index-helpers.ts',
         '^\\.\\/projections\\.js$': '<rootDir>/services/search-server/src/projections.ts',

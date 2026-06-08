@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import { BlockList, isIP } from 'net';
 
-import type { IndexExportRequest } from '@mdip/gatekeeper/types';
+import type { GatekeeperDb, IndexExportRequest } from '@mdip/gatekeeper/types';
 import { childLogger } from '@mdip/common/logger';
 
 const log = childLogger({ service: 'gatekeeper-server' });
@@ -127,6 +127,22 @@ export function shouldSkipRateLimitPath(req: Request, skipPaths: string[]): bool
 
     return skipPaths.some((skipPath: string) =>
         pathOnly === skipPath || pathOnly.startsWith(`${skipPath}/`));
+}
+
+export async function isGatekeeperReady(
+    serverReady: boolean,
+    db: Pick<GatekeeperDb, 'isReady'>
+): Promise<boolean> {
+    if (!serverReady) {
+        return false;
+    }
+
+    try {
+        return await db.isReady();
+    }
+    catch {
+        return false;
+    }
 }
 
 export function parseOptionalString(value: unknown, fieldName: string): string | null | undefined {
