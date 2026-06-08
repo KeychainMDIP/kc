@@ -24,6 +24,9 @@ import {
     createWhitelistBlockList,
     formatBytes,
     formatDuration,
+    DatabaseUnavailableError,
+    databaseUnavailableResponse,
+    exportIndexWithReadiness,
     isRateLimitWhitelistedRequest,
     isGatekeeperReady,
     logRequest,
@@ -1044,6 +1047,8 @@ v1router.post('/dids/', async (req, res) => {
  *                         type: object
  *       400:
  *         description: Invalid request body.
+ *       503:
+ *         description: Gatekeeper database is unavailable.
  *       500:
  *         description: Internal Server Error.
  */
@@ -1058,12 +1063,15 @@ v1router.post('/index/export', async (req, res) => {
     }
 
     try {
-        const response = request.mode === 'snapshot'
-            ? await db.exportIndexSnapshot(request)
-            : await db.exportIndexChanges(request);
-
+        const response = await exportIndexWithReadiness(db, request);
         res.json(response);
     } catch (error: any) {
+        if (error instanceof DatabaseUnavailableError) {
+            log.warn({ err: error.cause ?? error }, 'Index export database unavailable');
+            res.status(503).json(databaseUnavailableResponse());
+            return;
+        }
+
         log.error({ err: error }, 'Index export error');
         res.status(500).json({ error: error.toString() });
     }

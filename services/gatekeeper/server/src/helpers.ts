@@ -1,10 +1,47 @@
 import type { NextFunction, Request, Response } from 'express';
 import { BlockList, isIP } from 'net';
 
-import type { GatekeeperDb, IndexExportRequest } from '@mdip/gatekeeper/types';
+import type { GatekeeperDb, IndexExportRequest, IndexExportResponse } from '@mdip/gatekeeper/types';
 import { childLogger } from '@mdip/common/logger';
 
 const log = childLogger({ service: 'gatekeeper-server' });
+
+export const DATABASE_UNAVAILABLE_ERROR = 'database_unavailable';
+export const DATABASE_UNAVAILABLE_MESSAGE = 'Gatekeeper database is unavailable while exporting index';
+
+const DB_CONNECTIVITY_ERROR_NAMES = new Set([
+    'MongoServerSelectionError',
+    'MongoNetworkError',
+    'MongoNetworkTimeoutError',
+    'MongoNotConnectedError',
+    'MongoOperationTimeoutError',
+    'MongoServerClosedError',
+    'MongoTopologyClosedError',
+    'MongoClientClosedError',
+    'MongoTimeoutError',
+]);
+
+const DB_CONNECTIVITY_ERROR_CODES = new Set([
+    'ENOTFOUND',
+    'ECONNREFUSED',
+    'ECONNRESET',
+    'ETIMEDOUT',
+]);
+
+export interface DatabaseUnavailableResponse {
+    error: typeof DATABASE_UNAVAILABLE_ERROR;
+    message: typeof DATABASE_UNAVAILABLE_MESSAGE;
+}
+
+export class DatabaseUnavailableError extends Error {
+    readonly cause?: unknown;
+
+    constructor(cause?: unknown) {
+        super(DATABASE_UNAVAILABLE_MESSAGE);
+        this.name = 'DatabaseUnavailableError';
+        this.cause = cause;
+    }
+}
 
 export const rateLimitWindowUnits = {
     second: 1000,
@@ -142,6 +179,84 @@ export async function isGatekeeperReady(
     }
     catch {
         return false;
+    }
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+}
+
+function stringField(value: Record<string, unknown>, field: string): string | undefined {
+    const fieldValue = value[field];
+    return typeof fieldValue === 'string' ? fieldValue : undefined;
+}
+
+function errorHasConnectivitySignal(error: Record<string, unknown>): boolean {
+    const name = stringField(error, 'name');
+    const code = stringField(error, 'code');
+    const message = stringField(error, 'message');
+
+    return (name !== undefined && DB_CONNECTIVITY_ERROR_NAMES.has(name))
+        || (code !== undefined && DB_CONNECTIVITY_ERROR_CODES.has(code))
+        || (message !== undefined && Array.from(DB_CONNECTIVITY_ERROR_CODES).some(errorCode =>
+            message.includes(errorCode)))
+        || (message !== undefined && message.toLowerCase().includes('server selection timed out'));
+}
+
+export function isDatabaseConnectivityError(error: unknown): boolean {
+    const pending: unknown[] = [error];
+    const seen = new Set<unknown>();
+
+    while (pending.length > 0) {
+        const current = pending.pop();
+        if (!isObject(current) || seen.has(current)) {
+            continue;
+        }
+
+        seen.add(current);
+
+        if (errorHasConnectivitySignal(current)) {
+            return true;
+        }
+
+        if ('cause' in current) {
+            pending.push(current.cause);
+        }
+
+        if (Array.isArray(current.errors)) {
+            pending.push(...current.errors);
+        }
+    }
+
+    return false;
+}
+
+export function databaseUnavailableResponse(): DatabaseUnavailableResponse {
+    return {
+        error: DATABASE_UNAVAILABLE_ERROR,
+        message: DATABASE_UNAVAILABLE_MESSAGE,
+    };
+}
+
+export async function exportIndexWithReadiness(
+    db: Pick<GatekeeperDb, 'isReady' | 'exportIndexSnapshot' | 'exportIndexChanges'>,
+    request: IndexExportRequest
+): Promise<IndexExportResponse> {
+    if (!await db.isReady()) {
+        throw new DatabaseUnavailableError();
+    }
+
+    try {
+        return request.mode === 'snapshot'
+            ? await db.exportIndexSnapshot(request)
+            : await db.exportIndexChanges(request);
+    }
+    catch (error) {
+        if (isDatabaseConnectivityError(error)) {
+            throw new DatabaseUnavailableError(error);
+        }
+
+        throw error;
     }
 }
 

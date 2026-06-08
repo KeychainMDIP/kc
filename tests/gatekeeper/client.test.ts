@@ -564,6 +564,22 @@ describe('exportIndex', () => {
             expect(error.message).toBe(ServerError.message);
         }
     });
+
+    it('should throw database unavailable payload on exportIndex 503', async () => {
+        const unavailable = {
+            error: 'database_unavailable',
+            message: 'Gatekeeper database is unavailable while exporting index',
+        };
+
+        nock(GatekeeperURL)
+            .post(Endpoints.index.export)
+            .reply(503, unavailable);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+
+        await expect(gatekeeper.exportIndex({ mode: 'changes' }))
+            .rejects.toStrictEqual(unavailable);
+    });
 });
 
 describe('exportBatch', () => {

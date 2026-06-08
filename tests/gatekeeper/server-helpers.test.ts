@@ -157,6 +157,74 @@ describe('gatekeeper server helpers', () => {
         await expect(helpers.isGatekeeperReady(true, db)).resolves.toBe(false);
     });
 
+    it('classifies database connectivity errors', () => {
+        expect(helpers.isDatabaseConnectivityError({
+            name: 'MongoServerSelectionError',
+            message: 'getaddrinfo ENOTFOUND mongodb',
+        })).toBe(true);
+
+        expect(helpers.isDatabaseConnectivityError({
+            name: 'Error',
+            cause: {
+                code: 'ECONNREFUSED',
+                message: 'connect ECONNREFUSED 127.0.0.1:27017',
+            },
+        })).toBe(true);
+
+        expect(helpers.isDatabaseConnectivityError({
+            name: 'ValidationError',
+            message: 'request body must be an object',
+        })).toBe(false);
+    });
+
+    it('exports index only when the database is ready', async () => {
+        const response = {
+            mode: 'changes',
+            cursor: '1',
+            hasMore: false,
+            dids: [],
+            blocks: [],
+        };
+        const db = {
+            isReady: jest.fn<() => Promise<boolean>>().mockResolvedValue(false),
+            exportIndexSnapshot: jest.fn(),
+            exportIndexChanges: jest.fn().mockResolvedValue(response),
+        };
+
+        await expect(helpers.exportIndexWithReadiness(db, { mode: 'changes' }))
+            .rejects.toBeInstanceOf(helpers.DatabaseUnavailableError);
+        expect(db.exportIndexChanges).not.toHaveBeenCalled();
+
+        db.isReady.mockResolvedValue(true);
+        await expect(helpers.exportIndexWithReadiness(db, { mode: 'changes', cursor: '0' }))
+            .resolves.toStrictEqual(response);
+        expect(db.exportIndexChanges).toHaveBeenCalledWith({ mode: 'changes', cursor: '0' });
+    });
+
+    it('converts export-time database connectivity errors to unavailable errors', async () => {
+        const mongoError = {
+            name: 'MongoServerSelectionError',
+            message: 'server selection timed out',
+        };
+        const applicationError = new Error('bad cursor');
+        const db = {
+            isReady: jest.fn<() => Promise<boolean>>().mockResolvedValue(true),
+            exportIndexSnapshot: jest.fn(),
+            exportIndexChanges: jest.fn()
+                .mockRejectedValueOnce(mongoError)
+                .mockRejectedValueOnce(applicationError),
+        };
+
+        await expect(helpers.exportIndexWithReadiness(db, { mode: 'changes' }))
+            .rejects.toMatchObject({
+                name: 'DatabaseUnavailableError',
+                cause: mongoError,
+            });
+
+        await expect(helpers.exportIndexWithReadiness(db, { mode: 'changes' }))
+            .rejects.toBe(applicationError);
+    });
+
     it('parses optional strings and positive integers', () => {
         expect(helpers.parseOptionalString(undefined, 'cursor')).toBeUndefined();
         expect(helpers.parseOptionalString(null, 'cursor')).toBeNull();

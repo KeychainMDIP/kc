@@ -314,15 +314,9 @@ export default class DbMongo implements GatekeeperDb {
         }
 
         const id = this.splitSuffix(did);
-
-        try {
-
-            const row = await this.db.collection('dids').findOne({ id });
-            return row?.events ?? [];
-        }
-        catch {
-            return [];
-        }
+        const row = await this.db.collection<DidsDoc>('dids')
+            .findOne({ id }, { timeoutMS: DB_HEALTH_TIMEOUT_MS });
+        return row?.events ?? [];
     }
 
     async deleteEvents(did: string): Promise<number> {
@@ -364,7 +358,10 @@ export default class DbMongo implements GatekeeperDb {
         const cursor = options.cursor ?? null;
         const checkpointCursor = options.checkpointCursor ?? await this.getIndexCheckpointCursor();
         const docs = await this.db.collection<DidsDoc>('dids')
-            .find(cursor ? { id: { $gt: cursor } } : {}, { projection: { id: 1 } })
+            .find(
+                cursor ? { id: { $gt: cursor } } : {},
+                { projection: { id: 1 }, timeoutMS: DB_HEALTH_TIMEOUT_MS }
+            )
             .sort({ id: 1 })
             .limit(limit + 1)
             .toArray();
@@ -383,7 +380,7 @@ export default class DbMongo implements GatekeeperDb {
         }
 
         const row = await this.db.collection<IndexChangeRecord>('index_changes')
-            .find()
+            .find({}, { timeoutMS: DB_HEALTH_TIMEOUT_MS })
             .sort({ seq: -1 })
             .limit(1)
             .next();
@@ -400,7 +397,7 @@ export default class DbMongo implements GatekeeperDb {
         const afterSeq = parseIndexExportCursor(options.cursor);
         const limit = normalizeIndexExportLimit(options.limit);
         const rows = await this.db.collection<IndexChangeRecord>('index_changes')
-            .find({ seq: { $gt: afterSeq } })
+            .find({ seq: { $gt: afterSeq } }, { timeoutMS: DB_HEALTH_TIMEOUT_MS })
             .sort({ seq: 1 })
             .limit(limit + 1)
             .toArray();
