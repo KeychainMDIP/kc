@@ -89,6 +89,7 @@ export default class DbMongo implements GatekeeperDb {
             await this.ensureIndex('blocks', { registry: 1, hash: 1 }, { name: 'blocks_registry_hash_unique', unique: true });  // for hash lookup
             await this.ensureIndex('counters', { id: 1 }, { name: 'counters_id_unique', unique: true });
             await this.ensureIndex('index_changes', { seq: 1 }, { name: 'index_changes_seq_unique', unique: true });
+            await this.ensureIndexSeqCounter();
         }
         catch (error) {
             await this.client.close();
@@ -188,6 +189,44 @@ export default class DbMongo implements GatekeeperDb {
         }
 
         await collection.createIndex(key, options);
+    }
+
+    private isValidCounterValue(value: unknown): value is number {
+        return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+    }
+
+    private async getMaxIndexChangeSeq(): Promise<number> {
+        if (!this.db) {
+            throw new Error(MONGO_NOT_STARTED_ERROR);
+        }
+
+        const row = await this.db.collection<IndexChangeRecord>('index_changes')
+            .find({}, { projection: { seq: 1 } })
+            .sort({ seq: -1 })
+            .limit(1)
+            .next();
+
+        return this.isValidCounterValue(row?.seq) ? row.seq : 0;
+    }
+
+    private async ensureIndexSeqCounter(): Promise<void> {
+        if (!this.db) {
+            throw new Error(MONGO_NOT_STARTED_ERROR);
+        }
+
+        const maxSeq = await this.getMaxIndexChangeSeq();
+        const counters = this.db.collection<CounterDoc>('counters');
+        const counter = await counters.findOne({ id: 'indexSeq' });
+
+        if (this.isValidCounterValue(counter?.value) && counter.value >= maxSeq) {
+            return;
+        }
+
+        await counters.updateOne(
+            { id: 'indexSeq' },
+            { $set: { value: maxSeq } },
+            { upsert: true }
+        );
     }
 
     private async verifyTransactionSupport(): Promise<void> {

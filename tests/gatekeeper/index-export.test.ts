@@ -2116,6 +2116,7 @@ describe('Gatekeeper DB startup and guard behavior', () => {
     it('starts, repairs deployed Mongo indexes, resets, and stops with transaction-capable topology', async () => {
         const deletedCollections: string[] = [];
         const droppedIndexes: { collection: string; index: string }[] = [];
+        const counterUpdates: unknown[][] = [];
         const createIndex = jest.fn(async () => undefined);
         const close = jest.fn(async () => undefined);
         const indexesByCollection: Record<string, unknown[]> = {
@@ -2137,6 +2138,20 @@ describe('Gatekeeper DB startup and guard behavior', () => {
                 deleteMany: async () => {
                     deletedCollections.push(name);
                     return { deletedCount: 1 };
+                },
+                find: () => ({
+                    sort: () => ({
+                        limit: () => ({
+                            next: async () => null,
+                        }),
+                    }),
+                }),
+                findOne: async () => null,
+                updateOne: async (...args: unknown[]) => {
+                    if (name === 'counters') {
+                        counterUpdates.push(args);
+                    }
+                    return { modifiedCount: 0, upsertedCount: 1 };
                 },
             }),
         };
@@ -2165,6 +2180,11 @@ describe('Gatekeeper DB startup and guard behavior', () => {
             { name: 'dids_id_unique', unique: true }
         );
         expect(droppedIndexes).toStrictEqual([{ collection: 'dids', index: 'id_1' }]);
+        expect(counterUpdates).toStrictEqual([[
+            { id: 'indexSeq' },
+            { $set: { value: 0 } },
+            { upsert: true },
+        ]]);
         expect(deletedCollections).toStrictEqual([
             'dids',
             'queue',
@@ -2173,6 +2193,328 @@ describe('Gatekeeper DB startup and guard behavior', () => {
             'counters',
         ]);
         expect(close).toHaveBeenCalledTimes(1);
+
+        jest.dontMock('mongodb');
+        jest.resetModules();
+    });
+
+    it('initializes Mongo index sequence counter from existing index changes', async () => {
+        const counterUpdates: unknown[][] = [];
+        const client = {
+            connect: jest.fn(async () => undefined),
+            close: jest.fn(async () => undefined),
+            db: jest.fn((name: string) => name === 'admin'
+                ? { command: jest.fn(async () => ({ setName: 'rs0' })) }
+                : {
+                    collection: (collectionName: string) => ({
+                        indexes: async () => [],
+                        createIndex: jest.fn(async () => undefined),
+                        find: () => ({
+                            sort: () => ({
+                                limit: () => ({
+                                    next: async () => collectionName === 'index_changes'
+                                        ? { seq: 12 }
+                                        : null,
+                                }),
+                            }),
+                        }),
+                        findOne: async () => collectionName === 'counters'
+                            ? { id: 'indexSeq', value: 5 }
+                            : null,
+                        updateOne: async (...args: unknown[]) => {
+                            if (collectionName === 'counters') {
+                                counterUpdates.push(args);
+                            }
+                            return { modifiedCount: 1, upsertedCount: 0 };
+                        },
+                    }),
+                }),
+        };
+        jest.resetModules();
+        jest.unstable_mockModule('mongodb', () => ({
+            MongoClient: jest.fn(() => client),
+        }));
+        const { default: MockedDbMongo } = await import('@mdip/gatekeeper/db/mongo.ts');
+        const db = new MockedDbMongo('mongo-counter-upgrade');
+
+        await db.start();
+        await db.stop();
+
+        expect(counterUpdates).toStrictEqual([[
+            { id: 'indexSeq' },
+            { $set: { value: 12 } },
+            { upsert: true },
+        ]]);
+
+        jest.dontMock('mongodb');
+        jest.resetModules();
+    });
+
+    it('does not lower Mongo index sequence counter when it is already ahead', async () => {
+        const counterUpdates: unknown[][] = [];
+        const client = {
+            connect: jest.fn(async () => undefined),
+            close: jest.fn(async () => undefined),
+            db: jest.fn((name: string) => name === 'admin'
+                ? { command: jest.fn(async () => ({ setName: 'rs0' })) }
+                : {
+                    collection: (collectionName: string) => ({
+                        indexes: async () => [],
+                        createIndex: jest.fn(async () => undefined),
+                        find: () => ({
+                            sort: () => ({
+                                limit: () => ({
+                                    next: async () => collectionName === 'index_changes'
+                                        ? { seq: 12 }
+                                        : null,
+                                }),
+                            }),
+                        }),
+                        findOne: async () => collectionName === 'counters'
+                            ? { id: 'indexSeq', value: 20 }
+                            : null,
+                        updateOne: async (...args: unknown[]) => {
+                            if (collectionName === 'counters') {
+                                counterUpdates.push(args);
+                            }
+                            return { modifiedCount: 1, upsertedCount: 0 };
+                        },
+                    }),
+                }),
+        };
+        jest.resetModules();
+        jest.unstable_mockModule('mongodb', () => ({
+            MongoClient: jest.fn(() => client),
+        }));
+        const { default: MockedDbMongo } = await import('@mdip/gatekeeper/db/mongo.ts');
+        const db = new MockedDbMongo('mongo-counter-no-op');
+
+        await db.start();
+        await db.stop();
+
+        expect(counterUpdates).toStrictEqual([]);
+
+        jest.dontMock('mongodb');
+        jest.resetModules();
+    });
+
+    it('upgrades a Mongo 1.4.0 shape and starts post-upgrade changes at sequence 1', async () => {
+        const didC = 'did:test:z3';
+        const eventC = createEvent(didC, '2026-01-01T00:00:03.000Z');
+        const createdIndexes: { collection: string; key: unknown; options: unknown }[] = [];
+        const existingCollections = new Set(['dids', 'queue', 'blocks']);
+        const eventsByKey = new Map<string, GatekeeperEvent[]>([
+            ['z1', [eventA]],
+            ['z2', [eventB]],
+        ]);
+        const changes: IndexChangeRecord[] = [];
+        let indexSeq = 0;
+
+        const appDb = {
+            collection: (collectionName: string) => ({
+                indexes: async () => {
+                    if (!existingCollections.has(collectionName)) {
+                        throw { code: 26, codeName: 'NamespaceNotFound' };
+                    }
+                    return [];
+                },
+                createIndex: async (key: unknown, options: unknown) => {
+                    existingCollections.add(collectionName);
+                    createdIndexes.push({ collection: collectionName, key, options });
+                    return `${collectionName}_index`;
+                },
+                dropIndex: async () => undefined,
+                find: (query: { id?: { $gt?: string }; seq?: { $gt?: number } } = {}) => {
+                    let limit = Infinity;
+                    const chain = {
+                        sort: () => chain,
+                        limit: (nextLimit: number) => {
+                            limit = nextLimit;
+                            return chain;
+                        },
+                        next: async () => {
+                            if (collectionName !== 'index_changes') {
+                                return null;
+                            }
+
+                            return changes
+                                .slice()
+                                .sort((a, b) => b.seq - a.seq)[0] ?? null;
+                        },
+                        toArray: async () => {
+                            if (collectionName === 'dids') {
+                                const cursor = query.id?.$gt ?? null;
+                                return Array.from(eventsByKey.keys())
+                                    .sort()
+                                    .filter(id => !cursor || id > cursor)
+                                    .slice(0, limit)
+                                    .map(id => ({ id, events: eventsByKey.get(id) }));
+                            }
+
+                            if (collectionName === 'index_changes') {
+                                const afterSeq = query.seq?.$gt ?? 0;
+                                return changes
+                                    .filter(change => change.seq > afterSeq)
+                                    .sort((a, b) => a.seq - b.seq)
+                                    .slice(0, limit);
+                            }
+
+                            return [];
+                        },
+                    };
+
+                    return chain;
+                },
+                findOne: async ({ id }: { id: string }) => {
+                    if (collectionName === 'dids') {
+                        return {
+                            id,
+                            events: eventsByKey.get(id) ?? [],
+                        };
+                    }
+
+                    if (collectionName === 'counters' && id === 'indexSeq') {
+                        return { id, value: indexSeq };
+                    }
+
+                    return null;
+                },
+                updateOne: async (
+                    { id }: { id?: string },
+                    update: {
+                        $set?: { value?: number; events?: GatekeeperEvent[] };
+                        $push?: { events: { $each: GatekeeperEvent[] } };
+                    }
+                ) => {
+                    if (collectionName === 'counters' && id === 'indexSeq') {
+                        indexSeq = update.$set?.value ?? indexSeq;
+                        return { modifiedCount: 1, upsertedCount: 0 };
+                    }
+
+                    if (collectionName === 'dids' && id) {
+                        const existed = eventsByKey.has(id);
+
+                        if (update.$push) {
+                            eventsByKey.set(id, [
+                                ...(eventsByKey.get(id) ?? []),
+                                ...update.$push.events.$each,
+                            ]);
+                        }
+                        if (update.$set?.events) {
+                            eventsByKey.set(id, update.$set.events);
+                        }
+
+                        return {
+                            modifiedCount: existed ? 1 : 0,
+                            upsertedCount: existed ? 0 : 1,
+                        };
+                    }
+
+                    return { modifiedCount: 0, upsertedCount: 0 };
+                },
+                findOneAndUpdate: async (
+                    { id }: { id: string },
+                    update: { $inc: { value: number } }
+                ) => {
+                    if (collectionName !== 'counters' || id !== 'indexSeq') {
+                        return null;
+                    }
+
+                    indexSeq += update.$inc.value;
+                    return { id, value: indexSeq };
+                },
+                insertOne: async (change: IndexChangeRecord) => {
+                    changes.push(change);
+                    return { insertedId: change.seq };
+                },
+            }),
+        };
+        const client = {
+            connect: jest.fn(async () => undefined),
+            close: jest.fn(async () => undefined),
+            db: jest.fn((name: string) => name === 'admin'
+                ? { command: jest.fn(async () => ({ setName: 'rs0' })) }
+                : appDb),
+            startSession: () => ({
+                withTransaction: async (callback: MongoTransactionCallback) => callback(),
+                endSession: async () => undefined,
+            }),
+        };
+        jest.resetModules();
+        jest.unstable_mockModule('mongodb', () => ({
+            MongoClient: jest.fn(() => client),
+        }));
+        const { default: MockedDbMongo } = await import('@mdip/gatekeeper/db/mongo.ts');
+        const db = new MockedDbMongo('mongo-legacy-1-4-0');
+
+        await db.start();
+
+        expect(existingCollections.has('index_changes')).toBe(true);
+        expect(existingCollections.has('counters')).toBe(true);
+        expect(createdIndexes).toEqual(expect.arrayContaining([
+            {
+                collection: 'index_changes',
+                key: { seq: 1 },
+                options: { name: 'index_changes_seq_unique', unique: true },
+            },
+            {
+                collection: 'counters',
+                key: { id: 1 },
+                options: { name: 'counters_id_unique', unique: true },
+            },
+        ]));
+        expect(indexSeq).toBe(0);
+
+        await expect(db.exportIndexSnapshot({ limit: 10 })).resolves.toMatchObject({
+            mode: 'snapshot',
+            cursor: 'z2',
+            checkpointCursor: '0',
+            hasMore: false,
+            dids: [
+                { did: didA, events: [eventA] },
+                { did: didB, events: [eventB] },
+            ],
+            blocks: [],
+        });
+
+        await expect(db.exportIndexChanges({ includeOperations: true })).resolves.toStrictEqual({
+            mode: 'changes',
+            cursor: '0',
+            hasMore: false,
+            dids: [],
+            blocks: [],
+            operations: [],
+        });
+
+        await db.addEvent(didC, eventC);
+
+        expect(indexSeq).toBe(1);
+        expect(changes).toStrictEqual([{
+            seq: 1,
+            kind: 'did',
+            did: didC,
+            event: eventC,
+        }]);
+
+        await expect(db.exportIndexChanges({ includeOperations: true })).resolves.toStrictEqual({
+            mode: 'changes',
+            cursor: '1',
+            hasMore: false,
+            dids: [
+                { did: didC, events: [eventC] },
+            ],
+            blocks: [],
+            operations: [
+                {
+                    seq: 1,
+                    did: didC,
+                    event: eventC,
+                    operationHash: undefined,
+                },
+            ],
+        });
+
+        await db.stop();
 
         jest.dontMock('mongodb');
         jest.resetModules();

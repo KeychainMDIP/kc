@@ -4,6 +4,7 @@ import type {
     IndexExportResponse,
     Operation,
 } from '@mdip/gatekeeper/types';
+import { childLogger } from '@mdip/common/logger';
 import type { OperationSyncStore } from './db/types.js';
 import {
     mapAcceptedOperationsToSyncRecords,
@@ -11,6 +12,20 @@ import {
 } from './sync-persistence.js';
 
 const DEFAULT_INDEX_EXPORT_PAGE_LIMIT = 500;
+const log = childLogger({ service: 'hyperswarm-bootstrap' });
+type BootstrapLogLevel = 'debug' | 'error';
+
+function writeLog(
+    level: BootstrapLogLevel,
+    payload: Record<string, unknown>,
+    message: string
+): void {
+    const method = log[level] as unknown;
+
+    if (typeof method === 'function') {
+        method.call(log, payload, message);
+    }
+}
 
 export const HYPR_INDEX_SYNC_STATE_KEYS = {
     snapshotComplete: 'index.snapshot.complete',
@@ -48,6 +63,22 @@ interface ImportTotals {
     invalid: number;
     inserted: number;
     updated: number;
+}
+
+interface SnapshotLogState {
+    pageLimit: number;
+    pages: number;
+    exported: number;
+    mapped: number;
+    invalid: number;
+    inserted: number;
+    updated: number;
+    requestCursor: string | null | undefined;
+    nextCursor: string | null | undefined;
+    checkpointCursor: string | null | undefined;
+    hasMore: boolean | null;
+    snapshotComplete: boolean;
+    durationMs: number;
 }
 
 function toOperations(events: GatekeeperEvent[]): Operation[] {
@@ -114,6 +145,33 @@ function addTotals(totals: ImportTotals, page: Omit<ImportTotals, 'pages'>): voi
     totals.pages += 1;
 }
 
+function buildSnapshotLogState(params: {
+    totals: ImportTotals;
+    pageLimit: number;
+    requestCursor?: string | null;
+    nextCursor?: string | null;
+    checkpointCursor?: string | null;
+    hasMore?: boolean | null;
+    snapshotComplete: boolean;
+    startedAt: number;
+}): SnapshotLogState {
+    return {
+        pageLimit: params.pageLimit,
+        pages: params.totals.pages,
+        exported: params.totals.exported,
+        mapped: params.totals.mapped,
+        invalid: params.totals.invalid,
+        inserted: params.totals.inserted,
+        updated: params.totals.updated,
+        requestCursor: params.requestCursor,
+        nextCursor: params.nextCursor,
+        checkpointCursor: params.checkpointCursor,
+        hasMore: params.hasMore ?? null,
+        snapshotComplete: params.snapshotComplete,
+        durationMs: Date.now() - params.startedAt,
+    };
+}
+
 async function syncSnapshot(
     syncStore: OperationSyncStore,
     gatekeeper: BootstrapGatekeeper,
@@ -129,6 +187,10 @@ async function syncSnapshot(
     };
     let cursor = await syncStore.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotCursor);
     let checkpointCursor = await syncStore.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotCheckpointCursor);
+    let requestCursor: string | null | undefined = cursor;
+    let nextCursor: string | null | undefined = cursor;
+    let responseHasMore: boolean | null = null;
+    const startedAt = Date.now();
 
     if (cursor && !checkpointCursor) {
         throw new Error('Snapshot cursor found without checkpointCursor');
@@ -137,51 +199,113 @@ async function syncSnapshot(
         throw new Error('Snapshot checkpointCursor found without cursor');
     }
 
-    while (true) {
-        const response = await gatekeeper.exportIndex({
-            mode: 'snapshot',
-            cursor,
-            ...(checkpointCursor ? { checkpointCursor } : {}),
-            limit: pageLimit,
-        });
+    writeLog('debug', {
+        snapshot: buildSnapshotLogState({
+            totals,
+            pageLimit,
+            requestCursor,
+            nextCursor,
+            checkpointCursor,
+            hasMore: null,
+            snapshotComplete: false,
+            startedAt,
+        }),
+    }, 'snapshot bootstrap starting');
 
-        if (response.mode !== 'snapshot') {
-            throw new Error(`Expected snapshot export response, got ${response.mode}`);
+    try {
+        while (true) {
+            requestCursor = cursor;
+            const response = await gatekeeper.exportIndex({
+                mode: 'snapshot',
+                cursor,
+                ...(checkpointCursor ? { checkpointCursor } : {}),
+                limit: pageLimit,
+            });
+
+            if (response.mode !== 'snapshot') {
+                throw new Error(`Expected snapshot export response, got ${response.mode}`);
+            }
+            if (response.checkpointCursor === undefined) {
+                throw new Error('Snapshot export response missing checkpointCursor');
+            }
+
+            const responseCheckpointCursor = response.checkpointCursor ?? '0';
+            if (checkpointCursor && responseCheckpointCursor !== checkpointCursor) {
+                throw new Error(
+                    `Snapshot export checkpoint changed from ${checkpointCursor} to ${responseCheckpointCursor}`
+                );
+            }
+            checkpointCursor = checkpointCursor ?? responseCheckpointCursor;
+
+            nextCursor = response.cursor;
+            responseHasMore = response.hasMore;
+            const syncStateUpdates: Record<string, string | null> = {
+                [HYPR_INDEX_SYNC_STATE_KEYS.snapshotCursor]: nextCursor,
+                [HYPR_INDEX_SYNC_STATE_KEYS.snapshotCheckpointCursor]: checkpointCursor,
+            };
+
+            if (!response.hasMore) {
+                syncStateUpdates[HYPR_INDEX_SYNC_STATE_KEYS.snapshotComplete] = 'true';
+                syncStateUpdates[HYPR_INDEX_SYNC_STATE_KEYS.changesCursor] = checkpointCursor;
+            }
+
+            const page = await applySnapshotPage(syncStore, response, syncStateUpdates);
+            addTotals(totals, page);
+
+            writeLog('debug', {
+                snapshot: {
+                    ...buildSnapshotLogState({
+                        totals,
+                        pageLimit,
+                        requestCursor,
+                        nextCursor,
+                        checkpointCursor,
+                        hasMore: response.hasMore,
+                        snapshotComplete: !response.hasMore,
+                        startedAt,
+                    }),
+                    page,
+                },
+            }, 'snapshot bootstrap page imported');
+
+            if (!response.hasMore) {
+                writeLog('debug', {
+                    snapshot: buildSnapshotLogState({
+                        totals,
+                        pageLimit,
+                        requestCursor,
+                        nextCursor,
+                        checkpointCursor,
+                        hasMore: response.hasMore,
+                        snapshotComplete: true,
+                        startedAt,
+                    }),
+                }, 'snapshot bootstrap complete');
+                return totals;
+            }
+
+            if (!nextCursor || nextCursor === cursor) {
+                throw new Error('Snapshot export did not advance cursor');
+            }
+
+            cursor = nextCursor;
         }
-        if (response.checkpointCursor === undefined) {
-            throw new Error('Snapshot export response missing checkpointCursor');
-        }
-
-        const responseCheckpointCursor = response.checkpointCursor ?? '0';
-        if (checkpointCursor && responseCheckpointCursor !== checkpointCursor) {
-            throw new Error(
-                `Snapshot export checkpoint changed from ${checkpointCursor} to ${responseCheckpointCursor}`
-            );
-        }
-        checkpointCursor = checkpointCursor ?? responseCheckpointCursor;
-
-        const nextCursor = response.cursor;
-        const syncStateUpdates: Record<string, string | null> = {
-            [HYPR_INDEX_SYNC_STATE_KEYS.snapshotCursor]: nextCursor,
-            [HYPR_INDEX_SYNC_STATE_KEYS.snapshotCheckpointCursor]: checkpointCursor,
-        };
-
-        if (!response.hasMore) {
-            syncStateUpdates[HYPR_INDEX_SYNC_STATE_KEYS.snapshotComplete] = 'true';
-            syncStateUpdates[HYPR_INDEX_SYNC_STATE_KEYS.changesCursor] = checkpointCursor;
-        }
-
-        addTotals(totals, await applySnapshotPage(syncStore, response, syncStateUpdates));
-
-        if (!response.hasMore) {
-            return totals;
-        }
-
-        if (!nextCursor || nextCursor === cursor) {
-            throw new Error('Snapshot export did not advance cursor');
-        }
-
-        cursor = nextCursor;
+    }
+    catch (error) {
+        writeLog('error', {
+            error,
+            snapshot: buildSnapshotLogState({
+                totals,
+                pageLimit,
+                requestCursor,
+                nextCursor,
+                checkpointCursor,
+                hasMore: responseHasMore,
+                snapshotComplete: false,
+                startedAt,
+            }),
+        }, 'snapshot bootstrap partially complete');
+        throw error;
     }
 }
 
