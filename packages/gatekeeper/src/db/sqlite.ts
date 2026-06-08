@@ -125,6 +125,21 @@ export default class DbSqlite implements GatekeeperDb {
 
             CREATE UNIQUE INDEX IF NOT EXISTS idx_registry_height ON blocks (registry, height);
         `);
+
+        await this.migrateSchema();
+    }
+
+    private async migrateSchema(): Promise<void> {
+        if (!this.db) {
+            throw new Error(SQLITE_NOT_STARTED_ERROR);
+        }
+
+        const indexChangeColumns = await this.db.all<{ name: string }[]>('PRAGMA table_info(index_changes)');
+        const hasEventColumn = indexChangeColumns.some(column => column.name === 'event');
+
+        if (!hasEventColumn) {
+            await this.db.exec('ALTER TABLE index_changes ADD COLUMN event TEXT');
+        }
     }
 
     async stop(): Promise<void> {

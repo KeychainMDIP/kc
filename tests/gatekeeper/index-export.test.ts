@@ -2,6 +2,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { jest } from '@jest/globals';
+import * as sqlite from 'sqlite';
+import sqlite3 from 'sqlite3';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory.ts';
 import DbMongo from '@mdip/gatekeeper/db/mongo.ts';
 import DbPostgres from '@mdip/gatekeeper/db/postgres.ts';
@@ -1670,6 +1672,105 @@ describe.each(productionAdapterFactories)('Gatekeeper production snapshot export
         expect(firstPage.hasMore).toBe(true);
         expect(firstPage.dids.map(record => record.did)).toStrictEqual([didA]);
         expect(loadedKeys).toStrictEqual(['z1']);
+    });
+});
+
+describe('Gatekeeper SQLite index change schema migration', () => {
+    let tempDir: string;
+
+    beforeEach(() => {
+        tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gatekeeper-sqlite-index-migration-'));
+    });
+
+    afterEach(() => {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+    });
+
+    it('adds missing event column without breaking old incremental rows', async () => {
+        const file = path.join(tempDir, 'sqlite.db');
+        const oldDb = await sqlite.open({
+            filename: file,
+            driver: sqlite3.Database,
+        });
+
+        await oldDb.exec(`
+            CREATE TABLE dids (
+                id TEXT PRIMARY KEY,
+                events TEXT
+            );
+            CREATE TABLE queue (
+                id TEXT PRIMARY KEY,
+                ops TEXT
+            );
+            CREATE TABLE index_changes (
+                seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                kind TEXT NOT NULL,
+                did TEXT,
+                registry TEXT,
+                block TEXT,
+                removed INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE blocks (
+                registry TEXT NOT NULL,
+                hash TEXT NOT NULL,
+                height INTEGER NOT NULL,
+                time TEXT NOT NULL,
+                txns INTEGER NOT NULL,
+                PRIMARY KEY (registry, hash)
+            );
+        `);
+        await oldDb.run(
+            'INSERT INTO dids(id, events) VALUES(?, ?)',
+            'z1',
+            JSON.stringify([eventA])
+        );
+        await oldDb.run(
+            'INSERT INTO index_changes(kind, did, removed) VALUES(?, ?, ?)',
+            'did',
+            didA,
+            0
+        );
+        await oldDb.close();
+
+        const db = new DbSqlite('sqlite', tempDir);
+        await db.start();
+
+        try {
+            const columns = await (db as any).db.all<{ name: string }[]>('PRAGMA table_info(index_changes)');
+            expect(columns.map(column => column.name)).toContain('event');
+
+            await expect(db.exportIndexChanges({ includeOperations: true })).resolves.toMatchObject({
+                mode: 'changes',
+                cursor: '1',
+                hasMore: false,
+                dids: [
+                    {
+                        did: didA,
+                        events: [eventA],
+                    },
+                ],
+                operations: [],
+            });
+
+            const eventBUpdate = createEvent(didB, '2026-01-01T00:00:02.000Z', 'update');
+            await db.addEvent(didB, eventBUpdate);
+
+            const changes = await db.exportIndexChanges({
+                cursor: '1',
+                includeOperations: true,
+            });
+
+            expect(changes.operations).toStrictEqual([
+                {
+                    seq: 2,
+                    did: didB,
+                    event: eventBUpdate,
+                    operationHash: undefined,
+                },
+            ]);
+        } finally {
+            await db.stop();
+        }
     });
 });
 
