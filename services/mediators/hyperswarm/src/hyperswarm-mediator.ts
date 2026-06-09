@@ -269,6 +269,7 @@ interface ConnectionInfo {
     legacyFallbackNoted: boolean;
     orderedCatchupAttempted: boolean;
     transportMode: 'unknown' | 'legacy' | 'framed';
+    inboundTransportMode: 'unknown' | 'legacy' | 'framed' | 'draining_to_framed';
     peerTransportFramingVersion: number | null;
     inboundBuffer: Buffer;
     inboundReceiveChain: Promise<void>;
@@ -643,6 +644,10 @@ function addConnection(conn: HyperswarmConnection): void {
     }
 
     conn.once('close', () => closeConnection(peerKey));
+    conn.once('error', error => {
+        log.warn({ error, peer: peerName }, 'hyperswarm peer connection error');
+        terminatePeerConnection(peerKey, 'connection_error');
+    });
     conn.on('data', data => queueInboundPeerData(peerKey, data));
 
     log.info(`received connection from: ${peerName}`);
@@ -674,6 +679,7 @@ function addConnection(conn: HyperswarmConnection): void {
         legacyFallbackNoted: false,
         orderedCatchupAttempted: false,
         transportMode: 'unknown',
+        inboundTransportMode: 'unknown',
         peerTransportFramingVersion: null,
         inboundBuffer: Buffer.alloc(0),
         inboundReceiveChain: Promise.resolve(),
@@ -777,6 +783,51 @@ function setPeerTransportMode(
         transportMode,
         reason,
     }, 'updated hyperswarm transport mode');
+}
+
+function setPeerInboundTransportMode(
+    peerKey: string,
+    inboundTransportMode: ConnectionInfo['inboundTransportMode'],
+    reason: string,
+): void {
+    const conn = connectionInfo[peerKey];
+    if (!conn || conn.inboundTransportMode === inboundTransportMode) {
+        return;
+    }
+
+    const previousMode = conn.inboundTransportMode;
+    conn.inboundTransportMode = inboundTransportMode;
+    log.debug({
+        peer: shortName(peerKey),
+        previousMode,
+        inboundTransportMode,
+        reason,
+    }, 'updated hyperswarm inbound transport mode');
+}
+
+function classifyPendingBuffer(buffer: Buffer): {
+    firstByte: number | null;
+    startsWithJsonObject: boolean;
+    printablePrefix: string;
+} {
+    let offset = 0;
+    while (offset < buffer.length) {
+        const byte = buffer[offset];
+        if (byte !== 0x20 && byte !== 0x09 && byte !== 0x0a && byte !== 0x0d) {
+            break;
+        }
+        offset += 1;
+    }
+
+    const firstByte = offset < buffer.length ? buffer[offset] : null;
+    const prefix = buffer.subarray(offset, Math.min(buffer.length, offset + 32));
+    const printablePrefix = prefix.toString('utf8').replace(/[^\x20-\x7e]/g, '.');
+
+    return {
+        firstByte,
+        startsWithJsonObject: firstByte === 0x7b,
+        printablePrefix,
+    };
 }
 
 async function buildPeerCapabilities(): Promise<PeerCapabilities> {
@@ -2988,7 +3039,7 @@ async function processInboundPeerData(peerKey: string, chunk: Buffer): Promise<v
         : Buffer.concat([conn.inboundBuffer, chunk]);
 
     while (conn.inboundBuffer.length > 0) {
-        if (conn.transportMode === 'framed') {
+        if (conn.inboundTransportMode === 'framed') {
             const parsed = decodeFramedMessages(conn.inboundBuffer, MAX_FRAMED_MESSAGE_BYTES);
             if (parsed.error) {
                 log.warn(
@@ -2996,6 +3047,7 @@ async function processInboundPeerData(peerKey: string, chunk: Buffer): Promise<v
                         peer: shortName(peerKey),
                         pendingBytes: conn.inboundBuffer.length,
                         error: parsed.error,
+                        ...classifyPendingBuffer(conn.inboundBuffer),
                     },
                     'received malformed framed hyperswarm message'
                 );
@@ -3019,8 +3071,10 @@ async function processInboundPeerData(peerKey: string, chunk: Buffer): Promise<v
             continue;
         }
 
-        const maxLegacyMessages = conn.capabilities.advertised ? Number.MAX_SAFE_INTEGER : 1;
-        const parsed = conn.transportMode === 'unknown'
+        // Drain negotiation one message at a time so a raw ping can safely be followed
+        // by either another coalesced raw message or the first framed message.
+        const maxLegacyMessages = 1;
+        const parsed = conn.inboundTransportMode === 'unknown' || conn.inboundTransportMode === 'draining_to_framed'
             ? decodeUnknownTransportMessages(conn.inboundBuffer, MAX_FRAMED_MESSAGE_BYTES, maxLegacyMessages)
             : decodeLegacyJsonMessages(conn.inboundBuffer, MAX_FRAMED_MESSAGE_BYTES, maxLegacyMessages);
         if (parsed.error) {
@@ -3028,6 +3082,7 @@ async function processInboundPeerData(peerKey: string, chunk: Buffer): Promise<v
                 {
                     peer: shortName(peerKey),
                     transportMode: conn.transportMode,
+                    inboundTransportMode: conn.inboundTransportMode,
                     pendingBytes: conn.inboundBuffer.length,
                     error: parsed.error,
                     legacyError: 'legacyError' in parsed ? parsed.legacyError : undefined,
@@ -3042,18 +3097,31 @@ async function processInboundPeerData(peerKey: string, chunk: Buffer): Promise<v
 
         if (parsed.messages.length === 0) {
             conn.inboundBuffer = parsed.remaining;
+            if (conn.inboundTransportMode === 'draining_to_framed'
+                && 'transportMode' in parsed
+                && parsed.transportMode === null
+                && 'legacyError' in parsed
+                && parsed.legacyError) {
+                setPeerInboundTransportMode(peerKey, 'framed', 'negotiation_drain_partial_frame');
+            }
             return;
         }
 
         conn.inboundBuffer = parsed.remaining;
-        if (conn.transportMode === 'unknown' && 'transportMode' in parsed && parsed.transportMode === 'framed') {
+        if ('transportMode' in parsed && parsed.transportMode === 'framed') {
             setPeerTransportMode(peerKey, 'framed', 'received_framed_message_before_ping');
+            setPeerInboundTransportMode(peerKey, 'framed', 'received_framed_message_before_ping');
         }
         for (const message of parsed.messages) {
             await receiveMsg(peerKey, message.toString('utf8'));
             if (!connectionInfo[peerKey]) {
                 return;
             }
+        }
+
+        const activeConn = connectionInfo[peerKey];
+        if (activeConn?.inboundTransportMode === 'draining_to_framed' && activeConn.inboundBuffer.length === 0) {
+            setPeerInboundTransportMode(peerKey, 'framed', 'negotiation_drain_complete');
         }
     }
 }
@@ -3140,6 +3208,7 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
 
     if (msg.type !== 'ping' && conn.transportMode === 'unknown') {
         setPeerTransportMode(peerKey, 'legacy', 'received_raw_message_before_ping');
+        setPeerInboundTransportMode(peerKey, 'legacy', 'received_raw_message_before_ping');
     }
 
     if (msg.type === 'batch') {
@@ -3195,11 +3264,20 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
             ? Number(msg.transportFramingVersion)
             : null;
         connectionInfo[peerKey].peerTransportFramingVersion = peerTransportFramingVersion;
-        setPeerTransportMode(
-            peerKey,
-            peerTransportFramingVersion === TRANSPORT_FRAMING_VERSION ? 'framed' : 'legacy',
-            'ping_capability_exchange',
-        );
+        const negotiatedTransportMode = peerTransportFramingVersion === TRANSPORT_FRAMING_VERSION ? 'framed' : 'legacy';
+        setPeerTransportMode(peerKey, negotiatedTransportMode, 'ping_capability_exchange');
+        if (negotiatedTransportMode === 'framed') {
+            const inboundMode = connectionInfo[peerKey].inboundTransportMode;
+            if (inboundMode !== 'framed') {
+                setPeerInboundTransportMode(
+                    peerKey,
+                    connectionInfo[peerKey].inboundBuffer.length > 0 ? 'draining_to_framed' : 'framed',
+                    'ping_capability_exchange',
+                );
+            }
+        } else {
+            setPeerInboundTransportMode(peerKey, 'legacy', 'ping_capability_exchange');
+        }
         log.info(
             {
                 ...buildPeerSyncCompatibilityContext(peerKey, connectionInfo[peerKey]),
