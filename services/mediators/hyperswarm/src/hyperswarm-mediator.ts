@@ -1,9 +1,7 @@
 import Hyperswarm, { HyperswarmConnection } from 'hyperswarm';
 import goodbye from 'graceful-goodbye';
 import b4a from 'b4a';
-import { randomBytes } from 'crypto';
-import { sha256 } from '@noble/hashes/sha2.js';
-import { utf8ToBytes } from '@noble/hashes/utils.js';
+import { createHash, randomBytes } from 'crypto';
 import asyncLib from 'async';
 import { EventEmitter } from 'events';
 
@@ -3751,8 +3749,7 @@ process.stdin.on('data', d => {
 });
 
 // Join a common topic
-const hash = sha256(utf8ToBytes(config.protocol));
-const networkID = Buffer.from(hash).toString('hex');
+const networkID = createHash('sha256').update(config.protocol, 'utf8').digest('hex');
 const topic = Buffer.from(b4a.from(networkID, 'hex'));
 
 async function main(): Promise<void> {
