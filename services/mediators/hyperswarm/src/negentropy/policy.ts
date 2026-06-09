@@ -41,8 +41,40 @@ export interface OrderedCatchupStateInput {
     orderedCatchupServerSessionId?: string | null;
 }
 
+export type ActivePeerSessionMode = SyncMode | 'ordered_catchup';
+
+export interface InboundNegOpenConflictInput {
+    activeSessionMode?: ActivePeerSessionMode | null;
+    activeSessionId?: string | null;
+    activeOrderedCatchupSessionId?: string | null;
+    remoteSessionId: string;
+}
+
+export type InboundNegOpenConflictDecision =
+    | { action: 'accept' }
+    | { action: 'replace' }
+    | { action: 'ignore'; reason: 'ordered_catchup_active' };
+
 export function hasActiveOrderedCatchupSession(input: OrderedCatchupStateInput): boolean {
     return !!input.orderedCatchupClientSessionId || !!input.orderedCatchupServerSessionId;
+}
+
+export function decideInboundNegOpenConflict(
+    input: InboundNegOpenConflictInput,
+): InboundNegOpenConflictDecision {
+    if (input.activeSessionMode === 'ordered_catchup' || input.activeOrderedCatchupSessionId) {
+        return { action: 'ignore', reason: 'ordered_catchup_active' };
+    }
+
+    if (!input.activeSessionId) {
+        return { action: 'accept' };
+    }
+
+    if (input.activeSessionMode === 'negentropy' && input.activeSessionId === input.remoteSessionId) {
+        return { action: 'accept' };
+    }
+
+    return { action: 'replace' };
 }
 
 export function shouldAcceptLegacySync(

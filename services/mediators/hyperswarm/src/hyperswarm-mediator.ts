@@ -45,6 +45,7 @@ import {
     type SyncMode,
 } from './negentropy/protocol.js';
 import {
+    decideInboundNegOpenConflict,
     hasActiveOrderedCatchupSession,
     shouldAcceptInboundLegacySync,
     shouldDeferLegacySync,
@@ -1068,6 +1069,14 @@ function hasActiveOrderedCatchupForPeer(conn: ConnectionInfo): boolean {
         orderedCatchupClientSessionId: conn.orderedCatchupClientSessionId,
         orderedCatchupServerSessionId: conn.orderedCatchupServerSessionId,
     });
+}
+
+function getActiveOrderedCatchupSessionId(conn: ConnectionInfo, session?: PeerSyncSession): string | null {
+    if (session?.mode === 'ordered_catchup') {
+        return session.sessionId;
+    }
+
+    return conn.orderedCatchupClientSessionId ?? conn.orderedCatchupServerSessionId;
 }
 
 function setOrderedCatchupClientState(peerKey: string, sessionId: string): void {
@@ -3438,6 +3447,30 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
     }
 
     if (msg.type === 'neg_open') {
+        let session = peerSessions.get(peerKey);
+        const remoteSessionId = typeof msg.sessionId === 'string' ? msg.sessionId : '';
+        const activeOrderedCatchupSessionId = getActiveOrderedCatchupSessionId(conn, session);
+        const conflictDecision = decideInboundNegOpenConflict({
+            activeSessionMode: session?.mode ?? null,
+            activeSessionId: session?.sessionId ?? null,
+            activeOrderedCatchupSessionId,
+            remoteSessionId,
+        });
+
+        if (conflictDecision.action === 'ignore') {
+            log.warn(
+                {
+                    peer: shortName(peerKey),
+                    remoteSessionId,
+                    activeSessionMode: session?.mode ?? null,
+                    activeSessionId: session?.sessionId ?? null,
+                    activeOrderedCatchupSessionId,
+                },
+                'ignoring neg_open while ordered catch-up active'
+            );
+            return;
+        }
+
         if (!negentropyAdapter) {
             log.warn('neg_open ignored because adapter is unavailable');
             return;
@@ -3467,8 +3500,7 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
             return;
         }
 
-        let session = peerSessions.get(peerKey);
-        if (session && session.sessionId !== msg.sessionId) {
+        if (conflictDecision.action === 'replace' && session) {
             closePeerSession(peerKey, 'replaced_by_remote_open');
             session = undefined;
         }
@@ -3862,6 +3894,14 @@ export const __test = {
         orderedCatchupPostImportPeers.clear();
         nodeKey = '';
         syncStore = createConfiguredSyncStore();
+        negentropyAdapter = null;
+        adapterChangeSeq = 0;
+        adapterBuiltSeq = -1;
+        adapterBuiltAt = 0;
+        adapterBuiltWindowId = null;
+        adapterBuiltSnapshot = null;
+        rebuildPromise = null;
+        backgroundPrebuildQueued = false;
     },
 
     setNodeKey(key: string): void {
@@ -3872,6 +3912,10 @@ export const __test = {
         syncStore = store;
     },
 
+    setNegentropyAdapter(adapter: unknown): void {
+        negentropyAdapter = adapter as NegentropyAdapter | null;
+    },
+
     addConnection(peerKey: string, overrides: Record<string, unknown> = {}): void {
         const connection = (overrides.connection as HyperswarmConnection | undefined) ?? ({
             write: () => undefined,
@@ -3880,6 +3924,8 @@ export const __test = {
             on: () => undefined,
             remotePublicKey: Buffer.from(peerKey, 'hex'),
         } as unknown as HyperswarmConnection);
+        const connectionInfoOverrides = { ...overrides };
+        delete connectionInfoOverrides.connection;
 
         connectionInfo[peerKey] = {
             connection,
@@ -3906,8 +3952,7 @@ export const __test = {
             peerTransportFramingVersion: null,
             inboundBuffer: Buffer.alloc(0),
             inboundReceiveChain: Promise.resolve(),
-            ...overrides,
-            connection,
+            ...connectionInfoOverrides,
         } as ConnectionInfo;
     },
 
@@ -3919,15 +3964,31 @@ export const __test = {
         await maybeStartPeerSync(peerKey, source);
     },
 
+    createOrderedCatchupClientSession(peerKey: string, sessionId: string): void {
+        const session = createPeerSession(peerKey, 'ordered_catchup', true, sessionId);
+        setOrderedCatchupClientState(peerKey, session.sessionId);
+    },
+
+    async receiveMsg(peerKey: string, msg: Record<string, unknown>): Promise<void> {
+        await receiveMsg(peerKey, JSON.stringify(msg));
+    },
+
     getConnectionState(peerKey: string): Record<string, unknown> | null {
         const conn = connectionInfo[peerKey];
         if (!conn) {
             return null;
         }
+        const session = peerSessions.get(peerKey);
 
         return {
             syncMode: conn.syncMode,
             syncStarted: conn.syncStarted,
+            activeSession: session
+                ? {
+                    mode: session.mode,
+                    sessionId: session.sessionId,
+                }
+                : null,
             orderedCatchupClientSessionId: conn.orderedCatchupClientSessionId,
             orderedCatchupServerSessionId: conn.orderedCatchupServerSessionId,
             orderedCatchupServerLastActivity: conn.orderedCatchupServerLastActivity,

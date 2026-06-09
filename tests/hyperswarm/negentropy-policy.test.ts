@@ -1,4 +1,5 @@
 import {
+    decideInboundNegOpenConflict,
     hasActiveOrderedCatchupSession,
     shouldAcceptLegacySync,
     shouldAcceptInboundLegacySync,
@@ -22,6 +23,43 @@ describe('negentropy sync policy', () => {
             orderedCatchupClientSessionId: null,
             orderedCatchupServerSessionId: 'server-session',
         })).toBe(true);
+    });
+
+    it('decides inbound neg_open conflicts without replacing active ordered catch-up', () => {
+        expect(decideInboundNegOpenConflict({
+            activeSessionMode: null,
+            activeSessionId: null,
+            activeOrderedCatchupSessionId: null,
+            remoteSessionId: 'remote-negentropy',
+        })).toStrictEqual({ action: 'accept' });
+
+        expect(decideInboundNegOpenConflict({
+            activeSessionMode: 'negentropy',
+            activeSessionId: 'remote-negentropy',
+            activeOrderedCatchupSessionId: null,
+            remoteSessionId: 'remote-negentropy',
+        })).toStrictEqual({ action: 'accept' });
+
+        expect(decideInboundNegOpenConflict({
+            activeSessionMode: 'negentropy',
+            activeSessionId: 'local-negentropy',
+            activeOrderedCatchupSessionId: null,
+            remoteSessionId: 'remote-negentropy',
+        })).toStrictEqual({ action: 'replace' });
+
+        expect(decideInboundNegOpenConflict({
+            activeSessionMode: 'ordered_catchup',
+            activeSessionId: 'ordered-client',
+            activeOrderedCatchupSessionId: 'ordered-client',
+            remoteSessionId: 'remote-negentropy',
+        })).toStrictEqual({ action: 'ignore', reason: 'ordered_catchup_active' });
+
+        expect(decideInboundNegOpenConflict({
+            activeSessionMode: null,
+            activeSessionId: null,
+            activeOrderedCatchupSessionId: 'ordered-server',
+            remoteSessionId: 'remote-negentropy',
+        })).toStrictEqual({ action: 'ignore', reason: 'ordered_catchup_active' });
     });
 
     it('accepts legacy sync only when enabled and mode is explicitly legacy', () => {

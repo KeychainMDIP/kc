@@ -88,6 +88,66 @@ describe('ordered catch-up mediator flow', () => {
         mediatorTest.resetState();
     });
 
+    it('ignores inbound neg_open while ordered catch-up client session is active', async () => {
+        const peerKey = 'e'.repeat(64);
+        const connection = {
+            write: jest.fn(),
+            destroy: jest.fn(),
+            once: jest.fn(),
+            on: jest.fn(),
+            remotePublicKey: Buffer.from(peerKey, 'hex'),
+        };
+
+        mediatorTest.addConnection(peerKey, {
+            connection,
+            capabilities: normalizePeerCapabilities({
+                negentropy: true,
+                negentropyVersion: 1,
+                orderedCatchup: true,
+                orderedCatchupVersion: 1,
+                orderedCatchupReady: true,
+                operationCount: 100,
+                orderedOperationCount: 100,
+            }),
+            syncMode: 'negentropy',
+            transportMode: 'framed',
+            inboundTransportMode: 'framed',
+            peerTransportFramingVersion: 1,
+        });
+        mediatorTest.setNegentropyAdapter({});
+        mediatorTest.createOrderedCatchupClientSession(peerKey, 'ordered-client-session');
+
+        await mediatorTest.receiveMsg(peerKey, {
+            type: 'neg_open',
+            time: '2026-06-09T00:00:00.000Z',
+            node: 'peer',
+            relays: [],
+            sessionId: 'remote-negentropy-session',
+            windowId: 'remote-window',
+            window: {
+                name: 'full_history',
+                fromTs: 0,
+                toTs: 1_800_000_000,
+                maxRecords: 100,
+                order: 0,
+            },
+            round: 0,
+            frame: {
+                encoding: 'utf8',
+                data: '',
+            },
+        });
+
+        expect(mediatorTest.getConnectionState(peerKey)).toMatchObject({
+            activeSession: {
+                mode: 'ordered_catchup',
+                sessionId: 'ordered-client-session',
+            },
+            orderedCatchupClientSessionId: 'ordered-client-session',
+        });
+        expect(connection.write).not.toHaveBeenCalled();
+    });
+
     it('suppresses outbound negentropy while serving ordered catch-up for a peer', async () => {
         const peerKey = 'f'.repeat(64);
         const writes: Buffer[] = [];
