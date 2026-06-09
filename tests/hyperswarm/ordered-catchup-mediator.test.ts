@@ -1,8 +1,5 @@
 import { jest } from '@jest/globals';
 import type { Operation } from '@mdip/gatekeeper/types';
-import {
-    __test as mediatorTest,
-} from '../../services/mediators/hyperswarm/src/hyperswarm-mediator.ts';
 import type {
     OperationSyncStore,
     SyncOperationRecord,
@@ -17,6 +14,12 @@ import {
 import {
     decodeFramedMessages,
 } from '../../services/mediators/hyperswarm/src/transport-framing.ts';
+
+type MediatorTestApi = typeof import('../../services/mediators/hyperswarm/src/hyperswarm-mediator.ts')['__test'];
+
+const ORIGINAL_ENV = { ...process.env };
+
+let mediatorTest: MediatorTestApi;
 
 const hexId = (value: number): string => value.toString(16).padStart(64, '0');
 
@@ -84,8 +87,22 @@ function decodeWrittenMessageTypes(writes: Buffer[]): string[] {
 }
 
 describe('ordered catch-up mediator flow', () => {
+    beforeAll(async () => {
+        process.env = {
+            ...ORIGINAL_ENV,
+            KC_HYPR_DB: process.env.KC_HYPR_DB?.trim() || 'sqlite',
+        };
+
+        mediatorTest = (await import('../../services/mediators/hyperswarm/src/hyperswarm-mediator.ts')).__test;
+    });
+
     afterEach(() => {
         mediatorTest.resetState();
+    });
+
+    afterAll(() => {
+        process.env = { ...ORIGINAL_ENV };
+        jest.resetModules();
     });
 
     it('ignores inbound neg_open while ordered catch-up client session is active', async () => {
