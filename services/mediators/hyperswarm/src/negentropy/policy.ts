@@ -3,6 +3,7 @@ import type { SyncMode } from './protocol.js';
 export interface RepairSchedulingInput {
     syncMode: SyncMode | 'unknown';
     hasActiveSession: boolean;
+    orderedCatchupActive?: boolean;
     importQueueLength: number;
     activeNegentropySessions: number;
     lastAttemptAtMs: number;
@@ -33,6 +34,15 @@ export interface LegacySyncPriorityInput {
     nowMs: number;
     capabilityGraceMs: number;
     fallbackTimeoutMs: number;
+}
+
+export interface OrderedCatchupStateInput {
+    orderedCatchupClientSessionId?: string | null;
+    orderedCatchupServerSessionId?: string | null;
+}
+
+export function hasActiveOrderedCatchupSession(input: OrderedCatchupStateInput): boolean {
+    return !!input.orderedCatchupClientSessionId || !!input.orderedCatchupServerSessionId;
 }
 
 export function shouldAcceptLegacySync(
@@ -68,12 +78,21 @@ export function shouldStartConnectTimeNegentropy(
     syncMode: SyncMode | 'unknown',
     hasActiveSession: boolean,
     isInitiator: boolean,
+    orderedCatchupActive = false,
 ): boolean {
+    if (orderedCatchupActive) {
+        return false;
+    }
+
     return syncMode === 'negentropy' && !hasActiveSession && isInitiator;
 }
 
 export function shouldSchedulePeriodicRepair(input: RepairSchedulingInput): boolean {
     if (input.syncMode !== 'negentropy') {
+        return false;
+    }
+
+    if (input.orderedCatchupActive === true) {
         return false;
     }
 

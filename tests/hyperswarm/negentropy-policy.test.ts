@@ -1,4 +1,5 @@
 import {
+    hasActiveOrderedCatchupSession,
     shouldAcceptLegacySync,
     shouldAcceptInboundLegacySync,
     shouldDeferLegacySync,
@@ -8,6 +9,21 @@ import {
 } from '../../services/mediators/hyperswarm/src/negentropy/policy.ts';
 
 describe('negentropy sync policy', () => {
+    it('detects active ordered catch-up in either direction', () => {
+        expect(hasActiveOrderedCatchupSession({
+            orderedCatchupClientSessionId: null,
+            orderedCatchupServerSessionId: null,
+        })).toBe(false);
+        expect(hasActiveOrderedCatchupSession({
+            orderedCatchupClientSessionId: 'client-session',
+            orderedCatchupServerSessionId: null,
+        })).toBe(true);
+        expect(hasActiveOrderedCatchupSession({
+            orderedCatchupClientSessionId: null,
+            orderedCatchupServerSessionId: 'server-session',
+        })).toBe(true);
+    });
+
     it('accepts legacy sync only when enabled and mode is explicitly legacy', () => {
         expect(shouldAcceptLegacySync('legacy', true)).toBe(true);
         expect(shouldAcceptLegacySync('legacy', true, true)).toBe(false);
@@ -30,6 +46,36 @@ describe('negentropy sync policy', () => {
         expect(shouldStartConnectTimeNegentropy('negentropy', true, true)).toBe(false);
         expect(shouldStartConnectTimeNegentropy('negentropy', false, false)).toBe(false);
         expect(shouldStartConnectTimeNegentropy('legacy', false, true)).toBe(false);
+    });
+
+    it('suppresses normal negentropy while ordered catch-up is active', () => {
+        const repairBase = {
+            syncMode: 'negentropy' as const,
+            hasActiveSession: false,
+            importQueueLength: 0,
+            activeNegentropySessions: 0,
+            lastAttemptAtMs: 0,
+            nowMs: 1_000_000,
+            repairIntervalMs: 300_000,
+            isInitiator: true,
+            syncCompleted: false,
+        };
+        const states = [
+            {
+                orderedCatchupClientSessionId: 'client-session',
+                orderedCatchupServerSessionId: null,
+            },
+            {
+                orderedCatchupClientSessionId: null,
+                orderedCatchupServerSessionId: 'server-session',
+            },
+        ];
+
+        for (const state of states) {
+            const orderedCatchupActive = hasActiveOrderedCatchupSession(state);
+            expect(shouldStartConnectTimeNegentropy('negentropy', false, true, orderedCatchupActive)).toBe(false);
+            expect(shouldSchedulePeriodicRepair({ ...repairBase, orderedCatchupActive })).toBe(false);
+        }
     });
 
     it('schedules periodic repair only when all guards pass', () => {
