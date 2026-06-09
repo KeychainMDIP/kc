@@ -1,0 +1,144 @@
+import { jest } from '@jest/globals';
+import type { Operation } from '@mdip/gatekeeper/types';
+import {
+    __test as mediatorTest,
+} from '../../services/mediators/hyperswarm/src/hyperswarm-mediator.ts';
+import type {
+    OperationSyncStore,
+    SyncOperationRecord,
+    SyncStoreListOptions,
+    SyncStoreOrderedListOptions,
+    SyncStorePage,
+    SyncStoreWriteResult,
+} from '../../services/mediators/hyperswarm/src/db/types.ts';
+import {
+    normalizePeerCapabilities,
+} from '../../services/mediators/hyperswarm/src/negentropy/protocol.ts';
+import {
+    decodeFramedMessages,
+} from '../../services/mediators/hyperswarm/src/transport-framing.ts';
+
+const hexId = (value: number): string => value.toString(16).padStart(64, '0');
+
+function makeOperation(id: string, index: number): Operation {
+    return {
+        type: 'create',
+        mdip: {
+            version: 1,
+            type: 'asset',
+            registry: 'hyperswarm',
+        },
+        signature: {
+            signed: new Date((1_700_000_000 + index) * 1000).toISOString(),
+            hash: id,
+            value: `sig-${index}`,
+        },
+    };
+}
+
+function makeOrderedRecord(index: number): SyncOperationRecord {
+    const id = hexId(index);
+    const signedTs = 1_700_000_000 + index;
+
+    return {
+        id,
+        syncOrder: index,
+        signedTs,
+        ts: signedTs,
+        operation: makeOperation(id, index),
+        insertedAt: signedTs,
+    };
+}
+
+function createOrderedSyncStore(records: SyncOperationRecord[]): OperationSyncStore {
+    return {
+        start: async () => undefined,
+        stop: async () => undefined,
+        reset: async () => undefined,
+        upsertMany: async (): Promise<SyncStoreWriteResult> => ({ inserted: 0, updated: 0 }),
+        applySyncPage: async (_page: SyncStorePage): Promise<SyncStoreWriteResult> => ({ inserted: 0, updated: 0 }),
+        loadSyncState: async () => null,
+        saveSyncState: async () => undefined,
+        getByIds: async (ids: string[]) => records.filter(record => ids.includes(record.id)),
+        iterateSorted: async (options: SyncStoreListOptions = {}) => records.slice(0, options.limit ?? records.length),
+        iterateOrdered: async (options: SyncStoreOrderedListOptions = {}) => {
+            const startIndex = options.after
+                ? records.findIndex(record => record.syncOrder === options.after!.syncOrder && record.id === options.after!.id) + 1
+                : 0;
+            const limit = options.limit ?? records.length;
+
+            return records.slice(Math.max(startIndex, 0), Math.max(startIndex, 0) + limit);
+        },
+        has: async (id: string) => records.some(record => record.id === id),
+        count: async () => records.length,
+        countOrdered: async () => records.filter(record => record.syncOrder !== undefined).length,
+    };
+}
+
+function decodeWrittenMessageTypes(writes: Buffer[]): string[] {
+    const framed = decodeFramedMessages(Buffer.concat(writes));
+    expect(framed.error).toBeUndefined();
+    expect(framed.remaining.length).toBe(0);
+
+    return framed.messages.map(message => JSON.parse(message.toString('utf8')).type);
+}
+
+describe('ordered catch-up mediator flow', () => {
+    afterEach(() => {
+        mediatorTest.resetState();
+    });
+
+    it('suppresses outbound negentropy while serving ordered catch-up for a peer', async () => {
+        const peerKey = 'f'.repeat(64);
+        const writes: Buffer[] = [];
+        const connection = {
+            write: (data: Buffer | string) => {
+                writes.push(Buffer.isBuffer(data) ? Buffer.from(data) : Buffer.from(data, 'utf8'));
+            },
+            destroy: jest.fn(),
+            once: jest.fn(),
+            on: jest.fn(),
+            remotePublicKey: Buffer.from(peerKey, 'hex'),
+        };
+        const records = Array.from({ length: 257 }, (_value, index) => makeOrderedRecord(index + 1));
+
+        mediatorTest.setNodeKey('0'.repeat(64));
+        mediatorTest.setSyncStore(createOrderedSyncStore(records));
+        mediatorTest.addConnection(peerKey, {
+            connection,
+            capabilities: normalizePeerCapabilities({
+                negentropy: true,
+                negentropyVersion: 1,
+                orderedCatchup: true,
+                orderedCatchupVersion: 1,
+                orderedCatchupReady: true,
+                operationCount: records.length,
+                orderedOperationCount: records.length,
+            }),
+            syncMode: 'negentropy',
+            transportMode: 'framed',
+            inboundTransportMode: 'framed',
+            peerTransportFramingVersion: 1,
+        });
+
+        await mediatorTest.sendOrderedCatchupPage(peerKey, {
+            type: 'ordered_catchup_req',
+            time: '2026-06-09T00:00:00.000Z',
+            node: 'peer',
+            relays: [],
+            sessionId: 'server-session',
+        });
+
+        expect(mediatorTest.getConnectionState(peerKey)).toMatchObject({
+            orderedCatchupServerSessionId: 'server-session',
+        });
+        expect(decodeWrittenMessageTypes(writes)).toStrictEqual(['ordered_catchup_push']);
+
+        const writesAfterOrderedCatchupPage = writes.length;
+
+        await mediatorTest.maybeStartPeerSync(peerKey, 'periodic');
+
+        expect(writes).toHaveLength(writesAfterOrderedCatchupPage);
+        expect(decodeWrittenMessageTypes(writes)).not.toContain('neg_open');
+    });
+});

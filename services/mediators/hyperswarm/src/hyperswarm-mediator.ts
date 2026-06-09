@@ -3853,6 +3853,88 @@ export async function runMediator(options: MediatorMainOptions = {}): Promise<vo
     return main();
 }
 
+export const __test = {
+    resetState(): void {
+        for (const peerKey of Object.keys(connectionInfo)) {
+            delete connectionInfo[peerKey];
+        }
+        peerSessions.clear();
+        orderedCatchupPostImportPeers.clear();
+        nodeKey = '';
+        syncStore = createConfiguredSyncStore();
+    },
+
+    setNodeKey(key: string): void {
+        nodeKey = key;
+    },
+
+    setSyncStore(store: OperationSyncStore): void {
+        syncStore = store;
+    },
+
+    addConnection(peerKey: string, overrides: Record<string, unknown> = {}): void {
+        const connection = (overrides.connection as HyperswarmConnection | undefined) ?? ({
+            write: () => undefined,
+            destroy: () => undefined,
+            once: () => undefined,
+            on: () => undefined,
+            remotePublicKey: Buffer.from(peerKey, 'hex'),
+        } as unknown as HyperswarmConnection);
+
+        connectionInfo[peerKey] = {
+            connection,
+            key: peerKey,
+            peerName: shortName(peerKey),
+            nodeName: 'test-peer',
+            did: '',
+            connectedAt: Date.now(),
+            lastSeen: Date.now(),
+            capabilities: normalizePeerCapabilities(),
+            syncMode: 'unknown',
+            syncStarted: false,
+            lastNegentropyAttemptAt: 0,
+            negentropySynced: false,
+            legacyOutboundDeferred: false,
+            legacyInboundDeferred: null,
+            legacyFallbackNoted: false,
+            orderedCatchupAttempted: false,
+            orderedCatchupClientSessionId: null,
+            orderedCatchupServerSessionId: null,
+            orderedCatchupServerLastActivity: 0,
+            transportMode: 'unknown',
+            inboundTransportMode: 'unknown',
+            peerTransportFramingVersion: null,
+            inboundBuffer: Buffer.alloc(0),
+            inboundReceiveChain: Promise.resolve(),
+            ...overrides,
+            connection,
+        } as ConnectionInfo;
+    },
+
+    async sendOrderedCatchupPage(peerKey: string, msg: OrderedCatchupReqMessage): Promise<void> {
+        await sendOrderedCatchupPage(peerKey, msg);
+    },
+
+    async maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic' = 'connect'): Promise<void> {
+        await maybeStartPeerSync(peerKey, source);
+    },
+
+    getConnectionState(peerKey: string): Record<string, unknown> | null {
+        const conn = connectionInfo[peerKey];
+        if (!conn) {
+            return null;
+        }
+
+        return {
+            syncMode: conn.syncMode,
+            syncStarted: conn.syncStarted,
+            orderedCatchupClientSessionId: conn.orderedCatchupClientSessionId,
+            orderedCatchupServerSessionId: conn.orderedCatchupServerSessionId,
+            orderedCatchupServerLastActivity: conn.orderedCatchupServerLastActivity,
+        };
+    },
+};
+
 const isDirectRun = !!process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
 if (isDirectRun) {
     runMediator().catch(error => {
