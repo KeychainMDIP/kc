@@ -218,4 +218,105 @@ describe('ordered catch-up mediator flow', () => {
         expect(writes).toHaveLength(writesAfterOrderedCatchupPage);
         expect(decodeWrittenMessageTypes(writes)).not.toContain('neg_open');
     });
+
+    it('suppresses outbound negentropy while expecting an ordered catch-up request', async () => {
+        const peerKey = 'f'.repeat(64);
+        const writes: Buffer[] = [];
+        const connection = {
+            write: (data: Buffer | string) => {
+                writes.push(Buffer.isBuffer(data) ? Buffer.from(data) : Buffer.from(data, 'utf8'));
+            },
+            destroy: jest.fn(),
+            once: jest.fn(),
+            on: jest.fn(),
+            remotePublicKey: Buffer.from(peerKey, 'hex'),
+        };
+        const records = Array.from({ length: 257 }, (_value, index) => makeOrderedRecord(index + 1));
+
+        mediatorTest.setNodeKey('0'.repeat(64));
+        mediatorTest.setSyncStore(createOrderedSyncStore(records));
+        mediatorTest.addConnection(peerKey, {
+            connection,
+            capabilities: normalizePeerCapabilities({
+                negentropy: true,
+                negentropyVersion: 1,
+                orderedCatchup: true,
+                orderedCatchupVersion: 1,
+                orderedCatchupReady: false,
+                operationCount: 0,
+                orderedOperationCount: 0,
+            }),
+            syncMode: 'negentropy',
+            transportMode: 'framed',
+            inboundTransportMode: 'framed',
+            peerTransportFramingVersion: 1,
+        });
+
+        await mediatorTest.maybeStartPeerSync(peerKey, 'connect');
+
+        const pendingState = mediatorTest.getConnectionState(peerKey);
+        expect(pendingState).toMatchObject({
+            syncStarted: true,
+            orderedCatchupServerPendingReason: 'enabled',
+            orderedCatchupServerPendingGap: records.length,
+        });
+        expect(pendingState?.orderedCatchupServerPendingUntil).not.toBe(0);
+        expect(writes).toHaveLength(0);
+
+        await mediatorTest.maybeStartPeerSync(peerKey, 'periodic');
+
+        expect(writes).toHaveLength(0);
+
+        await mediatorTest.sendOrderedCatchupPage(peerKey, {
+            type: 'ordered_catchup_req',
+            time: '2026-06-09T00:00:00.000Z',
+            node: 'peer',
+            relays: [],
+            sessionId: 'expected-server-session',
+        });
+
+        expect(mediatorTest.getConnectionState(peerKey)).toMatchObject({
+            orderedCatchupServerSessionId: 'expected-server-session',
+            orderedCatchupServerPendingUntil: 0,
+            orderedCatchupServerPendingReason: null,
+        });
+        expect(decodeWrittenMessageTypes(writes)).toStrictEqual(['ordered_catchup_push']);
+    });
+
+    it('expires an ordered catch-up request expectation', async () => {
+        const peerKey = 'f'.repeat(64);
+        const records = Array.from({ length: 257 }, (_value, index) => makeOrderedRecord(index + 1));
+
+        mediatorTest.setNodeKey('0'.repeat(64));
+        mediatorTest.setSyncStore(createOrderedSyncStore(records));
+        mediatorTest.addConnection(peerKey, {
+            capabilities: normalizePeerCapabilities({
+                negentropy: true,
+                negentropyVersion: 1,
+                orderedCatchup: true,
+                orderedCatchupVersion: 1,
+                orderedCatchupReady: false,
+                operationCount: 0,
+                orderedOperationCount: 0,
+            }),
+            syncMode: 'negentropy',
+            transportMode: 'framed',
+            inboundTransportMode: 'framed',
+            peerTransportFramingVersion: 1,
+        });
+
+        await mediatorTest.maybeStartPeerSync(peerKey, 'connect');
+
+        const pendingState = mediatorTest.getConnectionState(peerKey);
+        const pendingUntil = pendingState?.orderedCatchupServerPendingUntil;
+        expect(typeof pendingUntil).toBe('number');
+        expect(pendingUntil).not.toBe(0);
+
+        expect(mediatorTest.clearExpiredOrderedCatchupServerExpectation(peerKey, Number(pendingUntil) + 1)).toBe(true);
+        expect(mediatorTest.getConnectionState(peerKey)).toMatchObject({
+            orderedCatchupServerPendingUntil: 0,
+            orderedCatchupServerPendingReason: null,
+            orderedCatchupServerPendingGap: 0,
+        });
+    });
 });

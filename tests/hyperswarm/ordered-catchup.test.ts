@@ -1,4 +1,5 @@
 import {
+    getExpectedOrderedCatchupRequestDecision,
     getOrderedCatchupDecision,
 } from '../../services/mediators/hyperswarm/src/ordered-catchup.ts';
 import type { NegotiatedPeerCapabilities } from '../../services/mediators/hyperswarm/src/negentropy/protocol.ts';
@@ -130,6 +131,81 @@ describe('ordered catch-up decision', () => {
             useOrderedCatchup: false,
             reason: 'peer_not_ahead',
             gap: 0,
+        });
+    });
+});
+
+describe('expected ordered catch-up request decision', () => {
+    it('expects an empty ordered-catchup peer to request from a ready local node', () => {
+        expect(getExpectedOrderedCatchupRequestDecision({
+            enabled: true,
+            localOperationCount: 100,
+            localOrderedOperationCount: 100,
+            peerCapabilities: makePeer({
+                orderedCatchupReady: false,
+                operationCount: 0,
+                orderedOperationCount: 0,
+            }),
+            requiredVersion: 1,
+            threshold: 25,
+        })).toMatchObject({
+            expectRequest: true,
+            reason: 'enabled',
+            gap: 100,
+        });
+    });
+
+    it('expects a far-behind ordered-catchup peer to request from a ready local node', () => {
+        expect(getExpectedOrderedCatchupRequestDecision({
+            enabled: true,
+            localOperationCount: 100,
+            localOrderedOperationCount: 100,
+            peerCapabilities: makePeer({
+                operationCount: 60,
+                orderedOperationCount: 60,
+            }),
+            requiredVersion: 1,
+            threshold: 25,
+        })).toMatchObject({
+            expectRequest: true,
+            reason: 'enabled',
+            gap: 40,
+        });
+    });
+
+    it('does not expect a request when the local node is not fully ordered', () => {
+        expect(getExpectedOrderedCatchupRequestDecision({
+            enabled: true,
+            localOperationCount: 100,
+            localOrderedOperationCount: 99,
+            peerCapabilities: makePeer({
+                operationCount: 0,
+                orderedOperationCount: 0,
+            }),
+            requiredVersion: 1,
+            threshold: 25,
+        })).toMatchObject({
+            expectRequest: false,
+            reason: 'local_unready',
+            gap: 0,
+        });
+    });
+
+    it('does not expect a request when the peer is not sufficiently behind', () => {
+        expect(getExpectedOrderedCatchupRequestDecision({
+            enabled: true,
+            localOperationCount: 100,
+            localOrderedOperationCount: 100,
+            peerCapabilities: makePeer({
+                operationCount: 90,
+                orderedOperationCount: 90,
+            }),
+            requiredVersion: 1,
+            threshold: 25,
+        })).toMatchObject({
+            expectRequest: false,
+            reason: 'not_far_behind',
+            gap: 10,
         });
     });
 });

@@ -89,6 +89,7 @@ import {
     mapOperationToSyncKey,
 } from './sync-mapping.js';
 import {
+    getExpectedOrderedCatchupRequestDecision,
     getOrderedCatchupDecision,
 } from './ordered-catchup.js';
 import {
@@ -271,6 +272,10 @@ interface ConnectionInfo {
     orderedCatchupClientSessionId: string | null;
     orderedCatchupServerSessionId: string | null;
     orderedCatchupServerLastActivity: number;
+    orderedCatchupServerPendingSince: number;
+    orderedCatchupServerPendingUntil: number;
+    orderedCatchupServerPendingReason: string | null;
+    orderedCatchupServerPendingGap: number;
     transportMode: 'unknown' | 'legacy' | 'framed';
     inboundTransportMode: 'unknown' | 'legacy' | 'framed' | 'draining_to_framed';
     peerTransportFramingVersion: number | null;
@@ -409,6 +414,7 @@ const NEG_REPAIR_INTERVAL_MS = config.negentropyIntervalSeconds * 1000;
 const NEG_ADAPTER_MAX_AGE_MS = 60 * 1000;
 const LEGACY_CAPABILITY_GRACE_MS = 5 * 1000;
 const LEGACY_NEGENTROPY_FALLBACK_MS = 60 * 1000;
+const ORDERED_CATCHUP_SERVER_EXPECTATION_MS = 5 * 1000;
 const MALFORMED_PEER_STRIKE_WINDOW_MS = 5 * 60 * 1000;
 const MALFORMED_PEER_COOLDOWN_MS = 5 * 60 * 1000;
 const MALFORMED_PEER_REJECT_LOG_INTERVAL_MS = 60 * 1000;
@@ -684,6 +690,10 @@ function addConnection(conn: HyperswarmConnection): void {
         orderedCatchupClientSessionId: null,
         orderedCatchupServerSessionId: null,
         orderedCatchupServerLastActivity: 0,
+        orderedCatchupServerPendingSince: 0,
+        orderedCatchupServerPendingUntil: 0,
+        orderedCatchupServerPendingReason: null,
+        orderedCatchupServerPendingGap: 0,
         transportMode: 'unknown',
         inboundTransportMode: 'unknown',
         peerTransportFramingVersion: null,
@@ -1030,6 +1040,7 @@ function expireIdlePeerSessions(): void {
     }
 
     for (const [peerKey, conn] of Object.entries(connectionInfo)) {
+        clearExpiredOrderedCatchupServerExpectation(peerKey, now);
         if (conn.orderedCatchupServerSessionId
             && conn.orderedCatchupServerLastActivity > 0
             && (now - conn.orderedCatchupServerLastActivity) > NEG_SESSION_IDLE_TIMEOUT_MS) {
@@ -1069,12 +1080,84 @@ function hasActiveOrderedCatchupForPeer(conn: ConnectionInfo): boolean {
     });
 }
 
+function hasPendingOrderedCatchupServerExpectation(conn: ConnectionInfo, now = Date.now()): boolean {
+    return conn.orderedCatchupServerPendingUntil > now;
+}
+
+function hasOrderedCatchupOutboundGuardForPeer(conn: ConnectionInfo, now = Date.now()): boolean {
+    return hasActiveOrderedCatchupForPeer(conn) || hasPendingOrderedCatchupServerExpectation(conn, now);
+}
+
 function getActiveOrderedCatchupSessionId(conn: ConnectionInfo, session?: PeerSyncSession): string | null {
     if (session?.mode === 'ordered_catchup') {
         return session.sessionId;
     }
 
     return conn.orderedCatchupClientSessionId ?? conn.orderedCatchupServerSessionId;
+}
+
+function setOrderedCatchupServerExpectation(peerKey: string, reason: string, gap: number): void {
+    const conn = connectionInfo[peerKey];
+    if (!conn) {
+        return;
+    }
+
+    const now = Date.now();
+    if (hasPendingOrderedCatchupServerExpectation(conn, now)) {
+        return;
+    }
+
+    conn.orderedCatchupServerPendingSince = now;
+    conn.orderedCatchupServerPendingUntil = now + ORDERED_CATCHUP_SERVER_EXPECTATION_MS;
+    conn.orderedCatchupServerPendingReason = reason;
+    conn.orderedCatchupServerPendingGap = gap;
+    log.info(
+        {
+            peer: shortName(peerKey),
+            reason,
+            gap,
+            pendingMs: ORDERED_CATCHUP_SERVER_EXPECTATION_MS,
+            pendingUntil: new Date(conn.orderedCatchupServerPendingUntil).toISOString(),
+        },
+        'ordered catch-up server request expected'
+    );
+}
+
+function clearOrderedCatchupServerExpectation(peerKey: string, reason: string): void {
+    const conn = connectionInfo[peerKey];
+    if (!conn || conn.orderedCatchupServerPendingUntil <= 0) {
+        return;
+    }
+
+    const previous = {
+        pendingSince: conn.orderedCatchupServerPendingSince,
+        pendingUntil: conn.orderedCatchupServerPendingUntil,
+        pendingReason: conn.orderedCatchupServerPendingReason,
+        pendingGap: conn.orderedCatchupServerPendingGap,
+    };
+
+    conn.orderedCatchupServerPendingSince = 0;
+    conn.orderedCatchupServerPendingUntil = 0;
+    conn.orderedCatchupServerPendingReason = null;
+    conn.orderedCatchupServerPendingGap = 0;
+    log.debug(
+        {
+            peer: shortName(peerKey),
+            reason,
+            ...previous,
+        },
+        'ordered catch-up server request expectation cleared'
+    );
+}
+
+function clearExpiredOrderedCatchupServerExpectation(peerKey: string, now = Date.now()): boolean {
+    const conn = connectionInfo[peerKey];
+    if (!conn || conn.orderedCatchupServerPendingUntil <= 0 || conn.orderedCatchupServerPendingUntil > now) {
+        return false;
+    }
+
+    clearOrderedCatchupServerExpectation(peerKey, 'server_expectation_timeout');
+    return true;
 }
 
 function setOrderedCatchupClientState(peerKey: string, sessionId: string): void {
@@ -1112,6 +1195,7 @@ function setOrderedCatchupServerState(peerKey: string, sessionId: string): void 
         return;
     }
 
+    clearOrderedCatchupServerExpectation(peerKey, 'ordered_catchup_server_state_set');
     const previousSessionId = conn.orderedCatchupServerSessionId;
     conn.orderedCatchupServerSessionId = sessionId;
     conn.orderedCatchupServerLastActivity = Date.now();
@@ -1153,7 +1237,10 @@ function logNegentropySuppressedByOrderedCatchup(
         source,
         orderedCatchupClientSessionId: conn.orderedCatchupClientSessionId,
         orderedCatchupServerSessionId: conn.orderedCatchupServerSessionId,
-    }, 'outbound negentropy suppressed while ordered catch-up is active');
+        orderedCatchupServerPendingUntil: conn.orderedCatchupServerPendingUntil,
+        orderedCatchupServerPendingReason: conn.orderedCatchupServerPendingReason,
+        orderedCatchupServerPendingGap: conn.orderedCatchupServerPendingGap,
+    }, 'outbound negentropy suppressed while ordered catch-up is active or expected');
 }
 
 function buildPeerSyncCompatibilityContext(peerKey: string, conn: ConnectionInfo): object {
@@ -1412,7 +1499,8 @@ async function startNegentropySessionForPeer(
         return;
     }
 
-    if (hasActiveOrderedCatchupForPeer(conn)) {
+    clearExpiredOrderedCatchupServerExpectation(peerKey);
+    if (hasOrderedCatchupOutboundGuardForPeer(conn)) {
         logNegentropySuppressedByOrderedCatchup(peerKey, source);
         return;
     }
@@ -1538,7 +1626,8 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
     const initiator = nodeKey.localeCompare(peerKey) < 0;
     const hasActiveSession = peerSessions.has(peerKey);
     const activeNegentropySessions = getActiveNegentropySessions();
-    const orderedCatchupActive = hasActiveOrderedCatchupForPeer(conn);
+    clearExpiredOrderedCatchupServerExpectation(peerKey);
+    let orderedCatchupActive = hasOrderedCatchupOutboundGuardForPeer(conn);
 
     conn.syncMode = 'negentropy';
     conn.syncStarted = true;
@@ -1562,6 +1651,31 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
             orderedCatchupDecision.gap,
         );
         return;
+    }
+
+    if (source === 'connect'
+        && initiator
+        && !orderedCatchupActive
+        && !hasActiveSession
+        && activeNegentropySessions === 0) {
+        const localOrderedOperationCount = await syncStore.countOrdered();
+        const expectedOrderedCatchupRequest = getExpectedOrderedCatchupRequestDecision({
+            enabled: config.orderedCatchupEnabled,
+            localOperationCount,
+            localOrderedOperationCount,
+            peerCapabilities: conn.capabilities,
+            requiredVersion: ORDERED_CATCHUP_VERSION,
+            threshold: config.orderedCatchupThreshold,
+        });
+
+        if (expectedOrderedCatchupRequest.expectRequest) {
+            setOrderedCatchupServerExpectation(
+                peerKey,
+                expectedOrderedCatchupRequest.reason,
+                expectedOrderedCatchupRequest.gap,
+            );
+            orderedCatchupActive = hasOrderedCatchupOutboundGuardForPeer(conn);
+        }
     }
 
     const shouldStart = source === 'connect'
@@ -2356,6 +2470,8 @@ async function sendOrderedCatchupPage(peerKey: string, msg: OrderedCatchupReqMes
     if (!conn) {
         return;
     }
+
+    clearOrderedCatchupServerExpectation(peerKey, 'ordered_catchup_req_received');
 
     if (conn.capabilities.orderedCatchup !== true || conn.capabilities.orderedCatchupVersion !== ORDERED_CATCHUP_VERSION) {
         log.warn(
@@ -3944,6 +4060,10 @@ export const __test = {
             orderedCatchupClientSessionId: null,
             orderedCatchupServerSessionId: null,
             orderedCatchupServerLastActivity: 0,
+            orderedCatchupServerPendingSince: 0,
+            orderedCatchupServerPendingUntil: 0,
+            orderedCatchupServerPendingReason: null,
+            orderedCatchupServerPendingGap: 0,
             transportMode: 'unknown',
             inboundTransportMode: 'unknown',
             peerTransportFramingVersion: null,
@@ -3959,6 +4079,10 @@ export const __test = {
 
     async maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic' = 'connect'): Promise<void> {
         await maybeStartPeerSync(peerKey, source);
+    },
+
+    clearExpiredOrderedCatchupServerExpectation(peerKey: string, now = Date.now()): boolean {
+        return clearExpiredOrderedCatchupServerExpectation(peerKey, now);
     },
 
     createOrderedCatchupClientSession(peerKey: string, sessionId: string): void {
@@ -3989,6 +4113,10 @@ export const __test = {
             orderedCatchupClientSessionId: conn.orderedCatchupClientSessionId,
             orderedCatchupServerSessionId: conn.orderedCatchupServerSessionId,
             orderedCatchupServerLastActivity: conn.orderedCatchupServerLastActivity,
+            orderedCatchupServerPendingSince: conn.orderedCatchupServerPendingSince,
+            orderedCatchupServerPendingUntil: conn.orderedCatchupServerPendingUntil,
+            orderedCatchupServerPendingReason: conn.orderedCatchupServerPendingReason,
+            orderedCatchupServerPendingGap: conn.orderedCatchupServerPendingGap,
         };
     },
 };
