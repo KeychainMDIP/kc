@@ -184,6 +184,7 @@ export interface IndexExportSnapshotResponse extends IndexExportBaseResponse {
 
 export interface IndexExportChangesResponse extends IndexExportBaseResponse {
     mode: 'changes';
+    checkpointCursor: string | null;
 }
 
 export type IndexExportResponse = IndexExportSnapshotResponse | IndexExportChangesResponse;

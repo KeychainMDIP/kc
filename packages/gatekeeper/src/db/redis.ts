@@ -423,6 +423,7 @@ export default class DbRedis implements GatekeeperDb {
         const options = _options ?? {};
         const afterSeq = parseIndexExportCursor(options.cursor);
         const limit = normalizeIndexExportLimit(options.limit);
+        const checkpointCursor = await this.getIndexCheckpointCursor();
         const payloads = await this.redis.zrangebyscore(
             this.indexChangesKey(),
             `(${afterSeq}`,
@@ -438,6 +439,7 @@ export default class DbRedis implements GatekeeperDb {
             page,
             payloads.length > limit,
             options,
+            checkpointCursor,
             did => this.getEvents(did)
         );
     }

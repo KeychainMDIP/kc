@@ -13,7 +13,8 @@ import {
 
 const DEFAULT_INDEX_EXPORT_PAGE_LIMIT = 500;
 const log = childLogger({ service: 'hyperswarm-bootstrap' });
-type BootstrapLogLevel = 'debug' | 'error';
+const STALE_SYNC_STORE_RESET_REASON = 'gatekeeper_checkpoint_behind_sync_cursor';
+type BootstrapLogLevel = 'debug' | 'error' | 'warn';
 
 function writeLog(
     level: BootstrapLogLevel,
@@ -46,6 +47,7 @@ export interface BootstrapResult {
     updated: number;
     snapshotComplete: boolean;
     durationMs: number;
+    resetReason?: string;
 }
 
 export interface BootstrapOptions {
@@ -63,6 +65,18 @@ interface ImportTotals {
     invalid: number;
     inserted: number;
     updated: number;
+}
+
+class StaleSyncStoreError extends Error {
+    readonly savedCursor: string;
+    readonly gatekeeperCheckpointCursor: string;
+
+    constructor(savedCursor: string, gatekeeperCheckpointCursor: string) {
+        super('Stored hyperswarm sync cursor is ahead of gatekeeper checkpoint');
+        this.name = 'StaleSyncStoreError';
+        this.savedCursor = savedCursor;
+        this.gatekeeperCheckpointCursor = gatekeeperCheckpointCursor;
+    }
 }
 
 interface SnapshotLogState {
@@ -143,6 +157,35 @@ function addTotals(totals: ImportTotals, page: Omit<ImportTotals, 'pages'>): voi
     totals.inserted += page.inserted;
     totals.updated += page.updated;
     totals.pages += 1;
+}
+
+function parseNonNegativeCursor(cursor: string | null | undefined): number | null {
+    if (cursor === null || cursor === undefined || cursor === '') {
+        return 0;
+    }
+
+    if (!/^\d+$/.test(cursor)) {
+        return null;
+    }
+
+    const parsed = Number(cursor);
+    return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
+function assertSyncStoreCursorWithinGatekeeperCheckpoint(
+    savedCursor: string | null,
+    checkpointCursor: string | null | undefined
+): void {
+    const saved = parseNonNegativeCursor(savedCursor);
+    const checkpoint = parseNonNegativeCursor(checkpointCursor);
+
+    if (saved === null || checkpoint === null) {
+        return;
+    }
+
+    if (saved > checkpoint) {
+        throw new StaleSyncStoreError(savedCursor ?? '0', checkpointCursor ?? '0');
+    }
 }
 
 function buildSnapshotLogState(params: {
@@ -335,6 +378,11 @@ async function syncChanges(
         if (response.mode !== 'changes') {
             throw new Error(`Expected changes export response, got ${response.mode}`);
         }
+        if (response.checkpointCursor === undefined) {
+            throw new Error('Changes export response missing checkpointCursor');
+        }
+
+        assertSyncStoreCursorWithinGatekeeperCheckpoint(cursor, response.checkpointCursor);
 
         const nextCursor = response.cursor ?? cursor ?? '0';
         addTotals(totals, await applyChangesPage(syncStore, response, {
@@ -362,10 +410,33 @@ export async function bootstrapSyncStoreFromGatekeeper(
     const countBefore = await syncStore.count();
     const pageLimit = options.pageLimit ?? DEFAULT_INDEX_EXPORT_PAGE_LIMIT;
     const snapshotCompleteBefore = await syncStore.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotComplete) === 'true';
-    const mode = snapshotCompleteBefore ? 'changes' : 'snapshot';
-    const imported = snapshotCompleteBefore
-        ? await syncChanges(syncStore, gatekeeper, pageLimit)
-        : await syncSnapshot(syncStore, gatekeeper, pageLimit);
+    let mode: BootstrapResult['mode'] = snapshotCompleteBefore ? 'changes' : 'snapshot';
+    let resetReason: string | undefined;
+    let imported: ImportTotals;
+
+    try {
+        imported = snapshotCompleteBefore
+            ? await syncChanges(syncStore, gatekeeper, pageLimit)
+            : await syncSnapshot(syncStore, gatekeeper, pageLimit);
+    }
+    catch (error) {
+        if (!(error instanceof StaleSyncStoreError)) {
+            throw error;
+        }
+
+        resetReason = STALE_SYNC_STORE_RESET_REASON;
+        writeLog('warn', {
+            reason: resetReason,
+            savedCursor: error.savedCursor,
+            gatekeeperCheckpointCursor: error.gatekeeperCheckpointCursor,
+            countBefore,
+        }, 'resetting stale hyperswarm sync store');
+
+        await syncStore.reset();
+        mode = 'snapshot';
+        imported = await syncSnapshot(syncStore, gatekeeper, pageLimit);
+    }
+
     const countAfter = await syncStore.count();
     const snapshotCompleteAfter = await syncStore.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotComplete) === 'true';
 
@@ -381,5 +452,6 @@ export async function bootstrapSyncStoreFromGatekeeper(
         updated: imported.updated,
         snapshotComplete: snapshotCompleteAfter,
         durationMs: Date.now() - startedAt,
+        ...(resetReason ? { resetReason } : {}),
     };
 }

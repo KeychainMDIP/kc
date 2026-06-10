@@ -444,6 +444,7 @@ export default class DbPostgres implements GatekeeperDb {
         const options = _options ?? {};
         const afterSeq = parseIndexExportCursor(options.cursor);
         const limit = normalizeIndexExportLimit(options.limit);
+        const checkpointCursor = await this.getIndexCheckpointCursor();
         const result = await pool.query<IndexChangeRow>(
             `SELECT seq, kind, did, registry, block, event, removed
              FROM gatekeeper_index_changes
@@ -470,6 +471,7 @@ export default class DbPostgres implements GatekeeperDb {
             page,
             result.rows.length > limit,
             options,
+            checkpointCursor,
             did => this.getEvents(did)
         );
     }

@@ -219,6 +219,7 @@ export abstract class AbstractJson implements GatekeeperDb {
         const afterSeq = parseIndexExportCursor(options.cursor);
         const limit = normalizeIndexExportLimit(options.limit);
         const db = this.loadDb();
+        const checkpointCursor = await this.getIndexCheckpointCursor();
         const changes = (db.indexChanges ?? [])
             .filter(change => change.seq > afterSeq)
             .sort((a, b) => a.seq - b.seq);
@@ -228,6 +229,7 @@ export abstract class AbstractJson implements GatekeeperDb {
             page,
             changes.length > limit,
             options,
+            checkpointCursor,
             did => this.getEvents(did)
         );
     }

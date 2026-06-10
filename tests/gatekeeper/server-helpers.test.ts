@@ -181,6 +181,7 @@ describe('gatekeeper server helpers', () => {
         const response = {
             mode: 'changes',
             cursor: '1',
+            checkpointCursor: '1',
             hasMore: false,
             dids: [],
             blocks: [],

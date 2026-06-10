@@ -50,6 +50,7 @@ function snapshotResponse(params: {
 
 function changesResponse(params: {
     cursor: string | null;
+    checkpointCursor?: string | null;
     operations?: GatekeeperEvent[];
     didEvents?: GatekeeperEvent[];
     hasMore?: boolean;
@@ -57,6 +58,7 @@ function changesResponse(params: {
     return {
         mode: 'changes',
         cursor: params.cursor,
+        checkpointCursor: params.checkpointCursor ?? params.cursor ?? '0',
         hasMore: params.hasMore ?? false,
         dids: [{
             did: 'did:test:fallback',
@@ -218,6 +220,88 @@ describe('bootstrapSyncStoreFromGatekeeper', () => {
             signedTs: Math.floor(Date.parse(opA.signature!.signed) / 1000),
         }]);
         expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor)).toBe('13');
+    });
+
+    it('resets a stale completed sync store when gatekeeper checkpoint is behind the saved changes cursor', async () => {
+        const store = new InMemoryOperationSyncStore();
+        await store.start();
+        await store.upsertMany([{
+            id: h('z'),
+            ts: Math.floor(Date.parse('2026-02-10T09:00:00.000Z') / 1000),
+            operation: makeOperation('z', '2026-02-10T09:00:00.000Z'),
+        }]);
+        await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotComplete, 'true');
+        await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor, '118597');
+
+        const opA = makeOperation('a', '2026-02-10T10:00:00.000Z');
+        const gatekeeper = {
+            exportIndex: jest.fn()
+                .mockResolvedValueOnce(changesResponse({
+                    cursor: '118597',
+                    checkpointCursor: '0',
+                    operations: [],
+                }))
+                .mockResolvedValueOnce(snapshotResponse({
+                    did: 'did:test:a',
+                    events: [makeEvent(opA, 'did:test:a')],
+                    cursor: 'did:test:a',
+                    checkpointCursor: '0',
+                })),
+        };
+
+        const result = await bootstrapSyncStoreFromGatekeeper(store, gatekeeper);
+
+        expect(result).toMatchObject({
+            countBefore: 1,
+            countAfter: 1,
+            mode: 'snapshot',
+            pages: 1,
+            exported: 1,
+            mapped: 1,
+            invalid: 0,
+            inserted: 1,
+            updated: 0,
+            snapshotComplete: true,
+            resetReason: 'gatekeeper_checkpoint_behind_sync_cursor',
+        });
+        expect(gatekeeper.exportIndex).toHaveBeenNthCalledWith(1, {
+            mode: 'changes',
+            cursor: '118597',
+            limit: 500,
+            includeOperations: true,
+        });
+        expect(gatekeeper.exportIndex).toHaveBeenNthCalledWith(2, {
+            mode: 'snapshot',
+            cursor: null,
+            limit: 500,
+        });
+        expect(await store.has(h('z'))).toBe(false);
+        expect(await store.has(h('a'))).toBe(true);
+        expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotComplete)).toBe('true');
+        expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor)).toBe('0');
+    });
+
+    it('rejects changes responses without checkpoint cursor metadata', async () => {
+        const store = new InMemoryOperationSyncStore();
+        await store.start();
+        await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotComplete, 'true');
+        await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor, '12');
+
+        const gatekeeper = {
+            exportIndex: jest.fn(async () => {
+                const response = changesResponse({
+                    cursor: '13',
+                    operations: [],
+                });
+                delete (response as { checkpointCursor?: string | null }).checkpointCursor;
+                return response;
+            }),
+        };
+
+        await expect(bootstrapSyncStoreFromGatekeeper(store, gatekeeper))
+            .rejects
+            .toThrow('Changes export response missing checkpointCursor');
+        expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor)).toBe('12');
     });
 
     it('rejects changes responses without operation records', async () => {

@@ -49,6 +49,7 @@ function createChangesResponse(): IndexExportResponse {
     return {
         mode: 'changes',
         cursor: '7',
+        checkpointCursor: '7',
         hasMore: false,
         blocks: [],
         dids: [{

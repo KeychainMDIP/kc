@@ -139,6 +139,7 @@ export async function buildIndexChangesResponse(
     changes: IndexChangeRecord[],
     hasMore: boolean,
     options: IndexExportChangesOptions = {},
+    checkpointCursor: string | null,
     getEvents: (did: string) => Promise<GatekeeperEvent[]>
 ): Promise<IndexExportResponse> {
     const afterSeq = parseIndexExportCursor(options.cursor);
@@ -198,6 +199,7 @@ export async function buildIndexChangesResponse(
     const response: IndexExportResponse = {
         mode: 'changes',
         cursor,
+        checkpointCursor,
         hasMore,
         dids,
         blocks,

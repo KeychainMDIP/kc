@@ -435,6 +435,7 @@ export default class DbMongo implements GatekeeperDb {
         const options = _options ?? {};
         const afterSeq = parseIndexExportCursor(options.cursor);
         const limit = normalizeIndexExportLimit(options.limit);
+        const checkpointCursor = await this.getIndexCheckpointCursor();
         const rows = await this.db.collection<IndexChangeRecord>('index_changes')
             .find({ seq: { $gt: afterSeq } }, { timeoutMS: DB_HEALTH_TIMEOUT_MS })
             .sort({ seq: 1 })
@@ -446,6 +447,7 @@ export default class DbMongo implements GatekeeperDb {
             page,
             rows.length > limit,
             options,
+            checkpointCursor,
             did => this.getEvents(did)
         );
     }

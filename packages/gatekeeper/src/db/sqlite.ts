@@ -443,6 +443,7 @@ export default class DbSqlite implements GatekeeperDb {
         const options = _options ?? {};
         const afterSeq = parseIndexExportCursor(options.cursor);
         const limit = normalizeIndexExportLimit(options.limit);
+        const checkpointCursor = await this.getIndexCheckpointCursor();
         const rows = await this.db.all<IndexChangeRow[]>(
             `SELECT seq, kind, did, registry, block, event, removed
              FROM index_changes
@@ -466,6 +467,7 @@ export default class DbSqlite implements GatekeeperDb {
             page,
             rows.length > limit,
             options,
+            checkpointCursor,
             did => this.getEvents(did)
         );
     }

@@ -16,6 +16,7 @@ import {
     IndexChangeRecord,
 } from '@mdip/gatekeeper/types';
 import {
+    buildIndexChangesResponse,
     buildIndexSnapshotResponseFromPageKeys,
     exportIndexSnapshotFromAllKeysForLocalDb,
     normalizeIndexExportLimit,
@@ -935,6 +936,26 @@ describe('Gatekeeper index export request parsing', () => {
         expect(parseIndexExportCursor('42')).toBe(42);
     });
 
+    it('includes the checkpoint cursor on changes export responses', async () => {
+        const response = await buildIndexChangesResponse(
+            [],
+            false,
+            { cursor: '12', includeOperations: true },
+            '9',
+            async () => []
+        );
+
+        expect(response).toStrictEqual({
+            mode: 'changes',
+            cursor: '12',
+            checkpointCursor: '9',
+            hasMore: false,
+            dids: [],
+            blocks: [],
+            operations: [],
+        });
+    });
+
     it('builds snapshot pages from opaque page keys without loading extra keys', async () => {
         const getEvents = jest.fn(async (key: string) => {
             if (key === 'storage-z1') {
@@ -1156,6 +1177,7 @@ describe('Gatekeeper DB index snapshot export', () => {
         expect(changes).toMatchObject({
             mode: 'changes',
             cursor: '3',
+            checkpointCursor: '3',
             hasMore: false,
         });
         expect(changes.dids).toHaveLength(1);
@@ -1469,6 +1491,7 @@ describe.each(adapterFactories)('Gatekeeper DB index export adapter: %s', (_name
         expect(firstPage).toMatchObject({
             mode: 'changes',
             cursor: '2',
+            checkpointCursor: '3',
             hasMore: true,
         });
         expect(firstPage.dids.map(record => record.did)).toStrictEqual([didB]);
@@ -1482,6 +1505,7 @@ describe.each(adapterFactories)('Gatekeeper DB index export adapter: %s', (_name
         expect(secondPage).toMatchObject({
             mode: 'changes',
             cursor: '3',
+            checkpointCursor: '3',
             hasMore: false,
         });
         expect(secondPage.dids).toStrictEqual([]);
@@ -1519,6 +1543,7 @@ describe.each(adapterFactories)('Gatekeeper DB index export adapter: %s', (_name
         expect(changes).toMatchObject({
             mode: 'changes',
             cursor: '6',
+            checkpointCursor: '6',
             hasMore: false,
         });
         expect(changes.dids).toStrictEqual([
@@ -1572,6 +1597,7 @@ describe.each(adapterFactories)('Gatekeeper DB index export adapter: %s', (_name
         expect(changes).toMatchObject({
             mode: 'changes',
             cursor: '7',
+            checkpointCursor: '7',
             hasMore: false,
         });
         expect(changes.dids).toStrictEqual([
@@ -1629,6 +1655,7 @@ describe.each(adapterFactories)('Gatekeeper DB index export adapter: %s', (_name
         expect(changesWithOperations).toMatchObject({
             mode: 'changes',
             cursor: '4',
+            checkpointCursor: '4',
             hasMore: false,
         });
         expect(changesWithOperations.dids).toStrictEqual([
@@ -1742,6 +1769,7 @@ describe('Gatekeeper SQLite index change schema migration', () => {
             await expect(db.exportIndexChanges({ includeOperations: true })).resolves.toMatchObject({
                 mode: 'changes',
                 cursor: '1',
+                checkpointCursor: '1',
                 hasMore: false,
                 dids: [
                     {
@@ -2480,6 +2508,7 @@ describe('Gatekeeper DB startup and guard behavior', () => {
         await expect(db.exportIndexChanges({ includeOperations: true })).resolves.toStrictEqual({
             mode: 'changes',
             cursor: '0',
+            checkpointCursor: '0',
             hasMore: false,
             dids: [],
             blocks: [],
@@ -2499,6 +2528,7 @@ describe('Gatekeeper DB startup and guard behavior', () => {
         await expect(db.exportIndexChanges({ includeOperations: true })).resolves.toStrictEqual({
             mode: 'changes',
             cursor: '1',
+            checkpointCursor: '1',
             hasMore: false,
             dids: [
                 { did: didC, events: [eventC] },
