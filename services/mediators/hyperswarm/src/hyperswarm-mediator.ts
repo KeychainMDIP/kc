@@ -276,8 +276,9 @@ interface ConnectionInfo {
     orderedCatchupServerPendingUntil: number;
     orderedCatchupServerPendingReason: string | null;
     orderedCatchupServerPendingGap: number;
+    initialPingSent: boolean;
     transportMode: 'unknown' | 'legacy' | 'framed';
-    inboundTransportMode: 'unknown' | 'legacy' | 'framed' | 'draining_to_framed';
+    inboundTransportMode: 'unknown' | 'legacy' | 'framed';
     peerTransportFramingVersion: number | null;
     inboundBuffer: Buffer;
     inboundReceiveChain: Promise<void>;
@@ -694,6 +695,7 @@ function addConnection(conn: HyperswarmConnection): void {
         orderedCatchupServerPendingUntil: 0,
         orderedCatchupServerPendingReason: null,
         orderedCatchupServerPendingGap: 0,
+        initialPingSent: false,
         transportMode: 'unknown',
         inboundTransportMode: 'unknown',
         peerTransportFramingVersion: null,
@@ -704,7 +706,7 @@ function addConnection(conn: HyperswarmConnection): void {
     const peerNames = Object.values(connectionInfo).map(info => info.peerName);
     log.debug(`--- ${peerNames.length} nodes connected, detected nodes: ${peerNames.join(', ')}`);
 
-    void sendPingToPeer(peerKey);
+    void sendPingToPeer(peerKey, 'initial');
 }
 
 function closeConnection(peerKey: string): void {
@@ -901,7 +903,11 @@ async function buildPingMessage(): Promise<PingMessage> {
     };
 }
 
-function sendToPeer(peerKey: string, msg: HyperMessage): boolean {
+interface SendToPeerOptions {
+    initialPing?: boolean;
+}
+
+function sendToPeer(peerKey: string, msg: HyperMessage, options: SendToPeerOptions = {}): boolean {
     const conn = connectionInfo[peerKey];
     if (!conn) {
         return false;
@@ -911,8 +917,14 @@ function sendToPeer(peerKey: string, msg: HyperMessage): boolean {
         const json = JSON.stringify(msg);
         if (conn.transportMode === 'framed') {
             writeFramedJson(conn.connection, json);
-        } else if (supportsLegacyRawTransportMessage(msg.type)) {
+        } else if (conn.transportMode === 'legacy' && supportsLegacyRawTransportMessage(msg.type)) {
             writeLegacyJson(conn.connection, json);
+        } else if (conn.transportMode === 'unknown'
+            && msg.type === 'ping'
+            && options.initialPing === true
+            && !conn.initialPingSent) {
+            writeLegacyJson(conn.connection, json);
+            conn.initialPingSent = true;
         } else {
             log.debug({ peer: shortName(peerKey), type: msg.type }, 'deferring hyperswarm message until transport negotiation completes');
             return false;
@@ -925,9 +937,9 @@ function sendToPeer(peerKey: string, msg: HyperMessage): boolean {
     }
 }
 
-async function sendPingToPeer(peerKey: string): Promise<void> {
+async function sendPingToPeer(peerKey: string, source: 'initial' | 'periodic' = 'periodic'): Promise<void> {
     const ping = await buildPingMessage();
-    if (sendToPeer(peerKey, ping)) {
+    if (sendToPeer(peerKey, ping, { initialPing: source === 'initial' })) {
         log.debug(`* sent ping to: ${shortName(peerKey)}`);
     }
 }
@@ -3319,10 +3331,10 @@ async function processInboundPeerData(peerKey: string, chunk: Buffer): Promise<v
             continue;
         }
 
-        // Drain negotiation one message at a time so a raw ping can safely be followed
-        // by either another coalesced raw message or the first framed message.
+        // Parse one pre-negotiation raw message at a time. If that message advertises
+        // framing, receiveMsg() switches inbound mode before the remaining bytes are decoded.
         const maxLegacyMessages = 1;
-        const parsed = conn.inboundTransportMode === 'unknown' || conn.inboundTransportMode === 'draining_to_framed'
+        const parsed = conn.inboundTransportMode === 'unknown'
             ? decodeUnknownTransportMessages(conn.inboundBuffer, MAX_FRAMED_MESSAGE_BYTES, maxLegacyMessages)
             : decodeLegacyJsonMessages(conn.inboundBuffer, MAX_FRAMED_MESSAGE_BYTES, maxLegacyMessages);
         if (parsed.error) {
@@ -3345,13 +3357,6 @@ async function processInboundPeerData(peerKey: string, chunk: Buffer): Promise<v
 
         if (parsed.messages.length === 0) {
             conn.inboundBuffer = parsed.remaining;
-            if (conn.inboundTransportMode === 'draining_to_framed'
-                && 'transportMode' in parsed
-                && parsed.transportMode === null
-                && 'legacyError' in parsed
-                && parsed.legacyError) {
-                setPeerInboundTransportMode(peerKey, 'framed', 'negotiation_drain_partial_frame');
-            }
             return;
         }
 
@@ -3365,11 +3370,6 @@ async function processInboundPeerData(peerKey: string, chunk: Buffer): Promise<v
             if (!connectionInfo[peerKey]) {
                 return;
             }
-        }
-
-        const activeConn = connectionInfo[peerKey];
-        if (activeConn?.inboundTransportMode === 'draining_to_framed' && activeConn.inboundBuffer.length === 0) {
-            setPeerInboundTransportMode(peerKey, 'framed', 'negotiation_drain_complete');
         }
     }
 }
@@ -3517,11 +3517,7 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
         if (negotiatedTransportMode === 'framed') {
             const inboundMode = connectionInfo[peerKey].inboundTransportMode;
             if (inboundMode !== 'framed') {
-                setPeerInboundTransportMode(
-                    peerKey,
-                    connectionInfo[peerKey].inboundBuffer.length > 0 ? 'draining_to_framed' : 'framed',
-                    'ping_capability_exchange',
-                );
+                setPeerInboundTransportMode(peerKey, 'framed', 'ping_capability_exchange');
             }
         } else {
             setPeerInboundTransportMode(peerKey, 'legacy', 'ping_capability_exchange');
@@ -4064,6 +4060,7 @@ export const __test = {
             orderedCatchupServerPendingUntil: 0,
             orderedCatchupServerPendingReason: null,
             orderedCatchupServerPendingGap: 0,
+            initialPingSent: false,
             transportMode: 'unknown',
             inboundTransportMode: 'unknown',
             peerTransportFramingVersion: null,
@@ -4094,6 +4091,14 @@ export const __test = {
         await receiveMsg(peerKey, JSON.stringify(msg));
     },
 
+    async processInboundPeerData(peerKey: string, chunk: Buffer | string): Promise<void> {
+        await processInboundPeerData(peerKey, typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : Buffer.from(chunk));
+    },
+
+    async sendPingToPeer(peerKey: string, source: 'initial' | 'periodic' = 'periodic'): Promise<void> {
+        await sendPingToPeer(peerKey, source);
+    },
+
     getConnectionState(peerKey: string): Record<string, unknown> | null {
         const conn = connectionInfo[peerKey];
         if (!conn) {
@@ -4117,6 +4122,10 @@ export const __test = {
             orderedCatchupServerPendingUntil: conn.orderedCatchupServerPendingUntil,
             orderedCatchupServerPendingReason: conn.orderedCatchupServerPendingReason,
             orderedCatchupServerPendingGap: conn.orderedCatchupServerPendingGap,
+            initialPingSent: conn.initialPingSent,
+            transportMode: conn.transportMode,
+            inboundTransportMode: conn.inboundTransportMode,
+            peerTransportFramingVersion: conn.peerTransportFramingVersion,
         };
     },
 };

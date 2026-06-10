@@ -168,38 +168,6 @@ describe('hyperswarm transport framing', () => {
         expect(framed.remaining.length).toBe(0);
     });
 
-    it('preserves a coalesced raw ping during transport negotiation', () => {
-        const firstPing = JSON.stringify({
-            type: 'ping',
-            node: 'node-a',
-            transportFramingVersion: 1,
-        });
-        const secondPing = JSON.stringify({
-            type: 'ping',
-            node: 'node-a',
-            capabilities: {
-                negentropy: true,
-                negentropyVersion: 1,
-            },
-            transportFramingVersion: 1,
-        });
-        const combined = Buffer.concat([
-            Buffer.from(firstPing, 'utf8'),
-            Buffer.from(secondPing, 'utf8'),
-        ]);
-
-        const first = decodeUnknownTransportMessages(combined, DEFAULT_MAX_FRAMED_MESSAGE_BYTES, 1);
-        expect(first.error).toBeUndefined();
-        expect(first.transportMode).toBe('legacy');
-        expect(first.messages.map(message => message.toString('utf8'))).toStrictEqual([firstPing]);
-
-        const second = decodeUnknownTransportMessages(first.remaining, DEFAULT_MAX_FRAMED_MESSAGE_BYTES, 1);
-        expect(second.error).toBeUndefined();
-        expect(second.transportMode).toBe('legacy');
-        expect(second.messages.map(message => message.toString('utf8'))).toStrictEqual([secondPing]);
-        expect(second.remaining.length).toBe(0);
-    });
-
     it('preserves a partial framed message after a raw negotiation ping', () => {
         const ping = JSON.stringify({
             type: 'ping',
@@ -223,10 +191,8 @@ describe('hyperswarm transport framing', () => {
         expect(first.transportMode).toBe('legacy');
         expect(first.messages.map(message => message.toString('utf8'))).toStrictEqual([ping]);
 
-        const partial = decodeUnknownTransportMessages(first.remaining, DEFAULT_MAX_FRAMED_MESSAGE_BYTES, 1);
+        const partial = decodeFramedMessages(first.remaining, DEFAULT_MAX_FRAMED_MESSAGE_BYTES);
         expect(partial.error).toBeUndefined();
-        expect(partial.transportMode).toBeNull();
-        expect(partial.legacyError).toBe('invalid legacy JSON message prefix byte 0');
         expect(partial.messages).toStrictEqual([]);
         expect(partial.remaining).toStrictEqual(framed.subarray(0, 3));
 

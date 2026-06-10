@@ -13,6 +13,7 @@ import {
 } from '../../services/mediators/hyperswarm/src/negentropy/protocol.ts';
 import {
     decodeFramedMessages,
+    encodeFramedMessage,
 } from '../../services/mediators/hyperswarm/src/transport-framing.ts';
 
 type MediatorTestApi = typeof import('../../services/mediators/hyperswarm/src/hyperswarm-mediator.ts')['__test'];
@@ -86,6 +87,18 @@ function decodeWrittenMessageTypes(writes: Buffer[]): string[] {
     return framed.messages.map(message => JSON.parse(message.toString('utf8')).type);
 }
 
+function createWritableConnection(peerKey: string, writes: Buffer[] = []) {
+    return {
+        write: (data: Buffer | string) => {
+            writes.push(Buffer.isBuffer(data) ? Buffer.from(data) : Buffer.from(data, 'utf8'));
+        },
+        destroy: jest.fn(),
+        once: jest.fn(),
+        on: jest.fn(),
+        remotePublicKey: Buffer.from(peerKey, 'hex'),
+    };
+}
+
 describe('ordered catch-up mediator flow', () => {
     beforeAll(async () => {
         process.env = {
@@ -103,6 +116,133 @@ describe('ordered catch-up mediator flow', () => {
     afterAll(() => {
         process.env = { ...ORIGINAL_ENV };
         jest.resetModules();
+    });
+
+    it('sends exactly one initial raw ping while transport is unknown', async () => {
+        const peerKey = 'a'.repeat(64);
+        const writes: Buffer[] = [];
+        const connection = createWritableConnection(peerKey, writes);
+
+        mediatorTest.setSyncStore(createOrderedSyncStore([]));
+        mediatorTest.addConnection(peerKey, { connection });
+
+        await mediatorTest.sendPingToPeer(peerKey, 'initial');
+
+        expect(writes).toHaveLength(1);
+        expect(writes[0][0]).toBe('{'.charCodeAt(0));
+        expect(JSON.parse(writes[0].toString('utf8'))).toMatchObject({
+            type: 'ping',
+            transportFramingVersion: 1,
+        });
+        expect(mediatorTest.getConnectionState(peerKey)).toMatchObject({
+            initialPingSent: true,
+            transportMode: 'unknown',
+        });
+
+        await mediatorTest.sendPingToPeer(peerKey, 'periodic');
+        await mediatorTest.sendPingToPeer(peerKey, 'initial');
+
+        expect(writes).toHaveLength(1);
+    });
+
+    it('sends periodic raw pings after a peer negotiates legacy transport', async () => {
+        const peerKey = 'b'.repeat(64);
+        const writes: Buffer[] = [];
+        const connection = createWritableConnection(peerKey, writes);
+
+        mediatorTest.setSyncStore(createOrderedSyncStore([]));
+        mediatorTest.addConnection(peerKey, { connection });
+
+        await mediatorTest.receiveMsg(peerKey, {
+            type: 'ping',
+            time: '2026-06-09T00:00:00.000Z',
+            node: 'legacy-peer',
+            relays: [],
+        });
+
+        expect(mediatorTest.getConnectionState(peerKey)).toMatchObject({
+            transportMode: 'legacy',
+            inboundTransportMode: 'legacy',
+            peerTransportFramingVersion: null,
+        });
+
+        writes.length = 0;
+
+        await mediatorTest.sendPingToPeer(peerKey, 'periodic');
+
+        expect(writes).toHaveLength(1);
+        expect(writes[0][0]).toBe('{'.charCodeAt(0));
+        expect(JSON.parse(writes[0].toString('utf8'))).toMatchObject({
+            type: 'ping',
+            transportFramingVersion: 1,
+        });
+    });
+
+    it('switches inbound directly to framed after a framed-capable ping', async () => {
+        const peerKey = 'c'.repeat(64);
+        const connection = createWritableConnection(peerKey);
+        const firstPing = JSON.stringify({
+            type: 'ping',
+            time: '2026-06-09T00:00:00.000Z',
+            node: 'framed-peer',
+            relays: [],
+            transportFramingVersion: 1,
+        });
+        const secondPing = JSON.stringify({
+            type: 'ping',
+            time: '2026-06-09T00:00:01.000Z',
+            node: 'framed-peer',
+            relays: [],
+            transportFramingVersion: 1,
+        });
+
+        mediatorTest.setSyncStore(createOrderedSyncStore([]));
+        mediatorTest.addConnection(peerKey, { connection });
+
+        await mediatorTest.processInboundPeerData(peerKey, Buffer.concat([
+            Buffer.from(firstPing, 'utf8'),
+            encodeFramedMessage(secondPing),
+        ]));
+
+        expect(connection.destroy).not.toHaveBeenCalled();
+        expect(mediatorTest.getConnectionState(peerKey)).toMatchObject({
+            transportMode: 'framed',
+            inboundTransportMode: 'framed',
+            peerTransportFramingVersion: 1,
+        });
+    });
+
+    it('rejects a second coalesced raw ping after framed negotiation', async () => {
+        const peerKey = 'd'.repeat(64);
+        const connection = createWritableConnection(peerKey);
+        const firstPing = JSON.stringify({
+            type: 'ping',
+            time: '2026-06-09T00:00:00.000Z',
+            node: 'framed-peer',
+            relays: [],
+            transportFramingVersion: 1,
+        });
+        const secondPing = JSON.stringify({
+            type: 'ping',
+            time: '2026-06-09T00:00:01.000Z',
+            node: 'framed-peer',
+            relays: [],
+            transportFramingVersion: 1,
+        });
+
+        mediatorTest.setSyncStore(createOrderedSyncStore([]));
+        mediatorTest.addConnection(peerKey, { connection });
+
+        await mediatorTest.processInboundPeerData(peerKey, Buffer.concat([
+            Buffer.from(firstPing, 'utf8'),
+            Buffer.from(secondPing, 'utf8'),
+        ]));
+
+        expect(connection.destroy).toHaveBeenCalled();
+        expect(mediatorTest.getConnectionState(peerKey)).toMatchObject({
+            transportMode: 'framed',
+            inboundTransportMode: 'framed',
+        });
     });
 
     it('ignores inbound neg_open while ordered catch-up client session is active', async () => {
