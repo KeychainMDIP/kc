@@ -1,4 +1,5 @@
 import mockFs from 'mock-fs';
+import cluster from 'node:cluster';
 import HeliaClient from '@mdip/ipfs/helia';
 import { ExpectedExceptionError } from '@mdip/common/errors';
 
@@ -26,6 +27,17 @@ describe('stop', () => {
         const ipfs = await HeliaClient.create();
         await ipfs.stop();
         await ipfs.stop();
+    });
+
+    it('should clean up cluster message listeners added during start', async () => {
+        const before = cluster.listenerCount('message');
+        const ipfs = await HeliaClient.create({ cleanupGlobalListeners: true });
+
+        expect(cluster.listenerCount('message')).toBeGreaterThanOrEqual(before);
+
+        await ipfs.stop();
+
+        expect(cluster.listenerCount('message')).toBe(before);
     });
 });
 
