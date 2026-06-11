@@ -218,6 +218,20 @@ describe('hyperswarm transport framing', () => {
         expect(decoded.remaining.length).toBe(0);
     });
 
+    it('rejects invalid unknown transport data when neither legacy nor framed parsing works', () => {
+        const invalid = Buffer.from('[1,2,3]', 'utf8');
+        const decoded = decodeUnknownTransportMessages(invalid, DEFAULT_MAX_FRAMED_MESSAGE_BYTES, 1);
+
+        expect(decoded.transportMode).toBeNull();
+        expect(decoded.messages).toStrictEqual([]);
+        expect(decoded.remaining.length).toBe(0);
+        expect(decoded.legacyError).toBe(`invalid legacy JSON message prefix byte ${'['.charCodeAt(0)}`);
+        expect(decoded.framedError).toBe(
+            `framed message length ${invalid.readUInt32BE(0)} exceeds max ${DEFAULT_MAX_FRAMED_MESSAGE_BYTES}`
+        );
+        expect(decoded.error).toBe(`invalid unknown transport message: legacy=${decoded.legacyError}; framed=${decoded.framedError}`);
+    });
+
     it('preserves an incomplete framed-first message before transport mode is known', () => {
         const ping = JSON.stringify({
             type: 'ping',

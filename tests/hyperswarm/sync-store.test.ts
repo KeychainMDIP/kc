@@ -1,6 +1,8 @@
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
+import * as sqlite from 'sqlite';
+import sqlite3 from 'sqlite3';
 import { Operation } from '@mdip/gatekeeper/types';
 import SqliteOperationSyncStore from '../../services/mediators/hyperswarm/src/db/sqlite.ts';
 import InMemoryOperationSyncStore from '../../services/mediators/hyperswarm/src/db/memory.ts';
@@ -128,6 +130,16 @@ async function runStoreContractTests(store: OperationSyncStore): Promise<void> {
     expect(orderedAfterB.map(item => item.id)).toStrictEqual([recC.id]);
 
     await store.reset();
+    await store.upsertMany([
+        { ...recC, syncOrder: 20 },
+        { ...recB, syncOrder: 10 },
+    ]);
+
+    const orderedByDifferentSyncOrder = await store.iterateOrdered();
+    expect(orderedByDifferentSyncOrder.map(item => item.id)).toStrictEqual([recB.id, recC.id]);
+    expect(orderedByDifferentSyncOrder.map(item => item.syncOrder)).toStrictEqual([10, 20]);
+
+    await store.reset();
     expect(await store.count()).toBe(0);
     expect(await store.countOrdered()).toBe(0);
 
@@ -155,6 +167,17 @@ describe('InMemoryOperationSyncStore', () => {
         const rows = await store.getByIds([recA.id]);
         expect(rows[0].insertedAt).toBe(insertedAt);
         expect(await store.getByIds([])).toStrictEqual([]);
+    });
+
+    it('rejects records without an integer signed timestamp', async () => {
+        const store = new InMemoryOperationSyncStore();
+        await store.start();
+        await store.reset();
+
+        await expect(store.upsertMany([{
+            id: h('d'),
+            operation: opA,
+        } as any])).rejects.toThrow('Sync operation record signedTs must be an integer');
     });
 });
 
@@ -215,6 +238,65 @@ describe('SqliteOperationSyncStore', () => {
 
         expect(await store.upsertMany([])).toStrictEqual({ inserted: 0, updated: 0 });
         expect(await store.getByIds([])).toStrictEqual([]);
+    });
+
+    it('migrates legacy operations columns and backfills signed timestamps from ts', async () => {
+        const dataFolder = path.join(tmpRoot, 'data/hyperswarm');
+        await fs.mkdir(dataFolder, { recursive: true });
+        const db = await sqlite.open({
+            filename: path.join(dataFolder, 'operations.db'),
+            driver: sqlite3.Database,
+        });
+
+        await db.exec(`
+            CREATE TABLE operations (
+                id TEXT PRIMARY KEY,
+                ts INTEGER NOT NULL,
+                operation_json TEXT NOT NULL,
+                inserted_at INTEGER NOT NULL
+            );
+        `);
+        await db.run(
+            'INSERT INTO operations(id, ts, operation_json, inserted_at) VALUES (?, ?, ?, ?)',
+            recA.id,
+            1234,
+            JSON.stringify(opA),
+            5678,
+        );
+        await db.close();
+
+        const store = new SqliteOperationSyncStore('operations.db', dataFolder);
+        await store.start();
+
+        const migratedDb = (store as any).db;
+        await expect(migratedDb.all('PRAGMA table_info(operations)'))
+            .resolves
+            .toEqual(expect.arrayContaining([
+                expect.objectContaining({ name: 'sync_order' }),
+                expect.objectContaining({ name: 'signed_ts' }),
+                expect.objectContaining({ name: 'ts' }),
+            ]));
+
+        const rows = await store.getByIds([recA.id]);
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toMatchObject({
+            id: recA.id,
+            signedTs: 1234,
+            ts: 1234,
+            insertedAt: 5678,
+        });
+
+        await store.stop();
+    });
+
+    it('rejects records without an integer signed timestamp', async () => {
+        const store = new SqliteOperationSyncStore('operations.db', path.join(tmpRoot, 'data/hyperswarm'));
+        await store.start();
+
+        await expect(store.upsertMany([{
+            id: h('d'),
+            operation: opA,
+        } as any])).rejects.toThrow('Sync operation record signedTs must be an integer');
     });
 
     it('rolls back transaction when an upsert item fails serialization', async () => {

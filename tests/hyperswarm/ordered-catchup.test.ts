@@ -136,6 +136,24 @@ describe('ordered catch-up decision', () => {
 });
 
 describe('expected ordered catch-up request decision', () => {
+    it('does not expect a request when ordered catch-up is disabled', () => {
+        expect(getExpectedOrderedCatchupRequestDecision({
+            enabled: false,
+            localOperationCount: 100,
+            localOrderedOperationCount: 100,
+            peerCapabilities: makePeer({
+                operationCount: 0,
+                orderedOperationCount: 0,
+            }),
+            requiredVersion: 1,
+            threshold: 25,
+        })).toMatchObject({
+            expectRequest: false,
+            reason: 'disabled',
+            gap: 0,
+        });
+    });
+
     it('expects an empty ordered-catchup peer to request from a ready local node', () => {
         expect(getExpectedOrderedCatchupRequestDecision({
             enabled: true,
@@ -191,6 +209,41 @@ describe('expected ordered catch-up request decision', () => {
         });
     });
 
+    it('requires peer support and operation count metadata before expecting a request', () => {
+        expect(getExpectedOrderedCatchupRequestDecision({
+            enabled: true,
+            localOperationCount: 100,
+            localOrderedOperationCount: 100,
+            peerCapabilities: makePeer({
+                orderedCatchup: false,
+                operationCount: 0,
+                orderedOperationCount: 0,
+            }),
+            requiredVersion: 1,
+            threshold: 25,
+        })).toMatchObject({
+            expectRequest: false,
+            reason: 'peer_unsupported',
+            gap: 0,
+        });
+
+        expect(getExpectedOrderedCatchupRequestDecision({
+            enabled: true,
+            localOperationCount: 100,
+            localOrderedOperationCount: 100,
+            peerCapabilities: makePeer({
+                operationCount: null,
+                orderedOperationCount: null,
+            }),
+            requiredVersion: 1,
+            threshold: 25,
+        })).toMatchObject({
+            expectRequest: false,
+            reason: 'peer_counts_missing',
+            gap: 0,
+        });
+    });
+
     it('does not expect a request when the peer is not sufficiently behind', () => {
         expect(getExpectedOrderedCatchupRequestDecision({
             enabled: true,
@@ -206,6 +259,24 @@ describe('expected ordered catch-up request decision', () => {
             expectRequest: false,
             reason: 'not_far_behind',
             gap: 10,
+        });
+    });
+
+    it('does not expect a request when the peer is not behind', () => {
+        expect(getExpectedOrderedCatchupRequestDecision({
+            enabled: true,
+            localOperationCount: 100,
+            localOrderedOperationCount: 100,
+            peerCapabilities: makePeer({
+                operationCount: 100,
+                orderedOperationCount: 100,
+            }),
+            requiredVersion: 1,
+            threshold: 25,
+        })).toMatchObject({
+            expectRequest: false,
+            reason: 'peer_not_behind',
+            gap: 0,
         });
     });
 });

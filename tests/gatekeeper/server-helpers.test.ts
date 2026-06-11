@@ -158,6 +158,8 @@ describe('gatekeeper server helpers', () => {
     });
 
     it('classifies database connectivity errors', () => {
+        expect(helpers.isDatabaseConnectivityError('ECONNREFUSED')).toBe(false);
+
         expect(helpers.isDatabaseConnectivityError({
             name: 'MongoServerSelectionError',
             message: 'getaddrinfo ENOTFOUND mongodb',
@@ -172,9 +174,22 @@ describe('gatekeeper server helpers', () => {
         })).toBe(true);
 
         expect(helpers.isDatabaseConnectivityError({
+            name: 'AggregateError',
+            errors: [
+                { name: 'ValidationError', message: 'request body must be an object' },
+                { name: 'Error', message: 'connect ETIMEDOUT 127.0.0.1:27017' },
+            ],
+        })).toBe(true);
+
+        expect(helpers.isDatabaseConnectivityError({
             name: 'ValidationError',
             message: 'request body must be an object',
         })).toBe(false);
+
+        expect(helpers.databaseUnavailableResponse()).toStrictEqual({
+            error: 'database_unavailable',
+            message: 'Gatekeeper database is unavailable while exporting index',
+        });
     });
 
     it('exports index only when the database is ready', async () => {

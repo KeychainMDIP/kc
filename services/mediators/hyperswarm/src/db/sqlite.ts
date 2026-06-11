@@ -87,9 +87,6 @@ export default class SqliteOperationSyncStore implements OperationSyncStore {
                 inserted_at INTEGER NOT NULL
             );
 
-            CREATE INDEX IF NOT EXISTS idx_operations_signed_ts_id ON operations (signed_ts, id);
-            CREATE INDEX IF NOT EXISTS idx_operations_sync_order_id ON operations (sync_order, id);
-
             CREATE TABLE IF NOT EXISTS sync_state (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL

@@ -325,6 +325,159 @@ describe('bootstrapSyncStoreFromGatekeeper', () => {
         expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor)).toBe('12');
     });
 
+    it('rejects inconsistent saved snapshot cursor state', async () => {
+        const storeWithCursorOnly = new InMemoryOperationSyncStore();
+        await storeWithCursorOnly.start();
+        await storeWithCursorOnly.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotCursor, 'did:test:a');
+
+        await expect(bootstrapSyncStoreFromGatekeeper(storeWithCursorOnly, {
+            exportIndex: jest.fn(),
+        })).rejects.toThrow('Snapshot cursor found without checkpointCursor');
+
+        const storeWithCheckpointOnly = new InMemoryOperationSyncStore();
+        await storeWithCheckpointOnly.start();
+        await storeWithCheckpointOnly.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotCheckpointCursor, '12');
+
+        await expect(bootstrapSyncStoreFromGatekeeper(storeWithCheckpointOnly, {
+            exportIndex: jest.fn(),
+        })).rejects.toThrow('Snapshot checkpointCursor found without cursor');
+    });
+
+    it('rejects malformed snapshot export responses', async () => {
+        const wrongModeStore = new InMemoryOperationSyncStore();
+        await wrongModeStore.start();
+
+        await expect(bootstrapSyncStoreFromGatekeeper(wrongModeStore, {
+            exportIndex: jest.fn(async () => changesResponse({ cursor: '1', operations: [] })),
+        })).rejects.toThrow('Expected snapshot export response, got changes');
+
+        const missingCheckpointStore = new InMemoryOperationSyncStore();
+        await missingCheckpointStore.start();
+
+        await expect(bootstrapSyncStoreFromGatekeeper(missingCheckpointStore, {
+            exportIndex: jest.fn(async () => {
+                const response = snapshotResponse({
+                    did: 'did:test:a',
+                    events: [],
+                    cursor: 'did:test:a',
+                    checkpointCursor: '12',
+                });
+                delete (response as { checkpointCursor?: string | null }).checkpointCursor;
+                return response;
+            }),
+        })).rejects.toThrow('Snapshot export response missing checkpointCursor');
+
+        const stalledCursorStore = new InMemoryOperationSyncStore();
+        await stalledCursorStore.start();
+
+        await expect(bootstrapSyncStoreFromGatekeeper(stalledCursorStore, {
+            exportIndex: jest.fn(async () => snapshotResponse({
+                did: 'did:test:a',
+                events: [],
+                cursor: null,
+                checkpointCursor: '12',
+                hasMore: true,
+            })),
+        })).rejects.toThrow('Snapshot export did not advance cursor');
+    });
+
+    it('handles paginated changes and rejects malformed changes export responses', async () => {
+        const paginatedStore = new InMemoryOperationSyncStore();
+        await paginatedStore.start();
+        await paginatedStore.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotComplete, 'true');
+        await paginatedStore.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor, '12');
+
+        const opA = makeOperation('a', '2026-02-10T10:00:00.000Z');
+        const opB = makeOperation('b', '2026-02-10T11:00:00.000Z');
+        const paginatedGatekeeper = {
+            exportIndex: jest.fn()
+                .mockResolvedValueOnce(changesResponse({
+                    cursor: '13',
+                    operations: [makeEvent(opA, 'did:test:a')],
+                    hasMore: true,
+                }))
+                .mockResolvedValueOnce(changesResponse({
+                    cursor: '14',
+                    operations: [makeEvent(opB, 'did:test:b')],
+                })),
+        };
+
+        const result = await bootstrapSyncStoreFromGatekeeper(paginatedStore, paginatedGatekeeper);
+
+        expect(result).toMatchObject({
+            mode: 'changes',
+            pages: 2,
+            inserted: 2,
+        });
+        expect(paginatedGatekeeper.exportIndex).toHaveBeenNthCalledWith(2, {
+            mode: 'changes',
+            cursor: '13',
+            limit: 500,
+            includeOperations: true,
+        });
+        expect(await paginatedStore.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor)).toBe('14');
+
+        const wrongModeStore = new InMemoryOperationSyncStore();
+        await wrongModeStore.start();
+        await wrongModeStore.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotComplete, 'true');
+
+        await expect(bootstrapSyncStoreFromGatekeeper(wrongModeStore, {
+            exportIndex: jest.fn(async () => snapshotResponse({
+                did: 'did:test:a',
+                events: [],
+                cursor: 'did:test:a',
+                checkpointCursor: '12',
+            })),
+        })).rejects.toThrow('Expected changes export response, got snapshot');
+
+        const stalledCursorStore = new InMemoryOperationSyncStore();
+        await stalledCursorStore.start();
+        await stalledCursorStore.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotComplete, 'true');
+        await stalledCursorStore.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor, '12');
+
+        await expect(bootstrapSyncStoreFromGatekeeper(stalledCursorStore, {
+            exportIndex: jest.fn(async () => changesResponse({
+                cursor: '12',
+                operations: [],
+                hasMore: true,
+            })),
+        })).rejects.toThrow('Changes export did not advance cursor');
+    });
+
+    it('allows empty and non-numeric saved changes cursors when checking gatekeeper checkpoint compatibility', async () => {
+        const emptyCursorStore = new InMemoryOperationSyncStore();
+        await emptyCursorStore.start();
+        await emptyCursorStore.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotComplete, 'true');
+        await emptyCursorStore.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor, '');
+
+        await expect(bootstrapSyncStoreFromGatekeeper(emptyCursorStore, {
+            exportIndex: jest.fn(async () => changesResponse({
+                cursor: '0',
+                checkpointCursor: '0',
+                operations: [],
+            })),
+        })).resolves.toMatchObject({
+            mode: 'changes',
+            pages: 1,
+        });
+
+        const nonNumericCursorStore = new InMemoryOperationSyncStore();
+        await nonNumericCursorStore.start();
+        await nonNumericCursorStore.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotComplete, 'true');
+        await nonNumericCursorStore.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor, 'not-a-number');
+
+        await expect(bootstrapSyncStoreFromGatekeeper(nonNumericCursorStore, {
+            exportIndex: jest.fn(async () => changesResponse({
+                cursor: '0',
+                checkpointCursor: '0',
+                operations: [],
+            })),
+        })).resolves.toMatchObject({
+            mode: 'changes',
+            pages: 1,
+        });
+    });
+
     it('does not save the next cursor if page persistence fails', async () => {
         const store = new InMemoryOperationSyncStore();
         await store.start();
