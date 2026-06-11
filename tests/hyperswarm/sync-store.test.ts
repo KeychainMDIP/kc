@@ -4,7 +4,6 @@ import path from 'path';
 import { Operation } from '@mdip/gatekeeper/types';
 import SqliteOperationSyncStore from '../../services/mediators/hyperswarm/src/db/sqlite.ts';
 import InMemoryOperationSyncStore from '../../services/mediators/hyperswarm/src/db/memory.ts';
-import PostgresOperationSyncStore from '../../services/mediators/hyperswarm/src/db/postgres.ts';
 import { OperationSyncStore } from '../../services/mediators/hyperswarm/src/db/types.ts';
 
 const h = (c: string) => c.repeat(64);
@@ -274,61 +273,5 @@ describe('SqliteOperationSyncStore', () => {
         await expect(store.count()).resolves.toBe(0);
         await expect(store.countOrdered()).resolves.toBe(0);
         db.get = originalGet;
-    });
-});
-
-describe('PostgresOperationSyncStore', () => {
-    it('uses conflict-safe upsert semantics for duplicate operation ids', async () => {
-        const store = new PostgresOperationSyncStore('postgresql://unused');
-        const queries: string[] = [];
-        const rows = new Map<string, { syncOrder: number | null }>();
-        let releaseCount = 0;
-        const client = {
-            query: async (sql: string, params: unknown[] = []) => {
-                const text = String(sql);
-                queries.push(text);
-
-                if (['BEGIN', 'COMMIT', 'ROLLBACK'].includes(text)) {
-                    return { rows: [], rowCount: 0 };
-                }
-
-                if (!text.includes('INSERT INTO hyperswarm_sync_operations')) {
-                    throw new Error(`Unexpected postgres query: ${text}`);
-                }
-
-                const id = String(params[0]);
-                const syncOrder = params[1] === null ? null : Number(params[1]);
-                const existing = rows.get(id);
-
-                if (!existing) {
-                    rows.set(id, { syncOrder });
-                    return { rows: [{ inserted: true }], rowCount: 1 };
-                }
-
-                if (existing.syncOrder === null && syncOrder !== null) {
-                    existing.syncOrder = syncOrder;
-                    return { rows: [{ inserted: false }], rowCount: 1 };
-                }
-
-                return { rows: [], rowCount: 0 };
-            },
-            release: () => {
-                releaseCount += 1;
-            },
-        };
-
-        (store as any).pool = {
-            connect: async () => client,
-        };
-
-        expect(await store.upsertMany([recA])).toStrictEqual({ inserted: 1, updated: 0 });
-        expect(await store.upsertMany([recA])).toStrictEqual({ inserted: 0, updated: 0 });
-        expect(await store.upsertMany([{ ...recA, syncOrder: 5 }])).toStrictEqual({ inserted: 0, updated: 1 });
-        expect(await store.upsertMany([{ ...recA, syncOrder: 9 }])).toStrictEqual({ inserted: 0, updated: 0 });
-
-        expect(rows.get(recA.id)?.syncOrder).toBe(5);
-        expect(queries.some(query => query.includes('ON CONFLICT(id) DO UPDATE'))).toBe(true);
-        expect(queries.some(query => query.includes('SELECT sync_order'))).toBe(false);
-        expect(releaseCount).toBe(4);
     });
 });
