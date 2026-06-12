@@ -1,4 +1,7 @@
-import { Operation } from '@mdip/gatekeeper/types';
+import {
+    GatekeeperEvent,
+    Operation,
+} from '@mdip/gatekeeper/types';
 import { jest } from '@jest/globals';
 import InMemoryOperationSyncStore from '../../services/mediators/hyperswarm/src/db/memory.ts';
 import {
@@ -7,6 +10,7 @@ import {
     filterOperationsByAcceptedHashes,
     filterIndexRejectedOperations,
     mapAcceptedOperationsToSyncRecords,
+    mapIndexExportOperationsToSyncRecords,
     sortOperationsBySyncKey,
 } from '../../services/mediators/hyperswarm/src/sync-persistence.ts';
 import {
@@ -65,14 +69,45 @@ describe('sync-persistence helpers', () => {
 
         expect(result.records.length).toBe(1);
         expect(result.records[0].id).toBe(h('a'));
+        expect(result.records[0].syncOrder).toBeUndefined();
+        expect(result.records[0].signedTs).toBe(Math.floor(Date.parse(valid.signature!.signed) / 1000));
         expect(result.records[0].ts).toBe(Math.floor(Date.parse(valid.signature!.signed) / 1000));
         expect(result.invalid).toBe(1);
+    });
+
+    it('maps index export operation rows with sync order', () => {
+        const valid = makeCreateOp('A', '2026-02-10T10:00:00.000Z');
+        const event: GatekeeperEvent = {
+            registry: 'hyperswarm',
+            time: valid.signature!.signed,
+            did: 'did:test:a',
+            operation: valid,
+        };
+
+        const result = mapIndexExportOperationsToSyncRecords([{
+            seq: 42,
+            did: 'did:test:a',
+            event,
+            operationHash: valid.signature!.hash,
+        }]);
+
+        expect(result.records).toStrictEqual([
+            {
+                id: h('a'),
+                syncOrder: 42,
+                signedTs: Math.floor(Date.parse(valid.signature!.signed) / 1000),
+                ts: Math.floor(Date.parse(valid.signature!.signed) / 1000),
+                operation: valid,
+            },
+        ]);
+        expect(result.invalid).toBe(0);
     });
 
     it('maps pre-MDIP signed timestamp to MDIP epoch seconds', () => {
         const legacyEpoch = makeCreateOp('a', '1971-01-01T00:00:00.000Z');
         const result = mapAcceptedOperationsToSyncRecords([legacyEpoch]);
         expect(result.records.length).toBe(1);
+        expect(result.records[0].signedTs).toBe(MDIP_EPOCH_SECONDS);
         expect(result.records[0].ts).toBe(MDIP_EPOCH_SECONDS);
         expect(result.invalid).toBe(0);
     });

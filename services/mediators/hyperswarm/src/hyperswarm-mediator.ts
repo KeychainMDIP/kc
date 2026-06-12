@@ -1,9 +1,7 @@
 import Hyperswarm, { HyperswarmConnection } from 'hyperswarm';
 import goodbye from 'graceful-goodbye';
 import b4a from 'b4a';
-import { randomBytes } from 'crypto';
-import { sha256 } from '@noble/hashes/sha2.js';
-import { utf8ToBytes } from '@noble/hashes/utils.js';
+import { createHash, randomBytes } from 'crypto';
 import asyncLib from 'async';
 import { EventEmitter } from 'events';
 
@@ -14,7 +12,12 @@ import { GatekeeperEvent, Operation } from '@mdip/gatekeeper/types';
 import CipherNode from '@mdip/cipher/node';
 import { childLogger } from '@mdip/common/logger';
 import config from './config.js';
-import type { OperationSyncStore, SyncStoreCursor } from './db/types.js';
+import type {
+    OperationSyncStore,
+    SyncOperationRecord,
+    SyncStoreCursor,
+    SyncStoreOrderedCursor,
+} from './db/types.js';
 import SqliteOperationSyncStore from './db/sqlite.js';
 import PostgresOperationSyncStore from './db/postgres.js';
 import NegentropyAdapter, {
@@ -25,6 +28,7 @@ import NegentropyAdapter, {
 } from './negentropy/adapter.js';
 import {
     NEG_SYNC_ID_RE,
+    buildOrderedCatchupCapabilities,
     chooseConnectSyncMode,
     decodeNegentropyFrame,
     encodeNegentropyFrame,
@@ -39,10 +43,13 @@ import {
     type SyncMode,
 } from './negentropy/protocol.js';
 import {
+    decideInboundNegOpenConflict,
+    hasActiveOrderedCatchupSession,
     shouldAcceptInboundLegacySync,
     shouldDeferLegacySync,
     shouldSchedulePeriodicRepair,
     shouldStartConnectTimeNegentropy,
+    shouldStartPostOrderedCatchupNegentropy,
 } from './negentropy/policy.js';
 import {
     addAggregateSample,
@@ -58,6 +65,10 @@ import {
     chunkOperationsForPush,
 } from './negentropy/transfer.js';
 import {
+    normalizeInboundOpsPushBatch,
+    orderSyncRecordsForPush,
+} from './operation-order.js';
+import {
     compareSyncCursor,
     getContinuationCursorDecision,
 } from './negentropy/cursor.js';
@@ -72,16 +83,20 @@ import {
     filterKnownOperations,
     filterIndexRejectedOperations,
     mapAcceptedOperationsToSyncRecords,
-    sortOperationsBySyncKey,
 } from './sync-persistence.js';
 import { resolveAcceptedOperationsToPersist } from './sync-store-mirroring.js';
 import {
     mapOperationToSyncKey,
 } from './sync-mapping.js';
 import {
+    getExpectedOrderedCatchupRequestDecision,
+    getOrderedCatchupDecision,
+} from './ordered-catchup.js';
+import {
     DEFAULT_MAX_FRAMED_MESSAGE_BYTES,
     decodeFramedMessages,
     decodeLegacyJsonMessages,
+    decodeUnknownTransportMessages,
     encodeFramedMessage,
     supportsLegacyRawTransportMessage,
 } from './transport-framing.js';
@@ -187,6 +202,25 @@ interface OpsPushMessage extends HyperMessageBase {
     data: Operation[];
 }
 
+interface OrderedCatchupReqMessage extends HyperMessageBase {
+    type: 'ordered_catchup_req';
+    sessionId: string;
+    cursor?: SyncStoreOrderedCursor;
+}
+
+interface OrderedCatchupPushMessage extends HyperMessageBase {
+    type: 'ordered_catchup_push';
+    sessionId: string;
+    cursor?: SyncStoreOrderedCursor;
+    hasMore: boolean;
+    data: Operation[];
+}
+
+interface OrderedCatchupDoneMessage extends HyperMessageBase {
+    type: 'ordered_catchup_done';
+    sessionId: string;
+}
+
 type HyperMessage =
     | BatchMessage
     | SyncMessage
@@ -195,7 +229,10 @@ type HyperMessage =
     | NegMsgMessage
     | NegCloseMessage
     | OpsReqMessage
-    | OpsPushMessage;
+    | OpsPushMessage
+    | OrderedCatchupReqMessage
+    | OrderedCatchupPushMessage
+    | OrderedCatchupDoneMessage;
 
 interface ImportQueueTask {
     name: string;
@@ -231,16 +268,38 @@ interface ConnectionInfo {
     legacyOutboundDeferred: boolean;
     legacyInboundDeferred: DeferredLegacyInboundTask | null;
     legacyFallbackNoted: boolean;
+    orderedCatchupAttempted: boolean;
+    orderedCatchupClientSessionId: string | null;
+    orderedCatchupServerSessionId: string | null;
+    orderedCatchupServerLastActivity: number;
+    orderedCatchupServerPendingSince: number;
+    orderedCatchupServerPendingUntil: number;
+    orderedCatchupServerPendingReason: string | null;
+    orderedCatchupServerPendingGap: number;
+    initialPingSent: boolean;
     transportMode: 'unknown' | 'legacy' | 'framed';
+    inboundTransportMode: 'unknown' | 'legacy' | 'framed';
     peerTransportFramingVersion: number | null;
     inboundBuffer: Buffer;
     inboundReceiveChain: Promise<void>;
 }
 
+interface MalformedPeerState {
+    strikes: number;
+    firstSeenAt: number;
+    lastSeenAt: number;
+    cooldownUntil: number;
+    lastReason: string;
+    rejectedConnections: number;
+    lastRejectLogAt: number;
+}
+
+type PeerSessionMode = SyncMode | 'ordered_catchup';
+
 interface PeerSyncSession {
     sessionId: string;
     peerKey: string;
-    mode: SyncMode;
+    mode: PeerSessionMode;
     initiator: boolean;
     windows: ReconciliationWindow[];
     windowIndex: number;
@@ -261,6 +320,7 @@ interface PeerSyncSession {
     receivedPushMaxCursor: SyncStoreCursor | null;
     remoteWindowCappedByRecords: boolean;
     remoteWindowLastCursor: SyncStoreCursor | null;
+    orderedCatchupCursor: SyncStoreOrderedCursor | null;
 }
 
 interface MediatorSyncStats {
@@ -270,7 +330,12 @@ interface MediatorSyncStats {
     modeSelectionsLegacyMissingCapabilities: number;
     modeSelectionsLegacyNegentropyDisabled: number;
     modeSelectionsLegacyVersionMismatch: number;
+    modeSelectionsLegacyTransportFramingUnsupported: number;
     modeSelectionsNoModeLegacyDisabled: number;
+    modeSelectionsNoModeMissingCapabilities: number;
+    modeSelectionsNoModeNegentropyDisabled: number;
+    modeSelectionsNoModeVersionMismatch: number;
+    modeSelectionsNoModeTransportFramingUnsupported: number;
     queueOpsRelayed: number;
     queueOpsImported: number;
     queueDelayMs: AggregateMetric;
@@ -289,10 +354,19 @@ interface MediatorSyncStats {
     negentropyOpsReqReceived: number;
     negentropyOpsPushSent: number;
     negentropyOpsPushReceived: number;
+    orderedCatchupSessionsStarted: number;
+    orderedCatchupSessionsCompleted: number;
+    orderedCatchupSessionsFailed: number;
+    orderedCatchupPagesSent: number;
+    orderedCatchupPagesReceived: number;
+    orderedCatchupOpsSent: number;
+    orderedCatchupOpsReceived: number;
     opsApplied: number;
     opsRejected: number;
     bytesSent: number;
     bytesReceived: number;
+    malformedPeerCooldowns: number;
+    malformedPeerConnectionsRejected: number;
     syncDurationMs: AggregateMetric;
 }
 
@@ -328,7 +402,8 @@ EventEmitter.defaultMaxListeners = 100;
 
 const REGISTRY = 'hyperswarm';
 const BATCH_SIZE = 100;
-const NEGENTROPY_VERSION = 2;
+const NEGENTROPY_VERSION = 1;
+const ORDERED_CATCHUP_VERSION = 1;
 const TRANSPORT_FRAMING_VERSION = 1;
 const MAX_FRAMED_MESSAGE_BYTES = DEFAULT_MAX_FRAMED_MESSAGE_BYTES;
 const NEG_SESSION_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
@@ -340,12 +415,19 @@ const NEG_REPAIR_INTERVAL_MS = config.negentropyIntervalSeconds * 1000;
 const NEG_ADAPTER_MAX_AGE_MS = 60 * 1000;
 const LEGACY_CAPABILITY_GRACE_MS = 5 * 1000;
 const LEGACY_NEGENTROPY_FALLBACK_MS = 60 * 1000;
+const ORDERED_CATCHUP_SERVER_EXPECTATION_MS = 5 * 1000;
+const MALFORMED_PEER_STRIKE_WINDOW_MS = 5 * 60 * 1000;
+const MALFORMED_PEER_COOLDOWN_MS = 5 * 60 * 1000;
+const MALFORMED_PEER_REJECT_LOG_INTERVAL_MS = 60 * 1000;
+const MALFORMED_PEER_MAX_STRIKES = 3;
 const connectionInfo: Record<string, ConnectionInfo> = {};
 const knownNodes: Record<string, NodeInfo> = {};
 const knownPeers: Record<string, string> = {};
 const addedPeers: Record<string, number> = {};
 const badPeers: Record<string, number> = {};
+const malformedPeers: Record<string, MalformedPeerState> = {};
 const peerSessions = new Map<string, PeerSyncSession>();
+const orderedCatchupPostImportPeers = new Set<string>();
 const syncStats: MediatorSyncStats = {
     modeSelectionsTotal: 0,
     modeSelectionsLegacy: 0,
@@ -353,7 +435,12 @@ const syncStats: MediatorSyncStats = {
     modeSelectionsLegacyMissingCapabilities: 0,
     modeSelectionsLegacyNegentropyDisabled: 0,
     modeSelectionsLegacyVersionMismatch: 0,
+    modeSelectionsLegacyTransportFramingUnsupported: 0,
     modeSelectionsNoModeLegacyDisabled: 0,
+    modeSelectionsNoModeMissingCapabilities: 0,
+    modeSelectionsNoModeNegentropyDisabled: 0,
+    modeSelectionsNoModeVersionMismatch: 0,
+    modeSelectionsNoModeTransportFramingUnsupported: 0,
     queueOpsRelayed: 0,
     queueOpsImported: 0,
     queueDelayMs: createAggregateMetric(),
@@ -372,10 +459,19 @@ const syncStats: MediatorSyncStats = {
     negentropyOpsReqReceived: 0,
     negentropyOpsPushSent: 0,
     negentropyOpsPushReceived: 0,
+    orderedCatchupSessionsStarted: 0,
+    orderedCatchupSessionsCompleted: 0,
+    orderedCatchupSessionsFailed: 0,
+    orderedCatchupPagesSent: 0,
+    orderedCatchupPagesReceived: 0,
+    orderedCatchupOpsSent: 0,
+    orderedCatchupOpsReceived: 0,
     opsApplied: 0,
     opsRejected: 0,
     bytesSent: 0,
     bytesReceived: 0,
+    malformedPeerCooldowns: 0,
+    malformedPeerConnectionsRejected: 0,
     syncDurationMs: createAggregateMetric(),
 };
 
@@ -418,6 +514,112 @@ async function createSwarm(): Promise<void> {
     log.info(`new hyperswarm peer id: ${shortName(nodeKey)} (${config.nodeName}) joined topic: ${shortTopic} using protocol: ${config.protocol}`);
 }
 
+function getMalformedPeerCooldown(peerKey: string, nowMs = Date.now()): MalformedPeerState | null {
+    const state = malformedPeers[peerKey];
+    if (!state) {
+        return null;
+    }
+
+    if (state.cooldownUntil <= nowMs) {
+        if ((nowMs - state.lastSeenAt) > MALFORMED_PEER_STRIKE_WINDOW_MS) {
+            delete malformedPeers[peerKey];
+        }
+        return null;
+    }
+
+    return state;
+}
+
+function noteMalformedPeer(peerKey: string, reason: string): void {
+    const nowMs = Date.now();
+    let state = malformedPeers[peerKey];
+    if (!state || (nowMs - state.firstSeenAt) > MALFORMED_PEER_STRIKE_WINDOW_MS) {
+        state = {
+            strikes: 0,
+            firstSeenAt: nowMs,
+            lastSeenAt: nowMs,
+            cooldownUntil: 0,
+            lastReason: reason,
+            rejectedConnections: 0,
+            lastRejectLogAt: 0,
+        };
+        malformedPeers[peerKey] = state;
+    }
+
+    state.strikes += 1;
+    state.lastSeenAt = nowMs;
+    state.lastReason = reason;
+
+    if (state.strikes >= MALFORMED_PEER_MAX_STRIKES && state.cooldownUntil <= nowMs) {
+        state.cooldownUntil = nowMs + MALFORMED_PEER_COOLDOWN_MS;
+        state.rejectedConnections = 0;
+        state.lastRejectLogAt = 0;
+        syncStats.malformedPeerCooldowns += 1;
+        log.warn(
+            {
+                peer: shortName(peerKey),
+                reason,
+                strikes: state.strikes,
+                cooldownMs: MALFORMED_PEER_COOLDOWN_MS,
+            },
+            'peer entered malformed message cooldown'
+        );
+    }
+}
+
+function rejectMalformedPeerIfCoolingDown(peerKey: string, conn: HyperswarmConnection): boolean {
+    const state = getMalformedPeerCooldown(peerKey);
+    if (!state) {
+        return false;
+    }
+
+    const nowMs = Date.now();
+    state.rejectedConnections += 1;
+    syncStats.malformedPeerConnectionsRejected += 1;
+
+    const logPayload = {
+        peer: shortName(peerKey),
+        lastReason: state.lastReason,
+        strikes: state.strikes,
+        rejectedConnections: state.rejectedConnections,
+        remainingMs: state.cooldownUntil - nowMs,
+    };
+    if ((nowMs - state.lastRejectLogAt) >= MALFORMED_PEER_REJECT_LOG_INTERVAL_MS) {
+        state.lastRejectLogAt = nowMs;
+        log.warn(logPayload, 'rejecting hyperswarm peer during malformed message cooldown');
+    } else {
+        log.debug(logPayload, 'rejecting hyperswarm peer during malformed message cooldown');
+    }
+
+    try {
+        if (typeof conn.destroy === 'function') {
+            conn.destroy();
+        }
+    }
+    catch (error) {
+        log.warn({ error, peer: shortName(peerKey) }, 'failed to destroy rejected malformed peer connection');
+    }
+    return true;
+}
+
+function clearMalformedPeer(peerKey: string, reason: string): void {
+    const state = malformedPeers[peerKey];
+    if (!state) {
+        return;
+    }
+
+    delete malformedPeers[peerKey];
+    log.info(
+        {
+            peer: shortName(peerKey),
+            reason,
+            strikes: state.strikes,
+            rejectedConnections: state.rejectedConnections,
+        },
+        'cleared malformed peer cooldown state'
+    );
+}
+
 let syncQueue = asyncLib.queue<HyperswarmConnection, asyncLib.ErrorCallback>(
     async function (conn, callback) {
         try {
@@ -447,7 +649,15 @@ function addConnection(conn: HyperswarmConnection): void {
     const peerKey = b4a.toString(conn.remotePublicKey, 'hex');
     const peerName = shortName(peerKey);
 
+    if (rejectMalformedPeerIfCoolingDown(peerKey, conn)) {
+        return;
+    }
+
     conn.once('close', () => closeConnection(peerKey));
+    conn.once('error', error => {
+        log.warn({ error, peer: peerName }, 'hyperswarm peer connection error');
+        terminatePeerConnection(peerKey, 'connection_error');
+    });
     conn.on('data', data => queueInboundPeerData(peerKey, data));
 
     log.info(`received connection from: ${peerName}`);
@@ -464,6 +674,11 @@ function addConnection(conn: HyperswarmConnection): void {
             advertised: false,
             negentropy: false,
             version: null,
+            orderedCatchup: false,
+            orderedCatchupVersion: null,
+            orderedCatchupReady: false,
+            operationCount: null,
+            orderedOperationCount: null,
         },
         syncMode: 'unknown',
         syncStarted: false,
@@ -472,7 +687,17 @@ function addConnection(conn: HyperswarmConnection): void {
         legacyOutboundDeferred: false,
         legacyInboundDeferred: null,
         legacyFallbackNoted: false,
+        orderedCatchupAttempted: false,
+        orderedCatchupClientSessionId: null,
+        orderedCatchupServerSessionId: null,
+        orderedCatchupServerLastActivity: 0,
+        orderedCatchupServerPendingSince: 0,
+        orderedCatchupServerPendingUntil: 0,
+        orderedCatchupServerPendingReason: null,
+        orderedCatchupServerPendingGap: 0,
+        initialPingSent: false,
         transportMode: 'unknown',
+        inboundTransportMode: 'unknown',
         peerTransportFramingVersion: null,
         inboundBuffer: Buffer.alloc(0),
         inboundReceiveChain: Promise.resolve(),
@@ -481,7 +706,7 @@ function addConnection(conn: HyperswarmConnection): void {
     const peerNames = Object.values(connectionInfo).map(info => info.peerName);
     log.debug(`--- ${peerNames.length} nodes connected, detected nodes: ${peerNames.join(', ')}`);
 
-    void sendPingToPeer(peerKey);
+    void sendPingToPeer(peerKey, 'initial');
 }
 
 function closeConnection(peerKey: string): void {
@@ -578,15 +803,97 @@ function setPeerTransportMode(
     }, 'updated hyperswarm transport mode');
 }
 
-function buildPingMessage(): PingMessage {
-    const capabilities = config.negentropyEnabled
-        ? {
-            negentropy: true,
-            negentropyVersion: NEGENTROPY_VERSION,
+function setPeerInboundTransportMode(
+    peerKey: string,
+    inboundTransportMode: ConnectionInfo['inboundTransportMode'],
+    reason: string,
+): void {
+    const conn = connectionInfo[peerKey];
+    if (!conn || conn.inboundTransportMode === inboundTransportMode) {
+        return;
+    }
+
+    const previousMode = conn.inboundTransportMode;
+    conn.inboundTransportMode = inboundTransportMode;
+    log.debug({
+        peer: shortName(peerKey),
+        previousMode,
+        inboundTransportMode,
+        reason,
+    }, 'updated hyperswarm inbound transport mode');
+}
+
+function classifyPendingBuffer(buffer: Buffer): {
+    firstByte: number | null;
+    startsWithJsonObject: boolean;
+    printablePrefix: string;
+} {
+    let offset = 0;
+    while (offset < buffer.length) {
+        const byte = buffer[offset];
+        if (byte !== 0x20 && byte !== 0x09 && byte !== 0x0a && byte !== 0x0d) {
+            break;
         }
-        : {
+        offset += 1;
+    }
+
+    const firstByte = offset < buffer.length ? buffer[offset] : null;
+    const prefix = buffer.subarray(offset, Math.min(buffer.length, offset + 32));
+    const printablePrefix = prefix.toString('utf8').replace(/[^\x20-\x7e]/g, '.');
+
+    return {
+        firstByte,
+        startsWithJsonObject: firstByte === 0x7b,
+        printablePrefix,
+    };
+}
+
+async function buildPeerCapabilities(): Promise<PeerCapabilities> {
+    if (!config.negentropyEnabled) {
+        return {
             negentropy: false,
+            ...buildOrderedCatchupCapabilities({
+                enabled: false,
+                version: ORDERED_CATCHUP_VERSION,
+                operationCount: 0,
+                orderedOperationCount: 0,
+            }),
         };
+    }
+
+    const orderedStatus = await getLocalOrderedCatchupStatus();
+
+    return {
+        negentropy: true,
+        negentropyVersion: NEGENTROPY_VERSION,
+        ...buildOrderedCatchupCapabilities({
+            enabled: config.orderedCatchupEnabled,
+            version: ORDERED_CATCHUP_VERSION,
+            operationCount: orderedStatus.operationCount,
+            orderedOperationCount: orderedStatus.orderedOperationCount,
+        }),
+    };
+}
+
+async function getLocalOrderedCatchupStatus(): Promise<{
+    operationCount: number;
+    orderedOperationCount: number;
+    ready: boolean;
+}> {
+    const [operationCount, orderedOperationCount] = await Promise.all([
+        syncStore.count(),
+        syncStore.countOrdered(),
+    ]);
+
+    return {
+        operationCount,
+        orderedOperationCount,
+        ready: operationCount > 0 && operationCount === orderedOperationCount,
+    };
+}
+
+async function buildPingMessage(): Promise<PingMessage> {
+    const capabilities = await buildPeerCapabilities();
 
     return {
         ...createBaseMessage('ping'),
@@ -596,7 +903,11 @@ function buildPingMessage(): PingMessage {
     };
 }
 
-function sendToPeer(peerKey: string, msg: HyperMessage): boolean {
+interface SendToPeerOptions {
+    initialPing?: boolean;
+}
+
+function sendToPeer(peerKey: string, msg: HyperMessage, options: SendToPeerOptions = {}): boolean {
     const conn = connectionInfo[peerKey];
     if (!conn) {
         return false;
@@ -606,8 +917,14 @@ function sendToPeer(peerKey: string, msg: HyperMessage): boolean {
         const json = JSON.stringify(msg);
         if (conn.transportMode === 'framed') {
             writeFramedJson(conn.connection, json);
-        } else if (supportsLegacyRawTransportMessage(msg.type)) {
+        } else if (conn.transportMode === 'legacy' && supportsLegacyRawTransportMessage(msg.type)) {
             writeLegacyJson(conn.connection, json);
+        } else if (conn.transportMode === 'unknown'
+            && msg.type === 'ping'
+            && options.initialPing === true
+            && !conn.initialPingSent) {
+            writeLegacyJson(conn.connection, json);
+            conn.initialPingSent = true;
         } else {
             log.debug({ peer: shortName(peerKey), type: msg.type }, 'deferring hyperswarm message until transport negotiation completes');
             return false;
@@ -620,9 +937,9 @@ function sendToPeer(peerKey: string, msg: HyperMessage): boolean {
     }
 }
 
-async function sendPingToPeer(peerKey: string): Promise<void> {
-    const ping = buildPingMessage();
-    if (sendToPeer(peerKey, ping)) {
+async function sendPingToPeer(peerKey: string, source: 'initial' | 'periodic' = 'periodic'): Promise<void> {
+    const ping = await buildPingMessage();
+    if (sendToPeer(peerKey, ping, { initialPing: source === 'initial' })) {
         log.debug(`* sent ping to: ${shortName(peerKey)}`);
     }
 }
@@ -632,7 +949,7 @@ function createSessionId(peerKey: string): string {
     return `${Date.now().toString(36)}-${shortName(nodeKey)}-${shortName(peerKey)}-${nonce}`;
 }
 
-function createPeerSession(peerKey: string, mode: SyncMode, initiator: boolean, sessionId?: string): PeerSyncSession {
+function createPeerSession(peerKey: string, mode: PeerSessionMode, initiator: boolean, sessionId?: string): PeerSyncSession {
     const now = Date.now();
     const session: PeerSyncSession = {
         sessionId: sessionId ?? createSessionId(peerKey),
@@ -658,13 +975,16 @@ function createPeerSession(peerKey: string, mode: SyncMode, initiator: boolean, 
         receivedPushMaxCursor: null,
         remoteWindowCappedByRecords: false,
         remoteWindowLastCursor: null,
+        orderedCatchupCursor: null,
     };
     peerSessions.set(peerKey, session);
-    connectionInfo[peerKey].syncMode = mode;
+    connectionInfo[peerKey].syncMode = mode === 'ordered_catchup' ? 'negentropy' : mode;
     connectionInfo[peerKey].syncStarted = true;
     if (mode === 'negentropy') {
         syncStats.negentropySessionsStarted += 1;
         connectionInfo[peerKey].lastNegentropyAttemptAt = now;
+    } else if (mode === 'ordered_catchup') {
+        syncStats.orderedCatchupSessionsStarted += 1;
     }
     return session;
 }
@@ -696,10 +1016,19 @@ function closePeerSession(peerKey: string, reason: string): void {
             conn.negentropySynced = false;
             syncStats.negentropySessionsFailed += 1;
         }
+    } else if (conn && session.mode === 'ordered_catchup') {
+        clearOrderedCatchupClientState(peerKey, session.sessionId, reason);
+        if (reason === 'ordered_catchup_complete' || reason === 'ordered_catchup_done') {
+            syncStats.orderedCatchupSessionsCompleted += 1;
+        } else {
+            syncStats.orderedCatchupSessionsFailed += 1;
+        }
     }
 
-    maybeStartBackgroundPrebuild('session_closed');
-    void maybeSchedulePreferredSyncs(`session_closed:${reason}`);
+    if (session.mode !== 'ordered_catchup') {
+        maybeStartBackgroundPrebuild('session_closed');
+        void maybeSchedulePreferredSyncs(`session_closed:${reason}`);
+    }
 
     log.debug({
         peer: shortName(peerKey),
@@ -715,8 +1044,23 @@ function expireIdlePeerSessions(): void {
     const now = Date.now();
     for (const [peerKey, session] of peerSessions.entries()) {
         if (now - session.lastActivity > NEG_SESSION_IDLE_TIMEOUT_MS) {
-            sendNegClose(peerKey, session, 'idle_timeout');
+            if (session.mode === 'negentropy') {
+                sendNegClose(peerKey, session, 'idle_timeout');
+            }
             closePeerSession(peerKey, 'idle_timeout');
+        }
+    }
+
+    for (const [peerKey, conn] of Object.entries(connectionInfo)) {
+        clearExpiredOrderedCatchupServerExpectation(peerKey, now);
+        if (conn.orderedCatchupServerSessionId
+            && conn.orderedCatchupServerLastActivity > 0
+            && (now - conn.orderedCatchupServerLastActivity) > NEG_SESSION_IDLE_TIMEOUT_MS) {
+            clearOrderedCatchupServerState(
+                peerKey,
+                conn.orderedCatchupServerSessionId,
+                'server_idle_timeout',
+            );
         }
     }
 }
@@ -732,7 +1076,228 @@ function choosePeerSyncMode(peerKey: string): { mode: SyncMode | null; reason: C
         NEGENTROPY_VERSION,
         config.legacySyncEnabled,
         config.negentropyEnabled,
+        conn.peerTransportFramingVersion === TRANSPORT_FRAMING_VERSION,
     );
+}
+
+function supportsPeerNegentropyTransport(conn: ConnectionInfo): boolean {
+    return supportsPeerNegentropy(conn.capabilities, NEGENTROPY_VERSION)
+        && conn.peerTransportFramingVersion === TRANSPORT_FRAMING_VERSION;
+}
+
+function hasActiveOrderedCatchupForPeer(conn: ConnectionInfo): boolean {
+    return hasActiveOrderedCatchupSession({
+        orderedCatchupClientSessionId: conn.orderedCatchupClientSessionId,
+        orderedCatchupServerSessionId: conn.orderedCatchupServerSessionId,
+    });
+}
+
+function hasPendingOrderedCatchupServerExpectation(conn: ConnectionInfo, now = Date.now()): boolean {
+    return conn.orderedCatchupServerPendingUntil > now;
+}
+
+function hasOrderedCatchupOutboundGuardForPeer(conn: ConnectionInfo, now = Date.now()): boolean {
+    return hasActiveOrderedCatchupForPeer(conn) || hasPendingOrderedCatchupServerExpectation(conn, now);
+}
+
+function getActiveOrderedCatchupSessionId(conn: ConnectionInfo, session?: PeerSyncSession): string | null {
+    if (session?.mode === 'ordered_catchup') {
+        return session.sessionId;
+    }
+
+    return conn.orderedCatchupClientSessionId ?? conn.orderedCatchupServerSessionId;
+}
+
+function setOrderedCatchupServerExpectation(peerKey: string, reason: string, gap: number): void {
+    const conn = connectionInfo[peerKey];
+    if (!conn) {
+        return;
+    }
+
+    const now = Date.now();
+    if (hasPendingOrderedCatchupServerExpectation(conn, now)) {
+        return;
+    }
+
+    conn.orderedCatchupServerPendingSince = now;
+    conn.orderedCatchupServerPendingUntil = now + ORDERED_CATCHUP_SERVER_EXPECTATION_MS;
+    conn.orderedCatchupServerPendingReason = reason;
+    conn.orderedCatchupServerPendingGap = gap;
+    log.info(
+        {
+            peer: shortName(peerKey),
+            reason,
+            gap,
+            pendingMs: ORDERED_CATCHUP_SERVER_EXPECTATION_MS,
+            pendingUntil: new Date(conn.orderedCatchupServerPendingUntil).toISOString(),
+        },
+        'ordered catch-up server request expected'
+    );
+}
+
+function clearOrderedCatchupServerExpectation(peerKey: string, reason: string): void {
+    const conn = connectionInfo[peerKey];
+    if (!conn || conn.orderedCatchupServerPendingUntil <= 0) {
+        return;
+    }
+
+    const previous = {
+        pendingSince: conn.orderedCatchupServerPendingSince,
+        pendingUntil: conn.orderedCatchupServerPendingUntil,
+        pendingReason: conn.orderedCatchupServerPendingReason,
+        pendingGap: conn.orderedCatchupServerPendingGap,
+    };
+
+    conn.orderedCatchupServerPendingSince = 0;
+    conn.orderedCatchupServerPendingUntil = 0;
+    conn.orderedCatchupServerPendingReason = null;
+    conn.orderedCatchupServerPendingGap = 0;
+    log.debug(
+        {
+            peer: shortName(peerKey),
+            reason,
+            ...previous,
+        },
+        'ordered catch-up server request expectation cleared'
+    );
+}
+
+function clearExpiredOrderedCatchupServerExpectation(peerKey: string, now = Date.now()): boolean {
+    const conn = connectionInfo[peerKey];
+    if (!conn || conn.orderedCatchupServerPendingUntil <= 0 || conn.orderedCatchupServerPendingUntil > now) {
+        return false;
+    }
+
+    clearOrderedCatchupServerExpectation(peerKey, 'server_expectation_timeout');
+    return true;
+}
+
+function setOrderedCatchupClientState(peerKey: string, sessionId: string): void {
+    const conn = connectionInfo[peerKey];
+    if (!conn || conn.orderedCatchupClientSessionId === sessionId) {
+        return;
+    }
+
+    const previousSessionId = conn.orderedCatchupClientSessionId;
+    conn.orderedCatchupClientSessionId = sessionId;
+    log.debug({
+        peer: shortName(peerKey),
+        previousSessionId,
+        sessionId,
+    }, 'ordered catch-up client state set');
+}
+
+function clearOrderedCatchupClientState(peerKey: string, sessionId: string, reason: string): void {
+    const conn = connectionInfo[peerKey];
+    if (!conn || conn.orderedCatchupClientSessionId !== sessionId) {
+        return;
+    }
+
+    conn.orderedCatchupClientSessionId = null;
+    log.debug({
+        peer: shortName(peerKey),
+        sessionId,
+        reason,
+    }, 'ordered catch-up client state cleared');
+}
+
+function setOrderedCatchupServerState(peerKey: string, sessionId: string): void {
+    const conn = connectionInfo[peerKey];
+    if (!conn) {
+        return;
+    }
+
+    clearOrderedCatchupServerExpectation(peerKey, 'ordered_catchup_server_state_set');
+    const previousSessionId = conn.orderedCatchupServerSessionId;
+    conn.orderedCatchupServerSessionId = sessionId;
+    conn.orderedCatchupServerLastActivity = Date.now();
+    if (previousSessionId !== sessionId) {
+        log.debug({
+            peer: shortName(peerKey),
+            previousSessionId,
+            sessionId,
+        }, 'ordered catch-up server state set');
+    }
+}
+
+function clearOrderedCatchupServerState(peerKey: string, sessionId: string, reason: string): void {
+    const conn = connectionInfo[peerKey];
+    if (!conn || conn.orderedCatchupServerSessionId !== sessionId) {
+        return;
+    }
+
+    conn.orderedCatchupServerSessionId = null;
+    conn.orderedCatchupServerLastActivity = 0;
+    log.debug({
+        peer: shortName(peerKey),
+        sessionId,
+        reason,
+    }, 'ordered catch-up server state cleared');
+}
+
+function logNegentropySuppressedByOrderedCatchup(
+    peerKey: string,
+    source: 'connect' | 'periodic' | 'ordered_catchup_complete',
+): void {
+    const conn = connectionInfo[peerKey];
+    if (!conn) {
+        return;
+    }
+
+    log.debug({
+        peer: shortName(peerKey),
+        source,
+        orderedCatchupClientSessionId: conn.orderedCatchupClientSessionId,
+        orderedCatchupServerSessionId: conn.orderedCatchupServerSessionId,
+        orderedCatchupServerPendingUntil: conn.orderedCatchupServerPendingUntil,
+        orderedCatchupServerPendingReason: conn.orderedCatchupServerPendingReason,
+        orderedCatchupServerPendingGap: conn.orderedCatchupServerPendingGap,
+    }, 'outbound negentropy suppressed while ordered catch-up is active or expected');
+}
+
+function buildPeerSyncCompatibilityContext(peerKey: string, conn: ConnectionInfo): object {
+    return {
+        peer: shortName(peerKey),
+        node: conn.nodeName || 'anon',
+        capabilities: conn.capabilities,
+        peerTransportFramingVersion: conn.peerTransportFramingVersion,
+        requiredNegentropyVersion: NEGENTROPY_VERSION,
+        requiredTransportFramingVersion: TRANSPORT_FRAMING_VERSION,
+        legacySyncEnabled: config.legacySyncEnabled,
+        negentropyEnabled: config.negentropyEnabled,
+        orderedCatchupEnabled: config.orderedCatchupEnabled,
+    };
+}
+
+function incrementLegacyModeReason(reason: ConnectSyncModeReason | null): void {
+    if (reason === 'missing_capabilities') {
+        syncStats.modeSelectionsLegacyMissingCapabilities += 1;
+    }
+    if (reason === 'negentropy_disabled') {
+        syncStats.modeSelectionsLegacyNegentropyDisabled += 1;
+    }
+    if (reason === 'version_mismatch') {
+        syncStats.modeSelectionsLegacyVersionMismatch += 1;
+    }
+    if (reason === 'transport_framing_unsupported') {
+        syncStats.modeSelectionsLegacyTransportFramingUnsupported += 1;
+    }
+}
+
+function incrementNoModeReason(reason: ConnectSyncModeReason | null): void {
+    syncStats.modeSelectionsNoModeLegacyDisabled += 1;
+    if (reason === 'missing_capabilities') {
+        syncStats.modeSelectionsNoModeMissingCapabilities += 1;
+    }
+    if (reason === 'negentropy_disabled') {
+        syncStats.modeSelectionsNoModeNegentropyDisabled += 1;
+    }
+    if (reason === 'version_mismatch') {
+        syncStats.modeSelectionsNoModeVersionMismatch += 1;
+    }
+    if (reason === 'transport_framing_unsupported') {
+        syncStats.modeSelectionsNoModeTransportFramingUnsupported += 1;
+    }
 }
 
 function getActiveNegentropySessions(): number {
@@ -761,7 +1326,7 @@ function countPendingNegentropyPeers(excludePeerKey?: string): number {
             continue;
         }
 
-        if (supportsPeerNegentropy(conn.capabilities, NEGENTROPY_VERSION)) {
+        if (supportsPeerNegentropyTransport(conn)) {
             count += 1;
         }
     }
@@ -936,6 +1501,70 @@ async function maybeSchedulePreferredSyncs(source: string): Promise<void> {
     await maybeReleaseDeferredLegacySyncs(source);
 }
 
+async function startNegentropySessionForPeer(
+    peerKey: string,
+    source: 'connect' | 'periodic' | 'ordered_catchup_complete',
+    modeReason: ConnectSyncModeReason | 'ordered_catchup_complete' | null = null,
+): Promise<void> {
+    const conn = connectionInfo[peerKey];
+    if (!conn) {
+        return;
+    }
+
+    clearExpiredOrderedCatchupServerExpectation(peerKey);
+    if (hasOrderedCatchupOutboundGuardForPeer(conn)) {
+        logNegentropySuppressedByOrderedCatchup(peerKey, source);
+        return;
+    }
+
+    const initiator = nodeKey.localeCompare(peerKey) < 0;
+    const session = createPeerSession(peerKey, 'negentropy', initiator);
+    session.windows = [await buildInitialHistoryWindowForSession()];
+    session.windowIndex = 0;
+    log.info(
+        {
+            peer: shortName(peerKey),
+            mode: 'negentropy',
+            modeReason,
+            initiator,
+            sessionId: session.sessionId,
+            source,
+            plannedWindows: session.windows.length,
+        },
+        'peer sync mode selected'
+    );
+    await startNextNegentropyWindow(peerKey, session);
+}
+
+async function startOrderedCatchupSessionForPeer(
+    peerKey: string,
+    decisionReason: string,
+    gap: number,
+): Promise<void> {
+    const conn = connectionInfo[peerKey];
+    if (!conn) {
+        return;
+    }
+
+    conn.orderedCatchupAttempted = true;
+    const session = createPeerSession(peerKey, 'ordered_catchup', true);
+    setOrderedCatchupClientState(peerKey, session.sessionId);
+    log.info(
+        {
+            peer: shortName(peerKey),
+            mode: 'ordered_catchup',
+            sessionId: session.sessionId,
+            reason: decisionReason,
+            gap,
+        },
+        'peer ordered catch-up selected'
+    );
+
+    if (!sendOrderedCatchupReq(peerKey, session)) {
+        closePeerSession(peerKey, 'send_ordered_catchup_req_failed');
+    }
+}
+
 async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic' = 'connect'): Promise<void> {
     const conn = connectionInfo[peerKey];
     if (!conn) {
@@ -961,8 +1590,16 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
     }
 
     if (!mode || mode === 'unknown') {
-        if (source === 'connect' && modeReason === 'legacy_disabled') {
-            syncStats.modeSelectionsNoModeLegacyDisabled += 1;
+        if (source === 'connect') {
+            incrementNoModeReason(modeReason);
+            log.info(
+                {
+                    ...buildPeerSyncCompatibilityContext(peerKey, conn),
+                    modeReason,
+                    source,
+                },
+                'peer sync mode unavailable'
+            );
         }
         return;
     }
@@ -971,15 +1608,7 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
         syncStats.modeSelectionsTotal += 1;
         if (mode === 'legacy') {
             syncStats.modeSelectionsLegacy += 1;
-            if (modeReason === 'missing_capabilities') {
-                syncStats.modeSelectionsLegacyMissingCapabilities += 1;
-            }
-            if (modeReason === 'negentropy_disabled') {
-                syncStats.modeSelectionsLegacyNegentropyDisabled += 1;
-            }
-            if (modeReason === 'version_mismatch') {
-                syncStats.modeSelectionsLegacyVersionMismatch += 1;
-            }
+            incrementLegacyModeReason(modeReason);
         } else {
             syncStats.modeSelectionsNegentropy += 1;
         }
@@ -1009,6 +1638,8 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
     const initiator = nodeKey.localeCompare(peerKey) < 0;
     const hasActiveSession = peerSessions.has(peerKey);
     const activeNegentropySessions = getActiveNegentropySessions();
+    clearExpiredOrderedCatchupServerExpectation(peerKey);
+    let orderedCatchupActive = hasOrderedCatchupOutboundGuardForPeer(conn);
 
     conn.syncMode = 'negentropy';
     conn.syncStarted = true;
@@ -1017,11 +1648,54 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
         return;
     }
 
+    const localOperationCount = await syncStore.count();
+    const orderedCatchupDecision = getOrderedCatchupDecision({
+        enabled: config.orderedCatchupEnabled && !conn.orderedCatchupAttempted,
+        localOperationCount,
+        peerCapabilities: conn.capabilities,
+        requiredVersion: ORDERED_CATCHUP_VERSION,
+        threshold: config.orderedCatchupThreshold,
+    });
+    if (orderedCatchupDecision.useOrderedCatchup && !hasActiveSession && activeNegentropySessions === 0) {
+        await startOrderedCatchupSessionForPeer(
+            peerKey,
+            orderedCatchupDecision.reason,
+            orderedCatchupDecision.gap,
+        );
+        return;
+    }
+
+    if (source === 'connect'
+        && initiator
+        && !orderedCatchupActive
+        && !hasActiveSession
+        && activeNegentropySessions === 0) {
+        const localOrderedOperationCount = await syncStore.countOrdered();
+        const expectedOrderedCatchupRequest = getExpectedOrderedCatchupRequestDecision({
+            enabled: config.orderedCatchupEnabled,
+            localOperationCount,
+            localOrderedOperationCount,
+            peerCapabilities: conn.capabilities,
+            requiredVersion: ORDERED_CATCHUP_VERSION,
+            threshold: config.orderedCatchupThreshold,
+        });
+
+        if (expectedOrderedCatchupRequest.expectRequest) {
+            setOrderedCatchupServerExpectation(
+                peerKey,
+                expectedOrderedCatchupRequest.reason,
+                expectedOrderedCatchupRequest.gap,
+            );
+            orderedCatchupActive = hasOrderedCatchupOutboundGuardForPeer(conn);
+        }
+    }
+
     const shouldStart = source === 'connect'
-        ? shouldStartConnectTimeNegentropy(mode, hasActiveSession, initiator)
+        ? shouldStartConnectTimeNegentropy(mode, hasActiveSession, initiator, orderedCatchupActive)
         : shouldSchedulePeriodicRepair({
             syncMode: mode,
             hasActiveSession,
+            orderedCatchupActive,
             importQueueLength: importQueue.length(),
             activeNegentropySessions,
             lastAttemptAtMs: conn.lastNegentropyAttemptAt,
@@ -1032,6 +1706,9 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
         });
 
     if (!shouldStart) {
+        if (orderedCatchupActive) {
+            logNegentropySuppressedByOrderedCatchup(peerKey, source);
+        }
         return;
     }
 
@@ -1039,22 +1716,7 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
         return;
     }
 
-    const session = createPeerSession(peerKey, 'negentropy', initiator);
-    session.windows = [await buildInitialHistoryWindowForSession()];
-    session.windowIndex = 0;
-    log.info(
-        {
-            peer: shortName(peerKey),
-            mode,
-            modeReason,
-            initiator,
-            sessionId: session.sessionId,
-            source,
-            plannedWindows: session.windows.length,
-        },
-        'peer sync mode selected'
-    );
-    await startNextNegentropyWindow(peerKey, session);
+    await startNegentropySessionForPeer(peerKey, source, modeReason);
 }
 
 async function runPeriodicNegentropyRepair(): Promise<void> {
@@ -1079,9 +1741,16 @@ function buildSyncStatsSnapshot(): object {
                 missingCapabilities: syncStats.modeSelectionsLegacyMissingCapabilities,
                 negentropyDisabled: syncStats.modeSelectionsLegacyNegentropyDisabled,
                 versionMismatch: syncStats.modeSelectionsLegacyVersionMismatch,
+                transportFramingUnsupported: syncStats.modeSelectionsLegacyTransportFramingUnsupported,
             },
             noMode: {
                 legacyDisabled: syncStats.modeSelectionsNoModeLegacyDisabled,
+                reasons: {
+                    missingCapabilities: syncStats.modeSelectionsNoModeMissingCapabilities,
+                    negentropyDisabled: syncStats.modeSelectionsNoModeNegentropyDisabled,
+                    versionMismatch: syncStats.modeSelectionsNoModeVersionMismatch,
+                    transportFramingUnsupported: syncStats.modeSelectionsNoModeTransportFramingUnsupported,
+                },
             },
         },
         queue: {
@@ -1112,6 +1781,15 @@ function buildSyncStatsSnapshot(): object {
             opsPushed: syncStats.negentropyOpsPushSent,
             opsPushedReceived: syncStats.negentropyOpsPushReceived,
         },
+        orderedCatchup: {
+            sessionsStarted: syncStats.orderedCatchupSessionsStarted,
+            sessionsCompleted: syncStats.orderedCatchupSessionsCompleted,
+            sessionsFailed: syncStats.orderedCatchupSessionsFailed,
+            pagesSent: syncStats.orderedCatchupPagesSent,
+            pagesReceived: syncStats.orderedCatchupPagesReceived,
+            opsSent: syncStats.orderedCatchupOpsSent,
+            opsReceived: syncStats.orderedCatchupOpsReceived,
+        },
         gatekeeper: {
             opsApplied: syncStats.opsApplied,
             opsRejected: syncStats.opsRejected,
@@ -1119,6 +1797,8 @@ function buildSyncStatsSnapshot(): object {
         transport: {
             bytesSent: syncStats.bytesSent,
             bytesReceived: syncStats.bytesReceived,
+            malformedPeerCooldowns: syncStats.malformedPeerCooldowns,
+            malformedPeerConnectionsRejected: syncStats.malformedPeerConnectionsRejected,
         },
         syncDurationMs: {
             avg: averageAggregate(syncStats.syncDurationMs),
@@ -1698,60 +2378,329 @@ async function sendOpsReq(peerKey: string, session: PeerSyncSession, ids: string
 async function sendOpsPushForIds(peerKey: string, session: PeerSyncSession, ids: string[]): Promise<void> {
     const normalized = Array.from(new Set(ids.map(id => id.toLowerCase()).filter(id => NEG_SYNC_ID_RE.test(id))));
     const idLookupBatches = chunkIds(normalized, NEG_MAX_IDS_PER_LOOKUP);
+    const rows: SyncOperationRecord[] = [];
 
     for (const idBatch of idLookupBatches) {
-        const rows = (await syncStore.getByIds(idBatch))
-            .sort((a, b) => {
-                if (a.ts !== b.ts) {
-                    return a.ts - b.ts;
-                }
-
-                if (a.id < b.id) {
-                    return -1;
-                }
-
-                if (a.id > b.id) {
-                    return 1;
-                }
-
-                return 0;
-            });
-        const operations = rows.map(row => row.operation);
-        if (operations.length === 0) {
-            log.debug(
-                {
-                    peer: shortName(peerKey),
-                    sessionId: session.sessionId,
-                    windowId: session.windowId,
-                    round: session.rounds,
-                    requestedIds: summarizeSyncIds(idBatch),
-                },
-                'negentropy ops_push lookup returned no operations'
-            );
-            continue;
-        }
-
-        const opBatches = chunkOperationsForPush(operations, {
-            maxOpsPerPush: NEG_MAX_OPS_PER_PUSH,
-            maxBytesPerPush: NEG_MAX_BYTES_PER_PUSH,
-        });
-
-        for (const opBatch of opBatches) {
-            const msg: OpsPushMessage = {
-                ...createBaseMessage('ops_push'),
-                sessionId: session.sessionId,
-                windowId: getExpectedWindowId(session),
-                round: session.rounds,
-                data: opBatch,
-            };
-
-            if (!sendToPeer(peerKey, msg)) {
-                closePeerSession(peerKey, 'send_ops_push_failed');
-                return;
-            }
-            syncStats.negentropyOpsPushSent += opBatch.length;
-        }
+        rows.push(...await syncStore.getByIds(idBatch));
     }
+
+    const operations = orderSyncRecordsForPush(rows).map(row => row.operation);
+    if (operations.length === 0) {
+        log.debug(
+            {
+                peer: shortName(peerKey),
+                sessionId: session.sessionId,
+                windowId: session.windowId,
+                round: session.rounds,
+                requestedIds: summarizeSyncIds(normalized),
+            },
+            'negentropy ops_push lookup returned no operations'
+        );
+        return;
+    }
+
+    const opBatches = chunkOperationsForPush(operations, {
+        maxOpsPerPush: NEG_MAX_OPS_PER_PUSH,
+        maxBytesPerPush: NEG_MAX_BYTES_PER_PUSH,
+    });
+
+    for (const opBatch of opBatches) {
+        const msg: OpsPushMessage = {
+            ...createBaseMessage('ops_push'),
+            sessionId: session.sessionId,
+            windowId: getExpectedWindowId(session),
+            round: session.rounds,
+            data: opBatch,
+        };
+
+        if (!sendToPeer(peerKey, msg)) {
+            closePeerSession(peerKey, 'send_ops_push_failed');
+            return;
+        }
+        syncStats.negentropyOpsPushSent += opBatch.length;
+    }
+}
+
+function parseOrderedCatchupCursor(cursor: unknown): SyncStoreOrderedCursor | undefined | null {
+    if (cursor == null) {
+        return undefined;
+    }
+
+    if (typeof cursor !== 'object') {
+        return null;
+    }
+
+    const raw = cursor as Partial<SyncStoreOrderedCursor>;
+    if (!Number.isSafeInteger(raw.syncOrder) || raw.syncOrder! < 0) {
+        return null;
+    }
+
+    if (typeof raw.id !== 'string' || !NEG_SYNC_ID_RE.test(raw.id)) {
+        return null;
+    }
+
+    return {
+        syncOrder: raw.syncOrder!,
+        id: raw.id.toLowerCase(),
+    };
+}
+
+function getOrderedCursorFromRow(row: SyncOperationRecord): SyncStoreOrderedCursor | null {
+    if (!Number.isSafeInteger(row.syncOrder)) {
+        return null;
+    }
+
+    return {
+        syncOrder: row.syncOrder!,
+        id: row.id,
+    };
+}
+
+function sendOrderedCatchupDone(peerKey: string, sessionId: string): boolean {
+    const msg: OrderedCatchupDoneMessage = {
+        ...createBaseMessage('ordered_catchup_done'),
+        sessionId,
+    };
+
+    const sent = sendToPeer(peerKey, msg);
+    clearOrderedCatchupServerState(peerKey, sessionId, sent ? 'ordered_catchup_done_sent' : 'send_ordered_catchup_done_failed');
+    return sent;
+}
+
+function sendOrderedCatchupReq(peerKey: string, session: PeerSyncSession): boolean {
+    const msg: OrderedCatchupReqMessage = {
+        ...createBaseMessage('ordered_catchup_req'),
+        sessionId: session.sessionId,
+        cursor: session.orderedCatchupCursor ?? undefined,
+    };
+
+    return sendToPeer(peerKey, msg);
+}
+
+async function sendOrderedCatchupPage(peerKey: string, msg: OrderedCatchupReqMessage): Promise<void> {
+    const conn = connectionInfo[peerKey];
+    if (!conn) {
+        return;
+    }
+
+    clearOrderedCatchupServerExpectation(peerKey, 'ordered_catchup_req_received');
+
+    if (conn.capabilities.orderedCatchup !== true || conn.capabilities.orderedCatchupVersion !== ORDERED_CATCHUP_VERSION) {
+        log.warn(
+            {
+                peer: shortName(peerKey),
+                sessionId: msg.sessionId,
+                peerOrderedCatchup: conn.capabilities.orderedCatchup,
+                peerOrderedCatchupVersion: conn.capabilities.orderedCatchupVersion,
+            },
+            'ignoring ordered catch-up request from unsupported peer'
+        );
+        return;
+    }
+
+    if (!config.orderedCatchupEnabled) {
+        sendOrderedCatchupDone(peerKey, msg.sessionId);
+        return;
+    }
+
+    const cursor = parseOrderedCatchupCursor(msg.cursor);
+    if (cursor === null) {
+        log.warn({ peer: shortName(peerKey), sessionId: msg.sessionId }, 'ignoring ordered catch-up request with invalid cursor');
+        return;
+    }
+
+    setOrderedCatchupServerState(peerKey, msg.sessionId);
+
+    const status = await getLocalOrderedCatchupStatus();
+    if (!status.ready) {
+        log.info(
+            {
+                peer: shortName(peerKey),
+                sessionId: msg.sessionId,
+                operationCount: status.operationCount,
+                orderedOperationCount: status.orderedOperationCount,
+            },
+            'ordered catch-up requested but local store is not ready'
+        );
+        sendOrderedCatchupDone(peerKey, msg.sessionId);
+        return;
+    }
+
+    const rows = await syncStore.iterateOrdered({
+        after: cursor,
+        limit: NEG_MAX_OPS_PER_PUSH + 1,
+    });
+    const candidateRows = rows.slice(0, NEG_MAX_OPS_PER_PUSH);
+    const [opBatch = []] = chunkOperationsForPush(candidateRows.map(row => row.operation), {
+        maxOpsPerPush: NEG_MAX_OPS_PER_PUSH,
+        maxBytesPerPush: NEG_MAX_BYTES_PER_PUSH,
+    });
+    const pageRows = candidateRows.slice(0, opBatch.length);
+    const lastRow = pageRows[pageRows.length - 1];
+    const nextCursor = lastRow ? getOrderedCursorFromRow(lastRow) : null;
+
+    if (pageRows.length === 0 || !nextCursor) {
+        sendOrderedCatchupDone(peerKey, msg.sessionId);
+        return;
+    }
+
+    const push: OrderedCatchupPushMessage = {
+        ...createBaseMessage('ordered_catchup_push'),
+        sessionId: msg.sessionId,
+        cursor: nextCursor,
+        hasMore: rows.length > pageRows.length,
+        data: opBatch,
+    };
+
+    if (!sendToPeer(peerKey, push)) {
+        clearOrderedCatchupServerState(peerKey, msg.sessionId, 'send_ordered_catchup_push_failed');
+        return;
+    }
+
+    syncStats.orderedCatchupPagesSent += 1;
+    syncStats.orderedCatchupOpsSent += push.data.length;
+
+    if (!push.hasMore) {
+        clearOrderedCatchupServerState(peerKey, msg.sessionId, 'ordered_catchup_final_page_sent');
+    }
+}
+
+function completeOrderedCatchup(peerKey: string, session: PeerSyncSession, reason: string): void {
+    const conn = connectionInfo[peerKey];
+    if (!conn) {
+        return;
+    }
+
+    conn.orderedCatchupAttempted = true;
+    session.reconciliationComplete = true;
+    closePeerSession(peerKey, reason);
+    queueOrderedCatchupPostImport(peerKey, reason);
+}
+
+async function waitForImportQueueIdle(reason: string): Promise<void> {
+    while (importQueue.length() > 0 || importQueue.running() > 0) {
+        log.debug(
+            {
+                reason,
+                queued: importQueue.length(),
+                running: importQueue.running(),
+            },
+            'waiting for import queue to drain'
+        );
+        await new Promise(resolve => setTimeout(resolve, 250));
+    }
+}
+
+function queueOrderedCatchupPostImport(peerKey: string, reason: string): void {
+    if (orderedCatchupPostImportPeers.has(peerKey)) {
+        log.debug({ peer: shortName(peerKey), reason }, 'ordered catch-up post-import continuation already queued');
+        return;
+    }
+
+    orderedCatchupPostImportPeers.add(peerKey);
+    (async () => {
+        await waitForImportQueueIdle('ordered_catchup_complete');
+        await syncGatekeeperIndexToStore('ordered_catchup_complete');
+        markNegentropyAdapterDirty();
+        await maybeStartPostOrderedCatchupNegentropy(peerKey, reason);
+    })()
+        .catch(error => {
+            log.error({ error, peer: shortName(peerKey), reason }, 'ordered catch-up post-import continuation failed');
+        })
+        .finally(() => {
+            orderedCatchupPostImportPeers.delete(peerKey);
+        });
+}
+
+async function maybeStartPostOrderedCatchupNegentropy(peerKey: string, reason: string): Promise<void> {
+    const conn = connectionInfo[peerKey];
+    const shouldStart = shouldStartPostOrderedCatchupNegentropy({
+        syncMode: conn?.syncMode ?? 'unknown',
+        peerConnected: !!conn,
+        peerSupportsNegentropyTransport: conn ? supportsPeerNegentropyTransport(conn) : false,
+        hasActiveSession: peerSessions.has(peerKey),
+        importQueueLength: importQueue.length(),
+        importQueueRunning: importQueue.running(),
+        activeNegentropySessions: getActiveNegentropySessions(),
+        syncCompleted: conn?.negentropySynced ?? false,
+    });
+
+    if (shouldStart) {
+        await maybeStartPeerSync(peerKey, 'periodic');
+    } else {
+        log.debug(
+            {
+                peer: shortName(peerKey),
+                reason,
+                syncMode: conn?.syncMode ?? 'unknown',
+                peerConnected: !!conn,
+                peerSupportsNegentropyTransport: conn ? supportsPeerNegentropyTransport(conn) : false,
+                hasActiveSession: peerSessions.has(peerKey),
+                importQueueLength: importQueue.length(),
+                importQueueRunning: importQueue.running(),
+                activeNegentropySessions: getActiveNegentropySessions(),
+                syncCompleted: conn?.negentropySynced ?? false,
+            },
+            'post ordered catch-up negentropy handoff deferred'
+        );
+    }
+
+    if (getActiveNegentropySessions() === 0) {
+        await maybeSchedulePreferredSyncs(`ordered_catchup_post_import:${reason}`);
+    }
+}
+
+async function handleOrderedCatchupPush(peerKey: string, msg: OrderedCatchupPushMessage): Promise<void> {
+    const session = peerSessions.get(peerKey);
+    if (!session || session.mode !== 'ordered_catchup' || session.sessionId !== msg.sessionId) {
+        log.warn({ peer: shortName(peerKey), sessionId: msg.sessionId }, 'ignoring ordered catch-up push for unknown session');
+        return;
+    }
+
+    const cursor = parseOrderedCatchupCursor(msg.cursor);
+    if (cursor === null) {
+        log.warn({ peer: shortName(peerKey), sessionId: msg.sessionId }, 'ignoring ordered catch-up push with invalid cursor');
+        closePeerSession(peerKey, 'invalid_ordered_catchup_cursor');
+        return;
+    }
+
+    const batch = normalizeInboundOpsPushBatch(msg.data);
+    syncStats.orderedCatchupPagesReceived += 1;
+    syncStats.orderedCatchupOpsReceived += batch.length;
+    if (batch.length > 0) {
+        importQueue.push({
+            name: peerKey,
+            msg: {
+                ...createBaseMessage('batch'),
+                data: batch,
+            },
+        });
+    }
+
+    if (cursor) {
+        session.orderedCatchupCursor = cursor;
+    }
+
+    touchPeerSession(peerKey);
+
+    if (msg.hasMore === true) {
+        if (!sendOrderedCatchupReq(peerKey, session)) {
+            closePeerSession(peerKey, 'send_ordered_catchup_req_failed');
+        }
+        return;
+    }
+
+    completeOrderedCatchup(peerKey, session, 'ordered_catchup_complete');
+}
+
+async function handleOrderedCatchupDone(peerKey: string, msg: OrderedCatchupDoneMessage): Promise<void> {
+    const session = peerSessions.get(peerKey);
+    if (!session || session.mode !== 'ordered_catchup' || session.sessionId !== msg.sessionId) {
+        log.warn({ peer: shortName(peerKey), sessionId: msg.sessionId }, 'ignoring ordered catch-up done for unknown session');
+        return;
+    }
+
+    completeOrderedCatchup(peerKey, session, 'ordered_catchup_done');
 }
 
 function sendNegMsg(peerKey: string, session: PeerSyncSession, frame: string | Uint8Array): boolean {
@@ -2166,13 +3115,20 @@ async function persistAcceptedOperations(operations: Operation[], source: string
         return;
     }
 
-    const inserted = await syncStore.upsertMany(records);
-    if (inserted > 0) {
+    const result = await syncStore.upsertMany(records);
+    if (result.inserted > 0 || result.updated > 0) {
         markNegentropyAdapterDirty();
         maybeStartBackgroundPrebuild(`persist_${source}`);
     }
     log.debug(
-        { source, attempted: operations.length, mapped: records.length, invalid, inserted },
+        {
+            source,
+            attempted: operations.length,
+            mapped: records.length,
+            invalid,
+            inserted: result.inserted,
+            updated: result.updated,
+        },
         'sync-store persist accepted ops'
     );
 }
@@ -2343,7 +3299,7 @@ async function processInboundPeerData(peerKey: string, chunk: Buffer): Promise<v
         : Buffer.concat([conn.inboundBuffer, chunk]);
 
     while (conn.inboundBuffer.length > 0) {
-        if (conn.transportMode === 'framed') {
+        if (conn.inboundTransportMode === 'framed') {
             const parsed = decodeFramedMessages(conn.inboundBuffer, MAX_FRAMED_MESSAGE_BYTES);
             if (parsed.error) {
                 log.warn(
@@ -2351,9 +3307,11 @@ async function processInboundPeerData(peerKey: string, chunk: Buffer): Promise<v
                         peer: shortName(peerKey),
                         pendingBytes: conn.inboundBuffer.length,
                         error: parsed.error,
+                        ...classifyPendingBuffer(conn.inboundBuffer),
                     },
                     'received malformed framed hyperswarm message'
                 );
+                noteMalformedPeer(peerKey, 'malformed_framed_message');
                 terminatePeerConnection(peerKey, 'malformed_framed_message');
                 return;
             }
@@ -2373,21 +3331,26 @@ async function processInboundPeerData(peerKey: string, chunk: Buffer): Promise<v
             continue;
         }
 
-        const parsed = decodeLegacyJsonMessages(
-            conn.inboundBuffer,
-            MAX_FRAMED_MESSAGE_BYTES,
-            conn.capabilities.advertised ? Number.MAX_SAFE_INTEGER : 1,
-        );
+        // Parse one pre-negotiation raw message at a time. If that message advertises
+        // framing, receiveMsg() switches inbound mode before the remaining bytes are decoded.
+        const maxLegacyMessages = 1;
+        const parsed = conn.inboundTransportMode === 'unknown'
+            ? decodeUnknownTransportMessages(conn.inboundBuffer, MAX_FRAMED_MESSAGE_BYTES, maxLegacyMessages)
+            : decodeLegacyJsonMessages(conn.inboundBuffer, MAX_FRAMED_MESSAGE_BYTES, maxLegacyMessages);
         if (parsed.error) {
             log.warn(
                 {
                     peer: shortName(peerKey),
                     transportMode: conn.transportMode,
+                    inboundTransportMode: conn.inboundTransportMode,
                     pendingBytes: conn.inboundBuffer.length,
                     error: parsed.error,
+                    legacyError: 'legacyError' in parsed ? parsed.legacyError : undefined,
+                    framedError: 'framedError' in parsed ? parsed.framedError : undefined,
                 },
                 'received malformed legacy hyperswarm message'
             );
+            noteMalformedPeer(peerKey, 'malformed_legacy_message');
             terminatePeerConnection(peerKey, 'malformed_legacy_message');
             return;
         }
@@ -2398,6 +3361,10 @@ async function processInboundPeerData(peerKey: string, chunk: Buffer): Promise<v
         }
 
         conn.inboundBuffer = parsed.remaining;
+        if ('transportMode' in parsed && parsed.transportMode === 'framed') {
+            setPeerTransportMode(peerKey, 'framed', 'received_framed_message_before_ping');
+            setPeerInboundTransportMode(peerKey, 'framed', 'received_framed_message_before_ping');
+        }
         for (const message of parsed.messages) {
             await receiveMsg(peerKey, message.toString('utf8'));
             if (!connectionInfo[peerKey]) {
@@ -2477,6 +3444,7 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
     catch {
         const jsonPreview = payload.length > 80 ? `${payload.slice(0, 40)}...${payload.slice(-40)}` : payload;
         log.warn({ peer: conn.peerName, transportMode: conn.transportMode, jsonPreview }, 'received invalid hyperswarm JSON message');
+        noteMalformedPeer(peerKey, 'invalid_hyperswarm_json_message');
         terminatePeerConnection(peerKey, 'invalid_hyperswarm_json_message');
         return;
     }
@@ -2488,6 +3456,7 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
 
     if (msg.type !== 'ping' && conn.transportMode === 'unknown') {
         setPeerTransportMode(peerKey, 'legacy', 'received_raw_message_before_ping');
+        setPeerInboundTransportMode(peerKey, 'legacy', 'received_raw_message_before_ping');
     }
 
     if (msg.type === 'batch') {
@@ -2536,16 +3505,29 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
     }
 
     if (msg.type === 'ping') {
+        clearMalformedPeer(peerKey, 'valid_ping');
         connectionInfo[peerKey].nodeName = nodeName;
         connectionInfo[peerKey].capabilities = normalizePeerCapabilities(msg.capabilities);
         const peerTransportFramingVersion = Number.isInteger(msg.transportFramingVersion)
             ? Number(msg.transportFramingVersion)
             : null;
         connectionInfo[peerKey].peerTransportFramingVersion = peerTransportFramingVersion;
-        setPeerTransportMode(
-            peerKey,
-            peerTransportFramingVersion === TRANSPORT_FRAMING_VERSION ? 'framed' : 'legacy',
-            'ping_capability_exchange',
+        const negotiatedTransportMode = peerTransportFramingVersion === TRANSPORT_FRAMING_VERSION ? 'framed' : 'legacy';
+        setPeerTransportMode(peerKey, negotiatedTransportMode, 'ping_capability_exchange');
+        if (negotiatedTransportMode === 'framed') {
+            const inboundMode = connectionInfo[peerKey].inboundTransportMode;
+            if (inboundMode !== 'framed') {
+                setPeerInboundTransportMode(peerKey, 'framed', 'ping_capability_exchange');
+            }
+        } else {
+            setPeerInboundTransportMode(peerKey, 'legacy', 'ping_capability_exchange');
+        }
+        log.info(
+            {
+                ...buildPeerSyncCompatibilityContext(peerKey, connectionInfo[peerKey]),
+                rawCapabilities: msg.capabilities ?? null,
+            },
+            'peer capabilities received'
         );
 
         if (Array.isArray(msg.peers)) {
@@ -2559,20 +3541,61 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
         return;
     }
 
+    if (msg.type === 'ordered_catchup_req') {
+        await sendOrderedCatchupPage(peerKey, msg);
+        return;
+    }
+
+    if (msg.type === 'ordered_catchup_push') {
+        await handleOrderedCatchupPush(peerKey, msg);
+        return;
+    }
+
+    if (msg.type === 'ordered_catchup_done') {
+        await handleOrderedCatchupDone(peerKey, msg);
+        return;
+    }
+
     if (msg.type === 'neg_open') {
+        let session = peerSessions.get(peerKey);
+        const remoteSessionId = typeof msg.sessionId === 'string' ? msg.sessionId : '';
+        const activeOrderedCatchupSessionId = getActiveOrderedCatchupSessionId(conn, session);
+        const conflictDecision = decideInboundNegOpenConflict({
+            activeSessionMode: session?.mode ?? null,
+            activeSessionId: session?.sessionId ?? null,
+            activeOrderedCatchupSessionId,
+            remoteSessionId,
+        });
+
+        if (conflictDecision.action === 'ignore') {
+            log.warn(
+                {
+                    peer: shortName(peerKey),
+                    remoteSessionId,
+                    activeSessionMode: session?.mode ?? null,
+                    activeSessionId: session?.sessionId ?? null,
+                    activeOrderedCatchupSessionId,
+                },
+                'ignoring neg_open while ordered catch-up active'
+            );
+            return;
+        }
+
         if (!negentropyAdapter) {
             log.warn('neg_open ignored because adapter is unavailable');
             return;
         }
-        if (!supportsPeerNegentropy(conn.capabilities, NEGENTROPY_VERSION)) {
+        if (!supportsPeerNegentropyTransport(conn)) {
             log.warn(
                 {
                     peer: shortName(peerKey),
                     sessionId: msg.sessionId,
                     peerVersion: conn.capabilities.version,
                     requiredVersion: NEGENTROPY_VERSION,
+                    peerTransportFramingVersion: conn.peerTransportFramingVersion,
+                    requiredTransportFramingVersion: TRANSPORT_FRAMING_VERSION,
                 },
-                'ignoring neg_open from incompatible negentropy version'
+                'ignoring neg_open from incompatible negentropy transport'
             );
             return;
         }
@@ -2587,8 +3610,7 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
             return;
         }
 
-        let session = peerSessions.get(peerKey);
-        if (session && session.sessionId !== msg.sessionId) {
+        if (conflictDecision.action === 'replace' && session) {
             closePeerSession(peerKey, 'replaced_by_remote_open');
             session = undefined;
         }
@@ -2665,7 +3687,7 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
             return;
         }
 
-        const batch = sortOperationsBySyncKey(Array.isArray(msg.data) ? msg.data : []);
+        const batch = normalizeInboundOpsPushBatch(msg.data);
         if (batch.length > 0) {
             syncStats.negentropyOpsPushReceived += batch.length;
             trackReceivedWindowOperations(session, batch);
@@ -2740,8 +3762,19 @@ async function flushQueue(): Promise<void> {
     }
 }
 
+async function syncGatekeeperIndexToStore(source: string): Promise<void> {
+    const sync = await bootstrapSyncStoreFromGatekeeper(syncStore, gatekeeper);
+    if (sync.inserted > 0 || sync.updated > 0) {
+        markNegentropyAdapterDirty();
+        maybeStartBackgroundPrebuild(`gatekeeper_index_${source}`);
+    }
+
+    log.debug({ source, sync }, 'gatekeeper index sync complete');
+}
+
 async function exportLoop(): Promise<void> {
     try {
+        await syncGatekeeperIndexToStore('exportLoop');
         await flushQueue();
     } catch (error) {
         log.error({ error }, 'Error in exportLoop');
@@ -2790,7 +3823,7 @@ async function connectionLoop(): Promise<void> {
 
         await checkConnections();
 
-        const msg: PingMessage = buildPingMessage();
+        const msg = await buildPingMessage();
 
         await relayMsg(msg);
         await runPeriodicNegentropyRepair();
@@ -2828,8 +3861,7 @@ process.stdin.on('data', d => {
 });
 
 // Join a common topic
-const hash = sha256(utf8ToBytes(config.protocol));
-const networkID = Buffer.from(hash).toString('hex');
+const networkID = createHash('sha256').update(config.protocol, 'utf8').digest('hex');
 const topic = Buffer.from(b4a.from(networkID, 'hex'));
 
 async function main(): Promise<void> {
@@ -2961,6 +3993,142 @@ export async function runMediator(options: MediatorMainOptions = {}): Promise<vo
 
     return main();
 }
+
+export const __test = {
+    resetState(): void {
+        for (const peerKey of Object.keys(connectionInfo)) {
+            delete connectionInfo[peerKey];
+        }
+        peerSessions.clear();
+        orderedCatchupPostImportPeers.clear();
+        nodeKey = '';
+        syncStore = createConfiguredSyncStore();
+        negentropyAdapter = null;
+        adapterChangeSeq = 0;
+        adapterBuiltSeq = -1;
+        adapterBuiltAt = 0;
+        adapterBuiltWindowId = null;
+        adapterBuiltSnapshot = null;
+        rebuildPromise = null;
+        backgroundPrebuildQueued = false;
+    },
+
+    setNodeKey(key: string): void {
+        nodeKey = key;
+    },
+
+    setSyncStore(store: OperationSyncStore): void {
+        syncStore = store;
+    },
+
+    setNegentropyAdapter(adapter: unknown): void {
+        negentropyAdapter = adapter as NegentropyAdapter | null;
+    },
+
+    addConnection(peerKey: string, overrides: Record<string, unknown> = {}): void {
+        const connection = (overrides.connection as HyperswarmConnection | undefined) ?? ({
+            write: () => undefined,
+            destroy: () => undefined,
+            once: () => undefined,
+            on: () => undefined,
+            remotePublicKey: Buffer.from(peerKey, 'hex'),
+        } as unknown as HyperswarmConnection);
+        const connectionInfoOverrides = { ...overrides };
+        delete connectionInfoOverrides.connection;
+
+        connectionInfo[peerKey] = {
+            connection,
+            key: peerKey,
+            peerName: shortName(peerKey),
+            nodeName: 'test-peer',
+            did: '',
+            connectedAt: Date.now(),
+            lastSeen: Date.now(),
+            capabilities: normalizePeerCapabilities(),
+            syncMode: 'unknown',
+            syncStarted: false,
+            lastNegentropyAttemptAt: 0,
+            negentropySynced: false,
+            legacyOutboundDeferred: false,
+            legacyInboundDeferred: null,
+            legacyFallbackNoted: false,
+            orderedCatchupAttempted: false,
+            orderedCatchupClientSessionId: null,
+            orderedCatchupServerSessionId: null,
+            orderedCatchupServerLastActivity: 0,
+            orderedCatchupServerPendingSince: 0,
+            orderedCatchupServerPendingUntil: 0,
+            orderedCatchupServerPendingReason: null,
+            orderedCatchupServerPendingGap: 0,
+            initialPingSent: false,
+            transportMode: 'unknown',
+            inboundTransportMode: 'unknown',
+            peerTransportFramingVersion: null,
+            inboundBuffer: Buffer.alloc(0),
+            inboundReceiveChain: Promise.resolve(),
+            ...connectionInfoOverrides,
+        } as ConnectionInfo;
+    },
+
+    async sendOrderedCatchupPage(peerKey: string, msg: OrderedCatchupReqMessage): Promise<void> {
+        await sendOrderedCatchupPage(peerKey, msg);
+    },
+
+    async maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic' = 'connect'): Promise<void> {
+        await maybeStartPeerSync(peerKey, source);
+    },
+
+    clearExpiredOrderedCatchupServerExpectation(peerKey: string, now = Date.now()): boolean {
+        return clearExpiredOrderedCatchupServerExpectation(peerKey, now);
+    },
+
+    createOrderedCatchupClientSession(peerKey: string, sessionId: string): void {
+        const session = createPeerSession(peerKey, 'ordered_catchup', true, sessionId);
+        setOrderedCatchupClientState(peerKey, session.sessionId);
+    },
+
+    async receiveMsg(peerKey: string, msg: Record<string, unknown>): Promise<void> {
+        await receiveMsg(peerKey, JSON.stringify(msg));
+    },
+
+    async processInboundPeerData(peerKey: string, chunk: Buffer | string): Promise<void> {
+        await processInboundPeerData(peerKey, typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : Buffer.from(chunk));
+    },
+
+    async sendPingToPeer(peerKey: string, source: 'initial' | 'periodic' = 'periodic'): Promise<void> {
+        await sendPingToPeer(peerKey, source);
+    },
+
+    getConnectionState(peerKey: string): Record<string, unknown> | null {
+        const conn = connectionInfo[peerKey];
+        if (!conn) {
+            return null;
+        }
+        const session = peerSessions.get(peerKey);
+
+        return {
+            syncMode: conn.syncMode,
+            syncStarted: conn.syncStarted,
+            activeSession: session
+                ? {
+                    mode: session.mode,
+                    sessionId: session.sessionId,
+                }
+                : null,
+            orderedCatchupClientSessionId: conn.orderedCatchupClientSessionId,
+            orderedCatchupServerSessionId: conn.orderedCatchupServerSessionId,
+            orderedCatchupServerLastActivity: conn.orderedCatchupServerLastActivity,
+            orderedCatchupServerPendingSince: conn.orderedCatchupServerPendingSince,
+            orderedCatchupServerPendingUntil: conn.orderedCatchupServerPendingUntil,
+            orderedCatchupServerPendingReason: conn.orderedCatchupServerPendingReason,
+            orderedCatchupServerPendingGap: conn.orderedCatchupServerPendingGap,
+            initialPingSent: conn.initialPingSent,
+            transportMode: conn.transportMode,
+            inboundTransportMode: conn.inboundTransportMode,
+            peerTransportFramingVersion: conn.peerTransportFramingVersion,
+        };
+    },
+};
 
 const isDirectRun = !!process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
 if (isDirectRun) {

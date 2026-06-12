@@ -84,6 +84,17 @@ describe('isReady', () => {
         expect(isReady).toBe(false);
     });
 
+    it('should return false when service is not ready', async () => {
+        nock(GatekeeperURL)
+            .get(Endpoints.ready)
+            .reply(503, 'false');
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        const isReady = await gatekeeper.isReady();
+
+        expect(isReady).toBe(false);
+    });
+
     it('should wait until ready', async () => {
         nock(GatekeeperURL)
             .get(Endpoints.ready)
@@ -523,6 +534,7 @@ describe('exportIndex', () => {
         const exportResponse = {
             mode: 'changes',
             cursor: '1',
+            checkpointCursor: '1',
             hasMore: false,
             dids: [],
             blocks: [],
@@ -552,6 +564,22 @@ describe('exportIndex', () => {
         catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
+    });
+
+    it('should throw database unavailable payload on exportIndex 503', async () => {
+        const unavailable = {
+            error: 'database_unavailable',
+            message: 'Gatekeeper database is unavailable while exporting index',
+        };
+
+        nock(GatekeeperURL)
+            .post(Endpoints.index.export)
+            .reply(503, unavailable);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+
+        await expect(gatekeeper.exportIndex({ mode: 'changes' }))
+            .rejects.toStrictEqual(unavailable);
     });
 });
 

@@ -1,17 +1,31 @@
 import { Pool, PoolClient } from 'pg';
 import { Operation } from '@mdip/gatekeeper/types';
 import { childLogger } from '@mdip/common/logger';
-import { OperationSyncStore, SyncOperationRecord, SyncStoreListOptions } from './types.js';
+import {
+    ApplySyncStorePageResult,
+    OperationSyncStore,
+    SyncOperationRecord,
+    SyncOperationWriteRecord,
+    SyncStoreListOptions,
+    SyncStoreOrderedListOptions,
+    SyncStorePage,
+    SyncStoreWriteResult,
+} from './types.js';
 
 interface SyncRow {
     id: string;
-    ts: number | string;
+    sync_order: number | string | null;
+    signed_ts: number | string;
     operation_json: Operation | string;
     inserted_at: number | string;
 }
 
 interface CountRow {
     count: number | string;
+}
+
+interface UpsertRow {
+    inserted: boolean;
 }
 
 const POSTGRES_NOT_STARTED_ERROR = 'Sync Postgres DB not open. Call start() first.';
@@ -75,14 +89,25 @@ export default class PostgresOperationSyncStore implements OperationSyncStore {
         await pool.query(`
             CREATE TABLE IF NOT EXISTS hyperswarm_sync_operations (
                 id TEXT COLLATE "C" PRIMARY KEY,
-                ts BIGINT NOT NULL,
+                sync_order BIGINT,
+                signed_ts BIGINT NOT NULL,
                 operation_json JSONB NOT NULL,
                 inserted_at BIGINT NOT NULL
             );
 
-            CREATE INDEX IF NOT EXISTS idx_hypr_sync_operations_ts_id
-                ON hyperswarm_sync_operations (ts ASC, id ASC);
+            CREATE INDEX IF NOT EXISTS idx_hypr_sync_operations_signed_ts_id
+                ON hyperswarm_sync_operations (signed_ts ASC, id ASC);
+
+            CREATE INDEX IF NOT EXISTS idx_hypr_sync_operations_sync_order_id
+                ON hyperswarm_sync_operations (sync_order ASC, id ASC);
+
+            CREATE TABLE IF NOT EXISTS hyperswarm_sync_state (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
         `);
+
+        await this.ensureOperationsColumns();
     }
 
     async stop(): Promise<void> {
@@ -98,41 +123,64 @@ export default class PostgresOperationSyncStore implements OperationSyncStore {
         await this.runExclusive(async () => {
             await this.withTx(async (client) => {
                 await client.query('TRUNCATE TABLE hyperswarm_sync_operations');
+                await client.query('TRUNCATE TABLE hyperswarm_sync_state');
             });
         });
     }
 
-    async upsertMany(records: Array<Omit<SyncOperationRecord, 'insertedAt'> | SyncOperationRecord>): Promise<number> {
+    async upsertMany(records: SyncOperationWriteRecord[]): Promise<SyncStoreWriteResult> {
         this.getPool();
 
         if (!Array.isArray(records) || records.length === 0) {
-            return 0;
+            return { inserted: 0, updated: 0 };
         }
 
         return this.runExclusive(async () => {
             try {
-                return await this.withTx(async (client) => {
-                    let inserted = 0;
-                    const now = Date.now();
-
-                    for (const record of records) {
-                        const insertedAt = 'insertedAt' in record ? record.insertedAt : now;
-                        const response = await client.query(
-                            `INSERT INTO hyperswarm_sync_operations(id, ts, operation_json, inserted_at)
-                             VALUES($1, $2, $3::jsonb, $4)
-                             ON CONFLICT(id) DO NOTHING`,
-                            [record.id, record.ts, JSON.stringify(record.operation), insertedAt]
-                        );
-
-                        inserted += response.rowCount ?? 0;
-                    }
-
-                    return inserted;
-                });
+                return await this.withTx(client => this.insertRecordsInTx(client, records));
             } catch (error) {
                 log.error({ error }, 'upsertMany failed');
                 throw error;
             }
+        });
+    }
+
+    async applySyncPage(page: SyncStorePage): Promise<ApplySyncStorePageResult> {
+        this.getPool();
+
+        return this.runExclusive(async () => {
+            try {
+                return await this.withTx(async (client) => {
+                    const result = await this.insertRecordsInTx(client, page.records);
+                    for (const [key, value] of Object.entries(page.syncStateUpdates ?? {})) {
+                        await this.saveSyncStateInTx(client, key, value);
+                    }
+                    return result;
+                });
+            } catch (error) {
+                log.error({ error }, 'applySyncPage failed');
+                throw error;
+            }
+        });
+    }
+
+    async loadSyncState(key: string): Promise<string | null> {
+        const result = await this.getPool().query<{ value: string }>(
+            `SELECT value
+             FROM hyperswarm_sync_state
+             WHERE key = $1
+             LIMIT 1`,
+            [key]
+        );
+
+        return result.rows[0]?.value ?? null;
+    }
+
+    async saveSyncState(key: string, value: string | null): Promise<void> {
+        this.getPool();
+
+        await this.runExclusive(async () => {
+            await this.withTx(client => this.saveSyncStateInTx(client, key, value));
         });
     }
 
@@ -142,7 +190,7 @@ export default class PostgresOperationSyncStore implements OperationSyncStore {
         }
 
         const result = await this.getPool().query<SyncRow>(
-            `SELECT id, ts, operation_json, inserted_at
+            `SELECT id, sync_order, signed_ts, operation_json, inserted_at
              FROM hyperswarm_sync_operations
              WHERE id = ANY($1::text[])`,
             [ids]
@@ -166,17 +214,19 @@ export default class PostgresOperationSyncStore implements OperationSyncStore {
         if (after) {
             const afterTsParam = params.push(after.ts);
             const afterIdParam = params.push(after.id);
-            predicates.push(`(ts > $${afterTsParam} OR (ts = $${afterTsParam} AND id > $${afterIdParam}))`);
+            predicates.push(
+                `(signed_ts > $${afterTsParam} OR (signed_ts = $${afterTsParam} AND id > $${afterIdParam}))`
+            );
         }
 
         if (typeof fromTs === 'number') {
             const fromTsParam = params.push(fromTs);
-            predicates.push(`ts >= $${fromTsParam}`);
+            predicates.push(`signed_ts >= $${fromTsParam}`);
         }
 
         if (typeof toTs === 'number') {
             const toTsParam = params.push(toTs);
-            predicates.push(`ts <= $${toTsParam}`);
+            predicates.push(`signed_ts <= $${toTsParam}`);
         }
 
         const where = predicates.length > 0
@@ -186,10 +236,39 @@ export default class PostgresOperationSyncStore implements OperationSyncStore {
         const limitParam = params.push(limit);
 
         const result = await this.getPool().query<SyncRow>(
-            `SELECT id, ts, operation_json, inserted_at
+            `SELECT id, sync_order, signed_ts, operation_json, inserted_at
              FROM hyperswarm_sync_operations
              ${where}
-             ORDER BY ts ASC, id ASC
+             ORDER BY signed_ts ASC, id ASC
+             LIMIT $${limitParam}`,
+            params
+        );
+
+        return result.rows.map(row => this.mapRow(row));
+    }
+
+    async iterateOrdered(options: SyncStoreOrderedListOptions = {}): Promise<SyncOperationRecord[]> {
+        const limit = options.limit ?? 1000;
+        const after = options.after;
+
+        const params: Array<number | string> = [];
+        const predicates = ['sync_order IS NOT NULL'];
+
+        if (after) {
+            const afterSyncOrderParam = params.push(after.syncOrder);
+            const afterIdParam = params.push(after.id);
+            predicates.push(
+                `(sync_order > $${afterSyncOrderParam} OR (sync_order = $${afterSyncOrderParam} AND id > $${afterIdParam}))`
+            );
+        }
+
+        const limitParam = params.push(limit);
+
+        const result = await this.getPool().query<SyncRow>(
+            `SELECT id, sync_order, signed_ts, operation_json, inserted_at
+             FROM hyperswarm_sync_operations
+             WHERE ${predicates.join(' AND ')}
+             ORDER BY sync_order ASC, id ASC
              LIMIT $${limitParam}`,
             params
         );
@@ -221,6 +300,18 @@ export default class PostgresOperationSyncStore implements OperationSyncStore {
         return this.toNumber(result.rows[0].count);
     }
 
+    async countOrdered(): Promise<number> {
+        const result = await this.getPool().query<CountRow>(
+            'SELECT COUNT(*) AS count FROM hyperswarm_sync_operations WHERE sync_order IS NOT NULL'
+        );
+
+        if (result.rowCount === 0) {
+            return 0;
+        }
+
+        return this.toNumber(result.rows[0].count);
+    }
+
     private mapRow(row: SyncRow): SyncOperationRecord {
         const operation = typeof row.operation_json === 'string'
             ? JSON.parse(row.operation_json) as Operation
@@ -228,7 +319,9 @@ export default class PostgresOperationSyncStore implements OperationSyncStore {
 
         return {
             id: row.id,
-            ts: this.toNumber(row.ts),
+            syncOrder: row.sync_order == null ? undefined : this.toNumber(row.sync_order),
+            signedTs: this.toNumber(row.signed_ts),
+            ts: this.toNumber(row.signed_ts),
             operation,
             insertedAt: this.toNumber(row.inserted_at),
         };
@@ -240,5 +333,122 @@ export default class PostgresOperationSyncStore implements OperationSyncStore {
         }
 
         return Number.parseInt(value, 10);
+    }
+
+    private async insertRecordsInTx(
+        client: PoolClient,
+        records: SyncOperationWriteRecord[]
+    ): Promise<SyncStoreWriteResult> {
+        let inserted = 0;
+        let updated = 0;
+        const now = Date.now();
+
+        for (const record of records) {
+            const insertedAt = record.insertedAt ?? now;
+            const signedTs = this.getSignedTs(record);
+            const syncOrder = this.getSyncOrder(record);
+
+            const response = await client.query<UpsertRow>(
+                `INSERT INTO hyperswarm_sync_operations(id, sync_order, signed_ts, operation_json, inserted_at)
+                 VALUES($1, $2, $3, $4::jsonb, $5)
+                 ON CONFLICT(id) DO UPDATE
+                 SET sync_order = EXCLUDED.sync_order
+                 WHERE hyperswarm_sync_operations.sync_order IS NULL
+                   AND EXCLUDED.sync_order IS NOT NULL
+                 RETURNING (xmax = '0'::xid) AS inserted`,
+                [
+                    record.id,
+                    syncOrder ?? null,
+                    signedTs,
+                    JSON.stringify(record.operation),
+                    insertedAt,
+                ]
+            );
+
+            if ((response.rowCount ?? 0) === 0) {
+                continue;
+            }
+
+            if (response.rows[0]?.inserted) {
+                inserted += 1;
+            } else {
+                updated += 1;
+            }
+        }
+
+        return { inserted, updated };
+    }
+
+    private async saveSyncStateInTx(client: PoolClient, key: string, value: string | null): Promise<void> {
+        if (value === null) {
+            await client.query(
+                `DELETE FROM hyperswarm_sync_state
+                 WHERE key = $1`,
+                [key]
+            );
+            return;
+        }
+
+        await client.query(
+            `INSERT INTO hyperswarm_sync_state(key, value)
+             VALUES($1, $2)
+             ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+            [key, value]
+        );
+    }
+
+    private async ensureOperationsColumns(): Promise<void> {
+        const pool = this.getPool();
+
+        await pool.query(`
+            ALTER TABLE hyperswarm_sync_operations
+                ADD COLUMN IF NOT EXISTS sync_order BIGINT;
+
+            ALTER TABLE hyperswarm_sync_operations
+                ADD COLUMN IF NOT EXISTS signed_ts BIGINT;
+
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_name = 'hyperswarm_sync_operations'
+                      AND column_name = 'ts'
+                ) THEN
+                    UPDATE hyperswarm_sync_operations
+                    SET signed_ts = ts
+                    WHERE signed_ts IS NULL;
+                END IF;
+            END $$;
+
+            UPDATE hyperswarm_sync_operations
+            SET signed_ts = 0
+            WHERE signed_ts IS NULL;
+
+            ALTER TABLE hyperswarm_sync_operations
+                ALTER COLUMN signed_ts SET NOT NULL;
+
+            CREATE INDEX IF NOT EXISTS idx_hypr_sync_operations_signed_ts_id
+                ON hyperswarm_sync_operations (signed_ts ASC, id ASC);
+
+            CREATE INDEX IF NOT EXISTS idx_hypr_sync_operations_sync_order_id
+                ON hyperswarm_sync_operations (sync_order ASC, id ASC);
+        `);
+    }
+
+    private getSignedTs(record: SyncOperationWriteRecord): number {
+        const signedTs = record.signedTs ?? record.ts;
+
+        if (typeof signedTs !== 'number' || !Number.isSafeInteger(signedTs)) {
+            throw new Error('Sync operation record signedTs must be an integer');
+        }
+
+        return signedTs;
+    }
+
+    private getSyncOrder(record: SyncOperationWriteRecord): number | undefined {
+        return Number.isSafeInteger(record.syncOrder) && record.syncOrder! >= 0
+            ? record.syncOrder
+            : undefined;
     }
 }

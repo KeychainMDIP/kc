@@ -9,7 +9,8 @@ import {
     IndexExportChangesOptions,
     IndexExportResponse,
     IndexExportSnapshotOptions,
-    Operation
+    Operation,
+    SetEventsOptions,
 } from '../types.js';
 import {
     buildIndexChangesResponse,
@@ -65,6 +66,10 @@ export abstract class AbstractJson implements GatekeeperDb {
         return;
     }
 
+    async isReady(): Promise<boolean> {
+        return true;
+    }
+
     private splitSuffix(did: string): string {
         if (!did) {
             throw new InvalidDIDError();
@@ -85,7 +90,11 @@ export abstract class AbstractJson implements GatekeeperDb {
             } else {
                 db.dids[suffix] = [event];
             }
-            this.recordIndexChange(db, { kind: 'did', did });
+            this.recordIndexChange(db, {
+                kind: 'did',
+                did,
+                event,
+            });
             this.writeDb(db);
         });
     }
@@ -101,12 +110,26 @@ export abstract class AbstractJson implements GatekeeperDb {
         }
     }
 
-    async setEvents(did: string, events: GatekeeperEvent[]): Promise<void> {
+    async setEvents(did: string, events: GatekeeperEvent[], options?: SetEventsOptions): Promise<void> {
         const suffix = this.splitSuffix(did);
         return this.runExclusive(async () => {
             const db = this.loadDb();
+            const operationEvents = options?.operationEvents ?? [];
             db.dids[suffix] = events;
-            this.recordIndexChange(db, { kind: 'did', did });
+
+            if (operationEvents.length === 0) {
+                this.recordIndexChange(db, { kind: 'did', did });
+                this.writeDb(db);
+                return;
+            }
+
+            for (const event of operationEvents) {
+                this.recordIndexChange(db, {
+                    kind: 'did',
+                    did,
+                    event,
+                });
+            }
             this.writeDb(db);
         });
     }
@@ -196,6 +219,7 @@ export abstract class AbstractJson implements GatekeeperDb {
         const afterSeq = parseIndexExportCursor(options.cursor);
         const limit = normalizeIndexExportLimit(options.limit);
         const db = this.loadDb();
+        const checkpointCursor = await this.getIndexCheckpointCursor();
         const changes = (db.indexChanges ?? [])
             .filter(change => change.seq > afterSeq)
             .sort((a, b) => a.seq - b.seq);
@@ -205,6 +229,7 @@ export abstract class AbstractJson implements GatekeeperDb {
             page,
             changes.length > limit,
             options,
+            checkpointCursor,
             did => this.getEvents(did)
         );
     }

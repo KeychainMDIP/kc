@@ -8,7 +8,8 @@ import {
     BlockInfo,
     IndexExportSnapshotOptions,
     IndexExportResponse,
-    IndexExportChangesOptions
+    IndexExportChangesOptions,
+    SetEventsOptions,
 } from '../types.js';
 import {
     buildIndexChangesResponse,
@@ -16,6 +17,7 @@ import {
     normalizeIndexExportLimit,
     parseIndexExportCursor
 } from './index-export.js';
+import { withHealthCheckTimeout } from './health.js';
 
 interface EventRow {
     event: GatekeeperEvent | string | null;
@@ -35,16 +37,8 @@ interface LengthRow {
     length: number | string;
 }
 
-interface CountRow {
-    count: number | string;
-}
-
 interface SeqRow {
     seq: number | string;
-}
-
-interface ValueRow {
-    value: string | null;
 }
 
 interface IndexChangeRow {
@@ -53,11 +47,11 @@ interface IndexChangeRow {
     did: string | null;
     registry: string | null;
     block: BlockInfo | string | null;
+    event: GatekeeperEvent | string | null;
     removed: boolean;
 }
 
 const POSTGRES_NOT_STARTED_ERROR = 'Postgres DB not started. Call start() first.';
-const SCHEMA_VERSION = '2';
 
 export default class DbPostgres implements GatekeeperDb {
     private readonly dbName: string;
@@ -154,20 +148,6 @@ export default class DbPostgres implements GatekeeperDb {
 
     private async ensureSchema(client: PoolClient): Promise<void> {
         await client.query(`
-            CREATE TABLE IF NOT EXISTS gatekeeper_meta (
-                namespace TEXT NOT NULL,
-                key TEXT NOT NULL,
-                value TEXT NOT NULL,
-                PRIMARY KEY (namespace, key)
-            );
-
-            CREATE TABLE IF NOT EXISTS gatekeeper_dids (
-                namespace TEXT NOT NULL,
-                id TEXT NOT NULL,
-                events JSONB NOT NULL DEFAULT '[]'::jsonb,
-                PRIMARY KEY (namespace, id)
-            );
-
             CREATE TABLE IF NOT EXISTS gatekeeper_events (
                 namespace TEXT NOT NULL,
                 id TEXT NOT NULL,
@@ -207,99 +187,13 @@ export default class DbPostgres implements GatekeeperDb {
                 did TEXT,
                 registry TEXT,
                 block JSONB,
+                event JSONB,
                 removed BOOLEAN NOT NULL DEFAULT FALSE
             );
 
             CREATE INDEX IF NOT EXISTS idx_gatekeeper_index_changes_ns_seq
                 ON gatekeeper_index_changes (namespace, seq ASC);
         `);
-    }
-
-    private async getSchemaVersion(client: PoolClient): Promise<string | null> {
-        const result = await client.query<ValueRow>(
-            `SELECT value
-             FROM gatekeeper_meta
-             WHERE namespace = $1 AND key = 'schema_version'
-             LIMIT 1`,
-            [this.dbName]
-        );
-
-        if (result.rowCount === 0) {
-            return null;
-        }
-
-        return result.rows[0].value;
-    }
-
-    private async setSchemaVersion(client: PoolClient, version: string): Promise<void> {
-        await client.query(
-            `INSERT INTO gatekeeper_meta (namespace, key, value)
-             VALUES ($1, 'schema_version', $2)
-             ON CONFLICT (namespace, key)
-             DO UPDATE SET value = EXCLUDED.value`,
-            [this.dbName, version]
-        );
-    }
-
-    private async legacyDidTableExists(client: PoolClient): Promise<boolean> {
-        const result = await client.query<{ exists: string | null }>(
-            `SELECT to_regclass('public.gatekeeper_dids') AS exists`
-        );
-
-        return !!result.rows[0]?.exists;
-    }
-
-    private async migrateLegacySchema(client: PoolClient): Promise<boolean> {
-        if (!(await this.legacyDidTableExists(client))) {
-            return false;
-        }
-
-        const legacyCount = await client.query<CountRow>(
-            `SELECT COALESCE(SUM(jsonb_array_length(events)), 0) AS count
-             FROM gatekeeper_dids
-             WHERE namespace = $1`,
-            [this.dbName]
-        );
-        const expectedRows = this.toNumber(legacyCount.rows[0].count);
-
-        if (expectedRows === 0) {
-            return false;
-        }
-
-        await client.query(
-            `DELETE FROM gatekeeper_events
-             WHERE namespace = $1`,
-            [this.dbName]
-        );
-
-        await client.query(
-            `INSERT INTO gatekeeper_events (namespace, id, seq, event)
-             SELECT dids.namespace, dids.id, element.ordinality - 1, element.event
-             FROM gatekeeper_dids AS dids
-             CROSS JOIN LATERAL jsonb_array_elements(dids.events) WITH ORDINALITY AS element(event, ordinality)
-             WHERE dids.namespace = $1`,
-            [this.dbName]
-        );
-
-        const migratedCount = await client.query<CountRow>(
-            `SELECT COUNT(*) AS count
-             FROM gatekeeper_events
-             WHERE namespace = $1`,
-            [this.dbName]
-        );
-        const actualRows = this.toNumber(migratedCount.rows[0].count);
-
-        if (actualRows !== expectedRows) {
-            throw new Error(`Legacy migration count mismatch: expected ${expectedRows}, got ${actualRows}`);
-        }
-
-        await client.query(
-            `DELETE FROM gatekeeper_dids
-             WHERE namespace = $1`,
-            [this.dbName]
-        );
-
-        return true;
     }
 
     private async insertEventRows(client: PoolClient, id: string, events: GatekeeperEvent[]): Promise<number> {
@@ -332,12 +226,14 @@ export default class DbPostgres implements GatekeeperDb {
             did?: string;
             registry?: string;
             block?: BlockInfo;
+            event?: GatekeeperEvent;
             removed?: boolean;
         }
     ): Promise<void> {
         await client.query(
-            `INSERT INTO gatekeeper_index_changes (namespace, kind, did, registry, block, removed)
-             VALUES ($1, $2, $3, $4, $5::jsonb, $6)`,
+            `INSERT INTO gatekeeper_index_changes
+                (namespace, kind, did, registry, block, removed, event)
+             VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7::jsonb)`,
             [
                 this.dbName,
                 change.kind,
@@ -345,6 +241,7 @@ export default class DbPostgres implements GatekeeperDb {
                 change.registry ?? null,
                 change.block ? JSON.stringify(change.block) : null,
                 change.removed ?? false,
+                change.event ? JSON.stringify(change.event) : null,
             ]
         );
     }
@@ -357,13 +254,6 @@ export default class DbPostgres implements GatekeeperDb {
         this.pool = new Pool({ connectionString: this.url });
         await this.withTx(async client => {
             await this.ensureSchema(client);
-            const version = await this.getSchemaVersion(client);
-            if (version === SCHEMA_VERSION) {
-                return;
-            }
-
-            await this.migrateLegacySchema(client);
-            await this.setSchemaVersion(client, SCHEMA_VERSION);
         });
     }
 
@@ -374,11 +264,26 @@ export default class DbPostgres implements GatekeeperDb {
         }
     }
 
+    async isReady(): Promise<boolean> {
+        if (!this.pool) {
+            return false;
+        }
+
+        try {
+            await withHealthCheckTimeout(
+                this.pool.query('SELECT 1'),
+                'Postgres readiness check timed out'
+            );
+            return true;
+        }
+        catch {
+            return false;
+        }
+    }
+
     async resetDb(): Promise<void> {
         await this.withTx(async client => {
-            await client.query('DELETE FROM gatekeeper_meta WHERE namespace = $1', [this.dbName]);
             await client.query('DELETE FROM gatekeeper_events WHERE namespace = $1', [this.dbName]);
-            await client.query('DELETE FROM gatekeeper_dids WHERE namespace = $1', [this.dbName]);
             await client.query('DELETE FROM gatekeeper_queue WHERE namespace = $1', [this.dbName]);
             await client.query('DELETE FROM gatekeeper_blocks WHERE namespace = $1', [this.dbName]);
             await client.query('DELETE FROM gatekeeper_index_changes WHERE namespace = $1', [this.dbName]);
@@ -402,13 +307,17 @@ export default class DbPostgres implements GatekeeperDb {
                 [this.dbName, id, this.toNumber(nextSeq.rows[0].seq), JSON.stringify(event)]
             );
 
-            await this.recordIndexChange(client, { kind: 'did', did });
+            await this.recordIndexChange(client, {
+                kind: 'did',
+                did,
+                event,
+            });
 
             return result.rowCount ?? 0;
         });
     }
 
-    async setEvents(did: string, events: GatekeeperEvent[]): Promise<number> {
+    async setEvents(did: string, events: GatekeeperEvent[], options?: SetEventsOptions): Promise<number> {
         const id = this.splitSuffix(did);
 
         return this.withTx(async client => {
@@ -419,7 +328,23 @@ export default class DbPostgres implements GatekeeperDb {
             );
 
             const inserted = await this.insertEventRows(client, id, events);
-            await this.recordIndexChange(client, { kind: 'did', did });
+            const operationEvents = options?.operationEvents ?? [];
+
+            if (operationEvents.length === 0) {
+                await this.recordIndexChange(client, {
+                    kind: 'did',
+                    did,
+                });
+            } else {
+                for (const event of operationEvents) {
+                    await this.recordIndexChange(client, {
+                        kind: 'did',
+                        did,
+                        event,
+                    });
+                }
+            }
+
             return inserted;
         });
     }
@@ -519,8 +444,9 @@ export default class DbPostgres implements GatekeeperDb {
         const options = _options ?? {};
         const afterSeq = parseIndexExportCursor(options.cursor);
         const limit = normalizeIndexExportLimit(options.limit);
+        const checkpointCursor = await this.getIndexCheckpointCursor();
         const result = await pool.query<IndexChangeRow>(
-            `SELECT seq, kind, did, registry, block, removed
+            `SELECT seq, kind, did, registry, block, event, removed
              FROM gatekeeper_index_changes
              WHERE namespace = $1 AND seq > $2
              ORDER BY seq ASC
@@ -535,6 +461,9 @@ export default class DbPostgres implements GatekeeperDb {
             block: typeof row.block === 'string'
                 ? JSON.parse(row.block) as BlockInfo
                 : row.block ?? undefined,
+            event: row.event
+                ? this.parseEvent(row.event)
+                : undefined,
             removed: row.removed,
         }));
 
@@ -542,6 +471,7 @@ export default class DbPostgres implements GatekeeperDb {
             page,
             result.rows.length > limit,
             options,
+            checkpointCursor,
             did => this.getEvents(did)
         );
     }

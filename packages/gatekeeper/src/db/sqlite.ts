@@ -10,7 +10,8 @@ import {
     BlockInfo,
     IndexExportSnapshotOptions,
     IndexExportResponse,
-    IndexExportChangesOptions
+    IndexExportChangesOptions,
+    SetEventsOptions,
 } from '../types.js'
 import {
     buildIndexChangesResponse,
@@ -35,6 +36,7 @@ interface IndexChangeRow {
     did?: string | null;
     registry?: string | null;
     block?: string | null;
+    event?: string | null;
     removed: number;
 }
 
@@ -108,6 +110,7 @@ export default class DbSqlite implements GatekeeperDb {
             did TEXT,
             registry TEXT,
             block TEXT,
+            event TEXT,
             removed INTEGER NOT NULL DEFAULT 0
         )`);
 
@@ -122,12 +125,41 @@ export default class DbSqlite implements GatekeeperDb {
 
             CREATE UNIQUE INDEX IF NOT EXISTS idx_registry_height ON blocks (registry, height);
         `);
+
+        await this.migrateSchema();
+    }
+
+    private async migrateSchema(): Promise<void> {
+        if (!this.db) {
+            throw new Error(SQLITE_NOT_STARTED_ERROR);
+        }
+
+        const indexChangeColumns = await this.db.all<{ name: string }[]>('PRAGMA table_info(index_changes)');
+        const hasEventColumn = indexChangeColumns.some(column => column.name === 'event');
+
+        if (!hasEventColumn) {
+            await this.db.exec('ALTER TABLE index_changes ADD COLUMN event TEXT');
+        }
     }
 
     async stop(): Promise<void> {
         if (this.db) {
             await this.db.close();
             this.db = null;
+        }
+    }
+
+    async isReady(): Promise<boolean> {
+        if (!this.db) {
+            return false;
+        }
+
+        try {
+            await this.db.get('SELECT 1');
+            return true;
+        }
+        catch {
+            return false;
         }
     }
 
@@ -160,6 +192,7 @@ export default class DbSqlite implements GatekeeperDb {
                 await this.recordIndexChangeStrict({
                     kind: 'did',
                     did,
+                    event,
                 });
                 return changes;
             })
@@ -171,6 +204,7 @@ export default class DbSqlite implements GatekeeperDb {
         did?: string;
         registry?: string;
         block?: BlockInfo;
+        event?: GatekeeperEvent;
         removed?: boolean;
     }): Promise<void> {
         if (!this.db) {
@@ -178,13 +212,14 @@ export default class DbSqlite implements GatekeeperDb {
         }
 
         await this.db.run(
-            `INSERT INTO index_changes(kind, did, registry, block, removed)
-             VALUES (?, ?, ?, ?, ?)`,
+            `INSERT INTO index_changes(kind, did, registry, block, removed, event)
+             VALUES (?, ?, ?, ?, ?, ?)`,
             change.kind,
             change.did ?? null,
             change.registry ?? null,
             change.block ? JSON.stringify(change.block) : null,
-            change.removed ? 1 : 0
+            change.removed ? 1 : 0,
+            change.event ? JSON.stringify(change.event) : null
         );
     }
 
@@ -201,15 +236,28 @@ export default class DbSqlite implements GatekeeperDb {
     }
 
 
-    async setEvents(did: string, events: GatekeeperEvent[]): Promise<number> {
+    async setEvents(did: string, events: GatekeeperEvent[], options?: SetEventsOptions): Promise<number> {
         const id = this.splitSuffix(did);
         return this.runExclusive(() =>
             this.withTx(async () => {
                 const changes = await this.setEventsStrict(id, events);
-                await this.recordIndexChangeStrict({
-                    kind: 'did',
-                    did,
-                });
+                const operationEvents = options?.operationEvents ?? [];
+
+                if (operationEvents.length === 0) {
+                    await this.recordIndexChangeStrict({
+                        kind: 'did',
+                        did,
+                    });
+                } else {
+                    for (const event of operationEvents) {
+                        await this.recordIndexChangeStrict({
+                            kind: 'did',
+                            did,
+                            event,
+                        });
+                    }
+                }
+
                 return changes;
             })
         );
@@ -395,8 +443,9 @@ export default class DbSqlite implements GatekeeperDb {
         const options = _options ?? {};
         const afterSeq = parseIndexExportCursor(options.cursor);
         const limit = normalizeIndexExportLimit(options.limit);
+        const checkpointCursor = await this.getIndexCheckpointCursor();
         const rows = await this.db.all<IndexChangeRow[]>(
-            `SELECT seq, kind, did, registry, block, removed
+            `SELECT seq, kind, did, registry, block, event, removed
              FROM index_changes
              WHERE seq > ?
              ORDER BY seq ASC
@@ -410,6 +459,7 @@ export default class DbSqlite implements GatekeeperDb {
             did: row.did ?? undefined,
             registry: row.registry ?? undefined,
             block: row.block ? JSON.parse(row.block) as BlockInfo : undefined,
+            event: row.event ? JSON.parse(row.event) as GatekeeperEvent : undefined,
             removed: row.removed === 1,
         }));
 
@@ -417,6 +467,7 @@ export default class DbSqlite implements GatekeeperDb {
             page,
             rows.length > limit,
             options,
+            checkpointCursor,
             did => this.getEvents(did)
         );
     }

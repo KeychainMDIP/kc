@@ -2,6 +2,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { jest } from '@jest/globals';
+import * as sqlite from 'sqlite';
+import sqlite3 from 'sqlite3';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory.ts';
 import DbMongo from '@mdip/gatekeeper/db/mongo.ts';
 import DbPostgres from '@mdip/gatekeeper/db/postgres.ts';
@@ -14,6 +16,7 @@ import {
     IndexChangeRecord,
 } from '@mdip/gatekeeper/types';
 import {
+    buildIndexChangesResponse,
     buildIndexSnapshotResponseFromPageKeys,
     exportIndexSnapshotFromAllKeysForLocalDb,
     normalizeIndexExportLimit,
@@ -30,6 +33,20 @@ function createEvent(did: string, time: string, type: 'create' | 'update' = 'cre
         operation: {
             type,
             ...(type === 'update' && { did }),
+        },
+    };
+}
+
+function withOperationHash(event: GatekeeperEvent, hash: string): GatekeeperEvent {
+    return {
+        ...event,
+        operation: {
+            ...event.operation,
+            signature: {
+                signed: event.time,
+                hash,
+                value: `signature-${hash}`,
+            },
         },
     };
 }
@@ -118,6 +135,9 @@ function createPostgresFixture(): AdapterFixture {
                 ? JSON.parse(params[4] as string) as BlockInfo
                 : undefined,
             removed: params[5] === true,
+            event: params[6]
+                ? parseStoredEvent(params[6])
+                : undefined,
         });
     }
 
@@ -157,9 +177,7 @@ function createPostgresFixture(): AdapterFixture {
             return { rows: [], rowCount: existed ? 1 : 0 };
         }
 
-        if (text.includes('DELETE FROM gatekeeper_meta') ||
-            text.includes('DELETE FROM gatekeeper_dids') ||
-            text.includes('DELETE FROM gatekeeper_queue') ||
+        if (text.includes('DELETE FROM gatekeeper_queue') ||
             text.includes('DELETE FROM gatekeeper_blocks') ||
             text.includes('DELETE FROM gatekeeper_index_changes')) {
             return { rows: [], rowCount: 1 };
@@ -402,15 +420,18 @@ function createRedisFixture(): AdapterFixture {
                 return count;
             }
 
-            if (keyCount === 4 && args.length >= 3 && /^\d+$/.test(args[0])) {
-                const count = Number(args[0]);
+            if (keyCount === 4 && args.length >= 3 && /^\d+$/.test(args[0]) && /^\d+$/.test(args[1])) {
+                const eventCount = Number(args[0]);
+                const changeCount = Number(args[1]);
                 del(keys[0]);
-                if (count > 0) {
-                    rpush(keys[0], ...args.slice(1, 1 + count));
+                if (eventCount > 0) {
+                    rpush(keys[0], ...args.slice(2, 2 + eventCount));
                 }
-                recordChange(JSON.parse(args[count + 1]) as Omit<IndexChangeRecord, 'seq'>);
-                zadd(keys[3], 0, args[count + 2]);
-                return count;
+                for (let i = 0; i < changeCount; i += 1) {
+                    recordChange(JSON.parse(args[2 + eventCount + i]) as Omit<IndexChangeRecord, 'seq'>);
+                }
+                zadd(keys[3], 0, args[2 + eventCount + changeCount]);
+                return eventCount;
             }
 
             if (keyCount === 4 && args.length === 2) {
@@ -868,11 +889,13 @@ function createIndexChanges(): IndexChangeRecord[] {
             seq: 1,
             kind: 'did',
             did: didA,
+            event: eventA,
         },
         {
             seq: 2,
             kind: 'did',
             did: didB,
+            event: eventB,
         },
         {
             seq: 3,
@@ -911,6 +934,26 @@ describe('Gatekeeper index export request parsing', () => {
         expect(parseIndexExportCursor('not-a-number')).toBe(0);
         expect(parseIndexExportCursor('-1')).toBe(0);
         expect(parseIndexExportCursor('42')).toBe(42);
+    });
+
+    it('includes the checkpoint cursor on changes export responses', async () => {
+        const response = await buildIndexChangesResponse(
+            [],
+            false,
+            { cursor: '12', includeOperations: true },
+            '9',
+            async () => []
+        );
+
+        expect(response).toStrictEqual({
+            mode: 'changes',
+            cursor: '12',
+            checkpointCursor: '9',
+            hasMore: false,
+            dids: [],
+            blocks: [],
+            operations: [],
+        });
     });
 
     it('builds snapshot pages from opaque page keys without loading extra keys', async () => {
@@ -1056,6 +1099,7 @@ describe('Gatekeeper DB index snapshot export', () => {
         expect(snapshot.dids.map(record => record.did)).toStrictEqual([didA, didB]);
         expect(snapshot.dids[0].events).toHaveLength(1);
         expect(snapshot.dids[1].events).toHaveLength(2);
+        expect(snapshot).not.toHaveProperty('operations');
     });
 
     it('pages snapshots with an opaque cursor and limit', async () => {
@@ -1133,12 +1177,31 @@ describe('Gatekeeper DB index snapshot export', () => {
         expect(changes).toMatchObject({
             mode: 'changes',
             cursor: '3',
+            checkpointCursor: '3',
             hasMore: false,
         });
         expect(changes.dids).toHaveLength(1);
         expect(changes.dids[0].did).toBe(did);
         expect(changes.dids[0]).not.toHaveProperty('removed');
         expect(changes.dids[0].events).toHaveLength(2);
+        expect(changes).not.toHaveProperty('operations');
+
+        const changesWithOperations = await db.exportIndexChanges({ includeOperations: true });
+
+        expect(changesWithOperations.operations).toStrictEqual([
+            {
+                seq: 1,
+                did,
+                event: createEvent(did, '2026-01-01T00:00:01.000Z'),
+                operationHash: undefined,
+            },
+            {
+                seq: 2,
+                did,
+                event: createEvent(did, '2026-01-01T00:00:02.000Z', 'update'),
+                operationHash: undefined,
+            },
+        ]);
         expect(changes.blocks).toStrictEqual([
             {
                 registry: 'TFTC',
@@ -1428,6 +1491,7 @@ describe.each(adapterFactories)('Gatekeeper DB index export adapter: %s', (_name
         expect(firstPage).toMatchObject({
             mode: 'changes',
             cursor: '2',
+            checkpointCursor: '3',
             hasMore: true,
         });
         expect(firstPage.dids.map(record => record.did)).toStrictEqual([didB]);
@@ -1441,6 +1505,7 @@ describe.each(adapterFactories)('Gatekeeper DB index export adapter: %s', (_name
         expect(secondPage).toMatchObject({
             mode: 'changes',
             cursor: '3',
+            checkpointCursor: '3',
             hasMore: false,
         });
         expect(secondPage.dids).toStrictEqual([]);
@@ -1448,6 +1513,63 @@ describe.each(adapterFactories)('Gatekeeper DB index export adapter: %s', (_name
         expect(secondPage.blocks[0]).toMatchObject({
             registry: 'local',
             block,
+        });
+    });
+
+    it('exports operation rows in accepted order without block rows', async () => {
+        const checkpoint = await fixture.db.exportIndexChanges();
+        const didC = 'did:test:z3';
+        const firstEvent = withOperationHash(
+            createEvent(didC, '2026-01-01T00:00:03.000Z'),
+            'operation-hash-z3-1'
+        );
+        const secondEvent = createEvent(didC, '2026-01-01T00:00:04.000Z', 'update');
+        const block2: BlockInfo = {
+            height: 8,
+            hash: 'block-8',
+            time: 1775037900,
+        };
+
+        await fixture.db.addEvent(didC, firstEvent);
+        await fixture.db.addEvent(didC, secondEvent);
+        await fixture.db.addBlock('local', block2);
+
+        const changes = await fixture.db.exportIndexChanges({
+            cursor: checkpoint.cursor,
+            limit: 10,
+            includeOperations: true,
+        });
+
+        expect(changes).toMatchObject({
+            mode: 'changes',
+            cursor: '6',
+            checkpointCursor: '6',
+            hasMore: false,
+        });
+        expect(changes.dids).toStrictEqual([
+            {
+                did: didC,
+                events: [firstEvent, secondEvent],
+            },
+        ]);
+        expect(changes.operations).toStrictEqual([
+            {
+                seq: 4,
+                did: didC,
+                event: firstEvent,
+                operationHash: 'operation-hash-z3-1',
+            },
+            {
+                seq: 5,
+                did: didC,
+                event: secondEvent,
+                operationHash: undefined,
+            },
+        ]);
+        expect(changes.blocks).toHaveLength(1);
+        expect(changes.blocks[0]).toMatchObject({
+            registry: 'local',
+            block: block2,
         });
     });
 
@@ -1475,6 +1597,7 @@ describe.each(adapterFactories)('Gatekeeper DB index export adapter: %s', (_name
         expect(changes).toMatchObject({
             mode: 'changes',
             cursor: '7',
+            checkpointCursor: '7',
             hasMore: false,
         });
         expect(changes.dids).toStrictEqual([
@@ -1492,11 +1615,63 @@ describe.each(adapterFactories)('Gatekeeper DB index export adapter: %s', (_name
                 removed: true,
             },
         ]);
+        expect(changes).not.toHaveProperty('operations');
+
+        const changesWithOperations = await fixture.db.exportIndexChanges({
+            cursor: checkpoint.cursor,
+            limit: 10,
+            includeOperations: true,
+        });
+
+        expect(changesWithOperations.operations).toStrictEqual([
+            {
+                seq: 4,
+                did: didC,
+                event: eventC,
+                operationHash: undefined,
+            },
+        ]);
         expect(changes.blocks).toHaveLength(1);
         expect(changes.blocks[0]).toMatchObject({
             registry: 'local',
             block: block2,
         });
+    });
+
+    it('records only explicit operation events from setEvents replacements', async () => {
+        const checkpoint = await fixture.db.exportIndexChanges();
+        const eventAUpdate = createEvent(didA, '2026-01-01T00:00:04.000Z', 'update');
+
+        await fixture.db.setEvents(didA, [eventA, eventAUpdate], {
+            operationEvents: [eventAUpdate],
+        });
+
+        const changesWithOperations = await fixture.db.exportIndexChanges({
+            cursor: checkpoint.cursor,
+            limit: 10,
+            includeOperations: true,
+        });
+
+        expect(changesWithOperations).toMatchObject({
+            mode: 'changes',
+            cursor: '4',
+            checkpointCursor: '4',
+            hasMore: false,
+        });
+        expect(changesWithOperations.dids).toStrictEqual([
+            {
+                did: didA,
+                events: [eventA, eventAUpdate],
+            },
+        ]);
+        expect(changesWithOperations.operations).toStrictEqual([
+            {
+                seq: 4,
+                did: didA,
+                event: eventAUpdate,
+                operationHash: undefined,
+            },
+        ]);
     });
 });
 
@@ -1524,6 +1699,106 @@ describe.each(productionAdapterFactories)('Gatekeeper production snapshot export
         expect(firstPage.hasMore).toBe(true);
         expect(firstPage.dids.map(record => record.did)).toStrictEqual([didA]);
         expect(loadedKeys).toStrictEqual(['z1']);
+    });
+});
+
+describe('Gatekeeper SQLite index change schema migration', () => {
+    let tempDir: string;
+
+    beforeEach(() => {
+        tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gatekeeper-sqlite-index-migration-'));
+    });
+
+    afterEach(() => {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+    });
+
+    it('adds missing event column without breaking old incremental rows', async () => {
+        const file = path.join(tempDir, 'sqlite.db');
+        const oldDb = await sqlite.open({
+            filename: file,
+            driver: sqlite3.Database,
+        });
+
+        await oldDb.exec(`
+            CREATE TABLE dids (
+                id TEXT PRIMARY KEY,
+                events TEXT
+            );
+            CREATE TABLE queue (
+                id TEXT PRIMARY KEY,
+                ops TEXT
+            );
+            CREATE TABLE index_changes (
+                seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                kind TEXT NOT NULL,
+                did TEXT,
+                registry TEXT,
+                block TEXT,
+                removed INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE blocks (
+                registry TEXT NOT NULL,
+                hash TEXT NOT NULL,
+                height INTEGER NOT NULL,
+                time TEXT NOT NULL,
+                txns INTEGER NOT NULL,
+                PRIMARY KEY (registry, hash)
+            );
+        `);
+        await oldDb.run(
+            'INSERT INTO dids(id, events) VALUES(?, ?)',
+            'z1',
+            JSON.stringify([eventA])
+        );
+        await oldDb.run(
+            'INSERT INTO index_changes(kind, did, removed) VALUES(?, ?, ?)',
+            'did',
+            didA,
+            0
+        );
+        await oldDb.close();
+
+        const db = new DbSqlite('sqlite', tempDir);
+        await db.start();
+
+        try {
+            const columns = await (db as any).db.all<{ name: string }[]>('PRAGMA table_info(index_changes)');
+            expect(columns.map(column => column.name)).toContain('event');
+
+            await expect(db.exportIndexChanges({ includeOperations: true })).resolves.toMatchObject({
+                mode: 'changes',
+                cursor: '1',
+                checkpointCursor: '1',
+                hasMore: false,
+                dids: [
+                    {
+                        did: didA,
+                        events: [eventA],
+                    },
+                ],
+                operations: [],
+            });
+
+            const eventBUpdate = createEvent(didB, '2026-01-01T00:00:02.000Z', 'update');
+            await db.addEvent(didB, eventBUpdate);
+
+            const changes = await db.exportIndexChanges({
+                cursor: '1',
+                includeOperations: true,
+            });
+
+            expect(changes.operations).toStrictEqual([
+                {
+                    seq: 2,
+                    did: didB,
+                    event: eventBUpdate,
+                    operationHash: undefined,
+                },
+            ]);
+        } finally {
+            await db.stop();
+        }
     });
 });
 
@@ -1866,9 +2141,10 @@ describe('Gatekeeper DB startup and guard behavior', () => {
         jest.resetModules();
     });
 
-    it('starts, migrates legacy indexes, resets, and stops Mongo with transaction-capable topology', async () => {
+    it('starts, repairs deployed Mongo indexes, resets, and stops with transaction-capable topology', async () => {
         const deletedCollections: string[] = [];
         const droppedIndexes: { collection: string; index: string }[] = [];
+        const counterUpdates: unknown[][] = [];
         const createIndex = jest.fn(async () => undefined);
         const close = jest.fn(async () => undefined);
         const indexesByCollection: Record<string, unknown[]> = {
@@ -1890,6 +2166,20 @@ describe('Gatekeeper DB startup and guard behavior', () => {
                 deleteMany: async () => {
                     deletedCollections.push(name);
                     return { deletedCount: 1 };
+                },
+                find: () => ({
+                    sort: () => ({
+                        limit: () => ({
+                            next: async () => null,
+                        }),
+                    }),
+                }),
+                findOne: async () => null,
+                updateOne: async (...args: unknown[]) => {
+                    if (name === 'counters') {
+                        counterUpdates.push(args);
+                    }
+                    return { modifiedCount: 0, upsertedCount: 1 };
                 },
             }),
         };
@@ -1918,6 +2208,11 @@ describe('Gatekeeper DB startup and guard behavior', () => {
             { name: 'dids_id_unique', unique: true }
         );
         expect(droppedIndexes).toStrictEqual([{ collection: 'dids', index: 'id_1' }]);
+        expect(counterUpdates).toStrictEqual([[
+            { id: 'indexSeq' },
+            { $set: { value: 0 } },
+            { upsert: true },
+        ]]);
         expect(deletedCollections).toStrictEqual([
             'dids',
             'queue',
@@ -1926,6 +2221,330 @@ describe('Gatekeeper DB startup and guard behavior', () => {
             'counters',
         ]);
         expect(close).toHaveBeenCalledTimes(1);
+
+        jest.dontMock('mongodb');
+        jest.resetModules();
+    });
+
+    it('initializes Mongo index sequence counter from existing index changes', async () => {
+        const counterUpdates: unknown[][] = [];
+        const client = {
+            connect: jest.fn(async () => undefined),
+            close: jest.fn(async () => undefined),
+            db: jest.fn((name: string) => name === 'admin'
+                ? { command: jest.fn(async () => ({ setName: 'rs0' })) }
+                : {
+                    collection: (collectionName: string) => ({
+                        indexes: async () => [],
+                        createIndex: jest.fn(async () => undefined),
+                        find: () => ({
+                            sort: () => ({
+                                limit: () => ({
+                                    next: async () => collectionName === 'index_changes'
+                                        ? { seq: 12 }
+                                        : null,
+                                }),
+                            }),
+                        }),
+                        findOne: async () => collectionName === 'counters'
+                            ? { id: 'indexSeq', value: 5 }
+                            : null,
+                        updateOne: async (...args: unknown[]) => {
+                            if (collectionName === 'counters') {
+                                counterUpdates.push(args);
+                            }
+                            return { modifiedCount: 1, upsertedCount: 0 };
+                        },
+                    }),
+                }),
+        };
+        jest.resetModules();
+        jest.unstable_mockModule('mongodb', () => ({
+            MongoClient: jest.fn(() => client),
+        }));
+        const { default: MockedDbMongo } = await import('@mdip/gatekeeper/db/mongo.ts');
+        const db = new MockedDbMongo('mongo-counter-upgrade');
+
+        await db.start();
+        await db.stop();
+
+        expect(counterUpdates).toStrictEqual([[
+            { id: 'indexSeq' },
+            { $set: { value: 12 } },
+            { upsert: true },
+        ]]);
+
+        jest.dontMock('mongodb');
+        jest.resetModules();
+    });
+
+    it('does not lower Mongo index sequence counter when it is already ahead', async () => {
+        const counterUpdates: unknown[][] = [];
+        const client = {
+            connect: jest.fn(async () => undefined),
+            close: jest.fn(async () => undefined),
+            db: jest.fn((name: string) => name === 'admin'
+                ? { command: jest.fn(async () => ({ setName: 'rs0' })) }
+                : {
+                    collection: (collectionName: string) => ({
+                        indexes: async () => [],
+                        createIndex: jest.fn(async () => undefined),
+                        find: () => ({
+                            sort: () => ({
+                                limit: () => ({
+                                    next: async () => collectionName === 'index_changes'
+                                        ? { seq: 12 }
+                                        : null,
+                                }),
+                            }),
+                        }),
+                        findOne: async () => collectionName === 'counters'
+                            ? { id: 'indexSeq', value: 20 }
+                            : null,
+                        updateOne: async (...args: unknown[]) => {
+                            if (collectionName === 'counters') {
+                                counterUpdates.push(args);
+                            }
+                            return { modifiedCount: 1, upsertedCount: 0 };
+                        },
+                    }),
+                }),
+        };
+        jest.resetModules();
+        jest.unstable_mockModule('mongodb', () => ({
+            MongoClient: jest.fn(() => client),
+        }));
+        const { default: MockedDbMongo } = await import('@mdip/gatekeeper/db/mongo.ts');
+        const db = new MockedDbMongo('mongo-counter-no-op');
+
+        await db.start();
+        await db.stop();
+
+        expect(counterUpdates).toStrictEqual([]);
+
+        jest.dontMock('mongodb');
+        jest.resetModules();
+    });
+
+    it('upgrades a Mongo 1.4.0 shape and starts post-upgrade changes at sequence 1', async () => {
+        const didC = 'did:test:z3';
+        const eventC = createEvent(didC, '2026-01-01T00:00:03.000Z');
+        const createdIndexes: { collection: string; key: unknown; options: unknown }[] = [];
+        const existingCollections = new Set(['dids', 'queue', 'blocks']);
+        const eventsByKey = new Map<string, GatekeeperEvent[]>([
+            ['z1', [eventA]],
+            ['z2', [eventB]],
+        ]);
+        const changes: IndexChangeRecord[] = [];
+        let indexSeq = 0;
+
+        const appDb = {
+            collection: (collectionName: string) => ({
+                indexes: async () => {
+                    if (!existingCollections.has(collectionName)) {
+                        throw { code: 26, codeName: 'NamespaceNotFound' };
+                    }
+                    return [];
+                },
+                createIndex: async (key: unknown, options: unknown) => {
+                    existingCollections.add(collectionName);
+                    createdIndexes.push({ collection: collectionName, key, options });
+                    return `${collectionName}_index`;
+                },
+                dropIndex: async () => undefined,
+                find: (query: { id?: { $gt?: string }; seq?: { $gt?: number } } = {}) => {
+                    let limit = Infinity;
+                    const chain = {
+                        sort: () => chain,
+                        limit: (nextLimit: number) => {
+                            limit = nextLimit;
+                            return chain;
+                        },
+                        next: async () => {
+                            if (collectionName !== 'index_changes') {
+                                return null;
+                            }
+
+                            return changes
+                                .slice()
+                                .sort((a, b) => b.seq - a.seq)[0] ?? null;
+                        },
+                        toArray: async () => {
+                            if (collectionName === 'dids') {
+                                const cursor = query.id?.$gt ?? null;
+                                return Array.from(eventsByKey.keys())
+                                    .sort()
+                                    .filter(id => !cursor || id > cursor)
+                                    .slice(0, limit)
+                                    .map(id => ({ id, events: eventsByKey.get(id) }));
+                            }
+
+                            if (collectionName === 'index_changes') {
+                                const afterSeq = query.seq?.$gt ?? 0;
+                                return changes
+                                    .filter(change => change.seq > afterSeq)
+                                    .sort((a, b) => a.seq - b.seq)
+                                    .slice(0, limit);
+                            }
+
+                            return [];
+                        },
+                    };
+
+                    return chain;
+                },
+                findOne: async ({ id }: { id: string }) => {
+                    if (collectionName === 'dids') {
+                        return {
+                            id,
+                            events: eventsByKey.get(id) ?? [],
+                        };
+                    }
+
+                    if (collectionName === 'counters' && id === 'indexSeq') {
+                        return { id, value: indexSeq };
+                    }
+
+                    return null;
+                },
+                updateOne: async (
+                    { id }: { id?: string },
+                    update: {
+                        $set?: { value?: number; events?: GatekeeperEvent[] };
+                        $push?: { events: { $each: GatekeeperEvent[] } };
+                    }
+                ) => {
+                    if (collectionName === 'counters' && id === 'indexSeq') {
+                        indexSeq = update.$set?.value ?? indexSeq;
+                        return { modifiedCount: 1, upsertedCount: 0 };
+                    }
+
+                    if (collectionName === 'dids' && id) {
+                        const existed = eventsByKey.has(id);
+
+                        if (update.$push) {
+                            eventsByKey.set(id, [
+                                ...(eventsByKey.get(id) ?? []),
+                                ...update.$push.events.$each,
+                            ]);
+                        }
+                        if (update.$set?.events) {
+                            eventsByKey.set(id, update.$set.events);
+                        }
+
+                        return {
+                            modifiedCount: existed ? 1 : 0,
+                            upsertedCount: existed ? 0 : 1,
+                        };
+                    }
+
+                    return { modifiedCount: 0, upsertedCount: 0 };
+                },
+                findOneAndUpdate: async (
+                    { id }: { id: string },
+                    update: { $inc: { value: number } }
+                ) => {
+                    if (collectionName !== 'counters' || id !== 'indexSeq') {
+                        return null;
+                    }
+
+                    indexSeq += update.$inc.value;
+                    return { id, value: indexSeq };
+                },
+                insertOne: async (change: IndexChangeRecord) => {
+                    changes.push(change);
+                    return { insertedId: change.seq };
+                },
+            }),
+        };
+        const client = {
+            connect: jest.fn(async () => undefined),
+            close: jest.fn(async () => undefined),
+            db: jest.fn((name: string) => name === 'admin'
+                ? { command: jest.fn(async () => ({ setName: 'rs0' })) }
+                : appDb),
+            startSession: () => ({
+                withTransaction: async (callback: MongoTransactionCallback) => callback(),
+                endSession: async () => undefined,
+            }),
+        };
+        jest.resetModules();
+        jest.unstable_mockModule('mongodb', () => ({
+            MongoClient: jest.fn(() => client),
+        }));
+        const { default: MockedDbMongo } = await import('@mdip/gatekeeper/db/mongo.ts');
+        const db = new MockedDbMongo('mongo-legacy-1-4-0');
+
+        await db.start();
+
+        expect(existingCollections.has('index_changes')).toBe(true);
+        expect(existingCollections.has('counters')).toBe(true);
+        expect(createdIndexes).toEqual(expect.arrayContaining([
+            {
+                collection: 'index_changes',
+                key: { seq: 1 },
+                options: { name: 'index_changes_seq_unique', unique: true },
+            },
+            {
+                collection: 'counters',
+                key: { id: 1 },
+                options: { name: 'counters_id_unique', unique: true },
+            },
+        ]));
+        expect(indexSeq).toBe(0);
+
+        await expect(db.exportIndexSnapshot({ limit: 10 })).resolves.toMatchObject({
+            mode: 'snapshot',
+            cursor: 'z2',
+            checkpointCursor: '0',
+            hasMore: false,
+            dids: [
+                { did: didA, events: [eventA] },
+                { did: didB, events: [eventB] },
+            ],
+            blocks: [],
+        });
+
+        await expect(db.exportIndexChanges({ includeOperations: true })).resolves.toStrictEqual({
+            mode: 'changes',
+            cursor: '0',
+            checkpointCursor: '0',
+            hasMore: false,
+            dids: [],
+            blocks: [],
+            operations: [],
+        });
+
+        await db.addEvent(didC, eventC);
+
+        expect(indexSeq).toBe(1);
+        expect(changes).toStrictEqual([{
+            seq: 1,
+            kind: 'did',
+            did: didC,
+            event: eventC,
+        }]);
+
+        await expect(db.exportIndexChanges({ includeOperations: true })).resolves.toStrictEqual({
+            mode: 'changes',
+            cursor: '1',
+            checkpointCursor: '1',
+            hasMore: false,
+            dids: [
+                { did: didC, events: [eventC] },
+            ],
+            blocks: [],
+            operations: [
+                {
+                    seq: 1,
+                    did: didC,
+                    event: eventC,
+                    operationHash: undefined,
+                },
+            ],
+        });
+
+        await db.stop();
 
         jest.dontMock('mongodb');
         jest.resetModules();

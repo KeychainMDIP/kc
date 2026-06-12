@@ -1356,6 +1356,7 @@ describe('DidIndexer published credential indexing', () => {
             exportIndex: jest.fn().mockResolvedValue({
                 mode: 'changes' as const,
                 cursor: '1',
+                checkpointCursor: '1',
                 hasMore: false,
                 blocks: [],
                 dids: [{
