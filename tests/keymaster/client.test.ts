@@ -2790,6 +2790,19 @@ describe('getGroupVault', () => {
         expect(vault).toStrictEqual(mockVault);
     });
 
+    it('should get group vault at a version time', async () => {
+        const options = { versionTime: '2026-06-01T00:00:00.000Z' };
+        nock(KeymasterURL)
+            .get(`${Endpoints.groupVaults}/${mockVaultId}`)
+            .query(options)
+            .reply(200, { groupVault: mockVault });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const vault = await keymaster.getGroupVault(mockVaultId, options);
+
+        expect(vault).toStrictEqual(mockVault);
+    });
+
     it('should throw exception on getDocument server error', async () => {
         nock(KeymasterURL)
             .get(`${Endpoints.groupVaults}/${mockVaultId}`)
@@ -3015,6 +3028,19 @@ describe('listGroupVaultItems', () => {
         expect(items).toStrictEqual(mockItems);
     });
 
+    it('should list vault items at a version time', async () => {
+        const options = { versionTime: '2026-06-01T00:00:00.000Z' };
+        nock(KeymasterURL)
+            .get(`${Endpoints.groupVaults}/${mockVaultId}/items`)
+            .query(options)
+            .reply(200, { items: mockItems });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const items = await keymaster.listGroupVaultItems(mockVaultId, options);
+
+        expect(items).toStrictEqual(mockItems);
+    });
+
     it('should throw exception on listGroupVaultItems server error', async () => {
         nock(KeymasterURL)
             .get(`${Endpoints.groupVaults}/${mockVaultId}/items`)
@@ -3044,6 +3070,19 @@ describe('getGroupVaultItem', () => {
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
         const data = await keymaster.getGroupVaultItem(mockVaultId, mockName);
+
+        expect(data).toStrictEqual(mockData);
+    });
+
+    it('should return group vault item data at a version time', async () => {
+        const options = { versionTime: '2026-06-01T00:00:00.000Z' };
+        nock(KeymasterURL)
+            .get(`${Endpoints.groupVaults}/${mockVaultId}/items/${mockName}`)
+            .query(options)
+            .reply(200, mockData);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const data = await keymaster.getGroupVaultItem(mockVaultId, mockName, options);
 
         expect(data).toStrictEqual(mockData);
     });
@@ -3317,6 +3356,19 @@ describe('listDmailAttachments', () => {
         expect(items).toStrictEqual(mockAttachments);
     });
 
+    it('should list dmail attachments at a version time', async () => {
+        const options = { versionTime: '2026-06-01T00:00:00.000Z' };
+        nock(KeymasterURL)
+            .get(`${Endpoints.dmail}/${mockDmailId}/attachments`)
+            .query(options)
+            .reply(200, { attachments: mockAttachments });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const items = await keymaster.listDmailAttachments(mockDmailId, options);
+
+        expect(items).toStrictEqual(mockAttachments);
+    });
+
     it('should throw exception on listDmailAttachments server error', async () => {
         nock(KeymasterURL)
             .get(`${Endpoints.dmail}/${mockDmailId}/attachments`)
@@ -3426,6 +3478,19 @@ describe('getDmailMessage', () => {
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
         const message = await keymaster.getDmailMessage(mockDmailId);
+
+        expect(message).toStrictEqual(mockDmail);
+    });
+
+    it('should get message at a version time', async () => {
+        const options = { versionTime: '2026-06-01T00:00:00.000Z' };
+        nock(KeymasterURL)
+            .get(`${Endpoints.dmail}/${mockDmailId}`)
+            .query(options)
+            .reply(200, { message: mockDmail });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const message = await keymaster.getDmailMessage(mockDmailId, options);
 
         expect(message).toStrictEqual(mockDmail);
     });
