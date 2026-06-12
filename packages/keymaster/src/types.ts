@@ -148,13 +148,10 @@ export interface ChallengeReceipt {
     responseCommitment: string;
 }
 
-export interface BuildChallengeReceiptOptions {
+export interface PublishChallengeReceiptOptions {
     verification?: ChallengeResponse;
     retries?: number;
     delay?: number;
-}
-
-export interface PublishChallengeReceiptOptions extends BuildChallengeReceiptOptions {
     registry?: string;
     validUntil?: string;
     name?: string;
@@ -412,7 +409,6 @@ export interface KeymasterInterface {
     createChallenge(challenge?: Challenge, options?: { registry?: string; validUntil?: string }): Promise<string>;
     createResponse(challengeDid: string, options?: CreateResponseOptions): Promise<string>;
     verifyResponse(responseDid: string, options?: { retries?: number; delay?: number }): Promise<ChallengeResponse>;
-    buildChallengeReceipts(responseDid: string, options?: BuildChallengeReceiptOptions): Promise<ChallengeReceipt[]>;
     publishChallengeReceipts(responseDid: string, options?: PublishChallengeReceiptOptions): Promise<string[]>;
 
     // Polls

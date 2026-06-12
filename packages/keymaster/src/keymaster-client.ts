@@ -4,14 +4,12 @@ import {
 } from '@mdip/gatekeeper/types';
 import {
     Challenge,
-    ChallengeReceipt,
     ChallengeResponse,
     CheckWalletResult,
     CreateAssetOptions,
     DmailItem,
     DmailMessage,
     FileAssetOptions,
-    BuildChallengeReceiptOptions,
     CreateResponseOptions,
     EncryptOptions,
     FileAsset,
@@ -541,19 +539,6 @@ export default class KeymasterClient implements KeymasterInterface {
         try {
             const response = await axios.post(`${this.API}/response/verify`, { response: responseDID, options });
             return response.data.verify;
-        }
-        catch (error) {
-            throwError(error);
-        }
-    }
-
-    async buildChallengeReceipts(
-        responseDID: string,
-        options?: BuildChallengeReceiptOptions
-    ): Promise<ChallengeReceipt[]> {
-        try {
-            const response = await axios.post(`${this.API}/response/receipts/build`, { response: responseDID, options });
-            return response.data.receipts;
         }
         catch (error) {
             throwError(error);

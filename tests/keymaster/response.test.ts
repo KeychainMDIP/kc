@@ -458,20 +458,15 @@ describe('challenge receipts', () => {
             responseDid: responseDID,
             responseNonce: verification.responseNonce,
         });
+        const expectedReceipt: ChallengeReceipt = {
+            version: 1,
+            attesterDid: alice,
+            schemaDid,
+            requesterDid: victor,
+            responseCommitment,
+        };
 
-        const receipts = await keymaster.buildChallengeReceipts(responseDID, { verification });
-
-        expect(receipts).toStrictEqual([
-            {
-                version: 1,
-                attesterDid: alice,
-                schemaDid,
-                requesterDid: victor,
-                responseCommitment,
-            },
-        ]);
-
-        const receipt = receipts[0];
+        const receipt = expectedReceipt;
         expect(receipt).not.toHaveProperty('holderDid');
         expect(receipt).not.toHaveProperty('credentialDid');
         expect(receipt).not.toHaveProperty('vpDid');
@@ -487,20 +482,16 @@ describe('challenge receipts', () => {
         expect(receiptDIDs).toHaveLength(1);
 
         const receiptAsset = await keymaster.resolveAsset(receiptDIDs[0]) as { challengeReceipt: ChallengeReceipt };
-        expect(receiptAsset.challengeReceipt).toStrictEqual(receipts[0]);
+        expect(receiptAsset.challengeReceipt).toStrictEqual(expectedReceipt);
 
         const receiptDoc = await keymaster.resolveDID(receiptDIDs[0]);
         expect(receiptDoc.didDocument?.controller).toBe(victor);
-
-        const defaultBuildReceipts = await keymaster.buildChallengeReceipts(responseDID);
-        expect(defaultBuildReceipts).toHaveLength(1);
-        expect(defaultBuildReceipts[0]).toStrictEqual(receipts[0]);
 
         const defaultReceiptDIDs = await keymaster.publishChallengeReceipts(responseDID);
         expect(defaultReceiptDIDs).toHaveLength(1);
 
         const defaultReceiptAsset = await keymaster.resolveAsset(defaultReceiptDIDs[0]) as { challengeReceipt: ChallengeReceipt };
-        expect(defaultReceiptAsset.challengeReceipt).toStrictEqual(receipts[0]);
+        expect(defaultReceiptAsset.challengeReceipt).toStrictEqual(expectedReceipt);
     });
 
     it('should reject receipts for unsuccessful challenge responses', async () => {
@@ -527,7 +518,7 @@ describe('challenge receipts', () => {
         const verification = await keymaster.verifyResponse(responseDID);
 
         try {
-            await keymaster.buildChallengeReceipts(responseDID, { verification });
+            await keymaster.publishChallengeReceipts(responseDID, { verification });
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
@@ -564,12 +555,12 @@ describe('challenge receipts', () => {
             responseNonce: 'mock-nonce',
         };
 
-        await expect(keymaster.buildChallengeReceipts('did:mock:response', {
+        await expect(keymaster.publishChallengeReceipts('did:mock:response', {
             verification: emptyVerification,
         })).resolves.toStrictEqual([]);
 
         try {
-            await keymaster.buildChallengeReceipts('did:mock:response', {
+            await keymaster.publishChallengeReceipts('did:mock:response', {
                 verification: {
                     ...verification,
                     responseNonce: undefined,
@@ -584,7 +575,7 @@ describe('challenge receipts', () => {
         const resolveDID = jest.spyOn(keymaster, 'resolveDID')
             .mockResolvedValueOnce({ didDocument: {} } as any);
         try {
-            await keymaster.buildChallengeReceipts('did:mock:response', { verification });
+            await keymaster.publishChallengeReceipts('did:mock:response', { verification });
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
@@ -595,7 +586,7 @@ describe('challenge receipts', () => {
         const resolveAsset = jest.spyOn(keymaster, 'resolveAsset')
             .mockResolvedValueOnce(null);
         try {
-            await keymaster.buildChallengeReceipts('did:mock:response', { verification });
+            await keymaster.publishChallengeReceipts('did:mock:response', { verification });
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
@@ -604,7 +595,7 @@ describe('challenge receipts', () => {
         resolveAsset.mockRestore();
 
         try {
-            await keymaster.buildChallengeReceipts('did:mock:response', {
+            await keymaster.publishChallengeReceipts('did:mock:response', {
                 verification: {
                     ...verification,
                     vps: undefined,
@@ -617,7 +608,7 @@ describe('challenge receipts', () => {
         }
 
         try {
-            await keymaster.buildChallengeReceipts('did:mock:response', {
+            await keymaster.publishChallengeReceipts('did:mock:response', {
                 verification: {
                     challenge: emptyChallengeDID,
                     credentials: [],
@@ -635,7 +626,7 @@ describe('challenge receipts', () => {
         }
 
         try {
-            await keymaster.buildChallengeReceipts('did:mock:response', {
+            await keymaster.publishChallengeReceipts('did:mock:response', {
                 verification: {
                     challenge: emptyChallengeDID,
                     credentials: [],
@@ -664,34 +655,51 @@ describe('challenge receipts', () => {
     });
 
     it('should reject invalid receipt publish options', async () => {
-        const receipt: ChallengeReceipt = {
-            version: 1,
-            attesterDid: 'did:mock:attester',
-            schemaDid: 'did:mock:schema',
-            requesterDid: 'did:mock:requester',
-            responseCommitment: 'mock-commitment',
+        const victor = await keymaster.createId('Victor');
+        const schemaDid = await keymaster.createSchema(mockSchema);
+        const challengeDID = await keymaster.createChallenge();
+        const verification: ChallengeResponse = {
+            challenge: challengeDID,
+            credentials: [],
+            requested: 0,
+            fulfilled: 0,
+            match: true,
+            responseNonce: 'mock-nonce',
+            vps: [
+                {
+                    '@context': [],
+                    type: ['VerifiableCredential', schemaDid],
+                    issuer: victor,
+                    validFrom: '2026-01-01T00:00:00.000Z',
+                    credentialSubject: {
+                        id: victor,
+                    },
+                },
+                {
+                    '@context': [],
+                    type: ['VerifiableCredential', schemaDid],
+                    issuer: victor,
+                    validFrom: '2026-01-01T00:00:00.000Z',
+                    credentialSubject: {
+                        id: victor,
+                    },
+                },
+            ],
         };
 
-        const buildReceipts = jest.spyOn(keymaster, 'buildChallengeReceipts')
-            .mockResolvedValueOnce([
-                receipt,
-                {
-                    ...receipt,
-                    schemaDid: 'did:mock:schema2',
-                },
-            ]);
-
         try {
-            await keymaster.publishChallengeReceipts('did:mock:response', { name: 'mock-receipt' });
+            await keymaster.publishChallengeReceipts('did:mock:response', {
+                verification,
+                name: 'mock-receipt',
+            });
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
             expect(error.message).toBe('Invalid parameter: options.name');
         }
-        buildReceipts.mockRestore();
     });
 
-    it('should only allow the challenge requester to build receipts', async () => {
+    it('should only allow the challenge requester to publish receipts', async () => {
         const alice = await keymaster.createId('Alice');
         const carol = await keymaster.createId('Carol');
         await keymaster.createId('Victor');
@@ -723,7 +731,7 @@ describe('challenge receipts', () => {
         await keymaster.setCurrentId('Carol');
 
         try {
-            await keymaster.buildChallengeReceipts(responseDID, { verification });
+            await keymaster.publishChallengeReceipts(responseDID, { verification });
             throw new ExpectedExceptionError();
         }
         catch (error: any) {

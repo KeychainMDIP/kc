@@ -21,7 +21,6 @@ import {
     CreateAssetOptions,
     EncryptedMessage,
     FileAssetOptions,
-    BuildChallengeReceiptOptions,
     CreateResponseOptions,
     DmailItem,
     DmailMessage,
@@ -76,6 +75,12 @@ const DefaultSchema = {
     "required": [
         "propertyName"
     ]
+};
+
+type BuildChallengeReceiptOptions = {
+    verification?: ChallengeResponse;
+    retries?: number;
+    delay?: number;
 };
 
 export enum DmailTags {
@@ -2155,7 +2160,7 @@ export default class Keymaster implements KeymasterInterface {
         });
     }
 
-    async buildChallengeReceipts(
+    private async buildChallengeReceipts(
         responseDID: string,
         options: BuildChallengeReceiptOptions = {}
     ): Promise<ChallengeReceipt[]> {
