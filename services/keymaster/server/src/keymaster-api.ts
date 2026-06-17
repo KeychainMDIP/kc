@@ -6327,6 +6327,8 @@ async function initWalletProviderStore() {
         wallet = await WalletMongo.create(storeName) as unknown as WalletProviderStore;
     } else if (config.db === 'sqlite') {
         wallet = await WalletSQLite.create('wallet-provider.db') as unknown as WalletProviderStore;
+    } else if (config.db === 'postgres') {
+        wallet = await WalletPostgres.create(storeName) as unknown as WalletProviderStore;
     } else if (config.db === 'json') {
         wallet = new WalletJson('wallet-provider.json') as unknown as WalletProviderStore;
     } else {
