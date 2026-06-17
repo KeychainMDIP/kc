@@ -271,6 +271,37 @@ describe('sync-persistence helpers', () => {
         expect(dedupeOperationsByHash([])).toStrictEqual([]);
     });
 
+    it('keeps operations that do not have a usable signature hash', () => {
+        const missingSignature = makeCreateOp('a', '2026-02-10T10:00:00.000Z');
+        delete missingSignature.signature;
+        const emptyHash = makeCreateOp('b', '2026-02-10T11:00:00.000Z');
+        emptyHash.signature!.hash = '';
+        const valid = makeCreateOp('c', '2026-02-10T12:00:00.000Z');
+
+        expect(dedupeOperationsByHash([missingSignature, emptyHash, valid]))
+            .toStrictEqual([missingSignature, emptyHash, valid]);
+    });
+
+    it('handles empty and all-invalid known-operation filter inputs', async () => {
+        const getByIds = jest.fn(async () => []);
+
+        await expect(filterKnownOperations([], { getByIds })).resolves.toStrictEqual({
+            operations: [],
+            mapped: 0,
+            known: 0,
+            invalid: 0,
+        });
+
+        const invalid = makeCreateOp('a', 'not-a-date');
+        await expect(filterKnownOperations([invalid], { getByIds })).resolves.toStrictEqual({
+            operations: [invalid],
+            mapped: 0,
+            known: 0,
+            invalid: 1,
+        });
+        expect(getByIds).not.toHaveBeenCalled();
+    });
+
     it('filters operations already present in the local sync-store', async () => {
         const store = new InMemoryOperationSyncStore();
         await store.start();

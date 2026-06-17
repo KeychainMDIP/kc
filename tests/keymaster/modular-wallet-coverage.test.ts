@@ -171,6 +171,78 @@ async function makeLegacyV1Decrypted(
 }
 
 describe('Keymaster modular wallet coverage', () => {
+    it('rejects seed bank operations for non-mnemonic providers', async () => {
+        const provider = new DummyWalletProvider();
+        const store = new MemoryKeymasterStore(await makeWalletFile(provider));
+        const keymaster = new Keymaster({ gatekeeper, store, walletProvider: provider, cipher: cipherStub });
+
+        await expect(keymaster.resolveSeedBank()).rejects.toThrow(
+            'Keymaster: Seed bank requires MnemonicHdWalletProvider.'
+        );
+        await expect(keymaster.updateSeedBank({} as any)).rejects.toThrow(
+            'Keymaster: Seed bank requires MnemonicHdWalletProvider.'
+        );
+    });
+
+    it('rejects seed bank updates without a DID', async () => {
+        const cipher = new CipherNode();
+        const walletProvider = new MnemonicHdWalletProvider({
+            store: new ControlledProviderStore(),
+            cipher,
+            passphrase: PASSPHRASE,
+        });
+        const keymaster = new Keymaster({
+            gatekeeper,
+            store: new MemoryKeymasterStore(),
+            walletProvider,
+            cipher,
+        });
+
+        await expect(keymaster.updateSeedBank({ didDocument: {} } as any))
+            .rejects.toThrow('Invalid parameter: seed bank missing DID');
+    });
+
+    it('backs up metadata-only wallets for non-mnemonic providers', async () => {
+        const provider = new DummyWalletProvider();
+        const current = await makeWalletFile(provider);
+        const store = new MemoryKeymasterStore(current);
+        const keymaster = new Keymaster({ gatekeeper, store, walletProvider: provider, cipher: cipherStub });
+
+        jest.spyOn(keymaster, 'createAsset').mockResolvedValue('did:test:backup');
+
+        await expect(keymaster.backupWallet()).resolves.toBe('did:test:backup');
+        await expect(keymaster.loadWallet()).resolves.toEqual({
+            ...current,
+            backupDid: 'did:test:backup',
+        });
+        expect(keymaster.createAsset).toHaveBeenCalledWith(
+            {
+                backup: expect.objectContaining({
+                    ...current,
+                    backupDid: 'did:test:backup',
+                }),
+            },
+            { registry: 'hyperswarm' },
+        );
+    });
+
+    it('falls back to the current wallet when backup asset data is missing or malformed', async () => {
+        const provider = new DummyWalletProvider();
+        const current = await makeWalletFile(provider);
+        const store = new MemoryKeymasterStore(current);
+        const keymaster = new Keymaster({ gatekeeper, store, walletProvider: provider, cipher: cipherStub });
+        const resolveAsset = jest.spyOn(keymaster, 'resolveAsset');
+
+        resolveAsset.mockResolvedValueOnce(null);
+        await expect(keymaster.recoverWallet('did:test:empty')).resolves.toEqual(current);
+
+        resolveAsset.mockResolvedValueOnce({} as any);
+        await expect(keymaster.recoverWallet('did:test:missing')).resolves.toEqual(current);
+
+        resolveAsset.mockResolvedValueOnce({ backup: 'not-json' } as any);
+        await expect(keymaster.recoverWallet('did:test:malformed')).resolves.toEqual(current);
+    });
+
     it('rejects v2 metadata when the active provider identity does not match', async () => {
         const provider = new DummyWalletProvider();
         const storedWallet = await makeWalletFile(provider);
