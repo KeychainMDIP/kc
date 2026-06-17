@@ -113,7 +113,6 @@ function App() {
         };
 
         void init();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const getSearchClient = async () => {
