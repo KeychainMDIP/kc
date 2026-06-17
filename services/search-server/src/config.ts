@@ -2,7 +2,7 @@ import { loadEnv } from "@mdip/common/env";
 
 loadEnv();
 
-const DEFAULT_RATE_LIMIT_SKIP_PATHS = ['/api/v1/ready'];
+const DEFAULT_RATE_LIMIT_SKIP_PATHS = ['/api/v1/ready', '/api/v1/status'];
 
 function parseBoolean(value: string | undefined, defaultValue: boolean): boolean {
     if (value === undefined) {

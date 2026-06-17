@@ -21,7 +21,6 @@ import {
     CreateAssetOptions,
     EncryptedMessage,
     FileAssetOptions,
-    BuildChallengeReceiptOptions,
     CreateResponseOptions,
     DmailItem,
     DmailMessage,
@@ -76,6 +75,12 @@ const DefaultSchema = {
     "required": [
         "propertyName"
     ]
+};
+
+type BuildChallengeReceiptOptions = {
+    verification?: ChallengeResponse;
+    retries?: number;
+    delay?: number;
 };
 
 export enum DmailTags {
@@ -2258,11 +2263,11 @@ export default class Keymaster implements KeymasterInterface {
         });
     }
 
-    async buildChallengeReceipts(
+    private async buildChallengeReceipts(
         responseDID: string,
         options: BuildChallengeReceiptOptions = {}
     ): Promise<ChallengeReceipt[]> {
-        const { verification, verifiedAt, retries, delay } = options;
+        const { verification, retries, delay } = options;
         const response = verification ?? await this.verifyResponse(responseDID, { retries, delay });
 
         if (!response.match) {
@@ -2271,10 +2276,6 @@ export default class Keymaster implements KeymasterInterface {
 
         if (!response.responseNonce) {
             throw new InvalidParameterError('response.responseNonce');
-        }
-
-        if (verifiedAt && isNaN(new Date(verifiedAt).getTime())) {
-            throw new InvalidParameterError('options.verifiedAt');
         }
 
         const challengeDoc = await this.resolveDID(response.challenge);
@@ -2299,7 +2300,6 @@ export default class Keymaster implements KeymasterInterface {
             throw new InvalidParameterError('verification.vps');
         }
 
-        const timestamp = verifiedAt ?? new Date().toISOString();
         const responseCommitment = this.createResponseCommitment(responseDID, response.responseNonce);
         const receipts: ChallengeReceipt[] = [];
 
@@ -2318,7 +2318,6 @@ export default class Keymaster implements KeymasterInterface {
                 attesterDid: vp.issuer,
                 schemaDid,
                 requesterDid,
-                verifiedAt: timestamp,
                 responseCommitment,
             });
         }

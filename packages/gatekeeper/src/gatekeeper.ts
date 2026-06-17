@@ -26,20 +26,20 @@ import {
     VerifyDbResult,
     Signature,
 } from './types.js';
+import {
+    generateDocFromOperation,
+    resolveDIDFromEvents,
+    ValidRegistries,
+    ValidTypes,
+    ValidVersions,
+} from './did-resolver.js';
 
-const ValidVersions = [1];
-const ValidTypes = ['agent', 'asset'];
-// Registries that are considered valid when importing DIDs from the network
-const ValidRegistries = [
-    'local',
-    'hyperswarm',
-    'TESS',
-    'TBTC',
-    'TFTC',
-    'Signet',
-    'Signet-Inscription',
-    'BTC-Inscription'
-];
+export {
+    generateDIDFromOperation,
+    generateDocFromOperation,
+    generateOperationCID,
+    resolveDIDFromEvents,
+} from './did-resolver.js';
 
 enum ImportStatus {
     ADDED = 'added',
@@ -549,262 +549,30 @@ export default class Gatekeeper implements GatekeeperInterface {
     }
 
     async generateDoc(anchor: Operation, defaultDID?: string): Promise<MdipDocument> {
-        let doc: MdipDocument = {};
-        try {
-            if (!anchor?.mdip) {
-                return {};
-            }
-
-            if (!ValidVersions.includes(anchor.mdip.version)) {
-                return {};
-            }
-
-            if (!ValidTypes.includes(anchor.mdip.type)) {
-                return {};
-            }
-
-            if (!ValidRegistries.includes(anchor.mdip.registry)) {
-                return {};
-            }
-
-            const did = defaultDID ?? await this.generateDID(anchor);
-
-            if (anchor.mdip.type === 'agent') {
-                // TBD support different key types?
-                doc = {
-                    "didDocument": {
-                        "@context": ["https://www.w3.org/ns/did/v1"],
-                        "id": did,
-                        "verificationMethod": [
-                            {
-                                "id": "#key-1",
-                                "controller": did,
-                                "type": "EcdsaSecp256k1VerificationKey2019",
-                                "publicKeyJwk": anchor.publicJwk,
-                            }
-                        ],
-                        "authentication": [
-                            "#key-1"
-                        ],
-                    },
-                    "didDocumentMetadata": {
-                        "created": anchor.created,
-                    },
-                    "didDocumentData": {},
-                    "mdip": anchor.mdip,
-                };
-            }
-
-            if (anchor.mdip.type === 'asset') {
-                doc = {
-                    "didDocument": {
-                        "@context": ["https://www.w3.org/ns/did/v1"],
-                        "id": did,
-                        "controller": anchor.controller,
-                    },
-                    "didDocumentMetadata": {
-                        "created": anchor.created,
-                    },
-                    "didDocumentData": anchor.data,
-                    "mdip": anchor.mdip,
-                };
-            }
-
-            if (doc.didDocumentMetadata && anchor.mdip.prefix) {
-                doc.didDocumentMetadata.canonicalId = did;
-            }
-        }
-        catch {
-        }
-
-        return doc;
+        return generateDocFromOperation(anchor, {
+            defaultDID,
+            didPrefix: this.didPrefix,
+            generateDID: (operation) => this.generateDID(operation),
+        });
     }
 
     async resolveDID(
         did?: string,
         options?: ResolveDIDOptions
     ): Promise<MdipDocument> {
-        const { versionTime, versionSequence, confirm = false, verify = false } = options || {};
-        if (!did || !isValidDID(did)) {
-            return {
-                didResolutionMetadata: {
-                    error: "invalidDid"
-                },
-                didDocument: {},
-                didDocumentMetadata: {}
-            };
-        }
+        const events = did && isValidDID(did) ? await this.db.getEvents(did) : [];
 
-        const events = await this.db.getEvents(did);
-
-        if (events.length === 0) {
-            return {
-                didResolutionMetadata: {
-                    error: "notFound"
-                },
-                didDocument: {},
-                didDocumentMetadata: {}
-            };
-        }
-
-        const anchor = events[0];
-        let doc = await this.generateDoc(anchor.operation, did);
-
-        if (versionTime && doc.mdip?.created && new Date(doc.mdip.created) > new Date(versionTime)) {
-            // TBD What to return if DID was created after specified time?
-        }
-
-        function generateStandardDatetime(time: any): string {
-            const date = new Date(time);
-            return date.toISOString().replace(/\.\d{3}Z$/, 'Z');
-        }
-
-        const created = generateStandardDatetime(doc.didDocumentMetadata?.created);
-        const canonicalId = doc.didDocumentMetadata?.canonicalId;
-        let versionNum = 1;
-        let confirmed = true;
-
-        for (const { time, operation, registry, blockchain, opid } of events) {
-            const versionId = opid || await this.generateCID(operation);
-            const updated = generateStandardDatetime(time);
-            let timestamp;
-
-            if (doc.mdip?.registry) {
-                let lowerBound;
-                let upperBound;
-
-                if (operation.blockid) {
-                    const lowerBlock = await this.db.getBlock(doc.mdip.registry, operation.blockid);
-
-                    if (lowerBlock) {
-                        lowerBound = {
-                            time: lowerBlock.time,
-                            timeISO: new Date(lowerBlock.time * 1000).toISOString(),
-                            blockid: lowerBlock.hash,
-                            height: lowerBlock.height,
-                        };
-                    }
-                }
-
-                if (blockchain) {
-                    const upperBlock = await this.db.getBlock(doc.mdip.registry, blockchain.height);
-
-                    if (upperBlock) {
-                        upperBound = {
-                            time: upperBlock.time,
-                            timeISO: new Date(upperBlock.time * 1000).toISOString(),
-                            blockid: upperBlock.hash,
-                            height: upperBlock.height,
-                            txid: blockchain.txid,
-                            txidx: blockchain.index,
-                            batchid: blockchain.batch,
-                            opidx: blockchain.opidx,
-                        };
-                    }
-                }
-
-                if (lowerBound || upperBound) {
-                    timestamp = {
-                        chain: doc.mdip.registry,
-                        opid: versionId,
-                        lowerBound,
-                        upperBound,
-                    };
-                }
-            }
-
-            if (operation.type === 'create') {
-                if (verify) {
-                    const valid = await this.verifyCreateOperation(operation);
-
-                    if (!valid) {
-                        throw new InvalidOperationError('signature');
-                    }
-                }
-
-                doc.didDocumentMetadata = {
-                    created,
-                    canonicalId,
-                    versionId,
-                    version: versionNum.toString(),
-                    confirmed,
-                    timestamp,
-                };
-                continue;
-            }
-
-            if (versionTime && new Date(time) > new Date(versionTime)) {
-                break;
-            }
-
-            if (versionSequence && versionNum === versionSequence) {
-                break;
-            }
-
-            confirmed = confirmed && doc.mdip?.registry === registry;
-
-            if (confirm && !confirmed) {
-                break;
-            }
-
-            if (verify) {
-                const valid = await this.verifyUpdateOperation(operation, doc);
-
-                if (!valid) {
-                    throw new InvalidOperationError('signature');
-                }
-
-                if (operation.previd && operation.previd !== doc.didDocumentMetadata?.versionId) {
-                    throw new InvalidOperationError('previd');
-                }
-            }
-
-            if (operation.type === 'update') {
-                versionNum += 1;
-
-                doc = operation.doc || {};
-                doc.didDocumentMetadata = {
-                    created,
-                    updated,
-                    canonicalId,
-                    versionId,
-                    version: versionNum.toString(),
-                    confirmed,
-                    timestamp,
-                };
-                continue;
-            }
-
-            if (operation.type === 'delete') {
-                versionNum += 1;
-
-                doc.didDocument = { id: did };
-                doc.didDocumentData = {};
-                doc.didDocumentMetadata = {
-                    deactivated: true,
-                    created,
-                    deleted: updated,
-                    canonicalId,
-                    versionId,
-                    version: versionNum.toString(),
-                    confirmed,
-                    timestamp,
-                };
-            }
-        }
-
-        doc.didResolutionMetadata = {
-            retrieved: new Date().toISOString(),
-        };
-
-        delete (doc as any)['@context'];
-
-        if (doc.mdip) {
-            delete doc.mdip.opid;
-            delete doc.mdip.registration;
-        }
-
-        return copyJSON(doc);
+        return resolveDIDFromEvents({
+            did,
+            events,
+            options,
+            didPrefix: this.didPrefix,
+            generateCID: (operation) => this.generateCID(operation),
+            generateDID: (operation) => this.generateDID(operation),
+            getBlock: (registry, block) => this.db.getBlock(registry, block),
+            verifyCreateOperation: (operation) => this.verifyCreateOperation(operation),
+            verifyUpdateOperation: (operation, doc) => this.verifyUpdateOperation(operation, doc),
+        });
     }
 
     async updateDID(operation: Operation): Promise<boolean> {

@@ -8,8 +8,15 @@ import {
     DialogTitle,
     Typography,
 } from "@mui/material";
+import type { PollResults } from "@mdip/keymaster/types";
 
-const PollResultsModal = ({ open, onClose, results }) => {
+type PollResultsModalProps = {
+    open: boolean;
+    onClose: () => void;
+    results: PollResults | null;
+};
+
+const PollResultsModal = ({ open, onClose, results }: PollResultsModalProps) => {
     if (!results) {
         return null;
     }

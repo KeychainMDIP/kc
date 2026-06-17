@@ -978,6 +978,148 @@
         }
       }
     },
+    "/index/export": {
+      "post": {
+        "summary": "Export a paginated DID index snapshot or incremental change batch.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "mode"
+                ],
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "snapshot",
+                      "changes"
+                    ]
+                  },
+                  "cursor": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "Opaque snapshot cursor or incremental change cursor."
+                  },
+                  "checkpointCursor": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "Snapshot-only high-water change cursor returned by the first snapshot page and required on continuation pages."
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Index export page.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "mode",
+                        "cursor",
+                        "checkpointCursor",
+                        "hasMore",
+                        "dids",
+                        "blocks"
+                      ],
+                      "properties": {
+                        "mode": {
+                          "type": "string",
+                          "enum": [
+                            "snapshot"
+                          ]
+                        },
+                        "cursor": {
+                          "type": "string",
+                          "nullable": true,
+                          "description": "Opaque snapshot page cursor. Clients must store and pass it back without interpretation."
+                        },
+                        "checkpointCursor": {
+                          "type": "string",
+                          "nullable": true,
+                          "description": "Snapshot high-water change cursor returned on every snapshot page."
+                        },
+                        "hasMore": {
+                          "type": "boolean"
+                        },
+                        "dids": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        },
+                        "blocks": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "mode",
+                        "cursor",
+                        "hasMore",
+                        "dids",
+                        "blocks"
+                      ],
+                      "properties": {
+                        "mode": {
+                          "type": "string",
+                          "enum": [
+                            "changes"
+                          ]
+                        },
+                        "cursor": {
+                          "type": "string",
+                          "nullable": true,
+                          "description": "Incremental change cursor."
+                        },
+                        "hasMore": {
+                          "type": "boolean"
+                        },
+                        "dids": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        },
+                        "blocks": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body."
+          },
+          "500": {
+            "description": "Internal Server Error."
+          }
+        }
+      }
+    },
     "/dids/remove": {
       "post": {
         "summary": "Remove one or more DIDs",

@@ -1,12 +1,25 @@
 import sqlite3 from 'sqlite3';
 import { open, Database } from 'sqlite';
 import {
+    ApplyIndexPageOptions,
+    ApplyIndexPageResult,
+    BlockId,
+    BlockInfo,
+    ChallengeReceiptListOptions,
+    ChallengeReceiptListResult,
+    ChallengeReceiptRecord,
+    ChallengeReceiptUsageOptions,
+    ChallengeReceiptUsageResult,
     DIDsDb,
+    DIDEventListOptions,
+    DIDEventListResult,
     PublishedCredentialListOptions,
     PublishedCredentialListResult,
     PublishedCredentialRecord,
     PublishedCredentialSchemaCount,
+    GatekeeperEvent,
 } from "../types.js";
+import { getEventDisplayTime, stableStringify } from './db-utils.js';
 
 export default class Sqlite implements DIDsDb {
     private readonly dbFile: string;
@@ -35,10 +48,37 @@ export default class Sqlite implements DIDsDb {
         });
 
         await this.db.exec(`
+            CREATE TABLE IF NOT EXISTS did_events (
+                did TEXT NOT NULL,
+                event_index INTEGER NOT NULL,
+                registry TEXT NOT NULL,
+                time TEXT NOT NULL,
+                event TEXT NOT NULL,
+                PRIMARY KEY (did, event_index)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_did_events_did
+                ON did_events (did);
+
+            CREATE INDEX IF NOT EXISTS idx_did_events_registry_time
+                ON did_events (registry, time);
+
             CREATE TABLE IF NOT EXISTS did_docs (
                                                     did TEXT PRIMARY KEY,
                                                     doc TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS blocks (
+                registry TEXT NOT NULL,
+                hash TEXT NOT NULL,
+                height INTEGER NOT NULL,
+                time INTEGER NOT NULL,
+                block TEXT NOT NULL,
+                PRIMARY KEY (registry, hash)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_blocks_registry_height
+                ON blocks (registry, height);
 
             CREATE TABLE IF NOT EXISTS published_credentials (
                 holder_did TEXT NOT NULL,
@@ -60,23 +100,32 @@ export default class Sqlite implements DIDsDb {
             CREATE INDEX IF NOT EXISTS idx_published_credentials_schema_subject
                 ON published_credentials (schema_did, subject_did);
 
-            CREATE TABLE IF NOT EXISTS config (
-                                                  key TEXT PRIMARY KEY,
-                                                  value TEXT NOT NULL
+            CREATE TABLE IF NOT EXISTS challenge_receipts (
+                receipt_did TEXT PRIMARY KEY,
+                attester_did TEXT NOT NULL,
+                schema_did TEXT NOT NULL,
+                requester_did TEXT NOT NULL,
+                response_commitment TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_challenge_receipts_attester
+                ON challenge_receipts (attester_did);
+
+            CREATE INDEX IF NOT EXISTS idx_challenge_receipts_schema
+                ON challenge_receipts (schema_did);
+
+            CREATE INDEX IF NOT EXISTS idx_challenge_receipts_requester
+                ON challenge_receipts (requester_did);
+
+            CREATE INDEX IF NOT EXISTS idx_challenge_receipts_commitment
+                ON challenge_receipts (response_commitment);
+
+            CREATE TABLE IF NOT EXISTS sync_state (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
             );
         `);
-
-        const columns = await this.db.all<{ name: string }[]>(
-            `PRAGMA table_info('published_credentials')`
-        );
-        const hasRevealed = columns.some(column => column.name === 'revealed');
-
-        if (!hasRevealed) {
-            await this.db.exec(`
-                ALTER TABLE published_credentials
-                ADD COLUMN revealed INTEGER
-            `);
-        }
 
         await this.db.exec(`
             CREATE INDEX IF NOT EXISTS idx_published_credentials_schema_revealed
@@ -91,81 +140,177 @@ export default class Sqlite implements DIDsDb {
         }
     }
 
-    async loadUpdatedAfter(): Promise<string | null> {
+    async loadSyncState(key: string): Promise<string | null> {
         if (!this.db) {
             // eslint-disable-next-line sonarjs/no-duplicate-string
             throw new Error('DB not connected');
         }
-        const row = await this.db.get('SELECT value FROM config WHERE key = ?', ['updated_after']);
+        const row = await this.db.get<{ value: string }>(
+            'SELECT value FROM sync_state WHERE key = ?',
+            [key]
+        );
         if (!row) {
             return null;
         }
         return row.value;
     }
 
-    async saveUpdatedAfter(timestamp: string): Promise<void> {
+    async saveSyncState(key: string, value: string | null): Promise<void> {
         if (!this.db) {
             throw new Error('DB not connected');
         }
+
+        if (value === null) {
+            await this.db.run('DELETE FROM sync_state WHERE key = ?', [key]);
+            return;
+        }
+
         await this.db.run(`
-            INSERT INTO config (key, value) VALUES ('updated_after', ?)
+            INSERT INTO sync_state (key, value) VALUES (?, ?)
                 ON CONFLICT(key) DO UPDATE SET value=excluded.value
-        `, [timestamp]);
+        `, [key, value]);
     }
 
-    async storeDID(did: string, doc: object): Promise<void> {
+    async getDIDEvents(did: string): Promise<GatekeeperEvent[]> {
         if (!this.db) {
             throw new Error('DB not connected');
         }
-        const docString = JSON.stringify(doc);
-        await this.db.run(`
-            INSERT INTO did_docs (did, doc) VALUES (?, ?)
-                ON CONFLICT(did) DO UPDATE SET doc=excluded.doc
-        `, [did, docString]);
+
+        const rows = await this.db.all<{ event: string }[]>(
+            'SELECT event FROM did_events WHERE did = ? ORDER BY event_index ASC',
+            [did]
+        );
+
+        return rows.map(row => JSON.parse(row.event) as GatekeeperEvent);
     }
 
-    async replacePublishedCredentials(holderDid: string, records: PublishedCredentialRecord[]): Promise<void> {
+    async getBlock(registry: string, blockId?: BlockId): Promise<BlockInfo | null> {
         if (!this.db) {
             throw new Error('DB not connected');
+        }
+
+        let row: { block: string } | undefined;
+
+        if (blockId === undefined) {
+            row = await this.db.get<{ block: string }>(
+                'SELECT block FROM blocks WHERE registry = ? ORDER BY height DESC LIMIT 1',
+                [registry]
+            );
+        }
+        else if (typeof blockId === 'number') {
+            row = await this.db.get<{ block: string }>(
+                'SELECT block FROM blocks WHERE registry = ? AND height = ? LIMIT 1',
+                [registry, blockId]
+            );
+        }
+        else {
+            row = await this.db.get<{ block: string }>(
+                'SELECT block FROM blocks WHERE registry = ? AND hash = ? LIMIT 1',
+                [registry, blockId]
+            );
+        }
+
+        return row ? JSON.parse(row.block) as BlockInfo : null;
+    }
+
+    async applyIndexPage(page: ApplyIndexPageOptions): Promise<ApplyIndexPageResult> {
+        if (!this.db) {
+            throw new Error('DB not connected');
+        }
+
+        const result: ApplyIndexPageResult = {
+            changedDids: [],
+            storedBlocks: 0,
+            removedBlocks: 0,
+            removedDids: 0,
+        };
+
+        const eventChanges = new Map<string, boolean>();
+
+        for (const record of page.dids) {
+            const existing = await this.getDIDEvents(record.did);
+            eventChanges.set(
+                record.did,
+                stableStringify(existing) !== stableStringify(record.events)
+            );
         }
 
         await this.db.exec('BEGIN');
 
         try {
-            await this.db.run(
-                'DELETE FROM published_credentials WHERE holder_did = ?',
-                [holderDid]
-            );
+            for (const { registry, block, removed } of page.blocks) {
+                if (removed) {
+                    const deletion = await this.db.run(
+                        'DELETE FROM blocks WHERE registry = ? AND hash = ?',
+                        [registry, block.hash]
+                    );
+                    if (Number(deletion.changes) > 0) {
+                        result.removedBlocks += 1;
+                    }
+                    continue;
+                }
 
-            for (const record of records) {
                 await this.db.run(`
-                    INSERT INTO published_credentials (
-                        holder_did,
-                        credential_did,
-                        schema_did,
-                        issuer_did,
-                        subject_did,
-                        revealed,
-                        updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(holder_did, credential_did) DO UPDATE SET
-                        schema_did = excluded.schema_did,
-                        issuer_did = excluded.issuer_did,
-                        subject_did = excluded.subject_did,
-                        revealed = excluded.revealed,
-                        updated_at = excluded.updated_at
-                `, [
-                    record.holderDid,
-                    record.credentialDid,
-                    record.schemaDid,
-                    record.issuerDid,
-                    record.subjectDid,
-                    record.revealed ? 1 : 0,
-                    record.updatedAt,
-                ]);
+                    INSERT INTO blocks (registry, hash, height, time, block)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(registry, hash) DO UPDATE SET
+                        height = excluded.height,
+                        time = excluded.time,
+                        block = excluded.block
+                `, [registry, block.hash, block.height, block.time, JSON.stringify(block)]);
+                result.storedBlocks += 1;
+            }
+
+            for (const record of page.dids) {
+                const changed = eventChanges.get(record.did) === true;
+
+                if (!changed && !record.removed) {
+                    continue;
+                }
+
+                result.changedDids.push(record.did);
+                await this.db.run('DELETE FROM did_events WHERE did = ?', [record.did]);
+
+                if (record.removed) {
+                    await this.db.run('DELETE FROM did_docs WHERE did = ?', [record.did]);
+                    await this.db.run('DELETE FROM published_credentials WHERE holder_did = ?', [record.did]);
+                    await this.db.run('DELETE FROM challenge_receipts WHERE receipt_did = ?', [record.did]);
+                    result.removedDids += 1;
+                    continue;
+                }
+
+                for (const [index, event] of record.events.entries()) {
+                    await this.db.run(
+                        'INSERT INTO did_events (did, event_index, registry, time, event) VALUES (?, ?, ?, ?, ?)',
+                        [record.did, index, event.registry, getEventDisplayTime(event), JSON.stringify(event)]
+                    );
+                }
+
+                if (record.doc) {
+                    await this.db.run(`
+                        INSERT INTO did_docs (did, doc) VALUES (?, ?)
+                            ON CONFLICT(did) DO UPDATE SET doc=excluded.doc
+                    `, [record.did, JSON.stringify(record.doc)]);
+                }
+
+                await this.replacePublishedCredentialsInTx(record.did, record.publishedCredentials ?? []);
+                await this.replaceChallengeReceiptsInTx(record.did, record.challengeReceipts ?? []);
+            }
+
+            for (const [key, value] of Object.entries(page.syncStateUpdates ?? {})) {
+                if (value === null) {
+                    await this.db.run('DELETE FROM sync_state WHERE key = ?', [key]);
+                    continue;
+                }
+
+                await this.db.run(`
+                    INSERT INTO sync_state (key, value) VALUES (?, ?)
+                        ON CONFLICT(key) DO UPDATE SET value=excluded.value
+                `, [key, value]);
             }
 
             await this.db.exec('COMMIT');
+            return result;
         }
         catch (error) {
             await this.db.exec('ROLLBACK');
@@ -292,6 +437,171 @@ export default class Sqlite implements DIDsDb {
         };
     }
 
+    async listChallengeReceipts(
+        options: ChallengeReceiptListOptions = {}
+    ): Promise<ChallengeReceiptListResult> {
+        if (!this.db) {
+            throw new Error('DB not connected');
+        }
+
+        const {
+            limit = 50,
+            offset = 0,
+        } = options;
+        const { where, params } = this.buildChallengeReceiptWhere(options);
+        const totalRow = await this.db.get<{ total: number | string }>(
+            `SELECT COUNT(*) AS total FROM challenge_receipts ${where}`,
+            params
+        );
+        const rows = await this.db.all<{
+            receiptDid: string;
+            attesterDid: string;
+            schemaDid: string;
+            requesterDid: string;
+            responseCommitment: string;
+            updatedAt: string;
+        }[]>(
+            `SELECT
+                receipt_did AS receiptDid,
+                attester_did AS attesterDid,
+                schema_did AS schemaDid,
+                requester_did AS requesterDid,
+                response_commitment AS responseCommitment,
+                updated_at AS updatedAt
+             FROM challenge_receipts
+             ${where}
+             ORDER BY updated_at DESC, receipt_did ASC
+             LIMIT ? OFFSET ?`,
+            [...params, Math.max(0, limit), Math.max(0, offset)]
+        );
+
+        return {
+            total: Number(totalRow?.total ?? 0),
+            receipts: rows.map(row => ({
+                receiptDid: row.receiptDid,
+                attesterDid: row.attesterDid,
+                schemaDid: row.schemaDid,
+                requesterDid: row.requesterDid,
+                responseCommitment: row.responseCommitment,
+                updatedAt: row.updatedAt,
+            })),
+        };
+    }
+
+    async getChallengeReceiptUsage(
+        options: ChallengeReceiptUsageOptions = {}
+    ): Promise<ChallengeReceiptUsageResult> {
+        if (!this.db) {
+            throw new Error('DB not connected');
+        }
+
+        const {
+            limit = 50,
+            offset = 0,
+        } = options;
+        const { where, params } = this.buildChallengeReceiptWhere(options);
+        const totalRow = await this.db.get<{ total: number | string }>(
+            `SELECT COUNT(*) AS total
+             FROM (
+                SELECT 1
+                FROM challenge_receipts
+                ${where}
+                GROUP BY attester_did, schema_did, requester_did
+             )`,
+            params
+        );
+        const rows = await this.db.all<{
+            attesterDid: string;
+            schemaDid: string;
+            requesterDid: string;
+            count: number | string;
+            firstUpdatedAt: string;
+            lastUpdatedAt: string;
+        }[]>(
+            `SELECT
+                attester_did AS attesterDid,
+                schema_did AS schemaDid,
+                requester_did AS requesterDid,
+                COUNT(DISTINCT response_commitment) AS count,
+                MIN(updated_at) AS firstUpdatedAt,
+                MAX(updated_at) AS lastUpdatedAt
+             FROM challenge_receipts
+             ${where}
+             GROUP BY attester_did, schema_did, requester_did
+             ORDER BY count DESC, schema_did ASC, requester_did ASC
+             LIMIT ? OFFSET ?`,
+            [...params, Math.max(0, limit), Math.max(0, offset)]
+        );
+
+        return {
+            total: Number(totalRow?.total ?? 0),
+            usage: rows.map(row => ({
+                ...row,
+                count: Number(row.count),
+            })),
+        };
+    }
+
+    async listEvents(options: DIDEventListOptions = {}): Promise<DIDEventListResult> {
+        if (!this.db) {
+            throw new Error('DB not connected');
+        }
+
+        const {
+            registry,
+            updatedAfter,
+            updatedBefore,
+            limit = 50,
+            offset = 0,
+        } = options;
+        const clauses: string[] = [];
+        const params: unknown[] = [];
+
+        if (registry) {
+            clauses.push('registry = ?');
+            params.push(registry);
+        }
+
+        if (updatedAfter) {
+            clauses.push('time > ?');
+            params.push(updatedAfter);
+        }
+
+        if (updatedBefore) {
+            clauses.push('time < ?');
+            params.push(updatedBefore);
+        }
+
+        const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+        const totalRow = await this.db.get<{ total: number | string }>(
+            `SELECT COUNT(*) AS total FROM did_events ${where}`,
+            params
+        );
+        const rows = await this.db.all<{
+            did: string;
+            registry: string;
+            time: string;
+            event: string;
+        }[]>(
+            `SELECT did, registry, time, event
+             FROM did_events
+             ${where}
+             ORDER BY time DESC, did ASC, event_index ASC
+             LIMIT ? OFFSET ?`,
+            [...params, Math.max(0, limit), Math.max(0, offset)]
+        );
+
+        return {
+            total: Number(totalRow?.total ?? 0),
+            events: rows.map(row => ({
+                did: row.did,
+                registry: row.registry,
+                time: row.time,
+                event: JSON.parse(row.event) as GatekeeperEvent,
+            })),
+        };
+    }
+
     async searchDocs(q: string): Promise<string[]> {
         if (!this.db) {
             throw new Error('DB not connected');
@@ -393,8 +703,134 @@ export default class Sqlite implements DIDsDb {
         }
         await this.db.exec(`
             DELETE FROM did_docs;
+            DELETE FROM did_events;
+            DELETE FROM blocks;
             DELETE FROM published_credentials;
-            DELETE FROM config;
+            DELETE FROM challenge_receipts;
+            DELETE FROM sync_state;
         `);
+    }
+
+    private buildChallengeReceiptWhere(
+        options: ChallengeReceiptListOptions | ChallengeReceiptUsageOptions
+    ): { where: string; params: unknown[] } {
+        const clauses: string[] = [];
+        const params: unknown[] = [];
+        const receiptDid = 'receiptDid' in options ? options.receiptDid : undefined;
+        const responseCommitment = 'responseCommitment' in options ? options.responseCommitment : undefined;
+
+        if (receiptDid) {
+            clauses.push('receipt_did = ?');
+            params.push(receiptDid);
+        }
+
+        if (options.attesterDid) {
+            clauses.push('attester_did = ?');
+            params.push(options.attesterDid);
+        }
+
+        if (options.schemaDid) {
+            clauses.push('schema_did = ?');
+            params.push(options.schemaDid);
+        }
+
+        if (options.requesterDid) {
+            clauses.push('requester_did = ?');
+            params.push(options.requesterDid);
+        }
+
+        if (responseCommitment) {
+            clauses.push('response_commitment = ?');
+            params.push(responseCommitment);
+        }
+
+        if (options.updatedAfter) {
+            clauses.push('updated_at >= ?');
+            params.push(options.updatedAfter);
+        }
+
+        if (options.updatedBefore) {
+            clauses.push('updated_at <= ?');
+            params.push(options.updatedBefore);
+        }
+
+        return {
+            where: clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '',
+            params,
+        };
+    }
+
+    private async replacePublishedCredentialsInTx(
+        holderDid: string,
+        records: PublishedCredentialRecord[]
+    ): Promise<void> {
+        await this.db!.run(
+            'DELETE FROM published_credentials WHERE holder_did = ?',
+            [holderDid]
+        );
+
+        for (const record of records) {
+            await this.db!.run(`
+                INSERT INTO published_credentials (
+                    holder_did,
+                    credential_did,
+                    schema_did,
+                    issuer_did,
+                    subject_did,
+                    revealed,
+                    updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(holder_did, credential_did) DO UPDATE SET
+                    schema_did = excluded.schema_did,
+                    issuer_did = excluded.issuer_did,
+                    subject_did = excluded.subject_did,
+                    revealed = excluded.revealed,
+                    updated_at = excluded.updated_at
+            `, [
+                record.holderDid,
+                record.credentialDid,
+                record.schemaDid,
+                record.issuerDid,
+                record.subjectDid,
+                record.revealed ? 1 : 0,
+                record.updatedAt,
+            ]);
+        }
+    }
+
+    private async replaceChallengeReceiptsInTx(
+        receiptDid: string,
+        records: ChallengeReceiptRecord[]
+    ): Promise<void> {
+        await this.db!.run(
+            'DELETE FROM challenge_receipts WHERE receipt_did = ?',
+            [receiptDid]
+        );
+
+        for (const record of records) {
+            await this.db!.run(`
+                INSERT INTO challenge_receipts (
+                    receipt_did,
+                    attester_did,
+                    schema_did,
+                    requester_did,
+                    response_commitment,
+                    updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(receipt_did) DO UPDATE SET
+                    attester_did = excluded.attester_did,
+                    schema_did = excluded.schema_did,
+                    requester_did = excluded.requester_did,
+                    response_commitment = excluded.response_commitment,
+                    updated_at = excluded.updated_at
+            `, [
+                record.receiptDid,
+                record.attesterDid,
+                record.schemaDid,
+                record.requesterDid,
+                record.responseCommitment,
+                record.updatedAt,
+            ]);
+        }
     }
 }

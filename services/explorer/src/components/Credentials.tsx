@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import ArrowBackIosNewIcon from "@mui/icons-material/ArrowBackIosNew";
 import axios from "axios";
 import JsonView from "@uiw/react-json-view";
-import { GatekeeperInterface } from "@mdip/gatekeeper/types";
 import {
     Box,
     Button,
@@ -18,7 +17,7 @@ import {
     Typography,
 } from "@mui/material";
 import { Link as RouterLink, useSearchParams } from "react-router-dom";
-import { fetchCachedDid } from "../shared/utilities.js";
+import { fetchDIDDocument } from "../shared/utilities.js";
 
 const searchServerURL = import.meta.env.VITE_SEARCH_SERVER || "http://localhost:4002";
 const VERSION = "/api/v1";
@@ -240,12 +239,8 @@ function SummaryCard(
 
 function Credentials(
     {
-        gatekeeper,
-        isReady,
         setError,
     }: {
-        gatekeeper: GatekeeperInterface;
-        isReady: boolean;
         setError: (error: any) => void;
     }
 ) {
@@ -476,14 +471,6 @@ function Credentials(
                 return;
             }
 
-            if (!isReady) {
-                setDetailRecord(null);
-                setDetailDoc(null);
-                setDetailError("Waiting for Gatekeeper...");
-                setIsDetailLoading(false);
-                return;
-            }
-
             setIsDetailLoading(true);
             setDetailError(null);
 
@@ -511,21 +498,13 @@ function Credentials(
                 }
 
                 if (nextDetailRecord) {
-                    const cachedSubjectDoc = await fetchCachedDid(nextDetailRecord.subjectDid);
-                    let manifestEntry = cachedSubjectDoc
+                    const subjectDoc = await fetchDIDDocument(nextDetailRecord.subjectDid);
+                    const manifestEntry = subjectDoc
                         ? getManifestEntryFromDoc({
-                            doc: cachedSubjectDoc,
+                            doc: subjectDoc,
                             credentialDid: nextDetailRecord.credentialDid,
                         })
                         : null;
-
-                    if (!manifestEntry) {
-                        const subjectDoc = await gatekeeper.resolveDID(nextDetailRecord.subjectDid) as Record<string, unknown>;
-                        manifestEntry = getManifestEntryFromDoc({
-                            doc: subjectDoc,
-                            credentialDid: nextDetailRecord.credentialDid,
-                        });
-                    }
 
                     if (!ignore) {
                         if (!manifestEntry) {
@@ -540,10 +519,15 @@ function Credentials(
                     return;
                 }
 
-                const cachedDoc = await fetchCachedDid(selectedDetailDid);
-                const response = cachedDoc ?? await gatekeeper.resolveDID(selectedDetailDid) as Record<string, unknown>;
+                const response = await fetchDIDDocument(selectedDetailDid);
 
                 if (!ignore) {
+                    if (!response) {
+                        setDetailDoc(null);
+                        setDetailError("DID document not found.");
+                        return;
+                    }
+
                     setDetailDoc(response);
                 }
             }
@@ -573,7 +557,7 @@ function Credentials(
         return () => {
             ignore = true;
         };
-    }, [gatekeeper, isReady, listDetailRecord, schemaDid, selectedDetailDid, setError]);
+    }, [listDetailRecord, schemaDid, selectedDetailDid, setError]);
 
     return (
         <Box sx={{ ml: 1, mt: 2, minWidth: 860 }}>

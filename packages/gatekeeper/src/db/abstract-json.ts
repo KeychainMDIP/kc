@@ -5,8 +5,18 @@ import {
     JsonDbFile,
     GatekeeperDb,
     GatekeeperEvent,
+    IndexChangeRecord,
+    IndexExportChangesOptions,
+    IndexExportResponse,
+    IndexExportSnapshotOptions,
     Operation
 } from '../types.js';
+import {
+    buildIndexChangesResponse,
+    exportIndexSnapshotFromAllKeysForLocalDb,
+    normalizeIndexExportLimit,
+    parseIndexExportCursor
+} from './index-export.js';
 
 export abstract class AbstractJson implements GatekeeperDb {
     protected readonly dataFolder: string;
@@ -30,6 +40,22 @@ export abstract class AbstractJson implements GatekeeperDb {
     protected abstract writeDb(db: JsonDbFile): void;
 
     abstract resetDb(): Promise<void | number | JsonDbFile>;
+
+    private recordIndexChange(
+        db: JsonDbFile,
+        change: Omit<IndexChangeRecord, 'seq'>
+    ): IndexChangeRecord {
+        const seq = (db.indexSeq ?? 0) + 1;
+        const record = { seq, ...change };
+
+        db.indexSeq = seq;
+        if (!db.indexChanges) {
+            db.indexChanges = [];
+        }
+        db.indexChanges.push(record);
+
+        return record;
+    }
 
     async start(): Promise<void> {
         return;
@@ -59,6 +85,7 @@ export abstract class AbstractJson implements GatekeeperDb {
             } else {
                 db.dids[suffix] = [event];
             }
+            this.recordIndexChange(db, { kind: 'did', did });
             this.writeDb(db);
         });
     }
@@ -79,6 +106,7 @@ export abstract class AbstractJson implements GatekeeperDb {
         return this.runExclusive(async () => {
             const db = this.loadDb();
             db.dids[suffix] = events;
+            this.recordIndexChange(db, { kind: 'did', did });
             this.writeDb(db);
         });
     }
@@ -89,6 +117,7 @@ export abstract class AbstractJson implements GatekeeperDb {
             const db = this.loadDb();
             if (db.dids[suffix]) {
                 delete db.dids[suffix];
+                this.recordIndexChange(db, { kind: 'did', did, removed: true });
                 this.writeDb(db);
             }
         });
@@ -148,6 +177,38 @@ export abstract class AbstractJson implements GatekeeperDb {
         return Object.keys(db.dids);
     }
 
+    private async getIndexCheckpointCursor(): Promise<string> {
+        const db = this.loadDb();
+        return (db.indexSeq ?? 0).toString();
+    }
+
+    async exportIndexSnapshot(_options?: IndexExportSnapshotOptions): Promise<IndexExportResponse> {
+        return exportIndexSnapshotFromAllKeysForLocalDb(
+            () => this.getAllKeys(),
+            did => this.getEvents(did),
+            _options,
+            () => this.getIndexCheckpointCursor()
+        );
+    }
+
+    async exportIndexChanges(_options?: IndexExportChangesOptions): Promise<IndexExportResponse> {
+        const options = _options ?? {};
+        const afterSeq = parseIndexExportCursor(options.cursor);
+        const limit = normalizeIndexExportLimit(options.limit);
+        const db = this.loadDb();
+        const changes = (db.indexChanges ?? [])
+            .filter(change => change.seq > afterSeq)
+            .sort((a, b) => a.seq - b.seq);
+        const page = changes.slice(0, limit);
+
+        return buildIndexChangesResponse(
+            page,
+            changes.length > limit,
+            options,
+            did => this.getEvents(did)
+        );
+    }
+
     async addBlock(registry: string, blockInfo: BlockInfo): Promise<boolean> {
         return this.runExclusive(async () => {
             const db = this.loadDb();
@@ -158,6 +219,7 @@ export abstract class AbstractJson implements GatekeeperDb {
                 db.blocks[registry] = {};
             }
             db.blocks[registry][blockInfo.hash] = blockInfo;
+            this.recordIndexChange(db, { kind: 'block', registry, block: blockInfo });
             this.writeDb(db);
             return true;
         });

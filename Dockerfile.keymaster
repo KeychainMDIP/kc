@@ -17,7 +17,7 @@ RUN npm run build
 
 COPY services/keymaster ./keymaster/
 
-RUN cd keymaster/client && npm ci && npm run build
+RUN cd keymaster/client && npm ci --include=dev && npm run build
 RUN cd keymaster/server && npm ci && npm run build
 
 WORKDIR /app/keymaster

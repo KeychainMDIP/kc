@@ -3,12 +3,12 @@
   "version": "1.4.0",
   "private": true,
   "dependencies": {
-    "axios": "^1.13.6",
-    "buffer": "^6.0.3",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
     "@mui/icons-material": "^7.3.9",
     "@mui/material": "^7.3.9",
+    "axios": "^1.13.6",
+    "buffer": "^6.0.3",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-dropzone": "^15.0.0",
@@ -17,11 +17,15 @@
   "scripts": {
     "dev": "vite",
     "start": "vite",
-    "build": "vite build",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
     "preview": "vite preview"
   },
   "devDependencies": {
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.4",
+    "typescript": "^5.9.3",
     "vite": "^7.3.1"
   }
 }

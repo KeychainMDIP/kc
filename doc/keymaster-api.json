@@ -2032,11 +2032,6 @@
         }
       }
     },
-    "/response/receipts/build": {
-      "post": {
-        "summary": "Build challenge usage receipts for a verified response without publishing them."
-      }
-    },
     "/response/receipts": {
       "post": {
         "summary": "Publish challenge usage receipts for a verified response."

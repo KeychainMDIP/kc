@@ -49,7 +49,7 @@ jobs:
       - name: Grab logs
         if: always()
         run: |
-          docker compose logs --no-color keymaster cli gatekeeper redis > docker-compose-logs.txt
+          docker compose logs --no-color keymaster cli gatekeeper redis search-server > docker-compose-logs.txt
           cat docker-compose-logs.txt
       
 
@@ -72,5 +72,4 @@ jobs:
         with:
             name: E2E Artifacts
             path: tests/test-results/cli-tests.xml
-
 

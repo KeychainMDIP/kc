@@ -1,13 +1,26 @@
-import { Pool } from 'pg';
+import { Pool, type PoolClient } from 'pg';
 import {
+    ApplyIndexPageOptions,
+    ApplyIndexPageResult,
+    BlockId,
+    BlockInfo,
+    ChallengeReceiptListOptions,
+    ChallengeReceiptListResult,
+    ChallengeReceiptRecord,
+    ChallengeReceiptUsageOptions,
+    ChallengeReceiptUsageResult,
     DIDsDb,
+    DIDEventListOptions,
+    DIDEventListResult,
     PublishedCredentialListOptions,
     PublishedCredentialListResult,
     PublishedCredentialRecord,
     PublishedCredentialSchemaCount,
+    GatekeeperEvent,
 } from '../types.js';
+import { getEventDisplayTime, stableStringify } from './db-utils.js';
 
-interface ConfigRow {
+interface SyncStateRow {
     value: string;
 }
 
@@ -17,6 +30,14 @@ interface DocRow {
 
 interface DidRow {
     did: string;
+}
+
+interface EventRow {
+    event: GatekeeperEvent | string;
+}
+
+interface BlockRow {
+    block: BlockInfo | string;
 }
 
 interface CountRow {
@@ -50,10 +71,37 @@ export default class Postgres implements DIDsDb {
         this.pool = this.createPool();
 
         await this.pool.query(`
+            CREATE TABLE IF NOT EXISTS did_events (
+                did TEXT NOT NULL,
+                event_index INTEGER NOT NULL,
+                registry TEXT NOT NULL,
+                time TEXT NOT NULL,
+                event JSONB NOT NULL,
+                PRIMARY KEY (did, event_index)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_did_events_did
+                ON did_events (did);
+
+            CREATE INDEX IF NOT EXISTS idx_did_events_registry_time
+                ON did_events (registry, time);
+
             CREATE TABLE IF NOT EXISTS did_docs (
                 did TEXT PRIMARY KEY,
                 doc JSONB NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS blocks (
+                registry TEXT NOT NULL,
+                hash TEXT NOT NULL,
+                height INTEGER NOT NULL,
+                time INTEGER NOT NULL,
+                block JSONB NOT NULL,
+                PRIMARY KEY (registry, hash)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_blocks_registry_height
+                ON blocks (registry, height);
 
             CREATE TABLE IF NOT EXISTS published_credentials (
                 holder_did TEXT NOT NULL,
@@ -75,15 +123,31 @@ export default class Postgres implements DIDsDb {
             CREATE INDEX IF NOT EXISTS idx_published_credentials_schema_subject
                 ON published_credentials (schema_did, subject_did);
 
-            CREATE TABLE IF NOT EXISTS config (
+            CREATE TABLE IF NOT EXISTS challenge_receipts (
+                receipt_did TEXT PRIMARY KEY,
+                attester_did TEXT NOT NULL,
+                schema_did TEXT NOT NULL,
+                requester_did TEXT NOT NULL,
+                response_commitment TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_challenge_receipts_attester
+                ON challenge_receipts (attester_did);
+
+            CREATE INDEX IF NOT EXISTS idx_challenge_receipts_schema
+                ON challenge_receipts (schema_did);
+
+            CREATE INDEX IF NOT EXISTS idx_challenge_receipts_requester
+                ON challenge_receipts (requester_did);
+
+            CREATE INDEX IF NOT EXISTS idx_challenge_receipts_commitment
+                ON challenge_receipts (response_commitment);
+
+            CREATE TABLE IF NOT EXISTS sync_state (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
-        `);
-
-        await this.pool.query(`
-            ALTER TABLE published_credentials
-            ADD COLUMN IF NOT EXISTS revealed BOOLEAN
         `);
 
         await this.pool.query(`
@@ -99,11 +163,11 @@ export default class Postgres implements DIDsDb {
         }
     }
 
-    async loadUpdatedAfter(): Promise<string | null> {
+    async loadSyncState(key: string): Promise<string | null> {
         const pool = this.getPool();
-        const result = await pool.query<ConfigRow>(
-            'SELECT value FROM config WHERE key = $1 LIMIT 1',
-            ['updated_after']
+        const result = await pool.query<SyncStateRow>(
+            'SELECT value FROM sync_state WHERE key = $1 LIMIT 1',
+            [key]
         );
 
         if (result.rowCount === 0) {
@@ -113,65 +177,173 @@ export default class Postgres implements DIDsDb {
         return result.rows[0].value;
     }
 
-    async saveUpdatedAfter(timestamp: string): Promise<void> {
+    async saveSyncState(key: string, value: string | null): Promise<void> {
         const pool = this.getPool();
+
+        if (value === null) {
+            await pool.query('DELETE FROM sync_state WHERE key = $1', [key]);
+            return;
+        }
+
         await pool.query(
-            `INSERT INTO config (key, value) VALUES ('updated_after', $1)
+            `INSERT INTO sync_state (key, value) VALUES ($1, $2)
              ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
-            [timestamp]
+            [key, value]
         );
     }
 
-    async storeDID(did: string, doc: object): Promise<void> {
+    async getDIDEvents(did: string): Promise<GatekeeperEvent[]> {
         const pool = this.getPool();
-        await pool.query(
-            `INSERT INTO did_docs (did, doc) VALUES ($1, $2::jsonb)
-             ON CONFLICT (did) DO UPDATE SET doc = EXCLUDED.doc`,
-            [did, JSON.stringify(doc)]
+        const result = await pool.query<EventRow>(
+            'SELECT event FROM did_events WHERE did = $1 ORDER BY event_index ASC',
+            [did]
+        );
+
+        return result.rows.map(row =>
+            typeof row.event === 'string'
+                ? JSON.parse(row.event) as GatekeeperEvent
+                : row.event
         );
     }
 
-    async replacePublishedCredentials(holderDid: string, records: PublishedCredentialRecord[]): Promise<void> {
+    async getBlock(registry: string, blockId?: BlockId): Promise<BlockInfo | null> {
+        const pool = this.getPool();
+        let result;
+
+        if (blockId === undefined) {
+            result = await pool.query<BlockRow>(
+                'SELECT block FROM blocks WHERE registry = $1 ORDER BY height DESC LIMIT 1',
+                [registry]
+            );
+        }
+        else if (typeof blockId === 'number') {
+            result = await pool.query<BlockRow>(
+                'SELECT block FROM blocks WHERE registry = $1 AND height = $2 LIMIT 1',
+                [registry, blockId]
+            );
+        }
+        else {
+            result = await pool.query<BlockRow>(
+                'SELECT block FROM blocks WHERE registry = $1 AND hash = $2 LIMIT 1',
+                [registry, blockId]
+            );
+        }
+
+        if (result.rowCount === 0) {
+            return null;
+        }
+
+        const { block } = result.rows[0];
+        return typeof block === 'string' ? JSON.parse(block) as BlockInfo : block;
+    }
+
+    async applyIndexPage(page: ApplyIndexPageOptions): Promise<ApplyIndexPageResult> {
+        const result: ApplyIndexPageResult = {
+            changedDids: [],
+            storedBlocks: 0,
+            removedBlocks: 0,
+            removedDids: 0,
+        };
+        const eventChanges = new Map<string, boolean>();
+
+        for (const record of page.dids) {
+            const existing = await this.getDIDEvents(record.did);
+            eventChanges.set(
+                record.did,
+                stableStringify(existing) !== stableStringify(record.events)
+            );
+        }
+
         const pool = this.getPool();
         const client = await pool.connect();
 
         try {
             await client.query('BEGIN');
-            await client.query(
-                'DELETE FROM published_credentials WHERE holder_did = $1',
-                [holderDid]
-            );
 
-            for (const record of records) {
+            for (const { registry, block, removed } of page.blocks) {
+                if (removed) {
+                    const deletion = await client.query(
+                        'DELETE FROM blocks WHERE registry = $1 AND hash = $2',
+                        [registry, block.hash]
+                    );
+                    if (Number(deletion.rowCount) > 0) {
+                        result.removedBlocks += 1;
+                    }
+                    continue;
+                }
+
                 await client.query(
-                    `INSERT INTO published_credentials (
-                        holder_did,
-                        credential_did,
-                        schema_did,
-                        issuer_did,
-                        subject_did,
-                        revealed,
-                        updated_at
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-                    ON CONFLICT (holder_did, credential_did) DO UPDATE SET
-                        schema_did = EXCLUDED.schema_did,
-                        issuer_did = EXCLUDED.issuer_did,
-                        subject_did = EXCLUDED.subject_did,
-                        revealed = EXCLUDED.revealed,
-                        updated_at = EXCLUDED.updated_at`,
-                    [
-                        record.holderDid,
-                        record.credentialDid,
-                        record.schemaDid,
-                        record.issuerDid,
-                        record.subjectDid,
-                        record.revealed,
-                        record.updatedAt,
-                    ]
+                    `INSERT INTO blocks (registry, hash, height, time, block)
+                     VALUES ($1, $2, $3, $4, $5::jsonb)
+                     ON CONFLICT (registry, hash) DO UPDATE SET
+                        height = EXCLUDED.height,
+                        time = EXCLUDED.time,
+                        block = EXCLUDED.block`,
+                    [registry, block.hash, block.height, block.time, JSON.stringify(block)]
+                );
+                result.storedBlocks += 1;
+            }
+
+            for (const record of page.dids) {
+                const changed = eventChanges.get(record.did) === true;
+
+                if (!changed && !record.removed) {
+                    continue;
+                }
+
+                result.changedDids.push(record.did);
+                await client.query('DELETE FROM did_events WHERE did = $1', [record.did]);
+
+                if (record.removed) {
+                    await client.query('DELETE FROM did_docs WHERE did = $1', [record.did]);
+                    await client.query('DELETE FROM published_credentials WHERE holder_did = $1', [record.did]);
+                    await client.query('DELETE FROM challenge_receipts WHERE receipt_did = $1', [record.did]);
+                    result.removedDids += 1;
+                    continue;
+                }
+
+                for (const [index, event] of record.events.entries()) {
+                    await client.query(
+                        'INSERT INTO did_events (did, event_index, registry, time, event) VALUES ($1, $2, $3, $4, $5::jsonb)',
+                        [record.did, index, event.registry, getEventDisplayTime(event), JSON.stringify(event)]
+                    );
+                }
+
+                if (record.doc) {
+                    await client.query(
+                        `INSERT INTO did_docs (did, doc) VALUES ($1, $2::jsonb)
+                         ON CONFLICT (did) DO UPDATE SET doc = EXCLUDED.doc`,
+                        [record.did, JSON.stringify(record.doc)]
+                    );
+                }
+
+                await this.replacePublishedCredentialsWithClient(
+                    client,
+                    record.did,
+                    record.publishedCredentials ?? []
+                );
+                await this.replaceChallengeReceiptsWithClient(
+                    client,
+                    record.did,
+                    record.challengeReceipts ?? []
+                );
+            }
+
+            for (const [key, value] of Object.entries(page.syncStateUpdates ?? {})) {
+                if (value === null) {
+                    await client.query('DELETE FROM sync_state WHERE key = $1', [key]);
+                    continue;
+                }
+
+                await client.query(
+                    `INSERT INTO sync_state (key, value) VALUES ($1, $2)
+                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+                    [key, value]
                 );
             }
 
             await client.query('COMMIT');
+            return result;
         }
         catch (error) {
             await client.query('ROLLBACK');
@@ -286,6 +458,159 @@ export default class Postgres implements DIDsDb {
         return {
             total: totalResult.rows[0]?.total ?? 0,
             credentials: result.rows,
+        };
+    }
+
+    async listChallengeReceipts(
+        options: ChallengeReceiptListOptions = {}
+    ): Promise<ChallengeReceiptListResult> {
+        const pool = this.getPool();
+        const {
+            limit = 50,
+            offset = 0,
+        } = options;
+        const { where, params } = this.buildChallengeReceiptWhere(options);
+        const totalResult = await pool.query<CountRow>(
+            `SELECT COUNT(*)::int AS total
+             FROM challenge_receipts
+             ${where}`,
+            params
+        );
+        const pageParams = [...params, Math.max(0, limit), Math.max(0, offset)];
+        const limitParam = `$${pageParams.length - 1}`;
+        const offsetParam = `$${pageParams.length}`;
+        const result = await pool.query<ChallengeReceiptRecord>(
+            `SELECT
+                receipt_did AS "receiptDid",
+                attester_did AS "attesterDid",
+                schema_did AS "schemaDid",
+                requester_did AS "requesterDid",
+                response_commitment AS "responseCommitment",
+                updated_at AS "updatedAt"
+             FROM challenge_receipts
+             ${where}
+             ORDER BY updated_at DESC, receipt_did ASC
+             LIMIT ${limitParam} OFFSET ${offsetParam}`,
+            pageParams
+        );
+
+        return {
+            total: totalResult.rows[0]?.total ?? 0,
+            receipts: result.rows,
+        };
+    }
+
+    async getChallengeReceiptUsage(
+        options: ChallengeReceiptUsageOptions = {}
+    ): Promise<ChallengeReceiptUsageResult> {
+        const pool = this.getPool();
+        const {
+            limit = 50,
+            offset = 0,
+        } = options;
+        const { where, params } = this.buildChallengeReceiptWhere(options);
+        const totalResult = await pool.query<CountRow>(
+            `SELECT COUNT(*)::int AS total
+             FROM (
+                SELECT 1
+                FROM challenge_receipts
+                ${where}
+                GROUP BY attester_did, schema_did, requester_did
+             ) AS grouped`,
+            params
+        );
+        const pageParams = [...params, Math.max(0, limit), Math.max(0, offset)];
+        const limitParam = `$${pageParams.length - 1}`;
+        const offsetParam = `$${pageParams.length}`;
+        const result = await pool.query<{
+            attesterDid: string;
+            schemaDid: string;
+            requesterDid: string;
+            count: number;
+            firstUpdatedAt: string;
+            lastUpdatedAt: string;
+        }>(
+            `SELECT
+                attester_did AS "attesterDid",
+                schema_did AS "schemaDid",
+                requester_did AS "requesterDid",
+                COUNT(DISTINCT response_commitment)::int AS count,
+                MIN(updated_at) AS "firstUpdatedAt",
+                MAX(updated_at) AS "lastUpdatedAt"
+             FROM challenge_receipts
+             ${where}
+             GROUP BY attester_did, schema_did, requester_did
+             ORDER BY count DESC, schema_did ASC, requester_did ASC
+             LIMIT ${limitParam} OFFSET ${offsetParam}`,
+            pageParams
+        );
+
+        return {
+            total: totalResult.rows[0]?.total ?? 0,
+            usage: result.rows,
+        };
+    }
+
+    async listEvents(options: DIDEventListOptions = {}): Promise<DIDEventListResult> {
+        const pool = this.getPool();
+        const {
+            registry,
+            updatedAfter,
+            updatedBefore,
+            limit = 50,
+            offset = 0,
+        } = options;
+        const clauses: string[] = [];
+        const params: unknown[] = [];
+        let index = 1;
+
+        if (registry) {
+            clauses.push(`registry = $${index++}`);
+            params.push(registry);
+        }
+
+        if (updatedAfter) {
+            clauses.push(`time > $${index++}`);
+            params.push(updatedAfter);
+        }
+
+        if (updatedBefore) {
+            clauses.push(`time < $${index++}`);
+            params.push(updatedBefore);
+        }
+
+        const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+        const totalResult = await pool.query<CountRow>(
+            `SELECT COUNT(*)::int AS total FROM did_events ${where}`,
+            params
+        );
+        const pageParams = [...params, Math.max(0, limit), Math.max(0, offset)];
+        const limitParam = `$${pageParams.length - 1}`;
+        const offsetParam = `$${pageParams.length}`;
+        const result = await pool.query<{
+            did: string;
+            registry: string;
+            time: string;
+            event: GatekeeperEvent | string;
+        }>(
+            `SELECT did, registry, time, event
+             FROM did_events
+             ${where}
+             ORDER BY time DESC, did ASC, event_index ASC
+             LIMIT ${limitParam} OFFSET ${offsetParam}`,
+            pageParams
+        );
+
+        return {
+            total: totalResult.rows[0]?.total ?? 0,
+            events: result.rows.map(row => ({
+                did: row.did,
+                registry: row.registry,
+                time: row.time,
+                event: typeof row.event === 'string'
+                    ? JSON.parse(row.event) as GatekeeperEvent
+                    : row.event,
+            })),
         };
     }
 
@@ -418,8 +743,11 @@ export default class Postgres implements DIDsDb {
     async wipeDb(): Promise<void> {
         const pool = this.getPool();
         await pool.query('DELETE FROM did_docs');
+        await pool.query('DELETE FROM did_events');
+        await pool.query('DELETE FROM blocks');
         await pool.query('DELETE FROM published_credentials');
-        await pool.query('DELETE FROM config');
+        await pool.query('DELETE FROM challenge_receipts');
+        await pool.query('DELETE FROM sync_state');
     }
 
     private getPool(): Pool {
@@ -432,6 +760,134 @@ export default class Postgres implements DIDsDb {
 
     protected createPool(): Pool {
         return new Pool({ connectionString: this.url });
+    }
+
+    private async replacePublishedCredentialsWithClient(
+        client: PoolClient,
+        holderDid: string,
+        records: PublishedCredentialRecord[]
+    ): Promise<void> {
+        await client.query(
+            'DELETE FROM published_credentials WHERE holder_did = $1',
+            [holderDid]
+        );
+
+        for (const record of records) {
+            await client.query(
+                `INSERT INTO published_credentials (
+                    holder_did,
+                    credential_did,
+                    schema_did,
+                    issuer_did,
+                    subject_did,
+                    revealed,
+                    updated_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                ON CONFLICT (holder_did, credential_did) DO UPDATE SET
+                    schema_did = EXCLUDED.schema_did,
+                    issuer_did = EXCLUDED.issuer_did,
+                    subject_did = EXCLUDED.subject_did,
+                    revealed = EXCLUDED.revealed,
+                    updated_at = EXCLUDED.updated_at`,
+                [
+                    record.holderDid,
+                    record.credentialDid,
+                    record.schemaDid,
+                    record.issuerDid,
+                    record.subjectDid,
+                    record.revealed,
+                    record.updatedAt,
+                ]
+            );
+        }
+    }
+
+    private async replaceChallengeReceiptsWithClient(
+        client: PoolClient,
+        receiptDid: string,
+        records: ChallengeReceiptRecord[]
+    ): Promise<void> {
+        await client.query(
+            'DELETE FROM challenge_receipts WHERE receipt_did = $1',
+            [receiptDid]
+        );
+
+        for (const record of records) {
+            await client.query(
+                `INSERT INTO challenge_receipts (
+                    receipt_did,
+                    attester_did,
+                    schema_did,
+                    requester_did,
+                    response_commitment,
+                    updated_at
+                ) VALUES ($1, $2, $3, $4, $5, $6)
+                ON CONFLICT (receipt_did) DO UPDATE SET
+                    attester_did = EXCLUDED.attester_did,
+                    schema_did = EXCLUDED.schema_did,
+                    requester_did = EXCLUDED.requester_did,
+                    response_commitment = EXCLUDED.response_commitment,
+                    updated_at = EXCLUDED.updated_at`,
+                [
+                    record.receiptDid,
+                    record.attesterDid,
+                    record.schemaDid,
+                    record.requesterDid,
+                    record.responseCommitment,
+                    record.updatedAt,
+                ]
+            );
+        }
+    }
+
+    private buildChallengeReceiptWhere(
+        options: ChallengeReceiptListOptions | ChallengeReceiptUsageOptions
+    ): { where: string; params: unknown[] } {
+        const clauses: string[] = [];
+        const params: unknown[] = [];
+        let index = 1;
+        const receiptDid = 'receiptDid' in options ? options.receiptDid : undefined;
+        const responseCommitment = 'responseCommitment' in options ? options.responseCommitment : undefined;
+
+        if (receiptDid) {
+            clauses.push(`receipt_did = $${index++}`);
+            params.push(receiptDid);
+        }
+
+        if (options.attesterDid) {
+            clauses.push(`attester_did = $${index++}`);
+            params.push(options.attesterDid);
+        }
+
+        if (options.schemaDid) {
+            clauses.push(`schema_did = $${index++}`);
+            params.push(options.schemaDid);
+        }
+
+        if (options.requesterDid) {
+            clauses.push(`requester_did = $${index++}`);
+            params.push(options.requesterDid);
+        }
+
+        if (responseCommitment) {
+            clauses.push(`response_commitment = $${index++}`);
+            params.push(responseCommitment);
+        }
+
+        if (options.updatedAfter) {
+            clauses.push(`updated_at >= $${index++}`);
+            params.push(options.updatedAfter);
+        }
+
+        if (options.updatedBefore) {
+            clauses.push(`updated_at <= $${index++}`);
+            params.push(options.updatedBefore);
+        }
+
+        return {
+            where: clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '',
+            params,
+        };
     }
 
     private toJsonLiterals(values: unknown[]): string[] {
