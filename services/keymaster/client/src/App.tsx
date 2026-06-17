@@ -1,25 +1,28 @@
 import KeymasterClient from '@mdip/keymaster/client';
+import type { MdipWalletBundle, StoredWallet } from '@mdip/keymaster/types';
 import KeymasterUI from './KeymasterUI';
 import './App.css';
 
-function isMdipWalletBundle(wallet) {
-    return !!wallet
-        && typeof wallet === 'object'
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return !!value && typeof value === 'object';
+}
+
+function isMdipWalletBundle(wallet: unknown): wallet is MdipWalletBundle {
+    return isRecord(wallet)
         && wallet.version === 1
         && wallet.type === 'mdip-wallet-bundle'
         && !!wallet.keymaster
         && !!wallet.provider;
 }
 
-function isV2Wallet(wallet) {
-    return !!wallet
-        && typeof wallet === 'object'
+function isV2Wallet(wallet: unknown): boolean {
+    return isRecord(wallet)
         && wallet.version === 2
         && !!wallet.provider
         && typeof wallet.ids === 'object';
 }
 
-function downloadJson(filename, data) {
+function downloadJson(filename: string, data: unknown) {
     const walletJSON = JSON.stringify(data, null, 4);
     const blob = new Blob([walletJSON], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -35,7 +38,7 @@ function downloadJson(filename, data) {
 function App() {
     const keymaster = new KeymasterClient();
 
-    async function handleWalletUpload(wallet) {
+    async function handleWalletUpload(wallet: unknown) {
         if (isMdipWalletBundle(wallet)) {
             await keymaster.importWalletBundle(wallet);
             return;
@@ -46,8 +49,21 @@ function App() {
             return;
         }
 
-        await keymaster.saveWallet(wallet, true);
+        await keymaster.saveWallet(wallet as StoredWallet);
         await keymaster.loadWallet();
+    }
+
+    async function handleShowMnemonic() {
+        return keymaster.decryptMnemonic();
+    }
+
+    async function handleCreateWallet() {
+        await keymaster.newWallet(undefined, true);
+    }
+
+    async function handleImportMnemonic(mnemonic: string) {
+        await keymaster.newWallet(mnemonic, true);
+        await keymaster.recoverWallet();
     }
 
     async function handleWalletDownload() {
@@ -59,7 +75,11 @@ function App() {
         <KeymasterUI
             keymaster={keymaster}
             title={'Keymaster Server Wallet Demo'}
+            challengeDID={null}
             onWalletUpload={handleWalletUpload}
+            onShowMnemonic={handleShowMnemonic}
+            onCreateWallet={handleCreateWallet}
+            onImportMnemonic={handleImportMnemonic}
             onWalletDownload={handleWalletDownload}
         />
     );
