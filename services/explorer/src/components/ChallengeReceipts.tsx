@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import ArrowBackIosNewIcon from "@mui/icons-material/ArrowBackIosNew";
-import axios from "axios";
 import {
     Box,
     Button,
@@ -18,12 +17,19 @@ import {
     Typography,
 } from "@mui/material";
 import { Link as RouterLink, useSearchParams } from "react-router-dom";
+import {
+    pageSizeOptions,
+    receiptBrowseFetchLimit,
+    usageFetchLimit,
+} from "../config.js";
+import {
+    fetchChallengeReceipts,
+    fetchChallengeReceiptUsage,
+    type ChallengeReceiptRow,
+    type ChallengeReceiptUsageRow,
+} from "../api/searchClient.js";
+import { useSnackbar } from "../contexts/SnackbarProvider.js";
 
-const searchServerURL = import.meta.env.VITE_SEARCH_SERVER || "http://localhost:4002";
-const VERSION = "/api/v1";
-const pageSizeOptions = [25, 50, 100];
-const usageFetchLimit = 500;
-const receiptBrowseFetchLimit = 500;
 const receiptTableSx = {
     tableLayout: "fixed",
     "& th, & td": {
@@ -49,24 +55,6 @@ type ReceiptSortKey = "updatedAt" | "receiptDid";
 interface SortState<Key extends string> {
     key: Key;
     direction: SortDirection;
-}
-
-interface ChallengeReceiptUsageRow {
-    attesterDid: string;
-    schemaDid: string;
-    requesterDid: string;
-    count: number;
-    firstUpdatedAt: string;
-    lastUpdatedAt: string;
-}
-
-interface ChallengeReceiptRow {
-    receiptDid: string;
-    attesterDid: string;
-    schemaDid: string;
-    requesterDid: string;
-    responseCommitment: string;
-    updatedAt: string;
 }
 
 interface AttesterUsageRow {
@@ -177,28 +165,6 @@ function getEndOfDay(value: string): string | undefined {
 
     const date = new Date(`${value}T23:59:59.999Z`);
     return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
-}
-
-function mapUsageRow(row: any): ChallengeReceiptUsageRow {
-    return {
-        attesterDid: row.attesterDid,
-        schemaDid: row.schemaDid,
-        requesterDid: row.requesterDid,
-        count: Number(row.count ?? 0),
-        firstUpdatedAt: row.firstUpdatedAt,
-        lastUpdatedAt: row.lastUpdatedAt,
-    };
-}
-
-function mapReceiptRow(row: any): ChallengeReceiptRow {
-    return {
-        receiptDid: row.receiptDid,
-        attesterDid: row.attesterDid,
-        schemaDid: row.schemaDid,
-        requesterDid: row.requesterDid,
-        responseCommitment: row.responseCommitment,
-        updatedAt: row.updatedAt,
-    };
 }
 
 function DidLink(
@@ -420,7 +386,8 @@ function compareReceiptRows(a: ChallengeReceiptRow, b: ChallengeReceiptRow, sort
     return applySortDirection(result, sort.direction) || compareText(a.receiptDid, b.receiptDid);
 }
 
-function ChallengeReceipts({ setError }: { setError: (error: any) => void }) {
+function ChallengeReceipts() {
+    const { setError } = useSnackbar();
     const [searchParams, setSearchParams] = useSearchParams();
     const [draftAttesterDid, setDraftAttesterDid] = useState<string>(searchParams.get("attesterDid") ?? "");
     const [draftDateFrom, setDraftDateFrom] = useState<string>(searchParams.get("dateFrom") ?? "");
@@ -648,17 +615,15 @@ function ChallengeReceipts({ setError }: { setError: (error: any) => void }) {
                 let total = 0;
 
                 do {
-                    const response = await axios.get(`${searchServerURL}${VERSION}/metrics/challenge-receipts`, {
-                        params: {
-                            updatedAfter,
-                            updatedBefore,
-                            limit: receiptBrowseFetchLimit,
-                            offset,
-                        },
+                    const result = await fetchChallengeReceipts({
+                        updatedAfter,
+                        updatedBefore,
+                        limit: receiptBrowseFetchLimit,
+                        offset,
                     });
 
-                    total = response.data.total ?? 0;
-                    allReceipts.push(...(response.data.receipts ?? []).map(mapReceiptRow));
+                    total = result.total;
+                    allReceipts.push(...result.receipts);
                     offset += receiptBrowseFetchLimit;
                 } while (offset < total);
 
@@ -704,18 +669,16 @@ function ChallengeReceipts({ setError }: { setError: (error: any) => void }) {
                 let total = 0;
 
                 do {
-                    const response = await axios.get(`${searchServerURL}${VERSION}/metrics/challenge-receipts/usage`, {
-                        params: {
-                            attesterDid,
-                            updatedAfter,
-                            updatedBefore,
-                            limit: usageFetchLimit,
-                            offset,
-                        },
+                    const result = await fetchChallengeReceiptUsage({
+                        attesterDid,
+                        updatedAfter,
+                        updatedBefore,
+                        limit: usageFetchLimit,
+                        offset,
                     });
 
-                    total = response.data.total ?? 0;
-                    allRows.push(...(response.data.usage ?? []).map(mapUsageRow));
+                    total = result.total;
+                    allRows.push(...result.usage);
                     offset += usageFetchLimit;
                 } while (offset < total);
 
@@ -769,20 +732,18 @@ function ChallengeReceipts({ setError }: { setError: (error: any) => void }) {
                 let total = 0;
 
                 do {
-                    const response = await axios.get(`${searchServerURL}${VERSION}/metrics/challenge-receipts`, {
-                        params: {
-                            attesterDid,
-                            schemaDid: selectedSchemaDid,
-                            requesterDid: selectedRequesterDid,
-                            updatedAfter,
-                            updatedBefore,
-                            limit: receiptBrowseFetchLimit,
-                            offset,
-                        },
+                    const result = await fetchChallengeReceipts({
+                        attesterDid,
+                        schemaDid: selectedSchemaDid,
+                        requesterDid: selectedRequesterDid,
+                        updatedAfter,
+                        updatedBefore,
+                        limit: receiptBrowseFetchLimit,
+                        offset,
                     });
 
-                    total = response.data.total ?? 0;
-                    allReceipts.push(...(response.data.receipts ?? []).map(mapReceiptRow));
+                    total = result.total;
+                    allReceipts.push(...result.receipts);
                     offset += receiptBrowseFetchLimit;
                 } while (offset < total);
 
