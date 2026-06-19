@@ -14,7 +14,7 @@ import WalletMongo from '@mdip/keymaster/wallet/mongo';
 import WalletSQLite from '@mdip/keymaster/wallet/sqlite';
 import WalletPostgres from '@mdip/keymaster/wallet/postgres';
 import CipherNode from '@mdip/cipher/node';
-import { InvalidParameterError } from '@mdip/common/errors';
+import { InvalidParameterError, KeymasterError } from '@mdip/common/errors';
 import { childLogger } from '@mdip/common/logger';
 import config from './config.js';
 
@@ -191,6 +191,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIDNotFound = { error: 'DID not found' };
 
 const serveClient = (process.env.KC_KEYMASTER_SERVE_CLIENT ?? 'true').toLowerCase() === 'true';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return !!value && typeof value === 'object' && !Array.isArray(value);
+}
 
 if (serveClient) {
     const clientBuildDir = path.join(__dirname, '../../client/build');
@@ -498,6 +502,39 @@ v1router.post('/wallet/new', async (req, res) => {
     }
 });
 
+function isMdipWalletBundle(bundle: unknown): bundle is MdipWalletBundle {
+    if (!isRecord(bundle)
+        || bundle.version !== 1
+        || bundle.type !== 'mdip-wallet-bundle'
+        || !isRecord(bundle.keymaster)
+        || !isRecord(bundle.provider)) {
+        return false;
+    }
+
+    const metadata = bundle.keymaster;
+    const providerMetadata = metadata.provider;
+    const provider = bundle.provider;
+
+    return metadata.version === 2
+        && isRecord(providerMetadata)
+        && provider.version === 1
+        && provider.type === 'mnemonic-hd';
+}
+
+async function validateWalletBundleImport(bundle: unknown): Promise<MdipWalletBundle> {
+    if (!isMdipWalletBundle(bundle)) {
+        throw new InvalidParameterError('bundle');
+    }
+
+    const providerFingerprint = await walletProvider.getFingerprintForWallet(bundle.provider);
+    if (bundle.keymaster.provider.type !== walletProvider.type
+        || bundle.keymaster.provider.walletFingerprint !== providerFingerprint) {
+        throw new KeymasterError('Wallet provider does not match stored metadata.');
+    }
+
+    return bundle;
+}
+
 /**
  * @swagger
  * /wallet/bundle:
@@ -577,13 +614,30 @@ v1router.get('/wallet/bundle', async (req, res) => {
  */
 v1router.put('/wallet/bundle', async (req, res) => {
     try {
-        const bundle = req.body?.bundle as MdipWalletBundle;
+        const bundle = await validateWalletBundleImport(req.body?.bundle);
+        const previousProvider = await walletProvider.backupWallet().catch(() => null);
+        let providerSaved = false;
+
         const providerOk = await walletProvider.saveWallet(bundle.provider, true);
         if (!providerOk) {
             throw new Error('save provider wallet failed');
         }
+        providerSaved = true;
 
-        const ok = await keymaster.saveWallet(bundle.keymaster, true);
+        let ok = false;
+        try {
+            ok = await keymaster.saveWallet(bundle.keymaster, true);
+            if (!ok) {
+                throw new Error('save wallet failed');
+            }
+        }
+        catch (error) {
+            if (providerSaved && previousProvider) {
+                await walletProvider.saveWallet(previousProvider, true);
+            }
+            throw error;
+        }
+
         const wallet = await keymaster.loadWallet();
         res.json({ ok, wallet });
     } catch (error: any) {

@@ -133,11 +133,8 @@ export default class MnemonicHdWalletProvider implements MnemonicHdWalletProvide
     }
 
     async saveWallet(wallet: MnemonicHdWalletState, overwrite = false): Promise<boolean> {
-        if (wallet.version !== 1 || wallet.type !== this.type || !wallet.rootPublicJwk) {
-            throw new InvalidParameterError('wallet');
-        }
-
-        const state = this.cloneState(wallet);
+        const existing = this.stateCache ?? await this.store.loadWallet();
+        const state = await this.validateImportedState(wallet, !!existing);
         const ok = await this.store.saveWallet(state, overwrite);
         if (!ok) {
             return false;
@@ -151,6 +148,15 @@ export default class MnemonicHdWalletProvider implements MnemonicHdWalletProvide
     async getFingerprint(): Promise<string> {
         await this.getHdKey();
         const publicJwk = this.getRootKeyPair().publicJwk;
+        return this.getFingerprintForPublicJwk(publicJwk);
+    }
+
+    async getFingerprintForWallet(wallet: MnemonicHdWalletState): Promise<string> {
+        const state = await this.validateImportedState(wallet, true);
+        return this.getFingerprintForPublicJwk(state.rootPublicJwk);
+    }
+
+    private getFingerprintForPublicJwk(publicJwk: EcdsaJwkPublic): string {
         return this.cipher.hashJSON({
             type: this.type,
             publicJwk,
@@ -330,6 +336,57 @@ export default class MnemonicHdWalletProvider implements MnemonicHdWalletProvide
         } catch {
             throw new KeymasterError('Incorrect passphrase.');
         }
+    }
+
+    private async validateImportedState(wallet: MnemonicHdWalletState, validateMnemonic: boolean): Promise<MnemonicHdWalletState> {
+        if (wallet?.version !== 1 || wallet.type !== this.type || !wallet.rootPublicJwk) {
+            throw new InvalidParameterError('wallet');
+        }
+        if (!wallet.mnemonicEnc
+            || typeof wallet.mnemonicEnc.salt !== 'string'
+            || typeof wallet.mnemonicEnc.iv !== 'string'
+            || typeof wallet.mnemonicEnc.data !== 'string') {
+            throw new InvalidParameterError('wallet');
+        }
+        if (!Number.isInteger(wallet.nextAccount) || wallet.nextAccount < 0 || !wallet.keys || typeof wallet.keys !== 'object' || Array.isArray(wallet.keys)) {
+            throw new InvalidParameterError('wallet');
+        }
+
+        const state = this.cloneState(wallet);
+        if (validateMnemonic) {
+            const mnemonic = await this.decryptProviderMnemonic(state.mnemonicEnc);
+            let hdKey;
+            try {
+                hdKey = this.cipher.generateHDKey(mnemonic);
+            }
+            catch {
+                throw new InvalidParameterError('wallet');
+            }
+            const { publicJwk } = this.cipher.generateJwk(hdKey.privateKey!);
+
+            if (this.cipher.hashJSON(publicJwk) !== this.cipher.hashJSON(state.rootPublicJwk)) {
+                throw new KeymasterError('Mnemonic does not match wallet.');
+            }
+        }
+
+        for (const [keyRef, entry] of Object.entries(state.keys)) {
+            if (!entry || !Number.isInteger(entry.currentIndex) || entry.currentIndex < 0) {
+                throw new InvalidParameterError('wallet');
+            }
+
+            let account: number;
+            try {
+                account = this.parseAccountFromBaseKeyRef(keyRef);
+            }
+            catch {
+                throw new InvalidParameterError('wallet');
+            }
+            if (account >= state.nextAccount) {
+                throw new InvalidParameterError('wallet');
+            }
+        }
+
+        return state;
     }
 
     private async mutateState(mutator: (state: MnemonicHdWalletState) => void | Promise<void>): Promise<void> {

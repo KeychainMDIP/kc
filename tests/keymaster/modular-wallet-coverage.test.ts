@@ -491,6 +491,38 @@ describe('MnemonicHdWalletProvider coverage', () => {
         } as any, true)).rejects.toThrow('Invalid parameter: wallet');
     });
 
+    it('saveWallet rejects encrypted provider state before committing it', async () => {
+        const cipher = new CipherNode();
+        const store = new ControlledProviderStore();
+        const provider = new MnemonicHdWalletProvider({ store, cipher, passphrase: PASSPHRASE });
+
+        await provider.newWallet(undefined, true);
+        const original = await provider.backupWallet();
+        const imported = structuredClone(original);
+        imported.mnemonicEnc = { salt: 'salt', iv: 'iv', data: 'data' };
+
+        await expect(provider.saveWallet(imported, true)).rejects.toThrow(
+            'Keymaster: Incorrect passphrase.'
+        );
+        await expect(store.loadWallet()).resolves.toStrictEqual(original);
+    });
+
+    it('saveWallet rejects root key mismatches before committing them', async () => {
+        const cipher = new CipherNode();
+        const store = new ControlledProviderStore();
+        const provider = new MnemonicHdWalletProvider({ store, cipher, passphrase: PASSPHRASE });
+
+        await provider.newWallet(undefined, true);
+        const original = await provider.backupWallet();
+        const imported = structuredClone(original);
+        imported.rootPublicJwk = cipher.generateRandomJwk().publicJwk;
+
+        await expect(provider.saveWallet(imported, true)).rejects.toThrow(
+            'Keymaster: Mnemonic does not match wallet.'
+        );
+        await expect(store.loadWallet()).resolves.toStrictEqual(original);
+    });
+
     it('saveWallet returns false when the provider store refuses the restore write', async () => {
         const cipher = new CipherNode();
         const sourceProvider = new MnemonicHdWalletProvider({
