@@ -786,6 +786,31 @@ export default class Keymaster implements KeymasterInterface {
         return this.getPublicKeyJwk(doc);
     }
 
+    private async assertProviderControlsId(id: IDInfo, doc: MdipDocument): Promise<void> {
+        try {
+            const did = doc.didDocument?.id;
+            if (!did || typeof id?.did !== 'string' || typeof id.keyRef !== 'string' || !this.didMatch(id.did, did)) {
+                throw new InvalidDIDError();
+            }
+
+            const publicJwk = this.getPublicKeyJwk(doc);
+            const challenge = {
+                purpose: 'recoverId',
+                did,
+                keyRef: id.keyRef,
+            };
+            const digest = this.cipher.hashJSON(challenge);
+            const signature = await this.walletProvider.signDigest(id.keyRef, digest);
+
+            if (!this.cipher.verifySig(digest, signature, publicJwk)) {
+                throw new InvalidDIDError();
+            }
+        }
+        catch {
+            throw new InvalidDIDError();
+        }
+    }
+
     private parseVersionedKeyRef(keyRef: string): { baseKeyRef: string; version?: number } {
         const hashIndex = keyRef.lastIndexOf('#');
         if (hashIndex < 0) {
@@ -1626,6 +1651,11 @@ export default class Keymaster implements KeymasterInterface {
             const data = typeof vault.backup === 'string'
                 ? JSON.parse(vault.backup) as { name: string; id: IDInfo }
                 : vault.backup;
+
+            if (!data || typeof data.name !== 'string' || !data.id) {
+                throw new InvalidDIDError();
+            }
+            await this.assertProviderControlsId(data.id, doc);
 
             await this.mutateWallet((wallet) => {
                 if (wallet.ids[data.name]) {

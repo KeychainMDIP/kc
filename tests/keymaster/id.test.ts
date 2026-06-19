@@ -471,6 +471,53 @@ describe('recoverId', () => {
             expect(error.message).toBe('Keymaster: Bob already exists in wallet');
         }
     });
+
+    it('should not recover an id to a different provider wallet', async () => {
+        const did = await keymaster.createId('Bob');
+        await keymaster.backupId();
+
+        await keymaster.newWallet(undefined, true);
+        let wallet = await keymaster.loadWallet();
+        expect(wallet.ids).toStrictEqual({});
+
+        try {
+            await keymaster.recoverId(did);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(InvalidDIDError.type);
+        }
+
+        wallet = await keymaster.loadWallet();
+        expect(wallet.ids).toStrictEqual({});
+    });
+
+    it('should reject an id backup with a keyRef the provider does not control', async () => {
+        const did = await keymaster.createId('Bob');
+        const providerBackup = await walletProvider.backupWallet();
+        await keymaster.backupId();
+
+        const doc = await keymaster.resolveDID(did);
+        const vaultDid = (doc.didDocumentData as { vault: string }).vault;
+        const vaultDoc = await keymaster.resolveDID(vaultDid);
+        const vaultData = vaultDoc.didDocumentData as { backup: { id: { keyRef: string } } };
+        vaultData.backup.id.keyRef = 'hd:0#99';
+        await keymaster.updateDID(vaultDoc);
+
+        await keymaster.newWallet(undefined, true);
+        await walletProvider.saveWallet(providerBackup, true);
+
+        try {
+            await keymaster.recoverId(did);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(InvalidDIDError.type);
+        }
+
+        const wallet = await keymaster.loadWallet();
+        expect(wallet.ids).toStrictEqual({});
+    });
 });
 
 describe('testAgent', () => {
