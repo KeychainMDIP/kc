@@ -219,8 +219,8 @@ export default class MnemonicHdWalletProvider implements MnemonicHdWalletProvide
         throw new KeymasterError("ID can't decrypt ciphertext");
     }
 
-    async rotateKey(keyRef: string): Promise<{ publicJwk: EcdsaJwkPublic }> {
-        let publicJwk!: EcdsaJwkPublic;
+    async rotateKey(keyRef: string): Promise<WalletProviderKey> {
+        let rotated!: WalletProviderKey;
 
         await this.mutateState(async (state) => {
             await this.getHdKey();
@@ -233,10 +233,13 @@ export default class MnemonicHdWalletProvider implements MnemonicHdWalletProvide
                 entry.currentIndex = nextIndex;
             }
 
-            publicJwk = this.deriveIdKeyPair(account, nextIndex).publicJwk;
+            rotated = {
+                keyRef: this.makeIdKeyRef(account, nextIndex),
+                publicJwk: this.deriveIdKeyPair(account, nextIndex).publicJwk,
+            };
         });
 
-        return { publicJwk };
+        return rotated;
     }
 
     async migrateLegacyWallet(wallet: LegacyStoredWallet): Promise<WalletFile> {

@@ -25,8 +25,10 @@ export interface LegacySeed {
 
 export interface IDInfo {
     did: string;
-    // Provider-managed key reference. Rotating providers may encode a key version.
+    // Provider-managed key reference for the current ID key version.
     keyRef: string;
+    // Provider-managed key reference for the previous ID key version while a rotation is unconfirmed.
+    previousKeyRef?: string;
     held?: string[];
     owned?: string[];
     dmail?: Record<string, any>;
@@ -325,7 +327,7 @@ export interface WalletProvider {
 }
 
 export interface MnemonicHdWalletProviderInterface extends WalletProvider {
-    rotateKey(keyRef: string): Promise<{ publicJwk: EcdsaJwkPublic }>;
+    rotateKey(keyRef: string): Promise<WalletProviderKey>;
     newWallet(mnemonic?: string, overwrite?: boolean): Promise<void>;
     migrateLegacyWallet(wallet: LegacyStoredWallet): Promise<WalletFile>;
     backupWallet(): Promise<MnemonicHdWalletState>;

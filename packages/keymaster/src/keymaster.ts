@@ -48,6 +48,7 @@ import {
     WalletFile,
     KeymasterStore,
     WalletProvider,
+    WalletProviderKey,
     SearchEngine,
 } from '@mdip/keymaster/types';
 import {
@@ -165,7 +166,7 @@ export default class Keymaster implements KeymasterInterface {
 
     private supportsKeyRotation(
         provider: WalletProvider
-    ): provider is WalletProvider & { rotateKey(keyRef: string): Promise<{ publicJwk: EcdsaJwkPublic }> } {
+    ): provider is WalletProvider & { rotateKey(keyRef: string): Promise<WalletProviderKey> } {
         return 'rotateKey' in provider && typeof provider.rotateKey === 'function';
     }
 
@@ -811,40 +812,6 @@ export default class Keymaster implements KeymasterInterface {
         }
     }
 
-    private parseVersionedKeyRef(keyRef: string): { baseKeyRef: string; version?: number } {
-        const hashIndex = keyRef.lastIndexOf('#');
-        if (hashIndex < 0) {
-            return { baseKeyRef: keyRef };
-        }
-
-        const baseKeyRef = keyRef.slice(0, hashIndex);
-        const versionPart = keyRef.slice(hashIndex + 1);
-        const version = Number(versionPart);
-
-        if (!Number.isInteger(version) || version < 0) {
-            throw new KeymasterError(`Unsupported keyRef: ${keyRef}`);
-        }
-
-        return { baseKeyRef, version };
-    }
-
-    private incrementKeyRefVersion(keyRef: string): string {
-        const { baseKeyRef, version } = this.parseVersionedKeyRef(keyRef);
-        const nextVersion = typeof version === 'number' ? version + 1 : 1;
-        return `${baseKeyRef}#${nextVersion}`;
-    }
-
-    private decrementKeyRefVersion(keyRef: string): string {
-        const { baseKeyRef, version } = this.parseVersionedKeyRef(keyRef);
-        const currentVersion = typeof version === 'number' ? version : 1;
-
-        if (currentVersion <= 0) {
-            throw new KeymasterError(`Unsupported keyRef: ${keyRef}`);
-        }
-
-        return `${baseKeyRef}#${currentVersion - 1}`;
-    }
-
     private async getActiveKeyRef(id: IDInfo): Promise<string> {
         if (!this.supportsKeyRotation(this.walletProvider)) {
             return id.keyRef;
@@ -861,7 +828,7 @@ export default class Keymaster implements KeymasterInterface {
             return id.keyRef;
         }
 
-        return this.decrementKeyRefVersion(id.keyRef);
+        return id.previousKeyRef ?? id.keyRef;
     }
 
     async createAsset(
@@ -1698,10 +1665,10 @@ export default class Keymaster implements KeymasterInterface {
             }
 
             const currentKeyRef = id.keyRef;
-            const { publicJwk } = await this.walletProvider.rotateKey(currentKeyRef);
+            const rotatedKey = await this.walletProvider.rotateKey(currentKeyRef);
             const currentKeyCount = doc.didDocument.verificationMethod.length || 1;
             vmethod.id = `#key-${currentKeyCount + 1}`;
-            vmethod.publicKeyJwk = publicJwk;
+            vmethod.publicKeyJwk = rotatedKey.publicJwk;
             doc.didDocument.authentication = [vmethod.id];
 
             ok = await this.updateDID(doc);
@@ -1709,7 +1676,8 @@ export default class Keymaster implements KeymasterInterface {
                 throw new KeymasterError('Cannot rotate keys');
             }
 
-            id.keyRef = this.incrementKeyRefVersion(currentKeyRef);
+            id.previousKeyRef = currentKeyRef;
+            id.keyRef = rotatedKey.keyRef;
         });
 
         return ok;

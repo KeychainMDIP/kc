@@ -32,6 +32,13 @@ const dummyPublicJwk = {
     y: 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
 } as EcdsaJwkPublic;
 
+const rotatedPublicJwk = {
+    kty: 'EC',
+    crv: 'secp256k1',
+    x: 'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC',
+    y: 'DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD',
+} as EcdsaJwkPublic;
+
 const PASSPHRASE = 'passphrase';
 
 class MemoryStore<T> {
@@ -106,7 +113,7 @@ class ControlledProviderStore extends WalletProviderJsonMemory {
 }
 
 class DummyWalletProvider implements WalletProvider {
-    readonly type = 'dummy';
+    readonly type: string = 'dummy';
     fingerprint = 'dummy-fingerprint';
     resetCalls: boolean[] = [];
 
@@ -135,6 +142,26 @@ class DummyWalletProvider implements WalletProvider {
 
     async decrypt(_keyRef: string, _sender: EcdsaJwkPublic, ciphertext: string): Promise<string> {
         return ciphertext;
+    }
+}
+
+class OpaqueRotatingWalletProvider extends DummyWalletProvider {
+    readonly type = 'opaque';
+    readonly rotateCalls: string[] = [];
+
+    override async createIdKey(): Promise<WalletProviderKey> {
+        return {
+            keyRef: 'opaque-initial',
+            publicJwk: dummyPublicJwk,
+        };
+    }
+
+    async rotateKey(keyRef: string): Promise<WalletProviderKey> {
+        this.rotateCalls.push(keyRef);
+        return {
+            keyRef: 'opaque-next',
+            publicJwk: rotatedPublicJwk,
+        };
     }
 }
 
@@ -334,6 +361,97 @@ describe('Keymaster modular wallet coverage', () => {
         await expect(keymaster.rotateKeys()).rejects.toThrow(
             'Keymaster: Wallet provider does not support key rotation.'
         );
+    });
+
+    it('stores provider-managed opaque key refs returned by rotation', async () => {
+        const provider = new OpaqueRotatingWalletProvider();
+        const wallet = await makeWalletFile(provider, {
+            Alice: {
+                did: 'did:test:alice',
+                keyRef: 'opaque-current',
+            },
+        });
+        wallet.current = 'Alice';
+
+        const store = new MemoryKeymasterStore(wallet);
+        const keymaster = new Keymaster({ gatekeeper, store, walletProvider: provider, cipher: cipherStub });
+        const doc = {
+            didDocument: {
+                id: 'did:test:alice',
+                verificationMethod: [{
+                    id: '#key-1',
+                    publicKeyJwk: dummyPublicJwk,
+                }],
+                authentication: ['#key-1'],
+            },
+            didDocumentMetadata: {
+                confirmed: true,
+            },
+        };
+
+        jest.spyOn(keymaster, 'resolveDID').mockResolvedValue(doc as any);
+        const updateSpy = jest.spyOn(keymaster, 'updateDID').mockResolvedValue(true as any);
+
+        await expect(keymaster.rotateKeys()).resolves.toBe(true);
+
+        const updated = await keymaster.loadWallet();
+        expect(provider.rotateCalls).toEqual(['opaque-current']);
+        expect(updated.ids.Alice.keyRef).toBe('opaque-next');
+        expect(updated.ids.Alice.previousKeyRef).toBe('opaque-current');
+        expect(updateSpy).toHaveBeenCalledWith(expect.objectContaining({
+            didDocument: expect.objectContaining({
+                verificationMethod: [expect.objectContaining({
+                    publicKeyJwk: rotatedPublicJwk,
+                })],
+            }),
+        }));
+    });
+
+    it('uses the previous provider-managed key ref while a rotation is unconfirmed', async () => {
+        const provider = new OpaqueRotatingWalletProvider();
+        const wallet = await makeWalletFile(provider);
+        const cipher = new CipherNode();
+        const keymaster = new Keymaster({
+            gatekeeper,
+            store: new MemoryKeymasterStore(wallet),
+            walletProvider: provider,
+            cipher,
+        });
+        const id = {
+            did: 'did:test:alice',
+            keyRef: 'opaque-next',
+            previousKeyRef: 'opaque-current',
+        };
+        const currentDoc = {
+            didDocument: {
+                id: 'did:test:alice',
+                verificationMethod: [{
+                    id: '#key-2',
+                    publicKeyJwk: rotatedPublicJwk,
+                }],
+            },
+            didDocumentMetadata: {
+                confirmed: false,
+            },
+        };
+        const confirmedDoc = {
+            didDocument: {
+                id: 'did:test:alice',
+                verificationMethod: [{
+                    id: '#key-1',
+                    publicKeyJwk: dummyPublicJwk,
+                }],
+            },
+            didDocumentMetadata: {
+                confirmed: true,
+            },
+        };
+
+        jest.spyOn(keymaster, 'resolveDID').mockImplementation(async (_did: any, options?: any) => {
+            return options?.confirm ? confirmedDoc as any : currentDoc as any;
+        });
+
+        await expect((keymaster as any).getActiveKeyRef(id)).resolves.toBe('opaque-current');
     });
 
     it('falls back to the current wallet when bundle recovery cannot save provider state', async () => {
@@ -682,6 +800,7 @@ describe('MnemonicHdWalletProvider coverage', () => {
         await provider.createIdKey();
 
         await expect(provider.rotateKey('hd:0')).resolves.toEqual({
+            keyRef: 'hd:0#1',
             publicJwk: expect.any(Object),
         });
     });

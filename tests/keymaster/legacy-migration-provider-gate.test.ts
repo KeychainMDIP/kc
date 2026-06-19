@@ -53,7 +53,7 @@ class DummyWalletProvider implements WalletProvider {
         return this.fail();
     }
 
-    async rotateKey(_keyRef: string): Promise<{ publicJwk: EcdsaJwkPublic }> {
+    async rotateKey(_keyRef: string): Promise<WalletProviderKey> {
         return this.fail();
     }
 
