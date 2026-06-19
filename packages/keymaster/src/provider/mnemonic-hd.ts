@@ -218,11 +218,14 @@ export default class MnemonicHdWalletProvider implements MnemonicHdWalletProvide
 
         await this.mutateState(async (state) => {
             await this.getHdKey();
-            const { baseKeyRef } = this.parseKeyRef(keyRef);
+            const { baseKeyRef, version } = this.parseKeyRef(keyRef);
             const entry = this.getIdKeyState(state, baseKeyRef);
             const account = this.parseAccountFromBaseKeyRef(baseKeyRef);
-            const nextIndex = entry.currentIndex + 1;
-            entry.currentIndex = nextIndex;
+            const currentIndex = typeof version === 'number' ? version : entry.currentIndex;
+            const nextIndex = currentIndex + 1;
+            if (nextIndex > entry.currentIndex) {
+                entry.currentIndex = nextIndex;
+            }
 
             publicJwk = this.deriveIdKeyPair(account, nextIndex).publicJwk;
         });

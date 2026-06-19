@@ -1655,9 +1655,6 @@ export default class Keymaster implements KeymasterInterface {
             }
 
             const doc = await this.resolveDID(id.did);
-            const currentKeyRef = id.keyRef;
-            const { publicJwk } = await this.walletProvider.rotateKey(currentKeyRef);
-
             if (!doc.didDocumentMetadata?.confirmed) {
                 throw new KeymasterError('Cannot rotate keys');
             }
@@ -1669,6 +1666,9 @@ export default class Keymaster implements KeymasterInterface {
             if (!vmethod.publicKeyJwk) {
                 throw new KeymasterError('DID Document missing verificationMethod');
             }
+
+            const currentKeyRef = id.keyRef;
+            const { publicJwk } = await this.walletProvider.rotateKey(currentKeyRef);
             const currentKeyCount = doc.didDocument.verificationMethod.length || 1;
             vmethod.id = `#key-${currentKeyCount + 1}`;
             vmethod.publicKeyJwk = publicJwk;
