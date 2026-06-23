@@ -83,12 +83,16 @@ describe('logger', () => {
     it('createLogger respects explicit transport and accepts falsy transport', () => {
         const customTransport = { target: 'pino-pretty', options: { singleLine: false } };
         loggerMod.createLogger({ transport: customTransport }, { KC_LOG_LEVEL: 'info' });
-        let options = pinoMock.mock.calls.at(-1)?.[0] as any;
+        let call = pinoMock.mock.calls.at(-1);
+        let options = call?.[0] as any;
         expect(options.transport).toBe(customTransport);
+        expect(call?.[1]).toBeUndefined();
 
         loggerMod.createLogger({ transport: false as any }, { KC_LOG_LEVEL: 'info' });
-        options = pinoMock.mock.calls.at(-1)?.[0] as any;
+        call = pinoMock.mock.calls.at(-1);
+        options = call?.[0] as any;
         expect(options.transport).toBe(false);
+        expect(call?.[1]).toBeUndefined();
     });
 
     it('setLogger and childLogger delegate to the current logger', () => {

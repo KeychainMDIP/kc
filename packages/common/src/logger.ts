@@ -90,7 +90,7 @@ export function createLogger(
         level: resolvedLevel,
     };
 
-    if (options.transport) {
+    if (options.transport !== undefined && options.transport !== null) {
         return pino(loggerOptions);
     }
 
