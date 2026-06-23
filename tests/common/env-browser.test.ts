@@ -11,4 +11,9 @@ describe('env-browser', () => {
         expect(resolveEnvFiles(options)).toEqual([]);
         expect(loadEnv(options)).toEqual([]);
     });
+
+    it('uses no-op env loading with default options', () => {
+        expect(resolveEnvFiles()).toEqual([]);
+        expect(loadEnv()).toEqual([]);
+    });
 });
