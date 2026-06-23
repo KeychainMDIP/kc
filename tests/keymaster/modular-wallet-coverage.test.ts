@@ -641,6 +641,54 @@ describe('MnemonicHdWalletProvider coverage', () => {
         await expect(store.loadWallet()).resolves.toStrictEqual(original);
     });
 
+    it('computes a fingerprint from imported provider state without saving it', async () => {
+        const cipher = new CipherNode();
+        const sourceProvider = new MnemonicHdWalletProvider({
+            store: new ControlledProviderStore(),
+            cipher,
+            passphrase: PASSPHRASE,
+        });
+        const targetStore = new ControlledProviderStore();
+        const targetProvider = new MnemonicHdWalletProvider({
+            store: targetStore,
+            cipher,
+            passphrase: PASSPHRASE,
+        });
+
+        await sourceProvider.newWallet(undefined, true);
+        const backup = await sourceProvider.backupWallet();
+        const fingerprint = await targetProvider.getFingerprintForWallet(backup);
+
+        expect(fingerprint).toBe(await sourceProvider.getFingerprint());
+        await expect(targetStore.loadWallet()).resolves.toBeNull();
+    });
+
+    it('rejects malformed imported provider key refs before saving them', async () => {
+        const cipher = new CipherNode();
+        const sourceProvider = new MnemonicHdWalletProvider({
+            store: new ControlledProviderStore(),
+            cipher,
+            passphrase: PASSPHRASE,
+        });
+        const targetStore = new ControlledProviderStore();
+        const targetProvider = new MnemonicHdWalletProvider({
+            store: targetStore,
+            cipher,
+            passphrase: PASSPHRASE,
+        });
+
+        await sourceProvider.newWallet(undefined, true);
+        const backup = await sourceProvider.backupWallet();
+
+        await expect(targetProvider.saveWallet({
+            ...backup,
+            keys: {
+                'bad-ref': { currentIndex: 0 },
+            },
+        }, true)).rejects.toThrow('Invalid parameter: wallet');
+        await expect(targetStore.loadWallet()).resolves.toBeNull();
+    });
+
     it('saveWallet returns false when the provider store refuses the restore write', async () => {
         const cipher = new CipherNode();
         const sourceProvider = new MnemonicHdWalletProvider({
