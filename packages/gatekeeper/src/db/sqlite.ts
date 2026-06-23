@@ -1,7 +1,23 @@
 import * as sqlite from 'sqlite';
 import sqlite3 from 'sqlite3';
 import { InvalidDIDError } from '@mdip/common/errors';
-import { GatekeeperDb, GatekeeperEvent, Operation, BlockId, BlockInfo } from '../types.js'
+import { childLogger } from '@mdip/common/logger';
+import {
+    GatekeeperDb,
+    GatekeeperEvent,
+    Operation,
+    BlockId,
+    BlockInfo,
+    IndexExportSnapshotOptions,
+    IndexExportResponse,
+    IndexExportChangesOptions
+} from '../types.js'
+import {
+    buildIndexChangesResponse,
+    buildIndexSnapshotResponseFromPageKeys,
+    normalizeIndexExportLimit,
+    parseIndexExportCursor
+} from './index-export.js';
 
 interface DidsRow {
     id: string
@@ -13,7 +29,17 @@ interface QueueRow {
     ops: string
 }
 
+interface IndexChangeRow {
+    seq: number;
+    kind: string;
+    did?: string | null;
+    registry?: string | null;
+    block?: string | null;
+    removed: number;
+}
+
 const SQLITE_NOT_STARTED_ERROR = 'SQLite DB not open. Call start() first.';
+const log = childLogger({ service: 'gatekeeper-db', module: 'sqlite' });
 
 export default class DbSqlite implements GatekeeperDb {
     private readonly dbName: string;
@@ -76,6 +102,15 @@ export default class DbSqlite implements GatekeeperDb {
             ops TEXT
         )`);
 
+        await this.db.exec(`CREATE TABLE IF NOT EXISTS index_changes (
+            seq INTEGER PRIMARY KEY AUTOINCREMENT,
+            kind TEXT NOT NULL,
+            did TEXT,
+            registry TEXT,
+            block TEXT,
+            removed INTEGER NOT NULL DEFAULT 0
+        )`);
+
         await this.db.exec(`CREATE TABLE IF NOT EXISTS blocks (
                 registry TEXT NOT NULL,
                 hash TEXT NOT NULL,
@@ -106,6 +141,7 @@ export default class DbSqlite implements GatekeeperDb {
                 await this.db!.run('DELETE FROM dids');
                 await this.db!.run('DELETE FROM queue');
                 await this.db!.run('DELETE FROM blocks');
+                await this.db!.run('DELETE FROM index_changes');
             });
         });
     }
@@ -120,8 +156,35 @@ export default class DbSqlite implements GatekeeperDb {
                 const id = this.splitSuffix(did);
                 const events = await this.getEventsStrict(id);
                 events.push(event);
-                return this.setEventsStrict(id, events);
+                const changes = await this.setEventsStrict(id, events);
+                await this.recordIndexChangeStrict({
+                    kind: 'did',
+                    did,
+                });
+                return changes;
             })
+        );
+    }
+
+    private async recordIndexChangeStrict(change: {
+        kind: 'did' | 'block';
+        did?: string;
+        registry?: string;
+        block?: BlockInfo;
+        removed?: boolean;
+    }): Promise<void> {
+        if (!this.db) {
+            throw new Error(SQLITE_NOT_STARTED_ERROR);
+        }
+
+        await this.db.run(
+            `INSERT INTO index_changes(kind, did, registry, block, removed)
+             VALUES (?, ?, ?, ?, ?)`,
+            change.kind,
+            change.did ?? null,
+            change.registry ?? null,
+            change.block ? JSON.stringify(change.block) : null,
+            change.removed ? 1 : 0
         );
     }
 
@@ -141,7 +204,14 @@ export default class DbSqlite implements GatekeeperDb {
     async setEvents(did: string, events: GatekeeperEvent[]): Promise<number> {
         const id = this.splitSuffix(did);
         return this.runExclusive(() =>
-            this.withTx(() => this.setEventsStrict(id, events))
+            this.withTx(async () => {
+                const changes = await this.setEventsStrict(id, events);
+                await this.recordIndexChangeStrict({
+                    kind: 'did',
+                    did,
+                });
+                return changes;
+            })
         );
     }
 
@@ -182,6 +252,13 @@ export default class DbSqlite implements GatekeeperDb {
             this.withTx(async () => {
                 const id = this.splitSuffix(did);
                 const result = await this.db!.run('DELETE FROM dids WHERE id = ?', id);
+                if ((result.changes ?? 0) > 0) {
+                    await this.recordIndexChangeStrict({
+                        kind: 'did',
+                        did,
+                        removed: true,
+                    });
+                }
                 return result.changes ?? 0;
             })
         );
@@ -258,7 +335,7 @@ export default class DbSqlite implements GatekeeperDb {
                 );
                 return true;
             }).catch(err => {
-                console.error(err);
+                log.error({ error: err }, 'SQLite clearQueue error');
                 return false;
             })
         );
@@ -273,6 +350,77 @@ export default class DbSqlite implements GatekeeperDb {
         return rows.map(row => row.id);
     }
 
+    private async getIndexCheckpointCursor(): Promise<string> {
+        if (!this.db) {
+            throw new Error(SQLITE_NOT_STARTED_ERROR)
+        }
+
+        const row = await this.db.get<{ seq: number | null }>('SELECT COALESCE(MAX(seq), 0) AS seq FROM index_changes');
+        return (row?.seq ?? 0).toString();
+    }
+
+    async exportIndexSnapshot(_options?: IndexExportSnapshotOptions): Promise<IndexExportResponse> {
+        if (!this.db) {
+            throw new Error(SQLITE_NOT_STARTED_ERROR)
+        }
+
+        const options = _options ?? {};
+        const limit = normalizeIndexExportLimit(options.limit);
+        const cursor = options.cursor ?? null;
+        const checkpointCursor = options.checkpointCursor ?? await this.getIndexCheckpointCursor();
+        const rows = await this.db.all<{ id: string }[]>(
+            `SELECT id
+             FROM dids
+             WHERE (? IS NULL OR id > ?)
+             ORDER BY id ASC
+             LIMIT ?`,
+            cursor,
+            cursor,
+            limit + 1
+        );
+
+        return buildIndexSnapshotResponseFromPageKeys(
+            rows.map(row => row.id),
+            id => this.getEvents(id),
+            options,
+            checkpointCursor
+        );
+    }
+
+    async exportIndexChanges(_options?: IndexExportChangesOptions): Promise<IndexExportResponse> {
+        if (!this.db) {
+            throw new Error(SQLITE_NOT_STARTED_ERROR)
+        }
+
+        const options = _options ?? {};
+        const afterSeq = parseIndexExportCursor(options.cursor);
+        const limit = normalizeIndexExportLimit(options.limit);
+        const rows = await this.db.all<IndexChangeRow[]>(
+            `SELECT seq, kind, did, registry, block, removed
+             FROM index_changes
+             WHERE seq > ?
+             ORDER BY seq ASC
+             LIMIT ?`,
+            afterSeq,
+            limit + 1
+        );
+        const page = rows.slice(0, limit).map(row => ({
+            seq: row.seq,
+            kind: row.kind === 'block' ? 'block' as const : 'did' as const,
+            did: row.did ?? undefined,
+            registry: row.registry ?? undefined,
+            block: row.block ? JSON.parse(row.block) as BlockInfo : undefined,
+            removed: row.removed === 1,
+        }));
+
+        return buildIndexChangesResponse(
+            page,
+            rows.length > limit,
+            options,
+            did => this.getEvents(did)
+        );
+    }
+
     async addBlock(registry: string, blockInfo: BlockInfo): Promise<boolean> {
         if (!this.db) {
             throw new Error(SQLITE_NOT_STARTED_ERROR);
@@ -281,18 +429,25 @@ export default class DbSqlite implements GatekeeperDb {
         try {
             // Insert or replace the block information
             await this.runExclusive(async () =>
-                await this.db!.run(
-                    `INSERT OR REPLACE INTO blocks (registry, hash, height, time, txns) VALUES (?, ?, ?, ?, ?)`,
-                    registry,
-                    blockInfo.hash,
-                    blockInfo.height,
-                    blockInfo.time,
-                    0
-                )
+                await this.withTx(async () => {
+                    await this.db!.run(
+                        `INSERT OR REPLACE INTO blocks (registry, hash, height, time, txns) VALUES (?, ?, ?, ?, ?)`,
+                        registry,
+                        blockInfo.hash,
+                        blockInfo.height,
+                        blockInfo.time,
+                        0
+                    );
+                    await this.recordIndexChangeStrict({
+                        kind: 'block',
+                        registry,
+                        block: blockInfo,
+                    });
+                })
             );
 
             return true;
-        } catch (error) {
+        } catch {
             return false;
         }
     }
@@ -326,7 +481,7 @@ export default class DbSqlite implements GatekeeperDb {
             }
 
             return blockRow ?? null;
-        } catch (error) {
+        } catch {
             return null;
         }
     }

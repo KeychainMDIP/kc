@@ -2,7 +2,7 @@
 
 ### Search Server
 
-**search-server** is a Node service that connects to a Gatekeeper instance, fetches newly updated DIDs, and stores the associated DID documents in a local database. It exposes HTTP endpoints for returning a DID document from a DID or text based queries against the DID documents, returning lists of DIDs that match.
+**search-server** is a Node service that connects to a Gatekeeper instance, syncs DID events through the Gatekeeper index export endpoint, and stores the associated DID documents in a local database. It exposes HTTP endpoints for returning a DID document from a DID or text based queries against the DID documents, returning lists of DIDs that match.
 
 ### Quick start
 
@@ -23,13 +23,34 @@ Then edit the `.env` file to set your desired configuration:
 
 ```env
 # The port the server will run on
-SEARCH_SERVER_PORT=4002
+KC_SEARCH_SERVER_PORT=4002
 
 # URL where your Gatekeeper service is running
-SEARCH_SERVER_GATEKEEPER_URL=http://localhost:4224
+KC_SEARCH_SERVER_GATEKEEPER_URL=http://localhost:4224
 
 # How often (in ms) to poll Gatekeeper for new or updated DIDs.
-SEARCH_SERVER_REFRESH_INTERVAL_MS=5000
+KC_SEARCH_SERVER_REFRESH_INTERVAL_MS=5000
+
+# Database adapter: sqlite | postgres | memory
+KC_SEARCH_SERVER_DB=sqlite
+
+# Used when KC_SEARCH_SERVER_DB=postgres
+# Falls back to KC_POSTGRES_URL when unset
+KC_SEARCH_SERVER_POSTGRES_URL=postgresql://mdip:mdip@localhost:5432/mdip
+
+# Trust proxy headers when determining req.ip
+KC_SEARCH_SERVER_TRUST_PROXY=false
+
+# API rate limiting
+KC_SEARCH_SERVER_RATE_LIMIT_ENABLED=false
+KC_SEARCH_SERVER_RATE_LIMIT_WINDOW_VALUE=1
+KC_SEARCH_SERVER_RATE_LIMIT_WINDOW_UNIT=minute
+KC_SEARCH_SERVER_RATE_LIMIT_MAX_REQUESTS=600
+KC_SEARCH_SERVER_RATE_LIMIT_WHITELIST=
+KC_SEARCH_SERVER_RATE_LIMIT_SKIP_PATHS=/api/v1/ready,/api/v1/status
+
+# Logging
+KC_LOG_LEVEL=info
 ```
 
 ### Endpoints
@@ -45,6 +66,38 @@ SEARCH_SERVER_REFRESH_INTERVAL_MS=5000
 - **Query Param**: q (string)
 - **Returns**:
     - 200 OK + [] (empty array) if nothing matches, otherwise an array of DID strings.
+
+### `GET /api/v1/metrics/schemas/published`
+- **Description**: Returns counts of published credentials grouped by schema DID.
+- **Returns**:
+    - `200 OK` + `{ "schemas": [{ "schemaDid": "...", "count": 42 }] }`
+
+### `GET /api/v1/metrics/credentials/published`
+- **Description**: Returns published credential rows with optional filtering and pagination.
+- **Query Params**:
+    - `credentialDid` (optional)
+    - `schemaDid` (optional)
+    - `issuerDid` (optional)
+    - `subjectDid` (optional)
+    - `limit` (optional, default `50`)
+    - `offset` (optional, default `0`)
+- **Notes**:
+    - `updatedAt` is derived from the credential manifest entry's `signature.signed` when available, with a fallback to the subject DID document timestamp.
+- **Returns**:
+    - `200 OK` + `{ "total": 123, "credentials": [{ "credentialDid": "...", "schemaDid": "...", "issuerDid": "...", "subjectDid": "...", "holderDid": "...", "updatedAt": "..." }] }`
+
+### Published credential metrics
+
+`search-server` also derives metrics for publicly published credentials by reading
+subject DID manifests. These metrics only cover credentials that have been
+published into a subject DID document; privately held or merely issued
+credentials are not included.
+
+### Known limitations
+
+Initial snapshot sync exports DID event histories and preserves accepted DID operation order through the incremental change cursor. It does not currently export Gatekeeper's blockchain table. As a result, a wiped `search-server` can rebuild DID documents and show operations that arrived through Hyperswarm or blockchain registration events, but resolved DID metadata may omit chain timestamp proof details that require block lookups, such as `didDocumentMetadata.timestamp.lowerBound` and `upperBound` block `height`, `hash`, and `time`.
+
+This is intentional for now: `search-server` is not a full Gatekeeper or blockchain indexer. Future work can add block snapshot hydration if the explorer needs complete chain timestamp metadata.
 
 ## Contributing
 

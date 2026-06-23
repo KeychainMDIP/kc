@@ -85,6 +85,76 @@ describe('clearQueue', () => {
         expect(queue2).toStrictEqual([]);
     });
 
+    it('should clear queue using signature hashes', async () => {
+        const registry = 'TFTC';
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await helper.createAgentOp(keypair, { version: 1, registry });
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        doc.didDocumentData = { mock: 1 };
+        const updateOp = await helper.createUpdateOp(keypair, did, doc);
+        await gatekeeper.updateDID(updateOp);
+
+        const queue = await gatekeeper.getQueue(registry);
+        const hashes = queue
+            .map(op => op.signature?.hash)
+            .filter((hash): hash is string => !!hash);
+
+        await gatekeeper.clearQueue(registry, hashes);
+        const queue2 = await gatekeeper.getQueue(registry);
+
+        expect(queue2).toStrictEqual([]);
+    });
+
+    it('should return true when hash list has no valid hashes', async () => {
+        const ok = await gatekeeper.clearQueue('TFTC', ['']);
+        expect(ok).toBe(true);
+    });
+
+    it('should leave queue unchanged when hashes do not match', async () => {
+        const registry = 'TFTC';
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await helper.createAgentOp(keypair, { version: 1, registry });
+        await gatekeeper.createDID(agentOp);
+
+        const queue1 = await gatekeeper.getQueue(registry);
+        expect(queue1.length).toBeGreaterThan(0);
+
+        const ok = await gatekeeper.clearQueue(registry, ['deadbeef']);
+        expect(ok).toBe(true);
+
+        const queue2 = await gatekeeper.getQueue(registry);
+        expect(queue2).toStrictEqual(queue1);
+    });
+
+    it('should ignore queued ops without hashes when clearing by hash', async () => {
+        const registry = 'TFTC';
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await helper.createAgentOp(keypair, { version: 1, registry });
+        await gatekeeper.createDID(agentOp);
+
+        const opWithoutHash = {
+            type: 'create',
+            mdip: { version: 1, type: 'agent', registry },
+            signature: { signed: '', hash: '', value: '' },
+        } as any;
+        await db.queueOperation(registry, opWithoutHash);
+
+        const hashes = [agentOp.signature!.hash];
+        await gatekeeper.clearQueue(registry, hashes);
+
+        const queue = await gatekeeper.getQueue(registry);
+        expect(queue).toStrictEqual([opWithoutHash]);
+    });
+
+    it('should return true when queue missing but operations provided', async () => {
+        const registry = 'TFTC';
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await helper.createAgentOp(keypair, { version: 1, registry });
+        const ok = await gatekeeper.clearQueue(registry, [agentOp]);
+        expect(ok).toBe(true);
+    });
+
     it('should clear only specified events', async () => {
         const registry = 'TFTC';
         const keypair = cipher.generateRandomJwk();

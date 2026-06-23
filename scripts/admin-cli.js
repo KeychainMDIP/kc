@@ -24,7 +24,7 @@ program
             const doc = await gatekeeper.resolveDID(did, { confirm: !!confirm });
             console.log(JSON.stringify(doc, null, 4));
         }
-        catch (error) {
+        catch {
             console.error(`cannot resolve ${did}`);
         }
     });
@@ -32,12 +32,12 @@ program
 program
     .command('verify-did <did>')
     .description('Return verified document associated with DID')
-    .action(async (did, confirm) => {
+    .action(async (did) => {
         try {
             const doc = await gatekeeper.resolveDID(did, { verify: true });
             console.log(JSON.stringify(doc, null, 4));
         }
-        catch (error) {
+        catch {
             console.error(`cannot verify ${did}`);
         }
     });

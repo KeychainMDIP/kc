@@ -1,18 +1,38 @@
 import { useEffect, useState } from "react";
-import {Box, Button, TextField, IconButton, InputAdornment, Tooltip} from "@mui/material";
+import {
+    Box,
+    Button,
+    IconButton,
+    InputAdornment,
+    MenuItem,
+    Select,
+    TextField,
+    Tooltip,
+    Typography,
+} from "@mui/material";
 import { CameraAlt } from "@mui/icons-material";
 import axios from "axios";
+import type { Challenge } from "@mdip/keymaster/types";
 import { useWalletContext } from "../contexts/WalletProvider";
 import { useSnackbar } from "../contexts/SnackbarProvider";
 import { useUIContext } from "../contexts/UIContext";
+import { useVariablesContext } from "../contexts/VariablesProvider";
 import { scanQrCode } from "../utils/utils";
+import JsonDocumentView, {
+    JsonDocumentValue,
+    toJsonDocumentValue,
+} from "./JsonDocumentView";
 
 function AuthTab() {
     const [authDID, setAuthDID] = useState<string>("");
     const [callback, setCallback] = useState<string>("");
     const [challenge, setChallenge] = useState<string>("");
+    const [challengeSchema, setChallengeSchema] = useState<string>("");
+    const [challengeAttester, setChallengeAttester] = useState<string>("");
     const [response, setResponse] = useState<string>("");
+    const [authContents, setAuthContents] = useState<JsonDocumentValue | undefined>(undefined);
     const [disableSendResponse, setDisableSendResponse] = useState<boolean>(true);
+    const [disableSendReceipt, setDisableSendReceipt] = useState<boolean>(true);
     const { keymaster } = useWalletContext();
     const {
         setOpenBrowser,
@@ -20,7 +40,12 @@ function AuthTab() {
         setPendingChallenge
     } = useUIContext();
     const {
+        agentList,
+        schemaList,
+    } = useVariablesContext();
+    const {
         setError,
+        setSuccess,
         setWarning,
     } = useSnackbar();
 
@@ -32,12 +57,39 @@ function AuthTab() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pendingChallenge]);
 
+    useEffect(() => {
+        if (challengeSchema && !schemaList.includes(challengeSchema)) {
+            setChallengeSchema("");
+            setChallengeAttester("");
+        }
+    }, [challengeSchema, schemaList]);
+
+    useEffect(() => {
+        if (challengeAttester && !agentList.includes(challengeAttester)) {
+            setChallengeAttester("");
+        }
+    }, [agentList, challengeAttester]);
+
     async function newChallenge() {
         if (!keymaster) {
             return;
         }
         try {
-            const challenge = await keymaster.createChallenge();
+            const challengeData: Challenge = {};
+
+            if (challengeSchema) {
+                const credential: NonNullable<Challenge["credentials"]>[number] = {
+                    schema: await resolveInputDID(challengeSchema),
+                };
+
+                if (challengeAttester) {
+                    credential.issuers = [await resolveInputDID(challengeAttester)];
+                }
+
+                challengeData.credentials = [credential];
+            }
+
+            const challenge = await keymaster.createChallenge(challengeData);
             await setChallenge(challenge);
             await resolveChallenge(challenge);
         } catch (error: any) {
@@ -51,12 +103,7 @@ function AuthTab() {
         }
         try {
             const contents = await keymaster.resolveAsset(did);
-            await setAuthDID(did);
-            setOpenBrowser({
-                did,
-                tab: "viewer",
-                contents
-            });
+            showAuthContents(did, contents);
         } catch (error: any) {
             setError(error);
         }
@@ -81,6 +128,8 @@ function AuthTab() {
             if (callback) {
                 await setDisableSendResponse(false);
             }
+
+            await decryptResponse(response);
         } catch (error: any) {
             setError(error);
         }
@@ -88,6 +137,29 @@ function AuthTab() {
 
     async function clearChallenge() {
         await setChallenge("");
+        setChallengeSchema("");
+        setChallengeAttester("");
+    }
+
+    async function resolveInputDID(id: string) {
+        if (!keymaster) {
+            throw new Error("Keymaster is not available");
+        }
+
+        const input = id.trim();
+
+        if (input.startsWith("did:")) {
+            return input;
+        }
+
+        const doc = await keymaster.resolveDID(input);
+        const did = doc.didDocument?.id;
+
+        if (!did) {
+            throw new Error(`Cannot resolve DID: ${input}`);
+        }
+
+        return did;
     }
 
     async function decryptResponse(did: string) {
@@ -96,12 +168,7 @@ function AuthTab() {
         }
         try {
             const contents = await keymaster.decryptJSON(did);
-            await setAuthDID(did);
-            setOpenBrowser({
-                did,
-                tab: "viewer",
-                contents
-            });
+            showAuthContents(did, contents);
         } catch (error: any) {
             setError(error);
         }
@@ -116,8 +183,10 @@ function AuthTab() {
 
             if (verify.match) {
                 setWarning("Response is VALID");
+                setDisableSendReceipt(false);
             } else {
                 setWarning("Response is NOT VALID");
+                setDisableSendReceipt(true);
             }
         } catch (error: any) {
             setError(error);
@@ -126,16 +195,59 @@ function AuthTab() {
 
     async function clearResponse() {
         await setResponse("");
+        setDisableSendReceipt(true);
+    }
+
+    async function updateResponse(did: string) {
+        await setResponse(did.trim());
+        setDisableSendReceipt(true);
     }
 
     async function sendResponse() {
         try {
+            if (!callback || !response) {
+                return;
+            }
+
             await setDisableSendResponse(true);
             await axios.post(callback, { response });
             await setCallback("");
         } catch (error: any) {
             setError(error);
         }
+    }
+
+    async function sendReceipt() {
+        if (!keymaster || !response) {
+            return;
+        }
+        try {
+            setDisableSendReceipt(true);
+            const receiptDIDs = await keymaster.publishChallengeReceipts(response);
+            showAuthContents(response, { receiptDIDs });
+
+            if (receiptDIDs.length === 0) {
+                setWarning("No receipts to send");
+            } else if (receiptDIDs.length === 1) {
+                setSuccess(`Receipt sent: ${receiptDIDs[0]}`);
+            } else {
+                setSuccess(`Receipts sent: ${receiptDIDs.length}`);
+            }
+        } catch (error: any) {
+            setError(error);
+        }
+    }
+
+    function showAuthContents(did: string, contents: unknown) {
+        setAuthDID(did);
+        setAuthContents(toJsonDocumentValue(contents));
+    }
+
+    function openDIDInJsonViewer(did: string) {
+        setOpenBrowser({
+            did,
+            tab: "viewer",
+        });
     }
 
     async function scanChallengeQR() {
@@ -164,12 +276,12 @@ function AuthTab() {
                         },
                         input: {
                             endAdornment: (
-                                <InputAdornment position="end">
+                                <InputAdornment position="end" sx={{ mr: "-14px", height: 40, maxHeight: "none" }}>
                                     <Tooltip title="Scan QR" placement="top">
                                         <span>
                                             <IconButton
-                                                edge="end"
                                                 onClick={scanChallengeQR}
+                                                sx={{ mr: 1 }}
                                             >
                                                 <CameraAlt />
                                             </IconButton>
@@ -180,6 +292,49 @@ function AuthTab() {
                         }
                     }}
                 />
+            </Box>
+
+            <Box display="flex" flexDirection="column">
+                <Select
+                    value={challengeSchema}
+                    onChange={(event) => {
+                        setChallengeSchema(event.target.value);
+                        if (!event.target.value) {
+                            setChallengeAttester("");
+                        }
+                    }}
+                    size="small"
+                    displayEmpty
+                    variant="outlined"
+                    className="select-small-middle"
+                >
+                    <MenuItem value="">
+                        <em>No credential schema</em>
+                    </MenuItem>
+                    {schemaList.map((name, index) => (
+                        <MenuItem value={name} key={index}>
+                            {name}
+                        </MenuItem>
+                    ))}
+                </Select>
+                <Select
+                    value={challengeAttester}
+                    onChange={(event) => setChallengeAttester(event.target.value)}
+                    size="small"
+                    displayEmpty
+                    disabled={!challengeSchema}
+                    variant="outlined"
+                    className="select-small-middle"
+                >
+                    <MenuItem value="">
+                        <em>Any attester</em>
+                    </MenuItem>
+                    {agentList.map((name, index) => (
+                        <MenuItem value={name} key={index}>
+                            {name}
+                        </MenuItem>
+                    ))}
+                </Select>
             </Box>
 
             <Box className="flex-box">
@@ -217,7 +372,7 @@ function AuthTab() {
                     color="primary"
                     onClick={clearChallenge}
                     className="button large bottom"
-                    disabled={!challenge}
+                    disabled={!challenge && !challengeSchema && !challengeAttester}
                 >
                     Clear
                 </Button>
@@ -228,9 +383,34 @@ function AuthTab() {
                     label="Response"
                     variant="outlined"
                     value={response}
-                    onChange={(e) => setResponse(e.target.value.trim())}
+                    onChange={(e) => updateResponse(e.target.value)}
                     size="small"
                     className="text-field top"
+                    slotProps={{
+                        htmlInput: {
+                            maxLength: 80,
+                        },
+                        input: {
+                            endAdornment: (
+                                <InputAdornment position="end" sx={{ mr: "-14px", height: 40, maxHeight: "none" }}>
+                                    <Button
+                                        variant="contained"
+                                        color="primary"
+                                        onClick={clearResponse}
+                                        disabled={!response}
+                                        sx={{
+                                            borderTopLeftRadius: 0,
+                                            borderBottomLeftRadius: 0,
+                                            boxShadow: "none",
+                                            height: 40,
+                                        }}
+                                    >
+                                        Clear
+                                    </Button>
+                                </InputAdornment>
+                            ),
+                        }
+                    }}
                 />
             </Box>
 
@@ -262,19 +442,40 @@ function AuthTab() {
                     className="button large bottom"
                     disabled={disableSendResponse}
                 >
-                    Send
+                    Send Response
                 </Button>
 
                 <Button
                     variant="contained"
                     color="primary"
-                    onClick={clearResponse}
+                    onClick={sendReceipt}
                     className="button large bottom"
-                    disabled={!response}
+                    disabled={disableSendReceipt}
                 >
-                    Clear
+                    Send Receipt
                 </Button>
             </Box>
+
+            {authContents && (
+                <Box sx={{ mt: 2, overflowX: "auto", overflowY: "visible", WebkitOverflowScrolling: "touch" }}>
+                    {authDID && (
+                        <Typography
+                            className="did-mono"
+                            onClick={() => openDIDInJsonViewer(authDID)}
+                            sx={{
+                                mb: 1,
+                                overflowWrap: "anywhere",
+                                color: "primary.main",
+                                cursor: "pointer",
+                                textDecoration: "underline",
+                            }}
+                        >
+                            {authDID}
+                        </Typography>
+                    )}
+                    <JsonDocumentView value={authContents} onResolveDID={openDIDInJsonViewer} />
+                </Box>
+            )}
         </Box>
     );
 }

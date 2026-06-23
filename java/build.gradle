@@ -1,0 +1,165 @@
+allprojects {
+    repositories {
+        mavenCentral()
+    }
+}
+
+subprojects {
+    apply plugin: 'java-library'
+
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(11)
+        }
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
+        options.release = 11
+    }
+
+    tasks.withType(Test).configureEach {
+        useJUnitPlatform()
+    }
+
+    dependencies {
+        testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+        testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.10.2'
+        testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.10.2'
+    }
+}
+
+def publishableModules = ['cid', 'crypto', 'gatekeeper', 'keymaster']
+def centralBundleDir = rootProject.layout.buildDirectory.dir("central-bundle")
+
+configure(subprojects.findAll { it.name in publishableModules }) {
+    apply plugin: 'maven-publish'
+    apply plugin: 'signing'
+
+    java {
+        withSourcesJar()
+        withJavadocJar()
+    }
+
+    publishing {
+        publications {
+            mavenJava(MavenPublication) {
+                from components.java
+                artifactId = project.name
+
+                pom {
+                    name = "Self ID Java ${project.name}"
+                    description = "Self ID Java ${project.name} module"
+                    url = "https://selfid.com"
+
+                    licenses {
+                        license {
+                            name = "MIT License"
+                            url = "https://opensource.org/licenses/MIT"
+                            distribution = "repo"
+                        }
+                    }
+
+                    developers {
+                        developer {
+                            id = "selfid"
+                            name = "Self ID"
+                            organization = "Self ID"
+                            organizationUrl = "https://selfid.com"
+                        }
+                    }
+
+                    scm {
+                        url = "https://github.com/KeychainMDIP/kc"
+                        connection = "scm:git:https://github.com/KeychainMDIP/kc.git"
+                        developerConnection = "scm:git:https://github.com/KeychainMDIP/kc.git"
+                    }
+                }
+            }
+        }
+
+        repositories {
+            maven {
+                name = "CentralBundle"
+                url = centralBundleDir.get().asFile.toURI()
+            }
+        }
+    }
+
+    signing {
+        def signingKey = findProperty("signingKey") ?: System.getenv("SIGNING_KEY")
+        def signingPassword = findProperty("signingPassword") ?: System.getenv("SIGNING_PASSWORD")
+
+        if (signingKey && signingPassword) {
+            useInMemoryPgpKeys(signingKey, signingPassword)
+        }
+
+        sign publishing.publications.mavenJava
+    }
+}
+
+tasks.register("cleanCentralBundle", Delete) {
+    delete centralBundleDir
+}
+
+tasks.register("publishCentralBundle") {
+    dependsOn "cleanCentralBundle"
+    dependsOn publishableModules.collect { ":${it}:publishMavenJavaPublicationToCentralBundleRepository" }
+}
+
+tasks.register("zipCentralBundle", Zip) {
+    dependsOn "publishCentralBundle"
+    from centralBundleDir
+    archiveFileName = "central-bundle.zip"
+    destinationDirectory = rootProject.layout.buildDirectory.dir("central")
+}
+
+tasks.register("uploadCentralBundle") {
+    dependsOn "zipCentralBundle"
+    doLast {
+        def zipFile = tasks.named("zipCentralBundle", Zip).get().archiveFile.get().asFile
+        if (!zipFile.exists()) {
+            throw new GradleException("Central bundle zip not found: ${zipFile}")
+        }
+
+        def username = System.getenv("SONATYPE_USERNAME")
+        def password = System.getenv("SONATYPE_PASSWORD")
+        if (!username || !password) {
+            throw new GradleException("SONATYPE_USERNAME and SONATYPE_PASSWORD must be set for Central upload.")
+        }
+
+        def token = "${username}:${password}".bytes.encodeBase64().toString()
+
+        def publishingType = System.getenv("CENTRAL_PUBLISHING_TYPE") ?: "USER_MANAGED"
+        def deploymentName = System.getenv("CENTRAL_DEPLOYMENT_NAME") ?: "Self ID Java ${project.version}"
+        def url = "https://central.sonatype.com/api/v1/publisher/upload?publishingType=${publishingType}&name=${java.net.URLEncoder.encode(deploymentName, 'UTF-8')}"
+
+        def stdout = new ByteArrayOutputStream()
+        def stderr = new ByteArrayOutputStream()
+
+        def result = project.exec {
+            commandLine "curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--request", "POST",
+                "--header", "Authorization: Bearer ${token}",
+                "--form", "bundle=@${zipFile.absolutePath}",
+                url
+            standardOutput = stdout
+            errorOutput = stderr
+            ignoreExitValue = true
+        }
+
+        if (result.exitValue != 0) {
+            throw new GradleException("Central upload failed: ${stderr.toString('UTF-8').trim()}")
+        }
+
+        def deploymentId = stdout.toString("UTF-8").trim()
+        println("Central upload complete. Deployment ID: ${deploymentId}")
+    }
+}
+
+tasks.register("publishCentral") {
+    dependsOn "uploadCentralBundle"
+}

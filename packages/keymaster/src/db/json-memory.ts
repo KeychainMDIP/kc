@@ -1,7 +1,6 @@
-import { StoredWallet } from '../types.js';
-import { AbstractBase } from './abstract-base.js';
+import { StoredWallet, WalletBase } from '../types.js';
 
-export default class WalletJsonMemory extends AbstractBase {
+export default class WalletJsonMemory implements WalletBase {
     walletCache: string | null = null;
 
     async saveWallet(wallet: StoredWallet, overwrite: boolean = false): Promise<boolean> {

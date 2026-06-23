@@ -1,8 +1,10 @@
 *.json
 *.db
+*.db-journal
 ipfs/
 mongodb/
 redis/
+postgres/
 tesseract/
 tftc/
 tbtc/

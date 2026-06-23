@@ -1,0 +1,137 @@
+{
+  "createId": {
+    "registry": "Signet",
+    "blockid": "0000000000000000000000000000000000000000000000000000000000000001",
+    "created": "2024-01-02T03:04:05.000Z",
+    "signed": "2024-01-02T03:04:06.000Z",
+    "publicJwk": {
+      "kty": "EC",
+      "crv": "secp256k1",
+      "x": "qutS3XSUw2EEneZ8xoDoPry7vb6xNjfZLNhF9wMIr14",
+      "y": "k3AWQTMpTl_RZ5Zy_nhmwwfa-XKBoo9m3KfLtSkZgk8"
+    },
+    "privateJwk": {
+      "kty": "EC",
+      "crv": "secp256k1",
+      "x": "qutS3XSUw2EEneZ8xoDoPry7vb6xNjfZLNhF9wMIr14",
+      "y": "k3AWQTMpTl_RZ5Zy_nhmwwfa-XKBoo9m3KfLtSkZgk8",
+      "d": "4oQSnMCSJXmlNbv00aOyV3MJDSjJCbwP7XO14CIsw3I"
+    },
+    "signedOperation": {
+      "type": "create",
+      "created": "2024-01-02T03:04:05.000Z",
+      "blockid": "0000000000000000000000000000000000000000000000000000000000000001",
+      "mdip": {
+        "version": 1,
+        "type": "agent",
+        "registry": "Signet"
+      },
+      "publicJwk": {
+        "kty": "EC",
+        "crv": "secp256k1",
+        "x": "qutS3XSUw2EEneZ8xoDoPry7vb6xNjfZLNhF9wMIr14",
+        "y": "k3AWQTMpTl_RZ5Zy_nhmwwfa-XKBoo9m3KfLtSkZgk8"
+      },
+      "signature": {
+        "signed": "2024-01-02T03:04:06.000Z",
+        "hash": "c0d7145e19ba28441bbdc7e79ae65eaeb5b024781f53b8dde7fced95f06b7655",
+        "value": "7e29f6a5e7945be7119e0f9613a972fd8d823e18c11d04c58f7cfe9c0f804a4c53aa00b08613bb0bf1d1260c600e7d300a94bd0057808a299b4175bf0329ff35"
+      }
+    }
+  },
+  "updateDID": {
+    "did": "did:test:alice",
+    "previd": "prev123",
+    "blockid": "0000000000000000000000000000000000000000000000000000000000000001",
+    "signerDid": "did:test:alice",
+    "signed": "2024-01-02T03:04:07.000Z",
+    "doc": {
+      "didDocument": {
+        "id": "did:test:alice",
+        "controller": "did:test:alice",
+        "verificationMethod": [
+          {
+            "id": "#key-1",
+            "controller": "did:test:alice",
+            "type": "EcdsaSecp256k1",
+            "publicKeyJwk": {
+              "kty": "EC",
+              "crv": "secp256k1",
+              "x": "qutS3XSUw2EEneZ8xoDoPry7vb6xNjfZLNhF9wMIr14",
+              "y": "k3AWQTMpTl_RZ5Zy_nhmwwfa-XKBoo9m3KfLtSkZgk8"
+            }
+          }
+        ],
+        "authentication": [
+          "#key-1"
+        ]
+      },
+      "didDocumentMetadata": {
+        "created": "2024-01-01T00:00:00.000Z",
+        "updated": "2024-01-02T00:00:00.000Z",
+        "versionId": "v1",
+        "confirmed": true
+      },
+      "didResolutionMetadata": {
+        "contentType": "application/did+ld+json"
+      },
+      "didDocumentData": {
+        "foo": "bar"
+      },
+      "mdip": {
+        "version": 1,
+        "type": "agent",
+        "registry": "Signet"
+      }
+    },
+    "privateJwk": {
+      "kty": "EC",
+      "crv": "secp256k1",
+      "x": "qutS3XSUw2EEneZ8xoDoPry7vb6xNjfZLNhF9wMIr14",
+      "y": "k3AWQTMpTl_RZ5Zy_nhmwwfa-XKBoo9m3KfLtSkZgk8",
+      "d": "4oQSnMCSJXmlNbv00aOyV3MJDSjJCbwP7XO14CIsw3I"
+    },
+    "signedOperation": {
+      "type": "update",
+      "did": "did:test:alice",
+      "previd": "prev123",
+      "blockid": "0000000000000000000000000000000000000000000000000000000000000001",
+      "doc": {
+        "didDocument": {
+          "id": "did:test:alice",
+          "controller": "did:test:alice",
+          "verificationMethod": [
+            {
+              "id": "#key-1",
+              "controller": "did:test:alice",
+              "type": "EcdsaSecp256k1",
+              "publicKeyJwk": {
+                "kty": "EC",
+                "crv": "secp256k1",
+                "x": "qutS3XSUw2EEneZ8xoDoPry7vb6xNjfZLNhF9wMIr14",
+                "y": "k3AWQTMpTl_RZ5Zy_nhmwwfa-XKBoo9m3KfLtSkZgk8"
+              }
+            }
+          ],
+          "authentication": [
+            "#key-1"
+          ]
+        },
+        "didDocumentData": {
+          "foo": "bar"
+        },
+        "mdip": {
+          "version": 1,
+          "type": "agent",
+          "registry": "Signet"
+        }
+      },
+      "signature": {
+        "signer": "did:test:alice",
+        "signed": "2024-01-02T03:04:07.000Z",
+        "hash": "1c0e760fe15a1aa25644b927e28784c23a65e52d9dc00aa9b1fdfb6320c4341a",
+        "value": "4b2986479d4451c47a89835c611b4fdcfc5be9c9915d427c68b6e88614be935434845a2875d137007c5aa1ad90cae3c7384e220d470334904540de2415ddf8d1"
+      }
+    }
+  }
+}

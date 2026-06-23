@@ -14,7 +14,7 @@ export function getTypeStyle(type: string): CSSProperties {
     }
 }
 
-export function handleCopyDID(did: string, setError: (error: any) => void) {
+export function handleCopyDID(did: string, setError: (error: unknown) => void) {
     navigator.clipboard.writeText(did).catch((err) => {
         setError(err);
     });

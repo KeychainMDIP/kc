@@ -1,20 +1,39 @@
 import express from 'express';
-import morgan from 'morgan';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { EventEmitter } from 'events';
+import rateLimit from 'express-rate-limit';
 
 import Gatekeeper from '@mdip/gatekeeper';
 import DbJsonCache from '@mdip/gatekeeper/db/json-cache';
 import DbRedis from '@mdip/gatekeeper/db/redis';
 import DbSqlite from '@mdip/gatekeeper/db/sqlite';
 import DbMongo from '@mdip/gatekeeper/db/mongo';
-import { CheckDIDsResult, ResolveDIDOptions, Operation } from '@mdip/gatekeeper/types';
+import DbPostgres from '@mdip/gatekeeper/db/postgres';
+import {
+    CheckDIDsResult,
+    Operation,
+    ResolveDIDOptions,
+} from '@mdip/gatekeeper/types';
 import KuboClient from '@mdip/ipfs/kubo';
+import { childLogger } from '@mdip/common/logger';
+import ClusterClient from '@mdip/ipfs/cluster';
 import config from './config.js';
+import {
+    createWhitelistBlockList,
+    formatBytes,
+    formatDuration,
+    isRateLimitWhitelistedRequest,
+    logRequest,
+    parseIndexExportRequest,
+    rateLimitWindowUnits,
+    shouldSkipRateLimitPath,
+} from './helpers.js';
 
 EventEmitter.defaultMaxListeners = 100;
+
+const log = childLogger({ service: 'gatekeeper-server' });
 
 const dbName = 'mdip';
 const db = (() => {
@@ -22,6 +41,7 @@ const db = (() => {
     case 'sqlite': return new DbSqlite(dbName);
     case 'mongodb': return new DbMongo(dbName);
     case 'redis': return new DbRedis(dbName);
+    case 'postgres': return new DbPostgres(dbName);
     case 'json':
     case 'json-cache': return new DbJsonCache(dbName);
     default: return null;
@@ -34,28 +54,84 @@ if (!db) {
 
 await db.start();
 
-const ipfs = await KuboClient.create({
-    url: config.ipfsURL,
-    waitUntilReady: true,
-    intervalSeconds: 5,
-    chatty: true,
-});
+const ipfs = config.ipfsEnabled
+    ? (config.ipfsClusterURL
+        ? await ClusterClient.create({
+            kuboUrl: config.ipfsURL,
+            clusterUrl: config.ipfsClusterURL,
+            clusterAuthHeader: config.ipfsClusterAuthHeader,
+            waitUntilReady: true,
+            intervalSeconds: 5,
+            chatty: true,
+        })
+        : await KuboClient.create({
+            url: config.ipfsURL,
+            waitUntilReady: true,
+            intervalSeconds: 5,
+            chatty: true,
+        }))
+    : undefined;
 
 const gatekeeper = new Gatekeeper({
     db,
     ipfs,
     didPrefix: config.didPrefix,
-    registries: config.registries
+    registries: config.registries,
+    maxOpBytes: config.maxOpBytes,
+    ipfsEnabled: config.ipfsEnabled,
 });
 const startTime = new Date();
 const app = express();
 const v1router = express.Router();
 
-app.use(cors());
-app.options('*', cors());
+if (config.gatekeeperTrustProxy) {
+    app.set('trust proxy', true);
+}
 
-app.use(morgan('dev'));
-app.use(express.json({ limit: '4mb' })); // Sets the JSON payload limit to 4MB
+const whitelistBlockList = createWhitelistBlockList(config.rateLimitWhitelist);
+const rateLimitWindowUnit = config.rateLimitWindowUnit as keyof typeof rateLimitWindowUnits;
+const rateLimitWindowMs = config.rateLimitWindowValue * (rateLimitWindowUnits[rateLimitWindowUnit] ?? rateLimitWindowUnits.minute);
+
+const apiRateLimiter = config.rateLimitEnabled
+    ? rateLimit({
+        windowMs: rateLimitWindowMs,
+        limit: config.rateLimitMaxRequests,
+        statusCode: 429,
+        message: { error: 'Too many requests' },
+        standardHeaders: 'draft-7',
+        legacyHeaders: false,
+        skip: (req) => {
+            if (req.method === 'OPTIONS') {
+                return true;
+            }
+
+            if (shouldSkipRateLimitPath(req, config.rateLimitSkipPaths)) {
+                return true;
+            }
+
+            if (config.rateLimitWhitelist.length === 0) {
+                return false;
+            }
+
+            return isRateLimitWhitelistedRequest(req, whitelistBlockList);
+        },
+    })
+    : null;
+
+if (config.rateLimitEnabled) {
+    log.info(`Rate limiting enabled: ${config.rateLimitMaxRequests} requests per ${config.rateLimitWindowValue} ${config.rateLimitWindowUnit}(s)`);
+}
+else {
+    log.info('Rate limiting disabled');
+}
+
+app.disable('x-powered-by');
+// eslint-disable-next-line sonarjs/cors
+app.use(cors());
+app.options('/{*corsPreflight}', cors());
+
+app.use(logRequest);
+app.use(express.json({ limit: config.jsonLimit }));
 
 // Define __dirname in ES module scope
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -376,7 +452,8 @@ v1router.post('/did', async (req, res) => {
         }
         res.json(result);
     } catch (error: any) {
-        console.error(error);
+        // eslint-disable-next-line sonarjs/no-duplicate-string
+        log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
 });
@@ -663,7 +740,7 @@ v1router.get('/did/:did', async (req, res) => {
 
         const doc = await gatekeeper.resolveDID(req.params.did, options);
         res.json(doc);
-    } catch (error: any) {
+    } catch {
         res.status(404).send({ error: 'DID not found' });
     }
 });
@@ -732,7 +809,7 @@ v1router.post('/did/:did', async (req, res) => {
         const ok = await gatekeeper.updateDID(operation);
         res.json(ok);
     } catch (error: any) {
-        console.error(error);
+        log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
 });
@@ -791,7 +868,7 @@ v1router.delete('/did/:did', async (req, res) => {
         const ok = await gatekeeper.deleteDID(operation);
         res.json(ok);
     } catch (error: any) {
-        console.error(error);
+        log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
 });
@@ -870,8 +947,115 @@ v1router.post('/dids/', async (req, res) => {
         const dids = await gatekeeper.getDIDs(req.body);
         res.json(dids);
     } catch (error: any) {
-        console.error(error);
+        log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
+    }
+});
+
+/**
+ * @swagger
+ * /index/export:
+ *   post:
+ *     summary: Export a paginated DID index snapshot or incremental change batch.
+ *
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [ mode ]
+ *             properties:
+ *               mode:
+ *                 type: string
+ *                 enum: [ snapshot, changes ]
+ *               cursor:
+ *                 type: string
+ *                 nullable: true
+ *                 description: Opaque snapshot cursor or incremental change cursor.
+ *               checkpointCursor:
+ *                 type: string
+ *                 nullable: true
+ *                 description: Snapshot-only high-water change cursor returned by the first snapshot page and required on continuation pages.
+ *               limit:
+ *                 type: integer
+ *                 minimum: 1
+ *
+ *     responses:
+ *       200:
+ *         description: Index export page.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - type: object
+ *                   required: [ mode, cursor, checkpointCursor, hasMore, dids, blocks ]
+ *                   properties:
+ *                     mode:
+ *                       type: string
+ *                       enum: [ snapshot ]
+ *                     cursor:
+ *                       type: string
+ *                       nullable: true
+ *                       description: Opaque snapshot page cursor. Clients must store and pass it back without interpretation.
+ *                     checkpointCursor:
+ *                       type: string
+ *                       nullable: true
+ *                       description: Snapshot high-water change cursor returned on every snapshot page.
+ *                     hasMore:
+ *                       type: boolean
+ *                     dids:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                     blocks:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                 - type: object
+ *                   required: [ mode, cursor, hasMore, dids, blocks ]
+ *                   properties:
+ *                     mode:
+ *                       type: string
+ *                       enum: [ changes ]
+ *                     cursor:
+ *                       type: string
+ *                       nullable: true
+ *                       description: Incremental change cursor.
+ *                     hasMore:
+ *                       type: boolean
+ *                     dids:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                     blocks:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *       400:
+ *         description: Invalid request body.
+ *       500:
+ *         description: Internal Server Error.
+ */
+v1router.post('/index/export', async (req, res) => {
+    let request: ReturnType<typeof parseIndexExportRequest>;
+
+    try {
+        request = parseIndexExportRequest(req.body);
+    } catch (error: any) {
+        res.status(400).json({ error: error.message ?? String(error) });
+        return;
+    }
+
+    try {
+        const response = request.mode === 'snapshot'
+            ? await db.exportIndexSnapshot(request)
+            : await db.exportIndexChanges(request);
+
+        res.json(response);
+    } catch (error: any) {
+        log.error({ err: error }, 'Index export error');
+        res.status(500).json({ error: error.toString() });
     }
 });
 
@@ -911,7 +1095,7 @@ v1router.post('/dids/remove', async (req, res) => {
         const response = await gatekeeper.removeDIDs(dids);
         res.json(response);
     } catch (error: any) {
-        console.error(error);
+        log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
 });
@@ -985,7 +1169,7 @@ v1router.post('/dids/export', async (req, res) => {
         const response = await gatekeeper.exportDIDs(dids);
         res.json(response);
     } catch (error: any) {
-        console.error(error);
+        log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
 });
@@ -1072,6 +1256,11 @@ v1router.post('/dids/export', async (req, res) => {
  *                 rejected:
  *                   type: integer
  *                   description: Number of events that failed validation (bad signature, size limit, etc.).
+ *                 rejectedIndices:
+ *                   type: array
+ *                   description: Zero-based indexes of rejected events in the original submitted batch order (for importDIDs this is `dids.flat()` order).
+ *                   items:
+ *                     type: integer
  *                 total:
  *                   type: integer
  *                   description: Total number of events in the queue after this import.
@@ -1088,7 +1277,7 @@ v1router.post('/dids/import', async (req, res) => {
         const response = await gatekeeper.importDIDs(dids);
         res.json(response);
     } catch (error: any) {
-        console.error(error);
+        log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
 });
@@ -1164,11 +1353,11 @@ v1router.post('/dids/import', async (req, res) => {
  */
 v1router.post('/batch/export', async (req, res) => {
     try {
-        const { dids } = req.body;
+        const dids = req.body?.dids;
         const response = await gatekeeper.exportBatch(dids);
         res.json(response);
     } catch (error: any) {
-        console.error(error);
+        log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
 });
@@ -1248,6 +1437,11 @@ v1router.post('/batch/export', async (req, res) => {
  *                 rejected:
  *                   type: integer
  *                   description: Number of events that failed validation.
+ *                 rejectedIndices:
+ *                   type: array
+ *                   description: Zero-based indexes of rejected events in the original submitted batch order.
+ *                   items:
+ *                     type: integer
  *                 total:
  *                   type: integer
  *                   description: The total event queue size after this import.
@@ -1265,7 +1459,7 @@ v1router.post('/batch/import', async (req, res) => {
         const response = await gatekeeper.importBatch(batch);
         res.json(response);
     } catch (error: any) {
-        console.error(error);
+        log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
 });
@@ -1341,7 +1535,7 @@ v1router.get('/queue/:registry', async (req, res) => {
         const queue = await gatekeeper.getQueue(req.params.registry);
         res.json(queue);
     } catch (error: any) {
-        console.error(error);
+        log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
 });
@@ -1367,31 +1561,36 @@ v1router.get('/queue/:registry', async (req, res) => {
  *       content:
  *         application/json:
  *           schema:
- *             type: array
- *             description: An array of DID operation event objects to remove from the queue.
- *             items:
- *               type: object
- *               description: A queued DID operation event.
- *               properties:
- *                 type:
+ *             oneOf:
+ *               - type: array
+ *                 description: An array of SHA-256 hashes of queued operations to remove.
+ *                 items:
  *                   type: string
- *                   description: The operation type.
- *                 did:
- *                   type: string
- *                   description: The DID targeted by this operation.
- *                 doc:
+ *               - type: array
+ *                 description: An array of DID operation event objects to remove from the queue.
+ *                 items:
  *                   type: object
- *                   description: The (optional) DID document content, present if type is "update" or "create" with doc data.
- *                 previd:
- *                   type: string
- *                   description: Reference to the previous version (optional).
- *                 signature:
- *                   type: object
- *                   description: Cryptographic signature.
- *               required:
- *                 - type
- *                 - did
- *                 - signature
+ *                   description: A queued DID operation event.
+ *                   properties:
+ *                     type:
+ *                       type: string
+ *                       description: The operation type.
+ *                     did:
+ *                       type: string
+ *                       description: The DID targeted by this operation.
+ *                     doc:
+ *                       type: object
+ *                       description: The (optional) DID document content, present if type is "update" or "create" with doc data.
+ *                     previd:
+ *                       type: string
+ *                       description: Reference to the previous version (optional).
+ *                     signature:
+ *                       type: object
+ *                       description: Cryptographic signature.
+ *                   required:
+ *                     - type
+ *                     - did
+ *                     - signature
  *
  *     responses:
  *       200:
@@ -1412,11 +1611,11 @@ v1router.get('/queue/:registry', async (req, res) => {
  */
 v1router.post('/queue/:registry/clear', async (req, res) => {
     try {
-        const events = req.body;
-        const queue = await gatekeeper.clearQueue(req.params.registry, events);
+        const eventsOrHashes = req.body;
+        const queue = await gatekeeper.clearQueue(req.params.registry, eventsOrHashes);
         res.json(queue);
     } catch (error: any) {
-        console.error(error);
+        log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
 });
@@ -1447,7 +1646,7 @@ v1router.get('/registries', async (req, res) => {
         const registries = await gatekeeper.listRegistries();
         res.json(registries);
     } catch (error: any) {
-        console.error(error);
+        log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
 });
@@ -1561,6 +1760,11 @@ v1router.get('/db/verify', async (req, res) => {
  *                     pending:
  *                       type: integer
  *                       description: Number of events still left in the queue after processing.
+ *                     acceptedHashes:
+ *                       type: array
+ *                       description: Lower-case signature hashes of events accepted during this processing run (added or merged).
+ *                       items:
+ *                         type: string
  *       500:
  *         description: Internal Server Error.
  *         content:
@@ -1612,6 +1816,11 @@ v1router.post('/cas/json', async (req, res) => {
         const response = await gatekeeper.addJSON(req.body);
         res.send(response);
     } catch (error: any) {
+        // eslint-disable-next-line sonarjs/no-duplicate-string
+        if (error?.message?.includes('IPFS disabled')) {
+            res.status(503).send('IPFS disabled');
+            return;
+        }
         res.status(500).send(error.toString());
     }
 });
@@ -1654,6 +1863,10 @@ v1router.get('/cas/json/:cid', async (req, res) => {
         const response = await gatekeeper.getJSON(req.params.cid);
         res.json(response);
     } catch (error: any) {
+        if (error?.message?.includes('IPFS disabled')) {
+            res.status(503).send('IPFS disabled');
+            return;
+        }
         res.status(500).send(error.toString());
     }
 });
@@ -1693,6 +1906,10 @@ v1router.post('/cas/text', express.text({ type: 'text/plain', limit: '10mb' }), 
         const response = await gatekeeper.addText(req.body);
         res.send(response);
     } catch (error: any) {
+        if (error?.message?.includes('IPFS disabled')) {
+            res.status(503).send('IPFS disabled');
+            return;
+        }
         res.status(500).send(error.toString());
     }
 });
@@ -1735,6 +1952,10 @@ v1router.get('/cas/text/:cid', async (req, res) => {
         const response = await gatekeeper.getText(req.params.cid);
         res.send(response);
     } catch (error: any) {
+        if (error?.message?.includes('IPFS disabled')) {
+            res.status(503).send('IPFS disabled');
+            return;
+        }
         res.status(500).send(error.toString());
     }
 });
@@ -1776,6 +1997,10 @@ v1router.post('/cas/data', express.raw({ type: 'application/octet-stream', limit
         const response = await gatekeeper.addData(data);
         res.send(response);
     } catch (error: any) {
+        if (error?.message?.includes('IPFS disabled')) {
+            res.status(503).send('IPFS disabled');
+            return;
+        }
         res.status(500).send(error.toString());
     }
 });
@@ -1820,6 +2045,10 @@ v1router.get('/cas/data/:cid', async (req, res) => {
         res.set('Content-Type', 'application/octet-stream');
         res.send(response);
     } catch (error: any) {
+        if (error?.message?.includes('IPFS disabled')) {
+            res.status(503).send('IPFS disabled');
+            return;
+        }
         res.status(500).send(error.toString());
     }
 });
@@ -1990,21 +2219,25 @@ v1router.post('/block/:registry', async (req, res) => {
     }
 });
 
+if (apiRateLimiter) {
+    app.use('/api', apiRateLimiter);
+}
+
 app.use('/api/v1', v1router);
 
 app.use('/api', (req, res) => {
-    console.warn(`Warning: Unhandled API endpoint - ${req.method} ${req.originalUrl}`);
+    log.warn(`Warning: Unhandled API endpoint - ${req.method} ${req.originalUrl}`);
     res.status(404).json({ message: 'Endpoint not found' });
 });
 
 async function gcLoop() {
     try {
         const response = await gatekeeper.verifyDb();
-        console.log(`DID garbage collection: ${JSON.stringify(response)} waiting ${config.gcInterval} minutes...`);
+        log.info(`DID garbage collection: ${JSON.stringify(response)} waiting ${config.gcInterval} minutes...`);
         await checkDids();
     }
     catch (error: any) {
-        console.error(`Error in DID garbage collection: ${error}`);
+        log.error(`Error in DID garbage collection: ${error}`);
     }
     setTimeout(gcLoop, config.gcInterval * 60 * 1000);
 }
@@ -2012,9 +2245,10 @@ async function gcLoop() {
 let didCheck: CheckDIDsResult;
 
 async function checkDids() {
-    console.time('checkDIDs');
+    const startTimeMs = Date.now();
     didCheck = await gatekeeper.checkDIDs();
-    console.timeEnd('checkDIDs');
+    const durationMs = Date.now() - startTimeMs;
+    log.debug({ durationMs }, 'checkDIDs');
 }
 
 async function getStatus() {
@@ -2029,131 +2263,75 @@ async function reportStatus() {
     await checkDids();
     const status = await getStatus();
 
-    console.log('Status -----------------------------');
+    log.info('Status -----------------------------');
 
-    console.log(`DID Database (${config.db}):`);
-    console.log(`  Total: ${status.dids.total}`);
+    log.info(`DID Database (${config.db}):`);
+    log.info(`  Total: ${status.dids.total}`);
 
     if (status.dids.total > 0) {
-        console.log(`  By type:`);
-        console.log(`    Agents: ${status.dids.byType.agents}`);
-        console.log(`    Assets: ${status.dids.byType.assets}`);
-        console.log(`    Confirmed: ${status.dids.byType.confirmed}`);
-        console.log(`    Unconfirmed: ${status.dids.byType.unconfirmed}`);
-        console.log(`    Ephemeral: ${status.dids.byType.ephemeral}`);
-        console.log(`    Invalid: ${status.dids.byType.invalid}`);
+        log.info(`  By type:`);
+        log.info(`    Agents: ${status.dids.byType.agents}`);
+        log.info(`    Assets: ${status.dids.byType.assets}`);
+        log.info(`    Confirmed: ${status.dids.byType.confirmed}`);
+        log.info(`    Unconfirmed: ${status.dids.byType.unconfirmed}`);
+        log.info(`    Ephemeral: ${status.dids.byType.ephemeral}`);
+        log.info(`    Invalid: ${status.dids.byType.invalid}`);
 
-        console.log(`  By registry:`);
+        log.info(`  By registry:`);
         const registries = Object.keys(status.dids.byRegistry).sort();
         for (let registry of registries) {
-            console.log(`    ${registry}: ${status.dids.byRegistry[registry]}`);
+            log.info(`    ${registry}: ${status.dids.byRegistry[registry]}`);
         }
 
-        console.log(`  By version:`);
+        log.info(`  By version:`);
         let count = 0;
         for (let version of [1, 2, 3, 4, 5]) {
             const num = status.dids.byVersion[version] || 0;
-            console.log(`    ${version}: ${num}`);
+            log.info(`    ${version}: ${num}`);
             count += num;
         }
-        console.log(`    6+: ${status.dids.total - count}`);
+        log.info(`    6+: ${status.dids.total - count}`);
     }
 
-    console.log(`Events Queue: ${status.dids.eventsQueue.length} pending`);
+    log.info(`Events Queue: ${status.dids.eventsQueue.length} pending`);
 
-    console.log(`Memory Usage Report:`);
-    console.log(`  RSS: ${formatBytes(status.memoryUsage.rss)} (Resident Set Size - total memory allocated for the process)`);
-    console.log(`  Heap Total: ${formatBytes(status.memoryUsage.heapTotal)} (Total heap allocated)`);
-    console.log(`  Heap Used: ${formatBytes(status.memoryUsage.heapUsed)} (Heap actually used)`);
-    console.log(`  External: ${formatBytes(status.memoryUsage.external)} (Memory used by C++ objects bound to JavaScript)`);
-    console.log(`  Array Buffers: ${formatBytes(status.memoryUsage.arrayBuffers)} (Memory used by ArrayBuffer and SharedArrayBuffer)`);
+    log.info(`Memory Usage Report:`);
+    log.info(`  RSS: ${formatBytes(status.memoryUsage.rss)} (Resident Set Size - total memory allocated for the process)`);
+    log.info(`  Heap Total: ${formatBytes(status.memoryUsage.heapTotal)} (Total heap allocated)`);
+    log.info(`  Heap Used: ${formatBytes(status.memoryUsage.heapUsed)} (Heap actually used)`);
+    log.info(`  External: ${formatBytes(status.memoryUsage.external)} (Memory used by C++ objects bound to JavaScript)`);
+    log.info(`  Array Buffers: ${formatBytes(status.memoryUsage.arrayBuffers)} (Memory used by ArrayBuffer and SharedArrayBuffer)`);
 
-    console.log(`Uptime: ${status.uptimeSeconds}s (${formatDuration(status.uptimeSeconds)})`);
+    log.info(`Uptime: ${status.uptimeSeconds}s (${formatDuration(status.uptimeSeconds)})`);
 
-    console.log('------------------------------------');
-}
-
-function formatDuration(seconds: number) {
-    const secPerMin = 60;
-    const secPerHour = secPerMin * 60;
-    const secPerDay = secPerHour * 24;
-
-    const days = Math.floor(seconds / secPerDay);
-    seconds %= secPerDay;
-
-    const hours = Math.floor(seconds / secPerHour);
-    seconds %= secPerHour;
-
-    const minutes = Math.floor(seconds / secPerMin);
-    seconds %= secPerMin;
-
-    let duration = "";
-
-    if (days > 0) {
-        if (days > 1) {
-            duration += `${days} days, `;
-        } else {
-            duration += `1 day, `;
-        }
-    }
-
-    if (hours > 0) {
-        if (hours > 1) {
-            duration += `${hours} hours, `;
-        } else {
-            duration += `1 hour, `;
-        }
-    }
-
-    if (minutes > 0) {
-        if (minutes > 1) {
-            duration += `${minutes} minutes, `;
-        } else {
-            duration += `1 minute, `;
-        }
-    }
-
-    if (seconds === 1) {
-        duration += `1 second`;
-    } else {
-        duration += `${seconds} seconds`;
-    }
-
-    return duration;
-}
-
-function formatBytes(bytes: number) {
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    if (bytes === 0) return '0 Byte';
-    const i = Math.floor(Math.log(bytes) / Math.log(1024));
-    return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
+    log.info('------------------------------------');
 }
 
 async function main() {
-    console.log(`Starting KeychainMDIP Gatekeeper with a db (${config.db}) check...`);
+    log.info(`Starting KeychainMDIP Gatekeeper with a db (${config.db}) check...`);
     await reportStatus();
 
     if (config.statusInterval > 0) {
-        console.log(`Starting status update every ${config.statusInterval} minutes`);
+        log.info(`Starting status update every ${config.statusInterval} minutes`);
         setInterval(reportStatus, config.statusInterval * 60 * 1000);
     }
     else {
-        console.log(`Status update disabled`);
+        log.info(`Status update disabled`);
     }
 
     if (config.gcInterval > 0) {
-        console.log(`Starting DID garbage collection in ${config.gcInterval} minutes`);
+        log.info(`Starting DID garbage collection in ${config.gcInterval} minutes`);
         setTimeout(gcLoop, config.gcInterval * 60 * 1000);
     }
     else {
-        console.log(`DID garbage collection disabled`);
+        log.info(`DID garbage collection disabled`);
     }
 
-    console.log(`DID prefix: ${JSON.stringify(gatekeeper.didPrefix)}`);
-    console.log(`Supported registries: ${JSON.stringify(gatekeeper.supportedRegistries)}`);
+    log.info(`DID prefix: ${JSON.stringify(gatekeeper.didPrefix)}`);
+    log.info(`Supported registries: ${JSON.stringify(gatekeeper.supportedRegistries)}`);
 
     const server = app.listen(config.port, () => {
-        console.log(`Server is running on port ${config.port}`);
+        log.info(`Server is running on port ${config.port}`);
         serverReady = true;
     });
 
@@ -2164,7 +2342,7 @@ async function main() {
                 db.stop();
             }
         } catch (error: any) {
-            console.error("Error during shutdown:", error);
+            log.error({ error }, 'Error during shutdown');
         } finally {
             process.exit(0);
         }
@@ -2177,9 +2355,9 @@ async function main() {
 main();
 
 process.on('uncaughtException', (error) => {
-    console.error('Unhandled exception caught', error);
+    log.error({ error }, 'Unhandled exception caught');
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-    console.error('Unhandled rejection caught', reason, promise);
+    log.error({ reason, promise }, 'Unhandled rejection caught');
 });

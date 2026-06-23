@@ -1,7 +1,6 @@
 import nock from 'nock';
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import { ExpectedExceptionError } from '@mdip/common/errors';
-import {Operation} from "@mdip/gatekeeper/types";
 
 const GatekeeperURL = 'http://gatekeeper.org';
 const ServerError = { message: 'Server error' };
@@ -22,15 +21,18 @@ const Endpoints = {
         import: '/api/v1/dids/import',
         remove: '/api/v1/dids/remove',
     },
+    index: {
+        export: '/api/v1/index/export',
+    },
     batch: {
         export: '/api/v1/batch/export',
         import: '/api/v1/batch/import',
     },
-    registries: '/api/v1/registries',
-    queue: '/api/v1/queue',
     events: {
         process: '/api/v1/events/process',
     },
+    registries: '/api/v1/registries',
+    queue: '/api/v1/queue',
     cas: {
         json: '/api/v1/cas/json',
         text: '/api/v1/cas/text',
@@ -45,6 +47,19 @@ const mockConsole = {
     time: () => { },
     timeEnd: () => { },
 } as unknown as typeof console;
+
+beforeAll(() => {
+    nock.disableNetConnect();
+});
+
+afterEach(() => {
+    nock.abortPendingRequests();
+    nock.cleanAll();
+});
+
+afterAll(() => {
+    nock.enableNetConnect();
+});
 
 describe('isReady', () => {
     it('should return ready flag', async () => {
@@ -87,6 +102,7 @@ describe('isReady', () => {
     it('should timeout if not ready', async () => {
         nock(GatekeeperURL)
             .get(Endpoints.ready)
+            .times(3)
             .reply(200, 'false');
 
         const gatekeeper = await GatekeeperClient.create({
@@ -469,13 +485,19 @@ describe('importDIDs', () => {
     it('should return imported DID results', async () => {
         nock(GatekeeperURL)
             .post(Endpoints.dids.import)
-            .reply(200, { queued: 0, processed: 0 });
+            .reply(200, { queued: 0, processed: 0, rejected: 0, total: 0, rejectedIndices: [] });
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
         // @ts-expect-error Testing without arguments
         const results = await gatekeeper.importDIDs();
 
-        expect(results).toStrictEqual({ queued: 0, processed: 0 });
+        expect(results).toStrictEqual({
+            queued: 0,
+            processed: 0,
+            rejected: 0,
+            total: 0,
+            rejectedIndices: [],
+        });
     });
 
     it('should throw exception on importDIDs server error', async () => {
@@ -488,6 +510,43 @@ describe('importDIDs', () => {
         try {
             // @ts-expect-error Testing without arguments
             await gatekeeper.importDIDs();
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('exportIndex', () => {
+    it('should return index export response', async () => {
+        const exportResponse = {
+            mode: 'changes',
+            cursor: '1',
+            hasMore: false,
+            dids: [],
+            blocks: [],
+        };
+
+        nock(GatekeeperURL)
+            .post(Endpoints.index.export, { mode: 'changes', cursor: '0' })
+            .reply(200, exportResponse);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        const response = await gatekeeper.exportIndex({ mode: 'changes', cursor: '0' });
+
+        expect(response).toStrictEqual(exportResponse);
+    });
+
+    it('should throw exception on exportIndex server error', async () => {
+        nock(GatekeeperURL)
+            .post(Endpoints.index.export)
+            .reply(500, ServerError);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+
+        try {
+            await gatekeeper.exportIndex({ mode: 'changes' });
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
@@ -529,13 +588,19 @@ describe('importBatch', () => {
     it('should return imported batch results', async () => {
         nock(GatekeeperURL)
             .post(Endpoints.batch.import)
-            .reply(200, { queued: 0, processed: 0 });
+            .reply(200, { queued: 0, processed: 0, rejected: 0, total: 0, rejectedIndices: [] });
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
         // @ts-expect-error Testing without arguments
         const results = await gatekeeper.importBatch();
 
-        expect(results).toStrictEqual({ queued: 0, processed: 0 });
+        expect(results).toStrictEqual({
+            queued: 0,
+            processed: 0,
+            rejected: 0,
+            total: 0,
+            rejectedIndices: [],
+        });
     });
 
     it('should throw exception on importBatch server error', async () => {
@@ -628,12 +693,12 @@ describe('processEvents', () => {
     it('should return process status', async () => {
         nock(GatekeeperURL)
             .post(Endpoints.events.process)
-            .reply(200, { added: 0, merged: 0, pending: 0 });
+            .reply(200, { added: 0, merged: 0, pending: 0, acceptedHashes: [], acceptedEvents: [] });
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
         const status = await gatekeeper.processEvents();
 
-        expect(status).toStrictEqual({ added: 0, merged: 0, pending: 0 });
+        expect(status).toStrictEqual({ added: 0, merged: 0, pending: 0, acceptedHashes: [], acceptedEvents: [] });
     });
 
     it('should throw exception on processEvents server error', async () => {

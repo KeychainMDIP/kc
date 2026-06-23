@@ -1,8 +1,7 @@
-import { StoredWallet } from '../types.js';
-import { AbstractBase } from './abstract-base.js';
+import { StoredWallet, WalletBase } from '../types.js';
 import { Redis } from 'ioredis'
 
-export default class WalletRedis extends AbstractBase {
+export default class WalletRedis implements WalletBase {
     private readonly walletKey: string;
     private readonly url: string;
     private redis: Redis | null
@@ -14,7 +13,6 @@ export default class WalletRedis extends AbstractBase {
     }
 
     constructor(walletKey: string = 'wallet') {
-        super();
         this.url = process.env.KC_REDIS_URL || 'redis://localhost:6379';
         this.walletKey = walletKey;
         this.redis = null

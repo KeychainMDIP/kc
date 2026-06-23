@@ -1,6 +1,6 @@
 {
   "name": "@mdip/ipfs",
-  "version": "1.4.0-beta.5",
+  "version": "1.4.0",
   "description": "MDIP IPFS lib",
   "type": "module",
   "module": "./dist/esm/index.js",
@@ -38,6 +38,11 @@
       "require": "./dist/cjs/kubo-client.cjs",
       "types": "./dist/types/kubo-client.d.ts"
     },
+    "./cluster": {
+      "import": "./dist/esm/cluster-client.js",
+      "require": "./dist/cjs/cluster-client.cjs",
+      "types": "./dist/types/cluster-client.d.ts"
+    },
     "./utils": {
       "import": "./dist/esm/utils.js",
       "require": "./dist/cjs/utils.cjs",
@@ -54,6 +59,9 @@
       ],
       "kubo": [
         "./dist/types/kubo-client.d.ts"
+      ],
+      "cluster": [
+        "./dist/types/cluster-client.d.ts"
       ],
       "utils": [
         "./dist/types/utils.d.ts"
@@ -73,21 +81,22 @@
   "author": "David McFadzean <davidmc@gmail.com>",
   "license": "MIT",
   "dependencies": {
-    "@helia/json": "^4.0.3",
-    "@helia/unixfs": "^5.0.0",
-    "axios": "^1.7.7",
-    "blockstore-fs": "^2.0.2",
-    "helia": "^5.3.0",
+    "@helia/json": "^5.0.7",
+    "@helia/unixfs": "^7.0.4",
+    "axios": "^1.13.6",
+    "blockstore-fs": "^3.0.2",
+    "helia": "^6.0.20",
     "ip": "^2.0.1",
-    "kubo-rpc-client": "^5.1.0",
+    "kubo-rpc-client": "^6.1.0",
     "@mdip/common": "*",
-    "multiformats": "^13.3.3"
+    "multiformats": "^13.4.2"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/KeychainMDIP/kc.git"
   },
   "devDependencies": {
+    "@rollup/plugin-json": "^6.1.0",
     "@types/ip": "^1.1.3"
   }
 }

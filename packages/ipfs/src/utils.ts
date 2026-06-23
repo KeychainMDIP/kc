@@ -8,7 +8,7 @@ export function isValidCID(cid: any): boolean {
     try {
         CID.parse(cid);
         return true;
-    } catch (error) {
+    } catch {
         return false;
     }
 }

@@ -146,6 +146,25 @@ describe('importDIDs', () => {
 
         expect(response.merged).toBe(1);
     });
+
+    it('should report rejectedIndices using dids.flat() order', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const op1 = await helper.createAgentOp(keypair);
+        const did1 = await gatekeeper.createDID(op1);
+        const did1Events = await gatekeeper.exportDIDs([did1]);
+
+        const op2 = await helper.createAgentOp(keypair);
+        const did2 = await gatekeeper.createDID(op2);
+        const did2Events = await gatekeeper.exportDIDs([did2]);
+
+        delete did2Events[0][0].operation.signature;
+
+        const response = await gatekeeper.importDIDs([did1Events[0], did2Events[0]]);
+
+        expect(response.queued).toBe(1);
+        expect(response.rejected).toBe(1);
+        expect(response.rejectedIndices).toStrictEqual([1]);
+    });
 });
 
 describe('removeDIDs', () => {
@@ -260,6 +279,22 @@ describe('importBatch', () => {
         expect(response.processed).toBe(1);
     });
 
+    it('should queue an already-seen event again after resetDb', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await helper.createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        await gatekeeper.importBatch(ops);
+        await gatekeeper.processEvents();
+        await gatekeeper.resetDb();
+
+        const response = await gatekeeper.importBatch(ops);
+
+        expect(response.queued).toBe(1);
+        expect(response.processed).toBe(0);
+    });
+
     it('should throw an exception on undefined', async () => {
         try {
             // @ts-expect-error Testing invalid usage
@@ -295,6 +330,7 @@ describe('importBatch', () => {
         const response = await gatekeeper.importBatch([1, 2, 3]);
 
         expect(response.rejected).toBe(3);
+        expect(response.rejectedIndices).toStrictEqual([0, 1, 2]);
     });
 
     it('should report an error on invalid event time', async () => {
@@ -498,6 +534,22 @@ describe('importBatch', () => {
 
         expect(response.queued).toBe(1);
         expect(response.rejected).toBe(1);
+        expect(response.rejectedIndices).toStrictEqual([1]);
+    });
+
+    it('should report sparse rejectedIndices in original submitted order', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await helper.createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        const invalid1 = { ...ops[0], time: 'invalid' } as any;
+        const invalid2 = { ...ops[0], operation: { ...ops[0].operation, type: 'bad-type' } } as any;
+        const response = await gatekeeper.importBatch([invalid1, ops[0], invalid2]);
+
+        expect(response.queued).toBe(1);
+        expect(response.rejected).toBe(2);
+        expect(response.rejectedIndices).toStrictEqual([0, 2]);
     });
 
     it('should report an error on invalid update operation missing did', async () => {
@@ -547,6 +599,7 @@ describe('processEvents', () => {
         const response = await gatekeeper.processEvents();
 
         expect(response.merged).toBe(1);
+        expect(response.acceptedHashes).toContain(ops[0].operation.signature!.hash.toLowerCase());
     });
 
     it('should import a valid asset DID export', async () => {
@@ -723,6 +776,38 @@ describe('processEvents', () => {
         };
 
         expect(doc2.didDocumentMetadata!.timestamp).toStrictEqual(expectedTimestamp);
+    });
+
+    it('should reuse persisted event opids when resolving a did', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await helper.createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        const updateOp = await helper.createUpdateOp(keypair, did, doc);
+        await gatekeeper.updateDID(updateOp);
+        const ops = await gatekeeper.exportDID(did);
+
+        ops[0].opid = await gatekeeper.generateCID(ops[0].operation);
+        ops[1].opid = await gatekeeper.generateCID(ops[1].operation);
+
+        await gatekeeper.resetDb();
+        await gatekeeper.importBatch(ops);
+        await gatekeeper.processEvents();
+
+        const originalGenerateCid = gatekeeper.generateCID.bind(gatekeeper);
+        // @ts-expect-error test shim
+        gatekeeper.generateCID = async () => {
+            throw new Error('unexpected generateCID');
+        };
+
+        try {
+            const resolved = await gatekeeper.resolveDID(did);
+
+            expect(resolved.didDocumentMetadata!.versionId).toBe(ops[1].opid);
+            expect(resolved.didDocumentMetadata!.version).toBe('2');
+        } finally {
+            gatekeeper.generateCID = originalGenerateCid;
+        }
     });
 
     it('should not overwrite events when verified DID is later synced from another registry', async () => {
@@ -921,6 +1006,7 @@ describe('processEvents', () => {
         const response = await gatekeeper.processEvents();
         expect(response.added).toBe(1);
         expect(response.rejected).toBe(2);
+        expect(response.acceptedHashes).toStrictEqual([updateOp1.signature!.hash.toLowerCase()]);
     });
 
     it('should handle a reorg event', async () => {
@@ -1034,6 +1120,48 @@ describe('processEvents', () => {
         const assetDoc3 = await gatekeeper.resolveDID(assetDID);
         expect(assetDoc3.didDocumentMetadata!.version).toBe("3");
         expect(assetDoc3.didDocumentMetadata!.confirmed).toBe(true);
+    });
+
+    it('should return accepted deferred asset creates in processEvents', async () => {
+        const controllerKeys = cipher.generateRandomJwk();
+        const controllerCreate = await helper.createAgentOp(controllerKeys, { version: 1, registry: 'TFTC' });
+        const controllerDid = await gatekeeper.createDID(controllerCreate);
+
+        const assetCreate = await helper.createAssetOp(controllerDid, controllerKeys, { registry: 'TFTC' });
+        await gatekeeper.createDID(assetCreate);
+
+        await gatekeeper.resetDb();
+
+        await gatekeeper.importBatch([{
+            registry: 'hyperswarm',
+            time: new Date().toISOString(),
+            ordinal: [1],
+            operation: assetCreate,
+        }]);
+        const first = await gatekeeper.processEvents();
+        expect(first.acceptedHashes).toStrictEqual([]);
+        expect(first.acceptedEvents).toStrictEqual([]);
+
+        await gatekeeper.importBatch([{
+            registry: 'hyperswarm',
+            time: new Date().toISOString(),
+            ordinal: [2],
+            operation: controllerCreate,
+        }]);
+        const second = await gatekeeper.processEvents();
+        expect(second.acceptedHashes).toEqual(expect.arrayContaining([
+            controllerCreate.signature!.hash.toLowerCase(),
+            assetCreate.signature!.hash.toLowerCase(),
+        ]));
+        const acceptedEventHashes = (second.acceptedEvents ?? [])
+            .map(event => event.operation.signature?.hash?.toLowerCase())
+            .filter((hash): hash is string => !!hash)
+            .sort();
+
+        expect(acceptedEventHashes).toStrictEqual([
+            assetCreate.signature!.hash.toLowerCase(),
+            controllerCreate.signature!.hash.toLowerCase(),
+        ].sort());
     });
 
     it('should reject events with bad signatures', async () => {

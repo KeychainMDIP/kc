@@ -14,8 +14,10 @@ const config = {
     moduleNameMapper: {
         '^@mdip/cipher/node$': '<rootDir>/packages/cipher/src/cipher-node.ts',
         '^@mdip/cipher/types': '<rootDir>/packages/cipher/src/types.ts',
+        '^@mdip/common/env$': '<rootDir>/packages/common/src/env.ts',
         '^@mdip/common/errors$': '<rootDir>/packages/common/src/errors.ts',
         '^@mdip/common/utils$': '<rootDir>/packages/common/src/utils.ts',
+        '^@mdip/common/logger': '<rootDir>/packages/common/src/logger.ts',
         '^@mdip/gatekeeper$': '<rootDir>/packages/gatekeeper/src/gatekeeper.ts',
         '^@mdip/gatekeeper/types$': '<rootDir>/packages/gatekeeper/src/types.ts',
         '^@mdip/gatekeeper/client$': '<rootDir>/packages/gatekeeper/src/gatekeeper-client.ts',
@@ -28,17 +30,36 @@ const config = {
         '^@mdip/keymaster/wallet/(.*)$': '<rootDir>/packages/keymaster/src/db/$1',
         '^@mdip/keymaster/encryption': '<rootDir>/packages/keymaster/src/encryption.ts',
         '^@mdip/inscription': '<rootDir>/packages/inscription/src/inscription.ts',
+        '^pino$': '<rootDir>/tests/common/pino.mock.ts',
         '^\\.\\/typeGuards\\.js$': '<rootDir>/packages/keymaster/src/db/typeGuards.ts',
         '^\\.\\/db\\/typeGuards\\.js$': '<rootDir>/packages/keymaster/src/db/typeGuards.ts',
+        '^\\.\\/sync-mapping\\.js$': '<rootDir>/services/mediators/hyperswarm/src/sync-mapping.ts',
+        '^\\.\\/sync-persistence\\.js$': '<rootDir>/services/mediators/hyperswarm/src/sync-persistence.ts',
+        '^\\.\\/windows\\.js$': '<rootDir>/services/mediators/hyperswarm/src/negentropy/windows.ts',
         '^\\.\\/abstract-json\\.js$': '<rootDir>/packages/gatekeeper/src/db/abstract-json.ts',
+        '^\\.\\/db-utils\\.js$': '<rootDir>/services/search-server/src/db/db-utils.ts',
+        '^\\.\\/did-resolver\\.js$': '<rootDir>/packages/gatekeeper/src/did-resolver.ts',
+        '^\\.\\/index-export\\.js$': '<rootDir>/packages/gatekeeper/src/db/index-export.ts',
+        '^\\.\\/index-helpers\\.js$': '<rootDir>/services/search-server/src/index-helpers.ts',
+        '^\\.\\/projections\\.js$': '<rootDir>/services/search-server/src/projections.ts',
+        '^\\.\\/published-credentials\\.js$': '<rootDir>/services/search-server/src/published-credentials.ts',
+        '^\\.\\/challenge-receipts\\.js$': '<rootDir>/services/search-server/src/challenge-receipts.ts',
         '^\\.\\/cipher-base\\.js$': '<rootDir>/packages/cipher/src/cipher-base.ts',
-        '^\\.\\/abstract-base\\.js$': '<rootDir>/packages/keymaster/src/db/abstract-base.ts',
         '^\\.\\/encryption\\.js$': '<rootDir>/packages/keymaster/src/encryption.ts',
     },
     testPathIgnorePatterns: [
         "/node_modules/",
         "/kc-app/",
         "/client/"
+    ],
+    coveragePathIgnorePatterns: [
+        "/node_modules/",
+        "/tests/",
+        "/packages/gatekeeper/src/db/mongo\\.ts$",
+        "/packages/gatekeeper/src/db/postgres\\.ts$",
+        "/packages/gatekeeper/src/db/redis\\.ts$",
+        "/packages/gatekeeper/src/db/sqlite\\.ts$",
+        "/services/mediators/hyperswarm/src/negentropy/Negentropy\\.cjs$",
     ]
 };
 

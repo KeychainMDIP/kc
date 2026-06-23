@@ -10,9 +10,11 @@ const external = [
 
 const config = {
     input: {
+        env: 'dist/esm/env.js',
         'index': 'dist/esm/index.js',
         utils: 'dist/esm/utils.js',
-        errors: 'dist/esm/errors.js'
+        errors: 'dist/esm/errors.js',
+        logger: 'dist/esm/logger.js'
     },
     output: {
         dir: 'dist/cjs',

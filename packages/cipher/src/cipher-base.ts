@@ -1,17 +1,16 @@
 import * as bip39 from 'bip39';
 import * as secp from '@noble/secp256k1';
-import { hmac } from '@noble/hashes/hmac';
-import { sha256 } from '@noble/hashes/sha256';
-import { xchacha20poly1305 } from '@noble/ciphers/chacha';
-import { managedNonce } from '@noble/ciphers/webcrypto/utils'
-import { bytesToUtf8, utf8ToBytes } from '@noble/ciphers/utils';
+import { hmac } from '@noble/hashes/hmac.js';
+import { sha256 } from '@noble/hashes/sha2.js';
+import { xchacha20poly1305 } from '@noble/ciphers/chacha.js';
+import { bytesToUtf8, managedNonce, utf8ToBytes } from '@noble/ciphers/utils.js';
 import { base64url } from 'multiformats/bases/base64';
 import { Cipher, HDKeyJSON, EcdsaJwkPublic, EcdsaJwkPrivate, EcdsaJwkPair } from './types.js';
 import canonicalizeModule from 'canonicalize';
 const canonicalize = canonicalizeModule as unknown as (input: unknown) => string;
 
-// Polyfill for synchronous signatures
-secp.etc.hmacSha256Sync = (k: Uint8Array, ...m: Uint8Array[]): Uint8Array => hmac(sha256, k, secp.etc.concatBytes(...m));
+secp.hashes.hmacSha256 = (key: Uint8Array, message: Uint8Array): Uint8Array => hmac(sha256, key, message);
+secp.hashes.sha256 = sha256;
 
 export default abstract class CipherBase implements Cipher {
     abstract generateHDKey(mnemonic: string): any;
@@ -25,8 +24,8 @@ export default abstract class CipherBase implements Cipher {
     generateJwk(privateKeyBytes: Uint8Array): EcdsaJwkPair {
         const compressedPublicKeyBytes = secp.getPublicKey(privateKeyBytes);
         const compressedPublicKeyHex = secp.etc.bytesToHex(compressedPublicKeyBytes);
-        const curvePoints = secp.ProjectivePoint.fromHex(compressedPublicKeyHex);
-        const uncompressedPublicKeyBytes = curvePoints.toRawBytes(false);
+        const curvePoints = secp.Point.fromHex(compressedPublicKeyHex);
+        const uncompressedPublicKeyBytes = curvePoints.toBytes(false);
         const d = base64url.baseEncode(privateKeyBytes);
         const x = base64url.baseEncode(uncompressedPublicKeyBytes.subarray(1, 33));
         const y = base64url.baseEncode(uncompressedPublicKeyBytes.subarray(33, 65));
@@ -44,7 +43,7 @@ export default abstract class CipherBase implements Cipher {
     }
 
     generateRandomJwk(): EcdsaJwkPair {
-        const privKey = secp.utils.randomPrivateKey();
+        const privKey = secp.utils.randomSecretKey();
         return this.generateJwk(privKey);
     }
 
@@ -56,7 +55,7 @@ export default abstract class CipherBase implements Cipher {
     }
 
     hashMessage(msg: string | Uint8Array): string {
-        const hash = sha256(msg);
+        const hash = sha256(typeof msg === 'string' ? utf8ToBytes(msg) : msg);
         return Buffer.from(hash).toString('hex');
     }
 
@@ -70,14 +69,18 @@ export default abstract class CipherBase implements Cipher {
 
     signHash(msgHash: string, privateJwk: EcdsaJwkPrivate): string {
         const privKey = base64url.baseDecode(privateJwk.d);
-        const signature = secp.sign(msgHash, privKey);
-        return signature.toCompactHex();
+        const signature = secp.sign(secp.etc.hexToBytes(msgHash), privKey, { prehash: false });
+        return secp.etc.bytesToHex(signature);
     }
 
     verifySig(msgHash: string, sigHex: string, publicJwk: EcdsaJwkPublic): boolean {
         const compressedPublicKeyBytes = this.convertJwkToCompressedBytes(publicJwk);
-        const signature = secp.Signature.fromCompact(sigHex);
-        return secp.verify(signature, msgHash, compressedPublicKeyBytes);
+        return secp.verify(
+            secp.etc.hexToBytes(sigHex),
+            secp.etc.hexToBytes(msgHash),
+            compressedPublicKeyBytes,
+            { prehash: false }
+        );
     }
 
     encryptBytes(pubKey: EcdsaJwkPublic, privKey: EcdsaJwkPrivate, data: Uint8Array): string {

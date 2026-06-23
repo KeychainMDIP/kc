@@ -1,12 +1,4 @@
-import {EncryptedWallet, WalletFile, WalletEncFile} from "../types.js";
-
-export function isEncryptedWallet(obj: any): obj is EncryptedWallet {
-    return obj != null
-        && typeof obj === 'object'
-        && 'salt' in obj
-        && 'iv' in obj
-        && 'data' in obj;
-}
+import { WalletFile, WalletEncFile } from "../types.js";
 
 export function isV1WithEnc(obj: any): obj is WalletEncFile {
     return !!obj && obj.version === 1 && typeof obj.enc === 'string' && obj.seed?.mnemonicEnc;

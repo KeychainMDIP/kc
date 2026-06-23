@@ -605,8 +605,8 @@ describe('acceptCredential', () => {
         expect(ok).toBe(true);
 
         const wallet = await keymaster.loadWallet();
-        expect(wallet.ids['Alice'].owned!.includes(did));
-        expect(wallet.ids['Bob'].held!.includes(did));
+        expect(wallet.ids['Alice'].owned!.includes(did)).toBe(true);
+        expect(wallet.ids['Bob'].held!.includes(did)).toBe(true);
     });
 
     it('should return false if user cannot decrypt credential', async () => {

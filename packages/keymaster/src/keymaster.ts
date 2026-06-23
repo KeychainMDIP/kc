@@ -15,6 +15,7 @@ import {
 } from '@mdip/gatekeeper/types';
 import {
     Challenge,
+    ChallengeReceipt,
     ChallengeResponse,
     CheckWalletResult,
     CreateAssetOptions,
@@ -37,6 +38,7 @@ import {
     NoticeMessage,
     Poll,
     PollResults,
+    PublishChallengeReceiptOptions,
     PossiblySigned,
     Signature,
     StoredWallet,
@@ -51,8 +53,7 @@ import {
 import {
     isV1WithEnc,
     isV1Decrypted,
-    isLegacyV0,
-    isEncryptedWallet
+    isLegacyV0
 } from './db/typeGuards.js';
 import {
     Cipher,
@@ -74,6 +75,12 @@ const DefaultSchema = {
     "required": [
         "propertyName"
     ]
+};
+
+type BuildChallengeReceiptOptions = {
+    verification?: ChallengeResponse;
+    retries?: number;
+    delay?: number;
 };
 
 export enum DmailTags {
@@ -104,6 +111,7 @@ export default class Keymaster implements KeymasterInterface {
     private readonly maxNameLength: number;
     private readonly maxDataLength: number;
     private _walletCache?: WalletFile;
+    private _walletMutationLock: Promise<void> = Promise.resolve();
     private _hdkeyCache?: any;
 
     constructor(options: KeymasterOptions) {
@@ -142,12 +150,12 @@ export default class Keymaster implements KeymasterInterface {
     private async mutateWallet(
         mutator: (wallet: WalletFile) => void | Promise<void>
     ): Promise<void> {
-        // Create wallet if none and make sure _walletCache is set
-        if (!this._walletCache) {
-            await this.loadWallet();
-        }
+        const run = async () => {
+            // Create wallet if none and make sure _walletCache is set
+            if (!this._walletCache) {
+                await this.loadWallet();
+            }
 
-        await this.db.updateWallet(async (stored: StoredWallet) => {
             const decrypted = this._walletCache!;
 
             const before = JSON.stringify(decrypted);
@@ -159,10 +167,17 @@ export default class Keymaster implements KeymasterInterface {
             }
 
             const reenc = await this.encryptWalletForStorage(decrypted);
-            Object.assign(stored as WalletEncFile, reenc);
+            const ok = await this.db.saveWallet(reenc, true);
+            if (!ok) {
+                throw new KeymasterError('save wallet failed');
+            }
 
             this._walletCache = decrypted;
-        });
+        };
+
+        const chained = this._walletMutationLock.then(run, run);
+        this._walletMutationLock = chained.catch(() => { });
+        return chained;
     }
 
     async loadWallet(): Promise<WalletFile> {
@@ -205,7 +220,7 @@ export default class Keymaster implements KeymasterInterface {
             }
 
             this._hdkeyCache = this.cipher.generateHDKey(mnemonic);
-        } catch (error) {
+        } catch {
             throw new InvalidParameterError('mnemonic');
         }
 
@@ -252,7 +267,7 @@ export default class Keymaster implements KeymasterInterface {
                     deleted += 1;
                 }
             }
-            catch (error) {
+            catch {
                 invalid += 1;
             }
 
@@ -269,7 +284,7 @@ export default class Keymaster implements KeymasterInterface {
                             deleted += 1;
                         }
                     }
-                    catch (error) {
+                    catch {
                         invalid += 1;
                     }
 
@@ -286,7 +301,7 @@ export default class Keymaster implements KeymasterInterface {
                             deleted += 1;
                         }
                     }
-                    catch (error) {
+                    catch {
                         invalid += 1;
                     }
 
@@ -304,7 +319,7 @@ export default class Keymaster implements KeymasterInterface {
                         deleted += 1;
                     }
                 }
-                catch (error) {
+                catch {
                     invalid += 1;
                 }
 
@@ -569,7 +584,7 @@ export default class Keymaster implements KeymasterInterface {
 
             return this.loadWallet();
         }
-        catch (error) {
+        catch {
             // If we can't recover the wallet, just return the current one
             return this.loadWallet();
         }
@@ -765,7 +780,7 @@ export default class Keymaster implements KeymasterInterface {
         try {
             metadata = imageSize(buffer);
         }
-        catch (error) {
+        catch {
             throw new InvalidParameterError('buffer');
         }
 
@@ -819,7 +834,7 @@ export default class Keymaster implements KeymasterInterface {
             const image = await this.getImage(id);
             return image !== null;
         }
-        catch (error) {
+        catch {
             return false;
         }
     }
@@ -897,7 +912,7 @@ export default class Keymaster implements KeymasterInterface {
             const document = await this.getDocument(id);
             return document !== null;
         }
-        catch (error) {
+        catch {
             return false;
         }
     }
@@ -948,7 +963,7 @@ export default class Keymaster implements KeymasterInterface {
             try {
                 return this.cipher.decryptMessage(senderPublicJwk, receiverKeypair.privateJwk, ciphertext);
             }
-            catch (error) {
+            catch {
                 index -= 1;
             }
         }
@@ -994,7 +1009,7 @@ export default class Keymaster implements KeymasterInterface {
         try {
             return JSON.parse(plaintext);
         }
-        catch (error) {
+        catch {
             throw new InvalidParameterError('did not encrypted JSON');
         }
     }
@@ -1029,7 +1044,7 @@ export default class Keymaster implements KeymasterInterface {
                 }
             };
         }
-        catch (error) {
+        catch {
             throw new InvalidParameterError('obj');
         }
     }
@@ -1058,7 +1073,7 @@ export default class Keymaster implements KeymasterInterface {
         try {
             return this.cipher.verifySig(msgHash, signature.value, publicJwk);
         }
-        catch (error) {
+        catch {
             return false;
         }
     }
@@ -1256,7 +1271,7 @@ export default class Keymaster implements KeymasterInterface {
             await this.fetchIdInfo(did);
             return true;
         }
-        catch (error) {
+        catch {
             return false;
         }
     }
@@ -1319,7 +1334,7 @@ export default class Keymaster implements KeymasterInterface {
             try {
                 await this.addToOwned(assetDID, controller);
             }
-            catch (error) {
+            catch {
                 // New controller is not in our wallet
             }
         }
@@ -1391,7 +1406,7 @@ export default class Keymaster implements KeymasterInterface {
         const { registry = this.defaultRegistry } = options;
         const wallet = await this.loadWallet();
 
-        name = this.validateName(name, wallet);
+        this.validateName(name, wallet);
 
         const hdkey = await this.getHDKeyFromCacheOrMnemonic(wallet);
         const path = `m/44'/0'/${account}'/0/0`;
@@ -1777,7 +1792,7 @@ export default class Keymaster implements KeymasterInterface {
                         issued.push(did);
                     }
                 }
-                catch (error) { }
+                catch { }
             }
         }
 
@@ -1797,7 +1812,7 @@ export default class Keymaster implements KeymasterInterface {
 
             return this.addToHeld(credential);
         }
-        catch (error) {
+        catch {
             return false;
         }
     }
@@ -1950,7 +1965,7 @@ export default class Keymaster implements KeymasterInterface {
                 // TBD test for VC expiry too
                 return did;
             }
-            catch (error) {
+            catch {
                 // Not encrypted, so can't be a VC
             }
         }
@@ -2028,13 +2043,15 @@ export default class Keymaster implements KeymasterInterface {
         const requested = challenge.credentials?.length ?? 0;
         const fulfilled = matches.length;
         const match = (requested === fulfilled);
+        const responseNonce = this.cipher.generateRandomSalt();
 
         const response = {
             challenge: challengeDID,
             credentials: pairs,
             requested: requested,
             fulfilled: fulfilled,
-            match: match
+            match: match,
+            responseNonce
         };
 
         return await this.encryptJSON({ response }, requestor!, options);
@@ -2078,7 +2095,7 @@ export default class Keymaster implements KeymasterInterface {
             throw new InvalidParameterError('challengeDID');
         }
 
-        const vps: unknown[] = [];
+        const vps: VerifiableCredential[] = [];
 
         for (let credential of response.credentials) {
             const vcData = await this.resolveAsset(credential.vc);
@@ -2134,6 +2151,98 @@ export default class Keymaster implements KeymasterInterface {
         response.responder = responseDoc.didDocument?.controller;
 
         return response;
+    }
+
+    private createResponseCommitment(responseDID: string, responseNonce: string): string {
+        return this.cipher.hashJSON({
+            responseDid: responseDID,
+            responseNonce,
+        });
+    }
+
+    private async buildChallengeReceipts(
+        responseDID: string,
+        options: BuildChallengeReceiptOptions = {}
+    ): Promise<ChallengeReceipt[]> {
+        const { verification, retries, delay } = options;
+        const response = verification ?? await this.verifyResponse(responseDID, { retries, delay });
+
+        if (!response.match) {
+            throw new InvalidParameterError('verification.match');
+        }
+
+        if (!response.responseNonce) {
+            throw new InvalidParameterError('response.responseNonce');
+        }
+
+        const challengeDoc = await this.resolveDID(response.challenge);
+        const requesterDid = challengeDoc.didDocument?.controller;
+        if (!requesterDid) {
+            throw new InvalidParameterError('requesterDid');
+        }
+
+        const id = await this.fetchIdInfo();
+        if (id.did !== requesterDid) {
+            throw new InvalidParameterError('requesterDid');
+        }
+
+        const result = await this.resolveAsset(response.challenge);
+        const challenge = (result as { challenge?: Challenge } | null)?.challenge;
+        if (!challenge) {
+            throw new InvalidParameterError('challengeDID');
+        }
+
+        const expectedCredentials = challenge?.credentials?.length ?? 0;
+        if (expectedCredentials > 0 && !response.vps) {
+            throw new InvalidParameterError('verification.vps');
+        }
+
+        const responseCommitment = this.createResponseCommitment(responseDID, response.responseNonce);
+        const receipts: ChallengeReceipt[] = [];
+
+        for (const vp of response.vps ?? []) {
+            if (!this.isVerifiableCredential(vp)) {
+                throw new InvalidParameterError('verification.vps');
+            }
+
+            const schemaDid = vp.type[1];
+            if (!schemaDid || !schemaDid.startsWith('did:')) {
+                throw new InvalidParameterError('verification.vps.type');
+            }
+
+            receipts.push({
+                version: 1,
+                attesterDid: vp.issuer,
+                schemaDid,
+                requesterDid,
+                responseCommitment,
+            });
+        }
+
+        return receipts;
+    }
+
+    async publishChallengeReceipts(
+        responseDID: string,
+        options: PublishChallengeReceiptOptions = {}
+    ): Promise<string[]> {
+        const { registry, validUntil, name, ...receiptOptions } = options;
+
+        const receipts = await this.buildChallengeReceipts(responseDID, receiptOptions);
+        if (name && receipts.length !== 1) {
+            throw new InvalidParameterError('options.name');
+        }
+
+        const receiptDIDs: string[] = [];
+        for (const challengeReceipt of receipts) {
+            const receiptDID = await this.createAsset(
+                { challengeReceipt },
+                { registry, validUntil, name }
+            );
+            receiptDIDs.push(receiptDID);
+        }
+
+        return receiptDIDs;
     }
 
     async createGroup(
@@ -2275,7 +2384,7 @@ export default class Keymaster implements KeymasterInterface {
 
             return isMember;
         }
-        catch (error) {
+        catch {
             return false;
         }
     }
@@ -2301,7 +2410,7 @@ export default class Keymaster implements KeymasterInterface {
             this.generateSchema(schema);
             return true;
         }
-        catch (error) {
+        catch {
             return false;
         }
     }
@@ -2384,7 +2493,7 @@ export default class Keymaster implements KeymasterInterface {
 
             return this.validateSchema(schema);
         }
-        catch (error) {
+        catch {
             return false;
         }
     }
@@ -2511,7 +2620,7 @@ export default class Keymaster implements KeymasterInterface {
             const poll = await this.getPoll(id);
             return poll !== null;
         }
-        catch (error) {
+        catch {
             return false;
         }
     }
@@ -2832,7 +2941,7 @@ export default class Keymaster implements KeymasterInterface {
             const groupVault = await this.getGroupVault(id, options);
             return groupVault !== null;
         }
-        catch (error) {
+        catch {
             return false;
         }
     }
@@ -2866,7 +2975,7 @@ export default class Keymaster implements KeymasterInterface {
             config = JSON.parse(configJSON);
             isOwner = true;
         }
-        catch (error) {
+        catch {
             // Can't decrypt config if not the owner
         }
 
@@ -2877,7 +2986,7 @@ export default class Keymaster implements KeymasterInterface {
                 const membersJSON = await this.decryptWithDerivedKeys(wallet, id, groupVault.publicJwk, groupVault.members);
                 members = JSON.parse(membersJSON);
             }
-            catch (error) {
+            catch {
             }
         }
         else {
@@ -2885,7 +2994,7 @@ export default class Keymaster implements KeymasterInterface {
                 const membersJSON = this.cipher.decryptMessage(groupVault.publicJwk, privateJwk, groupVault.members);
                 members = JSON.parse(membersJSON);
             }
-            catch (error) {
+            catch {
             }
         }
 
@@ -3080,7 +3189,7 @@ export default class Keymaster implements KeymasterInterface {
 
             return null;
         }
-        catch (error) {
+        catch {
             return null;
         }
     }
@@ -3138,7 +3247,7 @@ export default class Keymaster implements KeymasterInterface {
             try {
                 tagSet.add(this.validateName(tag));
             }
-            catch (error) {
+            catch {
                 throw new InvalidParameterError(`Invalid tag: '${tag}'`);
             }
         }
@@ -3311,7 +3420,7 @@ export default class Keymaster implements KeymasterInterface {
             const data = JSON.parse(buffer.toString('utf-8'));
             return data.dmail as DmailMessage;
         }
-        catch (error) {
+        catch {
             return null;
         }
     }
@@ -3517,7 +3626,7 @@ export default class Keymaster implements KeymasterInterface {
             // TBD search engine should not return expired notices
             notices = await this.searchEngine.search({ where });
         }
-        catch (error) {
+        catch {
             throw new KeymasterError('Failed to search for notices');
         }
 
@@ -3528,7 +3637,7 @@ export default class Keymaster implements KeymasterInterface {
 
             try {
                 await this.importNotice(notice);
-            } catch (error) {
+            } catch {
                 continue; // Skip if notice is expired or invalid
             }
         }
@@ -3646,17 +3755,12 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     private async upgradeWallet(wallet: any): Promise<WalletFile> {
-        if (isEncryptedWallet(wallet)) {
-            await this.db.saveWallet(wallet, true);
-            wallet = await this.db.loadWallet();
-        }
-
         if (isLegacyV0(wallet)) {
             const hdkey = this.cipher.generateHDKeyJSON(wallet.seed.hdkey!);
             const keypair = this.cipher.generateJwk(hdkey.privateKey!);
             const plaintext = this.cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, wallet.seed.mnemonic!);
             const mnemonicEnc = await encMnemonic(plaintext, this.passphrase);
-            const { seed: _legacySeed, version: _legacyVersion, ...rest } = wallet;
+            const { seed, version, ...rest } = wallet;
             const newWallet = { version: 1, seed: { mnemonicEnc }, ...rest };
             this._hdkeyCache = this.cipher.generateHDKey(plaintext);
             wallet = await this.encryptWallet(newWallet);

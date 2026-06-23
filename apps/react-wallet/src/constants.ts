@@ -2,6 +2,7 @@ import { Capacitor } from '@capacitor/core';
 
 const platform = Capacitor.getPlatform();
 const isAndroid = platform === 'android';
+// eslint-disable-next-line sonarjs/no-hardcoded-ip
 const HOST = isAndroid ? '10.0.2.2' : 'localhost';
 
 const ENV_GATEKEEPER = (import.meta.env.VITE_GATEKEEPER_URL as string) || '';

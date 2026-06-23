@@ -11,7 +11,7 @@ export class MDIPError extends Error {
 }
 
 export class InvalidDIDError extends MDIPError {
-    static type = 'Invalid DID';
+    static readonly type = 'Invalid DID';
 
     constructor(detail?: string) {
         super(InvalidDIDError.type, detail);
@@ -19,7 +19,7 @@ export class InvalidDIDError extends MDIPError {
 }
 
 export class InvalidParameterError extends MDIPError {
-    static type = 'Invalid parameter';
+    static readonly type = 'Invalid parameter';
 
     constructor(detail?: string) {
         super(InvalidParameterError.type, detail);
@@ -27,7 +27,7 @@ export class InvalidParameterError extends MDIPError {
 }
 
 export class InvalidOperationError extends MDIPError {
-    static type = 'Invalid operation';
+    static readonly type = 'Invalid operation';
 
     constructor(detail?: string) {
         super(InvalidOperationError.type, detail);
@@ -35,7 +35,7 @@ export class InvalidOperationError extends MDIPError {
 }
 
 export class KeymasterError extends MDIPError {
-    static type = 'Keymaster';
+    static readonly type = 'Keymaster';
 
     constructor(detail?: string) {
         super(KeymasterError.type, detail);
@@ -43,7 +43,7 @@ export class KeymasterError extends MDIPError {
 }
 
 export class UnknownIDError extends MDIPError {
-    static type = 'Unknown ID';
+    static readonly type = 'Unknown ID';
 
     constructor(detail?: string) {
         super(UnknownIDError.type, detail);
@@ -52,7 +52,7 @@ export class UnknownIDError extends MDIPError {
 
 // For unit tests
 export class ExpectedExceptionError extends MDIPError {
-    static type = 'Expected to throw an exception';
+    static readonly type = 'Expected to throw an exception';
 
     constructor() {
         super(ExpectedExceptionError.type);

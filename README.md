@@ -39,12 +39,21 @@ A Keychain MDIP node includes several interoperating microservices. If you follo
 
 Customize your node in the kc/.env file. Environment variables are documented for each service in the READMEs linked in the Overview above.
 
+When running the services outside `./start-node`, the supported configuration methods are:
+
+- inject environment variables directly with Docker Compose or Kubernetes
+- mount a shared `.env` file at `/app/.env` inside the container
+- mount a `.env` file anywhere and set `KC_ENV_FILE` to that path
+
+This matches local startup and avoids custom entrypoint wrappers just to source env files.
+
 ```
 KC_UID=1000                                        # Docker host UID
 KC_GID=1002                                        # Docker host GID
 KC_NODE_NAME=anon                                  # Hyperswarm node name
 KC_NODE_ID=anon                                    # Node Keymaster DID name
 KC_GATEKEEPER_REGISTRIES=hyperswarm,TBTC,TFTC      # Supported DID Registries
+KC_IPFS_ENABLE=true                                # Enable Gatekeeper IPFS storage and CAS endpoints
 ...
 {adjust registry details for advanced users only}
 ```

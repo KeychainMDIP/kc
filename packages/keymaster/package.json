@@ -1,6 +1,6 @@
 {
   "name": "@mdip/keymaster",
-  "version": "1.4.0-beta.5",
+  "version": "1.4.0",
   "description": "MDIP Keymaster",
   "type": "module",
   "module": "./dist/esm/index.js",
@@ -48,11 +48,6 @@
       "require": "./dist/cjs/db/json.cjs",
       "types": "./dist/types/db/json.d.ts"
     },
-    "./wallet/json-enc": {
-      "import": "./dist/esm/db/json-enc.js",
-      "require": "./dist/cjs/db/json-enc.cjs",
-      "types": "./dist/types/db/json-enc.d.ts"
-    },
     "./wallet/json-memory": {
       "import": "./dist/esm/db/json-memory.js",
       "require": "./dist/cjs/db/json-memory.cjs",
@@ -73,6 +68,11 @@
       "require": "./dist/cjs/db/sqlite.cjs",
       "types": "./dist/types/db/sqlite.d.ts"
     },
+    "./wallet/postgres": {
+      "import": "./dist/esm/db/postgres.js",
+      "require": "./dist/cjs/db/postgres.cjs",
+      "types": "./dist/types/db/postgres.d.ts"
+    },
     "./wallet/cache": {
       "import": "./dist/esm/db/cache.js",
       "require": "./dist/cjs/db/cache.cjs",
@@ -83,20 +83,10 @@
       "require": "./dist/cjs/db/web.cjs",
       "types": "./dist/types/db/web.d.ts"
     },
-    "./wallet/web-enc": {
-      "import": "./dist/esm/db/web-enc.js",
-      "require": "./dist/cjs/db/web-enc.cjs",
-      "types": "./dist/types/db/web-enc.d.ts"
-    },
     "./wallet/chrome": {
       "import": "./dist/esm/db/chrome.js",
       "require": "./dist/cjs/db/chrome.cjs",
       "types": "./dist/types/db/chrome.d.ts"
-    },
-    "./wallet/abstract-base": {
-      "import": "./dist/esm/db/abstract-base.js",
-      "require": "./dist/cjs/db/abstract-base.cjs",
-      "types": "./dist/types/db/abstract-base.d.ts"
     },
     "./wallet/typeGuards": {
       "import": "./dist/esm/db/typeGuards.js",
@@ -121,9 +111,6 @@
       "wallet/json": [
         "./dist/types/db/json.d.ts"
       ],
-      "wallet/json-enc": [
-        "./dist/types/db/json-enc.d.ts"
-      ],
       "wallet/json-memory": [
         "./dist/types/db/json-memory.d.ts"
       ],
@@ -136,20 +123,17 @@
       "wallet/sqlite": [
         "./dist/types/db/sqlite.d.ts"
       ],
+      "wallet/postgres": [
+        "./dist/types/db/postgres.d.ts"
+      ],
       "wallet/cache": [
         "./dist/types/db/cache.d.ts"
       ],
       "wallet/web": [
         "./dist/types/db/web.d.ts"
       ],
-      "wallet/web-enc": [
-        "./dist/types/db/web-enc.d.ts"
-      ],
       "wallet/chrome": [
         "./dist/types/db/chrome.d.ts"
-      ],
-      "wallet/abstract-base": [
-        "./dist/types/db/abstract-base.d.ts"
       ],
       "wallet/typeGuards": [
         "./dist/types/db/typeGuards.d.ts"
@@ -170,16 +154,21 @@
   "license": "MIT",
   "dependencies": {
     "@mdip/common": "*",
-    "axios": "^1.7.7",
-    "file-type": "^21.0.0",
-    "image-size": "^2.0.1",
-    "ioredis": "^5.4.1",
-    "mongodb": "^6.5.0",
+    "axios": "^1.13.6",
+    "file-type": "^21.3.0",
+    "image-size": "^2.0.2",
+    "ioredis": "^5.10.0",
+    "mongodb": "^7.1.0",
+    "pg": "^8.16.3",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/KeychainMDIP/kc.git"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.15.5",
+    "@rollup/plugin-json": "^6.1.0"
   }
 }

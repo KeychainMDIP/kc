@@ -28,6 +28,7 @@ const Endpoints = {
     challenge: '/api/v1/challenge',
     response: '/api/v1/response',
     response_verify: '/api/v1/response/verify',
+    response_receipts: '/api/v1/response/receipts',
     groups: '/api/v1/groups',
     schemas: '/api/v1/schemas',
     agents: '/api/v1/agents',
@@ -52,6 +53,19 @@ const mockConsole = {
     time: () => { },
     timeEnd: () => { },
 }
+
+beforeAll(() => {
+    nock.disableNetConnect();
+});
+
+afterEach(() => {
+    nock.abortPendingRequests();
+    nock.cleanAll();
+});
+
+afterAll(() => {
+    nock.enableNetConnect();
+});
 
 const mockCredential = {
     "@context": [
@@ -115,6 +129,7 @@ describe('isReady', () => {
     it('should timeout if not ready', async () => {
         nock(KeymasterURL)
             .get(Endpoints.ready)
+            .times(3)
             .reply(200, { ready: false });
 
         const keymaster = await KeymasterClient.create({
@@ -158,6 +173,22 @@ describe('loadWallet', () => {
         }
         catch (error: any) {
             expect(error.message).toBe(ServerError.message);
+        }
+    });
+
+    it('should throw raw error on loadWallet network error', async () => {
+        nock(KeymasterURL)
+            .get(Endpoints.wallet)
+            .replyWithError(new Error('mock network failure'));
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.loadWallet();
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toMatch(/mock network failure/i);
         }
     });
 });
@@ -1111,6 +1142,20 @@ describe('resolveAsset', () => {
         expect(asset).toStrictEqual(mockAsset);
     });
 
+    it('should resolve asset with query options', async () => {
+        const versionTime = '2026-02-17T00:00:00.000Z';
+
+        nock(KeymasterURL)
+            .get(`${Endpoints.assets}/${mockAssetId}`)
+            .query((query) => query.versionTime === versionTime && query.confirm === 'true')
+            .reply(200, { asset: mockAsset });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const asset = await keymaster.resolveAsset(mockAssetId, { versionTime, confirm: true });
+
+        expect(asset).toStrictEqual(mockAsset);
+    });
+
     it('should throw exception on resolveAsset server error', async () => {
         nock(KeymasterURL)
             .get(`${Endpoints.assets}/${mockAssetId}`)
@@ -1311,6 +1356,38 @@ describe('verifyResponse', () => {
 
         try {
             await keymaster.verifyResponse(mockResponse);
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('publishChallengeReceipts', () => {
+    const mockResponse = 'mockResponse';
+    const mockReceiptDIDs = ['did:mock:receipt'];
+
+    it('should publish challenge receipts', async () => {
+        nock(KeymasterURL)
+            .post(Endpoints.response_receipts)
+            .reply(200, { dids: mockReceiptDIDs });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const receiptDIDs = await keymaster.publishChallengeReceipts(mockResponse);
+
+        expect(receiptDIDs).toStrictEqual(mockReceiptDIDs);
+    });
+
+    it('should throw exception on publishChallengeReceipts server error', async () => {
+        nock(KeymasterURL)
+            .post(Endpoints.response_receipts)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.publishChallengeReceipts(mockResponse);
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
@@ -2713,6 +2790,19 @@ describe('getGroupVault', () => {
         expect(vault).toStrictEqual(mockVault);
     });
 
+    it('should get group vault at a version time', async () => {
+        const options = { versionTime: '2026-06-01T00:00:00.000Z' };
+        nock(KeymasterURL)
+            .get(`${Endpoints.groupVaults}/${mockVaultId}`)
+            .query(options)
+            .reply(200, { groupVault: mockVault });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const vault = await keymaster.getGroupVault(mockVaultId, options);
+
+        expect(vault).toStrictEqual(mockVault);
+    });
+
     it('should throw exception on getDocument server error', async () => {
         nock(KeymasterURL)
             .get(`${Endpoints.groupVaults}/${mockVaultId}`)
@@ -2938,6 +3028,19 @@ describe('listGroupVaultItems', () => {
         expect(items).toStrictEqual(mockItems);
     });
 
+    it('should list vault items at a version time', async () => {
+        const options = { versionTime: '2026-06-01T00:00:00.000Z' };
+        nock(KeymasterURL)
+            .get(`${Endpoints.groupVaults}/${mockVaultId}/items`)
+            .query(options)
+            .reply(200, { items: mockItems });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const items = await keymaster.listGroupVaultItems(mockVaultId, options);
+
+        expect(items).toStrictEqual(mockItems);
+    });
+
     it('should throw exception on listGroupVaultItems server error', async () => {
         nock(KeymasterURL)
             .get(`${Endpoints.groupVaults}/${mockVaultId}/items`)
@@ -2967,6 +3070,19 @@ describe('getGroupVaultItem', () => {
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
         const data = await keymaster.getGroupVaultItem(mockVaultId, mockName);
+
+        expect(data).toStrictEqual(mockData);
+    });
+
+    it('should return group vault item data at a version time', async () => {
+        const options = { versionTime: '2026-06-01T00:00:00.000Z' };
+        nock(KeymasterURL)
+            .get(`${Endpoints.groupVaults}/${mockVaultId}/items/${mockName}`)
+            .query(options)
+            .reply(200, mockData);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const data = await keymaster.getGroupVaultItem(mockVaultId, mockName, options);
 
         expect(data).toStrictEqual(mockData);
     });
@@ -3240,6 +3356,19 @@ describe('listDmailAttachments', () => {
         expect(items).toStrictEqual(mockAttachments);
     });
 
+    it('should list dmail attachments at a version time', async () => {
+        const options = { versionTime: '2026-06-01T00:00:00.000Z' };
+        nock(KeymasterURL)
+            .get(`${Endpoints.dmail}/${mockDmailId}/attachments`)
+            .query(options)
+            .reply(200, { attachments: mockAttachments });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const items = await keymaster.listDmailAttachments(mockDmailId, options);
+
+        expect(items).toStrictEqual(mockAttachments);
+    });
+
     it('should throw exception on listDmailAttachments server error', async () => {
         nock(KeymasterURL)
             .get(`${Endpoints.dmail}/${mockDmailId}/attachments`)
@@ -3349,6 +3478,19 @@ describe('getDmailMessage', () => {
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
         const message = await keymaster.getDmailMessage(mockDmailId);
+
+        expect(message).toStrictEqual(mockDmail);
+    });
+
+    it('should get message at a version time', async () => {
+        const options = { versionTime: '2026-06-01T00:00:00.000Z' };
+        nock(KeymasterURL)
+            .get(`${Endpoints.dmail}/${mockDmailId}`)
+            .query(options)
+            .reply(200, { message: mockDmail });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const message = await keymaster.getDmailMessage(mockDmailId, options);
 
         expect(message).toStrictEqual(mockDmail);
     });

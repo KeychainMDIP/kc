@@ -1,5 +1,6 @@
 import resolve from '@rollup/plugin-node-resolve';
 import commonjs from '@rollup/plugin-commonjs';
+import json from '@rollup/plugin-json';
 
 import pkg from './package.json' with { type: 'json' };
 
@@ -16,16 +17,14 @@ const config = {
         'keymaster-client': 'dist/esm/keymaster-client.js',
         'search-client': 'dist/esm/search-client.js',
         'encryption': 'dist/esm/encryption.js',
-        'db/abstract-base': 'dist/esm/db/abstract-base.js',
         'db/json': 'dist/esm/db/json.js',
-        'db/json-enc': 'dist/esm/db/json-enc.js',
         'db/json-memory': 'dist/esm/db/json-memory.js',
         'db/redis': 'dist/esm/db/redis.js',
         'db/mongo': 'dist/esm/db/mongo.js',
         'db/sqlite': 'dist/esm/db/sqlite.js',
+        'db/postgres': 'dist/esm/db/postgres.js',
         'db/cache': 'dist/esm/db/cache.js',
         'db/web': 'dist/esm/db/web.js',
-        'db/web-enc': 'dist/esm/db/web-enc.js',
         'db/chrome': 'dist/esm/db/chrome.js',
         'db/typeGuards': 'dist/esm/db/typeGuards.js',
     },
@@ -39,7 +38,8 @@ const config = {
     external,
     plugins: [
         resolve(),
-        commonjs()
+        commonjs(),
+        json()
     ]
 };
 

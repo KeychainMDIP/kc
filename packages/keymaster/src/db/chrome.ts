@@ -1,18 +1,16 @@
-import { StoredWallet } from '../types.js';
-import { AbstractBase } from './abstract-base.js';
+import { StoredWallet, WalletBase } from '../types.js';
 
-export default class WalletChrome extends AbstractBase {
+export default class WalletChrome implements WalletBase {
     walletName: string;
 
     constructor(walletName: string = 'mdip-keymaster') {
-        super();
         this.walletName = walletName;
     }
 
     async saveWallet(wallet: StoredWallet, overwrite: boolean = false): Promise<boolean> {
         if (!overwrite) {
             const res = await chrome.storage.local.get([this.walletName]);
-            if (res[this.walletName]) {
+            if (typeof res[this.walletName] === 'string') {
                 return false;
             }
         }
@@ -23,9 +21,10 @@ export default class WalletChrome extends AbstractBase {
 
     async loadWallet(): Promise<StoredWallet | null> {
         const res = await chrome.storage.local.get([this.walletName]);
+        const wallet = res[this.walletName];
 
-        if (res[this.walletName]) {
-            return JSON.parse(res[this.walletName]);
+        if (typeof wallet === 'string') {
+            return JSON.parse(wallet) as StoredWallet;
         }
 
         return null;

@@ -978,6 +978,148 @@
         }
       }
     },
+    "/index/export": {
+      "post": {
+        "summary": "Export a paginated DID index snapshot or incremental change batch.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "mode"
+                ],
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "snapshot",
+                      "changes"
+                    ]
+                  },
+                  "cursor": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "Opaque snapshot cursor or incremental change cursor."
+                  },
+                  "checkpointCursor": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "Snapshot-only high-water change cursor returned by the first snapshot page and required on continuation pages."
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Index export page.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "mode",
+                        "cursor",
+                        "checkpointCursor",
+                        "hasMore",
+                        "dids",
+                        "blocks"
+                      ],
+                      "properties": {
+                        "mode": {
+                          "type": "string",
+                          "enum": [
+                            "snapshot"
+                          ]
+                        },
+                        "cursor": {
+                          "type": "string",
+                          "nullable": true,
+                          "description": "Opaque snapshot page cursor. Clients must store and pass it back without interpretation."
+                        },
+                        "checkpointCursor": {
+                          "type": "string",
+                          "nullable": true,
+                          "description": "Snapshot high-water change cursor returned on every snapshot page."
+                        },
+                        "hasMore": {
+                          "type": "boolean"
+                        },
+                        "dids": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        },
+                        "blocks": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "mode",
+                        "cursor",
+                        "hasMore",
+                        "dids",
+                        "blocks"
+                      ],
+                      "properties": {
+                        "mode": {
+                          "type": "string",
+                          "enum": [
+                            "changes"
+                          ]
+                        },
+                        "cursor": {
+                          "type": "string",
+                          "nullable": true,
+                          "description": "Incremental change cursor."
+                        },
+                        "hasMore": {
+                          "type": "boolean"
+                        },
+                        "dids": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        },
+                        "blocks": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body."
+          },
+          "500": {
+            "description": "Internal Server Error."
+          }
+        }
+      }
+    },
     "/dids/remove": {
       "post": {
         "summary": "Remove one or more DIDs",
@@ -1217,6 +1359,13 @@
                       "type": "integer",
                       "description": "Number of events that failed validation (bad signature, size limit, etc.)."
                     },
+                    "rejectedIndices": {
+                      "type": "array",
+                      "description": "Zero-based indexes of rejected events in the original submitted batch order (for importDIDs this is `dids.flat()` order).",
+                      "items": {
+                        "type": "integer"
+                      }
+                    },
                     "total": {
                       "type": "integer",
                       "description": "Total number of events in the queue after this import."
@@ -1439,6 +1588,13 @@
                       "type": "integer",
                       "description": "Number of events that failed validation."
                     },
+                    "rejectedIndices": {
+                      "type": "array",
+                      "description": "Zero-based indexes of rejected events in the original submitted batch order.",
+                      "items": {
+                        "type": "integer"
+                      }
+                    },
                     "total": {
                       "type": "integer",
                       "description": "The total event queue size after this import."
@@ -1570,39 +1726,50 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "array",
-                "description": "An array of DID operation event objects to remove from the queue.",
-                "items": {
-                  "type": "object",
-                  "description": "A queued DID operation event.",
-                  "properties": {
-                    "type": {
-                      "type": "string",
-                      "description": "The operation type."
-                    },
-                    "did": {
-                      "type": "string",
-                      "description": "The DID targeted by this operation."
-                    },
-                    "doc": {
-                      "type": "object",
-                      "description": "The (optional) DID document content, present if type is \"update\" or \"create\" with doc data."
-                    },
-                    "previd": {
-                      "type": "string",
-                      "description": "Reference to the previous version (optional)."
-                    },
-                    "signature": {
-                      "type": "object",
-                      "description": "Cryptographic signature."
+                "oneOf": [
+                  {
+                    "type": "array",
+                    "description": "An array of SHA-256 hashes of queued operations to remove.",
+                    "items": {
+                      "type": "string"
                     }
                   },
-                  "required": [
-                    "type",
-                    "did",
-                    "signature"
-                  ]
-                }
+                  {
+                    "type": "array",
+                    "description": "An array of DID operation event objects to remove from the queue.",
+                    "items": {
+                      "type": "object",
+                      "description": "A queued DID operation event.",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "description": "The operation type."
+                        },
+                        "did": {
+                          "type": "string",
+                          "description": "The DID targeted by this operation."
+                        },
+                        "doc": {
+                          "type": "object",
+                          "description": "The (optional) DID document content, present if type is \"update\" or \"create\" with doc data."
+                        },
+                        "previd": {
+                          "type": "string",
+                          "description": "Reference to the previous version (optional)."
+                        },
+                        "signature": {
+                          "type": "object",
+                          "description": "Cryptographic signature."
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "did",
+                        "signature"
+                      ]
+                    }
+                  }
+                ]
               }
             }
           }
@@ -1775,6 +1942,13 @@
                         "pending": {
                           "type": "integer",
                           "description": "Number of events still left in the queue after processing."
+                        },
+                        "acceptedHashes": {
+                          "type": "array",
+                          "description": "Lower-case signature hashes of events accepted during this processing run (added or merged).",
+                          "items": {
+                            "type": "string"
+                          }
                         }
                       }
                     }

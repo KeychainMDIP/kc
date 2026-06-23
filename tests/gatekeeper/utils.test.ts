@@ -254,6 +254,46 @@ describe('generateDoc', () => {
     });
 });
 
+describe('ipfs disabled', () => {
+    it('should throw on addText/addData/addJSON when disabled', async () => {
+        const gatekeeper = new Gatekeeper({ db, ipfsEnabled: false });
+
+        // eslint-disable-next-line sonarjs/no-duplicate-string
+        await expect(gatekeeper.addText('hello')).rejects.toThrow('IPFS disabled');
+        await expect(gatekeeper.addData(Buffer.from('data'))).rejects.toThrow('IPFS disabled');
+        await expect(gatekeeper.addJSON({ hello: 'world' })).rejects.toThrow('IPFS disabled');
+        await expect(gatekeeper.getText('cid')).rejects.toThrow('IPFS disabled');
+        await expect(gatekeeper.getData('cid')).rejects.toThrow('IPFS disabled');
+        await expect(gatekeeper.getJSON('cid')).rejects.toThrow('IPFS disabled');
+    });
+
+    it('should still generate CID when save=true and disabled', async () => {
+        const gatekeeper = new Gatekeeper({ db, ipfsEnabled: false });
+        const operation: Operation = {
+            type: "create",
+            created: new Date().toISOString(),
+            mdip: {
+                version: 1,
+                type: "asset",
+                registry: "mockRegistry"
+            }
+        };
+
+        const cid = await gatekeeper.generateCID(operation, true);
+        expect(typeof cid).toBe('string');
+    });
+
+    it('should throw if ipfs is missing when enabled', async () => {
+        try {
+            new Gatekeeper({ db, ipfsEnabled: true });
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: missing options.ipfs');
+        }
+    });
+});
+
 describe('compareOrdinals', () => {
     it('should return -1 when a < b', async () => {
 

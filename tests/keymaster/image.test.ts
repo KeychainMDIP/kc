@@ -55,7 +55,7 @@ describe('createImage', () => {
         const expected = {
             image: {
                 cid,
-                bytes: 392,
+                bytes: mockImage.length,
                 type: 'image/png',
                 width: 100,
                 height: 100,
@@ -106,7 +106,7 @@ describe('updateImage', () => {
         const expected = {
             image: {
                 cid,
-                bytes: 522,
+                bytes: mockImage2.length,
                 type: 'image/jpg',
                 width: 200,
                 height: 200,
@@ -139,7 +139,7 @@ describe('updateImage', () => {
         const expected = {
             image: {
                 cid,
-                bytes: 779,
+                bytes: mockImage.length,
                 type: 'image/png',
                 width: 200,
                 height: 200,
@@ -191,7 +191,7 @@ describe('getImage', () => {
         expect(image!.type).toStrictEqual('image/png');
         expect(image!.width).toStrictEqual(100);
         expect(image!.height).toStrictEqual(100);
-        expect(image!.bytes).toStrictEqual(392);
+        expect(image!.bytes).toStrictEqual(mockImage.length);
     });
 
     it('should return null on invalid did', async () => {

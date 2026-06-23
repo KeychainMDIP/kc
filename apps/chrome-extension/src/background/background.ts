@@ -1,4 +1,4 @@
-import {openBrowserValues} from "../contexts/UIContext";
+import { OpenBrowserValues } from "../contexts/UIContext";
 
 const DEFAULT_GATEKEEPER_URL = "http://localhost:4224";
 const DEFAULT_SEARCH_SERVER_URL = "http://localhost:4002";
@@ -74,7 +74,7 @@ chrome.runtime.onMessage.addListener((message, _, sendResponse) => {
     return true;
 });
 
-function openBrowserWindowService(options: openBrowserValues) {
+function openBrowserWindowService(options: OpenBrowserValues) {
     const tab = options.tab ?? "viewer";
 
     const payload = {

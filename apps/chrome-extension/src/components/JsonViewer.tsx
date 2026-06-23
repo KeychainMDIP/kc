@@ -83,7 +83,7 @@ function JsonViewer({ browserTab, browserSubTab, showResolveField = false }: { b
                 setFormDid(parsed.formDid ?? "");
                 setCurrentDid(parsed.currentDid ?? "");
                 setCurrentTitle(parsed.currentTitle ?? "");
-            } catch (e) { }
+            } catch {}
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);

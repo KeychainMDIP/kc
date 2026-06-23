@@ -1,0 +1,5 @@
+dependencies {
+    api 'com.squareup.okhttp3:okhttp:4.12.0'
+    api 'com.fasterxml.jackson.core:jackson-databind:2.17.1'
+    testImplementation 'com.squareup.okhttp3:mockwebserver:4.12.0'
+}

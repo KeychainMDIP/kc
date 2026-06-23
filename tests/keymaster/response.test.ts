@@ -1,6 +1,7 @@
 import Gatekeeper from '@mdip/gatekeeper';
 import Keymaster from '@mdip/keymaster';
-import { ChallengeResponse } from '@mdip/keymaster/types';
+import { ChallengeReceipt, ChallengeResponse } from '@mdip/keymaster/types';
+import { jest } from '@jest/globals';
 import CipherNode from '@mdip/cipher/node';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory';
 import WalletJsonMemory from '@mdip/keymaster/wallet/json-memory';
@@ -51,8 +52,8 @@ describe('createResponse', () => {
         expect(ok).toBe(true);
 
         const wallet = await keymaster.loadWallet();
-        expect(wallet.ids['Alice'].owned!.includes(vcDid));
-        expect(wallet.ids['Bob'].held!.includes(vcDid));
+        expect(wallet.ids['Alice'].owned!.includes(vcDid)).toBe(true);
+        expect(wallet.ids['Bob'].held!.includes(vcDid)).toBe(true);
 
         await keymaster.setCurrentId('Victor');
 
@@ -73,6 +74,10 @@ describe('createResponse', () => {
         expect(response.challenge).toBe(challengeDID);
         expect(response.credentials.length).toBe(1);
         expect(response.credentials[0].vc).toBe(vcDid);
+        expect(response.responseNonce).toEqual(expect.any(String));
+
+        const publicAsset = await keymaster.resolveAsset(responseDID) as Record<string, unknown>;
+        expect(publicAsset).not.toHaveProperty('response');
     });
 
     it('should throw an exception on invalid challenge', async () => {
@@ -141,6 +146,7 @@ describe('verifyResponse', () => {
             requested: 0,
             fulfilled: 0,
             match: true,
+            responseNonce: expect.any(String),
             vps: [],
             responder: bob,
         };
@@ -415,6 +421,321 @@ describe('verifyResponse', () => {
         }
         catch (error: any) {
             expect(error.type).toBe(InvalidDIDError.type);
+        }
+    });
+});
+
+describe('challenge receipts', () => {
+    it('should build and publish receipts for successful challenge responses', async () => {
+        const alice = await keymaster.createId('Alice');
+        const carol = await keymaster.createId('Carol');
+        const victor = await keymaster.createId('Victor');
+
+        await keymaster.setCurrentId('Alice');
+        const schemaDid = await keymaster.createSchema(mockSchema);
+        const credential = await keymaster.bindCredential(schemaDid, carol);
+        const vcDid = await keymaster.issueCredential(credential);
+
+        await keymaster.setCurrentId('Carol');
+        await keymaster.acceptCredential(vcDid);
+
+        await keymaster.setCurrentId('Victor');
+        const challengeDID = await keymaster.createChallenge({
+            credentials: [
+                {
+                    schema: schemaDid,
+                    issuers: [alice],
+                },
+            ],
+        });
+
+        await keymaster.setCurrentId('Carol');
+        const responseDID = await keymaster.createResponse(challengeDID);
+
+        await keymaster.setCurrentId('Victor');
+        const verification = await keymaster.verifyResponse(responseDID);
+        const responseCommitment = cipher.hashJSON({
+            responseDid: responseDID,
+            responseNonce: verification.responseNonce,
+        });
+        const expectedReceipt: ChallengeReceipt = {
+            version: 1,
+            attesterDid: alice,
+            schemaDid,
+            requesterDid: victor,
+            responseCommitment,
+        };
+
+        const receipt = expectedReceipt;
+        expect(receipt).not.toHaveProperty('holderDid');
+        expect(receipt).not.toHaveProperty('credentialDid');
+        expect(receipt).not.toHaveProperty('vpDid');
+        expect(receipt).not.toHaveProperty('responseDid');
+        expect(receipt).not.toHaveProperty('responseNonce');
+        expect(receipt).not.toHaveProperty('credential');
+
+        const receiptDIDs = await keymaster.publishChallengeReceipts(responseDID, {
+            verification,
+            registry: 'local',
+        });
+
+        expect(receiptDIDs).toHaveLength(1);
+
+        const receiptAsset = await keymaster.resolveAsset(receiptDIDs[0]) as { challengeReceipt: ChallengeReceipt };
+        expect(receiptAsset.challengeReceipt).toStrictEqual(expectedReceipt);
+
+        const receiptDoc = await keymaster.resolveDID(receiptDIDs[0]);
+        expect(receiptDoc.didDocument?.controller).toBe(victor);
+
+        const defaultReceiptDIDs = await keymaster.publishChallengeReceipts(responseDID);
+        expect(defaultReceiptDIDs).toHaveLength(1);
+
+        const defaultReceiptAsset = await keymaster.resolveAsset(defaultReceiptDIDs[0]) as { challengeReceipt: ChallengeReceipt };
+        expect(defaultReceiptAsset.challengeReceipt).toStrictEqual(expectedReceipt);
+    });
+
+    it('should reject receipts for unsuccessful challenge responses', async () => {
+        await keymaster.createId('Alice');
+        await keymaster.createId('Carol');
+        await keymaster.createId('Victor');
+
+        await keymaster.setCurrentId('Alice');
+        const schemaDid = await keymaster.createSchema(mockSchema);
+
+        await keymaster.setCurrentId('Victor');
+        const challengeDID = await keymaster.createChallenge({
+            credentials: [
+                {
+                    schema: schemaDid,
+                },
+            ],
+        });
+
+        await keymaster.setCurrentId('Carol');
+        const responseDID = await keymaster.createResponse(challengeDID);
+
+        await keymaster.setCurrentId('Victor');
+        const verification = await keymaster.verifyResponse(responseDID);
+
+        try {
+            await keymaster.publishChallengeReceipts(responseDID, { verification });
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: verification.match');
+        }
+    });
+
+    it('should reject malformed receipt inputs', async () => {
+        const victor = await keymaster.createId('Victor');
+        const schemaDid = await keymaster.createSchema(mockSchema);
+        const challengeDID = await keymaster.createChallenge({
+            credentials: [
+                {
+                    schema: schemaDid,
+                },
+            ],
+        });
+        const emptyChallengeDID = await keymaster.createChallenge();
+        const verification: ChallengeResponse = {
+            challenge: challengeDID,
+            credentials: [],
+            requested: 1,
+            fulfilled: 1,
+            match: true,
+            responseNonce: 'mock-nonce',
+            vps: [],
+        };
+        const emptyVerification: ChallengeResponse = {
+            challenge: emptyChallengeDID,
+            credentials: [],
+            requested: 0,
+            fulfilled: 0,
+            match: true,
+            responseNonce: 'mock-nonce',
+        };
+
+        await expect(keymaster.publishChallengeReceipts('did:mock:response', {
+            verification: emptyVerification,
+        })).resolves.toStrictEqual([]);
+
+        try {
+            await keymaster.publishChallengeReceipts('did:mock:response', {
+                verification: {
+                    ...verification,
+                    responseNonce: undefined,
+                },
+            });
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: response.responseNonce');
+        }
+
+        const resolveDID = jest.spyOn(keymaster, 'resolveDID')
+            .mockResolvedValueOnce({ didDocument: {} } as any);
+        try {
+            await keymaster.publishChallengeReceipts('did:mock:response', { verification });
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: requesterDid');
+        }
+        resolveDID.mockRestore();
+
+        const resolveAsset = jest.spyOn(keymaster, 'resolveAsset')
+            .mockResolvedValueOnce(null);
+        try {
+            await keymaster.publishChallengeReceipts('did:mock:response', { verification });
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: challengeDID');
+        }
+        resolveAsset.mockRestore();
+
+        try {
+            await keymaster.publishChallengeReceipts('did:mock:response', {
+                verification: {
+                    ...verification,
+                    vps: undefined,
+                },
+            });
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: verification.vps');
+        }
+
+        try {
+            await keymaster.publishChallengeReceipts('did:mock:response', {
+                verification: {
+                    challenge: emptyChallengeDID,
+                    credentials: [],
+                    requested: 0,
+                    fulfilled: 0,
+                    match: true,
+                    responseNonce: 'mock-nonce',
+                    vps: [{} as any],
+                },
+            });
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: verification.vps');
+        }
+
+        try {
+            await keymaster.publishChallengeReceipts('did:mock:response', {
+                verification: {
+                    challenge: emptyChallengeDID,
+                    credentials: [],
+                    requested: 0,
+                    fulfilled: 0,
+                    match: true,
+                    responseNonce: 'mock-nonce',
+                    vps: [
+                        {
+                            '@context': [],
+                            type: ['VerifiableCredential'],
+                            issuer: victor,
+                            validFrom: '2026-01-01T00:00:00.000Z',
+                            credentialSubject: {
+                                id: victor,
+                            },
+                        },
+                    ],
+                },
+            });
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: verification.vps.type');
+        }
+    });
+
+    it('should reject invalid receipt publish options', async () => {
+        const victor = await keymaster.createId('Victor');
+        const schemaDid = await keymaster.createSchema(mockSchema);
+        const challengeDID = await keymaster.createChallenge();
+        const verification: ChallengeResponse = {
+            challenge: challengeDID,
+            credentials: [],
+            requested: 0,
+            fulfilled: 0,
+            match: true,
+            responseNonce: 'mock-nonce',
+            vps: [
+                {
+                    '@context': [],
+                    type: ['VerifiableCredential', schemaDid],
+                    issuer: victor,
+                    validFrom: '2026-01-01T00:00:00.000Z',
+                    credentialSubject: {
+                        id: victor,
+                    },
+                },
+                {
+                    '@context': [],
+                    type: ['VerifiableCredential', schemaDid],
+                    issuer: victor,
+                    validFrom: '2026-01-01T00:00:00.000Z',
+                    credentialSubject: {
+                        id: victor,
+                    },
+                },
+            ],
+        };
+
+        try {
+            await keymaster.publishChallengeReceipts('did:mock:response', {
+                verification,
+                name: 'mock-receipt',
+            });
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: options.name');
+        }
+    });
+
+    it('should only allow the challenge requester to publish receipts', async () => {
+        const alice = await keymaster.createId('Alice');
+        const carol = await keymaster.createId('Carol');
+        await keymaster.createId('Victor');
+
+        await keymaster.setCurrentId('Alice');
+        const schemaDid = await keymaster.createSchema(mockSchema);
+        const credential = await keymaster.bindCredential(schemaDid, carol);
+        const vcDid = await keymaster.issueCredential(credential);
+
+        await keymaster.setCurrentId('Carol');
+        await keymaster.acceptCredential(vcDid);
+
+        await keymaster.setCurrentId('Victor');
+        const challengeDID = await keymaster.createChallenge({
+            credentials: [
+                {
+                    schema: schemaDid,
+                    issuers: [alice],
+                },
+            ],
+        });
+
+        await keymaster.setCurrentId('Carol');
+        const responseDID = await keymaster.createResponse(challengeDID);
+
+        await keymaster.setCurrentId('Victor');
+        const verification = await keymaster.verifyResponse(responseDID);
+
+        await keymaster.setCurrentId('Carol');
+
+        try {
+            await keymaster.publishChallengeReceipts(responseDID, { verification });
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: requesterDid');
         }
     });
 });

@@ -1,0 +1,28 @@
+dependencies {
+    implementation project(':cid')
+    implementation project(':crypto')
+    implementation project(':gatekeeper')
+    testRuntimeOnly 'org.slf4j:slf4j-nop:1.7.36'
+}
+
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
+}
+
+tasks.named('test', Test) {
+    useJUnitPlatform {
+        excludeTags 'live'
+    }
+}
+
+tasks.register('liveTest', Test) {
+    description = 'Runs live Gatekeeper credential tests'
+    group = 'verification'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform {
+        includeTags 'live'
+    }
+    outputs.upToDateWhen { false }
+    outputs.cacheIf { false }
+}

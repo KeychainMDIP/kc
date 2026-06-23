@@ -1,7 +1,8 @@
 import express from 'express';
-import morgan from 'morgan';
+import { BlockList, isIP } from 'net';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import rateLimit from 'express-rate-limit';
 
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import Keymaster from '@mdip/keymaster';
@@ -11,16 +12,178 @@ import WalletJson from '@mdip/keymaster/wallet/json';
 import WalletRedis from '@mdip/keymaster/wallet/redis';
 import WalletMongo from '@mdip/keymaster/wallet/mongo';
 import WalletSQLite from '@mdip/keymaster/wallet/sqlite';
-import WalletEncrypted from '@mdip/keymaster/wallet/json-enc';
+import WalletPostgres from '@mdip/keymaster/wallet/postgres';
 import WalletCache from '@mdip/keymaster/wallet/cache';
 import CipherNode from '@mdip/cipher/node';
 import { InvalidParameterError } from '@mdip/common/errors';
+import { childLogger } from '@mdip/common/logger';
 import config from './config.js';
 
 const app = express();
 const v1router = express.Router();
+const log = childLogger({ service: 'keymaster-server' });
+const rateLimitWindowUnits = {
+    second: 1000,
+    minute: 60 * 1000,
+    hour: 60 * 60 * 1000,
+} as const;
 
-app.use(morgan('dev'));
+app.disable('x-powered-by');
+function logRequest(req: express.Request, res: express.Response, next: express.NextFunction): void {
+    const startTime = process.hrtime.bigint();
+
+    res.on('finish', () => {
+        const durationMs = Number(process.hrtime.bigint() - startTime) / 1e6;
+        const contentLength = res.getHeader('content-length');
+        const size = typeof contentLength === 'number'
+            ? String(contentLength)
+            : (typeof contentLength === 'string' ? contentLength : '-');
+        const msg = `${req.method} ${req.originalUrl} ${res.statusCode} ${durationMs.toFixed(3)} ms - ${size}`;
+
+        if (res.statusCode >= 500) {
+            log.error(msg);
+        }
+        else if (res.statusCode >= 400) {
+            log.warn(msg);
+        }
+        else {
+            log.info(msg);
+        }
+    });
+
+    next();
+}
+
+if (config.keymasterTrustProxy) {
+    app.set('trust proxy', true);
+}
+
+function normalizeIp(ip: string): string {
+    const withoutZone = ip.split('%')[0];
+
+    if (withoutZone === '::1') {
+        return '127.0.0.1';
+    }
+
+    if (withoutZone.startsWith('::ffff:')) {
+        return withoutZone.slice(7);
+    }
+
+    return withoutZone;
+}
+
+function detectIpFamily(ip: string): 'ipv4' | 'ipv6' | null {
+    const version = isIP(ip);
+
+    if (version === 4) {
+        return 'ipv4';
+    }
+
+    if (version === 6) {
+        return 'ipv6';
+    }
+
+    return null;
+}
+
+function createWhitelistBlockList(whitelist: string[]): BlockList {
+    const blockList = new BlockList();
+
+    for (const entry of whitelist) {
+        const [rawAddress, rawPrefixLength] = entry.split('/');
+        const address = normalizeIp(rawAddress);
+        const family = detectIpFamily(address);
+
+        if (!family) {
+            log.warn(`Ignoring invalid rate limit whitelist entry: '${entry}'`);
+            continue;
+        }
+
+        if (rawPrefixLength !== undefined) {
+            const prefixLength = Number.parseInt(rawPrefixLength, 10);
+
+            if (!Number.isInteger(prefixLength)) {
+                log.warn(`Ignoring invalid rate limit CIDR entry: '${entry}'`);
+                continue;
+            }
+
+            try {
+                blockList.addSubnet(address, prefixLength, family);
+            }
+            catch {
+                log.warn(`Ignoring invalid rate limit CIDR entry: '${entry}'`);
+            }
+            continue;
+        }
+
+        try {
+            blockList.addAddress(address, family);
+        }
+        catch {
+            log.warn(`Ignoring invalid rate limit whitelist entry: '${entry}'`);
+        }
+    }
+
+    return blockList;
+}
+
+function shouldSkipRateLimitPath(req: express.Request): boolean {
+    const pathOnly = req.originalUrl.split('?')[0];
+
+    return config.rateLimitSkipPaths.some((skipPath: string) =>
+        pathOnly === skipPath || pathOnly.startsWith(`${skipPath}/`));
+}
+
+const whitelistBlockList = createWhitelistBlockList(config.rateLimitWhitelist);
+const rateLimitWindowUnit = config.rateLimitWindowUnit as keyof typeof rateLimitWindowUnits;
+const rateLimitWindowMs = config.rateLimitWindowValue * (rateLimitWindowUnits[rateLimitWindowUnit] ?? rateLimitWindowUnits.minute);
+
+const apiRateLimiter = config.rateLimitEnabled
+    ? rateLimit({
+        windowMs: rateLimitWindowMs,
+        limit: config.rateLimitMaxRequests,
+        statusCode: 429,
+        message: { error: 'Too many requests' },
+        standardHeaders: 'draft-7',
+        legacyHeaders: false,
+        skip: (req) => {
+            if (req.method === 'OPTIONS') {
+                return true;
+            }
+
+            if (shouldSkipRateLimitPath(req)) {
+                return true;
+            }
+
+            if (config.rateLimitWhitelist.length === 0) {
+                return false;
+            }
+
+            const candidates = [req.ip, req.socket.remoteAddress]
+                .filter((ip): ip is string => typeof ip === 'string' && ip.length > 0);
+
+            for (const candidate of candidates) {
+                const normalizedIp = normalizeIp(candidate);
+                const family = detectIpFamily(normalizedIp);
+
+                if (family && whitelistBlockList.check(normalizedIp, family)) {
+                    return true;
+                }
+            }
+
+            return false;
+        },
+    })
+    : null;
+
+if (config.rateLimitEnabled) {
+    log.info(`Rate limiting enabled: ${config.rateLimitMaxRequests} requests per ${config.rateLimitWindowValue} ${config.rateLimitWindowUnit}(s)`);
+}
+else {
+    log.info('Rate limiting disabled');
+}
+
+app.use(logRequest);
 app.use(express.json());
 
 // Define __dirname in ES module scope
@@ -801,7 +964,7 @@ v1router.get('/did/:id', async (req, res) => {
     try {
         const docs = await keymaster.resolveDID(req.params.id, req.query);
         res.json({ docs });
-    } catch (error: any) {
+    } catch {
         res.status(404).send(DIDNotFound);
     }
 });
@@ -1065,7 +1228,7 @@ v1router.get('/ids/:id', async (req, res) => {
     try {
         const docs = await keymaster.resolveDID(req.params.id);
         res.json({ docs });
-    } catch (error: any) {
+    } catch {
         res.status(404).send({ error: 'ID not found' });
     }
 });
@@ -1386,7 +1549,7 @@ v1router.get('/names/:name', async (req, res) => {
     try {
         const did = await keymaster.getName(req.params.name);
         res.json({ did });
-    } catch (error: any) {
+    } catch {
         res.status(404).send(DIDNotFound);
     }
 });
@@ -1721,6 +1884,22 @@ v1router.post('/response/verify', async (req, res) => {
 
 /**
  * @swagger
+ * /response/receipts:
+ *   post:
+ *     summary: Publish challenge usage receipts for a verified response.
+ */
+v1router.post('/response/receipts', async (req, res) => {
+    try {
+        const { response, options } = req.body;
+        const dids = await keymaster.publishChallengeReceipts(response, options);
+        res.json({ dids });
+    } catch (error: any) {
+        res.status(400).send({ error: error.toString() });
+    }
+});
+
+/**
+ * @swagger
  * /groups:
  *   get:
  *     summary: List all group DIDs owned by (or associated with) a specific ID.
@@ -1894,7 +2073,7 @@ v1router.get('/groups/:name', async (req, res) => {
     try {
         const group = await keymaster.getGroup(req.params.name);
         res.json({ group });
-    } catch (error: any) {
+    } catch {
         res.status(404).send({ error: 'Group not found' });
     }
 });
@@ -2207,7 +2386,7 @@ v1router.get('/schemas/:id', async (req, res) => {
     try {
         const schema = await keymaster.getSchema(req.params.id);
         res.json({ schema });
-    } catch (error: any) {
+    } catch {
         res.status(404).send({ error: 'Schema not found' });
     }
 });
@@ -3580,7 +3759,7 @@ v1router.get('/assets/:id', async (req, res) => {
     try {
         const asset = await keymaster.resolveAsset(req.params.id);
         res.json({ asset });
-    } catch (error: any) {
+    } catch {
         res.status(404).send({ error: 'Asset not found' });
     }
 });
@@ -5521,7 +5700,7 @@ v1router.get('/dmail/:id', async (req, res) => {
     try {
         const message = await keymaster.getDmailMessage(req.params.id);
         res.json({ message });
-    } catch (error: any) {
+    } catch {
         res.status(404).send({ error: 'Dmail not found' });
     }
 });
@@ -6063,21 +6242,23 @@ v1router.post('/notices/refresh', async (req, res) => {
     }
 });
 
+if (apiRateLimiter) {
+    app.use('/api', apiRateLimiter);
+}
+
 app.use('/api/v1', v1router);
 
 app.use('/api', (req, res) => {
-    console.warn(`Warning: Unhandled API endpoint - ${req.method} ${req.originalUrl}`);
+    log.warn(`Warning: Unhandled API endpoint - ${req.method} ${req.originalUrl}`);
     res.status(404).json({ message: 'Endpoint not found' });
 });
 
 process.on('uncaughtException', (error) => {
-    //console.error('Unhandled exception caught');
-    console.error('Unhandled exception caught', error);
+    log.error({ error }, 'Unhandled exception caught');
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-    console.error('Unhandled rejection at:', promise, 'reason:', reason);
-    //console.error('Unhandled rejection caught');
+    log.error({ reason, promise }, 'Unhandled rejection at');
 });
 
 async function waitForNodeId() {
@@ -6091,18 +6272,18 @@ async function waitForNodeId() {
 
     if (!ids.includes(config.nodeID)) {
         await keymaster.createId(config.nodeID!);
-        console.log(`Created node ID '${config.nodeID}'`);
+        log.info(`Created node ID '${config.nodeID}'`);
     }
 
     while (!isReady) {
         try {
-            console.log(`Resolving node ID: ${config.nodeID}`);
+            log.debug(`Resolving node ID: ${config.nodeID}`);
             const doc = await keymaster.resolveDID(config.nodeID);
-            console.log(JSON.stringify(doc, null, 4));
+            log.debug(JSON.stringify(doc, null, 4));
             isReady = true;
         }
         catch {
-            console.log(`Waiting for gatekeeper to sync...`);
+            log.debug('Waiting for gatekeeper to sync...');
         }
 
         if (!isReady) {
@@ -6120,14 +6301,12 @@ async function initWallet() {
         wallet = await WalletMongo.create();
     } else if (config.db === 'sqlite') {
         wallet = await WalletSQLite.create();
+    } else if (config.db === 'postgres') {
+        wallet = await WalletPostgres.create();
     } else if (config.db === 'json') {
         wallet = new WalletJson();
     } else {
         throw new InvalidParameterError(`db=${config.db}`);
-    }
-
-    if (config.keymasterPassphrase) {
-        wallet = new WalletEncrypted(wallet, config.keymasterPassphrase);
     }
 
     if (config.walletCache) {
@@ -6161,22 +6340,22 @@ const server = app.listen(port, async () => {
             chatty: true,
         });
     } else {
-        console.warn('Search client is disabled. Keymaster will not be able to search assets.');
+        log.warn('Search client is disabled. Keymaster will not be able to search assets.');
     }
 
     const wallet = await initWallet();
     const cipher = new CipherNode();
     const defaultRegistry = config.defaultRegistry;
     keymaster = new Keymaster({ gatekeeper, wallet, cipher, search, defaultRegistry, passphrase: config.keymasterPassphrase });
-    console.log(`Keymaster server running on port ${port}`);
-    console.log(`Keymaster server persisting to ${config.db}`);
+    log.info(`Keymaster server running on port ${port}`);
+    log.info(`Keymaster server persisting to ${config.db}`);
 
     try {
         await waitForNodeId();
         serverReady = true;
     }
     catch (error) {
-        console.error('Failed to wait for node ID:', error);
+        log.error({ error }, 'Failed to wait for node ID');
     }
 });
 
@@ -6184,7 +6363,7 @@ const shutdown = async () => {
     try {
         server.close();
     } catch (error: any) {
-        console.error("Error during shutdown:", error);
+        log.error({ error }, 'Error during shutdown');
     } finally {
         process.exit(0);
     }

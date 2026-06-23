@@ -1,0 +1,19 @@
+.gradle/
+/build/
+**/build/
+**/out/
+
+# IDEs
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+.gradle-user/

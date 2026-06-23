@@ -23,6 +23,7 @@ import {
     KeymasterInterface,
     NoticeMessage,
     Poll,
+    PublishChallengeReceiptOptions,
     StoredWallet,
     VerifiableCredential,
     ViewPollResult,
@@ -33,6 +34,7 @@ import {
 
 import { Buffer } from 'buffer';
 import axiosModule, { AxiosError, type AxiosInstance, type AxiosStatic } from 'axios';
+import { childLogger, createConsoleLogger, type LoggerLike } from '@mdip/common/logger';
 
 const axios =
     (axiosModule as AxiosStatic & { default?: AxiosInstance })?.default ??
@@ -50,6 +52,7 @@ function throwError(error: AxiosError | any): never {
 
 export default class KeymasterClient implements KeymasterInterface {
     private API: string = "/api/v1";
+    private log: LoggerLike = childLogger({ service: 'keymaster-client' });
 
     // Factory method
     static async create(options: KeymasterClientOptions): Promise<KeymasterClient> {
@@ -66,8 +69,7 @@ export default class KeymasterClient implements KeymasterInterface {
         // Only used for unit testing
         // TBD replace console with a real logging package
         if (options.console) {
-            // eslint-disable-next-line
-            console = options.console;
+            this.log = createConsoleLogger(options.console);
         }
 
         if (options.waitUntilReady) {
@@ -81,7 +83,7 @@ export default class KeymasterClient implements KeymasterInterface {
         let retries = 0;
 
         if (chatty) {
-            console.log(`Connecting to Keymaster at ${this.API}`);
+            this.log.info(`Connecting to Keymaster at ${this.API}`);
         }
 
         while (!ready) {
@@ -89,7 +91,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
             if (!ready) {
                 if (chatty) {
-                    console.log('Waiting for Keymaster to be ready...');
+                    this.log.debug('Waiting for Keymaster to be ready...');
                 }
                 // wait for 1 second before checking again
                 await new Promise(resolve => setTimeout(resolve, intervalSeconds * 1000));
@@ -102,13 +104,13 @@ export default class KeymasterClient implements KeymasterInterface {
             }
 
             if (!chatty && becomeChattyAfter > 0 && retries > becomeChattyAfter) {
-                console.log(`Connecting to Keymaster at ${this.API}`);
+                this.log.info(`Connecting to Keymaster at ${this.API}`);
                 chatty = true;
             }
         }
 
         if (chatty) {
-            console.log('Keymaster service is ready!');
+            this.log.info('Keymaster service is ready!');
         }
     }
 
@@ -117,7 +119,7 @@ export default class KeymasterClient implements KeymasterInterface {
             const response = await axios.get(`${this.API}/ready`);
             return response.data.ready;
         }
-        catch (error) {
+        catch {
             return false;
         }
     }
@@ -537,6 +539,19 @@ export default class KeymasterClient implements KeymasterInterface {
         try {
             const response = await axios.post(`${this.API}/response/verify`, { response: responseDID, options });
             return response.data.verify;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async publishChallengeReceipts(
+        responseDID: string,
+        options?: PublishChallengeReceiptOptions
+    ): Promise<string[]> {
+        try {
+            const response = await axios.post(`${this.API}/response/receipts`, { response: responseDID, options });
+            return response.data.dids;
         }
         catch (error) {
             throwError(error);

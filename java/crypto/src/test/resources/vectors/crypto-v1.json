@@ -1,0 +1,267 @@
+{
+  "description": "Keymaster crypto compatibility vectors (generated from JS reference)",
+  "version": 1,
+  "vectors": {
+    "mnemonic": {
+      "phrase": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+    },
+    "hdKey": {
+      "xpriv": "xprv9s21ZrQH143K3GJpoapnV8SFfukcVBSfeCficPSGfubmSFDxo1kuHnLisriDvSnRRuL2Qrg5ggqHKNVpxR86QEC8w35uxmGoggxtQTPvfUu",
+      "xpub": "xpub661MyMwAqRbcFkPHucMnrGNzDwb6teAX1RbKQmqtEF8kK3Z7LZ59qafCjB9eCRLiTVG3uxBxgKvRgbubRhqSKXnGGb1aoaqLrpMBDrVxga8",
+      "account": 0,
+      "index": 0,
+      "path": "m/44'/0'/0'/0/0"
+    },
+    "jwk": {
+      "publicJwk": {
+        "kty": "EC",
+        "crv": "secp256k1",
+        "x": "qutS3XSUw2EEneZ8xoDoPry7vb6xNjfZLNhF9wMIr14",
+        "y": "k3AWQTMpTl_RZ5Zy_nhmwwfa-XKBoo9m3KfLtSkZgk8"
+      },
+      "privateJwk": {
+        "kty": "EC",
+        "crv": "secp256k1",
+        "x": "qutS3XSUw2EEneZ8xoDoPry7vb6xNjfZLNhF9wMIr14",
+        "y": "k3AWQTMpTl_RZ5Zy_nhmwwfa-XKBoo9m3KfLtSkZgk8",
+        "d": "4oQSnMCSJXmlNbv00aOyV3MJDSjJCbwP7XO14CIsw3I"
+      }
+    },
+    "hash": {
+      "input": {
+        "foo": "bar",
+        "count": 1,
+        "list": [
+          1,
+          2,
+          3
+        ]
+      },
+      "hashHex": "6a7b70891da3e87ecb23014864d9e088abcd56c9e53eeabffeb7c6f99895a748"
+    },
+    "signature": {
+      "hashHex": "6a7b70891da3e87ecb23014864d9e088abcd56c9e53eeabffeb7c6f99895a748",
+      "signatureHex": "842eee05749f9dc24a6f69d41ba5249b1932ff337a9115c9215698bee3bed740726602e4898fe67eb71b4c30852f5f799fc63ac2ef50df591e790386c83e7e97",
+      "signerPublicJwk": {
+        "kty": "EC",
+        "crv": "secp256k1",
+        "x": "qutS3XSUw2EEneZ8xoDoPry7vb6xNjfZLNhF9wMIr14",
+        "y": "k3AWQTMpTl_RZ5Zy_nhmwwfa-XKBoo9m3KfLtSkZgk8"
+      }
+    },
+    "encrypt": {
+      "plaintext": "hello keymaster",
+      "ciphertext": "Ir4CF9F76EVA-V7dsVGPZRJ5c6P1XHyWuQK-wUQpcBcEpFnEPSPCsJ_iMTmqx2l-uyAALzJO0A",
+      "sender": {
+        "publicJwk": {
+          "kty": "EC",
+          "crv": "secp256k1",
+          "x": "qutS3XSUw2EEneZ8xoDoPry7vb6xNjfZLNhF9wMIr14",
+          "y": "k3AWQTMpTl_RZ5Zy_nhmwwfa-XKBoo9m3KfLtSkZgk8"
+        },
+        "privateJwk": {
+          "kty": "EC",
+          "crv": "secp256k1",
+          "x": "qutS3XSUw2EEneZ8xoDoPry7vb6xNjfZLNhF9wMIr14",
+          "y": "k3AWQTMpTl_RZ5Zy_nhmwwfa-XKBoo9m3KfLtSkZgk8",
+          "d": "4oQSnMCSJXmlNbv00aOyV3MJDSjJCbwP7XO14CIsw3I"
+        }
+      },
+      "receiver": {
+        "publicJwk": {
+          "kty": "EC",
+          "crv": "secp256k1",
+          "x": "xgR_lEHtfW0wRUBulcB82Fx3jkuM7zynq6wJuVxwnuU",
+          "y": "GuFo_qY9wzmjxYQZRmzq7vf2MmUyZtDhI2QxqVDP5So"
+        },
+        "privateJwk": {
+          "kty": "EC",
+          "crv": "secp256k1",
+          "x": "xgR_lEHtfW0wRUBulcB82Fx3jkuM7zynq6wJuVxwnuU",
+          "y": "GuFo_qY9wzmjxYQZRmzq7vf2MmUyZtDhI2QxqVDP5So",
+          "d": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAI"
+        }
+      }
+    },
+    "ecdh": {
+      "sharedSecretCompressedHex": "021510bc0b4faf0c8aba1a69c27c06bb6253d546a4e40176d4c948068116b66b3a",
+      "key32Hex": "021510bc0b4faf0c8aba1a69c27c06bb6253d546a4e40176d4c948068116b66b"
+    },
+    "mnemonicEnc": {
+      "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+      "passphrase": "passphrase",
+      "salt": "AAECAwQFBgcICQoLDA0ODw==",
+      "iv": "EBESExQVFhcYGRob",
+      "data": "wx3fGlIor3vtRtYk0WPnbnEOHnM0agBEUugXfr1FoCrNenafh5H5xfsLXMmVUGBR38HreYHMF5yCmoBMAxwFxmIRsFBVQ0XbajAInzL7WF9UysoSsEstXtP7+M0U/ajMkXQuo0I2ZkrOlxtbIg=="
+    },
+    "walletEnc": {
+      "version": 1,
+      "seed": {
+        "mnemonicEnc": {
+          "salt": "AAECAwQFBgcICQoLDA0ODw==",
+          "iv": "EBESExQVFhcYGRob",
+          "data": "wx3fGlIor3vtRtYk0WPnbnEOHnM0agBEUugXfr1FoCrNenafh5H5xfsLXMmVUGBR38HreYHMF5yCmoBMAxwFxmIRsFBVQ0XbajAInzL7WF9UysoSsEstXtP7+M0U/ajMkXQuo0I2ZkrOlxtbIg=="
+        }
+      },
+      "enc": "NUKhOmTQbN4-BAUml2Jswqrb8tyDjWGXmNiT1SO874b1BiuzuUgcpgFL6wggPmSy1eBGsGbB3O6YoMfk4so-MEq4EbP80kqs8XmxbrUnoQURUPFWb2OFqf9B3ziVYGM06zxhAHarQXmPOfEJrJpS9KFz-QBjB7SvY-fGK8EEjXh0ny_w6N2XyOtD_txHY8uzXS9qF0s30AGl77i9JO7DxDPKFbHpyro1hyIizmlFEOOMFNhZKDbk00Ns5-Z5Sg6mtxFGi1Ha3eAk9y22FvfT2-rXrrgWWX5Cf6Fzja1Jkg",
+      "passphrase": "passphrase",
+      "wallet": {
+        "counter": 1,
+        "ids": {
+          "Alice": {
+            "did": "did:test:alice",
+            "account": 0,
+            "index": 0,
+            "held": [
+              "did:test:cred1"
+            ],
+            "owned": [
+              "did:test:asset1"
+            ]
+          }
+        },
+        "current": "Alice",
+        "names": {
+          "alias": "did:test:alice"
+        }
+      }
+    }
+  },
+  "operations": {
+    "createId": {
+      "registry": "Signet",
+      "blockid": "0000000000000000000000000000000000000000000000000000000000000001",
+      "created": "2024-01-02T03:04:05.000Z",
+      "signed": "2024-01-02T03:04:06.000Z",
+      "publicJwk": {
+        "kty": "EC",
+        "crv": "secp256k1",
+        "x": "qutS3XSUw2EEneZ8xoDoPry7vb6xNjfZLNhF9wMIr14",
+        "y": "k3AWQTMpTl_RZ5Zy_nhmwwfa-XKBoo9m3KfLtSkZgk8"
+      },
+      "privateJwk": {
+        "kty": "EC",
+        "crv": "secp256k1",
+        "x": "qutS3XSUw2EEneZ8xoDoPry7vb6xNjfZLNhF9wMIr14",
+        "y": "k3AWQTMpTl_RZ5Zy_nhmwwfa-XKBoo9m3KfLtSkZgk8",
+        "d": "4oQSnMCSJXmlNbv00aOyV3MJDSjJCbwP7XO14CIsw3I"
+      },
+      "signedOperation": {
+        "type": "create",
+        "created": "2024-01-02T03:04:05.000Z",
+        "blockid": "0000000000000000000000000000000000000000000000000000000000000001",
+        "mdip": {
+          "version": 1,
+          "type": "agent",
+          "registry": "Signet"
+        },
+        "publicJwk": {
+          "kty": "EC",
+          "crv": "secp256k1",
+          "x": "qutS3XSUw2EEneZ8xoDoPry7vb6xNjfZLNhF9wMIr14",
+          "y": "k3AWQTMpTl_RZ5Zy_nhmwwfa-XKBoo9m3KfLtSkZgk8"
+        },
+        "signature": {
+          "signed": "2024-01-02T03:04:06.000Z",
+          "hash": "c0d7145e19ba28441bbdc7e79ae65eaeb5b024781f53b8dde7fced95f06b7655",
+          "value": "7e29f6a5e7945be7119e0f9613a972fd8d823e18c11d04c58f7cfe9c0f804a4c53aa00b08613bb0bf1d1260c600e7d300a94bd0057808a299b4175bf0329ff35"
+        }
+      }
+    },
+    "updateDID": {
+      "did": "did:test:alice",
+      "previd": "prev123",
+      "blockid": "0000000000000000000000000000000000000000000000000000000000000001",
+      "signerDid": "did:test:alice",
+      "signed": "2024-01-02T03:04:07.000Z",
+      "doc": {
+        "didDocument": {
+          "id": "did:test:alice",
+          "controller": "did:test:alice",
+          "verificationMethod": [
+            {
+              "id": "#key-1",
+              "controller": "did:test:alice",
+              "type": "EcdsaSecp256k1",
+              "publicKeyJwk": {
+                "kty": "EC",
+                "crv": "secp256k1",
+                "x": "qutS3XSUw2EEneZ8xoDoPry7vb6xNjfZLNhF9wMIr14",
+                "y": "k3AWQTMpTl_RZ5Zy_nhmwwfa-XKBoo9m3KfLtSkZgk8"
+              }
+            }
+          ],
+          "authentication": [
+            "#key-1"
+          ]
+        },
+        "didDocumentMetadata": {
+          "created": "2024-01-01T00:00:00.000Z",
+          "updated": "2024-01-02T00:00:00.000Z",
+          "versionId": "v1",
+          "confirmed": true
+        },
+        "didResolutionMetadata": {
+          "contentType": "application/did+ld+json"
+        },
+        "didDocumentData": {
+          "foo": "bar"
+        },
+        "mdip": {
+          "version": 1,
+          "type": "agent",
+          "registry": "Signet"
+        }
+      },
+      "privateJwk": {
+        "kty": "EC",
+        "crv": "secp256k1",
+        "x": "qutS3XSUw2EEneZ8xoDoPry7vb6xNjfZLNhF9wMIr14",
+        "y": "k3AWQTMpTl_RZ5Zy_nhmwwfa-XKBoo9m3KfLtSkZgk8",
+        "d": "4oQSnMCSJXmlNbv00aOyV3MJDSjJCbwP7XO14CIsw3I"
+      },
+      "signedOperation": {
+        "type": "update",
+        "did": "did:test:alice",
+        "previd": "prev123",
+        "blockid": "0000000000000000000000000000000000000000000000000000000000000001",
+        "doc": {
+          "didDocument": {
+            "id": "did:test:alice",
+            "controller": "did:test:alice",
+            "verificationMethod": [
+              {
+                "id": "#key-1",
+                "controller": "did:test:alice",
+                "type": "EcdsaSecp256k1",
+                "publicKeyJwk": {
+                  "kty": "EC",
+                  "crv": "secp256k1",
+                  "x": "qutS3XSUw2EEneZ8xoDoPry7vb6xNjfZLNhF9wMIr14",
+                  "y": "k3AWQTMpTl_RZ5Zy_nhmwwfa-XKBoo9m3KfLtSkZgk8"
+                }
+              }
+            ],
+            "authentication": [
+              "#key-1"
+            ]
+          },
+          "didDocumentData": {
+            "foo": "bar"
+          },
+          "mdip": {
+            "version": 1,
+            "type": "agent",
+            "registry": "Signet"
+          }
+        },
+        "signature": {
+          "signer": "did:test:alice",
+          "signed": "2024-01-02T03:04:07.000Z",
+          "hash": "1c0e760fe15a1aa25644b927e28784c23a65e52d9dc00aa9b1fdfb6320c4341a",
+          "value": "4b2986479d4451c47a89835c611b4fdcfc5be9c9915d427c68b6e88614be935434845a2875d137007c5aa1ad90cae3c7384e220d470334904540de2415ddf8d1"
+        }
+      }
+    }
+  }
+}

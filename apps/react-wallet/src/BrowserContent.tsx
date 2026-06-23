@@ -169,7 +169,7 @@ function BrowserContent() {
             </TabPanel>
 
             {displayComponent && (
-                <TabPanel value="auth" sx={{ p: 0 }}>
+                <TabPanel value="auth" sx={{ p: 0 }} keepMounted>
                     <AuthTab />
                 </TabPanel>
             )}

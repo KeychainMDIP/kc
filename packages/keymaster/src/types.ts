@@ -5,12 +5,6 @@ import {
     ResolveDIDOptions,
 } from '@mdip/gatekeeper/types';
 
-export interface EncryptedWallet {
-    salt: string;
-    iv: string;
-    data: string;
-}
-
 export interface HDKey {
     xpriv: string;
     xpub: string;
@@ -134,7 +128,8 @@ export interface ChallengeResponse {
     requested: number;
     fulfilled: number;
     match: boolean;
-    vps?: unknown[];
+    responseNonce?: string;
+    vps?: VerifiableCredential[];
     responder?: string;
 }
 
@@ -143,6 +138,23 @@ export interface CreateResponseOptions {
     validUntil?: string;
     retries?: number;
     delay?: number;
+}
+
+export interface ChallengeReceipt {
+    version: 1;
+    attesterDid: string;
+    schemaDid: string;
+    requesterDid: string;
+    responseCommitment: string;
+}
+
+export interface PublishChallengeReceiptOptions {
+    verification?: ChallengeResponse;
+    retries?: number;
+    delay?: number;
+    registry?: string;
+    validUntil?: string;
+    name?: string;
 }
 
 export interface PollResults {
@@ -226,12 +238,11 @@ export interface GroupVaultLogin {
     password: string;
 }
 
-export type StoredWallet = EncryptedWallet | WalletFile | WalletEncFile | null;
+export type StoredWallet = WalletFile | WalletEncFile | null;
 
 export interface WalletBase {
     saveWallet(wallet: StoredWallet, overwrite?: boolean): Promise<boolean>;
     loadWallet(): Promise<StoredWallet | null>;
-    updateWallet(mutator: (wallet: StoredWallet) => void | Promise<void>): Promise<void>;
 }
 
 export interface SearchEngine {
@@ -318,6 +329,10 @@ export interface KeymasterInterface {
     fixWallet(): Promise<FixWalletResult>;
     decryptMnemonic(): Promise<string>;
     exportEncryptedWallet(): Promise<WalletEncFile>;
+    rotateKeys(): Promise<boolean>;
+
+    // Registry
+    listRegistries(): Promise<string[]>;
 
     // IDs
     listIds(): Promise<string[]>;
@@ -337,12 +352,15 @@ export interface KeymasterInterface {
 
     // DID resolution
     resolveDID(did: string, options?: ResolveDIDOptions): Promise<MdipDocument>;
+    revokeDID(id: string): Promise<boolean>;
 
     // Assets
     createAsset(data: unknown, options?: CreateAssetOptions): Promise<string>;
+    cloneAsset(id: string, options?: CreateAssetOptions): Promise<string>;
     listAssets(owner?: string): Promise<string[]>;
     resolveAsset(did: string, options?: ResolveDIDOptions): Promise<unknown | null>;
     updateAsset(did: string, data: Record<string, unknown>): Promise<boolean>;
+    transferAsset(id: string, controller: string): Promise<boolean>;
 
     // Encryption
     encryptMessage(msg: string, receiver: string, options?: EncryptOptions): Promise<string>;
@@ -391,6 +409,7 @@ export interface KeymasterInterface {
     createChallenge(challenge?: Challenge, options?: { registry?: string; validUntil?: string }): Promise<string>;
     createResponse(challengeDid: string, options?: CreateResponseOptions): Promise<string>;
     verifyResponse(responseDid: string, options?: { retries?: number; delay?: number }): Promise<ChallengeResponse>;
+    publishChallengeReceipts(responseDid: string, options?: PublishChallengeReceiptOptions): Promise<string[]>;
 
     // Polls
     pollTemplate(): Promise<Poll>;
@@ -420,6 +439,7 @@ export interface KeymasterInterface {
     testGroupVault(vaultId: string, options?: ResolveDIDOptions): Promise<boolean>;
     addGroupVaultMember(vaultId: string, memberId: string): Promise<boolean>;
     removeGroupVaultMember(vaultId: string, memberId: string): Promise<boolean>;
+    listGroupVaultMembers(vaultId: string): Promise<Record<string, any>>;
     addGroupVaultItem(vaultId: string, name: string, buffer: Buffer): Promise<boolean>;
     removeGroupVaultItem(vaultId: string, name: string): Promise<boolean>;
     listGroupVaultItems(vaultId: string, options?: ResolveDIDOptions): Promise<Record<string, any>>;

@@ -2056,6 +2056,11 @@
         }
       }
     },
+    "/response/receipts": {
+      "post": {
+        "summary": "Publish challenge usage receipts for a verified response."
+      }
+    },
     "/groups": {
       "get": {
         "summary": "List all group DIDs owned by (or associated with) a specific ID.",

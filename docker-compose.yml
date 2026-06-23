@@ -1,10 +1,17 @@
 services:
   mongodb:
     image: mongo:8.0
+    command: [ "mongod", "--replSet", "rs0", "--bind_ip_all" ]
     volumes:
       - ./data/mongodb:/data/db
     ports:
       - 127.0.0.1:27017:27017
+    healthcheck:
+      test: [ "CMD-SHELL", "mongosh --quiet --eval \"const host = 'mongodb:27017'; try { const cfg = rs.conf(); if (cfg._id !== 'rs0' || cfg.members.length !== 1 || cfg.members[0].host !== host) { cfg._id = 'rs0'; cfg.version = (cfg.version || 1) + 1; cfg.members = [{ _id: 0, host }]; rs.reconfig(cfg, { force: true }); } } catch (err) { try { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host }] }); } catch (initErr) {} } try { quit(db.adminCommand({ hello: 1 }).isWritablePrimary ? 0 : 1); } catch (err) { quit(1); }\"" ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
 
   redis:
     image: redis:8.0.4-alpine
@@ -14,8 +21,33 @@ services:
       - ./data/redis:/data
     ports:
       - 127.0.0.1:6379:6379
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      - POSTGRES_DB=${KC_POSTGRES_DB:-mdip}
+      - POSTGRES_USER=${KC_POSTGRES_USER:-mdip}
+      - POSTGRES_PASSWORD=${KC_POSTGRES_PASSWORD:-mdip}
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    ports:
+      - 127.0.0.1:${KC_POSTGRES_PORT:-5432}:5432
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${KC_POSTGRES_USER:-mdip} -d ${KC_POSTGRES_DB:-mdip}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
   ipfs:
+    profiles:
+      - ipfs
     image: ipfs/kubo:v0.35.0
     ports:
       - 4001:4001
@@ -38,18 +70,33 @@ services:
       - KC_GATEKEEPER_GC_INTERVAL=${KC_GATEKEEPER_GC_INTERVAL}
       - KC_GATEKEEPER_STATUS_INTERVAL=${KC_GATEKEEPER_STATUS_INTERVAL}
       - KC_GATEKEEPER_SERVE_CLIENT=${KC_GATEKEEPER_SERVE_CLIENT}
-      - KC_MONGODB_URL=mongodb://mongodb:27017
+      - KC_GATEKEEPER_TRUST_PROXY=${KC_GATEKEEPER_TRUST_PROXY}
+      - KC_GATEKEEPER_RATE_LIMIT_ENABLED=${KC_GATEKEEPER_RATE_LIMIT_ENABLED}
+      - KC_GATEKEEPER_RATE_LIMIT_WINDOW_VALUE=${KC_GATEKEEPER_RATE_LIMIT_WINDOW_VALUE}
+      - KC_GATEKEEPER_RATE_LIMIT_WINDOW_UNIT=${KC_GATEKEEPER_RATE_LIMIT_WINDOW_UNIT}
+      - KC_GATEKEEPER_RATE_LIMIT_MAX_REQUESTS=${KC_GATEKEEPER_RATE_LIMIT_MAX_REQUESTS}
+      - KC_GATEKEEPER_RATE_LIMIT_WHITELIST=${KC_GATEKEEPER_RATE_LIMIT_WHITELIST}
+      - KC_GATEKEEPER_RATE_LIMIT_SKIP_PATHS=${KC_GATEKEEPER_RATE_LIMIT_SKIP_PATHS}
+      - KC_LOG_LEVEL=${KC_LOG_LEVEL}
+      - KC_MONGODB_URL=mongodb://mongodb:27017/?replicaSet=rs0
       - KC_REDIS_URL=redis://redis:6379
+      - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}:${KC_POSTGRES_PASSWORD:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
+      - KC_IPFS_ENABLE=${KC_IPFS_ENABLE}
       - KC_IPFS_URL=http://ipfs:5001/api/v0
+      - KC_IPFS_CLUSTER_URL=${KC_IPFS_CLUSTER_URL}
+      - KC_IPFS_CLUSTER_AUTH_HEADER=${KC_IPFS_CLUSTER_AUTH_HEADER}
     volumes:
       - ./data:/app/gatekeeper/data
     user: "${KC_UID}:${KC_GID}"
     ports:
       - ${KC_GATEKEEPER_PORT}:4224
     depends_on:
-      - mongodb
-      - redis
-      - ipfs
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_started
 
   keymaster:
     build:
@@ -60,25 +107,40 @@ services:
       - KC_KEYMASTER_PORT=4226
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
       - KC_DISABLE_SEARCH=${KC_DISABLE_SEARCH:-false}
-      - KC_SEARCH_URL=http://search-server:4002
+      - KC_SEARCH_URL=http://search-server:${KC_SEARCH_SERVER_PORT:-4002}
       - KC_NODE_ID=${KC_NODE_ID}
       - KC_KEYMASTER_DB=${KC_KEYMASTER_DB}
       - KC_ENCRYPTED_PASSPHRASE=${KC_ENCRYPTED_PASSPHRASE}
       - KC_WALLET_CACHE=${KC_WALLET_CACHE}
       - KC_DEFAULT_REGISTRY=${KC_DEFAULT_REGISTRY}
       - KC_KEYMASTER_SERVE_CLIENT=${KC_KEYMASTER_SERVE_CLIENT}
-      - KC_MONGODB_URL=mongodb://mongodb:27017
+      - KC_KEYMASTER_TRUST_PROXY=${KC_KEYMASTER_TRUST_PROXY}
+      - KC_KEYMASTER_RATE_LIMIT_ENABLED=${KC_KEYMASTER_RATE_LIMIT_ENABLED}
+      - KC_KEYMASTER_RATE_LIMIT_WINDOW_VALUE=${KC_KEYMASTER_RATE_LIMIT_WINDOW_VALUE}
+      - KC_KEYMASTER_RATE_LIMIT_WINDOW_UNIT=${KC_KEYMASTER_RATE_LIMIT_WINDOW_UNIT}
+      - KC_KEYMASTER_RATE_LIMIT_MAX_REQUESTS=${KC_KEYMASTER_RATE_LIMIT_MAX_REQUESTS}
+      - KC_KEYMASTER_RATE_LIMIT_WHITELIST=${KC_KEYMASTER_RATE_LIMIT_WHITELIST}
+      - KC_KEYMASTER_RATE_LIMIT_SKIP_PATHS=${KC_KEYMASTER_RATE_LIMIT_SKIP_PATHS}
+      - KC_LOG_LEVEL=${KC_LOG_LEVEL}
+      - KC_MONGODB_URL=mongodb://mongodb:27017/?replicaSet=rs0
       - KC_REDIS_URL=redis://redis:6379
+      - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}:${KC_POSTGRES_PASSWORD:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
     volumes:
       - ./data:/app/keymaster/data
     user: "${KC_UID}:${KC_GID}"
     ports:
       - ${KC_KEYMASTER_PORT}:4226
     depends_on:
-      - gatekeeper
-      - redis
-      - mongodb
-      - search-server
+      gatekeeper:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      postgres:
+        condition: service_started
+      search-server:
+        condition: service_started
 
   hypr-mediator:
     build:
@@ -88,16 +150,27 @@ services:
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
       - KC_KEYMASTER_URL=http://keymaster:4226
+      - KC_IPFS_ENABLE=${KC_IPFS_ENABLE}
       - KC_IPFS_URL=http://ipfs:5001/api/v0
       - KC_NODE_ID=${KC_NODE_ID}
       - KC_NODE_NAME=${KC_NODE_NAME}
       - KC_MDIP_PROTOCOL=${KC_MDIP_PROTOCOL}
+      - KC_HYPR_DB=${KC_HYPR_DB:-sqlite}
+      - KC_HYPR_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}:${KC_POSTGRES_PASSWORD:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
       - KC_HYPR_EXPORT_INTERVAL=${KC_HYPR_EXPORT_INTERVAL}
+      - KC_HYPR_NEGENTROPY_ENABLE=${KC_HYPR_NEGENTROPY_ENABLE}
+      - KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT=${KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT}
+      - KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW=${KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW}
+      - KC_HYPR_NEGENTROPY_MAX_ROUNDS_PER_SESSION=${KC_HYPR_NEGENTROPY_MAX_ROUNDS_PER_SESSION}
+      - KC_HYPR_NEGENTROPY_INTERVAL=${KC_HYPR_NEGENTROPY_INTERVAL}
+      - KC_HYPR_LEGACY_SYNC_ENABLE=${KC_HYPR_LEGACY_SYNC_ENABLE}
+      - KC_LOG_LEVEL=${KC_LOG_LEVEL}
+    volumes:
+      - ./data:/app/hyperswarm/data
     user: "${KC_UID}:${KC_GID}"
     depends_on:
       - gatekeeper
       - keymaster
-      - ipfs
 
   tftc-node:
     image: keychainmdip/feathercoin:v0.19.2
@@ -108,12 +181,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.satoshi
-    image: keychainmdip/satoshi-mediator
+    image: keychainmdip/tftc-mediator
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
       - KC_KEYMASTER_URL=http://keymaster:4226
-      - KC_MONGODB_URL=mongodb://mongodb:27017
+      - KC_MONGODB_URL=mongodb://mongodb:27017/?replicaSet=rs0
       - KC_REDIS_URL=redis://redis:6379
+      - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}:${KC_POSTGRES_PASSWORD:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
       - KC_NODE_ID=${KC_NODE_ID}
       - KC_SAT_CHAIN=TFTC
       - KC_SAT_NETWORK=testnet
@@ -131,6 +205,7 @@ services:
       - KC_SAT_RBF_ENABLED=${KC_TFTC_RBF_ENABLED}
       - KC_SAT_REIMPORT=${KC_TFTC_REIMPORT}
       - KC_SAT_DB=${KC_TFTC_DB}
+      - KC_LOG_LEVEL=${KC_LOG_LEVEL}
     volumes:
       - ./data:/app/satoshi/data
     user: "${KC_UID}:${KC_GID}"
@@ -150,12 +225,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.satoshi-inscription
-    image: keychainmdip/inscription-mediator
+    image: keychainmdip/btc-inscription-mediator
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
       - KC_KEYMASTER_URL=http://keymaster:4226
-      - KC_MONGODB_URL=mongodb://mongodb:27017
+      - KC_MONGODB_URL=mongodb://mongodb:27017/?replicaSet=rs0
       - KC_REDIS_URL=redis://redis:6379
+      - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}:${KC_POSTGRES_PASSWORD:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
       - KC_NODE_ID=${KC_NODE_ID}
       - KC_SAT_CHAIN=BTC
       - KC_SAT_NETWORK=bitcoin
@@ -173,6 +249,7 @@ services:
       - KC_SAT_RBF_ENABLED=${KC_BTC_RBF_ENABLED}
       - KC_SAT_REIMPORT=${KC_BTC_REIMPORT}
       - KC_SAT_DB=${KC_BTC_DB}
+      - KC_LOG_LEVEL=${KC_LOG_LEVEL}
     volumes:
       - ./data:/app/satoshi/data
     user: "${KC_UID}:${KC_GID}"
@@ -190,12 +267,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.satoshi
-    image: keychainmdip/satoshi-mediator
+    image: keychainmdip/tbtc-mediator
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
       - KC_KEYMASTER_URL=http://keymaster:4226
-      - KC_MONGODB_URL=mongodb://mongodb:27017
+      - KC_MONGODB_URL=mongodb://mongodb:27017/?replicaSet=rs0
       - KC_REDIS_URL=redis://redis:6379
+      - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}:${KC_POSTGRES_PASSWORD:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
       - KC_NODE_ID=${KC_NODE_ID}
       - KC_SAT_CHAIN=TBTC
       - KC_SAT_NETWORK=testnet
@@ -213,6 +291,7 @@ services:
       - KC_SAT_RBF_ENABLED=${KC_TBTC_RBF_ENABLED}
       - KC_SAT_REIMPORT=${KC_TBTC_REIMPORT}
       - KC_SAT_DB=${KC_TBTC_DB}
+      - KC_LOG_LEVEL=${KC_LOG_LEVEL}
     volumes:
       - ./data:/app/satoshi/data
     user: "${KC_UID}:${KC_GID}"
@@ -232,12 +311,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.satoshi
-    image: keychainmdip/satoshi-mediator
+    image: keychainmdip/signet-mediator
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
       - KC_KEYMASTER_URL=http://keymaster:4226
-      - KC_MONGODB_URL=mongodb://mongodb:27017
+      - KC_MONGODB_URL=mongodb://mongodb:27017/?replicaSet=rs0
       - KC_REDIS_URL=redis://redis:6379
+      - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}:${KC_POSTGRES_PASSWORD:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
       - KC_NODE_ID=${KC_NODE_ID}
       - KC_SAT_CHAIN=Signet
       - KC_SAT_NETWORK=testnet
@@ -255,6 +335,7 @@ services:
       - KC_SAT_RBF_ENABLED=${KC_SIGNET_RBF_ENABLED}
       - KC_SAT_REIMPORT=${KC_SIGNET_REIMPORT}
       - KC_SAT_DB=${KC_SIGNET_DB}
+      - KC_LOG_LEVEL=${KC_LOG_LEVEL}
     volumes:
       - ./data:/app/satoshi/data
     user: "${KC_UID}:${KC_GID}"
@@ -267,12 +348,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.satoshi-inscription
-    image: keychainmdip/inscription-mediator
+    image: keychainmdip/signet-inscription-mediator
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
       - KC_KEYMASTER_URL=http://keymaster:4226
-      - KC_MONGODB_URL=mongodb://mongodb:27017
+      - KC_MONGODB_URL=mongodb://mongodb:27017/?replicaSet=rs0
       - KC_REDIS_URL=redis://redis:6379
+      - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}:${KC_POSTGRES_PASSWORD:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
       - KC_NODE_ID=${KC_NODE_ID}
       - KC_SAT_CHAIN=Signet
       - KC_SAT_NETWORK=testnet
@@ -290,6 +372,7 @@ services:
       - KC_SAT_RBF_ENABLED=${KC_SIGNET_INS_RBF_ENABLED}
       - KC_SAT_REIMPORT=${KC_SIGNET_INS_REIMPORT}
       - KC_SAT_DB=${KC_SIGNET_INS_DB}
+      - KC_LOG_LEVEL=${KC_LOG_LEVEL}
     volumes:
       - ./data:/app/satoshi/data
     user: "${KC_UID}:${KC_GID}"
@@ -307,13 +390,13 @@ services:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
       - KC_KEYMASTER_URL=http://keymaster:4226
       - KC_IPFS_URL=http://ipfs:5001/api/v0
+      - KC_LOG_LEVEL=${KC_LOG_LEVEL}
     volumes:
       - ./share:/app/share
     user: "${KC_UID}:${KC_GID}"
     depends_on:
       - gatekeeper
       - keymaster
-      - ipfs
 
   explorer:
     build:
@@ -322,13 +405,13 @@ services:
     image: keychainmdip/explorer
     environment:
       - VITE_EXPLORER_PORT=4000
-      - VITE_GATEKEEPER_URL=http://localhost:4224
-      - VITE_SEARCH_SERVER=http://localhost:4002
+      - VITE_SEARCH_SERVER=http://localhost:${KC_SEARCH_SERVER_PORT:-4002}
       - VITE_OPERATION_NETWORKS=hyperswarm,local,TFTC,TBTC
+      - KC_LOG_LEVEL=${KC_LOG_LEVEL}
     ports:
       - "4000:4000"
     depends_on:
-      - gatekeeper
+      - search-server
 
   search-server:
     build:
@@ -336,15 +419,25 @@ services:
       dockerfile: Dockerfile.search-server
     image: keychainmdip/search-server
     environment:
-      - SEARCH_SERVER_PORT=4002
-      - SEARCH_SERVER_GATEKEEPER_URL=http://gatekeeper:4224
-      - SEARCH_SERVER_REFRESH_INTERVAL_MS=5000
-      - SEARCH_SERVER_DB=sqlite
+      - KC_SEARCH_SERVER_PORT=${KC_SEARCH_SERVER_PORT:-4002}
+      - KC_SEARCH_SERVER_GATEKEEPER_URL=${KC_SEARCH_SERVER_GATEKEEPER_URL:-http://gatekeeper:4224}
+      - KC_SEARCH_SERVER_REFRESH_INTERVAL_MS=${KC_SEARCH_SERVER_REFRESH_INTERVAL_MS:-5000}
+      - KC_SEARCH_SERVER_DB=${KC_SEARCH_SERVER_DB:-sqlite}
+      - KC_SEARCH_SERVER_POSTGRES_URL=${KC_SEARCH_SERVER_POSTGRES_URL:-}
+      - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}:${KC_POSTGRES_PASSWORD:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
+      - KC_SEARCH_SERVER_TRUST_PROXY=${KC_SEARCH_SERVER_TRUST_PROXY:-false}
+      - KC_SEARCH_SERVER_RATE_LIMIT_ENABLED=${KC_SEARCH_SERVER_RATE_LIMIT_ENABLED:-false}
+      - KC_SEARCH_SERVER_RATE_LIMIT_WINDOW_VALUE=${KC_SEARCH_SERVER_RATE_LIMIT_WINDOW_VALUE:-1}
+      - KC_SEARCH_SERVER_RATE_LIMIT_WINDOW_UNIT=${KC_SEARCH_SERVER_RATE_LIMIT_WINDOW_UNIT:-minute}
+      - KC_SEARCH_SERVER_RATE_LIMIT_MAX_REQUESTS=${KC_SEARCH_SERVER_RATE_LIMIT_MAX_REQUESTS:-600}
+      - KC_SEARCH_SERVER_RATE_LIMIT_WHITELIST=${KC_SEARCH_SERVER_RATE_LIMIT_WHITELIST:-}
+      - KC_SEARCH_SERVER_RATE_LIMIT_SKIP_PATHS=${KC_SEARCH_SERVER_RATE_LIMIT_SKIP_PATHS:-/api/v1/ready,/api/v1/status}
+      - KC_LOG_LEVEL=${KC_LOG_LEVEL}
     volumes:
       - ./data:/app/search-server/data
     user: "${KC_UID}:${KC_GID}"
     ports:
-      - "4002:4002"
+      - "${KC_SEARCH_SERVER_PORT:-4002}:${KC_SEARCH_SERVER_PORT:-4002}"
     depends_on:
       - gatekeeper
 
@@ -357,7 +450,7 @@ services:
       - VITE_PORT=${KC_REACT_WALLET_PORT:-4228}
       - VITE_GATEKEEPER_URL=http://gatekeeper:4224
       - VITE_KEYMASTER_URL=http://keymaster:4226
-      - VITE_SEARCH_SERVER=http://search-server:4002
+      - VITE_SEARCH_SERVER=http://search-server:${KC_SEARCH_SERVER_PORT:-4002}
     user: "${KC_UID}:${KC_GID}"
     ports:
       - "${KC_REACT_WALLET_PORT:-4228}:${KC_REACT_WALLET_PORT:-4228}"

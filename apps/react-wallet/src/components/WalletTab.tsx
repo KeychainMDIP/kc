@@ -154,7 +154,7 @@ const WalletTab = () => {
                 const wallet = JSON.parse(text);
                 setPendingWallet(wallet);
                 setOpen(true);
-            } catch (err) {
+            } catch {
                 setError("Invalid JSON file.");
             }
         };

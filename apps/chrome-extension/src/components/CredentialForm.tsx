@@ -197,7 +197,7 @@ const CredentialForm: React.FC<CredentialsFormProps> = ({
         let baseCredentialObj: any;
         try {
             baseCredentialObj = JSON.parse(baseCredential);
-        } catch (e) {
+        } catch {
             setError("Invalid base credential JSON");
             return "";
         }

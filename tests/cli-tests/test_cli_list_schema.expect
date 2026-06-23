@@ -58,7 +58,7 @@ if {$captured_did eq ""} {
 }
 
 # Use the captured value in another function call
-spawn bash kc list-schemas $captured_did
+spawn bash kc list-schemas
 
 expect {
     -re "($captured_did)" {

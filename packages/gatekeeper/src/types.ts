@@ -6,6 +6,8 @@ export interface JsonDbFile {
     queue?: Record<string, Operation[]>
     blocks?: Record<string, any>
     hashes?: Record<string, any>
+    indexSeq?: number;
+    indexChanges?: IndexChangeRecord[];
 }
 
 export interface ImportBatchResult {
@@ -13,6 +15,7 @@ export interface ImportBatchResult {
     processed: number;
     rejected: number;
     total: number;
+    rejectedIndices: number[];
 }
 
 export interface ProcessEventsResult {
@@ -21,6 +24,8 @@ export interface ProcessEventsResult {
     merged?: number;
     rejected?: number;
     pending?: number;
+    acceptedHashes?: string[];
+    acceptedEvents?: GatekeeperEvent[];
 }
 
 export interface VerifyDbResult {
@@ -73,6 +78,101 @@ export interface GatekeeperEvent {
     blockchain?: MdipRegistration;
 }
 
+export type GenerateCID = (operation: unknown) => Promise<string>;
+export type GenerateDID = (operation: Operation) => Promise<string>;
+export type GetBlock = (registry: string, block?: BlockId) => Promise<BlockInfo | null>;
+export type VerifyCreateOperation = (operation: Operation) => Promise<boolean>;
+export type VerifyUpdateOperation = (operation: Operation, doc: MdipDocument) => Promise<boolean>;
+
+export interface GenerateDocFromOperationOptions {
+    defaultDID?: string;
+    didPrefix?: string;
+    generateCID?: GenerateCID;
+    generateDID?: GenerateDID;
+}
+
+export interface ResolveDIDFromEventsParams {
+    did?: string;
+    events: GatekeeperEvent[];
+    options?: ResolveDIDOptions;
+    didPrefix?: string;
+    generateCID?: GenerateCID;
+    generateDID?: GenerateDID;
+    getBlock?: GetBlock;
+    verifyCreateOperation?: VerifyCreateOperation;
+    verifyUpdateOperation?: VerifyUpdateOperation;
+    now?: () => Date;
+}
+
+export type IndexExportMode = 'snapshot' | 'changes';
+
+export type IndexChangeKind = 'did' | 'block';
+
+export interface IndexChangeRecord {
+    seq: number;
+    kind: IndexChangeKind;
+    did?: string;
+    registry?: string;
+    block?: BlockInfo;
+    removed?: boolean;
+}
+
+export interface IndexExportSnapshotRequest {
+    mode: 'snapshot';
+    cursor?: string | null;
+    checkpointCursor?: string | null;
+    limit?: number;
+}
+
+export interface IndexExportChangesRequest {
+    mode: 'changes';
+    cursor?: string | null;
+    limit?: number;
+}
+
+export type IndexExportRequest = IndexExportSnapshotRequest | IndexExportChangesRequest;
+
+export interface IndexExportSnapshotOptions {
+    cursor?: string | null;
+    checkpointCursor?: string | null;
+    limit?: number;
+}
+
+export interface IndexExportChangesOptions {
+    cursor?: string | null;
+    limit?: number;
+}
+
+export interface IndexExportDIDRecord {
+    did: string;
+    events: GatekeeperEvent[];
+    removed?: boolean;
+}
+
+export interface IndexExportBlockRecord {
+    registry: string;
+    block: BlockInfo;
+    removed?: boolean;
+}
+
+export interface IndexExportBaseResponse {
+    cursor: string | null;
+    hasMore: boolean;
+    dids: IndexExportDIDRecord[];
+    blocks: IndexExportBlockRecord[];
+}
+
+export interface IndexExportSnapshotResponse extends IndexExportBaseResponse {
+    mode: 'snapshot';
+    checkpointCursor: string | null;
+}
+
+export interface IndexExportChangesResponse extends IndexExportBaseResponse {
+    mode: 'changes';
+}
+
+export type IndexExportResponse = IndexExportSnapshotResponse | IndexExportChangesResponse;
+
 export interface GatekeeperDb {
     start(): Promise<void>;
     stop(): Promise<void>;
@@ -87,16 +187,19 @@ export interface GatekeeperDb {
     clearQueue(registry: string, batch: Operation[]): Promise<boolean>;
     addBlock(registry: string, blockInfo: BlockInfo): Promise<boolean>;
     getBlock(registry: string, blockId?: BlockId): Promise<BlockInfo | null>;
+    exportIndexSnapshot(options?: IndexExportSnapshotOptions): Promise<IndexExportResponse>;
+    exportIndexChanges(options?: IndexExportChangesOptions): Promise<IndexExportResponse>;
 }
 
 export interface GatekeeperOptions {
     db: GatekeeperDb,
-    ipfs: IPFSClient,
+    ipfs?: IPFSClient,
     console?: typeof console,
     didPrefix?: string,
     maxOpBytes?: number,
     maxQueueSize?: number,
     registries?: string[],
+    ipfsEnabled?: boolean,
 }
 
 export interface CheckDIDsOptions {
@@ -108,6 +211,8 @@ export interface ImportEventsResult {
     added: number;
     merged: number;
     rejected: number;
+    acceptedHashes: string[];
+    acceptedEvents: GatekeeperEvent[];
 }
 
 export interface GatekeeperClientOptions {
@@ -142,7 +247,7 @@ export interface GatekeeperInterface {
     importBatch(batch: GatekeeperEvent[]): Promise<ImportBatchResult>;
     processEvents(): Promise<ProcessEventsResult>;
     getQueue(registry: string): Promise<Operation[]>;
-    clearQueue(registry: string, events: Operation[]): Promise<boolean>;
+    clearQueue(registry: string, events: Operation[] | string[]): Promise<boolean>;
     addData(data: Buffer): Promise<string>;
     getData(cid: string): Promise<Buffer | null>;
     addJSON(json: object): Promise<string>;

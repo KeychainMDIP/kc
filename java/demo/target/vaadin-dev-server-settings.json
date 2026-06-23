@@ -1,0 +1,16 @@
+{
+  "frontendFolder": "/mnt/dev/github/kc/java/demo/./frontend",
+  "themeFolder": "themes",
+  "themeResourceFolder": "/mnt/dev/github/kc/java/demo/./frontend/generated/jar-resources",
+  "staticOutput": "/mnt/dev/github/kc/java/demo/target/classes/META-INF/VAADIN/webapp/VAADIN/static",
+  "generatedFolder": "generated",
+  "statsOutput": "/mnt/dev/github/kc/java/demo/target/classes/META-INF/VAADIN/config",
+  "frontendBundleOutput": "/mnt/dev/github/kc/java/demo/target/classes/META-INF/VAADIN/webapp",
+  "jarResourcesFolder": "/mnt/dev/github/kc/java/demo/./frontend/generated/jar-resources",
+  "generatedFlowImportsFolder": "target/frontend",
+  "themeName": "",
+  "clientServiceWorkerSource": "/mnt/dev/github/kc/java/demo/target/sw.ts",
+  "pwaEnabled": false,
+  "offlineEnabled": false,
+  "offlinePath": "'offline.html'"
+}

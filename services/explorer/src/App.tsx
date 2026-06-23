@@ -1,38 +1,26 @@
-import React, {useEffect, useMemo, useState} from 'react';
+import React, { useEffect, useState } from "react";
 import JsonViewer from "./components/JsonViewer.js";
 import Events from "./components/Events.js";
-import GatekeeperClient from '@mdip/gatekeeper/client';
-import { createTheme, ThemeProvider } from "@mui/material/styles";
+import Credentials from "./components/Credentials.js";
+import ChallengeReceipts from "./components/ChallengeReceipts.js";
 import {
-    Alert,
-    AlertColor,
     Box,
-    CssBaseline,
-    Snackbar,
     Typography,
 } from "@mui/material";
 import Header from "./components/Header.js";
-import { GatekeeperEvent } from "@mdip/gatekeeper/types";
-import { Routes, Route, useNavigate, Navigate } from 'react-router-dom';
-
-const gatekeeper = new GatekeeperClient();
-
-interface SnackbarState {
-    open: boolean;
-    message: string;
-    severity: AlertColor;
-}
-
-const gatekeeperUrl = import.meta.env.VITE_GATEKEEPER_URL || 'http://localhost:4224';
+import { Routes, Route, useNavigate, Navigate } from "react-router-dom";
+import type { GatekeeperEvent } from "@mdip/gatekeeper/types";
+import { useSnackbar } from "./contexts/SnackbarProvider.js";
+import { useExplorerContext } from "./contexts/ExplorerProvider.js";
 
 function App() {
-    const [isReady, setIsReady] = useState<boolean>(false);
-    const [snackbar, setSnackbar] = useState<SnackbarState>({
-        open: false,
-        message: "",
-        severity: "warning",
-    });
-    const [darkMode, setDarkMode] = useState<boolean>(false);
+    const { setError } = useSnackbar();
+    const {
+        config,
+        searchClient,
+        isReady,
+        readinessMessage,
+    } = useExplorerContext();
     const [events, setEvents] = useState<GatekeeperEvent[]>([]);
     const [total, setTotal] = useState<number>(0);
     const [eventCount, setEventCount] = useState<number>(50);
@@ -54,69 +42,13 @@ function App() {
         navigate(`/search?did=${encodeURIComponent(did)}`);
     }
 
-    const setError = (error: any) => {
-        const errorMessage = error.error || error.message || String(error);
-        setSnackbar({
-            open: true,
-            message: errorMessage,
-            severity: "error",
-        });
-    };
-
-    const theme = useMemo(() => createTheme({
-        palette: {
-            mode: darkMode ? 'dark' : 'light',
-        },
-    }), [darkMode]);
-
-    function handleThemeToggle(event: React.ChangeEvent<HTMLInputElement>) {
-        const isDark = event.target.checked;
-        setDarkMode(isDark);
-        localStorage.setItem('mdip-explorer-theme-mode', isDark ? 'dark' : 'light');
-    }
-
-    useEffect(() => {
-        const themeMode = localStorage.getItem('mdip-explorer-theme-mode');
-        if (themeMode) {
-            setDarkMode(themeMode === 'dark');
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-
-    const handleSnackbarClose = () => {
-        setSnackbar((prev) => ({ ...prev, open: false }));
-    };
-
-    useEffect(() => {
-        let interval: NodeJS.Timeout;
-
-        async function init() {
-            await gatekeeper.connect({
-                url: gatekeeperUrl,
-                waitUntilReady: true,
-                intervalSeconds: 5,
-                chatty: true,
-            });
-
-            interval = setInterval(async () => {
-                if (await gatekeeper.isReady()) {
-                    setIsReady(true);
-                    clearInterval(interval);
-                }
-            }, 500);
-        }
-
-        init();
-    }, []);
-
-
     useEffect(() => {
         if (!isReady) {
             return;
         }
 
         let isMounted = true;
-        let intervalId: NodeJS.Timeout | undefined;
+        let intervalId: ReturnType<typeof setInterval> | undefined;
 
         async function fetchRecent() {
             try {
@@ -133,28 +65,25 @@ function App() {
                     updatedBefore = toDate.toISOString();
                 }
 
-                const dids = (await gatekeeper.getDIDs({
+                const result = await searchClient.fetchSearchServerEvents({
+                    registry: registry === "All" ? undefined : registry,
                     updatedAfter,
-                    updatedBefore
-                })) as string[];
-                let allEvents = (await gatekeeper.exportDIDs(dids)).flat();
-
-                if (registry !== "All") {
-                    allEvents = allEvents.filter((evt) => evt.registry === registry);
-                }
-
-                allEvents.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
-
-                const from = page * eventCount;
-                const to = from + eventCount;
-                const pageEvents = allEvents.slice(from, to);
-                const totalCount = allEvents.length;
+                    updatedBefore,
+                    limit: eventCount,
+                    offset: page * eventCount,
+                });
+                const pageEvents = result.events.map(({ did, registry, time, event }) => ({
+                    ...event,
+                    did: event.did ?? did,
+                    registry: event.registry ?? registry,
+                    time: time || event.time,
+                }));
 
                 if (isMounted) {
                     setEvents(pageEvents);
-                    setTotal(totalCount);
+                    setTotal(result.total);
                 }
-            } catch (err: any) {
+            } catch (err: unknown) {
                 if (isMounted) {
                     setError(err);
                 }
@@ -163,95 +92,90 @@ function App() {
 
         fetchRecent();
 
-        intervalId = setInterval(fetchRecent, 10000);
+        intervalId = setInterval(fetchRecent, config.eventsPollIntervalMs);
 
         return () => {
             isMounted = false;
-            if (intervalId) clearInterval(intervalId);
+            if (intervalId) {
+                clearInterval(intervalId);
+            }
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isReady, eventCount, page, registry, dateFrom, dateTo]);
+    }, [config.eventsPollIntervalMs, isReady, eventCount, page, registry, dateFrom, dateTo, searchClient, setError]);
 
     const totalPages = Math.ceil(total / eventCount);
+    const waiting = <Typography sx={{ mt: 3 }}>{readinessMessage}</Typography>;
 
     return (
-        <ThemeProvider theme={theme}>
-            <CssBaseline />
-            <Box sx={{
-                bgcolor: 'background.default',
-                color: 'text.primary',
-                minHeight: '100vh',
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'flex-start'
-            }}>
-                <Box sx={{ width: '900px', boxSizing: 'border-box', p: 2 }}>
-                    <Snackbar
-                        open={snackbar.open}
-                        autoHideDuration={5000}
-                        onClose={handleSnackbarClose}
-                        anchorOrigin={{ vertical: "top", horizontal: "center" }}
-                    >
-                        <Alert
-                            onClose={handleSnackbarClose}
-                            severity={snackbar.severity}
-                            sx={{ width: "100%" }}
-                        >
-                            {snackbar.message}
-                        </Alert>
-                    </Snackbar>
-
-                    {isReady &&
-                        <Box>
-                            <Header
-                                handleThemeToggle={handleThemeToggle}
-                                darkMode={darkMode}
-                            />
-                            <Routes>
-                                <Route
-                                    path="/"
-                                    element={<Navigate to="/search" replace />}
+        <Box sx={{
+            bgcolor: "background.default",
+            color: "text.primary",
+            minHeight: "100vh",
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "flex-start"
+        }}>
+            <Box sx={{ width: "900px", boxSizing: "border-box", p: 2 }}>
+                <Box>
+                    <Header />
+                    <Routes>
+                        <Route
+                            path="/"
+                            element={<Navigate to="/search" replace />}
+                        />
+                        <Route
+                            path="/search"
+                            element={isReady ? (
+                                <JsonViewer />
+                            ) : (
+                                waiting
+                            )}
+                        />
+                        <Route
+                            path="/events"
+                            element={isReady ? (
+                                <Events
+                                    events={events}
+                                    eventCount={eventCount}
+                                    page={page}
+                                    dateFrom={dateFrom}
+                                    dateTo={dateTo}
+                                    registry={registry}
+                                    totalPages={totalPages}
+                                    setEventCount={setEventCount}
+                                    setPage={setPage}
+                                    setRegistry={setRegistry}
+                                    setDateFrom={setDateFrom}
+                                    setDateTo={setDateTo}
+                                    onDidClick={handleViewDid}
                                 />
-                                <Route
-                                    path="/search"
-                                    element={
-                                        <JsonViewer
-                                            gatekeeper={gatekeeper}
-                                            setError={setError}
-                                        />
-                                    }
-                                />
-                                <Route
-                                    path="/events"
-                                    element={
-                                        <Events
-                                            events={events}
-                                            eventCount={eventCount}
-                                            page={page}
-                                            dateFrom={dateFrom}
-                                            dateTo={dateTo}
-                                            registry={registry}
-                                            totalPages={totalPages}
-                                            setEventCount={setEventCount}
-                                            setPage={setPage}
-                                            setRegistry={setRegistry}
-                                            setDateFrom={setDateFrom}
-                                            setDateTo={setDateTo}
-                                            onDidClick={handleViewDid}
-                                            setError={setError}
-                                        />
-                                    }
-                                />
-                                <Route
-                                    path="*"
-                                    element={<Typography>404 Not Found</Typography>}
-                                />
-                            </Routes>
-                        </Box>
-                    }
+                            ) : (
+                                waiting
+                            )}
+                        />
+                        <Route
+                            path="/credentials"
+                            element={isReady ? (
+                                <Credentials />
+                            ) : (
+                                waiting
+                            )}
+                        />
+                        <Route
+                            path="/receipts"
+                            element={isReady ? (
+                                <ChallengeReceipts />
+                            ) : (
+                                waiting
+                            )}
+                        />
+                        <Route
+                            path="*"
+                            element={<Typography>404 Not Found</Typography>}
+                        />
+                    </Routes>
                 </Box>
             </Box>
-        </ThemeProvider>
+        </Box>
     );
 }
 
