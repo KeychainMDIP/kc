@@ -9,7 +9,7 @@ import { Cipher, HDKeyJSON, EcdsaJwkPublic, EcdsaJwkPrivate, EcdsaJwkPair } from
 import canonicalizeModule from 'canonicalize';
 const canonicalize = canonicalizeModule as unknown as (input: unknown) => string;
 
-secp.hashes.hmacSha256 = (key: Uint8Array, message: Uint8Array): Uint8Array => hmac(sha256, key, message);
+secp.hashes.hmacSha256 = (key, message) => hmac(sha256, key, message);
 secp.hashes.sha256 = sha256;
 
 export default abstract class CipherBase implements Cipher {
