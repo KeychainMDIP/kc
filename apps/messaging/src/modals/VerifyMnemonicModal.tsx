@@ -10,8 +10,10 @@ interface VerifyMnemonicModalProps {
 
 function pickThreeDistinct(maxExclusive: number): number[] {
     const set = new Set<number>();
+    const randomValue = new Uint32Array(1);
     while (set.size < 3) {
-        set.add(Math.floor(Math.random() * maxExclusive));
+        crypto.getRandomValues(randomValue);
+        set.add(randomValue[0] % maxExclusive);
     }
     return Array.from(set).sort((a, b) => a - b);
 }

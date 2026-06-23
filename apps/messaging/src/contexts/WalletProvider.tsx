@@ -189,7 +189,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     const handleImportMnemonic = async (mnemonic: string) => {
         try {
             await restoreMnemonic(mnemonic);
-        } catch (e) {
+        } catch (error) {
+            console.warn("Failed to restore wallet from mnemonic", error);
             setMnemonicError("Invalid mnemonic");
             return;
         }

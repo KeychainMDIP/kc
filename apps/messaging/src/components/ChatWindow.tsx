@@ -515,7 +515,7 @@ const ChatWindow: React.FC = () => {
         }
 
         return convo;
-    }, [activePeer, currentDID, peerDid, currentId, dmailList, groupList, keymaster, currentGroupMembers])
+    }, [activePeer, currentDID, peerDid, currentId, dmailList, groupList, keymaster])
 
     useEffect(() => {
         let mounted = true;
