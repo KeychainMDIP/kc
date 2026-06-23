@@ -89,6 +89,10 @@ export async function scanQrCode() {
 
         let did: string | null = null;
         for (const b of barcodes) {
+            if (typeof b.rawValue !== 'string') {
+                continue;
+            }
+
             const candidate = extractDid(b.rawValue);
             if (candidate) {
                 did = candidate;
@@ -104,4 +108,3 @@ export async function scanQrCode() {
     } catch {}
     return null;
 }
-
