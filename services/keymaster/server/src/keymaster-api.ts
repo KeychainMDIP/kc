@@ -5,17 +5,16 @@ import { fileURLToPath } from 'url';
 import rateLimit from 'express-rate-limit';
 
 import GatekeeperClient from '@mdip/gatekeeper/client';
-import Keymaster from '@mdip/keymaster';
+import Keymaster, { MnemonicHdWalletProvider } from '@mdip/keymaster';
 import SearchClient from '@mdip/keymaster/search';
-import { WalletBase } from '@mdip/keymaster/types';
+import { KeymasterStore, MdipWalletBundle, WalletProviderStore } from '@mdip/keymaster/types';
 import WalletJson from '@mdip/keymaster/wallet/json';
 import WalletRedis from '@mdip/keymaster/wallet/redis';
 import WalletMongo from '@mdip/keymaster/wallet/mongo';
 import WalletSQLite from '@mdip/keymaster/wallet/sqlite';
 import WalletPostgres from '@mdip/keymaster/wallet/postgres';
-import WalletCache from '@mdip/keymaster/wallet/cache';
 import CipherNode from '@mdip/cipher/node';
-import { InvalidParameterError } from '@mdip/common/errors';
+import { InvalidParameterError, KeymasterError } from '@mdip/common/errors';
 import { childLogger } from '@mdip/common/logger';
 import config from './config.js';
 
@@ -193,6 +192,10 @@ const DIDNotFound = { error: 'DID not found' };
 
 const serveClient = (process.env.KC_KEYMASTER_SERVE_CLIENT ?? 'true').toLowerCase() === 'true';
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
 if (serveClient) {
     const clientBuildDir = path.join(__dirname, '../../client/build');
 
@@ -210,6 +213,7 @@ if (serveClient) {
 
 let gatekeeper: GatekeeperClient;
 let keymaster: Keymaster;
+let walletProvider: MnemonicHdWalletProvider;
 let serverReady = false;
 
 /**
@@ -298,20 +302,15 @@ v1router.get('/registries', async (req, res) => {
  *                 wallet:
  *                   type: object
  *                   properties:
- *                     seed:
+ *                     version:
+ *                       type: integer
+ *                     provider:
  *                       type: object
  *                       properties:
- *                         mnemonic:
+ *                         type:
  *                           type: string
- *                         hdkey:
- *                           type: object
- *                           properties:
- *                             xpriv:
- *                               type: string
- *                             xpub:
- *                               type: string
- *                     counter:
- *                       type: integer
+ *                         walletFingerprint:
+ *                           type: string
  *                     ids:
  *                       type: object
  *                       additionalProperties:
@@ -319,10 +318,8 @@ v1router.get('/registries', async (req, res) => {
  *                         properties:
  *                           did:
  *                             type: string
- *                           account:
- *                             type: integer
- *                           index:
- *                             type: integer
+ *                           keyRef:
+ *                             type: string
  *                           owned:
  *                             type: array
  *                             items:
@@ -367,20 +364,15 @@ v1router.get('/wallet', async (req, res) => {
  *               wallet:
  *                 type: object
  *                 properties:
- *                   seed:
+ *                   version:
+ *                     type: integer
+ *                   provider:
  *                     type: object
  *                     properties:
- *                       mnemonic:
+ *                       type:
  *                         type: string
- *                       hdkey:
- *                         type: object
- *                         properties:
- *                           xpriv:
- *                             type: string
- *                           xpub:
- *                             type: string
- *                   counter:
- *                     type: integer
+ *                       walletFingerprint:
+ *                         type: string
  *                   ids:
  *                     type: object
  *                     additionalProperties:
@@ -388,10 +380,8 @@ v1router.get('/wallet', async (req, res) => {
  *                       properties:
  *                         did:
  *                           type: string
- *                         account:
- *                           type: integer
- *                         index:
- *                           type: integer
+ *                         keyRef:
+ *                           type: string
  *                         owned:
  *                           type: array
  *                           items:
@@ -464,20 +454,15 @@ v1router.put('/wallet', async (req, res) => {
  *                 wallet:
  *                   type: object
  *                   properties:
- *                     seed:
+ *                     version:
+ *                       type: integer
+ *                     provider:
  *                       type: object
  *                       properties:
- *                         mnemonic:
+ *                         type:
  *                           type: string
- *                         hdkey:
- *                           type: object
- *                           properties:
- *                             xpriv:
- *                               type: string
- *                             xpub:
- *                               type: string
- *                     counter:
- *                       type: integer
+ *                         walletFingerprint:
+ *                           type: string
  *                     ids:
  *                       type: object
  *                       additionalProperties:
@@ -485,10 +470,8 @@ v1router.put('/wallet', async (req, res) => {
  *                         properties:
  *                           did:
  *                             type: string
- *                           account:
- *                             type: integer
- *                           index:
- *                             type: integer
+ *                           keyRef:
+ *                             type: string
  *                           owned:
  *                             type: array
  *                             items:
@@ -519,6 +502,149 @@ v1router.post('/wallet/new', async (req, res) => {
     }
 });
 
+function isMdipWalletBundle(bundle: unknown): bundle is MdipWalletBundle {
+    if (!isRecord(bundle)
+        || bundle.version !== 1
+        || bundle.type !== 'mdip-wallet-bundle'
+        || !isRecord(bundle.keymaster)
+        || !isRecord(bundle.provider)) {
+        return false;
+    }
+
+    const metadata = bundle.keymaster;
+    const providerMetadata = metadata.provider;
+    const provider = bundle.provider;
+
+    return metadata.version === 2
+        && isRecord(providerMetadata)
+        && provider.version === 1
+        && provider.type === 'mnemonic-hd';
+}
+
+async function validateWalletBundleImport(bundle: unknown): Promise<MdipWalletBundle> {
+    if (!isMdipWalletBundle(bundle)) {
+        throw new InvalidParameterError('bundle');
+    }
+
+    const providerFingerprint = await walletProvider.getFingerprintForWallet(bundle.provider);
+    if (bundle.keymaster.provider.type !== walletProvider.type
+        || bundle.keymaster.provider.walletFingerprint !== providerFingerprint) {
+        throw new KeymasterError('Wallet provider does not match stored metadata.');
+    }
+
+    return bundle;
+}
+
+/**
+ * @swagger
+ * /wallet/bundle:
+ *   get:
+ *     summary: Export the current keymaster metadata and mnemonic wallet provider state.
+ *     responses:
+ *       200:
+ *         description: The wallet bundle object.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 bundle:
+ *                   type: object
+ *       500:
+ *         description: Internal server error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+v1router.get('/wallet/bundle', async (req, res) => {
+    try {
+        const wallet = await keymaster.loadWallet();
+        const provider = await walletProvider.backupWallet();
+        const bundle: MdipWalletBundle = {
+            version: 1,
+            type: 'mdip-wallet-bundle',
+            keymaster: wallet,
+            provider,
+        };
+        res.json({ bundle });
+    } catch (error: any) {
+        res.status(500).send({ error: error.toString() });
+    }
+});
+
+/**
+ * @swagger
+ * /wallet/bundle:
+ *   put:
+ *     summary: Import a wallet bundle containing keymaster metadata and mnemonic wallet provider state.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               bundle:
+ *                 type: object
+ *     responses:
+ *       200:
+ *         description: The imported wallet object.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok:
+ *                   type: boolean
+ *                 wallet:
+ *                   type: object
+ *       500:
+ *         description: Internal server error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+v1router.put('/wallet/bundle', async (req, res) => {
+    try {
+        const bundle = await validateWalletBundleImport(req.body?.bundle);
+        const previousProvider = await walletProvider.backupWallet().catch(() => null);
+        let providerSaved = false;
+
+        const providerOk = await walletProvider.saveWallet(bundle.provider, true);
+        if (!providerOk) {
+            throw new Error('save provider wallet failed');
+        }
+        providerSaved = true;
+
+        let ok = false;
+        try {
+            ok = await keymaster.saveWallet(bundle.keymaster, true);
+            if (!ok) {
+                throw new Error('save wallet failed');
+            }
+        }
+        catch (error) {
+            if (providerSaved && previousProvider) {
+                await walletProvider.saveWallet(previousProvider, true);
+            }
+            throw error;
+        }
+
+        const wallet = await keymaster.loadWallet();
+        res.json({ ok, wallet });
+    } catch (error: any) {
+        res.status(500).send({ error: error.toString() });
+    }
+});
+
 /**
  * @swagger
  * /wallet/backup:
@@ -532,7 +658,7 @@ v1router.post('/wallet/new', async (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 ok:
+ *                 did:
  *                   type: string
  *                   description: The DID associated with the wallet backup.
  *       500:
@@ -547,8 +673,8 @@ v1router.post('/wallet/new', async (req, res) => {
  */
 v1router.post('/wallet/backup', async (req, res) => {
     try {
-        const ok = await keymaster.backupWallet();
-        res.json({ ok });
+        const did = await keymaster.backupWallet();
+        res.json({ did });
     } catch (error: any) {
         res.status(500).send({ error: error.toString() });
     }
@@ -570,20 +696,15 @@ v1router.post('/wallet/backup', async (req, res) => {
  *                 wallet:
  *                   type: object
  *                   properties:
- *                     seed:
+ *                     version:
+ *                       type: integer
+ *                     provider:
  *                       type: object
  *                       properties:
- *                         mnemonic:
+ *                         type:
  *                           type: string
- *                         hdkey:
- *                           type: object
- *                           properties:
- *                             xpriv:
- *                               type: string
- *                             xpub:
- *                               type: string
- *                     counter:
- *                       type: integer
+ *                         walletFingerprint:
+ *                           type: string
  *                     ids:
  *                       type: object
  *                       additionalProperties:
@@ -591,10 +712,8 @@ v1router.post('/wallet/backup', async (req, res) => {
  *                         properties:
  *                           did:
  *                             type: string
- *                           account:
- *                             type: integer
- *                           index:
- *                             type: integer
+ *                           keyRef:
+ *                             type: string
  *                           owned:
  *                             type: array
  *                             items:
@@ -617,7 +736,7 @@ v1router.post('/wallet/backup', async (req, res) => {
  */
 v1router.post('/wallet/recover', async (req, res) => {
     try {
-        const wallet = await keymaster.recoverWallet();
+        const wallet = await keymaster.recoverWallet(req.body?.did);
         res.json({ wallet });
     } catch (error: any) {
         res.status(500).send({ error: error.toString() });
@@ -711,15 +830,14 @@ v1router.post('/wallet/fix', async (req, res) => {
     }
 });
 
-
 /**
  * @swagger
  * /wallet/mnemonic:
  *   get:
- *     summary: Decrypt and retrieve the wallet's mnemonic phrase.
+ *     summary: Retrieve the recovery phrase for the mnemonic wallet provider.
  *     responses:
  *       200:
- *         description: The mnemonic phrase.
+ *         description: The wallet recovery phrase.
  *         content:
  *           application/json:
  *             schema:
@@ -739,67 +857,8 @@ v1router.post('/wallet/fix', async (req, res) => {
  */
 v1router.get('/wallet/mnemonic', async (req, res) => {
     try {
-        const mnemonic = await keymaster.decryptMnemonic();
+        const mnemonic = await walletProvider.decryptMnemonic();
         res.json({ mnemonic });
-    } catch (error: any) {
-        res.status(500).send({ error: error.toString() });
-    }
-});
-
-/**
- * @swagger
- * /export/wallet/encrypted:
- *   get:
- *     summary: Export the wallet in encrypted form.
- *     description: >
- *       Returns the wallet in its encrypted format, which includes the encrypted mnemonic
- *       and encrypted wallet data. This format is secure for storage or backup purposes.
- *     responses:
- *       200:
- *         description: The encrypted wallet object.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 wallet:
- *                   type: object
- *                   properties:
- *                     version:
- *                       type: integer
- *                       description: The wallet format version.
- *                     seed:
- *                       type: object
- *                       properties:
- *                         mnemonicEnc:
- *                           type: object
- *                           properties:
- *                             salt:
- *                               type: string
- *                               description: Base64-encoded salt used for key derivation.
- *                             iv:
- *                               type: string
- *                               description: Base64-encoded initialization vector for AES-GCM encryption.
- *                             data:
- *                               type: string
- *                               description: Base64-encoded encrypted mnemonic.
- *                     enc:
- *                       type: string
- *                       description: Encrypted wallet data (IDs, names, etc.).
- *       500:
- *         description: Internal server error.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- */
-v1router.get('/export/wallet/encrypted', async (req, res) => {
-    try {
-        const wallet = await keymaster.exportEncryptedWallet();
-        res.json({ wallet });
     } catch (error: any) {
         res.status(500).send({ error: error.toString() });
     }
@@ -6293,7 +6352,7 @@ async function waitForNodeId() {
 }
 
 async function initWallet() {
-    let wallet: WalletBase;
+    let wallet: KeymasterStore;
 
     if (config.db === 'redis') {
         wallet = await WalletRedis.create();
@@ -6309,8 +6368,25 @@ async function initWallet() {
         throw new InvalidParameterError(`db=${config.db}`);
     }
 
-    if (config.walletCache) {
-        wallet = new WalletCache(wallet);
+    return wallet;
+}
+
+async function initWalletProviderStore() {
+    let wallet: WalletProviderStore;
+    const storeName = 'wallet-provider';
+
+    if (config.db === 'redis') {
+        wallet = await WalletRedis.create(storeName) as unknown as WalletProviderStore;
+    } else if (config.db === 'mongodb') {
+        wallet = await WalletMongo.create(storeName) as unknown as WalletProviderStore;
+    } else if (config.db === 'sqlite') {
+        wallet = await WalletSQLite.create('wallet-provider.db') as unknown as WalletProviderStore;
+    } else if (config.db === 'postgres') {
+        wallet = await WalletPostgres.create(storeName) as unknown as WalletProviderStore;
+    } else if (config.db === 'json') {
+        wallet = new WalletJson('wallet-provider.json') as unknown as WalletProviderStore;
+    } else {
+        throw new InvalidParameterError(`db=${config.db}`);
     }
 
     return wallet;
@@ -6344,9 +6420,15 @@ const server = app.listen(port, async () => {
     }
 
     const wallet = await initWallet();
+    const walletProviderStore = await initWalletProviderStore();
     const cipher = new CipherNode();
     const defaultRegistry = config.defaultRegistry;
-    keymaster = new Keymaster({ gatekeeper, wallet, cipher, search, defaultRegistry, passphrase: config.keymasterPassphrase });
+    walletProvider = new MnemonicHdWalletProvider({
+        store: walletProviderStore,
+        cipher,
+        passphrase: config.walletProviderPassphrase,
+    });
+    keymaster = new Keymaster({ gatekeeper, store: wallet, walletProvider, cipher, search, defaultRegistry });
     log.info(`Keymaster server running on port ${port}`);
     log.info(`Keymaster server persisting to ${config.db}`);
 

@@ -1,7 +1,7 @@
 import nock from 'nock';
 import KeymasterClient from '@mdip/keymaster/client';
 import { ExpectedExceptionError } from '@mdip/common/errors';
-import {Seed, WalletEncFile, WalletFile} from "@mdip/keymaster/types";
+import { MdipWalletBundle, WalletFile } from "@mdip/keymaster/types";
 
 const KeymasterURL = 'http://keymaster.org';
 const ServerError = { message: 'Server error' };
@@ -9,11 +9,12 @@ const Endpoints = {
     ready: '/api/v1/ready',
     wallet: '/api/v1/wallet',
     wallet_new: '/api/v1/wallet/new',
+    wallet_mnemonic: '/api/v1/wallet/mnemonic',
     wallet_backup: '/api/v1/wallet/backup',
     wallet_recover: '/api/v1/wallet/recover',
+    wallet_bundle: '/api/v1/wallet/bundle',
     wallet_check: '/api/v1/wallet/check',
     wallet_fix: '/api/v1/wallet/fix',
-    wallet_mnemonic: '/api/v1/wallet/mnemonic',
     registries: '/api/v1/registries',
     ids: '/api/v1/ids',
     ids_current: '/api/v1/ids/current',
@@ -44,7 +45,6 @@ const Endpoints = {
     groupVaults: `/api/v1/groupVaults`,
     dmail: '/api/v1/dmail',
     notices: '/api/v1/notices',
-    export_wallet_encrypted: '/api/v1/export/wallet/encrypted',
 };
 
 const mockConsole = {
@@ -86,6 +86,36 @@ const mockCredential = {
     "credential": {
         "email": "TBD"
     }
+};
+
+const mockWalletBundle: MdipWalletBundle = {
+    version: 1,
+    type: 'mdip-wallet-bundle',
+    keymaster: {
+        version: 2,
+        provider: {
+            type: 'mnemonic-hd',
+            walletFingerprint: 'fingerprint',
+        },
+        ids: {},
+    },
+    provider: {
+        version: 1,
+        type: 'mnemonic-hd',
+        rootPublicJwk: {
+            kty: 'EC',
+            crv: 'secp256k1',
+            x: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+            y: 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
+        },
+        mnemonicEnc: {
+            salt: 'salt',
+            iv: 'iv',
+            data: 'data',
+        },
+        nextAccount: 0,
+        keys: {},
+    },
 };
 
 describe('isReady', () => {
@@ -194,7 +224,14 @@ describe('loadWallet', () => {
 });
 
 describe('saveWallet', () => {
-    const mockWallet: WalletFile = { seed: {} as Seed, counter: 0, ids: {} };
+    const mockWallet: WalletFile = {
+        version: 2,
+        provider: {
+            type: 'mnemonic-hd',
+            walletFingerprint: 'fingerprint',
+        },
+        ids: {},
+    };
 
     it('should save wallet', async () => {
         nock(KeymasterURL)
@@ -255,16 +292,45 @@ describe('newWallet', () => {
     });
 });
 
+describe('decryptMnemonic', () => {
+    it('should return the decrypted mnemonic', async () => {
+        nock(KeymasterURL)
+            .get(Endpoints.wallet_mnemonic)
+            .reply(200, { mnemonic: 'alpha beta gamma' });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const mnemonic = await keymaster.decryptMnemonic();
+
+        expect(mnemonic).toBe('alpha beta gamma');
+    });
+
+    it('should throw exception on decryptMnemonic server error', async () => {
+        nock(KeymasterURL)
+            .get(Endpoints.wallet_mnemonic)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.decryptMnemonic();
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
 describe('backupWallet', () => {
     it('should backup wallet', async () => {
         nock(KeymasterURL)
             .post(Endpoints.wallet_backup)
-            .reply(200, { ok: true });
+            .reply(200, { did: 'did:test:backup' });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
-        const ok = await keymaster.backupWallet();
+        const did = await keymaster.backupWallet();
 
-        expect(ok).toStrictEqual(true);
+        expect(did).toStrictEqual('did:test:backup');
     });
 
     it('should throw exception on backupWallet server error', async () => {
@@ -307,6 +373,71 @@ describe('recoverWallet', () => {
 
         try {
             await keymaster.recoverWallet();
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+});
+
+describe('wallet bundle', () => {
+    it('should export wallet bundle', async () => {
+        nock(KeymasterURL)
+            .get(Endpoints.wallet_bundle)
+            .reply(200, { bundle: mockWalletBundle });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const bundle = await keymaster.exportWalletBundle();
+
+        expect(bundle).toStrictEqual(mockWalletBundle);
+    });
+
+    it('should throw exception on exportWalletBundle server error', async () => {
+        nock(KeymasterURL)
+            .get(Endpoints.wallet_bundle)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.exportWalletBundle();
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe(ServerError.message);
+        }
+    });
+
+    it('should import wallet bundle', async () => {
+        const mockWallet: WalletFile = {
+            version: 2,
+            provider: {
+                type: 'mnemonic-hd',
+                walletFingerprint: 'fingerprint',
+            },
+            ids: {},
+        };
+
+        nock(KeymasterURL)
+            .put(Endpoints.wallet_bundle)
+            .reply(200, { wallet: mockWallet });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const wallet = await keymaster.importWalletBundle(mockWalletBundle);
+
+        expect(wallet).toStrictEqual(mockWallet);
+    });
+
+    it('should throw exception on importWalletBundle server error', async () => {
+        nock(KeymasterURL)
+            .put(Endpoints.wallet_bundle)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        try {
+            await keymaster.importWalletBundle(mockWalletBundle);
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
@@ -365,37 +496,6 @@ describe('fixWallet', () => {
 
         try {
             await keymaster.fixWallet();
-            throw new ExpectedExceptionError();
-        }
-        catch (error: any) {
-            expect(error.message).toBe(ServerError.message);
-        }
-    });
-});
-
-describe('decryptMnemonic', () => {
-    const mockMnemonic = 'mock mnemonic phrase';
-
-    it('should decrypt mnemonic', async () => {
-        nock(KeymasterURL)
-            .get(Endpoints.wallet_mnemonic)
-            .reply(200, { mnemonic: mockMnemonic });
-
-        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
-        const mnemonic = await keymaster.decryptMnemonic();
-
-        expect(mnemonic).toStrictEqual(mockMnemonic);
-    });
-
-    it('should throw exception on decryptMnemonic server error', async () => {
-        nock(KeymasterURL)
-            .get(Endpoints.wallet_mnemonic)
-            .reply(500, ServerError);
-
-        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
-
-        try {
-            await keymaster.decryptMnemonic();
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
@@ -2778,6 +2878,7 @@ describe('createGroupVault', () => {
 describe('getGroupVault', () => {
     const mockVaultId = 'vault1';
     const mockVault = { salt: 'mockSalt', keys: {}, items: 'mockItems' };
+    const resolveOptions = { confirm: 'true', versionTime: '2025-01-01T00:00:00Z' } as any;
 
     it('should get document', async () => {
         nock(KeymasterURL)
@@ -2817,6 +2918,18 @@ describe('getGroupVault', () => {
         catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
+    });
+
+    it('should get document with resolve options', async () => {
+        nock(KeymasterURL)
+            .get(`${Endpoints.groupVaults}/${mockVaultId}`)
+            .query(resolveOptions)
+            .reply(200, { groupVault: mockVault });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const vault = await keymaster.getGroupVault(mockVaultId, resolveOptions);
+
+        expect(vault).toStrictEqual(mockVault);
     });
 });
 
@@ -3016,6 +3129,7 @@ describe('removeGroupVaultItem', () => {
 describe('listGroupVaultItems', () => {
     const mockVaultId = 'vault6';
     const mockItems = { item1: 'item1', item2: 'item2' };
+    const resolveOptions = { confirm: 'true', versionTime: '2025-01-01T00:00:00Z' } as any;
 
     it('should list vault items', async () => {
         nock(KeymasterURL)
@@ -3056,12 +3170,25 @@ describe('listGroupVaultItems', () => {
             expect(error.message).toBe(ServerError.message);
         }
     });
+
+    it('should list vault items with resolve options', async () => {
+        nock(KeymasterURL)
+            .get(`${Endpoints.groupVaults}/${mockVaultId}/items`)
+            .query(resolveOptions)
+            .reply(200, { items: mockItems });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const items = await keymaster.listGroupVaultItems(mockVaultId, resolveOptions);
+
+        expect(items).toStrictEqual(mockItems);
+    });
 });
 
 describe('getGroupVaultItem', () => {
     const mockVaultId = 'vault7';
     const mockName = 'mockName';
     const mockData = Buffer.from('mockData');
+    const resolveOptions = { confirm: 'true', versionTime: '2025-01-01T00:00:00Z' } as any;
 
     it('should return group vault item data', async () => {
         nock(KeymasterURL)
@@ -3123,6 +3250,18 @@ describe('getGroupVaultItem', () => {
         catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
+    });
+
+    it('should return group vault item data with resolve options', async () => {
+        nock(KeymasterURL)
+            .get(`${Endpoints.groupVaults}/${mockVaultId}/items/${mockName}`)
+            .query(resolveOptions)
+            .reply(200, mockData);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const data = await keymaster.getGroupVaultItem(mockVaultId, mockName, resolveOptions);
+
+        expect(data).toStrictEqual(mockData);
     });
 });
 
@@ -3344,6 +3483,7 @@ describe('removeDmailAttachment', () => {
 describe('listDmailAttachments', () => {
     const mockDmailId = 'dmail3';
     const mockAttachments = { item1: 'item1', item2: 'item2' };
+    const resolveOptions = { confirm: 'true', versionTime: '2025-01-01T00:00:00Z' } as any;
 
     it('should list vault items', async () => {
         nock(KeymasterURL)
@@ -3383,6 +3523,18 @@ describe('listDmailAttachments', () => {
         catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
+    });
+
+    it('should list attachments with resolve options', async () => {
+        nock(KeymasterURL)
+            .get(`${Endpoints.dmail}/${mockDmailId}/attachments`)
+            .query(resolveOptions)
+            .reply(200, { attachments: mockAttachments });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const attachments = await keymaster.listDmailAttachments(mockDmailId, resolveOptions);
+
+        expect(attachments).toStrictEqual(mockAttachments);
     });
 });
 
@@ -3471,6 +3623,8 @@ describe('importDmail', () => {
 });
 
 describe('getDmailMessage', () => {
+    const resolveOptions = { confirm: 'true', versionTime: '2025-01-01T00:00:00Z' } as any;
+
     it('should get message', async () => {
         nock(KeymasterURL)
             .get(`${Endpoints.dmail}/${mockDmailId}`)
@@ -3509,6 +3663,18 @@ describe('getDmailMessage', () => {
         catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
+    });
+
+    it('should get message with resolve options', async () => {
+        nock(KeymasterURL)
+            .get(`${Endpoints.dmail}/${mockDmailId}`)
+            .query(resolveOptions)
+            .reply(200, { message: mockDmail });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const message = await keymaster.getDmailMessage(mockDmailId, resolveOptions);
+
+        expect(message).toStrictEqual(mockDmail);
     });
 });
 
@@ -3625,47 +3791,6 @@ describe('refreshNotices', () => {
 
         try {
             await keymaster.refreshNotices();
-            throw new ExpectedExceptionError();
-        }
-        catch (error: any) {
-            expect(error.message).toBe(ServerError.message);
-        }
-    });
-});
-
-describe('exportEncryptedWallet', () => {
-    const mockEncWallet: WalletEncFile = {
-        version: 1,
-        seed: {
-            mnemonicEnc: {
-                salt: 'salt==',
-                iv: 'iviviviv',
-                data: 'ciphertext'
-            }
-        },
-        enc: 'top-level-seal'
-    };
-
-    it('should export encrypted wallet', async () => {
-        nock(KeymasterURL)
-            .get(Endpoints.export_wallet_encrypted)
-            .reply(200, { wallet: mockEncWallet });
-
-        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
-        const wallet = await keymaster.exportEncryptedWallet();
-
-        expect(wallet).toStrictEqual(mockEncWallet);
-    });
-
-    it('should throw exception on exportEncryptedWallet server error', async () => {
-        nock(KeymasterURL)
-            .get(Endpoints.export_wallet_encrypted)
-            .reply(500, ServerError);
-
-        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
-
-        try {
-            await keymaster.exportEncryptedWallet();
             throw new ExpectedExceptionError();
         }
         catch (error: any) {

@@ -1,15 +1,15 @@
-import { StoredWallet, WalletBase } from '../types.js';
+import { KeymasterStore, StoredWallet } from '../types.js';
 import { MongoClient, Db, Collection } from 'mongodb'
 
-export default class WalletMongo implements WalletBase {
+export default class WalletMongo implements KeymasterStore {
     private client: MongoClient;
     private db?: Db;
     private collection?: Collection;
     private dbName = 'keymaster'
     private readonly collectionName: string;
 
-    public static async create(): Promise<WalletMongo> {
-        const wallet = new WalletMongo();
+    public static async create(walletKey: string = 'wallet'): Promise<WalletMongo> {
+        const wallet = new WalletMongo(walletKey);
         await wallet.connect();
         return wallet;
     }
@@ -30,7 +30,7 @@ export default class WalletMongo implements WalletBase {
         await this.client.close();
     }
 
-    async saveWallet(wallet: Exclude<StoredWallet, null>, overwrite: boolean = false): Promise<boolean> {
+    async saveWallet(wallet: StoredWallet, overwrite: boolean = false): Promise<boolean> {
         if (!this.collection) {
             throw new Error('Not connected to MongoDB. Call connect() first or use WalletMongo.create().')
         }
@@ -40,7 +40,7 @@ export default class WalletMongo implements WalletBase {
             return false;
         }
 
-        await this.collection.replaceOne({}, wallet, { upsert: true });
+        await this.collection.replaceOne({}, wallet as Record<string, unknown>, { upsert: true });
         return true;
     }
 

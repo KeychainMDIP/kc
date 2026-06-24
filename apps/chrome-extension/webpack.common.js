@@ -60,7 +60,7 @@ module.exports = {
             "@mdip/gatekeeper/types": path.resolve(__dirname, "../../packages/gatekeeper/dist/types/types.d.js"),
             "@mdip/keymaster/wallet/chrome": path.resolve(__dirname, "../../packages/keymaster/dist/esm/db/chrome.js"),
             "@mdip/keymaster/wallet/json-memory": path.resolve(__dirname, "../../packages/keymaster/dist/esm/db/json-memory.js"),
-            "@mdip/keymaster/wallet/cache": path.resolve(__dirname, "../../packages/keymaster/dist/esm/db/cache.js"),
+            "@mdip/keymaster/wallet/mnemonic-hd": path.resolve(__dirname, "../../packages/keymaster/dist/esm/provider/mnemonic-hd.js"),
             "@mdip/keymaster/wallet/typeGuards": path.resolve(__dirname, "../../packages/keymaster/dist/esm/db/typeGuards.js"),
             "@mdip/keymaster/types": path.resolve(__dirname, "../../packages/keymaster/dist/types/types.d.js"),
             "@mdip/keymaster/search": path.resolve(__dirname, "../../packages/keymaster/dist/esm/search-client.js"),

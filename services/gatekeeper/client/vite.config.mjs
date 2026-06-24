@@ -28,7 +28,7 @@ export default defineConfig({
             '@mdip/gatekeeper/client': resolvePackageDist('gatekeeper/dist/esm/gatekeeper-client.js'),
             '@mdip/keymaster/wallet/web': resolvePackageDist('keymaster/dist/esm/db/web.js'),
             '@mdip/keymaster/wallet/json-memory': resolvePackageDist('keymaster/dist/esm/db/json-memory.js'),
-            '@mdip/keymaster/wallet/cache': resolvePackageDist('keymaster/dist/esm/db/cache.js'),
+            '@mdip/keymaster/wallet/mnemonic-hd': resolvePackageDist('keymaster/dist/esm/provider/mnemonic-hd.js'),
             '@mdip/keymaster/wallet/typeGuards': resolvePackageDist('keymaster/dist/esm/db/typeGuards.js'),
             '@mdip/keymaster/search': resolvePackageDist('keymaster/dist/esm/search-client.js'),
             '@mdip/keymaster/encryption': resolvePackageDist('keymaster/dist/esm/encryption.js'),

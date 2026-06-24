@@ -1,11 +1,11 @@
 import { Pool } from 'pg';
-import { StoredWallet, WalletBase } from '../types.js';
+import { KeymasterStore, StoredWallet } from '../types.js';
 
 interface WalletRow {
     data: StoredWallet | string;
 }
 
-export default class WalletPostgres implements WalletBase {
+export default class WalletPostgres implements KeymasterStore {
     private readonly url: string;
     private readonly walletKey: string;
     private pool: Pool | null;

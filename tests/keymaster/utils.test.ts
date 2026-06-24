@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import Gatekeeper from '@mdip/gatekeeper';
 import Keymaster from '@mdip/keymaster';
 import CipherNode from '@mdip/cipher/node';
@@ -6,14 +7,14 @@ import WalletJsonMemory from '@mdip/keymaster/wallet/json-memory';
 import { ExpectedExceptionError, UnknownIDError } from '@mdip/common/errors';
 import HeliaClient from '@mdip/ipfs/helia';
 import { MdipDocument } from "@mdip/gatekeeper/types";
+import { createTestKeymaster } from './testUtils.ts';
 
 let ipfs: HeliaClient;
 let gatekeeper: Gatekeeper;
-let wallet: WalletJsonMemory;
+let store: WalletJsonMemory;
+let walletProvider: any;
 let cipher: CipherNode;
 let keymaster: Keymaster;
-
-const PASSPHRASE = 'passphrase';
 
 beforeAll(async () => {
     ipfs = new HeliaClient();
@@ -29,9 +30,8 @@ afterAll(async () => {
 beforeEach(() => {
     const db = new DbJsonMemory('test');
     gatekeeper = new Gatekeeper({ db, ipfs, registries: ['local', 'hyperswarm', 'TFTC'] });
-    wallet = new WalletJsonMemory();
     cipher = new CipherNode();
-    keymaster = new Keymaster({ gatekeeper, wallet, cipher, passphrase: PASSPHRASE });
+    ({ keymaster, store, walletProvider } = createTestKeymaster(gatekeeper, cipher));
 });
 
 describe('constructor', () => {
@@ -48,7 +48,7 @@ describe('constructor', () => {
 
         try {
             // @ts-expect-error Testing invalid usage, missing gatekeeper arg
-            new Keymaster({ wallet, cipher, passphrase: PASSPHRASE });
+            new Keymaster({ store, walletProvider, cipher });
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
@@ -56,17 +56,17 @@ describe('constructor', () => {
         }
 
         try {
-            // @ts-expect-error Testing invalid usage, missing wallet arg
-            new Keymaster({ gatekeeper, cipher, passphrase: PASSPHRASE });
+            // @ts-expect-error Testing invalid usage, missing store arg
+            new Keymaster({ gatekeeper, walletProvider, cipher });
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
-            expect(error.message).toBe('Invalid parameter: options.wallet');
+            expect(error.message).toBe('Invalid parameter: options.store');
         }
 
         try {
             // @ts-expect-error Testing invalid usage, missing cipher arg
-            new Keymaster({ gatekeeper, wallet, passphrase: PASSPHRASE });
+            new Keymaster({ gatekeeper, store, walletProvider });
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
@@ -75,7 +75,7 @@ describe('constructor', () => {
 
         try {
             // @ts-expect-error Testing invalid usage, invalid gatekeeper arg
-            new Keymaster({ gatekeeper: {}, wallet, cipher, passphrase: PASSPHRASE });
+            new Keymaster({ gatekeeper: {}, store, walletProvider, cipher });
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
@@ -83,17 +83,26 @@ describe('constructor', () => {
         }
 
         try {
-            // @ts-expect-error Testing invalid usage, invalid wallet arg
-            new Keymaster({ gatekeeper, wallet: {}, cipher, passphrase: PASSPHRASE });
+            // @ts-expect-error Testing invalid usage, invalid store arg
+            new Keymaster({ gatekeeper, store: {}, walletProvider, cipher });
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
-            expect(error.message).toBe('Invalid parameter: options.wallet');
+            expect(error.message).toBe('Invalid parameter: options.store');
+        }
+
+        try {
+            // @ts-expect-error Testing invalid usage, invalid walletProvider arg
+            new Keymaster({ gatekeeper, store, walletProvider: {}, cipher });
+            throw new ExpectedExceptionError();
+        }
+        catch (error: any) {
+            expect(error.message).toBe('Invalid parameter: options.walletProvider');
         }
 
         try {
             // @ts-expect-error Testing invalid usage, invalid cipher arg
-            new Keymaster({ gatekeeper, wallet, cipher: {}, passphrase: PASSPHRASE });
+            new Keymaster({ gatekeeper, store, walletProvider, cipher: {} });
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
@@ -102,25 +111,16 @@ describe('constructor', () => {
 
         try {
             // @ts-expect-error Testing invalid usage, invalid search arg
-            new Keymaster({ gatekeeper, wallet, cipher, search: {}, passphrase: PASSPHRASE });
+            new Keymaster({ gatekeeper, store, walletProvider, cipher, search: {} });
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
             expect(error.message).toBe('Invalid parameter: options.search');
         }
 
-        try {
-            // @ts-expect-error Testing invalid usage, missing passphrase arg
-            new Keymaster({ gatekeeper, wallet, cipher });
-            throw new ExpectedExceptionError();
-        }
-        catch (error: any) {
-            expect(error.message).toBe('Invalid parameter: options.passphrase');
-        }
-
         // Cover the ExpectedExceptionError class for completeness
         try {
-            new Keymaster({ gatekeeper, wallet, cipher, passphrase: PASSPHRASE });
+            new Keymaster({ gatekeeper, store, walletProvider, cipher });
             throw new ExpectedExceptionError();
         }
         catch (error: any) {
@@ -367,6 +367,7 @@ describe('rotateKeys', () => {
         await keymaster.createId('Alice', { registry: 'TFTC' });
         await keymaster.rotateKeys();
 
+        const before = await walletProvider.backupWallet();
         try {
             await keymaster.rotateKeys();
             throw new ExpectedExceptionError();
@@ -374,6 +375,37 @@ describe('rotateKeys', () => {
         catch (error: any) {
             expect(error.message).toBe('Keymaster: Cannot rotate keys');
         }
+
+        const after = await walletProvider.backupWallet();
+        const wallet = await keymaster.loadWallet();
+        expect(before.keys['hd:0'].currentIndex).toBe(1);
+        expect(after.keys['hd:0'].currentIndex).toBe(1);
+        expect(wallet.ids.Alice.keyRef).toBe('hd:0#1');
+    });
+
+    it('should retry a failed DID update with the same next key', async () => {
+        const alice = await keymaster.createId('Alice', { registry: 'local' });
+        jest.spyOn(gatekeeper, 'updateDID').mockResolvedValueOnce(false);
+
+        await expect(keymaster.rotateKeys()).rejects.toThrow('Keymaster: Cannot rotate keys');
+
+        let wallet = await keymaster.loadWallet();
+        let provider = await walletProvider.backupWallet();
+        expect(wallet.ids.Alice.keyRef).toBe('hd:0#0');
+        expect(provider.keys['hd:0'].currentIndex).toBe(1);
+
+        await keymaster.rotateKeys();
+
+        wallet = await keymaster.loadWallet();
+        provider = await walletProvider.backupWallet();
+        const doc = await keymaster.resolveDID(alice);
+        const publicJwk = keymaster.getPublicKeyJwk(doc);
+        const msgHash = cipher.hashJSON({ test: 'rotation retry' });
+        const signature = await walletProvider.signDigest(wallet.ids.Alice.keyRef, msgHash);
+
+        expect(wallet.ids.Alice.keyRef).toBe('hd:0#1');
+        expect(provider.keys['hd:0'].currentIndex).toBe(1);
+        expect(cipher.verifySig(msgHash, signature, publicJwk)).toBe(true);
     });
 });
 

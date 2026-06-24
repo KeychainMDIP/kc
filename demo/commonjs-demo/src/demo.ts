@@ -6,7 +6,13 @@
 // import CipherNode from '@mdip/cipher/node';
 
 // If your build does not support subpaths import use the following example
-import Keymaster, { KeymasterClient, WalletJsonMemory } from '@mdip/keymaster';
+import Keymaster, {
+    KeymasterClient,
+    MnemonicHdWalletProvider,
+    SearchClient,
+    WalletJsonMemory,
+} from '@mdip/keymaster';
+import type { WalletProviderStore } from '@mdip/keymaster';
 import { GatekeeperClient } from '@mdip/gatekeeper';
 import CipherNode from '@mdip/cipher';
 
@@ -27,6 +33,7 @@ async function main() {
         });
     } else {
         const GATEKEEPER_SERVICE_URL = process.env.GATEKEEPER_SERVICE_URL || 'http://localhost:4224';
+        const SEARCH_SERVER_SERVICE_URL = process.env.SEARCH_SERVER_SERVICE_URL || 'http://localhost:4002';
         const gatekeeperClient = new GatekeeperClient();
         await gatekeeperClient.connect({
             url: GATEKEEPER_SERVICE_URL,
@@ -35,14 +42,25 @@ async function main() {
             chatty: true
         });
 
-        const wallet = new WalletJsonMemory();
+        const searchClient = await SearchClient.create({
+            url: SEARCH_SERVER_SERVICE_URL,
+        });
+
+        const store = new WalletJsonMemory();
+        const providerStore = new WalletJsonMemory() as unknown as WalletProviderStore;
         const cipher = new CipherNode();
+        const walletProvider = new MnemonicHdWalletProvider({
+            store: providerStore,
+            cipher,
+            passphrase: process.env.KC_WALLET_PROVIDER_PASSPHRASE || "passphrase",
+        });
 
         keymaster = new Keymaster({
             gatekeeper: gatekeeperClient,
-            wallet,
+            store,
+            walletProvider,
             cipher,
-            passphrase: process.env.KC_ENCRYPTED_PASSPHRASE || "passphrase",
+            search: searchClient,
         });
     }
 

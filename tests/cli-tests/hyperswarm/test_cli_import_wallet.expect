@@ -5,7 +5,7 @@ set timeout 10
 
 spawn bash kc new-wallet
 expect {
-    -re {"version"\s*:\s*1} {
+    -re {"version"\s*:\s*2} {
         send_user "\n✅ Wallet Reset Complete!\n"
     }
     timeout {
@@ -44,11 +44,9 @@ proc validate_wallet_output {output} {
     # Define exact required keys
     set required_keys [list \
         "version" \
-        "mnemonicEnc" \
-        "salt" \
-        "iv" \
-        "data" \
-        "counter" \
+        "provider" \
+        "type" \
+        "walletFingerprint" \
         "ids" \
     ]
 

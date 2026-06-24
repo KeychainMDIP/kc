@@ -1,6 +1,5 @@
+// @ts-nocheck
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import type { ChangeEvent } from 'react';
-import type { SelectChangeEvent } from '@mui/material/Select';
 import {
     Alert,
     Autocomplete,
@@ -14,7 +13,7 @@ import {
     FormControl,
     FormControlLabel,
     FormLabel,
-    GridLegacy as Grid,
+    Grid,
     IconButton,
     InputAdornment,
     MenuItem,
@@ -36,7 +35,6 @@ import {
     Tooltip,
     Typography,
 } from '@mui/material';
-import type { AlertColor } from '@mui/material';
 import {
     AddCircleOutline,
     AccountBalanceWallet,
@@ -72,7 +70,7 @@ import {
     PermIdentity,
     PersonAdd,
     PictureAsPdf,
-    Poll as PollIcon,
+    Poll,
     Refresh,
     Reply,
     ReplyAll,
@@ -84,67 +82,12 @@ import {
 } from "@mui/icons-material";
 import axios from 'axios';
 import { Buffer } from 'buffer';
-import type {
-    Challenge,
-    DmailItem,
-    DmailMessage,
-    FileAsset,
-    Group,
-    GroupVaultLogin,
-    ImageAsset,
-    KeymasterInterface,
-    PollResults,
-} from '@mdip/keymaster/types';
-import type { MdipDocument } from '@mdip/gatekeeper/types';
 import './App.css';
 import PollResultsModal from "./PollResultsModal";
 import TextInputModal from "./TextInputModal";
 import WarningModal from "./WarningModal";
 
-type Manifest = Record<string, any>;
-
-type SelectedVault = {
-    members: string[];
-    vaultMembers: Record<string, any>;
-    items: string[];
-    vaultItems: Record<string, any>;
-};
-
-type NameMap = Record<string, string>;
-type DocMap = Record<string, MdipDocument>;
-type DmailSortBy = 'sender' | 'subject' | 'date';
-type SortOrder = 'asc' | 'desc';
-type LoginVaultPayload = {
-    login?: GroupVaultLogin;
-    dmail?: DmailMessage;
-};
-type VersionsNavigatorProps = {
-    version: number;
-    maxVersion: number;
-    selectVersion: (version: number) => void | Promise<void>;
-};
-type LoginDialogProps = {
-    open: boolean;
-    onClose: () => void;
-    onOK?: (service: string, username: string, password: string) => void | Promise<void>;
-    login?: GroupVaultLogin | null;
-    readOnly?: boolean;
-};
-type DmailDialogProps = {
-    open: boolean;
-    onClose: () => void;
-    onOK?: () => void | Promise<void>;
-    dmail?: DmailMessage | null;
-    readOnly?: boolean;
-};
-
-type KeymasterUIProps = {
-    keymaster: KeymasterInterface;
-    title: string;
-    challengeDID?: string | null;
-    onWalletUpload?: (wallet: unknown) => void | boolean | Promise<void | boolean>;
-};
-
+// TBD figure out how to import an enum from keymaster package
 const DmailTags = {
     DMAIL: 'dmail',
     INBOX: 'inbox',
@@ -153,181 +96,159 @@ const DmailTags = {
     ARCHIVED: 'archived',
     DELETED: 'deleted',
     UNREAD: 'unread',
-} as const;
+};
 
-function parseCommaList(value: string): string[] {
-    return value.split(',').map((item) => item.trim()).filter(Boolean);
-}
-
-function readBuffer(event: ProgressEvent<FileReader>): Buffer | null {
-    const result = event.target?.result;
-    return result instanceof ArrayBuffer ? Buffer.from(result) : null;
-}
-
-function bufferBlobPart(buffer: Buffer): BlobPart {
-    return new Uint8Array(buffer) as Uint8Array<ArrayBuffer>;
-}
-
-function getErrorMessage(error: unknown): string {
-    if (error && typeof error === 'object') {
-        const maybeError = error as { error?: unknown; message?: unknown };
-        if (typeof maybeError.error === 'string') {
-            return maybeError.error;
-        }
-        if (typeof maybeError.message === 'string') {
-            return maybeError.message;
-        }
-    }
-
-    return String(error);
-}
-
-function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: KeymasterUIProps) {
-    const [tab, setTab] = useState<string | null>(null);
-    const [currentId, setCurrentId] = useState<string>('');
-    const [saveId, setSaveId] = useState<string>('');
-    const [currentDID, setCurrentDID] = useState<string>('');
-    const [selectedId, setSelectedId] = useState<string>('');
-    const [docsString, setDocsString] = useState<string | null>(null);
-    const [docsVersion, setDocsVersion] = useState<number>(1);
-    const [docsVersionMax, setDocsVersionMax] = useState<number>(1);
-    const [idList, setIdList] = useState<string[]>([]);
-    const [challenge, setChallenge] = useState<string | null>(null);
-    const [challengeSchema, setChallengeSchema] = useState<string>('');
-    const [challengeAttester, setChallengeAttester] = useState<string>('');
-    const [callback, setCallback] = useState<string | null>(null);
-    const [widget, setWidget] = useState<boolean>(false);
-    const [response, setResponse] = useState<string | null>(null);
-    const [accessGranted, setAccessGranted] = useState<boolean>(false);
-    const [newName, setNewName] = useState<string>('');
-    const [registry, setRegistry] = useState<string>('');
-    const [nameList, setNameList] = useState<NameMap>({});
-    const [aliasName, setAliasName] = useState<string>('');
-    const [aliasDID, setAliasDID] = useState<string>('');
-    const [selectedName, setSelectedName] = useState<string>('');
-    const [aliasDocs, setAliasDocs] = useState<string>('');
-    const [aliasDocsVersion, setAliasDocsVersion] = useState<number>(1);
-    const [aliasDocsVersionMax, setAliasDocsVersionMax] = useState<number>(1);
-    const [registries, setRegistries] = useState<string[]>([]);
-    const [groupList, setGroupList] = useState<string[]>([]);
-    const [groupName, setGroupName] = useState<string>('');
-    const [selectedGroupName, setSelectedGroupName] = useState<string>('');
-    const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
-    const [selectedGroupOwned, setSelectedGroupOwned] = useState<boolean>(false);
-    const [groupMember, setGroupMember] = useState<string>('');
-    const [groupMemberDocs, setGroupMemberDocs] = useState<string>('');
-    const [schemaList, setSchemaList] = useState<string[]>([]);
-    const [schemaName, setSchemaName] = useState<string>('');
-    const [schemaString, setSchemaString] = useState<string>('');
-    const [selectedSchemaOwned, setSelectedSchemaOwned] = useState<boolean>(false);
-    const [selectedSchemaName, setSelectedSchemaName] = useState<string>('');
-    const [selectedSchema, setSelectedSchema] = useState<unknown | null>(null);
-    const [agentList, setAgentList] = useState<string[]>([]);
-    const [credentialTab, setCredentialTab] = useState<string>('');
-    const [credentialDID, setCredentialDID] = useState<string>('');
-    const [credentialSubject, setCredentialSubject] = useState<string>('');
-    const [credentialSchema, setCredentialSchema] = useState<string>('');
-    const [credentialString, setCredentialString] = useState<string>('');
-    const [credentialSent, setCredentialSent] = useState<boolean>(false);
-    const [heldList, setHeldList] = useState<string[]>([]);
-    const [heldDID, setHeldDID] = useState<string>('');
-    const [heldString, setHeldString] = useState<string>('');
-    const [selectedHeld, setSelectedHeld] = useState<string>('');
-    const [issuedList, setIssuedList] = useState<string[]>([]);
-    const [selectedIssued, setSelectedIssued] = useState<string>('');
-    const [issuedStringOriginal, setIssuedStringOriginal] = useState<string>('');
-    const [issuedString, setIssuedString] = useState<string>('');
-    const [issuedEdit, setIssuedEdit] = useState<boolean>(false);
-    const [mnemonicString, setMnemonicString] = useState<string>('');
-    const [walletString, setWalletString] = useState<string>('');
-    const [manifest, setManifest] = useState<Manifest | null>(null);
-    const [checkingWallet, setCheckingWallet] = useState<boolean>(false);
-    const [disableSendResponse, setDisableSendResponse] = useState<boolean>(true);
-    const [disableSendReceipt, setDisableSendReceipt] = useState<boolean>(true);
-    const [authDID, setAuthDID] = useState<string>('');
-    const [authString, setAuthString] = useState<string>('');
-    const [dmailTab, setDmailTab] = useState<string>('');
-    const [dmailList, setDmailList] = useState<Record<string, DmailItem>>({});
-    const [selectedDmailDID, setSelectedDmailDID] = useState<string>('');
-    const [selectedDmail, setSelectedDmail] = useState<DmailItem | null>(null);
-    const [dmailSubject, setDmailSubject] = useState<string>('');
-    const [dmailBody, setDmailBody] = useState<string>('');
-    const [dmailTo, setDmailTo] = useState<string>('');
-    const [dmailCc, setDmailCc] = useState<string>('');
-    const [dmailToList, setDmailToList] = useState<string[]>([]);
-    const [dmailCcList, setDmailCcList] = useState<string[]>([]);
-    const [dmailEphemeral, setDmailEphemeral] = useState<boolean>(false);
-    const [dmailValidUntil, setDmailValidUntil] = useState<string>('');
-    const [dmailReference, setDmailReference] = useState<string>('');
-    const [dmailDID, setDmailDID] = useState<string>('');
-    const [dmailAttachments, setDmailAttachments] = useState<Record<string, any>>({});
-    const [dmailSortBy, setDmailSortBy] = useState<DmailSortBy>('date');
-    const [dmailSortOrder, setDmailSortOrder] = useState<SortOrder>('desc');
-    const [dmailForwarding, setDmailForwarding] = useState<string>('');
-    const [dmailSearchQuery, setDmailSearchQuery] = useState<string>('');
-    const [dmailSearchResults, setDmailSearchResults] = useState<Record<string, DmailItem>>({});
-    const [assetsTab, setAssetsTab] = useState<string>('');
-    const [imageList, setImageList] = useState<string[]>([]);
-    const [selectedImageName, setSelectedImageName] = useState<string>('');
-    const [selectedImage, setSelectedImage] = useState<ImageAsset | null>(null);
-    const [selectedImageOwned, setSelectedImageOwned] = useState<boolean>(false);
-    const [selectedImageDocs, setSelectedImageDocs] = useState<MdipDocument | null>(null);
-    const [selectedImageURL, setSelectedImageURL] = useState<string>('');
-    const [imageVersion, setImageVersion] = useState<number>(1);
-    const [imageVersionMax, setImageVersionMax] = useState<number>(1);
-    const [documentList, setDocumentList] = useState<string[]>([]);
-    const [selectedDocumentName, setSelectedDocumentName] = useState<string>('');
-    const [selectedDocument, setSelectedDocument] = useState<FileAsset | null>(null);
-    const [selectedDocumentOwned, setSelectedDocumentOwned] = useState<boolean>(false);
-    const [selectedDocumentDocs, setSelectedDocumentDocs] = useState<MdipDocument | null>(null);
-    const [selectedDocumentURL, setSelectedDocumentURL] = useState<string>('');
-    const [documentVersion, setDocumentVersion] = useState<number>(1);
-    const [documentVersionMax, setDocumentVersionMax] = useState<number>(1);
-    const [vaultList, setVaultList] = useState<string[]>([]);
-    const [vaultName, setVaultName] = useState<string>('');
-    const [selectedVaultName, setSelectedVaultName] = useState<string>('');
-    const [selectedVault, setSelectedVault] = useState<SelectedVault | null>(null);
-    const [selectedVaultOwned, setSelectedVaultOwned] = useState<boolean>(false);
-    const [vaultMember, setVaultMember] = useState<string>('');
-    const [docList, setDocList] = useState<DocMap>({});
-    const [editLoginOpen, setEditLoginOpen] = useState<boolean>(false);
-    const [revealLoginOpen, setRevealLoginOpen] = useState<boolean>(false);
-    const [revealLogin, setRevealLogin] = useState<GroupVaultLogin | null>(null);
-    const [revealDmailOpen, setRevealDmailOpen] = useState<boolean>(false);
-    const [revealDmail, setRevealDmail] = useState<DmailMessage | null>(null);
-    const [pollName, setPollName] = useState<string>("");
-    const [description, setDescription] = useState<string>("");
-    const [optionsStr, setOptionsStr] = useState<string>("yes, no, abstain");
-    const [rosterDid, setRosterDid] = useState<string>("");
-    const [deadline, setDeadline] = useState<string>("");
-    const [createdPollDid, setCreatedPollDid] = useState<string>("");
-    const [selectedPollName, setSelectedPollName] = useState<string>("");
-    const [selectedPollDesc, setSelectedPollDesc] = useState<string>("");
-    const [pollOptions, setPollOptions] = useState<string[]>([]);
-    const [selectedOptionIdx, setSelectedOptionIdx] = useState<number>(0);
-    const [spoil, setSpoil] = useState<boolean>(false);
-    const [pollDeadline, setPollDeadline] = useState<Date | null>(null);
-    const [pollPublished, setPollPublished] = useState<boolean>(false);
-    const [pollController, setPollController] = useState<string>("");
-    const [lastBallotDid, setLastBallotDid] = useState<string>("");
-    const [hasVoted, setHasVoted] = useState<boolean>(false);
-    const [pollResults, setPollResults] = useState<PollResults | null>(null);
-    const [pollResultsOpen, setPollResultsOpen] = useState<boolean>(false);
-    const [activeTab, setActiveTab] = useState<string>("create");
-    const [ballotSent, setBallotSent] = useState<boolean>(false);
-    const [pollNoticeSent, setPollNoticeSent] = useState<boolean>(false);
-    const [renamePollOpen, setRenamePollOpen] = useState<boolean>(false);
-    const [renameOldPollName, setRenameOldPollName] = useState<string>("");
-    const [removePollOpen, setRemovePollOpen] = useState<boolean>(false);
-    const [removePollName, setRemovePollName] = useState<string>("");
-    const [pollList, setPollList] = useState<string[]>([]);
-    const [canVote, setCanVote] = useState<boolean>(false);
-    const [eligiblePolls, setEligiblePolls] = useState<Record<string, boolean>>({});
-    const [snackbar, setSnackbar] = useState<{
-        open: boolean;
-        message: string;
-        severity: AlertColor;
-    }>({
+function KeymasterUI({
+    keymaster,
+    title,
+    challengeDID,
+    onWalletUpload,
+    onShowMnemonic,
+    onCreateWallet,
+    onImportMnemonic,
+    onWalletDownload,
+}) {
+    const [tab, setTab] = useState(null);
+    const [currentId, setCurrentId] = useState('');
+    const [saveId, setSaveId] = useState('');
+    const [currentDID, setCurrentDID] = useState('');
+    const [selectedId, setSelectedId] = useState('');
+    const [docsString, setDocsString] = useState(null);
+    const [docsVersion, setDocsVersion] = useState(1);
+    const [docsVersionMax, setDocsVersionMax] = useState(1);
+    const [idList, setIdList] = useState(null);
+    const [challenge, setChallenge] = useState(null);
+    const [challengeSchema, setChallengeSchema] = useState('');
+    const [challengeAttester, setChallengeAttester] = useState('');
+    const [callback, setCallback] = useState(null);
+    const [widget, setWidget] = useState(false);
+    const [response, setResponse] = useState(null);
+    const [accessGranted, setAccessGranted] = useState(false);
+    const [newName, setNewName] = useState('');
+    const [registry, setRegistry] = useState('');
+    const [nameList, setNameList] = useState(null);
+    const [aliasName, setAliasName] = useState('');
+    const [aliasDID, setAliasDID] = useState('');
+    const [selectedName, setSelectedName] = useState('');
+    const [aliasDocs, setAliasDocs] = useState('');
+    const [aliasDocsVersion, setAliasDocsVersion] = useState(1);
+    const [aliasDocsVersionMax, setAliasDocsVersionMax] = useState(1);
+    const [registries, setRegistries] = useState(null);
+    const [groupList, setGroupList] = useState(null);
+    const [groupName, setGroupName] = useState('');
+    const [selectedGroupName, setSelectedGroupName] = useState('');
+    const [selectedGroup, setSelectedGroup] = useState('');
+    const [selectedGroupOwned, setSelectedGroupOwned] = useState(false);
+    const [groupMember, setGroupMember] = useState('');
+    const [groupMemberDocs, setGroupMemberDocs] = useState('');
+    const [schemaList, setSchemaList] = useState(null);
+    const [schemaName, setSchemaName] = useState('');
+    const [schemaString, setSchemaString] = useState('');
+    const [selectedSchemaOwned, setSelectedSchemaOwned] = useState(false);
+    const [selectedSchemaName, setSelectedSchemaName] = useState('');
+    const [selectedSchema, setSelectedSchema] = useState('');
+    const [agentList, setAgentList] = useState(null);
+    const [credentialTab, setCredentialTab] = useState('');
+    const [credentialDID, setCredentialDID] = useState('');
+    const [credentialSubject, setCredentialSubject] = useState('');
+    const [credentialSchema, setCredentialSchema] = useState('');
+    const [credentialString, setCredentialString] = useState('');
+    const [credentialSent, setCredentialSent] = useState(false);
+    const [heldList, setHeldList] = useState(null);
+    const [heldDID, setHeldDID] = useState('');
+    const [heldString, setHeldString] = useState('');
+    const [selectedHeld, setSelectedHeld] = useState('');
+    const [issuedList, setIssuedList] = useState(null);
+    const [selectedIssued, setSelectedIssued] = useState('');
+    const [issuedStringOriginal, setIssuedStringOriginal] = useState('');
+    const [issuedString, setIssuedString] = useState('');
+    const [issuedEdit, setIssuedEdit] = useState(false);
+    const [mnemonicString, setMnemonicString] = useState('');
+    const [walletString, setWalletString] = useState('');
+    const [manifest, setManifest] = useState(null);
+    const [checkingWallet, setCheckingWallet] = useState(false);
+    const [disableSendResponse, setDisableSendResponse] = useState(true);
+    const [disableSendReceipt, setDisableSendReceipt] = useState(true);
+    const [authDID, setAuthDID] = useState('');
+    const [authString, setAuthString] = useState('');
+    const [dmailTab, setDmailTab] = useState('');
+    const [dmailList, setDmailList] = useState([]);
+    const [selectedDmailDID, setSelectedDmailDID] = useState('');
+    const [selectedDmail, setSelectedDmail] = useState(null);
+    const [dmailSubject, setDmailSubject] = useState('');
+    const [dmailBody, setDmailBody] = useState('');
+    const [dmailTo, setDmailTo] = useState('');
+    const [dmailCc, setDmailCc] = useState('');
+    const [dmailToList, setDmailToList] = useState([]);
+    const [dmailCcList, setDmailCcList] = useState([]);
+    const [dmailEphemeral, setDmailEphemeral] = useState(false);
+    const [dmailValidUntil, setDmailValidUntil] = useState('');
+    const [dmailReference, setDmailReference] = useState('');
+    const [dmailDID, setDmailDID] = useState('');
+    const [dmailAttachments, setDmailAttachments] = useState({});
+    const [dmailSortBy, setDmailSortBy] = useState('date');
+    const [dmailSortOrder, setDmailSortOrder] = useState('desc');
+    const [dmailForwarding, setDmailForwarding] = useState('');
+    const [dmailSearchQuery, setDmailSearchQuery] = useState('');
+    const [dmailSearchResults, setDmailSearchResults] = useState({});
+    const [assetsTab, setAssetsTab] = useState('');
+    const [imageList, setImageList] = useState(null);
+    const [selectedImageName, setSelectedImageName] = useState('');
+    const [selectedImage, setSelectedImage] = useState('');
+    const [selectedImageOwned, setSelectedImageOwned] = useState(false);
+    const [selectedImageDocs, setSelectedImageDocs] = useState('');
+    const [selectedImageURL, setSelectedImageURL] = useState('');
+    const [imageVersion, setImageVersion] = useState(1);
+    const [imageVersionMax, setImageVersionMax] = useState(1);
+    const [documentList, setDocumentList] = useState(null);
+    const [selectedDocumentName, setSelectedDocumentName] = useState('');
+    const [selectedDocument, setSelectedDocument] = useState('');
+    const [selectedDocumentOwned, setSelectedDocumentOwned] = useState(false);
+    const [selectedDocumentDocs, setSelectedDocumentDocs] = useState('');
+    const [selectedDocumentURL, setSelectedDocumentURL] = useState('');
+    const [documentVersion, setDocumentVersion] = useState(1);
+    const [documentVersionMax, setDocumentVersionMax] = useState(1);
+    const [vaultList, setVaultList] = useState(null);
+    const [vaultName, setVaultName] = useState('');
+    const [selectedVaultName, setSelectedVaultName] = useState('');
+    const [selectedVault, setSelectedVault] = useState('');
+    const [selectedVaultOwned, setSelectedVaultOwned] = useState(false);
+    const [vaultMember, setVaultMember] = useState('');
+    const [docList, setDocList] = useState({});
+    const [editLoginOpen, setEditLoginOpen] = useState(false);
+    const [revealLoginOpen, setRevealLoginOpen] = useState(false);
+    const [revealLogin, setRevealLogin] = useState(null);
+    const [revealDmailOpen, setRevealDmailOpen] = useState(false);
+    const [revealDmail, setRevealDmail] = useState(null);
+    const [pollName, setPollName] = useState("");
+    const [description, setDescription] = useState("");
+    const [optionsStr, setOptionsStr] = useState("yes, no, abstain");
+    const [rosterDid, setRosterDid] = useState("");
+    const [deadline, setDeadline] = useState("");
+    const [createdPollDid, setCreatedPollDid] = useState("");
+    const [selectedPollName, setSelectedPollName] = useState("");
+    const [selectedPollDesc, setSelectedPollDesc] = useState("");
+    const [pollOptions, setPollOptions] = useState([]);
+    const [selectedOptionIdx, setSelectedOptionIdx] = useState(0);
+    const [spoil, setSpoil] = useState(false);
+    const [pollDeadline, setPollDeadline] = useState(null);
+    const [pollPublished, setPollPublished] = useState(false);
+    const [pollController, setPollController] = useState("");
+    const [lastBallotDid, setLastBallotDid] = useState("");
+    const [hasVoted, setHasVoted] = useState(false);
+    const [pollResults, setPollResults] = useState(null);
+    const [pollResultsOpen, setPollResultsOpen] = useState(false);
+    const [activeTab, setActiveTab] = useState("create");
+    const [ballotSent, setBallotSent] = useState(false);
+    const [pollNoticeSent, setPollNoticeSent] = useState(false);
+    const [renamePollOpen, setRenamePollOpen] = useState(false);
+    const [renameOldPollName, setRenameOldPollName] = useState("");
+    const [removePollOpen, setRemovePollOpen] = useState(false);
+    const [removePollName, setRemovePollName] = useState("");
+    const [pollList, setPollList] = useState([]);
+    const [canVote, setCanVote] = useState(false);
+    const [eligiblePolls, setEligiblePolls] = useState({});
+    const [snackbar, setSnackbar] = useState({
         open: false,
         message: "",
         severity: "warning",
@@ -346,7 +267,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         // eslint-disable-next-line
     }, []);
 
-    function showAlert(warning: string) {
+    function showAlert(warning) {
         setSnackbar({
             open: true,
             message: warning,
@@ -354,8 +275,8 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         });
     }
 
-    function showError(error: unknown) {
-        const errorMessage = getErrorMessage(error);
+    function showError(error) {
+        const errorMessage = error.error || error.message || String(error);
         setSnackbar({
             open: true,
             message: errorMessage,
@@ -363,7 +284,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         });
     }
 
-    function showSuccess(message: string) {
+    function showSuccess(message) {
         setSnackbar({
             open: true,
             message: message,
@@ -386,23 +307,20 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         try {
             const currentId = await keymaster.getCurrentId();
             const registries = await keymaster.listRegistries();
+            const idList = await keymaster.listIds();
             setRegistries(registries);
+            setIdList(idList);
 
             if (currentId) {
                 setCurrentId(currentId);
                 setSelectedId(currentId);
 
-                const idList = await keymaster.listIds();
-                setIdList(idList);
-
                 const docs = await keymaster.resolveDID(currentId);
-                const data = (docs.didDocumentData ?? {}) as any;
-                const metadata = (docs.didDocumentMetadata ?? {}) as any;
-                setCurrentDID(docs.didDocument?.id ?? '');
-                setManifest(data.manifest ?? null);
+                setCurrentDID(docs.didDocument.id);
+                setManifest(docs.didDocumentData.manifest);
                 setDocsString(JSON.stringify(docs, null, 4));
 
-                const versions = parseInt(metadata.version ?? "1", 10);
+                const versions = parseInt(docs.didDocumentMetadata.version ?? "1", 10);
                 setDocsVersion(versions);
                 setDocsVersionMax(versions);
 
@@ -420,6 +338,14 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
                 setCurrentId('');
                 setSelectedId('');
                 setCurrentDID('');
+                setManifest(null);
+                setDocsString(null);
+                setDocsVersion(1);
+                setDocsVersionMax(1);
+                setNameList(null);
+                setHeldList(null);
+                setIssuedList(null);
+                setDmailList([]);
                 setTab('create');
             }
 
@@ -447,7 +373,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function selectId(id: string) {
+    async function selectId(id) {
         try {
             setSelectedId(id);
             await keymaster.setCurrentId(id);
@@ -457,7 +383,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function selectDocsVersion(version: number) {
+    async function selectDocsVersion(version) {
         try {
             setDocsVersion(version);
             const docs = await keymaster.resolveDID(currentId, { versionSequence: version });
@@ -490,12 +416,10 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
     async function resolveId() {
         try {
             const docs = await keymaster.resolveDID(selectedId);
-            const data = (docs.didDocumentData ?? {}) as any;
-            const metadata = (docs.didDocumentMetadata ?? {}) as any;
-            setManifest(data.manifest ?? null);
+            setManifest(docs.didDocumentData.manifest);
             setDocsString(JSON.stringify(docs, null, 4));
 
-            const versions = parseInt(metadata.version ?? "1", 10);
+            const versions = parseInt(docs.didDocumentMetadata.version ?? "1", 10);
             setDocsVersion(versions);
             setDocsVersionMax(versions);
         } catch (error) {
@@ -571,10 +495,10 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
 
     async function newChallenge() {
         try {
-            const challengeData: Challenge = {};
+            const challengeData = {};
 
             if (challengeSchema) {
-                const credential: NonNullable<Challenge['credentials']>[number] = {
+                const credential = {
                     schema: await resolveInputDID(challengeSchema),
                 };
 
@@ -593,7 +517,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function resolveChallenge(did: string) {
+    async function resolveChallenge(did) {
         try {
             const asset = await keymaster.resolveAsset(did);
             setAuthDID(did);
@@ -605,16 +529,12 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
 
     async function createResponse() {
         try {
-            if (!challenge) {
-                return;
-            }
-
             await clearResponse();
             const response = await keymaster.createResponse(challenge, { retries: 10 });
             setResponse(response);
 
-            const asset = await keymaster.resolveAsset(challenge) as any;
-            const callback = asset?.challenge?.callback ?? null;
+            const asset = await keymaster.resolveAsset(challenge);
+            const callback = asset.challenge.callback;
 
             setCallback(callback);
 
@@ -631,7 +551,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         setChallenge('');
     }
 
-    async function resolveInputDID(id: string) {
+    async function resolveInputDID(id) {
         const input = id.trim();
 
         if (input.startsWith('did:')) {
@@ -648,7 +568,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         return did;
     }
 
-    async function decryptResponse(did: string) {
+    async function decryptResponse(did) {
         try {
             const decrypted = await keymaster.decryptJSON(did);
             setAuthDID(did);
@@ -660,10 +580,6 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
 
     async function verifyResponse() {
         try {
-            if (!response) {
-                return;
-            }
-
             const verify = await keymaster.verifyResponse(response);
 
             if (verify.match) {
@@ -689,10 +605,6 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
 
     async function sendResponse() {
         try {
-            if (!callback || !response) {
-                return;
-            }
-
             setDisableSendResponse(true);
             axios.post(callback, { response });
         } catch (error) {
@@ -700,7 +612,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    function updateResponse(did: string) {
+    function updateResponse(did) {
         setResponse(did.trim());
         setAccessGranted(false);
         setDisableSendReceipt(true);
@@ -708,10 +620,6 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
 
     async function sendReceipt() {
         try {
-            if (!response) {
-                return;
-            }
-
             setDisableSendReceipt(true);
             const receiptDIDs = await keymaster.publishChallengeReceipts(response);
             setAuthDID(response);
@@ -740,23 +648,23 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         setAliasDID('');
         setAliasDocs('');
 
-        const docList: DocMap = {};
+        const docList = {};
         const agentList = await keymaster.listIds();
-        const groupList: string[] = [];
-        const schemaList: string[] = [];
-        const imageList: string[] = [];
-        const documentList: string[] = [];
-        const vaultList: string[] = [];
-        const pollList: string[] = [];
+        const groupList = [];
+        const schemaList = [];
+        const imageList = [];
+        const documentList = [];
+        const vaultList = [];
+        const pollList = [];
 
         for (const name of names) {
             try {
                 const doc = await keymaster.resolveDID(name);
-                const data = (doc.didDocumentData ?? {}) as any;
+                const data = doc.didDocumentData;
 
                 docList[name] = doc;
 
-                if (doc.mdip?.type === 'agent') {
+                if (doc.mdip.type === 'agent') {
                     agentList.push(name);
                     continue;
                 }
@@ -850,15 +758,15 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         setPollList(pollList);
     }
 
-    function getDID(name: string) {
+    function getDID(name) {
         if (name in docList) {
-            return docList[name].didDocument?.id ?? '';
+            return docList[name].didDocument.id;
         }
 
         return '';
     }
 
-    function getNameIcon(name: string) {
+    function getNameIcon(name) {
         const iconStyle = { verticalAlign: 'middle', marginRight: 4 };
 
         if (agentList && agentList.includes(name)) {
@@ -903,7 +811,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
             await keymaster.cloneAsset(aliasDID, { name: aliasName, registry });
             refreshNames();
         } catch (error) {
-            const errorMessage = getErrorMessage(error);
+            const errorMessage = error.error || error.toString();
 
             if (errorMessage.includes('Invalid parameter: id')) {
                 showError('Only assets can be cloned');
@@ -914,13 +822,13 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function resolveName(name: string) {
+    async function resolveName(name) {
         try {
             const trimmedName = name.trim();
             const docs = await keymaster.resolveDID(trimmedName);
             setSelectedName(trimmedName);
             setAliasDocs(JSON.stringify(docs, null, 4));
-            const versions = parseInt(((docs.didDocumentMetadata ?? {}) as any).version ?? "1", 10);
+            const versions = parseInt(docs.didDocumentMetadata.version ?? "1", 10);
             setAliasDocsVersion(versions);
             setAliasDocsVersionMax(versions);
         } catch (error) {
@@ -928,7 +836,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function removeName(name: string) {
+    async function removeName(name) {
         try {
             if (window.confirm(`Are you sure you want to remove ${name}?`)) {
                 await keymaster.removeName(name);
@@ -939,7 +847,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function changeName(oldName: string, did: string) {
+    async function changeName(oldName, did) {
         try {
             const newName = window.prompt("Rename DID:");
 
@@ -953,7 +861,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function revokeName(name: string) {
+    async function revokeName(name) {
         try {
             if (window.confirm(`Are you sure you want to revoke ${name}? This operation cannot be undone.`)) {
                 await keymaster.revokeDID(name);
@@ -965,16 +873,16 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function transferName(name: string) {
+    async function transferName(name) {
         try {
             const docs = await keymaster.resolveDID(name);
 
-            if (docs.mdip?.type === 'agent') {
+            if (docs.mdip.type === 'agent') {
                 showAlert("Only asset DIDs may be transferred");
                 return;
             }
 
-            if (!((docs.didDocumentMetadata ?? {}) as any).isOwned) {
+            if (!docs.didDocumentMetadata.isOwned) {
                 showAlert("Only assets you own may be transferred");
                 return;
             }
@@ -991,7 +899,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function selectAliasDocsVersion(version: number) {
+    async function selectAliasDocsVersion(version) {
         try {
             setAliasDocsVersion(version);
             const docs = await keymaster.resolveDID(selectedName, { versionSequence: version });
@@ -1021,15 +929,13 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function refreshGroup(groupName: string) {
+    async function refreshGroup(groupName) {
         try {
             const docs = await keymaster.resolveDID(groupName);
 
             setSelectedGroupName(groupName);
-            const data = (docs.didDocumentData ?? {}) as any;
-            const metadata = (docs.didDocumentMetadata ?? {}) as any;
-            setSelectedGroup(data.group ?? null);
-            setSelectedGroupOwned(metadata.isOwned ?? false);
+            setSelectedGroup(docs.didDocumentData.group);
+            setSelectedGroupOwned(docs.didDocumentMetadata.isOwned);
             setGroupMember('');
             setGroupMemberDocs('');
         } catch (error) {
@@ -1037,7 +943,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function resolveGroupMember(did: string) {
+    async function resolveGroupMember(did) {
         try {
             const docs = await keymaster.resolveDID(did);
             setGroupMemberDocs(JSON.stringify(docs, null, 4));
@@ -1046,7 +952,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function addGroupMember(did: string) {
+    async function addGroupMember(did) {
         try {
             await keymaster.addGroupMember(selectedGroupName, did);
             refreshGroup(selectedGroupName);
@@ -1055,7 +961,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function removeGroupMember(did: string) {
+    async function removeGroupMember(did) {
         try {
             if (window.confirm(`Remove member from ${selectedGroupName}?`)) {
                 await keymaster.removeGroupMember(selectedGroupName, did);
@@ -1086,13 +992,13 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function selectSchema(schemaName: string) {
+    async function selectSchema(schemaName) {
         try {
             const docs = await keymaster.resolveDID(schemaName);
-            const schema = ((docs.didDocumentData ?? {}) as any).schema;
+            const schema = docs.didDocumentData.schema;
 
             setSelectedSchemaName(schemaName);
-            setSelectedSchemaOwned(((docs.didDocumentMetadata ?? {}) as any).isOwned ?? false);
+            setSelectedSchemaOwned(docs.didDocumentMetadata.isOwned);
             setSelectedSchema(schema);
             setSchemaString(JSON.stringify(schema, null, 4));
         } catch (error) {
@@ -1176,7 +1082,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function removeCredential(did: string) {
+    async function removeCredential(did) {
         try {
             if (window.confirm(`Are you sure you want to remove ${did}?`)) {
                 await keymaster.removeCredential(did);
@@ -1187,7 +1093,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function resolveCredential(did: string) {
+    async function resolveCredential(did) {
         try {
             const doc = await keymaster.resolveDID(did);
             setSelectedHeld(did);
@@ -1197,7 +1103,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function decryptCredential(did: string) {
+    async function decryptCredential(did) {
         try {
             const doc = await keymaster.getCredential(did);
             setSelectedHeld(did);
@@ -1207,7 +1113,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function publishCredential(did: string) {
+    async function publishCredential(did) {
         try {
             await keymaster.publishCredential(did, { reveal: false });
             resolveId();
@@ -1217,7 +1123,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function revealCredential(did: string) {
+    async function revealCredential(did) {
         try {
             await keymaster.publishCredential(did, { reveal: true });
             resolveId();
@@ -1227,7 +1133,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function unpublishCredential(did: string) {
+    async function unpublishCredential(did) {
         try {
             await keymaster.unpublishCredential(did);
             resolveId();
@@ -1237,7 +1143,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    function credentialPublished(did: string) {
+    function credentialPublished(did) {
         if (!manifest) {
             return false;
         }
@@ -1249,7 +1155,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         return manifest[did].credential === null;
     }
 
-    function credentialRevealed(did: string) {
+    function credentialRevealed(did) {
         if (!manifest) {
             return false;
         }
@@ -1261,7 +1167,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         return manifest[did].credential !== null;
     }
 
-    function credentialUnpublished(did: string) {
+    function credentialUnpublished(did) {
         if (!manifest) {
             return true;
         }
@@ -1269,7 +1175,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         return !manifest[did];
     }
 
-    async function resolveIssued(did: string) {
+    async function resolveIssued(did) {
         try {
             const doc = await keymaster.resolveDID(did);
             setSelectedIssued(did);
@@ -1279,7 +1185,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function decryptIssued(did: string) {
+    async function decryptIssued(did) {
         try {
             const doc = await keymaster.getCredential(did);
             setSelectedIssued(did);
@@ -1292,7 +1198,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function updateIssued(did: string) {
+    async function updateIssued(did) {
         try {
             const credential = JSON.parse(issuedString);
             await keymaster.updateCredential(did, credential);
@@ -1302,7 +1208,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function revokeIssued(did: string) {
+    async function revokeIssued(did) {
         try {
             if (window.confirm(`Revoke credential?`)) {
                 await keymaster.revokeCredential(did);
@@ -1316,7 +1222,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function sendIssued(did: string) {
+    async function sendIssued(did) {
         try {
             await keymaster.sendCredential(did);
             showSuccess("Credential sent");
@@ -1382,7 +1288,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         setDmailTo(''); // Clear the input field after adding
     }
 
-    async function removeDmailTo(recipient: string) {
+    async function removeDmailTo(recipient) {
         setDmailToList(prevToList => {
             // Remove recipient from the list
             return prevToList.filter(item => item !== recipient);
@@ -1406,7 +1312,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         setDmailCc(''); // Clear the input field after adding
     }
 
-    async function removeDmailCc(recipient: string) {
+    async function removeDmailCc(recipient) {
         setDmailCcList(prevToList => {
             // Remove recipient from the list
             return prevToList.filter(item => item !== recipient);
@@ -1477,9 +1383,6 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
                 const attachments = await keymaster.listDmailAttachments(dmailForwarding) || {};
                 for (const name of Object.keys(attachments)) {
                     const buffer = await keymaster.getDmailAttachment(dmailForwarding, name);
-                    if (!buffer) {
-                        continue;
-                    }
                     await keymaster.addDmailAttachment(did, name, buffer);
                 }
 
@@ -1516,10 +1419,10 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function uploadDmailAttachment(event: ChangeEvent<HTMLInputElement>) {
+    async function uploadDmailAttachment(event) {
         try {
             const fileInput = event.target; // Reference to the input element
-            const file = fileInput.files?.[0];
+            const file = fileInput.files[0];
 
             if (!file) return;
 
@@ -1529,13 +1432,10 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
             // Read the file as a binary buffer
             const reader = new FileReader();
 
-            reader.onload = async (e: ProgressEvent<FileReader>) => {
+            reader.onload = async (e) => {
                 try {
-                    const buffer = readBuffer(e);
-                    if (!buffer) {
-                        showError(`Error reading file: ${file.name}`);
-                        return;
-                    }
+                    const arrayBuffer = e.target.result;
+                    const buffer = Buffer.from(arrayBuffer);
 
                     const ok = await keymaster.addDmailAttachment(dmailDID, file.name, buffer);
 
@@ -1561,7 +1461,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function removeDmailAttachment(name: string) {
+    async function removeDmailAttachment(name) {
         try {
             await keymaster.removeDmailAttachment(dmailDID, name);
             refreshDmailAttachments();
@@ -1570,7 +1470,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function downloadDmailAttachment(name: string) {
+    async function downloadDmailAttachment(name) {
         try {
             const buffer = await keymaster.getDmailAttachment(selectedDmailDID, name);
 
@@ -1580,7 +1480,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
             }
 
             // Create a Blob from the buffer
-            const blob = new Blob([bufferBlobPart(buffer)]);
+            const blob = new Blob([buffer]);
             // Create a temporary link to trigger the download
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
@@ -1737,7 +1637,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         setDmailTab('send');
     }
 
-    function isDmailUnread(item: DmailItem) {
+    function isDmailUnread(item) {
         return item.tags && item.tags.includes(DmailTags.UNREAD);
     }
 
@@ -1773,7 +1673,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
 
     function searchDmail() {
         const q = dmailSearchQuery.trim().toLowerCase();
-        const res: Record<string, DmailItem> = {};
+        const res = {};
 
         if (q) {
             Object.entries(dmailList).forEach(([did, item]) => {
@@ -1798,7 +1698,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         setDmailSearchResults({});
     }
 
-    async function addDmailContact(senderDID: string) {
+    async function addDmailContact(senderDID) {
         setAliasDID(senderDID);
         resolveName(senderDID);
         setTab('names');
@@ -1806,7 +1706,9 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
 
     async function showMnemonic() {
         try {
-            const response = await keymaster.decryptMnemonic();
+            const response = onShowMnemonic
+                ? await onShowMnemonic()
+                : await keymaster.decryptMnemonic();
             setMnemonicString(response);
         } catch (error) {
             showError(error);
@@ -1820,7 +1722,13 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
     async function newWallet() {
         try {
             if (window.confirm(`Overwrite wallet with new one?`)) {
-                await keymaster.newWallet(undefined, true);
+                if (onCreateWallet) {
+                    await onCreateWallet();
+                    return;
+                }
+                else {
+                    await keymaster.newWallet(undefined, true);
+                }
                 refreshAll();
             }
         } catch (error) {
@@ -1830,11 +1738,18 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
 
     async function importWallet() {
         try {
-            const mnenomic = window.prompt("Overwrite wallet with mnemonic:");
+            const mnemonic = window.prompt("Overwrite wallet with mnemonic:");
 
-            if (mnenomic) {
-                await keymaster.newWallet(mnenomic, true);
-                await keymaster.recoverWallet();
+            if (mnemonic) {
+                if (onImportMnemonic) {
+                    await onImportMnemonic(mnemonic);
+                    refreshAll();
+                    return;
+                }
+                else {
+                    await keymaster.newWallet(mnemonic, true);
+                    await keymaster.recoverWallet();
+                }
                 refreshAll();
             }
         } catch (error) {
@@ -1844,8 +1759,8 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
 
     async function backupWallet() {
         try {
-            await keymaster.backupWallet();
-            showSuccess('Wallet backup successful')
+            const did = await keymaster.backupWallet();
+            showSuccess(`Wallet backup DID:\n${did}`);
 
         } catch (error) {
             showError(error);
@@ -1902,42 +1817,40 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
             fileInput.type = 'file';
             fileInput.accept = 'application/json';
 
-            fileInput.onchange = async (event: Event) => {
-                const input = event.target as HTMLInputElement | null;
-                const file = input?.files?.[0];
-                if (!file) {
-                    return;
-                }
-
-                const text = await file.text();
-                let wallet;
+            fileInput.onchange = async (event) => {
                 try {
-                    wallet = JSON.parse(text);
-                } catch {
-                    showError("Invalid JSON file.");
-                }
+                    const file = event.target.files[0];
+                    if (!file) {
+                        return;
+                    }
 
-                if (!window.confirm('Overwrite wallet with upload?')) {
-                    return;
-                }
-
-                if (onWalletUpload) {
-                    await onWalletUpload(wallet);
-                    await refreshAll();
-                    return;
-                }
-
-                const backupWallet = await keymaster.exportEncryptedWallet();
-
-                try {
-                    await keymaster.saveWallet(wallet, true);
-                    await keymaster.loadWallet();
-                    refreshAll();
-                } catch (e) {
+                    const text = await file.text();
+                    let wallet;
                     try {
-                        await keymaster.saveWallet(backupWallet, true);
-                    } catch { }
-                    window.alert('Upload rejected: the server could not decrypt the wallet with its configured passphrase.');
+                        wallet = JSON.parse(text);
+                    } catch {
+                        showError("Invalid JSON file.");
+                        return;
+                    }
+
+                    if (!window.confirm('Overwrite wallet with upload?')) {
+                        return;
+                    }
+
+                    if (onWalletUpload) {
+                        await onWalletUpload(wallet);
+                        await refreshAll();
+                        return;
+                    }
+
+                    if (wallet?.type === 'mdip-wallet-bundle' && wallet?.version === 1) {
+                        await keymaster.importWalletBundle(wallet);
+                    } else {
+                        await keymaster.saveWallet(wallet, true);
+                    }
+                    await refreshAll();
+                } catch (error) {
+                    showError(error);
                 }
             };
 
@@ -1950,14 +1863,19 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
 
     async function downloadWallet() {
         try {
-            const wallet = await keymaster.exportEncryptedWallet();
-            const walletJSON = JSON.stringify(wallet, null, 4);
+            if (onWalletDownload) {
+                await onWalletDownload();
+                return;
+            }
+
+            const bundle = await keymaster.exportWalletBundle();
+            const walletJSON = JSON.stringify(bundle, null, 4);
             const blob = new Blob([walletJSON], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
 
             const link = document.createElement('a');
             link.href = url;
-            link.download = 'mdip-wallet.json';
+            link.download = 'mdip-wallet-bundle.json';
             link.click();
 
             // The URL.revokeObjectURL() method releases an existing object URL which was previously created by calling URL.createObjectURL().
@@ -1967,10 +1885,10 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function uploadImage(event: ChangeEvent<HTMLInputElement>) {
+    async function uploadImage(event) {
         try {
             const fileInput = event.target; // Reference to the input element
-            const file = fileInput.files?.[0];
+            const file = fileInput.files[0];
 
             if (!file) return;
 
@@ -1980,13 +1898,10 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
             // Read the file as a binary buffer
             const reader = new FileReader();
 
-            reader.onload = async (e: ProgressEvent<FileReader>) => {
+            reader.onload = async (e) => {
                 try {
-                    const buffer = readBuffer(e);
-                    if (!buffer) {
-                        showError(`Error reading file: ${file.name}`);
-                        return;
-                    }
+                    const arrayBuffer = e.target.result;
+                    const buffer = Buffer.from(arrayBuffer);
                     const did = await keymaster.createImage(buffer, { registry });
 
                     const nameList = await keymaster.listNames();
@@ -2019,10 +1934,10 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function updateImage(event: ChangeEvent<HTMLInputElement>) {
+    async function updateImage(event) {
         try {
             const fileInput = event.target; // Reference to the input element
-            const file = fileInput.files?.[0];
+            const file = fileInput.files[0];
 
             if (!file) return;
 
@@ -2032,13 +1947,10 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
             // Read the file as a binary buffer
             const reader = new FileReader();
 
-            reader.onload = async (e: ProgressEvent<FileReader>) => {
+            reader.onload = async (e) => {
                 try {
-                    const buffer = readBuffer(e);
-                    if (!buffer) {
-                        showError(`Error reading file: ${file.name}`);
-                        return;
-                    }
+                    const arrayBuffer = e.target.result;
+                    const buffer = Buffer.from(arrayBuffer);
 
                     await keymaster.updateImage(selectedImageName, buffer);
 
@@ -2059,24 +1971,18 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function selectImage(imageName: string) {
+    async function selectImage(imageName) {
         try {
             setSelectedImageURL('');
 
             const docs = await keymaster.resolveDID(imageName);
-            const metadata = (docs.didDocumentMetadata ?? {}) as any;
-            const data = (docs.didDocumentData ?? {}) as any;
-            const versions = parseInt(metadata.version ?? "1", 10);
-            const image = data.image as ImageAsset | undefined;
-            if (!image) {
-                showError(`Image ${imageName} not found`);
-                return;
-            }
+            const versions = parseInt(docs.didDocumentMetadata.version ?? "1", 10);
+            const image = docs.didDocumentData.image;
 
             setSelectedImageName(imageName);
             setSelectedImageDocs(docs);
             setSelectedImage(image);
-            setSelectedImageOwned(metadata.isOwned ?? false);
+            setSelectedImageOwned(docs.didDocumentMetadata.isOwned);
             setSelectedImageURL(`/api/v1/cas/data/${image.cid}`)
             setImageVersion(versions);
             setImageVersionMax(versions);
@@ -2085,16 +1991,12 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function selectImageVersion(version: number) {
+    async function selectImageVersion(version) {
         try {
             setSelectedImageURL('');
 
             const docs = await keymaster.resolveDID(selectedImageName, { versionSequence: version });
-            const image = ((docs.didDocumentData ?? {}) as any).image as ImageAsset | undefined;
-            if (!image) {
-                showError(`Image ${selectedImageName} version ${version} not found`);
-                return;
-            }
+            const image = docs.didDocumentData.image;
 
             setSelectedImageDocs(docs);
             setSelectedImage(image);
@@ -2105,10 +2007,10 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function uploadDocument(event: ChangeEvent<HTMLInputElement>) {
+    async function uploadDocument(event) {
         try {
             const fileInput = event.target; // Reference to the input element
-            const file = fileInput.files?.[0];
+            const file = fileInput.files[0];
 
             if (!file) return;
 
@@ -2118,13 +2020,10 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
             // Read the file as a binary buffer
             const reader = new FileReader();
 
-            reader.onload = async (e: ProgressEvent<FileReader>) => {
+            reader.onload = async (e) => {
                 try {
-                    const buffer = readBuffer(e);
-                    if (!buffer) {
-                        showError(`Error reading file: ${file.name}`);
-                        return;
-                    }
+                    const arrayBuffer = e.target.result;
+                    const buffer = Buffer.from(arrayBuffer);
                     // Names have a 32-character limit. Truncating to 26 characters and appending a number if needed.
                     const nameList = await keymaster.listNames();
                     let name = file.name.slice(0, 26);
@@ -2153,10 +2052,10 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function updateDocument(event: ChangeEvent<HTMLInputElement>) {
+    async function updateDocument(event) {
         try {
             const fileInput = event.target; // Reference to the input element
-            const file = fileInput.files?.[0];
+            const file = fileInput.files[0];
 
             if (!file) return;
 
@@ -2166,13 +2065,10 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
             // Read the file as a binary buffer
             const reader = new FileReader();
 
-            reader.onload = async (e: ProgressEvent<FileReader>) => {
+            reader.onload = async (e) => {
                 try {
-                    const buffer = readBuffer(e);
-                    if (!buffer) {
-                        showError(`Error reading file: ${file.name}`);
-                        return;
-                    }
+                    const arrayBuffer = e.target.result;
+                    const buffer = Buffer.from(arrayBuffer);
 
                     await keymaster.updateDocument(selectedDocumentName, buffer, { filename: file.name });
                     showSuccess(`Document updated successfully`);
@@ -2193,22 +2089,16 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function selectDocument(documentName: string) {
+    async function selectDocument(documentName) {
         try {
             const docs = await keymaster.resolveDID(documentName);
-            const metadata = (docs.didDocumentMetadata ?? {}) as any;
-            const data = (docs.didDocumentData ?? {}) as any;
-            const versions = parseInt(metadata.version ?? "1", 10);
-            const document = data.document as FileAsset | undefined;
-            if (!document) {
-                showError(`Document ${documentName} not found`);
-                return;
-            }
+            const versions = parseInt(docs.didDocumentMetadata.version ?? "1", 10);
+            const document = docs.didDocumentData.document;
 
             setSelectedDocumentName(documentName);
             setSelectedDocumentDocs(docs);
             setSelectedDocument(document);
-            setSelectedDocumentOwned(metadata.isOwned ?? false);
+            setSelectedDocumentOwned(docs.didDocumentMetadata.isOwned);
             setSelectedDocumentURL(`/api/v1/cas/data/${document.cid}`)
             setDocumentVersion(versions);
             setDocumentVersionMax(versions);
@@ -2217,14 +2107,10 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function selectDocumentVersion(version: number) {
+    async function selectDocumentVersion(version) {
         try {
             const docs = await keymaster.resolveDID(selectedDocumentName, { versionSequence: version });
-            const document = ((docs.didDocumentData ?? {}) as any).document as FileAsset | undefined;
-            if (!document) {
-                showError(`Document ${selectedDocumentName} version ${version} not found`);
-                return;
-            }
+            const document = docs.didDocumentData.document;
 
             setSelectedDocumentDocs(docs);
             setSelectedDocument(document);
@@ -2236,10 +2122,6 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
     }
 
     async function downloadDocument() {
-        if (!selectedDocument) {
-            return;
-        }
-
         const link = document.createElement('a');
         link.href = selectedDocumentURL;
         link.download = selectedDocument.filename;
@@ -2268,12 +2150,12 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function refreshVault(vaultName: string) {
+    async function refreshVault(vaultName) {
         try {
             const docs = await keymaster.resolveDID(vaultName);
 
             setSelectedVaultName(vaultName);
-            setSelectedVaultOwned(docs.didDocument?.controller === currentDID);
+            setSelectedVaultOwned(docs.didDocument.controller === currentDID);
             setVaultMember('');
 
             const vaultMembers = await keymaster.listGroupVaultMembers(vaultName);
@@ -2291,7 +2173,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function addVaultMember(did: string) {
+    async function addVaultMember(did) {
         try {
             await keymaster.addGroupVaultMember(selectedVaultName, did);
             refreshVault(selectedVaultName);
@@ -2300,7 +2182,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function removeVaultMember(did: string) {
+    async function removeVaultMember(did) {
         try {
             if (window.confirm(`Remove member from ${selectedVaultName}?`)) {
                 await keymaster.removeGroupVaultMember(selectedVaultName, did);
@@ -2311,10 +2193,10 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function uploadVaultItem(event: ChangeEvent<HTMLInputElement>) {
+    async function uploadVaultItem(event) {
         try {
             const fileInput = event.target; // Reference to the input element
-            const file = fileInput.files?.[0];
+            const file = fileInput.files[0];
 
             if (!file) return;
 
@@ -2324,13 +2206,10 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
             // Read the file as a binary buffer
             const reader = new FileReader();
 
-            reader.onload = async (e: ProgressEvent<FileReader>) => {
+            reader.onload = async (e) => {
                 try {
-                    const buffer = readBuffer(e);
-                    if (!buffer) {
-                        showError(`Error reading file: ${file.name}`);
-                        return;
-                    }
+                    const arrayBuffer = e.target.result;
+                    const buffer = Buffer.from(arrayBuffer);
 
                     const ok = await keymaster.addGroupVaultItem(selectedVaultName, file.name, buffer);
 
@@ -2356,7 +2235,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function addLoginVaultItem(service: string, username: string, password: string) {
+    async function addLoginVaultItem(service, username, password) {
         try {
             if (
                 !service || !service.trim() ||
@@ -2392,7 +2271,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    function isVaultItemFile(item: any) {
+    function isVaultItemFile(item) {
         if (item.type === 'application/json') {
             return false;
         }
@@ -2400,7 +2279,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         return true;
     }
 
-    async function downloadVaultItem(name: string) {
+    async function downloadVaultItem(name) {
         try {
             const buffer = await keymaster.getGroupVaultItem(selectedVaultName, name);
 
@@ -2410,7 +2289,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
             }
 
             // Create a Blob from the buffer
-            const blob = new Blob([bufferBlobPart(buffer)]);
+            const blob = new Blob([buffer]);
             // Create a temporary link to trigger the download
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
@@ -2424,7 +2303,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function revealVaultItem(name: string) {
+    async function revealVaultItem(name) {
         try {
             const buffer = await keymaster.getGroupVaultItem(selectedVaultName, name);
 
@@ -2433,7 +2312,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
                 return;
             }
 
-            const item = JSON.parse(buffer.toString('utf-8')) as LoginVaultPayload;
+            const item = JSON.parse(buffer.toString('utf-8'));
 
             if (item.login) {
                 setRevealLogin(item.login);
@@ -2453,7 +2332,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    async function removeVaultItem(name: string) {
+    async function removeVaultItem(name) {
         try {
             if (window.confirm(`Remove item from ${selectedVaultName}?`)) {
                 await keymaster.removeGroupVaultItem(selectedVaultName, name);
@@ -2464,7 +2343,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     }
 
-    function getVaultItemIcon(name: string, item?: any) {
+    function getVaultItemIcon(name, item) {
         const iconStyle = { verticalAlign: 'middle', marginRight: 4 };
 
         if (!item || !item.type) {
@@ -2505,7 +2384,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         setPollNoticeSent(false);
     };
 
-    const arraysEqual = (a: string[], b: string[]) => a.length === b.length && a.every((v, i) => v === b[i]);
+    const arraysEqual = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 
     const refreshInbox = useCallback(async () => {
         try {
@@ -2525,13 +2404,13 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
                 a.localeCompare(b)
             );
 
-            const extraNames: NameMap = {};
-            const polls: string[] = [];
+            const extraNames = {};
+            const polls = [];
 
             for (const name of names) {
                 try {
                     const doc = await keymaster.resolveDID(name);
-                    if (((doc.didDocumentData ?? {}) as any).poll) {
+                    if (doc?.didDocumentData?.poll) {
                         polls.push(name);
                     }
                 } catch { }
@@ -2654,7 +2533,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
     };
 
-    const handleSelectPoll = async (evt: SelectChangeEvent<string>) => {
+    const handleSelectPoll = async (evt) => {
         const name = evt.target.value;
         setSelectedPollName(name);
         setSelectedPollDesc("");
@@ -2824,7 +2703,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         }
 
         (async () => {
-            const map: Record<string, boolean> = {};
+            const map = {};
 
             for (const name of pollList) {
                 const did = nameList[name];
@@ -2849,7 +2728,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         setRenamePollOpen(true);
     };
 
-    const handleRenameSubmit = async (newName: string) => {
+    const handleRenameSubmit = async (newName) => {
         setRenamePollOpen(false);
         if (!newName || newName === selectedPollName) {
             return;
@@ -2887,7 +2766,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         );
     }
 
-    function VersionsNavigator({ version, maxVersion, selectVersion }: VersionsNavigatorProps) {
+    function VersionsNavigator({ version, maxVersion, selectVersion }) {
         const versions = Array.from({ length: maxVersion }, (_, i) => i + 1);
 
         return (
@@ -2907,7 +2786,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
                         style={{ width: '150px' }}
                         value={version}
                         fullWidth
-                        onChange={(event) => selectVersion(Number(event.target.value))}
+                        onChange={(event) => selectVersion(event.target.value)}
                     >
                         {versions.map((version, index) => (
                             <MenuItem value={version} key={index}>
@@ -2930,10 +2809,10 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         );
     }
 
-    function LoginDialog({ open, onClose, onOK, login = null, readOnly = false }: LoginDialogProps) {
-        const [service, setService] = useState<string>('');
-        const [username, setUsername] = useState<string>('');
-        const [password, setPassword] = useState<string>('');
+    function LoginDialog({ open, onClose, onOK, login, readOnly }) {
+        const [service, setService] = useState('');
+        const [username, setUsername] = useState('');
+        const [password, setPassword] = useState('');
 
         useEffect(() => {
             setService(login?.service || '');
@@ -2996,11 +2875,11 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         );
     }
 
-    function DmailDialog({ open, onClose, onOK, dmail = null, readOnly = false }: DmailDialogProps) {
-        const [toList, setToList] = useState<string[]>([]);
-        const [ccList, setCcList] = useState<string[]>([]);
-        const [subject, setSubject] = useState<string>('');
-        const [body, setBody] = useState<string>('');
+    function DmailDialog({ open, onClose, onOK, dmail, readOnly }) {
+        const [toList, setToList] = useState([]);
+        const [ccList, setCcList] = useState([]);
+        const [subject, setSubject] = useState('');
+        const [body, setBody] = useState('');
 
         useEffect(() => {
             setToList(dmail?.to || []);
@@ -3035,7 +2914,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
                         label="To"
                         fullWidth
                         value={toList.join(', ')}
-                        onChange={e => setToList(parseCommaList(e.target.value))}
+                        onChange={e => setToList(e.target.value)}
                         InputProps={{ readOnly }}
                     />
                     <TextField
@@ -3044,7 +2923,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
                         label="cc"
                         fullWidth
                         value={ccList.join(', ')}
-                        onChange={e => setCcList(parseCommaList(e.target.value))}
+                        onChange={e => setCcList(e.target.value)}
                         InputProps={{ readOnly }}
                     />
                     <TextField
@@ -3086,11 +2965,11 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
             return dmailSearchResults;
         }
 
-        let filtered: Record<string, DmailItem> = {};
+        let filtered = {};
 
         for (const [did, item] of Object.entries(dmailList)) {
-            const has = (tag: string) => item.tags.includes(tag);
-            const not = (tag: string) => !has(tag);
+            const has = (tag) => item.tags.includes(tag);
+            const not = (tag) => !has(tag);
 
             if (dmailTab === 'inbox' && has(DmailTags.INBOX) && not(DmailTags.DELETED) && not(DmailTags.ARCHIVED)) {
                 filtered[did] = item;
@@ -3113,11 +2992,10 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
         const column = dmailSortBy;
         const direction = dmailSortOrder;
 
-        const compare = (a: [string, DmailItem], b: [string, DmailItem]) => {
+        const compare = (a, b) => {
             const itemA = a[1];
             const itemB = b[1];
-            let valA: string | Date = '';
-            let valB: string | Date = '';
+            let valA, valB;
             if (column === 'sender') {
                 valA = itemA.sender?.toLowerCase() || '';
                 valB = itemB.sender?.toLowerCase() || '';
@@ -3203,7 +3081,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
                             <Tab key="dmail" value="dmail" label={'Dmail'} icon={<Email />} />
                         }
                         {currentId && !widget &&
-                            <Tab key="polls" value="polls" label={'Polls'} icon={<PollIcon />} />
+                            <Tab key="polls" value="polls" label={'Polls'} icon={<Poll />} />
                         }
                         {currentId &&
                             <Tab key="auth" value="auth" label={'Auth'} icon={<Key />} />
@@ -3279,7 +3157,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
                                     />
                                     <br />
                                     <textarea
-                                        value={docsString ?? ''}
+                                        value={docsString}
                                         readOnly
                                         style={{ width: '800px', height: '600px', overflow: 'auto' }}
                                     />
@@ -3330,7 +3208,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
                                                     Clone
                                                 </Button>
                                             </TableCell>
-                                            <TableCell colSpan={2}>
+                                            <TableCell colspan={2}>
                                                 <RegistrySelect />
                                             </TableCell>
                                         </TableRow>
@@ -3457,7 +3335,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
                                             </Grid>
                                         </Grid>
                                     }
-                                    {selectedSchema !== null &&
+                                    {selectedSchema &&
                                         <Box>
                                             <Grid container direction="column" spacing={1}>
                                                 <Grid item>
@@ -3614,7 +3492,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
                                             <Button
                                                 variant="contained"
                                                 color="primary"
-                                                onClick={() => document.getElementById('imageUpload')?.click()}
+                                                onClick={() => document.getElementById('imageUpload').click()}
                                                 disabled={!registry}
                                             >
                                                 Upload Image...
@@ -3656,7 +3534,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
                                                             <Button
                                                                 variant="contained"
                                                                 color="primary"
-                                                                onClick={() => document.getElementById('imageUpdate')?.click()}
+                                                                onClick={() => document.getElementById('imageUpdate').click()}
                                                                 disabled={!selectedImageName || !selectedImageOwned}
                                                             >
                                                                 Update image...
@@ -3690,7 +3568,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
                                                                 <TableBody>
                                                                     <TableRow>
                                                                         <TableCell>DID</TableCell>
-                                                                        <TableCell>{selectedImageDocs.didDocument?.id ?? ''}</TableCell>
+                                                                        <TableCell>{selectedImageDocs.didDocument.id}</TableCell>
                                                                     </TableRow>
                                                                     <TableRow>
                                                                         <TableCell>CID</TableCell>
@@ -3698,15 +3576,15 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
                                                                     </TableRow>
                                                                     <TableRow>
                                                                         <TableCell>Created</TableCell>
-                                                                        <TableCell>{((selectedImageDocs.didDocumentMetadata ?? {}) as any).created}</TableCell>
+                                                                        <TableCell>{selectedImageDocs.didDocumentMetadata.created}</TableCell>
                                                                     </TableRow>
                                                                     <TableRow>
                                                                         <TableCell>Updated</TableCell>
-                                                                        <TableCell>{((selectedImageDocs.didDocumentMetadata ?? {}) as any).updated || ((selectedImageDocs.didDocumentMetadata ?? {}) as any).created}</TableCell>
+                                                                        <TableCell>{selectedImageDocs.didDocumentMetadata.updated || selectedImageDocs.didDocumentMetadata.created}</TableCell>
                                                                     </TableRow>
                                                                     <TableRow>
                                                                         <TableCell>Version</TableCell>
-                                                                        <TableCell>{((selectedImageDocs.didDocumentMetadata ?? {}) as any).version} of {imageVersionMax}</TableCell>
+                                                                        <TableCell>{selectedImageDocs.didDocumentMetadata.version} of {imageVersionMax}</TableCell>
                                                                     </TableRow>
                                                                     <TableRow>
                                                                         <TableCell>File size</TableCell>
@@ -3740,7 +3618,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
                                             <Button
                                                 variant="contained"
                                                 color="primary"
-                                                onClick={() => document.getElementById('documentUpload')?.click()}
+                                                onClick={() => document.getElementById('documentUpload').click()}
                                                 disabled={!registry}
                                             >
                                                 Upload Document...
@@ -3784,7 +3662,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
                                                                     <Button
                                                                         variant="contained"
                                                                         color="primary"
-                                                                        onClick={() => document.getElementById('documentUpdate')?.click()}
+                                                                        onClick={() => document.getElementById('documentUpdate').click()}
                                                                         disabled={!selectedDocumentName || !selectedDocumentOwned}
                                                                     >
                                                                         Update document...
@@ -3826,7 +3704,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
                                                             <TableBody>
                                                                 <TableRow>
                                                                     <TableCell>DID</TableCell>
-                                                                    <TableCell>{selectedDocumentDocs.didDocument?.id ?? ''}</TableCell>
+                                                                    <TableCell>{selectedDocumentDocs.didDocument.id}</TableCell>
                                                                 </TableRow>
                                                                 <TableRow>
                                                                     <TableCell>CID</TableCell>
@@ -3834,11 +3712,11 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
                                                                 </TableRow>
                                                                 <TableRow>
                                                                     <TableCell>Created</TableCell>
-                                                                    <TableCell>{((selectedDocumentDocs.didDocumentMetadata ?? {}) as any).created}</TableCell>
+                                                                    <TableCell>{selectedDocumentDocs.didDocumentMetadata.created}</TableCell>
                                                                 </TableRow>
                                                                 <TableRow>
                                                                     <TableCell>Updated</TableCell>
-                                                                    <TableCell>{((selectedDocumentDocs.didDocumentMetadata ?? {}) as any).updated || ((selectedDocumentDocs.didDocumentMetadata ?? {}) as any).created}</TableCell>
+                                                                    <TableCell>{selectedDocumentDocs.didDocumentMetadata.updated || selectedDocumentDocs.didDocumentMetadata.created}</TableCell>
                                                                 </TableRow>
                                                                 <TableRow>
                                                                     <TableCell>Version</TableCell>
@@ -3928,7 +3806,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
                                                                     freeSolo
                                                                     options={agentList || []} // array of options, e.g. DIDs or names
                                                                     value={vaultMember}
-                                                                    onChange={(event, newValue) => setVaultMember(newValue ?? '')}
+                                                                    onChange={(event, newValue) => setVaultMember(newValue)}
                                                                     onInputChange={(event, newInputValue) => setVaultMember(newInputValue)}
                                                                     renderInput={(params) => (
                                                                         <TextField
@@ -3952,7 +3830,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
                                                                 </Tooltip>
                                                             </TableCell>
                                                         </TableRow>
-                                                        {selectedVault?.members.map((did, index) => (
+                                                        {selectedVault.members.map((did, index) => (
                                                             <TableRow key={index}>
                                                                 <TableCell>
                                                                     <Typography style={{ fontSize: '.9em', fontFamily: 'Courier' }}>
@@ -3997,7 +3875,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
                                                                 <Button
                                                                     variant="contained"
                                                                     color="primary"
-                                                                    onClick={() => document.getElementById('vaultItemUpload')?.click()}
+                                                                    onClick={() => document.getElementById('vaultItemUpload').click()}
                                                                     disabled={!selectedVaultOwned}
                                                                 >
                                                                     Upload...
@@ -4020,7 +3898,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
                                                                 </Button>
                                                             </TableCell>
                                                         </TableRow>
-                                                        {Object.entries(selectedVault?.vaultItems ?? {}).map(([name, item], index) => (
+                                                        {Object.entries(selectedVault.vaultItems).map(([name, item], index) => (
                                                             <TableRow key={index}>
                                                                 <TableCell>
                                                                     {getVaultItemIcon(name, item)}
@@ -4751,7 +4629,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
                                                         <TableRow
                                                             key={did}
                                                             hover
-                                                            selected={selectedDmail === item}
+                                                            selected={selectedDmail && selectedDmail === item}
                                                             onClick={() => setSelectedDmailDID(did)}
                                                             style={{ cursor: 'pointer' }}
                                                         >
@@ -4942,9 +4820,8 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
                                                                             }}
                                                                             onClick={e => {
                                                                                 e.preventDefault();
-                                                                                const reference = selectedDmail.message.reference;
-                                                                                if (reference && dmailList[reference]) {
-                                                                                    setSelectedDmailDID(reference);
+                                                                                if (dmailList[selectedDmail.message.reference]) {
+                                                                                    setSelectedDmailDID(selectedDmail.message.reference);
                                                                                 } else {
                                                                                     showAlert('Original dmail not found');
                                                                                 }
@@ -4997,7 +4874,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
                                                                             {name}
                                                                         </TableCell>
                                                                         <TableCell>
-                                                                            {(item as any).bytes}
+                                                                            {item.bytes}
                                                                         </TableCell>
                                                                     </TableRow>
                                                                 ))}
@@ -5022,7 +4899,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
                                                     freeSolo
                                                     options={agentList || []} // array of options, e.g. DIDs or names
                                                     value={dmailTo}
-                                                    onChange={(event, newValue) => setDmailTo(newValue ?? '')}
+                                                    onChange={(event, newValue) => setDmailTo(newValue)}
                                                     onInputChange={(event, newInputValue) => setDmailTo(newInputValue)}
                                                     renderInput={(params) => (
                                                         <TextField
@@ -5061,7 +4938,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
                                                     freeSolo
                                                     options={agentList || []} // array of options, e.g. DIDs or names
                                                     value={dmailCc}
-                                                    onChange={(event, newValue) => setDmailCc(newValue ?? '')}
+                                                    onChange={(event, newValue) => setDmailCc(newValue)}
                                                     onInputChange={(event, newInputValue) => setDmailCc(newInputValue)}
                                                     renderInput={(params) => (
                                                         <TextField
@@ -5161,7 +5038,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
                                                             variant="contained"
                                                             color="primary"
                                                             sx={{ ml: 2 }}
-                                                            onClick={() => document.getElementById('attachmentUpload')?.click()}
+                                                            onClick={() => document.getElementById('attachmentUpload').click()}
                                                         >
                                                             Upload...
                                                         </Button>
@@ -5339,7 +5216,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
                                             </Box>
                                             <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                                 <Grid item>
-                                                    <Button variant="contained" color="primary" onClick={() => { if (challenge) void resolveChallenge(challenge); }} disabled={!challenge || challenge === authDID}>
+                                                    <Button variant="contained" color="primary" onClick={() => resolveChallenge(challenge)} disabled={!challenge || challenge === authDID}>
                                                         Resolve
                                                     </Button>
                                                 </Grid>
@@ -5387,7 +5264,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
                                             <br />
                                             <Grid container direction="row" justifyContent="flex-start" alignItems="center" spacing={3}>
                                                 <Grid item>
-                                                    <Button variant="contained" color="primary" onClick={() => { if (response) void decryptResponse(response); }} disabled={!response || response === authDID}>
+                                                    <Button variant="contained" color="primary" onClick={() => decryptResponse(response)} disabled={!response || response === authDID}>
                                                         Decrypt
                                                     </Button>
                                                 </Grid>
@@ -5492,7 +5369,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
                                 {walletString &&
                                     <textarea
                                         value={walletString}
-                                        readOnly
+                                        readonly
                                         style={{ width: '800px', height: '600px', overflow: 'auto' }}
                                     />
                                 }
