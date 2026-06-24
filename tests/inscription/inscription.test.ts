@@ -864,6 +864,7 @@ describe('path helpers', () => {
         const lib = new Inscription({ feeMax: 0.01, network: 'testnet' }) as any;
         expect(lib.normalisePath("m/86h/1h/0h/0/123")).toBe("m/86'/1'/0'/0/123");
         expect(lib.normalisePath("84h/1h/0h/1/9")).toBe("m/84'/1'/0'/1/9");
+        expect(lib.normalisePath("m/account86h/1h/0h/0/123")).toBe("m/account86h/1'/0'/0/123");
     });
 
     it('relativePathFromAccount rejects short paths', () => {
