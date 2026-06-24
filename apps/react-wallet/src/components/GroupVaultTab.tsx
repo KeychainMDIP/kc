@@ -165,7 +165,7 @@ function GroupVaultTab() {
             }
 
             // Create a Blob from the buffer
-            const blob = new Blob([buffer]);
+            const blob = new Blob([Uint8Array.from(buffer)]);
             // Create a temporary link to trigger the download
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
