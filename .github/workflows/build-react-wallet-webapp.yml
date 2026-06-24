@@ -2,6 +2,7 @@ name: Build React-Wallet webapp
 
 on:
   push:
+  pull_request:
 
 jobs:
   build-react-wallet-webapp:

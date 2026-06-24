@@ -9,21 +9,17 @@ import {
     FormControl,
     TextField
 } from "@mui/material";
-import type { ExplorerDIDEvent } from "../shared/utilities.js";
+import type { GatekeeperEvent } from "@mdip/gatekeeper/types";
 import {
     getTypeStyle,
     handleCopyDID,
 } from "../shared/utilities.js";
 import ContentCopy from "@mui/icons-material/ContentCopy";
-
-const networksEnv = import.meta.env.VITE_OPERATION_NETWORKS || "hyperswarm";
-const knownRegistries: string[] = ["All", ...networksEnv.split(",").map((n: string) => n.trim())];
-if (!knownRegistries.includes("local")) {
-    knownRegistries.push("local");
-}
+import { knownRegistries } from "../config.js";
+import { useSnackbar } from "../contexts/SnackbarProvider.js";
 
 interface EventsProps {
-    events: ExplorerDIDEvent[];
+    events: GatekeeperEvent[];
     totalPages: number;
     eventCount: number;
     page: number;
@@ -36,7 +32,6 @@ interface EventsProps {
     setDateFrom: (val: string) => void;
     setDateTo: (val: string) => void;
     onDidClick: (did: string) => void;
-    setError: (error: any) => void;
 }
 
 function Events(
@@ -54,8 +49,8 @@ function Events(
         setDateFrom,
         setDateTo,
         onDidClick,
-        setError
     }: EventsProps) {
+    const { setError } = useSnackbar();
 
     const handleCountChange = (e: any) => {
         setEventCount(e.target.value);
