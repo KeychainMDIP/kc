@@ -18,10 +18,6 @@ import CipherNode from '@mdip/cipher/node';
 import { InvalidParameterError } from '@mdip/common/errors';
 import { childLogger } from '@mdip/common/logger';
 import config from './config.js';
-import {
-    buildChallengeReceiptsRoute,
-    publishChallengeReceiptsRoute,
-} from './challenge-receipts-api.js';
 
 const app = express();
 const v1router = express.Router();
@@ -1888,19 +1884,19 @@ v1router.post('/response/verify', async (req, res) => {
 
 /**
  * @swagger
- * /response/receipts/build:
- *   post:
- *     summary: Build challenge usage receipts for a verified response without publishing them.
- */
-v1router.post('/response/receipts/build', (req, res) => buildChallengeReceiptsRoute(keymaster)(req, res));
-
-/**
- * @swagger
  * /response/receipts:
  *   post:
  *     summary: Publish challenge usage receipts for a verified response.
  */
-v1router.post('/response/receipts', (req, res) => publishChallengeReceiptsRoute(keymaster)(req, res));
+v1router.post('/response/receipts', async (req, res) => {
+    try {
+        const { response, options } = req.body;
+        const dids = await keymaster.publishChallengeReceipts(response, options);
+        res.json({ dids });
+    } catch (error: any) {
+        res.status(400).send({ error: error.toString() });
+    }
+});
 
 /**
  * @swagger

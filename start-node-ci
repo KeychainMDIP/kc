@@ -39,7 +39,15 @@ while true; do
   if [[ "$RETRY_COUNT" -ge "$MAX_RETRIES" ]]; then
     echo "❌ Timed out waiting for containers to be 'Up'"
     docker compose "${PROFILE_ARGS[@]}" ps -a
-    docker compose "${PROFILE_ARGS[@]}" logs --no-color --tail=200 "${SERVICES[@]}"
+
+    RUNNING_SERVICES=$(docker compose "${PROFILE_ARGS[@]}" ps --services --status running "${SERVICES[@]}")
+    for service in "${SERVICES[@]}"; do
+      if ! grep -qx "$service" <<< "$RUNNING_SERVICES"; then
+        echo "----- logs: $service -----"
+        docker compose "${PROFILE_ARGS[@]}" logs --no-color "$service" || true
+      fi
+    done
+
     exit 1
   fi
 

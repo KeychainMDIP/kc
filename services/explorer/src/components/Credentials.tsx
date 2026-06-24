@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import ArrowBackIosNewIcon from "@mui/icons-material/ArrowBackIosNew";
-import axios from "axios";
 import JsonView from "@uiw/react-json-view";
 import {
     Box,
@@ -17,27 +16,21 @@ import {
     Typography,
 } from "@mui/material";
 import { Link as RouterLink, useSearchParams } from "react-router-dom";
-import { fetchDIDDocument } from "../shared/utilities.js";
+import {
+    pageSizeOptions,
+    schemaPageSizeOptions,
+} from "../config.js";
+import {
+    fetchDIDDocument,
+    fetchPublishedCredentials,
+    fetchPublishedSchemaMetrics,
+    type PublishedCredentialRow,
+    type PublishedSchemaMetric,
+} from "../api/searchClient.js";
+import { useSnackbar } from "../contexts/SnackbarProvider.js";
+import type { MdipDocument } from "@mdip/gatekeeper/types";
 
-const searchServerURL = import.meta.env.VITE_SEARCH_SERVER || "http://localhost:4002";
-const VERSION = "/api/v1";
-const pageSizeOptions = [25, 50, 100];
-const schemaPageSizeOptions = [25, 50, 100];
-
-interface SchemaMetric {
-    schemaDid: string;
-    count: number;
-}
-
-interface PublishedCredentialRow {
-    holderDid: string;
-    credentialDid: string;
-    schemaDid: string;
-    issuerDid: string;
-    subjectDid: string;
-    revealed: boolean;
-    updatedAt: string;
-}
+type CredentialDetailDocument = MdipDocument | Record<string, unknown>;
 
 function getDidPrefix(did: string): string {
     const parts = did.split(":");
@@ -77,18 +70,6 @@ function formatTimestamp(value: string): string {
     }
 
     return `${date.toISOString().replace("T", " ").slice(0, 16)}Z`;
-}
-
-function mapPublishedCredentialRow(row: any): PublishedCredentialRow {
-    return {
-        holderDid: row.holderDid,
-        credentialDid: row.credentialDid,
-        schemaDid: row.schemaDid,
-        issuerDid: row.issuerDid,
-        subjectDid: row.subjectDid,
-        revealed: row.revealed === true,
-        updatedAt: row.updatedAt,
-    };
 }
 
 function ClickableDid(
@@ -150,7 +131,7 @@ function getManifestEntryFromDoc(
         doc,
         credentialDid,
     }: {
-        doc: Record<string, unknown>;
+        doc: MdipDocument;
         credentialDid: string;
     }
 ): Record<string, unknown> | null {
@@ -237,21 +218,16 @@ function SummaryCard(
     );
 }
 
-function Credentials(
-    {
-        setError,
-    }: {
-        setError: (error: any) => void;
-    }
-) {
+function Credentials() {
+    const { setError } = useSnackbar();
     const [searchParams, setSearchParams] = useSearchParams();
-    const [schemaCounts, setSchemaCounts] = useState<SchemaMetric[]>([]);
+    const [schemaCounts, setSchemaCounts] = useState<PublishedSchemaMetric[]>([]);
     const [credentials, setCredentials] = useState<PublishedCredentialRow[]>([]);
     const [credentialTotal, setCredentialTotal] = useState<number>(0);
     const [schemaPageSize, setSchemaPageSize] = useState<number>(25);
     const [schemaPage, setSchemaPage] = useState<number>(0);
     const [detailRecord, setDetailRecord] = useState<PublishedCredentialRow | null>(null);
-    const [detailDoc, setDetailDoc] = useState<Record<string, unknown> | null>(null);
+    const [detailDoc, setDetailDoc] = useState<CredentialDetailDocument | null>(null);
     const [isDetailLoading, setIsDetailLoading] = useState<boolean>(false);
     const [detailError, setDetailError] = useState<string | null>(null);
 
@@ -370,10 +346,10 @@ function Credentials(
 
         async function fetchSchemaCounts() {
             try {
-                const response = await axios.get(`${searchServerURL}${VERSION}/metrics/schemas/published`);
+                const schemas = await fetchPublishedSchemaMetrics();
 
                 if (!ignore) {
-                    setSchemaCounts(response.data.schemas ?? []);
+                    setSchemaCounts(schemas);
                 }
             }
             catch (error: any) {
@@ -401,15 +377,13 @@ function Credentials(
             }
 
             try {
-                const response = await axios.get(`${searchServerURL}${VERSION}/metrics/credentials/published`, {
-                    params: {
-                        schemaDid,
-                        limit: pageSize,
-                        offset: page * pageSize,
-                    }
+                const result = await fetchPublishedCredentials({
+                    schemaDid,
+                    limit: pageSize,
+                    offset: page * pageSize,
                 });
 
-                const total = response.data.total ?? 0;
+                const total = result.total;
 
                 if (!ignore) {
                     if (total > 0 && page * pageSize >= total && page > 0) {
@@ -418,7 +392,7 @@ function Credentials(
                     }
 
                     setCredentialTotal(total);
-                    setCredentials((response.data.credentials ?? []).map(mapPublishedCredentialRow));
+                    setCredentials(result.credentials);
                 }
             }
             catch (error: any) {
@@ -478,18 +452,16 @@ function Credentials(
                 let nextDetailRecord = listDetailRecord;
 
                 if (!nextDetailRecord && selectedDetailDid !== schemaDid) {
-                    const response = await axios.get(`${searchServerURL}${VERSION}/metrics/credentials/published`, {
-                        params: {
-                            credentialDid: selectedDetailDid,
-                            schemaDid: schemaDid || undefined,
-                            limit: 1,
-                            offset: 0,
-                        }
+                    const result = await fetchPublishedCredentials({
+                        credentialDid: selectedDetailDid,
+                        schemaDid: schemaDid || undefined,
+                        limit: 1,
+                        offset: 0,
                     });
 
-                    const fetchedRow = response.data.credentials?.[0];
+                    const fetchedRow = result.credentials[0];
                     if (fetchedRow) {
-                        nextDetailRecord = mapPublishedCredentialRow(fetchedRow);
+                        nextDetailRecord = fetchedRow;
                     }
                 }
 

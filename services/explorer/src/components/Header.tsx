@@ -3,18 +3,10 @@ import { Box, Typography, Switch, Tabs, Tab } from "@mui/material";
 import { DarkMode, LightMode } from "@mui/icons-material";
 import iconInverted from '../static/icon_inverted.png';
 import { useNavigate, useLocation } from "react-router-dom";
+import { useThemeContext } from "../contexts/ContextProviders.js";
 
-interface HeaderProps {
-    darkMode: boolean;
-    handleThemeToggle: (event: React.ChangeEvent<HTMLInputElement>) => void;
-}
-
-const Header = (
-    {
-        darkMode,
-        handleThemeToggle
-    }: HeaderProps
-) => {
+const Header = () => {
+    const { darkMode, handleThemeToggle } = useThemeContext();
     const navigate = useNavigate();
     const location = useLocation();
 

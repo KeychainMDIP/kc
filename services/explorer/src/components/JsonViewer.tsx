@@ -16,21 +16,18 @@ import {
     IconButton
 } from "@mui/material";
 import ContentCopy from "@mui/icons-material/ContentCopy";
-import type { ExplorerDIDDocument } from '../shared/utilities.js';
+import type { MdipDocument } from "@mdip/gatekeeper/types";
 import {
     fetchDIDDocument,
-    handleCopyDID,
     searchDIDDocuments,
-} from '../shared/utilities.js';
+} from "../api/searchClient.js";
+import { useSnackbar } from "../contexts/SnackbarProvider.js";
+import { handleCopyDID } from "../shared/utilities.js";
 import { useSearchParams } from "react-router-dom";
 
-function JsonViewer(
-    {
-        setError,
-    }: {
-        setError: (error: any) => void;
-    }) {
-    const [aliasDocs, setAliasDocs] = useState<ExplorerDIDDocument | undefined>(undefined);
+function JsonViewer() {
+    const { setError } = useSnackbar();
+    const [aliasDocs, setAliasDocs] = useState<MdipDocument | undefined>(undefined);
     const [aliasDocsVersion, setAliasDocsVersion] = useState<number>(1);
     const [aliasDocsVersionMax, setAliasDocsVersionMax] = useState<number>(1);
     const [aliasDocsVersions, setAliasDocsVersions] = useState<number[] | undefined>(undefined);
