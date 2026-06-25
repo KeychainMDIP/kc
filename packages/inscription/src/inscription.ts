@@ -480,8 +480,16 @@ export default class Inscription {
 
     private normalisePath(path: string): string {
         const withM = path.startsWith('m/') ? path : `m/${path}`;
-        // eslint-disable-next-line sonarjs/slow-regex
-        return withM.replace(/(\d+)h/g, "$1'");
+        return withM
+            .split('/')
+            .map((segment) => {
+                const pathIndex = segment.slice(0, -1);
+                const isHardenedIndex = segment.endsWith('h')
+                    && pathIndex.length > 0
+                    && [...pathIndex].every((char) => char >= '0' && char <= '9');
+                return isHardenedIndex ? `${pathIndex}'` : segment;
+            })
+            .join('/');
     }
 
     private masterFingerprintFromXprv(xprv: string): Buffer {
