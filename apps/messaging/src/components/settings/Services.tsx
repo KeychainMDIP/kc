@@ -10,7 +10,6 @@ import {
     GATEKEEPER_KEY,
     SEARCH_SERVER_KEY,
 } from "../../constants";
-import {useVariablesContext} from "../../contexts/VariablesProvider";
 import SlideInRight from "../transitions/SlideInRight";
 
 export interface ServicesSettingsProps {
@@ -20,9 +19,8 @@ export interface ServicesSettingsProps {
 
 export default function Services({ isOpen, onClose }: ServicesSettingsProps) {
     const { colorMode } = useColorMode();
-    const { initialiseServices, initialiseWallet } = useWalletContext();
+    const { updateServices } = useWalletContext();
     const { setError, setSuccess } = useSnackbar();
-    const { refreshAll } = useVariablesContext();
 
     const [gatekeeperUrl, setGatekeeperUrl] = useState<string>(DEFAULT_GATEKEEPER_URL);
     const [searchServerUrl, setSearchServerUrl] = useState<string>(DEFAULT_SEARCH_SERVER_URL);
@@ -48,12 +46,8 @@ export default function Services({ isOpen, onClose }: ServicesSettingsProps) {
         }
 
         try {
-            localStorage.setItem(GATEKEEPER_KEY, gatekeeper);
-            localStorage.setItem(SEARCH_SERVER_KEY, search);
-            await initialiseServices();
-            await initialiseWallet();
+            await updateServices(gatekeeper, search);
             setSuccess("Services updated");
-            await refreshAll();
         } catch (e: any) {
             setError(e);
         }

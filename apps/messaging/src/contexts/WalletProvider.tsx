@@ -5,7 +5,7 @@ import {
     SetStateAction,
     useContext,
     useEffect,
-    useRef,
+    useMemo,
     useState,
 } from "react";
 import GatekeeperClient from "@mdip/gatekeeper/client";
@@ -31,8 +31,13 @@ import MnemonicModal from "../modals/MnemonicModal";
 import {useSnackbar} from "./SnackbarProvider";
 import VerifyMnemonicModal from "../modals/VerifyMnemonicModal";
 
-const gatekeeper = new GatekeeperClient();
 const cipher = new CipherWeb();
+const SERVICE_READY_TIMEOUT_MS = 3_000;
+
+type ServiceClients = {
+    gatekeeper: GatekeeperClient;
+    search: SearchClient;
+};
 
 interface WalletContextValue {
     manifest: Record<string, unknown> | undefined;
@@ -41,19 +46,18 @@ interface WalletContextValue {
     setRegistry: Dispatch<SetStateAction<string>>;
     wipeWallet: () => void;
     restoreMnemonic: (mnemonic: string) => Promise<void>;
-    initialiseWallet: () => Promise<void>;
-    initialiseServices: () => Promise<void>;
+    updateServices: (gatekeeperUrl: string, searchServerUrl: string) => Promise<void>;
     keymaster: Keymaster | null;
     search?: SearchClient;
 }
 
 const WalletContext = createContext<WalletContextValue | null>(null);
 
-let search: SearchClient | undefined;
-
 export function WalletProvider({ children }: { children: ReactNode }) {
     const [manifest, setManifest] = useState<Record<string, unknown> | undefined>(undefined);
     const [registry, setRegistry] = useState<string>("hyperswarm");
+    const [services, setServices] = useState<ServiceClients | null>(null);
+    const [keymaster, setKeymaster] = useState<Keymaster | null>(null);
     const [passphraseErrorText, setPassphraseErrorText] = useState<string>("");
     const [modalAction, setModalAction] = useState<null | "decrypt" | "set-passphrase">(null);
     const [isReady, setIsReady] = useState<boolean>(false);
@@ -67,25 +71,23 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
     const { setError } = useSnackbar();
 
-    const keymasterRef = useRef<Keymaster | null>(null);
-
-    const walletWeb = new WalletWeb(WALLET_NAME);
+    const walletWeb = useMemo(() => new WalletWeb(WALLET_NAME), []);
 
     useEffect(() => {
         async function init() {
-            await initialiseServices();
+            const initialServices = await initialiseServices();
             const walletData = await walletWeb.loadWallet();
             if (!walletData) {
                 setIsOnboardingOpen(true);
             } else {
-                await initialiseWallet();
+                await initialiseWallet(initialServices);
             }
         }
         init();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    async function initialiseWallet() {
+    async function initialiseWallet(serviceClients?: ServiceClients) {
         const walletData = await walletWeb.loadWallet();
 
         if (!walletData) {
@@ -96,7 +98,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
         const pass = getSessionPassphrase();
         if (pass) {
-            let res = await buildKeymaster(pass);
+            let res = await buildKeymaster(pass, serviceClients);
             if (res) {
                 return;
             }
@@ -107,29 +109,136 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         setModalAction('decrypt');
     }
 
-    async function initialiseServices() {
-        const gatekeeperUrl = localStorage.getItem(GATEKEEPER_KEY) || DEFAULT_GATEKEEPER_URL;
-        const searchServerUrl = localStorage.getItem(SEARCH_SERVER_KEY) || DEFAULT_SEARCH_SERVER_URL;
-        localStorage.setItem(GATEKEEPER_KEY, gatekeeperUrl);
-        localStorage.setItem(SEARCH_SERVER_KEY, searchServerUrl);
-        await gatekeeper.connect({ url: gatekeeperUrl });
-        search = await SearchClient.create({ url: searchServerUrl });
+    async function createServiceClients(
+        gatekeeperUrl: string,
+        searchServerUrl: string,
+        checkReady = false
+    ): Promise<ServiceClients> {
+        const nextGatekeeper = new GatekeeperClient();
+        await nextGatekeeper.connect({ url: gatekeeperUrl });
+
+        if (checkReady) {
+            await requireServiceReady("Gatekeeper", () => nextGatekeeper.isReady());
+        }
+
+        const nextSearch = await SearchClient.create({ url: searchServerUrl });
+
+        if (checkReady) {
+            await requireServiceReady("Search server", () => nextSearch.isReady());
+        }
+
+        return {
+            gatekeeper: nextGatekeeper,
+            search: nextSearch,
+        };
     }
 
-    const buildKeymaster = async (passphrase: string) => {
-        const instance = new Keymaster({gatekeeper, wallet: walletWeb, cipher, search, passphrase});
+    async function requireServiceReady(
+        name: string,
+        isReady: () => Promise<boolean>
+    ): Promise<void> {
+        let timeoutId: ReturnType<typeof setTimeout> | undefined;
+        const timeout = new Promise<boolean>((_, reject) => {
+            timeoutId = setTimeout(
+                () => reject(new Error(`${name} readiness check timed out`)),
+                SERVICE_READY_TIMEOUT_MS
+            );
+        });
+
+        let ready: boolean;
+        try {
+            ready = await Promise.race([isReady(), timeout]);
+        } finally {
+            if (timeoutId) {
+                clearTimeout(timeoutId);
+            }
+        }
+
+        if (!ready) {
+            throw new Error(`${name} is not reachable`);
+        }
+    }
+
+    async function initialiseServices(): Promise<ServiceClients> {
+        const gatekeeperUrl = localStorage.getItem(GATEKEEPER_KEY) || DEFAULT_GATEKEEPER_URL;
+        const searchServerUrl = localStorage.getItem(SEARCH_SERVER_KEY) || DEFAULT_SEARCH_SERVER_URL;
+        const initialServices = await createServiceClients(gatekeeperUrl, searchServerUrl);
+        localStorage.setItem(GATEKEEPER_KEY, gatekeeperUrl);
+        localStorage.setItem(SEARCH_SERVER_KEY, searchServerUrl);
+        setServices(initialServices);
+        return initialServices;
+    }
+
+    async function updateServices(gatekeeperUrl: string, searchServerUrl: string) {
+        const nextServices = await createServiceClients(gatekeeperUrl, searchServerUrl, true);
+        let nextKeymaster = keymaster;
+
+        if (keymaster) {
+            const passphrase = getSessionPassphrase();
+            if (!passphrase) {
+                throw new Error("Current wallet passphrase is required to update services");
+            }
+
+            nextKeymaster = await buildKeymasterInstance(passphrase, nextServices);
+            if (!nextKeymaster) {
+                throw new Error("Failed to rebuild wallet services");
+            }
+        }
+
+        localStorage.setItem(GATEKEEPER_KEY, gatekeeperUrl);
+        localStorage.setItem(SEARCH_SERVER_KEY, searchServerUrl);
+        setServices(nextServices);
+        setKeymaster(nextKeymaster);
+    }
+
+    async function buildKeymasterInstance(
+        passphrase: string,
+        serviceClients?: ServiceClients,
+        passphraseFailureText?: string
+    ): Promise<Keymaster | null> {
+        const activeServices = serviceClients ?? services;
+        if (!activeServices) {
+            throw new Error("Services not initialised");
+        }
+
+        const instance = new Keymaster({
+            gatekeeper: activeServices.gatekeeper,
+            wallet: walletWeb,
+            cipher,
+            search: activeServices.search,
+            passphrase,
+        });
 
         try {
             // check pass
             await instance.loadWallet();
-        } catch {
-            setPassphraseErrorText("Incorrect passphrase");
+        } catch (error) {
+            if (passphraseFailureText) {
+                setPassphraseErrorText(passphraseFailureText);
+                return null;
+            }
+            throw error;
+        }
+
+        return instance;
+    }
+
+    const buildKeymaster = async (passphrase: string, serviceClients?: ServiceClients) => {
+        let instance: Keymaster | null;
+        try {
+            instance = await buildKeymasterInstance(passphrase, serviceClients, "Incorrect passphrase");
+        } catch (error: any) {
+            setError(error);
+            return false;
+        }
+
+        if (!instance) {
             return false;
         }
 
         setModalAction(null);
         setPassphraseErrorText("");
-        keymasterRef.current = instance;
+        setKeymaster(instance);
         setSessionPassphrase(passphrase);
 
         if (useMnemonic) {
@@ -162,7 +271,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     }
 
     async function restoreMnemonic(mnemonic: string) {
-        const keymaster = keymasterRef.current;
         if (!keymaster) {
             throw new Error("Keymaster not initialised");
         }
@@ -233,6 +341,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             return;
         }
 
+        setKeymaster(null);
         setIsReady(false);
         setIsOnboardingOpen(true);
     };
@@ -244,10 +353,9 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         setManifest,
         restoreMnemonic,
         wipeWallet,
-        initialiseWallet,
-        initialiseServices,
-        keymaster: keymasterRef.current,
-        search,
+        updateServices,
+        keymaster,
+        search: services?.search,
     };
 
     return (
