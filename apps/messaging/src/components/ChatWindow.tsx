@@ -24,7 +24,7 @@ import { CHAT_SUBJECT } from "../constants";
 import WarningModal from "../modals/WarningModal";
 import QRCodeModal from "../modals/QRCodeModal";
 import { Buffer } from "buffer";
-import { CloseButton, Box } from "@chakra-ui/react";
+import { Box } from "@chakra-ui/react";
 import SlideInRight from "./transitions/SlideInRight";
 import { useColorMode } from "../contexts/ColorModeProvider";
 import {
@@ -706,8 +706,17 @@ const ChatWindow: React.FC = () => {
             </SlideInRight>
 
             {imageViewerOpen && (
-                <Box position="fixed" inset={0} zIndex={2400} display="flex" alignItems="center" justifyContent="center">
-                    <CloseButton position="absolute" top={4} right={4} size="lg" color="white" onClick={closeImageViewer} />
+                <Box
+                    position="fixed"
+                    inset={0}
+                    zIndex={2400}
+                    display="flex"
+                    alignItems="center"
+                    justifyContent="center"
+                    bg="blackAlpha.800"
+                    cursor="zoom-out"
+                    onClick={closeImageViewer}
+                >
                     {/* eslint-disable-next-line jsx-a11y/alt-text */}
                     <img src={imageViewerSrc} style={{ maxWidth: "100%", maxHeight: "100%" }} />
                 </Box>
