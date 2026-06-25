@@ -79,6 +79,7 @@ function createAssetEvent(
 function createSnapshotResponse(did: string, data: unknown) {
     return {
         mode: 'snapshot' as const,
+        indexEpoch: 'epoch-test',
         cursor: did,
         checkpointCursor: '0',
         hasMore: false,

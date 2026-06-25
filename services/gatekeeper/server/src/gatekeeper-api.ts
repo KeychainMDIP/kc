@@ -997,11 +997,14 @@ v1router.post('/dids/', async (req, res) => {
  *             schema:
  *               oneOf:
  *                 - type: object
- *                   required: [ mode, cursor, checkpointCursor, hasMore, dids, blocks ]
+ *                   required: [ mode, indexEpoch, cursor, checkpointCursor, hasMore, dids, blocks ]
  *                   properties:
  *                     mode:
  *                       type: string
  *                       enum: [ snapshot ]
+ *                     indexEpoch:
+ *                       type: string
+ *                       description: Local Gatekeeper index epoch. Changes when the backing index database is reset or replaced.
  *                     cursor:
  *                       type: string
  *                       nullable: true
@@ -1021,15 +1024,22 @@ v1router.post('/dids/', async (req, res) => {
  *                       items:
  *                         type: object
  *                 - type: object
- *                   required: [ mode, cursor, hasMore, dids, blocks ]
+ *                   required: [ mode, indexEpoch, cursor, checkpointCursor, hasMore, dids, blocks ]
  *                   properties:
  *                     mode:
  *                       type: string
  *                       enum: [ changes ]
+ *                     indexEpoch:
+ *                       type: string
+ *                       description: Local Gatekeeper index epoch. Changes when the backing index database is reset or replaced.
  *                     cursor:
  *                       type: string
  *                       nullable: true
  *                       description: Incremental change cursor.
+ *                     checkpointCursor:
+ *                       type: string
+ *                       nullable: true
+ *                       description: Change high-water cursor returned with the page.
  *                     hasMore:
  *                       type: boolean
  *                     dids:

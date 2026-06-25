@@ -1,4 +1,5 @@
 import { Redis } from 'ioredis';
+import { randomUUID } from 'crypto';
 import { InvalidDIDError } from '@mdip/common/errors';
 import { childLogger } from '@mdip/common/logger';
 import {
@@ -43,6 +44,7 @@ export default class DbRedis implements GatekeeperDb {
         try {
             await this.redis.ping();
             await this.ensureDidIndex();
+            await this.ensureIndexEpoch();
         }
         catch (error) {
             try {
@@ -120,6 +122,8 @@ export default class DbRedis implements GatekeeperDb {
                 totalDeleted += deletedCount; // Increment the total count
             }
         } while (cursor !== '0'); // Continue scanning until cursor returns to 0
+
+        await this.redis.set(this.indexEpochKey(), randomUUID());
 
         return totalDeleted;
     }
@@ -239,6 +243,10 @@ export default class DbRedis implements GatekeeperDb {
         return `${this.dbName}/index/changes/zset`;
     }
 
+    private indexEpochKey(): string {
+        return `${this.dbName}/index/epoch`;
+    }
+
     private didIndexKey(): string {
         return `${this.dbName}/index/dids`;
     }
@@ -315,6 +323,25 @@ export default class DbRedis implements GatekeeperDb {
                 throw new Error(`Unsupported Redis DID index key type for ${indexKey}: ${publishedType}`);
             }
         }
+    }
+
+    private async ensureIndexEpoch(): Promise<string> {
+        const redis = this.assertStarted();
+        const key = this.indexEpochKey();
+        const existing = await redis.get(key);
+        if (existing) {
+            return existing;
+        }
+
+        const epoch = randomUUID();
+        const result = await redis.set(key, epoch, 'NX');
+        return result === 'OK'
+            ? epoch
+            : await redis.get(key) ?? epoch;
+    }
+
+    private async getIndexEpoch(): Promise<string> {
+        return this.ensureIndexEpoch();
     }
 
     private async evalAtomicMutation(script: string, keys: string[], args: string[]): Promise<unknown> {
@@ -397,6 +424,7 @@ export default class DbRedis implements GatekeeperDb {
         const limit = normalizeIndexExportLimit(options.limit);
         const cursor = options.cursor ?? null;
         const checkpointCursor = options.checkpointCursor ?? await this.getIndexCheckpointCursor();
+        const indexEpoch = await this.getIndexEpoch();
         const min = cursor ? `(${cursor}` : '-';
         const ids = await this.redis.zrangebylex(
             this.didIndexKey(),
@@ -411,7 +439,8 @@ export default class DbRedis implements GatekeeperDb {
             ids,
             id => this.getEvents(id),
             options,
-            checkpointCursor
+            checkpointCursor,
+            indexEpoch
         );
     }
 
@@ -424,6 +453,7 @@ export default class DbRedis implements GatekeeperDb {
         const afterSeq = parseIndexExportCursor(options.cursor);
         const limit = normalizeIndexExportLimit(options.limit);
         const checkpointCursor = await this.getIndexCheckpointCursor();
+        const indexEpoch = await this.getIndexEpoch();
         const payloads = await this.redis.zrangebyscore(
             this.indexChangesKey(),
             `(${afterSeq}`,
@@ -440,7 +470,8 @@ export default class DbRedis implements GatekeeperDb {
             payloads.length > limit,
             options,
             checkpointCursor,
-            did => this.getEvents(did)
+            did => this.getEvents(did),
+            indexEpoch
         );
     }
 

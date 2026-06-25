@@ -195,6 +195,7 @@ describe('gatekeeper server helpers', () => {
     it('exports index only when the database is ready', async () => {
         const response = {
             mode: 'changes',
+            indexEpoch: 'epoch-test',
             cursor: '1',
             checkpointCursor: '1',
             hasMore: false,

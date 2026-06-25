@@ -1,5 +1,6 @@
 import * as sqlite from 'sqlite';
 import sqlite3 from 'sqlite3';
+import { randomUUID } from 'crypto';
 import { InvalidDIDError } from '@mdip/common/errors';
 import { childLogger } from '@mdip/common/logger';
 import {
@@ -114,6 +115,11 @@ export default class DbSqlite implements GatekeeperDb {
             removed INTEGER NOT NULL DEFAULT 0
         )`);
 
+        await this.db.exec(`CREATE TABLE IF NOT EXISTS metadata (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )`);
+
         await this.db.exec(`CREATE TABLE IF NOT EXISTS blocks (
                 registry TEXT NOT NULL,
                 hash TEXT NOT NULL,
@@ -127,6 +133,7 @@ export default class DbSqlite implements GatekeeperDb {
         `);
 
         await this.migrateSchema();
+        await this.ensureIndexEpoch();
     }
 
     private async migrateSchema(): Promise<void> {
@@ -174,6 +181,12 @@ export default class DbSqlite implements GatekeeperDb {
                 await this.db!.run('DELETE FROM queue');
                 await this.db!.run('DELETE FROM blocks');
                 await this.db!.run('DELETE FROM index_changes');
+                await this.db!.run(
+                    `INSERT INTO metadata (key, value)
+                     VALUES ('indexEpoch', ?)
+                     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+                    randomUUID()
+                );
             });
         });
     }
@@ -407,6 +420,30 @@ export default class DbSqlite implements GatekeeperDb {
         return (row?.seq ?? 0).toString();
     }
 
+    private async ensureIndexEpoch(): Promise<string> {
+        if (!this.db) {
+            throw new Error(SQLITE_NOT_STARTED_ERROR)
+        }
+
+        const existing = await this.db.get<{ value: string }>(
+            `SELECT value FROM metadata WHERE key = 'indexEpoch'`
+        );
+        if (existing?.value) {
+            return existing.value;
+        }
+
+        const epoch = randomUUID();
+        await this.db.run(
+            `INSERT INTO metadata (key, value) VALUES ('indexEpoch', ?)`,
+            epoch
+        );
+        return epoch;
+    }
+
+    private async getIndexEpoch(): Promise<string> {
+        return this.ensureIndexEpoch();
+    }
+
     async exportIndexSnapshot(_options?: IndexExportSnapshotOptions): Promise<IndexExportResponse> {
         if (!this.db) {
             throw new Error(SQLITE_NOT_STARTED_ERROR)
@@ -416,6 +453,7 @@ export default class DbSqlite implements GatekeeperDb {
         const limit = normalizeIndexExportLimit(options.limit);
         const cursor = options.cursor ?? null;
         const checkpointCursor = options.checkpointCursor ?? await this.getIndexCheckpointCursor();
+        const indexEpoch = await this.getIndexEpoch();
         const rows = await this.db.all<{ id: string }[]>(
             `SELECT id
              FROM dids
@@ -431,7 +469,8 @@ export default class DbSqlite implements GatekeeperDb {
             rows.map(row => row.id),
             id => this.getEvents(id),
             options,
-            checkpointCursor
+            checkpointCursor,
+            indexEpoch
         );
     }
 
@@ -444,6 +483,7 @@ export default class DbSqlite implements GatekeeperDb {
         const afterSeq = parseIndexExportCursor(options.cursor);
         const limit = normalizeIndexExportLimit(options.limit);
         const checkpointCursor = await this.getIndexCheckpointCursor();
+        const indexEpoch = await this.getIndexEpoch();
         const rows = await this.db.all<IndexChangeRow[]>(
             `SELECT seq, kind, did, registry, block, event, removed
              FROM index_changes
@@ -468,7 +508,8 @@ export default class DbSqlite implements GatekeeperDb {
             rows.length > limit,
             options,
             checkpointCursor,
-            did => this.getEvents(did)
+            did => this.getEvents(did),
+            indexEpoch
         );
     }
 

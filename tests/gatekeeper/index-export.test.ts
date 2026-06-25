@@ -123,6 +123,7 @@ function createPostgresFixture(): AdapterFixture {
     ]);
     const changes = createIndexChanges();
     let nextChangeSeq = changes.length;
+    let indexEpoch = 'epoch-test';
 
     function recordChange(params: unknown[]) {
         nextChangeSeq += 1;
@@ -159,6 +160,17 @@ function createPostgresFixture(): AdapterFixture {
                     .slice(0, limit)
                     .map(id => ({ id })),
             };
+        }
+
+        if (text.includes('FROM gatekeeper_metadata')) {
+            return { rows: [{ value: indexEpoch }], rowCount: 1 };
+        }
+
+        if (text.includes('INSERT INTO gatekeeper_metadata')) {
+            if (typeof params[1] === 'string') {
+                indexEpoch = params[1];
+            }
+            return { rows: [], rowCount: 1 };
         }
 
         if (text.includes('FROM gatekeeper_index_changes') && text.includes('SELECT COALESCE(MAX(seq)')) {
@@ -508,6 +520,7 @@ function createMongoFixture(): AdapterFixture {
     ]);
     const changes = createIndexChanges();
     let nextChangeSeq = changes.length;
+    let indexEpoch = 'epoch-test';
 
     (db as any).client = createMongoTransactionClient();
     (db as any).db = {
@@ -577,6 +590,23 @@ function createMongoFixture(): AdapterFixture {
                     findOneAndUpdate: async () => {
                         nextChangeSeq += 1;
                         return { value: nextChangeSeq };
+                    },
+                };
+            }
+
+            if (name === 'metadata') {
+                return {
+                    findOne: async ({ id }: { id: string }) => id === 'indexEpoch'
+                        ? { id, value: indexEpoch }
+                        : null,
+                    updateOne: async (
+                        { id }: { id: string },
+                        update: { $setOnInsert?: { value?: string } }
+                    ) => {
+                        if (id === 'indexEpoch' && update.$setOnInsert?.value) {
+                            indexEpoch = update.$setOnInsert.value;
+                        }
+                        return { modifiedCount: 1, upsertedCount: 0 };
                     },
                 };
             }
@@ -942,11 +972,13 @@ describe('Gatekeeper index export request parsing', () => {
             false,
             { cursor: '12', includeOperations: true },
             '9',
-            async () => []
+            async () => [],
+            'epoch-test'
         );
 
         expect(response).toStrictEqual({
             mode: 'changes',
+            indexEpoch: 'epoch-test',
             cursor: '12',
             checkpointCursor: '9',
             hasMore: false,
@@ -976,11 +1008,13 @@ describe('Gatekeeper index export request parsing', () => {
             ['storage-z1', 'storage-z2'],
             getEvents,
             { cursor: 'previous-page', limit: 1 },
-            '7'
+            '7',
+            'epoch-test'
         );
 
         expect(page).toMatchObject({
             mode: 'snapshot',
+            indexEpoch: 'epoch-test',
             cursor: 'storage-z1',
             checkpointCursor: '7',
             hasMore: true,
@@ -994,7 +1028,8 @@ describe('Gatekeeper index export request parsing', () => {
             [],
             getEvents,
             { cursor: 'previous-page', limit: 1 },
-            '7'
+            '7',
+            'epoch-test'
         );
 
         expect(emptyPage.cursor).toBe('previous-page');
@@ -1029,11 +1064,13 @@ describe('Gatekeeper index export request parsing', () => {
                 return [];
             },
             { limit: 10 },
-            async () => '3'
+            async () => '3',
+            async () => 'epoch-test'
         );
 
         expect(snapshot).toMatchObject({
             mode: 'snapshot',
+            indexEpoch: 'epoch-test',
             cursor: 'storage-empty',
             checkpointCursor: '3',
             hasMore: false,
@@ -1158,6 +1195,20 @@ describe('Gatekeeper DB index snapshot export', () => {
         });
 
         expect(nextPage.checkpointCursor).toBe('1');
+    });
+
+    it('returns a stable index epoch until the DB is reset', async () => {
+        const firstSnapshot = await db.exportIndexSnapshot();
+        const secondSnapshot = await db.exportIndexSnapshot();
+
+        expect(firstSnapshot.indexEpoch).toEqual(expect.any(String));
+        expect(secondSnapshot.indexEpoch).toBe(firstSnapshot.indexEpoch);
+
+        await db.resetDb();
+
+        const resetSnapshot = await db.exportIndexSnapshot();
+        expect(resetSnapshot.indexEpoch).toEqual(expect.any(String));
+        expect(resetSnapshot.indexEpoch).not.toBe(firstSnapshot.indexEpoch);
     });
 
     it('returns changed DID histories and blocks from incremental export', async () => {
@@ -1917,6 +1968,8 @@ describe('Gatekeeper Redis DID snapshot index', () => {
             on: jest.fn(),
             ping: async () => 'PONG',
             removeAllListeners: jest.fn(),
+            get: async () => null,
+            set: async () => 'OK',
             type: async () => 'none',
             del,
             scan: async () => ['0', [
@@ -1952,6 +2005,8 @@ describe('Gatekeeper Redis DID snapshot index', () => {
             on: jest.fn(),
             ping: async () => 'PONG',
             removeAllListeners: jest.fn(),
+            get: async () => null,
+            set: async () => 'OK',
             type: async (key: string) => key === didIndexKey ? 'zset' : 'none',
             del: jest.fn(),
             scan: jest.fn(),
@@ -2050,6 +2105,8 @@ describe('Gatekeeper Redis DID snapshot index', () => {
             on: jest.fn(),
             ping: async () => 'PONG',
             removeAllListeners: jest.fn(),
+            get: async () => null,
+            set: async () => 'OK',
             type: async (key: string) => zsets.has(key) ? 'zset' : 'none',
             del: async (...keys: string[]) => {
                 let removed = 0;
@@ -2202,10 +2259,14 @@ describe('Gatekeeper DB startup and guard behavior', () => {
         await db.resetDb();
         await db.stop();
 
-        expect(createIndex).toHaveBeenCalledTimes(5);
+        expect(createIndex).toHaveBeenCalledTimes(6);
         expect(createIndex).toHaveBeenCalledWith(
             { id: 1 },
             { name: 'dids_id_unique', unique: true }
+        );
+        expect(createIndex).toHaveBeenCalledWith(
+            { id: 1 },
+            { name: 'metadata_id_unique', unique: true }
         );
         expect(droppedIndexes).toStrictEqual([{ collection: 'dids', index: 'id_1' }]);
         expect(counterUpdates).toStrictEqual([[
@@ -2337,6 +2398,7 @@ describe('Gatekeeper DB startup and guard behavior', () => {
         ]);
         const changes: IndexChangeRecord[] = [];
         let indexSeq = 0;
+        let indexEpoch: string | null = null;
 
         const appDb = {
             collection: (collectionName: string) => ({
@@ -2405,18 +2467,28 @@ describe('Gatekeeper DB startup and guard behavior', () => {
                         return { id, value: indexSeq };
                     }
 
+                    if (collectionName === 'metadata' && id === 'indexEpoch' && indexEpoch) {
+                        return { id, value: indexEpoch };
+                    }
+
                     return null;
                 },
                 updateOne: async (
                     { id }: { id?: string },
                     update: {
-                        $set?: { value?: number; events?: GatekeeperEvent[] };
+                        $set?: { value?: number | string; events?: GatekeeperEvent[] };
+                        $setOnInsert?: { value?: string };
                         $push?: { events: { $each: GatekeeperEvent[] } };
                     }
                 ) => {
                     if (collectionName === 'counters' && id === 'indexSeq') {
                         indexSeq = update.$set?.value ?? indexSeq;
                         return { modifiedCount: 1, upsertedCount: 0 };
+                    }
+
+                    if (collectionName === 'metadata' && id === 'indexEpoch' && typeof update.$setOnInsert?.value === 'string') {
+                        indexEpoch = update.$setOnInsert.value;
+                        return { modifiedCount: 0, upsertedCount: 1 };
                     }
 
                     if (collectionName === 'dids' && id) {
@@ -2479,6 +2551,7 @@ describe('Gatekeeper DB startup and guard behavior', () => {
 
         expect(existingCollections.has('index_changes')).toBe(true);
         expect(existingCollections.has('counters')).toBe(true);
+        expect(existingCollections.has('metadata')).toBe(true);
         expect(createdIndexes).toEqual(expect.arrayContaining([
             {
                 collection: 'index_changes',
@@ -2490,11 +2563,17 @@ describe('Gatekeeper DB startup and guard behavior', () => {
                 key: { id: 1 },
                 options: { name: 'counters_id_unique', unique: true },
             },
+            {
+                collection: 'metadata',
+                key: { id: 1 },
+                options: { name: 'metadata_id_unique', unique: true },
+            },
         ]));
         expect(indexSeq).toBe(0);
 
         await expect(db.exportIndexSnapshot({ limit: 10 })).resolves.toMatchObject({
             mode: 'snapshot',
+            indexEpoch: expect.any(String),
             cursor: 'z2',
             checkpointCursor: '0',
             hasMore: false,
@@ -2507,6 +2586,7 @@ describe('Gatekeeper DB startup and guard behavior', () => {
 
         await expect(db.exportIndexChanges({ includeOperations: true })).resolves.toStrictEqual({
             mode: 'changes',
+            indexEpoch: expect.any(String),
             cursor: '0',
             checkpointCursor: '0',
             hasMore: false,
@@ -2527,6 +2607,7 @@ describe('Gatekeeper DB startup and guard behavior', () => {
 
         await expect(db.exportIndexChanges({ includeOperations: true })).resolves.toStrictEqual({
             mode: 'changes',
+            indexEpoch: expect.any(String),
             cursor: '1',
             checkpointCursor: '1',
             hasMore: false,

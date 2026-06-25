@@ -34,7 +34,7 @@ The repository `docker-compose.yml` starts MongoDB as a single-node replica set 
 
 ## Index export limitation
 
-`POST /api/v1/index/export` is intended to let consumers sync DID event histories using a cursor to avoid full database reads. Snapshot export includes DID events and the checkpoint cursor used to continue with incremental changes. It does not currently include Gatekeeper's blockchain table.
+`POST /api/v1/index/export` is intended to let consumers sync DID event histories using a cursor to avoid full database reads. Snapshot export includes DID events, the checkpoint cursor used to continue with incremental changes, and an `indexEpoch` that changes when the backing index database is reset or replaced. It does not currently include Gatekeeper's blockchain table.
 
 Consumers can rebuild DID documents and preserve accepted DID operation order from the event stream, but resolved DID metadata may omit chain timestamp proof bounds that require blockchain lookups, including block `height`, `hash`, and `time`. This keeps the explorer sync focused on DID operations for now, block snapshot hydration can be added later if full chain timestamp metadata is required.
 

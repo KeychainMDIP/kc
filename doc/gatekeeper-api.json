@@ -1032,6 +1032,7 @@
                       "type": "object",
                       "required": [
                         "mode",
+                        "indexEpoch",
                         "cursor",
                         "checkpointCursor",
                         "hasMore",
@@ -1044,6 +1045,10 @@
                           "enum": [
                             "snapshot"
                           ]
+                        },
+                        "indexEpoch": {
+                          "type": "string",
+                          "description": "Local Gatekeeper index epoch. Changes when the backing index database is reset or replaced."
                         },
                         "cursor": {
                           "type": "string",
@@ -1076,7 +1081,9 @@
                       "type": "object",
                       "required": [
                         "mode",
+                        "indexEpoch",
                         "cursor",
+                        "checkpointCursor",
                         "hasMore",
                         "dids",
                         "blocks"
@@ -1088,10 +1095,19 @@
                             "changes"
                           ]
                         },
+                        "indexEpoch": {
+                          "type": "string",
+                          "description": "Local Gatekeeper index epoch. Changes when the backing index database is reset or replaced."
+                        },
                         "cursor": {
                           "type": "string",
                           "nullable": true,
                           "description": "Incremental change cursor."
+                        },
+                        "checkpointCursor": {
+                          "type": "string",
+                          "nullable": true,
+                          "description": "Change high-water cursor returned with the page."
                         },
                         "hasMore": {
                           "type": "boolean"

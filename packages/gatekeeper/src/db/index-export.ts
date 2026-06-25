@@ -69,7 +69,8 @@ export async function buildIndexSnapshotResponseFromPageKeys(
     keys: string[],
     getEvents: (did: string) => Promise<GatekeeperEvent[]>,
     options: IndexExportSnapshotOptions = {},
-    checkpointCursor: string | null
+    checkpointCursor: string | null,
+    indexEpoch: string
 ): Promise<IndexExportResponse> {
     const limit = normalizeIndexExportLimit(options.limit);
     const pageKeys = keys.slice(0, limit);
@@ -85,6 +86,7 @@ export async function buildIndexSnapshotResponseFromPageKeys(
 
     return {
         mode: 'snapshot',
+        indexEpoch,
         cursor: pageKeys.length > 0
             ? pageKeys[pageKeys.length - 1]
             : options.cursor ?? null,
@@ -99,11 +101,16 @@ export async function exportIndexSnapshotFromAllKeysForLocalDb(
     getAllKeys: () => Promise<string[]>,
     getEvents: (did: string) => Promise<GatekeeperEvent[]>,
     options: IndexExportSnapshotOptions = {},
-    getCheckpointCursor?: () => Promise<string | null>
+    getCheckpointCursor?: () => Promise<string | null>,
+    getIndexEpoch?: () => Promise<string>
 ): Promise<IndexExportResponse> {
     const limit = normalizeIndexExportLimit(options.limit);
     const cursor = options.cursor ?? null;
     const checkpointCursor = options.checkpointCursor ?? (getCheckpointCursor ? await getCheckpointCursor() : null);
+    if (!getIndexEpoch) {
+        throw new Error('Index export response missing indexEpoch');
+    }
+    const indexEpoch = await getIndexEpoch();
     const keys = await getAllKeys();
     const records: IndexExportDIDRecord[] = [];
 
@@ -127,6 +134,7 @@ export async function exportIndexSnapshotFromAllKeysForLocalDb(
 
     return {
         mode: 'snapshot',
+        indexEpoch,
         cursor: nextCursor,
         checkpointCursor,
         hasMore: filtered.length > limit,
@@ -140,7 +148,8 @@ export async function buildIndexChangesResponse(
     hasMore: boolean,
     options: IndexExportChangesOptions = {},
     checkpointCursor: string | null,
-    getEvents: (did: string) => Promise<GatekeeperEvent[]>
+    getEvents: (did: string) => Promise<GatekeeperEvent[]>,
+    indexEpoch: string
 ): Promise<IndexExportResponse> {
     const afterSeq = parseIndexExportCursor(options.cursor);
     const cursor = changes.length > 0
@@ -198,6 +207,7 @@ export async function buildIndexChangesResponse(
 
     const response: IndexExportResponse = {
         mode: 'changes',
+        indexEpoch,
         cursor,
         checkpointCursor,
         hasMore,

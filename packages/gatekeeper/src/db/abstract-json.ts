@@ -1,4 +1,5 @@
 import { InvalidDIDError } from '@mdip/common/errors';
+import { randomUUID } from 'crypto';
 import {
     BlockId,
     BlockInfo,
@@ -200,6 +201,15 @@ export abstract class AbstractJson implements GatekeeperDb {
         return Object.keys(db.dids);
     }
 
+    private async getIndexEpoch(): Promise<string> {
+        const db = this.loadDb();
+        if (!db.indexEpoch) {
+            db.indexEpoch = randomUUID();
+            this.writeDb(db);
+        }
+        return db.indexEpoch;
+    }
+
     private async getIndexCheckpointCursor(): Promise<string> {
         const db = this.loadDb();
         return (db.indexSeq ?? 0).toString();
@@ -210,7 +220,8 @@ export abstract class AbstractJson implements GatekeeperDb {
             () => this.getAllKeys(),
             did => this.getEvents(did),
             _options,
-            () => this.getIndexCheckpointCursor()
+            () => this.getIndexCheckpointCursor(),
+            () => this.getIndexEpoch()
         );
     }
 
@@ -230,7 +241,8 @@ export abstract class AbstractJson implements GatekeeperDb {
             changes.length > limit,
             options,
             checkpointCursor,
-            did => this.getEvents(did)
+            did => this.getEvents(did),
+            await this.getIndexEpoch()
         );
     }
 

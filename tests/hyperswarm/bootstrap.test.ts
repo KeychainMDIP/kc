@@ -3,6 +3,7 @@ import type { GatekeeperEvent, IndexExportResponse, Operation } from '@mdip/gate
 import InMemoryOperationSyncStore from '../../services/mediators/hyperswarm/src/db/memory.ts';
 import {
     bootstrapSyncStoreFromGatekeeper,
+    GATEKEEPER_INDEX_EPOCH_CHANGED_RESET_REASON,
     HYPR_INDEX_SYNC_STATE_KEYS,
 } from '../../services/mediators/hyperswarm/src/bootstrap.ts';
 
@@ -33,10 +34,12 @@ function snapshotResponse(params: {
     events: GatekeeperEvent[];
     cursor: string | null;
     checkpointCursor: string | null;
+    indexEpoch?: string;
     hasMore?: boolean;
 }): IndexExportResponse {
     return {
         mode: 'snapshot',
+        indexEpoch: params.indexEpoch ?? 'epoch-a',
         cursor: params.cursor,
         checkpointCursor: params.checkpointCursor,
         hasMore: params.hasMore ?? false,
@@ -51,12 +54,14 @@ function snapshotResponse(params: {
 function changesResponse(params: {
     cursor: string | null;
     checkpointCursor?: string | null;
+    indexEpoch?: string;
     operations?: GatekeeperEvent[];
     didEvents?: GatekeeperEvent[];
     hasMore?: boolean;
 }): IndexExportResponse {
     return {
         mode: 'changes',
+        indexEpoch: params.indexEpoch ?? 'epoch-a',
         cursor: params.cursor,
         checkpointCursor: params.checkpointCursor ?? params.cursor ?? '0',
         hasMore: params.hasMore ?? false,
@@ -135,6 +140,7 @@ describe('bootstrapSyncStoreFromGatekeeper', () => {
         ]);
         expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotComplete)).toBe('true');
         expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor)).toBe('7');
+        expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.gatekeeperIndexEpoch)).toBe('epoch-a');
     });
 
     it('continues snapshot pages with the first checkpoint cursor', async () => {
@@ -185,6 +191,7 @@ describe('bootstrapSyncStoreFromGatekeeper', () => {
         await store.start();
         await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotComplete, 'true');
         await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor, '12');
+        await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.gatekeeperIndexEpoch, 'epoch-a');
 
         const opA = makeOperation('a', '2026-02-10T10:00:00.000Z');
         const opB = makeOperation('b', '2026-02-10T11:00:00.000Z');
@@ -220,6 +227,63 @@ describe('bootstrapSyncStoreFromGatekeeper', () => {
             signedTs: Math.floor(Date.parse(opA.signature!.signed) / 1000),
         }]);
         expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor)).toBe('13');
+        expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.gatekeeperIndexEpoch)).toBe('epoch-a');
+    });
+
+    it('resets the sync store when the local gatekeeper index epoch changes', async () => {
+        const store = new InMemoryOperationSyncStore();
+        await store.start();
+        await store.upsertMany([{
+            id: h('z'),
+            ts: Math.floor(Date.parse('2026-02-10T09:00:00.000Z') / 1000),
+            operation: makeOperation('z', '2026-02-10T09:00:00.000Z'),
+        }]);
+        await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotComplete, 'true');
+        await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor, '12');
+        await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.gatekeeperIndexEpoch, 'epoch-a');
+
+        const opA = makeOperation('a', '2026-02-10T10:00:00.000Z');
+        const gatekeeper = {
+            exportIndex: jest.fn()
+                .mockResolvedValueOnce(changesResponse({
+                    cursor: '12',
+                    checkpointCursor: '12',
+                    indexEpoch: 'epoch-b',
+                    operations: [],
+                }))
+                .mockResolvedValueOnce(snapshotResponse({
+                    did: 'did:test:a',
+                    events: [makeEvent(opA, 'did:test:a')],
+                    cursor: 'did:test:a',
+                    checkpointCursor: '0',
+                    indexEpoch: 'epoch-b',
+                })),
+        };
+
+        const result = await bootstrapSyncStoreFromGatekeeper(store, gatekeeper);
+
+        expect(result).toMatchObject({
+            countBefore: 1,
+            countAfter: 1,
+            mode: 'snapshot',
+            resetReason: GATEKEEPER_INDEX_EPOCH_CHANGED_RESET_REASON,
+            snapshotComplete: true,
+        });
+        expect(gatekeeper.exportIndex).toHaveBeenNthCalledWith(1, {
+            mode: 'changes',
+            cursor: '12',
+            limit: 500,
+            includeOperations: true,
+        });
+        expect(gatekeeper.exportIndex).toHaveBeenNthCalledWith(2, {
+            mode: 'snapshot',
+            cursor: null,
+            limit: 500,
+        });
+        expect(await store.has(h('z'))).toBe(false);
+        expect(await store.has(h('a'))).toBe(true);
+        expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor)).toBe('0');
+        expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.gatekeeperIndexEpoch)).toBe('epoch-b');
     });
 
     it('resets a stale completed sync store when gatekeeper checkpoint is behind the saved changes cursor', async () => {
@@ -301,6 +365,29 @@ describe('bootstrapSyncStoreFromGatekeeper', () => {
         await expect(bootstrapSyncStoreFromGatekeeper(store, gatekeeper))
             .rejects
             .toThrow('Changes export response missing checkpointCursor');
+        expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor)).toBe('12');
+    });
+
+    it('rejects changes responses without gatekeeper index epoch metadata', async () => {
+        const store = new InMemoryOperationSyncStore();
+        await store.start();
+        await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotComplete, 'true');
+        await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor, '12');
+
+        const gatekeeper = {
+            exportIndex: jest.fn(async () => {
+                const response = changesResponse({
+                    cursor: '13',
+                    operations: [],
+                });
+                delete (response as { indexEpoch?: string }).indexEpoch;
+                return response;
+            }),
+        };
+
+        await expect(bootstrapSyncStoreFromGatekeeper(store, gatekeeper))
+            .rejects
+            .toThrow('Index export response missing indexEpoch');
         expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor)).toBe('12');
     });
 
@@ -504,6 +591,7 @@ describe('bootstrapSyncStoreFromGatekeeper', () => {
             })],
             syncStateUpdates: {
                 [HYPR_INDEX_SYNC_STATE_KEYS.changesCursor]: '13',
+                [HYPR_INDEX_SYNC_STATE_KEYS.gatekeeperIndexEpoch]: 'epoch-a',
             },
         });
         expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor)).toBe('12');

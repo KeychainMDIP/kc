@@ -32,6 +32,7 @@ function createEvent(did: string, data: unknown, time: string): GatekeeperEvent 
 function createSnapshotResponse(): IndexExportResponse {
     return {
         mode: 'snapshot',
+        indexEpoch: 'epoch-test',
         cursor: snapshotCursor,
         checkpointCursor: '4',
         hasMore: false,
@@ -48,6 +49,7 @@ function createSnapshotResponse(): IndexExportResponse {
 function createChangesResponse(): IndexExportResponse {
     return {
         mode: 'changes',
+        indexEpoch: 'epoch-test',
         cursor: '7',
         checkpointCursor: '7',
         hasMore: false,

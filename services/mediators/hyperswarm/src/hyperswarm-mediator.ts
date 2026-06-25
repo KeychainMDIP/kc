@@ -78,7 +78,7 @@ import {
     buildRoundCapSplitWindow,
     MDIP_EPOCH_SECONDS,
 } from './negentropy/windows.js';
-import { bootstrapSyncStoreFromGatekeeper } from './bootstrap.js';
+import { bootstrapSyncStoreFromGatekeeper, type BootstrapResult } from './bootstrap.js';
 import {
     filterKnownOperations,
     filterIndexRejectedOperations,
@@ -1040,6 +1040,63 @@ function closePeerSession(peerKey: string, reason: string): void {
     }, 'peer sync session closed');
 }
 
+function resetConnectionSyncStateAfterGatekeeperReset(conn: ConnectionInfo): void {
+    conn.syncMode = 'unknown';
+    conn.syncStarted = false;
+    conn.lastNegentropyAttemptAt = 0;
+    conn.negentropySynced = false;
+    conn.legacyOutboundDeferred = false;
+    conn.legacyInboundDeferred = null;
+    conn.legacyFallbackNoted = false;
+    conn.orderedCatchupAttempted = false;
+    conn.orderedCatchupClientSessionId = null;
+    conn.orderedCatchupServerSessionId = null;
+    conn.orderedCatchupServerLastActivity = 0;
+    conn.orderedCatchupServerPendingSince = 0;
+    conn.orderedCatchupServerPendingUntil = 0;
+    conn.orderedCatchupServerPendingReason = null;
+    conn.orderedCatchupServerPendingGap = 0;
+}
+
+function resetRuntimeSyncStateAfterGatekeeperReset(sync: BootstrapResult): void {
+    const activeSessions = peerSessions.size;
+    const connectedPeers = Object.keys(connectionInfo).length;
+
+    peerSessions.clear();
+    orderedCatchupPostImportPeers.clear();
+    invalidateNegentropyAdapterCache();
+
+    for (const conn of Object.values(connectionInfo)) {
+        resetConnectionSyncStateAfterGatekeeperReset(conn);
+    }
+
+    log.warn(
+        {
+            resetReason: sync.resetReason,
+            countBefore: sync.countBefore,
+            countAfter: sync.countAfter,
+            mode: sync.mode,
+            pages: sync.pages,
+            inserted: sync.inserted,
+            updated: sync.updated,
+            activeSessions,
+            connectedPeers,
+        },
+        'gatekeeper reset detected; hyperswarm runtime sync state reset'
+    );
+}
+
+async function maybeRestartPeerSyncsAfterGatekeeperReset(reason: string): Promise<void> {
+    for (const peerKey of Object.keys(connectionInfo)) {
+        await maybeStartPeerSync(peerKey, 'connect');
+        if (getActiveNegentropySessions() > 0) {
+            return;
+        }
+    }
+
+    await maybeSchedulePreferredSyncs(`gatekeeper_reset_detected:${reason}`);
+}
+
 function expireIdlePeerSessions(): void {
     const now = Date.now();
     for (const [peerKey, session] of peerSessions.entries()) {
@@ -1814,6 +1871,16 @@ function isNegentropyAdapterDirty(): boolean {
 
 function markNegentropyAdapterDirty(): void {
     adapterChangeSeq += 1;
+}
+
+function invalidateNegentropyAdapterCache(): void {
+    markNegentropyAdapterDirty();
+    adapterBuiltSeq = -1;
+    adapterBuiltAt = 0;
+    adapterBuiltWindowId = null;
+    adapterBuiltSnapshot = null;
+    rebuildPromise = null;
+    backgroundPrebuildQueued = false;
 }
 
 function cloneCursor(cursor?: SyncStoreCursor | null): SyncStoreCursor | null {
@@ -3009,7 +3076,7 @@ function isStringArray(arr: any[]): arr is string[] {
 async function shareDb(conn: HyperswarmConnection): Promise<void> {
     const startTimeMs = Date.now();
     try {
-        const batchSize = 1000; // export DIDs in batches of 1000 for scalability
+        const batchSize = 100; // keep legacy share batches small to limit transient memory use
         const dids = await gatekeeper.getDIDs();
 
         // Either empty or we got an MdipDocument[] which should not happen.
@@ -3764,12 +3831,23 @@ async function flushQueue(): Promise<void> {
 
 async function syncGatekeeperIndexToStore(source: string): Promise<void> {
     const sync = await bootstrapSyncStoreFromGatekeeper(syncStore, gatekeeper);
-    if (sync.inserted > 0 || sync.updated > 0) {
+    if (sync.resetReason) {
+        resetRuntimeSyncStateAfterGatekeeperReset(sync);
+    }
+
+    if (!sync.resetReason && (sync.inserted > 0 || sync.updated > 0)) {
         markNegentropyAdapterDirty();
+    }
+
+    if (sync.resetReason || sync.inserted > 0 || sync.updated > 0) {
         maybeStartBackgroundPrebuild(`gatekeeper_index_${source}`);
     }
 
     log.debug({ source, sync }, 'gatekeeper index sync complete');
+
+    if (sync.resetReason) {
+        await maybeRestartPeerSyncsAfterGatekeeperReset(sync.resetReason);
+    }
 }
 
 async function exportLoop(): Promise<void> {

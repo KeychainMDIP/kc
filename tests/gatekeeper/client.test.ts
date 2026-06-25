@@ -533,6 +533,7 @@ describe('exportIndex', () => {
     it('should return index export response', async () => {
         const exportResponse = {
             mode: 'changes',
+            indexEpoch: 'epoch-test',
             cursor: '1',
             checkpointCursor: '1',
             hasMore: false,

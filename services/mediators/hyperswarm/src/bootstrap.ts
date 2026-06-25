@@ -13,7 +13,8 @@ import {
 
 const DEFAULT_INDEX_EXPORT_PAGE_LIMIT = 500;
 const log = childLogger({ service: 'hyperswarm-bootstrap' });
-const STALE_SYNC_STORE_RESET_REASON = 'gatekeeper_checkpoint_behind_sync_cursor';
+export const STALE_SYNC_STORE_RESET_REASON = 'gatekeeper_checkpoint_behind_sync_cursor';
+export const GATEKEEPER_INDEX_EPOCH_CHANGED_RESET_REASON = 'gatekeeper_index_epoch_changed';
 type BootstrapLogLevel = 'debug' | 'error' | 'warn';
 
 function writeLog(
@@ -33,6 +34,7 @@ export const HYPR_INDEX_SYNC_STATE_KEYS = {
     snapshotCursor: 'index.snapshot.cursor',
     snapshotCheckpointCursor: 'index.snapshot.checkpointCursor',
     changesCursor: 'index.changes.cursor',
+    gatekeeperIndexEpoch: 'index.gatekeeper.epoch',
 } as const;
 
 export interface BootstrapResult {
@@ -79,6 +81,18 @@ class StaleSyncStoreError extends Error {
     }
 }
 
+class GatekeeperIndexEpochChangedError extends Error {
+    readonly storedEpoch: string;
+    readonly gatekeeperEpoch: string;
+
+    constructor(storedEpoch: string, gatekeeperEpoch: string) {
+        super('Gatekeeper index epoch changed');
+        this.name = 'GatekeeperIndexEpochChangedError';
+        this.storedEpoch = storedEpoch;
+        this.gatekeeperEpoch = gatekeeperEpoch;
+    }
+}
+
 interface SnapshotLogState {
     pageLimit: number;
     pages: number;
@@ -93,6 +107,28 @@ interface SnapshotLogState {
     hasMore: boolean | null;
     snapshotComplete: boolean;
     durationMs: number;
+}
+
+function getResponseIndexEpoch(response: IndexExportResponse): string {
+    if (typeof response.indexEpoch !== 'string' || response.indexEpoch.length === 0) {
+        throw new Error('Index export response missing indexEpoch');
+    }
+
+    return response.indexEpoch;
+}
+
+async function assertGatekeeperIndexEpoch(
+    syncStore: OperationSyncStore,
+    response: IndexExportResponse
+): Promise<string> {
+    const responseEpoch = getResponseIndexEpoch(response);
+    const storedEpoch = await syncStore.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.gatekeeperIndexEpoch);
+
+    if (storedEpoch && storedEpoch !== responseEpoch) {
+        throw new GatekeeperIndexEpochChangedError(storedEpoch, responseEpoch);
+    }
+
+    return responseEpoch;
 }
 
 function toOperations(events: GatekeeperEvent[]): Operation[] {
@@ -271,6 +307,7 @@ async function syncSnapshot(
             if (response.checkpointCursor === undefined) {
                 throw new Error('Snapshot export response missing checkpointCursor');
             }
+            const responseIndexEpoch = await assertGatekeeperIndexEpoch(syncStore, response);
 
             const responseCheckpointCursor = response.checkpointCursor ?? '0';
             if (checkpointCursor && responseCheckpointCursor !== checkpointCursor) {
@@ -285,6 +322,7 @@ async function syncSnapshot(
             const syncStateUpdates: Record<string, string | null> = {
                 [HYPR_INDEX_SYNC_STATE_KEYS.snapshotCursor]: nextCursor,
                 [HYPR_INDEX_SYNC_STATE_KEYS.snapshotCheckpointCursor]: checkpointCursor,
+                [HYPR_INDEX_SYNC_STATE_KEYS.gatekeeperIndexEpoch]: responseIndexEpoch,
             };
 
             if (!response.hasMore) {
@@ -381,12 +419,14 @@ async function syncChanges(
         if (response.checkpointCursor === undefined) {
             throw new Error('Changes export response missing checkpointCursor');
         }
+        const responseIndexEpoch = await assertGatekeeperIndexEpoch(syncStore, response);
 
         assertSyncStoreCursorWithinGatekeeperCheckpoint(cursor, response.checkpointCursor);
 
         const nextCursor = response.cursor ?? cursor ?? '0';
         addTotals(totals, await applyChangesPage(syncStore, response, {
             [HYPR_INDEX_SYNC_STATE_KEYS.changesCursor]: nextCursor,
+            [HYPR_INDEX_SYNC_STATE_KEYS.gatekeeperIndexEpoch]: responseIndexEpoch,
         }));
 
         if (!response.hasMore) {
@@ -420,15 +460,24 @@ export async function bootstrapSyncStoreFromGatekeeper(
             : await syncSnapshot(syncStore, gatekeeper, pageLimit);
     }
     catch (error) {
-        if (!(error instanceof StaleSyncStoreError)) {
+        if (!(error instanceof StaleSyncStoreError) && !(error instanceof GatekeeperIndexEpochChangedError)) {
             throw error;
         }
 
-        resetReason = STALE_SYNC_STORE_RESET_REASON;
+        resetReason = error instanceof GatekeeperIndexEpochChangedError
+            ? GATEKEEPER_INDEX_EPOCH_CHANGED_RESET_REASON
+            : STALE_SYNC_STORE_RESET_REASON;
         writeLog('warn', {
             reason: resetReason,
-            savedCursor: error.savedCursor,
-            gatekeeperCheckpointCursor: error.gatekeeperCheckpointCursor,
+            ...(error instanceof StaleSyncStoreError
+                ? {
+                    savedCursor: error.savedCursor,
+                    gatekeeperCheckpointCursor: error.gatekeeperCheckpointCursor,
+                }
+                : {
+                    storedEpoch: error.storedEpoch,
+                    gatekeeperEpoch: error.gatekeeperEpoch,
+                }),
             countBefore,
         }, 'resetting stale hyperswarm sync store');
 

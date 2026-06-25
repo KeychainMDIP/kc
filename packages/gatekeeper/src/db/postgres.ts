@@ -1,4 +1,5 @@
 import { Pool, PoolClient } from 'pg';
+import { randomUUID } from 'crypto';
 import { InvalidDIDError } from '@mdip/common/errors';
 import {
     GatekeeperDb,
@@ -193,7 +194,49 @@ export default class DbPostgres implements GatekeeperDb {
 
             CREATE INDEX IF NOT EXISTS idx_gatekeeper_index_changes_ns_seq
                 ON gatekeeper_index_changes (namespace, seq ASC);
+
+            CREATE TABLE IF NOT EXISTS gatekeeper_metadata (
+                namespace TEXT NOT NULL,
+                key TEXT NOT NULL,
+                value TEXT NOT NULL,
+                PRIMARY KEY (namespace, key)
+            );
         `);
+    }
+
+    private async ensureIndexEpoch(client?: PoolClient): Promise<string> {
+        const executor = client ?? this.getPool();
+        const existing = await executor.query<{ value: string }>(
+            `SELECT value
+             FROM gatekeeper_metadata
+             WHERE namespace = $1 AND key = 'indexEpoch'
+             LIMIT 1`,
+            [this.dbName]
+        );
+        if (existing.rows[0]?.value) {
+            return existing.rows[0].value;
+        }
+
+        const epoch = randomUUID();
+        await executor.query(
+            `INSERT INTO gatekeeper_metadata (namespace, key, value)
+             VALUES ($1, 'indexEpoch', $2)
+             ON CONFLICT (namespace, key) DO NOTHING`,
+            [this.dbName, epoch]
+        );
+
+        const saved = await executor.query<{ value: string }>(
+            `SELECT value
+             FROM gatekeeper_metadata
+             WHERE namespace = $1 AND key = 'indexEpoch'
+             LIMIT 1`,
+            [this.dbName]
+        );
+        return saved.rows[0]?.value ?? epoch;
+    }
+
+    private async getIndexEpoch(): Promise<string> {
+        return this.ensureIndexEpoch();
     }
 
     private async insertEventRows(client: PoolClient, id: string, events: GatekeeperEvent[]): Promise<number> {
@@ -254,6 +297,7 @@ export default class DbPostgres implements GatekeeperDb {
         this.pool = new Pool({ connectionString: this.url });
         await this.withTx(async client => {
             await this.ensureSchema(client);
+            await this.ensureIndexEpoch(client);
         });
     }
 
@@ -287,6 +331,12 @@ export default class DbPostgres implements GatekeeperDb {
             await client.query('DELETE FROM gatekeeper_queue WHERE namespace = $1', [this.dbName]);
             await client.query('DELETE FROM gatekeeper_blocks WHERE namespace = $1', [this.dbName]);
             await client.query('DELETE FROM gatekeeper_index_changes WHERE namespace = $1', [this.dbName]);
+            await client.query(
+                `INSERT INTO gatekeeper_metadata (namespace, key, value)
+                 VALUES ($1, 'indexEpoch', $2)
+                 ON CONFLICT (namespace, key) DO UPDATE SET value = excluded.value`,
+                [this.dbName, randomUUID()]
+            );
         });
     }
 
@@ -421,6 +471,7 @@ export default class DbPostgres implements GatekeeperDb {
         const limit = normalizeIndexExportLimit(options.limit);
         const cursor = options.cursor ?? null;
         const checkpointCursor = options.checkpointCursor ?? await this.getIndexCheckpointCursor();
+        const indexEpoch = await this.getIndexEpoch();
         const result = await pool.query<{ id: string }>(
             `SELECT DISTINCT id
              FROM gatekeeper_events
@@ -435,7 +486,8 @@ export default class DbPostgres implements GatekeeperDb {
             result.rows.map(row => row.id),
             id => this.getEvents(id),
             options,
-            checkpointCursor
+            checkpointCursor,
+            indexEpoch
         );
     }
 
@@ -445,6 +497,7 @@ export default class DbPostgres implements GatekeeperDb {
         const afterSeq = parseIndexExportCursor(options.cursor);
         const limit = normalizeIndexExportLimit(options.limit);
         const checkpointCursor = await this.getIndexCheckpointCursor();
+        const indexEpoch = await this.getIndexEpoch();
         const result = await pool.query<IndexChangeRow>(
             `SELECT seq, kind, did, registry, block, event, removed
              FROM gatekeeper_index_changes
@@ -472,7 +525,8 @@ export default class DbPostgres implements GatekeeperDb {
             result.rows.length > limit,
             options,
             checkpointCursor,
-            did => this.getEvents(did)
+            did => this.getEvents(did),
+            indexEpoch
         );
     }
 

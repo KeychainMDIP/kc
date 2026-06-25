@@ -8,6 +8,7 @@ export interface JsonDbFile {
     hashes?: Record<string, any>
     indexSeq?: number;
     indexChanges?: IndexChangeRecord[];
+    indexEpoch?: string;
 }
 
 export interface ImportBatchResult {
@@ -170,6 +171,7 @@ export interface IndexExportOperationRecord {
 }
 
 export interface IndexExportBaseResponse {
+    indexEpoch: string;
     cursor: string | null;
     hasMore: boolean;
     dids: IndexExportDIDRecord[];
