@@ -3,7 +3,7 @@ import { DmailItem } from "@mdip/keymaster/types";
 import { useWalletContext } from "./WalletProvider";
 import { useSnackbar } from "./SnackbarProvider";
 import { CHAT_SUBJECT, MESSAGING_PROFILE } from "../constants";
-import { parseChatPayload } from "../utils/utils";
+import { hasRenderableChatContent, parseChatPayload } from "../utils/utils";
 
 const REFRESH_INTERVAL = 5_000;
 const UNREAD = "unread";
@@ -328,7 +328,7 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
                     continue;
                 }
 
-                const messageText = typeof payload.message === "string" ? payload.message.trim() : "";
+                const hasRenderableContent = hasRenderableChatContent(payload);
                 const groupId = typeof payload.groupId === "string" ? payload.groupId.trim() : "";
                 const groupName = typeof payload.groupName === "string" ? payload.groupName.trim() : "";
                 const toDids = item.message?.to ?? [];
@@ -362,13 +362,13 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
                     }
 
                     groupUpdates[groupId] = groupInfo;
-                    if (!messageText) {
+                    if (!hasRenderableContent) {
                         if (tags.includes(UNREAD)) {
                             updates.push({ did, tags: tags.filter(tag => tag !== UNREAD) });
                         }
                         continue;
                     }
-                } else if (!messageText) {
+                } else if (!hasRenderableContent) {
                     if (tags.includes(UNREAD)) {
                         updates.push({ did, tags: tags.filter(tag => tag !== UNREAD) });
                     }

@@ -30,6 +30,9 @@ import { useColorMode } from "../contexts/ColorModeProvider";
 import {
     avatarDataUrl,
     formatTime,
+    getChatMessageText,
+    hasRenderableChatContent,
+    isImageChatPayload,
     truncateMiddle,
     parseChatPayload,
     stringifyChatPayload,
@@ -174,8 +177,7 @@ const ChatWindow: React.FC = () => {
                 continue;
             }
 
-            const messageText = typeof payload.message === "string" ? payload.message.trim() : "";
-            if (!messageText) {
+            if (!hasRenderableChatContent(payload)) {
                 continue;
             }
             const payloadGroupId = typeof payload.groupId === "string" ? payload.groupId.trim() : "";
@@ -226,8 +228,7 @@ const ChatWindow: React.FC = () => {
                 setError(error);
             }
         })();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activePeer, peerDid, currentDID, currentGroupMembers]);
+    }, [activePeer, peerDid, currentDID, currentGroupMembers, dmailList, groupList, keymaster, refreshInbox, setError]);
 
     const handleSend = async (text: string) => {
         const messageText = (text ?? pendingText).trim();
@@ -452,10 +453,11 @@ const ChatWindow: React.FC = () => {
                     return acc;
                 }
 
-                const messageText = typeof payload.message === "string" ? payload.message.trim() : "";
-                if (!messageText) {
+                if (!hasRenderableChatContent(payload)) {
                     return acc;
                 }
+                const messageText = getChatMessageText(payload);
+                const isImage = isImageChatPayload(payload);
 
                 const senderDid = itm.docs?.didDocument?.controller;
                 const toDids = itm.message?.to ?? [];
@@ -492,6 +494,7 @@ const ChatWindow: React.FC = () => {
                     direction: itm.sender === currentId ? "outgoing" : "incoming",
                     sentTime: formatTime(itm.date),
                     position: "single",
+                    type: isImage && !messageText ? "custom" : undefined,
                 }
                 acc.push({ did, model, date: itm.date });
                 return acc;
@@ -643,31 +646,36 @@ const ChatWindow: React.FC = () => {
                             {conversation.map((m) => {
                                 const hasImages = !!(imageAttachments[m.did] && imageAttachments[m.did].length > 0);
                                 const displayMessage = m.model.message;
+                                const isImageOnly = m.model.type === "custom" && displayMessage === "";
                                 return (
                                     <Message
                                         key={m.did}
                                         model={{
                                             ...m.model,
                                             message: displayMessage,
-                                            type: hasImages && displayMessage === "" ? "custom" : undefined,
+                                            type: isImageOnly ? "custom" : undefined,
                                         }}
                                     >
                                         <Message.Header sentTime={m.model!.sentTime} />
-                                        {hasImages && (
+                                        {(hasImages || isImageOnly) && (
                                             <Message.CustomContent>
                                                 <div>
-                                                    {imageAttachments[m.did].map(img => (
-                                                        <img
-                                                            key={img.name}
-                                                            src={img.url}
-                                                            alt={img.name}
-                                                            style={{
-                                                                maxWidth: 240,
-                                                                maxHeight: 240,
-                                                            }}
-                                                            onClick={() => openImageViewer(img.url)}
-                                                        />
-                                                    ))}
+                                                    {hasImages ? (
+                                                        imageAttachments[m.did].map(img => (
+                                                            <img
+                                                                key={img.name}
+                                                                src={img.url}
+                                                                alt={img.name}
+                                                                style={{
+                                                                    maxWidth: 240,
+                                                                    maxHeight: 240,
+                                                                }}
+                                                                onClick={() => openImageViewer(img.url)}
+                                                            />
+                                                        ))
+                                                    ) : (
+                                                        <span>Image attachment unavailable</span>
+                                                    )}
                                                 </div>
                                             </Message.CustomContent>
                                         )}

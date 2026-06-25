@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useVariablesContext } from "../contexts/VariablesProvider";
 import { Avatar, Conversation, ConversationList } from "@chatscope/chat-ui-kit-react";
-import { avatarDataUrl, parseChatPayload, truncateMiddle } from "../utils/utils";
+import { avatarDataUrl, hasRenderableChatContent, parseChatPayload, truncateMiddle } from "../utils/utils";
 import {CHAT_SUBJECT, MESSAGING_PROFILE} from "../constants";
 import AddUserModal from "../modals/AddUserModal";
 import CreateGroupModal from "../modals/CreateGroupModal";
@@ -119,8 +119,7 @@ export default function HomePage() {
                 continue;
             }
 
-            const messageText = typeof payload.message === "string" ? payload.message.trim() : "";
-            if (!messageText) {
+            if (!hasRenderableChatContent(payload)) {
                 continue;
             }
 

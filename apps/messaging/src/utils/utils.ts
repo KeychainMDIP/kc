@@ -156,6 +156,18 @@ export type ChatPayload = {
     [key: string]: unknown;
 };
 
+export function getChatMessageText(payload: ChatPayload | null | undefined): string {
+    return typeof payload?.message === "string" ? payload.message.trim() : "";
+}
+
+export function isImageChatPayload(payload: ChatPayload | null | undefined): boolean {
+    return payload?.type === "image";
+}
+
+export function hasRenderableChatContent(payload: ChatPayload | null | undefined): boolean {
+    return getChatMessageText(payload).length > 0 || isImageChatPayload(payload);
+}
+
 export function parseChatPayload(body: string): ChatPayload | null {
     if (typeof body !== "string") {
         return null;
