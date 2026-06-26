@@ -1011,6 +1011,10 @@
                   "limit": {
                     "type": "integer",
                     "minimum": 1
+                  },
+                  "includeOperations": {
+                    "type": "boolean",
+                    "description": "Changes-only. Include event-level operation records for consumers that need replay order."
                   }
                 }
               }
@@ -1028,6 +1032,7 @@
                       "type": "object",
                       "required": [
                         "mode",
+                        "indexEpoch",
                         "cursor",
                         "checkpointCursor",
                         "hasMore",
@@ -1040,6 +1045,10 @@
                           "enum": [
                             "snapshot"
                           ]
+                        },
+                        "indexEpoch": {
+                          "type": "string",
+                          "description": "Local Gatekeeper index epoch. Changes when the backing index database is reset or replaced."
                         },
                         "cursor": {
                           "type": "string",
@@ -1072,7 +1081,9 @@
                       "type": "object",
                       "required": [
                         "mode",
+                        "indexEpoch",
                         "cursor",
+                        "checkpointCursor",
                         "hasMore",
                         "dids",
                         "blocks"
@@ -1084,10 +1095,19 @@
                             "changes"
                           ]
                         },
+                        "indexEpoch": {
+                          "type": "string",
+                          "description": "Local Gatekeeper index epoch. Changes when the backing index database is reset or replaced."
+                        },
                         "cursor": {
                           "type": "string",
                           "nullable": true,
                           "description": "Incremental change cursor."
+                        },
+                        "checkpointCursor": {
+                          "type": "string",
+                          "nullable": true,
+                          "description": "Change high-water cursor returned with the page."
                         },
                         "hasMore": {
                           "type": "boolean"
@@ -1100,6 +1120,13 @@
                         },
                         "blocks": {
                           "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        },
+                        "operations": {
+                          "type": "array",
+                          "description": "Optional ordered operation records. Returned only when includeOperations is true.",
                           "items": {
                             "type": "object"
                           }
@@ -1116,6 +1143,9 @@
           },
           "500": {
             "description": "Internal Server Error."
+          },
+          "503": {
+            "description": "Gatekeeper database is unavailable."
           }
         }
       }

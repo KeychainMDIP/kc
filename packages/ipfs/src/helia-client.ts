@@ -10,11 +10,15 @@ import * as sha256 from 'multiformats/hashes/sha2';
 import { MDIPError } from '@mdip/common/errors';
 import { IPFSClient } from './types.js';
 import { createLibp2p } from 'libp2p';
+import cluster from 'node:cluster';
 
 interface HeliaConfig {
     minimal?: boolean;
     datadir?: string;
+    cleanupGlobalListeners?: boolean;
 }
+
+type NodeListener = (...args: any[]) => void;
 
 export class NotConnectedError extends MDIPError {
     static readonly type = 'Not connected';
@@ -53,18 +57,26 @@ class HeliaClient implements IPFSClient {
     private helia: Helia | null;
     private ipfs: JSON | null;
     private unixfs: UnixFS | null;
+    private clusterMessageListeners: NodeListener[];
+    private cleanupGlobalListeners: boolean;
 
     constructor(config = {}) {
         this.config = config;
         this.helia = null;
         this.ipfs = null;
         this.unixfs = null;
+        this.clusterMessageListeners = [];
+        this.cleanupGlobalListeners = this.config.cleanupGlobalListeners ?? Boolean(process.env.JEST_WORKER_ID);
     }
 
     async start(): Promise<void> {
         if (this.helia || this.config.minimal) {
             return;
         }
+
+        const existingClusterMessageListeners = this.cleanupGlobalListeners
+            ? new Set(cluster.listeners('message'))
+            : null;
 
         const libp2p = await createLibp2p({
             transports: [], // local only
@@ -80,6 +92,12 @@ class HeliaClient implements IPFSClient {
 
         this.ipfs = json(this.helia);
         this.unixfs = unixfs(this.helia);
+
+        if (existingClusterMessageListeners) {
+            const listeners = cluster.listeners('message')
+                .filter(listener => !existingClusterMessageListeners.has(listener)) as NodeListener[];
+            this.clusterMessageListeners.push(...listeners);
+        }
     }
 
     async stop(): Promise<void> {
@@ -87,7 +105,22 @@ class HeliaClient implements IPFSClient {
             await this.helia.stop();
             this.helia = null;
             this.ipfs = null;
+            this.unixfs = null;
         }
+
+        this.removeClusterMessageListeners();
+    }
+
+    private removeClusterMessageListeners(): void {
+        if (!this.cleanupGlobalListeners) {
+            return;
+        }
+
+        for (const listener of this.clusterMessageListeners) {
+            cluster.removeListener('message', listener);
+        }
+
+        this.clusterMessageListeners = [];
     }
 
     public async addJSON(data: any): Promise<string> {

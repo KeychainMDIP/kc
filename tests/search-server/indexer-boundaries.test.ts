@@ -32,6 +32,7 @@ function createEvent(did: string, data: unknown, time: string): GatekeeperEvent 
 function createSnapshotResponse(): IndexExportResponse {
     return {
         mode: 'snapshot',
+        indexEpoch: 'epoch-test',
         cursor: snapshotCursor,
         checkpointCursor: '4',
         hasMore: false,
@@ -48,7 +49,9 @@ function createSnapshotResponse(): IndexExportResponse {
 function createChangesResponse(): IndexExportResponse {
     return {
         mode: 'changes',
+        indexEpoch: 'epoch-test',
         cursor: '7',
+        checkpointCursor: '7',
         hasMore: false,
         blocks: [],
         dids: [{
@@ -245,6 +248,59 @@ describe('DidIndexer gatekeeper read boundary', () => {
             limit: 500,
         });
         expect(await db.loadSyncState('index.changes.cursor')).toBe('9');
+    });
+
+    it('does not request operations and ignores them when they are present in changes responses', async () => {
+        const db = new DIDsDbMemory();
+        const applyIndexPage = jest.spyOn(db, 'applyIndexPage');
+        await db.saveSyncState('index.snapshot.complete', 'true');
+
+        const operationsOnlyDid = 'did:test:z3v8AuapxSfMXs4gozSR8pPJWYWSqmhaYmX2MLFQQiQBy1aCNU9';
+        const operationsOnlyEvent = createEvent(
+            operationsOnlyDid,
+            { name: 'ignored-operation-payload' },
+            '2026-04-01T12:00:00.000Z'
+        );
+        const gatekeeper = {
+            isReady: jest.fn().mockResolvedValue(true),
+            exportIndex: jest.fn()
+                .mockResolvedValueOnce(createChangesResponse())
+                .mockResolvedValueOnce({
+                    ...createChangesResponse(),
+                    cursor: '8',
+                    dids: [],
+                    operations: [{
+                        seq: 8,
+                        did: operationsOnlyDid,
+                        event: operationsOnlyEvent,
+                        operationHash: 'ignored-operation-hash',
+                    }],
+                }),
+        };
+        const indexer = new DidIndexer(gatekeeper as any, db, { intervalMs: 60_000 });
+
+        await (indexer as any).refreshIndex();
+        await (indexer as any).refreshIndex();
+
+        expect(gatekeeper.exportIndex).toHaveBeenNthCalledWith(1, {
+            mode: 'changes',
+            cursor: null,
+            limit: 500,
+        });
+        expect(gatekeeper.exportIndex).toHaveBeenNthCalledWith(2, {
+            mode: 'changes',
+            cursor: '7',
+            limit: 500,
+        });
+        expect(applyIndexPage.mock.calls[0][0]).not.toHaveProperty('operations');
+        expect(applyIndexPage.mock.calls[1][0]).toMatchObject({
+            dids: [],
+            blocks: [],
+        });
+        expect(applyIndexPage.mock.calls[1][0]).not.toHaveProperty('operations');
+        await expect(db.getDIDEvents(changesDid)).resolves.toHaveLength(1);
+        await expect(db.getDIDEvents(operationsOnlyDid)).resolves.toStrictEqual([]);
+        expect(await db.loadSyncState('index.changes.cursor')).toBe('8');
     });
 
     it('logs when sync error state cannot be persisted', async () => {

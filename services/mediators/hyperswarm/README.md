@@ -49,13 +49,15 @@ The mediator emits periodic structured sync metrics in `connectionLoop` includin
 | `KC_HYPR_POSTGRES_URL`    | postgresql://mdip:mdip@localhost:5432/mdip | Postgres DSN used when `KC_HYPR_DB=postgres` |
 | `KC_HYPR_EXPORT_INTERVAL` | 2                            | Seconds between export cycles |
 | `KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT` | 0                            | Negentropy frame-size limit in KB (0 or >= 4) |
-| `KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW` | 25000                        | Maximum operations loaded into a single window adapter |
+| `KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW` | 25000                        | Maximum operations loaded into a single window adapter; also the non-empty-node gap threshold for ordered catch-up |
 | `KC_HYPR_NEGENTROPY_MAX_ROUNDS_PER_SESSION` | 64                           | Maximum negentropy rounds per window session |
 | `KC_HYPR_NEGENTROPY_INTERVAL` | 300                          | Seconds between retry attempts for peers not yet fully synced |
+| `KC_HYPR_ORDERED_CATCHUP_ENABLE` | true                         | Pull ordered operation pages before negentropy when this node is clean or far behind |
 | `KC_HYPR_LEGACY_SYNC_ENABLE` | true                         | Allow legacy `sync`/`shareDb` compatibility path |
 | `KC_LOG_LEVEL`            | info                         | Log level: `debug`, `info`, `warn`, `error` |
 
 Negentropy session concurrency is currently fixed at one active session per node.
+Ordered catch-up uses the same operation push chunking as negentropy: up to 256 operations or 512 KiB per push.
 
 ## IPFS disabled mode
 

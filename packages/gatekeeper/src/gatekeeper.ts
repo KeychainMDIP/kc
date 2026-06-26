@@ -785,7 +785,9 @@ export default class Gatekeeper implements GatekeeperInterface {
                             (event.ordinal && nextEvent.ordinal && compareOrdinals(event.ordinal, nextEvent.ordinal) < 0)) {
                             // reorg event, discard the rest of the operation sequence and replace with this event
                             const newSequence = [...currentEvents.slice(0, index + 1), event];
-                            await this.db.setEvents(lockedDid, newSequence);
+                            await this.db.setEvents(lockedDid, newSequence, {
+                                operationEvents: [event],
+                            });
                             return ImportStatus.ADDED;
                         }
                     }

@@ -93,6 +93,7 @@ function createAssetEvent(
 function createSnapshotResponse(did: string, data: unknown) {
     return {
         mode: 'snapshot' as const,
+        indexEpoch: 'epoch-test',
         cursor: did,
         checkpointCursor: '0',
         hasMore: false,
@@ -107,6 +108,7 @@ function createSnapshotResponse(did: string, data: unknown) {
 function createEmptySnapshotResponse() {
     return {
         mode: 'snapshot' as const,
+        indexEpoch: 'epoch-test',
         cursor: null,
         checkpointCursor: '0',
         hasMore: false,
@@ -1355,7 +1357,9 @@ describe('DidIndexer published credential indexing', () => {
             isReady: jest.fn().mockResolvedValue(true),
             exportIndex: jest.fn().mockResolvedValue({
                 mode: 'changes' as const,
+                indexEpoch: 'epoch-test',
                 cursor: '1',
+                checkpointCursor: '1',
                 hasMore: false,
                 blocks: [],
                 dids: [{
@@ -1399,6 +1403,7 @@ describe('DidIndexer published credential indexing', () => {
             exportIndex: jest.fn()
                 .mockResolvedValueOnce({
                     mode: 'snapshot' as const,
+                    indexEpoch: 'epoch-test',
                     cursor: firstPageCursor,
                     checkpointCursor,
                     hasMore: true,
@@ -1410,6 +1415,7 @@ describe('DidIndexer published credential indexing', () => {
                 })
                 .mockResolvedValueOnce({
                     mode: 'snapshot' as const,
+                    indexEpoch: 'epoch-test',
                     cursor: secondPageCursor,
                     checkpointCursor,
                     hasMore: false,
@@ -1449,6 +1455,7 @@ describe('DidIndexer published credential indexing', () => {
             isReady: jest.fn().mockResolvedValue(true),
             exportIndex: jest.fn().mockResolvedValue({
                 mode: 'snapshot' as const,
+                indexEpoch: 'epoch-test',
                 cursor: did,
                 checkpointCursor: '0',
                 hasMore: false,
@@ -1487,6 +1494,7 @@ describe('DidIndexer published credential indexing', () => {
             isReady: jest.fn().mockResolvedValue(true),
             exportIndex: jest.fn().mockResolvedValue({
                 mode: 'snapshot' as const,
+                indexEpoch: 'epoch-test',
                 cursor: did,
                 checkpointCursor: '0',
                 hasMore: false,

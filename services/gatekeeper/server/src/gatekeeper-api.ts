@@ -24,7 +24,11 @@ import {
     createWhitelistBlockList,
     formatBytes,
     formatDuration,
+    DatabaseUnavailableError,
+    databaseUnavailableResponse,
+    exportIndexWithReadiness,
     isRateLimitWhitelistedRequest,
+    isGatekeeperReady,
     logRequest,
     parseIndexExportRequest,
     rateLimitWindowUnits,
@@ -170,7 +174,8 @@ let serverReady = false;
  */
 v1router.get('/ready', async (req, res) => {
     try {
-        res.json(serverReady);
+        const ready = await isGatekeeperReady(serverReady, db);
+        res.status(ready ? 200 : 503).json(ready);
     } catch (error: any) {
         res.status(500).send(error.toString());
     }
@@ -980,6 +985,9 @@ v1router.post('/dids/', async (req, res) => {
  *               limit:
  *                 type: integer
  *                 minimum: 1
+ *               includeOperations:
+ *                 type: boolean
+ *                 description: Changes-only. Include event-level operation records for consumers that need replay order.
  *
  *     responses:
  *       200:
@@ -989,11 +997,14 @@ v1router.post('/dids/', async (req, res) => {
  *             schema:
  *               oneOf:
  *                 - type: object
- *                   required: [ mode, cursor, checkpointCursor, hasMore, dids, blocks ]
+ *                   required: [ mode, indexEpoch, cursor, checkpointCursor, hasMore, dids, blocks ]
  *                   properties:
  *                     mode:
  *                       type: string
  *                       enum: [ snapshot ]
+ *                     indexEpoch:
+ *                       type: string
+ *                       description: Local Gatekeeper index epoch. Changes when the backing index database is reset or replaced.
  *                     cursor:
  *                       type: string
  *                       nullable: true
@@ -1013,15 +1024,22 @@ v1router.post('/dids/', async (req, res) => {
  *                       items:
  *                         type: object
  *                 - type: object
- *                   required: [ mode, cursor, hasMore, dids, blocks ]
+ *                   required: [ mode, indexEpoch, cursor, checkpointCursor, hasMore, dids, blocks ]
  *                   properties:
  *                     mode:
  *                       type: string
  *                       enum: [ changes ]
+ *                     indexEpoch:
+ *                       type: string
+ *                       description: Local Gatekeeper index epoch. Changes when the backing index database is reset or replaced.
  *                     cursor:
  *                       type: string
  *                       nullable: true
  *                       description: Incremental change cursor.
+ *                     checkpointCursor:
+ *                       type: string
+ *                       nullable: true
+ *                       description: Change high-water cursor returned with the page.
  *                     hasMore:
  *                       type: boolean
  *                     dids:
@@ -1032,8 +1050,15 @@ v1router.post('/dids/', async (req, res) => {
  *                       type: array
  *                       items:
  *                         type: object
+ *                     operations:
+ *                       type: array
+ *                       description: Optional ordered operation records. Returned only when includeOperations is true.
+ *                       items:
+ *                         type: object
  *       400:
  *         description: Invalid request body.
+ *       503:
+ *         description: Gatekeeper database is unavailable.
  *       500:
  *         description: Internal Server Error.
  */
@@ -1048,12 +1073,15 @@ v1router.post('/index/export', async (req, res) => {
     }
 
     try {
-        const response = request.mode === 'snapshot'
-            ? await db.exportIndexSnapshot(request)
-            : await db.exportIndexChanges(request);
-
+        const response = await exportIndexWithReadiness(db, request);
         res.json(response);
     } catch (error: any) {
+        if (error instanceof DatabaseUnavailableError) {
+            log.warn({ err: error.cause ?? error }, 'Index export database unavailable');
+            res.status(503).json(databaseUnavailableResponse());
+            return;
+        }
+
         log.error({ err: error }, 'Index export error');
         res.status(500).json({ error: error.toString() });
     }

@@ -249,16 +249,21 @@ describe('NegentropyAdapter', () => {
             start: async () => undefined,
             stop: async () => undefined,
             reset: async () => undefined,
-            upsertMany: async () => 0,
+            upsertMany: async () => ({ inserted: 0, updated: 0 }),
+            applySyncPage: async () => ({ inserted: 0, updated: 0 }),
+            loadSyncState: async () => null,
+            saveSyncState: async () => undefined,
             getByIds: async () => [],
             has: async () => false,
             count: async () => rows.length,
+            countOrdered: async () => 0,
             iterateSorted: async (options: SyncStoreListOptions = {}) => {
                 if (options.after) {
                     return [];
                 }
                 return rows;
             },
+            iterateOrdered: async () => [],
         };
 
         const adapter = await NegentropyAdapter.create({
@@ -399,16 +404,21 @@ describe('NegentropyAdapter', () => {
             async start() {},
             async stop() {},
             async reset() {},
-            async upsertMany() { return 0; },
+            async upsertMany() { return { inserted: 0, updated: 0 }; },
+            async applySyncPage() { return { inserted: 0, updated: 0 }; },
+            async loadSyncState() { return null; },
+            async saveSyncState() {},
             async getByIds() { return []; },
             async has() { return false; },
             async count() { return rows.length; },
+            async countOrdered() { return 0; },
             async iterateSorted(options: SyncStoreListOptions = {}) {
                 if (options.after) {
                     return [];
                 }
                 return rows;
             },
+            async iterateOrdered() { return []; },
         };
 
         const adapter = await NegentropyAdapter.create({
