@@ -47,11 +47,14 @@ interface VariablesContextValue {
     setAgentList: Dispatch<SetStateAction<string[]>>;
     profileList: Record<string, { avatar?: string; name?: string }>;
     setProfileList: Dispatch<SetStateAction<Record<string, { avatar?: string; name?: string }>>>;
+    senderProfileList: Record<string, SenderProfile>;
+    setSenderProfileList: Dispatch<SetStateAction<Record<string, SenderProfile>>>;
     pollList: string[];
     setPollList: Dispatch<SetStateAction<string[]>>;
     activePeer: string;
     setActivePeer: Dispatch<SetStateAction<string>>;
     resolveAvatar: (assetDid: string) => Promise<string | null>,
+    resolveSenderProfile: (did: string) => Promise<SenderProfile>;
     refreshAll: () => Promise<void>;
     refreshHeld: () => Promise<void>;
     refreshNames: () => Promise<void>;
@@ -66,6 +69,12 @@ type GroupInfo = {
     members: string[];
 };
 
+export type SenderProfile = {
+    did: string;
+    name: string;
+    avatar?: string;
+};
+
 export function VariablesProvider({ children }: { children: ReactNode }) {
     const [currentId, setCurrentId] = useState<string>("");
     const [currentDID, setCurrentDID] = useState<string>("");
@@ -77,6 +86,7 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
     const [nameRegistry, setNameRegistry] = useState<Record<string, string>>({});
     const [agentList, setAgentList] = useState<string[]>([]);
     const [profileList, setProfileList] = useState<Record<string, { avatar?: string; name?: string }>>({});
+    const [senderProfileList, setSenderProfileList] = useState<Record<string, SenderProfile>>({});
     const [pollList, setPollList] = useState<string[]>([]);
     const [groupList, setGroupList] = useState<Record<string, GroupInfo>>({});
     const [imageList, setImageList] = useState<string[]>([]);
@@ -97,6 +107,7 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
     const { setError } = useSnackbar();
 
     const avatarCache = useRef<Map<string, string>>(new Map());
+    const senderProfileListRef = useRef<Record<string, SenderProfile>>({});
 
     useEffect(() => {
         const refresh = async () => {
@@ -105,6 +116,10 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         void refresh();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    useEffect(() => {
+        senderProfileListRef.current = senderProfileList;
+    }, [senderProfileList]);
 
     function getProfileName(
         storedAlias: string,
@@ -119,6 +134,76 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         const trimmed = profile.name.trim();
         return trimmed || storedAlias;
     }
+
+    const cacheSenderProfile = useCallback((profile: SenderProfile): SenderProfile => {
+        const existing = senderProfileListRef.current[profile.did];
+        if (existing) {
+            return existing;
+        }
+
+        const next = { ...senderProfileListRef.current, [profile.did]: profile };
+        senderProfileListRef.current = next;
+        setSenderProfileList(next);
+        return profile;
+    }, []);
+
+    const pruneSenderProfilesForKnownDids = useCallback((knownDids: Set<string>) => {
+        const next: Record<string, SenderProfile> = {};
+        let changed = false;
+
+        for (const [did, profile] of Object.entries(senderProfileListRef.current)) {
+            if (knownDids.has(did)) {
+                changed = true;
+                continue;
+            }
+            next[did] = profile;
+        }
+
+        if (changed) {
+            senderProfileListRef.current = next;
+            setSenderProfileList(next);
+        }
+    }, []);
+
+    const resolveSenderProfile = useCallback(async (did: string): Promise<SenderProfile> => {
+        const senderDid = did.trim();
+        const fallbackName = senderDid.slice(-20) || senderDid;
+        const fallbackProfile: SenderProfile = { did: senderDid, name: fallbackName };
+
+        if (!senderDid || !keymaster) {
+            return fallbackProfile;
+        }
+
+        const cached = senderProfileListRef.current[senderDid];
+        if (cached) {
+            return cached;
+        }
+
+        let profile = fallbackProfile;
+
+        try {
+            const senderDoc = await keymaster.resolveDID(senderDid);
+            if (senderDoc.mdip?.type === "agent") {
+                const data = senderDoc.didDocumentData as Record<string, any> | undefined;
+                const name = getProfileName(fallbackName, data ?? {});
+                const messagingProfile = data?.[MESSAGING_PROFILE] as { avatar?: unknown } | undefined;
+                const avatarDid = typeof messagingProfile?.avatar === "string"
+                    ? messagingProfile.avatar.trim()
+                    : "";
+                const avatar = avatarDid ? await resolveAvatar(avatarDid) : null;
+
+                profile = {
+                    did: senderDid,
+                    name,
+                    ...(avatar ? { avatar } : {}),
+                };
+            }
+        } catch {
+            return fallbackProfile;
+        }
+
+        return cacheSenderProfile(profile);
+    }, [cacheSenderProfile, keymaster]);
 
     const refreshNames = useCallback(
         async () => {
@@ -271,6 +356,7 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
             setDisplayNameList(displayNameToDid);
             setNameRegistry(registryMap);
             setProfileList(profileListLocal);
+            pruneSenderProfilesForKnownDids(new Set(Object.values(canonicalAliasToDid)));
 
             const uniqueSortedAgents = [...new Set(agentDisplayNames)]
                 .sort((a, b) => a.localeCompare(b));
@@ -291,7 +377,7 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
             setNamesReady(true);
         },
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [keymaster, currentId, groupList]
+        [keymaster, currentId, groupList, pruneSenderProfilesForKnownDids]
     );
 
     const refreshInbox = useCallback( async() => {
@@ -313,6 +399,8 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
             const groupUpdates: Record<string, GroupInfo> = {};
             const knownGroups = new Map(Object.entries(groupList));
             const knownNames = { ...nameList };
+            const knownDids = new Set(Object.values(knownNames));
+            const senderProfilesToResolve = new Set<string>();
 
             for (const [did, item] of Object.entries(msgs)) {
                 if (item.message?.subject !== CHAT_SUBJECT) {
@@ -378,24 +466,28 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
 
                 filtered[did] = item;
 
-                if (!isGroupDelivery) {
-                    const senderDid = item.docs?.didDocument?.controller;
-                    if (senderDid && senderDid !== currentDID) {
-                        const alreadyKnown = Object.values(knownNames).includes(senderDid);
+                const senderDid = item.docs?.didDocument?.controller;
+                if (senderDid && senderDid !== currentDID) {
+                    const alreadyKnown = knownDids.has(senderDid);
+                    if (isGroupDelivery) {
                         if (!alreadyKnown) {
-                            try {
-                                let name = senderDid.slice(-20);
-                                try {
-                                    const senderDoc = await keymaster.resolveDID(senderDid);
-                                    const data = senderDoc.didDocumentData as Record<string, any> | undefined;
-                                    name = getProfileName(name, data ?? {});
-                                } catch {}
-                                name = makeUniqueContactAlias(name, senderDid, knownNames);
-                                await keymaster.addName(name, senderDid);
-                                knownNames[name] = senderDid;
-                                needsRefresh = true;
-                            } catch {}
+                            senderProfilesToResolve.add(senderDid);
                         }
+                    } else if (!alreadyKnown) {
+                        try {
+                            let name = senderDid.slice(-20);
+                            try {
+                                const senderDoc = await keymaster.resolveDID(senderDid);
+                                const data = senderDoc.didDocumentData as Record<string, any> | undefined;
+                                name = getProfileName(name, data ?? {});
+                            } catch {}
+                            name = makeUniqueContactAlias(name, senderDid, knownNames);
+                            await keymaster.addName(name, senderDid);
+                            knownNames[name] = senderDid;
+                            knownDids.add(senderDid);
+                            senderProfilesToResolve.delete(senderDid);
+                            needsRefresh = true;
+                        } catch {}
                     }
                 }
             }
@@ -427,6 +519,12 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
                 JSON.stringify(prev) === JSON.stringify(filtered) ? prev : filtered
             );
 
+            if (senderProfilesToResolve.size > 0) {
+                await Promise.all(
+                    [...senderProfilesToResolve].map(senderDid => resolveSenderProfile(senderDid))
+                );
+            }
+
             if (updates.length > 0) {
                 await Promise.all(updates.map(({ did, tags }) => keymaster.fileDmail(did, tags)));
             }
@@ -439,7 +537,7 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         } finally {
             inboxRefreshingRef.current = false;
         }
-    }, [keymaster, currentId, currentDID, namesReady, nameList, groupList, refreshNames, setError]);
+    }, [keymaster, currentId, currentDID, namesReady, nameList, groupList, refreshNames, resolveSenderProfile, setError]);
 
     useEffect(() => {
         if (!keymaster || !namesReady) {
@@ -583,9 +681,13 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         setCurrentDID("");
         setManifest({});
         setNameList({});
+        setDisplayNameList({});
+        setNameRegistry({});
         setSchemaList([]);
         setAgentList([]);
         setProfileList({});
+        senderProfileListRef.current = {};
+        setSenderProfileList({});
         setHeldList([]);
         setVaultList([]);
         setPollList([]);
@@ -671,6 +773,8 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         setAgentList,
         profileList,
         setProfileList,
+        senderProfileList,
+        setSenderProfileList,
         pollList,
         setPollList,
         dmailList,
@@ -678,6 +782,7 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         activePeer,
         setActivePeer,
         resolveAvatar,
+        resolveSenderProfile,
         refreshAll,
         refreshHeld,
         refreshNames,

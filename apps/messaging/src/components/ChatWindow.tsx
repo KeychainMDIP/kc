@@ -46,6 +46,17 @@ type MessageModel = {
     sentTime?: string
     position: "single" | "first" | "normal" | "last"
     type?: "text" | "custom"
+    senderDid?: string
+    senderName?: string
+    senderAvatar?: string
+    senderNameSource?: "keymaster" | "profile" | "fallback"
+    showSenderName?: boolean
+}
+
+type SenderDisplay = {
+    name: string
+    avatar?: string
+    source: "keymaster" | "profile" | "fallback"
 }
 
 const UNREAD = "unread"
@@ -63,6 +74,7 @@ const ChatWindow: React.FC = () => {
         setActivePeer,
         refreshNames,
         profileList,
+        senderProfileList,
         groupList,
     } = useVariablesContext();
     const {
@@ -102,6 +114,48 @@ const ChatWindow: React.FC = () => {
         peerDid
             ? (Object.entries(nameList).find(([, d]) => d === peerDid)?.[0] ?? uiPeer)
             : uiPeer;
+
+    const knownDisplayNameByDid = useMemo(() => {
+        const out: Record<string, string> = {};
+
+        for (const [alias, did] of Object.entries(nameList)) {
+            if (did && !out[did]) {
+                out[did] = alias;
+            }
+        }
+
+        for (const [displayName, did] of Object.entries(displayNameList)) {
+            if (did) {
+                out[did] = displayName;
+            }
+        }
+
+        return out;
+    }, [displayNameList, nameList]);
+
+    const getSenderDisplay = useMemo(() => {
+        return (senderDid?: string): SenderDisplay => {
+            if (!senderDid) {
+                return { name: "Unknown sender", source: "fallback" };
+            }
+
+            const keymasterName = knownDisplayNameByDid[senderDid];
+            if (keymasterName) {
+                return { name: keymasterName, source: "keymaster" };
+            }
+
+            const senderProfile = senderProfileList[senderDid];
+            if (senderProfile?.name) {
+                return {
+                    name: senderProfile.name,
+                    avatar: senderProfile.avatar,
+                    source: "profile",
+                };
+            }
+
+            return { name: truncateMiddle(senderDid, 25), source: "fallback" };
+        };
+    }, [knownDisplayNameByDid, senderProfileList]);
 
     const onRemove = () => {
         if (!activePeer) {
@@ -469,7 +523,7 @@ const ChatWindow: React.FC = () => {
                     }
 
                     const outgoing = senderDid === currentDID;
-                    const incoming = senderDid !== currentDID && toDids.includes(currentDID);
+                    const incoming = !!senderDid && senderDid !== currentDID && toDids.includes(currentDID);
                     if (!outgoing && !incoming) {
                         return acc;
                     }
@@ -488,37 +542,93 @@ const ChatWindow: React.FC = () => {
                     }
                 }
 
+                const senderDisplay = getSenderDisplay(senderDid);
+                const direction = senderDid === currentDID || itm.sender === currentId ? "outgoing" : "incoming";
                 const model: MessageModel = {
                     message: messageText,
-                    sender: itm.sender,
-                    direction: itm.sender === currentId ? "outgoing" : "incoming",
+                    sender: senderDisplay.name || itm.sender,
+                    direction,
                     sentTime: formatTime(itm.date),
                     position: "single",
                     type: isImage && !messageText ? "custom" : undefined,
+                    senderDid,
+                    senderName: senderDisplay.name,
+                    senderAvatar: senderDisplay.avatar,
+                    senderNameSource: senderDisplay.source,
+                    showSenderName: false,
                 }
                 acc.push({ did, model, date: itm.date });
                 return acc;
             }, [] as { did: string; model: MessageModel; date: string }[])
             .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-        for (let i = 0; i < convo.length; i++) {
-            const prevDir = convo[i - 1]?.model.direction;
-            const currDir = convo[i].model.direction;
-            const nextDir = convo[i + 1]?.model.direction;
+        if (isGroup) {
+            const senderNameDids = new Map<string, Set<string>>();
+            for (const item of convo) {
+                const { senderDid, senderName } = item.model;
+                if (!senderDid || !senderName) {
+                    continue;
+                }
 
-            if (prevDir !== currDir && nextDir !== currDir) {
+                const dids = senderNameDids.get(senderName) ?? new Set<string>();
+                dids.add(senderDid);
+                senderNameDids.set(senderName, dids);
+            }
+
+            for (const item of convo) {
+                const { senderDid, senderName, senderNameSource } = item.model;
+                if (!senderDid || !senderName || senderNameSource !== "profile") {
+                    continue;
+                }
+
+                if ((senderNameDids.get(senderName)?.size ?? 0) > 1) {
+                    item.model.senderName = `${senderName} (${truncateMiddle(senderDid, 18)})`;
+                    item.model.sender = item.model.senderName;
+                }
+            }
+        }
+
+        const sameRun = (
+            left: { model: MessageModel; } | undefined,
+            right: { model: MessageModel; } | undefined
+        ) => {
+            if (!left || !right) {
+                return false;
+            }
+
+            if (left.model.direction !== right.model.direction) {
+                return false;
+            }
+
+            if (!isGroup) {
+                return true;
+            }
+
+            return left.model.senderDid === right.model.senderDid;
+        };
+
+        for (let i = 0; i < convo.length; i++) {
+            const samePrev = sameRun(convo[i - 1], convo[i]);
+            const sameNext = sameRun(convo[i], convo[i + 1]);
+
+            if (!samePrev && !sameNext) {
                 convo[i].model.position = "single";
-            } else if (prevDir !== currDir) {
+            } else if (!samePrev) {
                 convo[i].model.position = "first";
-            } else if (nextDir !== currDir) {
+            } else if (!sameNext) {
                 convo[i].model.position = "last";
             } else {
                 convo[i].model.position = "normal";
             }
+
+            convo[i].model.showSenderName = isGroup
+                && convo[i].model.direction === "incoming"
+                && !!convo[i].model.senderName
+                && !samePrev;
         }
 
         return convo;
-    }, [activePeer, currentDID, peerDid, currentId, dmailList, groupList, keymaster])
+    }, [activePeer, currentDID, peerDid, currentId, dmailList, groupList, keymaster, getSenderDisplay])
 
     useEffect(() => {
         let mounted = true;
@@ -656,7 +766,10 @@ const ChatWindow: React.FC = () => {
                                             type: isImageOnly ? "custom" : undefined,
                                         }}
                                     >
-                                        <Message.Header sentTime={m.model!.sentTime} />
+                                        <Message.Header
+                                            sender={m.model.showSenderName ? m.model.senderName : undefined}
+                                            sentTime={m.model!.sentTime}
+                                        />
                                         {(hasImages || isImageOnly) && (
                                             <Message.CustomContent>
                                                 <div>

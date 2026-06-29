@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Dialog, Box, Flex, IconButton, Text, Field, Input, Button, Portal } from "@chakra-ui/react";
 import { useVariablesContext } from "../contexts/VariablesProvider";
 import { useWalletContext } from "../contexts/WalletProvider";
@@ -27,16 +27,74 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({ isOpen, onClose }) 
     const [groupName, setGroupName] = useState<string>("");
     const [searchTerm, setSearchTerm] = useState<string>("");
     const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
+    const [creating, setCreating] = useState<boolean>(false);
+    const [memberPickerOpen, setMemberPickerOpen] = useState<boolean>(false);
+    const memberPickerRef = useRef<HTMLDivElement | null>(null);
 
     useEffect(() => {
         if (isOpen) {
             setGroupName("");
             setSearchTerm("");
             setSelectedMembers([]);
+            setCreating(false);
+            setMemberPickerOpen(false);
         }
     }, [isOpen]);
 
+    useEffect(() => {
+        if (creating) {
+            setMemberPickerOpen(false);
+        }
+    }, [creating]);
+
+    useEffect(() => {
+        if (!memberPickerOpen) {
+            return;
+        }
+
+        const handleMouseDown = (event: MouseEvent) => {
+            if (!memberPickerRef.current?.contains(event.target as Node)) {
+                setMemberPickerOpen(false);
+            }
+        };
+
+        document.addEventListener("mousedown", handleMouseDown);
+        return () => document.removeEventListener("mousedown", handleMouseDown);
+    }, [memberPickerOpen]);
+
+    const getAgentDid = (agent: string) => displayNameList[agent] ?? nameList[agent] ?? "";
+    const isCurrentUserAgent = (agent: string) => agent === currentId || (!!currentDID && getAgentDid(agent) === currentDID);
+
+    const availableAgents = useMemo(() => {
+        return agentList.filter(agent => {
+            if (!agent.trim()) {
+                return false;
+            }
+
+            if (selectedMembers.includes(agent)) {
+                return false;
+            }
+
+            return !isCurrentUserAgent(agent);
+        });
+    }, [agentList, currentDID, currentId, displayNameList, nameList, selectedMembers]);
+
+    const filteredAgents = useMemo(() => {
+        const term = searchTerm.trim().toLowerCase();
+        if (!term) {
+            return availableAgents;
+        }
+
+        return availableAgents.filter(agent =>
+            agent.toLowerCase().includes(term)
+        );
+    }, [availableAgents, searchTerm]);
+
     const handleAddMember = (memberName?: string) => {
+        if (creating) {
+            return;
+        }
+
         const trimmed = (memberName || searchTerm).trim();
         if (!trimmed) {
             return;
@@ -47,6 +105,11 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({ isOpen, onClose }) 
             return;
         }
 
+        if (isCurrentUserAgent(trimmed)) {
+            setError("You are already included in the group");
+            return;
+        }
+
         if (selectedMembers.includes(trimmed)) {
             setError("User already added to group");
             return;
@@ -54,13 +117,22 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({ isOpen, onClose }) 
 
         setSelectedMembers([...selectedMembers, trimmed]);
         setSearchTerm("");
+        setMemberPickerOpen(availableAgents.some(agent => agent !== trimmed));
     };
 
     const handleRemoveMember = (member: string) => {
+        if (creating) {
+            return;
+        }
+
         setSelectedMembers(selectedMembers.filter(m => m !== member));
     };
 
     const handleCreate = async () => {
+        if (creating) {
+            return;
+        }
+
         const trimmed = groupName.trim();
         if (!trimmed) {
             setError("Group name is required");
@@ -78,11 +150,13 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({ isOpen, onClose }) 
         }
 
         try {
+            setCreating(true);
+
             const groupId = await keymaster.createGroup(trimmed);
             const memberDids = selectedMembers
                 .filter(member => member !== currentId)
                 .map(member => displayNameList[member] ?? nameList[member] ?? member)
-                .filter(member => !!member);
+                .filter(member => !!member && member !== currentDID);
             const recipients = Array.from(new Set([currentDID, ...memberDids]));
 
             for (const memberDid of recipients) {
@@ -107,16 +181,24 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({ isOpen, onClose }) 
             onClose();
         } catch (error: any) {
             setError(error);
+        } finally {
+            setCreating(false);
         }
     };
 
     const handleOpenChange = (e: { open: boolean }) => {
-        if (!e.open) onClose();
+        if (!e.open && !creating) {
+            onClose();
+        }
     };
 
-    const filteredAgents = agentList.filter(agent =>
-        agent.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const handleCancel = () => {
+        if (!creating) {
+            onClose();
+        }
+    };
+
+    const createDisabled = creating || !groupName.trim() || selectedMembers.length === 0;
 
     return (
         <Dialog.Root open={isOpen} onOpenChange={handleOpenChange}>
@@ -126,20 +208,30 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({ isOpen, onClose }) 
                     <Dialog.Content>
                         <Box display="flex" flexDir="column" minH="100%">
                             <Flex as="header" direction="column" w="100%" px={2} pt={10} gap={2} position="relative">
-                                <IconButton position="absolute" top="8px" left="8px" variant="ghost" size="sm" onClick={onClose}>
+                                <Button
+                                    position="absolute"
+                                    top="8px"
+                                    left="8px"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={handleCancel}
+                                    disabled={creating}
+                                >
                                     Cancel
-                                </IconButton>
-                                <IconButton
+                                </Button>
+                                <Button
                                     position="absolute"
                                     top="8px"
                                     right="8px"
                                     variant="ghost"
                                     size="sm"
                                     onClick={handleCreate}
-                                    disabled={!groupName.trim() || selectedMembers.length === 0}
+                                    disabled={createDisabled}
+                                    loading={creating}
+                                    loadingText="Creating"
                                 >
                                     Create
-                                </IconButton>
+                                </Button>
 
                                 <Text fontSize="lg" fontWeight="bold" textAlign="center">
                                     Create Group
@@ -154,43 +246,62 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({ isOpen, onClose }) 
                                         value={groupName}
                                         onChange={(e) => setGroupName(e.target.value)}
                                         placeholder="Enter group name"
+                                        disabled={creating}
                                     />
                                 </Field.Root>
 
                                 <Field.Root>
                                     <Field.Label fontWeight="medium">Add Members</Field.Label>
-                                    <Flex gap={2}>
-                                        <Input
-                                            type="text"
-                                            value={searchTerm}
-                                            onChange={(e) => setSearchTerm(e.target.value)}
-                                            placeholder="Search users..."
-                                            list="agent-suggestions"
-                                        />
-                                        <Button
-                                            size="sm"
-                                            onClick={() => handleAddMember()}
-                                            disabled={!searchTerm.trim()}
-                                        >
-                                            Add
-                                        </Button>
-                                    </Flex>
-                                    {searchTerm && filteredAgents.length > 0 && (
-                                        <Box mt={2} borderWidth="1px" borderRadius="md" maxH="150px" overflowY="auto">
-                                            {filteredAgents.slice(0, 5).map(agent => (
-                                                <Box
-                                                    key={agent}
-                                                    px={3}
-                                                    py={2}
-                                                    cursor="pointer"
-                                                    _hover={{ bg: "gray.100" }}
-                                                    onClick={() => handleAddMember(agent)}
-                                                >
-                                                    {agent}
-                                                </Box>
-                                            ))}
-                                        </Box>
-                                    )}
+                                    <Box ref={memberPickerRef}>
+                                        <Flex gap={2}>
+                                            <Input
+                                                type="text"
+                                                value={searchTerm}
+                                                onChange={(e) => {
+                                                    setSearchTerm(e.target.value);
+                                                    setMemberPickerOpen(true);
+                                                }}
+                                                onFocus={() => setMemberPickerOpen(true)}
+                                                onClick={() => setMemberPickerOpen(true)}
+                                                placeholder="Search users..."
+                                                autoComplete="off"
+                                                disabled={creating}
+                                            />
+                                            <Button
+                                                size="sm"
+                                                onClick={() => handleAddMember()}
+                                                disabled={creating || !searchTerm.trim()}
+                                            >
+                                                Add
+                                            </Button>
+                                        </Flex>
+                                        {!creating && memberPickerOpen && (
+                                            <Box mt={2} borderWidth="1px" borderRadius="md" maxH="150px" overflowY="auto" role="listbox">
+                                                {filteredAgents.length > 0 ? (
+                                                    filteredAgents.map(agent => (
+                                                        <Box
+                                                            key={agent}
+                                                            px={3}
+                                                            py={2}
+                                                            cursor="pointer"
+                                                            role="option"
+                                                            _hover={{ bg: "gray.100" }}
+                                                            onMouseDown={(event) => {
+                                                                event.preventDefault();
+                                                                handleAddMember(agent);
+                                                            }}
+                                                        >
+                                                            {agent}
+                                                        </Box>
+                                                    ))
+                                                ) : (
+                                                    <Box px={3} py={2} color="gray.500">
+                                                        No users found
+                                                    </Box>
+                                                )}
+                                            </Box>
+                                        )}
+                                    </Box>
                                 </Field.Root>
 
                                 {selectedMembers.length > 0 && (
@@ -211,6 +322,7 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({ isOpen, onClose }) 
                                                         size="sm"
                                                         variant="ghost"
                                                         onClick={() => handleRemoveMember(member)}
+                                                        disabled={creating}
                                                     >
                                                         <LuX />
                                                     </IconButton>
