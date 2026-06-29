@@ -1,6 +1,8 @@
 import {BarcodeScanner} from "@capacitor-mlkit/barcode-scanning";
 import { toSvg } from "jdenticon";
 
+const MAX_KEYMASTER_NAME_LENGTH = 32;
+
 export function avatarDataUrl(seed: string, size = 64) {
     const svg = toSvg(seed || "anonymous", size);
     return "data:image/svg+xml;utf8," + encodeURIComponent(svg);
@@ -146,6 +148,32 @@ export function arraysMatchMembers(arr1: string[], arr2: string[]) {
     const sorted1 = [...arr1].sort();
     const sorted2 = [...arr2].sort();
     return sorted1.every((val, idx) => val === sorted2[idx]);
+}
+
+export function makeUniqueContactAlias(
+    profileName: string,
+    did: string,
+    nameList: Record<string, string>
+): string {
+    const fallback = did.slice(-20);
+    const base = (profileName || fallback).trim() || fallback;
+
+    const buildAlias = (suffix?: number) => {
+        const suffixText = suffix ? ` #${suffix}` : "";
+        const maxBaseLength = MAX_KEYMASTER_NAME_LENGTH - suffixText.length;
+        const trimmedBase = base.slice(0, maxBaseLength).trim() || fallback.slice(0, maxBaseLength);
+        return `${trimmedBase}${suffixText}`;
+    };
+
+    let alias = buildAlias();
+    let suffix = 2;
+
+    while (nameList[alias] && nameList[alias] !== did) {
+        alias = buildAlias(suffix);
+        suffix++;
+    }
+
+    return alias;
 }
 
 export type ChatPayload = {

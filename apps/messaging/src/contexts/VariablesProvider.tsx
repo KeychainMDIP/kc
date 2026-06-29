@@ -3,7 +3,7 @@ import { DmailItem } from "@mdip/keymaster/types";
 import { useWalletContext } from "./WalletProvider";
 import { useSnackbar } from "./SnackbarProvider";
 import { CHAT_SUBJECT, MESSAGING_PROFILE } from "../constants";
-import { hasRenderableChatContent, parseChatPayload } from "../utils/utils";
+import { hasRenderableChatContent, makeUniqueContactAlias, parseChatPayload } from "../utils/utils";
 
 const REFRESH_INTERVAL = 5_000;
 const UNREAD = "unread";
@@ -312,6 +312,7 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
             const updates: Array<{ did: string; tags: string[] }> = [];
             const groupUpdates: Record<string, GroupInfo> = {};
             const knownGroups = new Map(Object.entries(groupList));
+            const knownNames = { ...nameList };
 
             for (const [did, item] of Object.entries(msgs)) {
                 if (item.message?.subject !== CHAT_SUBJECT) {
@@ -380,11 +381,18 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
                 if (!isGroupDelivery) {
                     const senderDid = item.docs?.didDocument?.controller;
                     if (senderDid && senderDid !== currentDID) {
-                        const alreadyKnown = Object.values(nameList).includes(senderDid);
+                        const alreadyKnown = Object.values(knownNames).includes(senderDid);
                         if (!alreadyKnown) {
                             try {
-                                const name = senderDid.slice(-20);
+                                let name = senderDid.slice(-20);
+                                try {
+                                    const senderDoc = await keymaster.resolveDID(senderDid);
+                                    const data = senderDoc.didDocumentData as Record<string, any> | undefined;
+                                    name = getProfileName(name, data ?? {});
+                                } catch {}
+                                name = makeUniqueContactAlias(name, senderDid, knownNames);
                                 await keymaster.addName(name, senderDid);
+                                knownNames[name] = senderDid;
                                 needsRefresh = true;
                             } catch {}
                         }

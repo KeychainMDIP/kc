@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useVariablesContext } from "../contexts/VariablesProvider";
 import { Avatar, Conversation, ConversationList } from "@chatscope/chat-ui-kit-react";
-import { avatarDataUrl, hasRenderableChatContent, parseChatPayload, truncateMiddle } from "../utils/utils";
+import {
+    avatarDataUrl,
+    hasRenderableChatContent,
+    makeUniqueContactAlias,
+    parseChatPayload,
+    truncateMiddle
+} from "../utils/utils";
 import {CHAT_SUBJECT, MESSAGING_PROFILE} from "../constants";
 import AddUserModal from "../modals/AddUserModal";
 import CreateGroupModal from "../modals/CreateGroupModal";
@@ -55,7 +61,7 @@ export default function HomePage() {
             return;
         }
 
-        let aliasName = "";
+        let profileName = "";
         try {
             const doc = await keymaster.resolveDID(aliasDID);
             if (doc.mdip?.type !== "agent") {
@@ -71,11 +77,13 @@ export default function HomePage() {
                 return;
             }
 
-            aliasName = existingProfile.name;
+            profileName = existingProfile.name.trim();
         } catch {
             setAddUserError("DID not found");
             return;
         }
+
+        const aliasName = makeUniqueContactAlias(profileName, aliasDID, nameList);
 
         try {
             await keymaster.addName(aliasName, aliasDID);
@@ -86,7 +94,7 @@ export default function HomePage() {
 
         setIsAddOpen(false);
         await refreshNames();
-        setSuccess(`User ${aliasName} added`);
+        setSuccess(`User ${profileName} added`);
     };
 
     const unreadBySender = useMemo(() => {
