@@ -6,6 +6,7 @@ import {
     useContext,
     useEffect,
     useMemo,
+    useRef,
     useState,
 } from "react";
 import GatekeeperClient from "@mdip/gatekeeper/client";
@@ -30,6 +31,7 @@ import OnboardingModal from "../modals/OnboardingModal";
 import MnemonicModal from "../modals/MnemonicModal";
 import {useSnackbar} from "./SnackbarProvider";
 import VerifyMnemonicModal from "../modals/VerifyMnemonicModal";
+import WarningModal from "../modals/WarningModal";
 
 const cipher = new CipherWeb();
 const SERVICE_READY_TIMEOUT_MS = 3_000;
@@ -68,10 +70,12 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     const [newWallet, setNewWallet] = useState(false);
     const [revealMnemonic, setRevealMnemonic] = useState("");
     const [isVerifyMnemonicOpen, setIsVerifyMnemonicOpen] = useState(false);
+    const [showResetConfirm, setShowResetConfirm] = useState(false);
 
     const { setError } = useSnackbar();
 
     const walletWeb = useMemo(() => new WalletWeb(WALLET_NAME), []);
+    const resetFlowRef = useRef(false);
 
     useEffect(() => {
         async function init() {
@@ -261,6 +265,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     };
 
     async function handlePassphraseClose() {
+        if (showResetConfirm || resetFlowRef.current) {
+            return;
+        }
+
         setPassphraseErrorText("");
         setModalAction(null);
 
@@ -333,15 +341,47 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         setIsMnemonicOpen(true);
     }
 
+    const handleStartReset = () => {
+        resetFlowRef.current = true;
+        setPassphraseErrorText("");
+        setShowResetConfirm(true);
+    };
+
+    const handleConfirmReset = () => {
+        setShowResetConfirm(false);
+        resetFlowRef.current = false;
+        wipeWallet();
+    };
+
+    const handleCancelReset = () => {
+        setShowResetConfirm(false);
+        setModalAction("decrypt");
+        setTimeout(() => {
+            resetFlowRef.current = false;
+        }, 0);
+    };
+
     const wipeWallet = () => {
         try {
             window.localStorage.removeItem(WALLET_NAME);
+            clearSessionPassphrase();
         } catch (e: any) {
             setError(e);
             return;
         }
 
         setKeymaster(null);
+        setManifest(undefined);
+        setPassphraseErrorText("");
+        setModalAction(null);
+        setShowResetConfirm(false);
+        resetFlowRef.current = false;
+        setIsMnemonicOpen(false);
+        setMnemonicError("");
+        setUseMnemonic(false);
+        setNewWallet(false);
+        setRevealMnemonic("");
+        setIsVerifyMnemonicOpen(false);
         setIsReady(false);
         setIsOnboardingOpen(true);
     };
@@ -361,7 +401,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     return (
         <>
             <PassphraseModal
-                isOpen={modalAction !== null}
+                isOpen={modalAction !== null && !showResetConfirm}
                 title={
                     modalAction === "decrypt"
                         ? "Enter Your Wallet Passphrase"
@@ -371,6 +411,15 @@ export function WalletProvider({ children }: { children: ReactNode }) {
                 onSubmit={buildKeymaster}
                 onClose={handlePassphraseClose}
                 encrypt={modalAction === 'set-passphrase'}
+                onStartReset={modalAction === "decrypt" ? handleStartReset : undefined}
+            />
+
+            <WarningModal
+                isOpen={showResetConfirm}
+                title="Reset Wallet"
+                warningText="This will delete the wallet stored on this device and create a brand new one. You will not be able to recover the old wallet without its mnemonic or backup."
+                onSubmit={handleConfirmReset}
+                onClose={handleCancelReset}
             />
 
             <OnboardingModal

@@ -5,9 +5,10 @@ interface PassphraseModalProps {
     isOpen: boolean,
     title: string,
     errorText: string,
-    onSubmit: (passphrase: string) => void,
+    onSubmit: (passphrase: string) => void | Promise<unknown>,
     onClose: () => void,
     encrypt: boolean,
+    onStartReset?: () => void,
 }
 
 const PassphraseModal: React.FC<PassphraseModalProps> = (
@@ -17,7 +18,8 @@ const PassphraseModal: React.FC<PassphraseModalProps> = (
         errorText,
         onSubmit,
         onClose,
-        encrypt
+        encrypt,
+        onStartReset,
     }) => {
     const [passphrase, setPassphrase] = useState("");
     const [confirmPassphrase, setConfirmPassphrase] = useState("");
@@ -43,7 +45,7 @@ const PassphraseModal: React.FC<PassphraseModalProps> = (
         await new Promise(requestAnimationFrame);
 
         try {
-            onSubmit(passphrase);
+            await onSubmit(passphrase);
             setPassphrase("");
             setConfirmPassphrase("");
             setLocalError("");
@@ -57,6 +59,16 @@ const PassphraseModal: React.FC<PassphraseModalProps> = (
             return;
         }
         onClose();
+    };
+
+    const handleStartReset = () => {
+        if (submitting) {
+            return;
+        }
+        setPassphrase("");
+        setConfirmPassphrase("");
+        setLocalError("");
+        onStartReset?.();
     };
 
     function checkPassphraseMismatch(newPass: string, newConfirm: string) {
@@ -145,7 +157,17 @@ const PassphraseModal: React.FC<PassphraseModalProps> = (
                         )}
                     </form>
                 </Dialog.Body>
-                <Dialog.Footer>
+                <Dialog.Footer display="flex" justifyContent={!encrypt && onStartReset ? "space-between" : "flex-end"}>
+                    {!encrypt && onStartReset && (
+                        <Button
+                            variant="ghost"
+                            colorPalette="red"
+                            onClick={handleStartReset}
+                            disabled={submitting}
+                        >
+                            Reset
+                        </Button>
+                    )}
                     {encrypt && (
                         <Button
                             variant="outline"
