@@ -1,5 +1,5 @@
 import React, { FormEvent, useState, useEffect } from "react";
-import { Button, Input, Text, Field, Dialog } from "@chakra-ui/react";
+import { Button, Input, Text, Field, Dialog, HStack } from "@chakra-ui/react";
 
 interface PassphraseModalProps {
     isOpen: boolean,
@@ -9,6 +9,7 @@ interface PassphraseModalProps {
     onClose: () => void,
     encrypt: boolean,
     onStartReset?: () => void,
+    onStartRecover?: () => void,
 }
 
 const PassphraseModal: React.FC<PassphraseModalProps> = (
@@ -20,6 +21,7 @@ const PassphraseModal: React.FC<PassphraseModalProps> = (
         onClose,
         encrypt,
         onStartReset,
+        onStartRecover,
     }) => {
     const [passphrase, setPassphrase] = useState("");
     const [confirmPassphrase, setConfirmPassphrase] = useState("");
@@ -71,6 +73,16 @@ const PassphraseModal: React.FC<PassphraseModalProps> = (
         onStartReset?.();
     };
 
+    const handleStartRecover = () => {
+        if (submitting) {
+            return;
+        }
+        setPassphrase("");
+        setConfirmPassphrase("");
+        setLocalError("");
+        onStartRecover?.();
+    };
+
     function checkPassphraseMismatch(newPass: string, newConfirm: string) {
         if (!encrypt) {
             return;
@@ -118,12 +130,16 @@ const PassphraseModal: React.FC<PassphraseModalProps> = (
     };
 
     return (
-        <Dialog.Root open={isOpen} onOpenChange={handleOpenChange}>
+        <Dialog.Root
+            open={isOpen}
+            onOpenChange={handleOpenChange}
+            closeOnInteractOutside={false}
+            closeOnEscape={false}
+        >
             <Dialog.Backdrop />
             <Dialog.Content>
                 <Dialog.Header>
                     <Dialog.Title textAlign="center" flex="1">{title}</Dialog.Title>
-                    <Dialog.CloseTrigger />
                 </Dialog.Header>
                 <Dialog.Body>
                     {combinedError && (
@@ -157,16 +173,29 @@ const PassphraseModal: React.FC<PassphraseModalProps> = (
                         )}
                     </form>
                 </Dialog.Body>
-                <Dialog.Footer display="flex" justifyContent={!encrypt && onStartReset ? "space-between" : "flex-end"}>
-                    {!encrypt && onStartReset && (
-                        <Button
-                            variant="ghost"
-                            colorPalette="red"
-                            onClick={handleStartReset}
-                            disabled={submitting}
-                        >
-                            Reset
-                        </Button>
+                <Dialog.Footer display="flex" justifyContent={!encrypt && (onStartReset || onStartRecover) ? "space-between" : "flex-end"}>
+                    {!encrypt && (onStartReset || onStartRecover) && (
+                        <HStack gap={2}>
+                            {onStartReset && (
+                                <Button
+                                    variant="ghost"
+                                    colorPalette="red"
+                                    onClick={handleStartReset}
+                                    disabled={submitting}
+                                >
+                                    Reset
+                                </Button>
+                            )}
+                            {onStartRecover && (
+                                <Button
+                                    variant="ghost"
+                                    onClick={handleStartRecover}
+                                    disabled={submitting}
+                                >
+                                    Recover
+                                </Button>
+                            )}
+                        </HStack>
                     )}
                     {encrypt && (
                         <Button

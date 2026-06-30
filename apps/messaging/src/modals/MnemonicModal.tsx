@@ -98,8 +98,14 @@ const MnemonicModal: React.FC<MnemonicModalProps> = ({ isOpen, onSubmit, onClose
         } catch {}
     };
 
+    const handleOpenChange = (e: { open: boolean }) => {
+        if (!e.open) {
+            onClose();
+        }
+    };
+
     return (
-        <Dialog.Root open={isOpen}>
+        <Dialog.Root open={isOpen} onOpenChange={handleOpenChange}>
             <Dialog.Backdrop />
             <Dialog.Content>
                 <Dialog.Header>
