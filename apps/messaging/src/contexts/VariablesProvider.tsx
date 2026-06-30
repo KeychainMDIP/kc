@@ -233,6 +233,31 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
             const vaultList = [];
             const pollList = [];
             const documentList = [];
+            const resolvedDocs = new Map<string, Awaited<ReturnType<typeof keymaster.resolveDID>>>();
+            const profiledAgentDids = new Set<string>();
+
+            const resolveOnce = async (aliasOrDid: string, expectedDid?: string) => {
+                const cachedByExpected = expectedDid ? resolvedDocs.get(expectedDid) : undefined;
+                if (cachedByExpected) {
+                    return cachedByExpected;
+                }
+
+                const cachedByInput = resolvedDocs.get(aliasOrDid);
+                if (cachedByInput) {
+                    return cachedByInput;
+                }
+
+                const doc = await keymaster.resolveDID(aliasOrDid);
+                const resolvedDid = doc.didDocument?.id ?? expectedDid ?? aliasOrDid;
+
+                resolvedDocs.set(aliasOrDid, doc);
+                resolvedDocs.set(resolvedDid, doc);
+                if (expectedDid) {
+                    resolvedDocs.set(expectedDid, doc);
+                }
+
+                return doc;
+            };
 
             const allocDisplayName = (baseName: string, did: string) => {
                 let display = baseName;
@@ -251,9 +276,24 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
                 return display;
             };
 
+            const processAgent = async (
+                alias: string,
+                did: string,
+                data: Record<string, any>
+            ) => {
+                const base = getProfileName(alias, data);
+                const display = didToDisplay[did] ?? allocDisplayName(base, did);
+                canonicalAliasToDid[alias] = did;
+
+                if (!profiledAgentDids.has(did)) {
+                    profiledAgentDids.add(did);
+                    await populateAgentProfile(display, data, profileListLocal);
+                }
+            };
+
             for (const idName of idNames) {
                 try {
-                    const doc = await keymaster.resolveDID(idName);
+                    const doc = await resolveOnce(idName, canonicalAliasToDid[idName]);
                     if (doc.mdip?.type !== "agent") {
                         continue;
                     }
@@ -263,33 +303,31 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
                         continue;
                     }
 
-                    if (doc.didDocumentData) {
-                        const base = getProfileName(idName, doc.didDocumentData);
-                        const display = didToDisplay[did] ?? allocDisplayName(base, did);
-                        canonicalAliasToDid[idName] = did;
-                        await populateAgentProfile(display, doc.didDocumentData, profileListLocal);
-                    }
+                    const data = (doc.didDocumentData ?? {}) as Record<string, any>;
+                    await processAgent(idName, did, data);
                 } catch {}
             }
 
-            for (const [alias, did] of Object.entries(canonicalSorted)) {
+            const canonicalEntries = Object.entries(canonicalAliasToDid)
+                .sort(([a], [b]) => a.localeCompare(b));
+
+            for (const [alias, expectedDid] of canonicalEntries) {
                 try {
-                    const doc = await keymaster.resolveDID(alias);
+                    const doc = await resolveOnce(alias, expectedDid);
+                    const did = doc.didDocument?.id ?? expectedDid;
+                    if (!did) {
+                        continue;
+                    }
 
                     const reg = doc.mdip?.registry;
                     if (reg) {
                         registryMap[alias] = reg;
                     }
 
-                    const data = doc.didDocumentData as Record<string, unknown>;
+                    const data = (doc.didDocumentData ?? {}) as Record<string, any>;
 
                     if (doc.mdip?.type === "agent") {
-                        const base = getProfileName(alias, data);
-
-                        const display = didToDisplay[did] ?? allocDisplayName(base, did);
-                        canonicalAliasToDid[alias] = did;
-
-                        await populateAgentProfile(display, data, profileListLocal);
+                        await processAgent(alias, did, data);
                         continue;
                     }
 
