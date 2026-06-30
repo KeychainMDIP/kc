@@ -13,9 +13,7 @@ function BrowserContent() {
     const { setError, setSuccess } = useSnackbar();
     const {
         currentId,
-        refreshInbox,
         refreshCurrentID,
-        refreshAll,
     } = useVariablesContext();
     const {
         keymaster,
@@ -34,10 +32,7 @@ function BrowserContent() {
 
             try {
                 const cid = await keymaster.getCurrentId();
-                if (cid) {
-                    await refreshAll();
-                    await refreshInbox();
-                } else {
+                if (!cid) {
                     setIsWelcomeOpen(true);
                 }
             } catch {}
