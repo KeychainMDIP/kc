@@ -4,11 +4,11 @@ import { Avatar, Conversation, ConversationList } from "@chatscope/chat-ui-kit-r
 import {
     avatarDataUrl,
     hasRenderableChatContent,
-    makeUniqueContactAlias,
     parseChatPayload,
     truncateMiddle
 } from "../utils/utils";
 import {CHAT_SUBJECT, MESSAGING_PROFILE} from "../constants";
+import { addMessagingContact } from "../utils/contacts";
 import AddUserModal from "../modals/AddUserModal";
 import CreateGroupModal from "../modals/CreateGroupModal";
 import { LuUser, LuUserPlus, LuMessagesSquare, LuUsers } from "react-icons/lu";
@@ -61,40 +61,14 @@ export default function HomePage() {
             return;
         }
 
-        let profileName = "";
         try {
-            const doc = await keymaster.resolveDID(aliasDID);
-            if (doc.mdip?.type !== "agent") {
-                setAddUserError("DID is not an agent");
-                return;
-            }
-
-            const data: Record<string, any> = doc.didDocumentData ?? {};
-            const existingProfile: Record<string, any> = data[MESSAGING_PROFILE] ?? {};
-
-            if (!existingProfile.name || typeof existingProfile.name !== "string" || !existingProfile.name.trim()) {
-                setAddUserError("This is not a valid messaging user");
-                return;
-            }
-
-            profileName = existingProfile.name.trim();
-        } catch {
-            setAddUserError("DID not found");
-            return;
-        }
-
-        const aliasName = makeUniqueContactAlias(profileName, aliasDID, nameList);
-
-        try {
-            await keymaster.addName(aliasName, aliasDID);
+            const { profileName } = await addMessagingContact(keymaster, aliasDID, nameList);
+            setIsAddOpen(false);
+            await refreshNames();
+            setSuccess(`User ${profileName} added`);
         } catch (error: any) {
-            setAddUserError(error);
-            return;
+            setAddUserError(error instanceof Error ? error.message : String(error));
         }
-
-        setIsAddOpen(false);
-        await refreshNames();
-        setSuccess(`User ${profileName} added`);
     };
 
     const unreadBySender = useMemo(() => {

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { Dialog, Box, Flex, Heading, IconButton, Button, Text, Portal } from "@chakra-ui/react";
 import { LuArrowLeft } from "react-icons/lu";
 import { QRCodeSVG } from "qrcode.react";
@@ -12,11 +12,26 @@ interface QRCodeModalProps {
     did: string;
     name: string;
     userAvatar: string;
+    title?: string;
+    primaryActionLabel?: string;
+    onPrimaryAction?: () => void | Promise<void>;
+    primaryActionDisabled?: boolean;
 }
 
 
-const QRCodeModal: React.FC<QRCodeModalProps> = ({ isOpen, onClose, did, name, userAvatar }) => {
+const QRCodeModal: React.FC<QRCodeModalProps> = ({
+    isOpen,
+    onClose,
+    did,
+    name,
+    userAvatar,
+    title = "Profile QR code",
+    primaryActionLabel,
+    onPrimaryAction,
+    primaryActionDisabled = false,
+}) => {
     const { setSuccess } = useSnackbar();
+    const [primaryActionRunning, setPrimaryActionRunning] = useState(false);
 
     const handleOpenChange = (e: { open: boolean }) => {
         if (!e.open) onClose();
@@ -27,6 +42,19 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({ isOpen, onClose, did, name, u
             await navigator.clipboard.writeText(did);
             setSuccess("Identifier copied to clipboard");
         } catch { }
+    };
+
+    const handlePrimaryAction = async () => {
+        if (!onPrimaryAction || primaryActionRunning) {
+            return;
+        }
+
+        try {
+            setPrimaryActionRunning(true);
+            await onPrimaryAction();
+        } finally {
+            setPrimaryActionRunning(false);
+        }
     };
 
     return (
@@ -41,7 +69,7 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({ isOpen, onClose, did, name, u
                                 <IconButton variant="ghost" onClick={onClose}>
                                     <LuArrowLeft />
                                 </IconButton>
-                                <Heading size="sm">Profile QR code</Heading>
+                                <Heading size="sm">{title}</Heading>
                             </Flex>
 
                             <Box as="main" flex={1} overflowY="auto" px={4} py={6} display="flex" flexDir="column" alignItems="center" gap={6}>
@@ -62,7 +90,18 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({ isOpen, onClose, did, name, u
                                 </Box>
                             </Box>
 
-                            <Box as="footer" p={4}>
+                            <Box as="footer" p={4} display="flex" flexDirection="column" gap={3}>
+                                {onPrimaryAction && primaryActionLabel && (
+                                    <Button
+                                        w="full"
+                                        colorPalette="blue"
+                                        onClick={handlePrimaryAction}
+                                        disabled={primaryActionDisabled || primaryActionRunning}
+                                        loading={primaryActionRunning}
+                                    >
+                                        {primaryActionLabel}
+                                    </Button>
+                                )}
                                 <Button w="full" onClick={handleCopy}>Copy Identifier</Button>
                             </Box>
                         </Box>

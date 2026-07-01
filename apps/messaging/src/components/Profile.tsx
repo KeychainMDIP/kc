@@ -41,6 +41,7 @@ export default function Profile({ isOpen }: ProfileProps) {
                 did={currentDID}
                 name={currentId}
                 userAvatar={userAvatar}
+                title="Your Profile QR Code"
             />
 
             <SettingsMenu

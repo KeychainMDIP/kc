@@ -8,6 +8,7 @@ import {
     Avatar,
 } from "@chatscope/chat-ui-kit-react";
 import {
+    Box,
     IconButton,
     Portal,
     MenuRoot,
@@ -16,17 +17,18 @@ import {
     MenuPositioner,
     MenuItem,
 } from "@chakra-ui/react";
-import { LuEllipsisVertical, LuQrCode, LuTrash2 } from "react-icons/lu";
+import { LuEllipsisVertical, LuInfo, LuQrCode, LuTrash2 } from "react-icons/lu";
 import { useSnackbar } from "../contexts/SnackbarProvider";
 import { useVariablesContext } from "../contexts/VariablesProvider";
 import { useWalletContext } from "../contexts/WalletProvider";
 import { CHAT_SUBJECT } from "../constants";
 import WarningModal from "../modals/WarningModal";
 import QRCodeModal from "../modals/QRCodeModal";
+import GroupDetailsModal, { GroupMemberDisplay } from "../modals/GroupDetailsModal";
 import { Buffer } from "buffer";
-import { Box } from "@chakra-ui/react";
 import SlideInRight from "./transitions/SlideInRight";
 import { useColorMode } from "../contexts/ColorModeProvider";
+import { addMessagingContact } from "../utils/contacts";
 import {
     avatarDataUrl,
     formatTime,
@@ -76,6 +78,7 @@ const ChatWindow: React.FC = () => {
         profileList,
         senderProfileList,
         groupList,
+        resolveSenderProfile,
     } = useVariablesContext();
     const {
         keymaster,
@@ -92,8 +95,10 @@ const ChatWindow: React.FC = () => {
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const [imageAttachments, setImageAttachments] = useState<Record<string, { name: string; url: string; mime: string }[]>>({});
     const [currentGroupMembers, setCurrentGroupMembers] = useState<string[]>([]);
+    const [groupDetailsOpen, setGroupDetailsOpen] = useState<boolean>(false);
+    const [selectedMember, setSelectedMember] = useState<GroupMemberDisplay | null>(null);
 
-    const { setError } = useSnackbar();
+    const { setError, setSuccess } = useSnackbar();
     const { colorMode } = useColorMode();
 
     const lastPeerRef = useRef<string>("");
@@ -156,6 +161,94 @@ const ChatWindow: React.FC = () => {
             return { name: truncateMiddle(senderDid, 25), source: "fallback" };
         };
     }, [knownDisplayNameByDid, senderProfileList]);
+
+    const groupMemberDisplays = useMemo((): GroupMemberDisplay[] => {
+        return currentGroupMembers.map(memberDid => {
+            const isCurrentUser = memberDid === currentDID;
+            const contactName = knownDisplayNameByDid[memberDid];
+            const senderProfile = senderProfileList[memberDid];
+            const name = isCurrentUser
+                ? currentId
+                : contactName ?? senderProfile?.name ?? truncateMiddle(memberDid, 25);
+
+            const avatar = isCurrentUser
+                ? (profileList[currentId]?.avatar ?? avatarDataUrl(memberDid))
+                : (profileList[contactName ?? ""]?.avatar ?? senderProfile?.avatar ?? avatarDataUrl(memberDid));
+
+            return {
+                avatar,
+                did: memberDid,
+                isCurrentUser,
+                name,
+            };
+        });
+    }, [currentDID, currentGroupMembers, currentId, knownDisplayNameByDid, profileList, senderProfileList]);
+
+    useEffect(() => {
+        if (!groupDetailsOpen || !isGroup) {
+            return;
+        }
+
+        const unresolvedMembers = currentGroupMembers.filter(memberDid =>
+            memberDid !== currentDID &&
+            !knownDisplayNameByDid[memberDid] &&
+            !senderProfileList[memberDid]
+        );
+
+        if (unresolvedMembers.length === 0) {
+            return;
+        }
+
+        (async () => {
+            try {
+                await Promise.all(unresolvedMembers.map(memberDid => resolveSenderProfile(memberDid)));
+            } catch (error: any) {
+                setError(error);
+            }
+        })();
+    }, [
+        currentDID,
+        currentGroupMembers,
+        groupDetailsOpen,
+        isGroup,
+        knownDisplayNameByDid,
+        resolveSenderProfile,
+        senderProfileList,
+        setError,
+    ]);
+
+    const openGroupDetails = () => {
+        if (isGroup) {
+            setGroupDetailsOpen(true);
+        }
+    };
+
+    const handleHeaderDetailsKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
+        if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            openGroupDetails();
+        }
+    };
+
+    const handleSelectedMemberAdd = async () => {
+        if (!keymaster || !selectedMember) {
+            return;
+        }
+
+        try {
+            const { profileName } = await addMessagingContact(keymaster, selectedMember.did, nameList);
+            await refreshNames();
+            setSuccess(`User ${profileName} added`);
+        } catch (error: any) {
+            setError(error instanceof Error ? error.message : String(error));
+        }
+    };
+
+    const selectedMemberAlreadyKnown = selectedMember
+        ? Object.values(nameList).includes(selectedMember.did)
+        : false;
+    const selectedMemberCanAdd = !!selectedMember && !selectedMember.isCurrentUser && !selectedMemberAlreadyKnown;
+    const memberCountLabel = `${currentGroupMembers.length} ${currentGroupMembers.length === 1 ? "member" : "members"}`;
 
     const onRemove = () => {
         if (!activePeer) {
@@ -692,8 +785,12 @@ const ChatWindow: React.FC = () => {
         <>
             <WarningModal
                 isOpen={removeOpen}
-                title="Remove user?"
-                warningText={`This will remove "${peerDisplayName}" from your contacts.`}
+                title={isGroup ? "Remove group?" : "Remove user?"}
+                warningText={
+                    isGroup
+                        ? `This will remove "${peerDisplayName}" from your conversations.`
+                        : `This will remove "${peerDisplayName}" from your contacts.`
+                }
                 onSubmit={confirmRemove}
                 onClose={() => setRemoveOpen(false)}
             />
@@ -704,7 +801,31 @@ const ChatWindow: React.FC = () => {
                 did={peerDid}
                 name={peerDisplayName}
                 userAvatar={peerAvatar}
+                title="Contact QR Code"
             />
+
+            <GroupDetailsModal
+                isOpen={groupDetailsOpen}
+                onClose={() => setGroupDetailsOpen(false)}
+                groupAvatar={peerAvatar}
+                groupId={peerDid}
+                groupName={peerDisplayName}
+                members={groupMemberDisplays}
+                onMemberSelect={(member) => setSelectedMember(member)}
+            />
+
+            {selectedMember && (
+                <QRCodeModal
+                    isOpen={!!selectedMember}
+                    onClose={() => setSelectedMember(null)}
+                    did={selectedMember.did}
+                    name={selectedMember.name}
+                    userAvatar={selectedMember.avatar}
+                    title="Group Member QR Code"
+                    primaryActionLabel={selectedMemberCanAdd ? "Add User" : undefined}
+                    onPrimaryAction={selectedMemberCanAdd ? handleSelectedMemberAdd : undefined}
+                />
+            )}
 
             <SlideInRight isOpen={!!activePeer} bg={colorMode === "dark" ? "gray.900" : "white"} bottomOffset={0} zIndex={2200} position="fixed">
                 {uiPeer && (
@@ -713,12 +834,30 @@ const ChatWindow: React.FC = () => {
                             <ConversationHeader.Back onClick={onBack} />
                             <Avatar src={peerAvatar} name={uiPeer} />
                             <ConversationHeader.Content
-                                userName={peerDisplayName}
-                                info={(
-                                    currentGroupMembers.length
-                                        ? `${currentGroupMembers.length} members`
-                                        : truncateMiddle(peerDid, 25)
-                                )}
+                                userName={isGroup ? (
+                                    <Box
+                                        as="span"
+                                        role="button"
+                                        tabIndex={0}
+                                        cursor="pointer"
+                                        onClick={openGroupDetails}
+                                        onKeyDown={handleHeaderDetailsKeyDown}
+                                    >
+                                        {peerDisplayName}
+                                    </Box>
+                                ) : peerDisplayName}
+                                info={isGroup ? (
+                                    <Box
+                                        as="span"
+                                        role="button"
+                                        tabIndex={0}
+                                        cursor="pointer"
+                                        onClick={openGroupDetails}
+                                        onKeyDown={handleHeaderDetailsKeyDown}
+                                    >
+                                        {memberCountLabel}
+                                    </Box>
+                                ) : truncateMiddle(peerDid, 25)}
                             />
                             <ConversationHeader.Actions>
                                 <MenuRoot closeOnSelect>
@@ -735,7 +874,13 @@ const ChatWindow: React.FC = () => {
                                     <Portal>
                                         <MenuPositioner zIndex={2300}>
                                             <MenuContent zIndex={2300}>
-                                                {currentGroupMembers.length === 0 && (
+                                                {isGroup && (
+                                                    <MenuItem value="details" onSelect={openGroupDetails}>
+                                                        <LuInfo style={{ marginRight: 8 }} />
+                                                        Details
+                                                    </MenuItem>
+                                                )}
+                                                {!isGroup && (
                                                     <MenuItem value="export" onSelect={() => setQrOpen(true)}>
                                                         <LuQrCode style={{ marginRight: 8 }} />
                                                         Export
