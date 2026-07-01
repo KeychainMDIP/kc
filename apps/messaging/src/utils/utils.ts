@@ -178,11 +178,16 @@ export function makeUniqueContactAlias(
 
 export type ChatPayload = {
     type?: string;
+    version?: number;
     message?: string;
     groupId?: string;
     groupName?: string;
+    groupAvatar?: string;
+    updatedAt?: string;
     [key: string]: unknown;
 };
+
+export const GROUP_PROFILE_PAYLOAD_TYPE = "group-profile";
 
 export function getChatMessageText(payload: ChatPayload | null | undefined): string {
     return typeof payload?.message === "string" ? payload.message.trim() : "";
@@ -190,6 +195,22 @@ export function getChatMessageText(payload: ChatPayload | null | undefined): str
 
 export function isImageChatPayload(payload: ChatPayload | null | undefined): boolean {
     return payload?.type === "image";
+}
+
+export function isGroupProfilePayload(payload: ChatPayload | null | undefined): boolean {
+    return payload?.type === GROUP_PROFILE_PAYLOAD_TYPE;
+}
+
+export function getGroupAvatarDid(payload: ChatPayload | null | undefined): string {
+    return typeof payload?.groupAvatar === "string" ? payload.groupAvatar.trim() : "";
+}
+
+export function canUpdateGroupProfile(senderDid: string | undefined, group: { members: string[] } | undefined): boolean {
+    if (!senderDid || !group) {
+        return false;
+    }
+
+    return group.members.includes(senderDid);
 }
 
 export function hasRenderableChatContent(payload: ChatPayload | null | undefined): boolean {
@@ -217,6 +238,9 @@ export function parseChatPayload(body: string): ChatPayload | null {
     if ("type" in payload && typeof payload.type !== "string") {
         return null;
     }
+    if ("version" in payload && typeof payload.version !== "number") {
+        return null;
+    }
     if ("message" in payload && typeof payload.message !== "string") {
         return null;
     }
@@ -224,6 +248,12 @@ export function parseChatPayload(body: string): ChatPayload | null {
         return null;
     }
     if ("groupName" in payload && typeof payload.groupName !== "string") {
+        return null;
+    }
+    if ("groupAvatar" in payload && typeof payload.groupAvatar !== "string") {
+        return null;
+    }
+    if ("updatedAt" in payload && typeof payload.updatedAt !== "string") {
         return null;
     }
 

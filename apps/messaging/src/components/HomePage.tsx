@@ -286,7 +286,7 @@ export default function HomePage() {
                 <ConversationList style={{ height: "auto", overflow: "visible" }}>
                     {filteredGroupEntries.map(([groupId, group]) => {
                         const groupName = group.name || groupId;
-                        const src = avatarDataUrl(groupId);
+                        const src = group.avatar ?? avatarDataUrl(groupId);
                         const selected = activePeer === groupId;
                         const unreadCnt = unreadBySender.get(groupId) ?? 0;
 

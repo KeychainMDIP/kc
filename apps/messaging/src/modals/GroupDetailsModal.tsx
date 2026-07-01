@@ -1,6 +1,6 @@
 import React from "react";
 import { Avatar } from "@chatscope/chat-ui-kit-react";
-import { Box, Dialog, Flex, Heading, IconButton, Portal, Text } from "@chakra-ui/react";
+import { Box, Dialog, Flex, Heading, IconButton, Portal, Spinner, Text } from "@chakra-ui/react";
 import { LuArrowLeft } from "react-icons/lu";
 import { truncateMiddle } from "../utils/utils";
 
@@ -19,6 +19,9 @@ interface GroupDetailsModalProps {
     groupName: string;
     members: GroupMemberDisplay[];
     onMemberSelect: (member: GroupMemberDisplay) => void;
+    onGroupAvatarClick?: () => void;
+    groupAvatarUpdating?: boolean;
+    canUpdateGroupAvatar?: boolean;
 }
 
 const GroupDetailsModal: React.FC<GroupDetailsModalProps> = ({
@@ -29,6 +32,9 @@ const GroupDetailsModal: React.FC<GroupDetailsModalProps> = ({
     groupName,
     members,
     onMemberSelect,
+    onGroupAvatarClick,
+    groupAvatarUpdating = false,
+    canUpdateGroupAvatar = false,
 }) => {
     const handleOpenChange = (e: { open: boolean }) => {
         if (!e.open) {
@@ -52,7 +58,35 @@ const GroupDetailsModal: React.FC<GroupDetailsModalProps> = ({
 
                             <Box as="main" flex={1} overflowY="auto" px={4} py={6}>
                                 <Flex direction="column" align="center" gap={2} mb={6}>
-                                    <Avatar size="lg" src={groupAvatar} name={groupName} />
+                                    <Box
+                                        as="button"
+                                        aria-label="Update group avatar"
+                                        aria-disabled={!canUpdateGroupAvatar || groupAvatarUpdating}
+                                        borderRadius="full"
+                                        cursor={canUpdateGroupAvatar && !groupAvatarUpdating ? "pointer" : "default"}
+                                        display="inline-flex"
+                                        p={0}
+                                        position="relative"
+                                        onClick={() => {
+                                            if (canUpdateGroupAvatar && !groupAvatarUpdating) {
+                                                onGroupAvatarClick?.();
+                                            }
+                                        }}
+                                    >
+                                        <Avatar size="lg" src={groupAvatar} name={groupName} />
+                                        {groupAvatarUpdating && (
+                                            <Flex
+                                                align="center"
+                                                bg="blackAlpha.500"
+                                                borderRadius="full"
+                                                inset={0}
+                                                justify="center"
+                                                position="absolute"
+                                            >
+                                                <Spinner color="white" size="sm" />
+                                            </Flex>
+                                        )}
+                                    </Box>
                                     <Text fontWeight="semibold" fontSize="lg" textAlign="center">
                                         {groupName}
                                     </Text>

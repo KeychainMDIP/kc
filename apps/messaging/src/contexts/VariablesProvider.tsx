@@ -3,7 +3,14 @@ import { DmailItem } from "@mdip/keymaster/types";
 import { useWalletContext } from "./WalletProvider";
 import { useSnackbar } from "./SnackbarProvider";
 import { CHAT_SUBJECT, MESSAGING_PROFILE } from "../constants";
-import { hasRenderableChatContent, makeUniqueContactAlias, parseChatPayload } from "../utils/utils";
+import {
+    canUpdateGroupProfile,
+    getGroupAvatarDid,
+    hasRenderableChatContent,
+    isGroupProfilePayload,
+    makeUniqueContactAlias,
+    parseChatPayload,
+} from "../utils/utils";
 
 const REFRESH_INTERVAL = 5_000;
 const UNREAD = "unread";
@@ -67,7 +74,23 @@ const VariablesContext = createContext<VariablesContextValue | null>(null);
 type GroupInfo = {
     name: string;
     members: string[];
+    avatar?: string;
+    avatarDid?: string;
+    avatarUpdatedAt?: string;
 };
+
+function timestampMs(value?: string): number {
+    if (!value) {
+        return 0;
+    }
+
+    const timestamp = Date.parse(value);
+    return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function shouldApplyGroupAvatarUpdate(existing?: string, incoming?: string): boolean {
+    return timestampMs(incoming) >= timestampMs(existing);
+}
 
 export type SenderProfile = {
     did: string;
@@ -165,6 +188,35 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         }
     }, []);
 
+    const resolveAvatar = useCallback(async (assetDid: string): Promise<string | null> => {
+        if (!assetDid || !keymaster) {
+            return null;
+        }
+
+        if (avatarCache.current.has(assetDid)) {
+            return avatarCache.current.get(assetDid)!;
+        }
+
+        try {
+            const imageAsset = await keymaster.getImage(assetDid);
+
+            if (!imageAsset || !imageAsset.data) {
+                return null;
+            }
+
+            const mimeType = imageAsset.type || 'image/png';
+            const raw: any = imageAsset.data as any;
+            const dataPart: BlobPart = raw?.buffer ? new Uint8Array(raw.buffer, raw.byteOffset ?? 0, raw.byteLength ?? raw.length) : new Uint8Array(raw as ArrayBufferLike);
+            const blob = new Blob([dataPart], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+
+            avatarCache.current.set(assetDid, url);
+            return url;
+        } catch {
+            return null;
+        }
+    }, [keymaster]);
+
     const resolveSenderProfile = useCallback(async (did: string): Promise<SenderProfile> => {
         const senderDid = did.trim();
         const fallbackName = senderDid.slice(-20) || senderDid;
@@ -203,7 +255,7 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         }
 
         return cacheSenderProfile(profile);
-    }, [cacheSenderProfile, keymaster]);
+    }, [cacheSenderProfile, keymaster, resolveAvatar]);
 
     const refreshNames = useCallback(
         async () => {
@@ -404,6 +456,13 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
             for (const [groupId, info] of Object.entries(groupList)) {
                 if (!mergedGroupList[groupId]) {
                     mergedGroupList[groupId] = info;
+                } else {
+                    mergedGroupList[groupId] = {
+                        ...mergedGroupList[groupId],
+                        avatar: mergedGroupList[groupId].avatar ?? info.avatar,
+                        avatarDid: mergedGroupList[groupId].avatarDid ?? info.avatarDid,
+                        avatarUpdatedAt: mergedGroupList[groupId].avatarUpdatedAt ?? info.avatarUpdatedAt,
+                    };
                 }
             }
             setGroupList(mergedGroupList);
@@ -459,7 +518,9 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
                 const groupId = typeof payload.groupId === "string" ? payload.groupId.trim() : "";
                 const groupName = typeof payload.groupName === "string" ? payload.groupName.trim() : "";
                 const toDids = item.message?.to ?? [];
-                const isGroupDelivery = toDids.length > 1;
+                const isGroupDelivery = !!groupId || toDids.length > 1;
+                const senderDid = item.docs?.didDocument?.controller;
+                const isGroupProfile = isGroupProfilePayload(payload);
 
                 if (isGroupDelivery) {
                     if (!groupId) {
@@ -483,12 +544,52 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
                     }
 
                     if (!groupInfo) {
+                        if (isGroupProfile) {
+                            if (tags.includes(UNREAD)) {
+                                updates.push({ did, tags: tags.filter(tag => tag !== UNREAD) });
+                            }
+                            continue;
+                        }
                         groupInfo = { name: groupName || groupId, members: [] };
-                    } else if (groupName && groupInfo.name !== groupName) {
+                    }
+
+                    const senderCanUpdateGroup = canUpdateGroupProfile(senderDid, groupInfo);
+
+                    if (groupName && groupInfo.name !== groupName && (!isGroupProfile || senderCanUpdateGroup)) {
                         groupInfo = { ...groupInfo, name: groupName };
                     }
 
                     groupUpdates[groupId] = groupInfo;
+
+                    if (isGroupProfile) {
+                        const groupAvatarDid = getGroupAvatarDid(payload);
+                        const itemDate = typeof item.date === "string" ? item.date : "";
+                        const updatedAt = itemDate || (typeof payload.updatedAt === "string" ? payload.updatedAt.trim() : "");
+                        const sameAvatarUpdate = groupInfo.avatarDid === groupAvatarDid && groupInfo.avatarUpdatedAt === updatedAt;
+
+                        if (
+                            groupAvatarDid &&
+                            senderCanUpdateGroup &&
+                            !sameAvatarUpdate &&
+                            shouldApplyGroupAvatarUpdate(groupInfo.avatarUpdatedAt, updatedAt)
+                        ) {
+                            const avatar = await resolveAvatar(groupAvatarDid);
+                            if (avatar) {
+                                groupUpdates[groupId] = {
+                                    ...groupInfo,
+                                    avatar,
+                                    avatarDid: groupAvatarDid,
+                                    avatarUpdatedAt: updatedAt,
+                                };
+                            }
+                        }
+
+                        if (tags.includes(UNREAD)) {
+                            updates.push({ did, tags: tags.filter(tag => tag !== UNREAD) });
+                        }
+                        continue;
+                    }
+
                     if (!hasRenderableContent) {
                         if (tags.includes(UNREAD)) {
                             updates.push({ did, tags: tags.filter(tag => tag !== UNREAD) });
@@ -504,7 +605,6 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
 
                 filtered[did] = item;
 
-                const senderDid = item.docs?.didDocument?.controller;
                 if (senderDid && senderDid !== currentDID) {
                     const alreadyKnown = knownDids.has(senderDid);
                     if (isGroupDelivery) {
@@ -536,16 +636,29 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
                     const merged = { ...prev };
                     for (const [groupId, info] of Object.entries(groupUpdates)) {
                         const existing = merged[groupId];
+                        const nextInfo: GroupInfo = {
+                            ...info,
+                            avatar: info.avatar ?? existing?.avatar,
+                            avatarDid: info.avatarDid ?? existing?.avatarDid,
+                            avatarUpdatedAt: info.avatarUpdatedAt ?? existing?.avatarUpdatedAt,
+                        };
                         let membersChanged = false;
                         if (!existing) {
                             membersChanged = true;
                         } else {
-                            membersChanged = existing.members.length !== info.members.length
-                                || existing.members.some((member, idx) => member !== info.members[idx]);
+                            membersChanged = existing.members.length !== nextInfo.members.length
+                                || existing.members.some((member, idx) => member !== nextInfo.members[idx]);
                         }
 
-                        if (!existing || existing.name !== info.name || membersChanged) {
-                            merged[groupId] = info;
+                        if (
+                            !existing ||
+                            existing.name !== nextInfo.name ||
+                            membersChanged ||
+                            existing.avatar !== nextInfo.avatar ||
+                            existing.avatarDid !== nextInfo.avatarDid ||
+                            existing.avatarUpdatedAt !== nextInfo.avatarUpdatedAt
+                        ) {
+                            merged[groupId] = nextInfo;
                             changed = true;
                         }
                     }
@@ -575,7 +688,7 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         } finally {
             inboxRefreshingRef.current = false;
         }
-    }, [keymaster, currentId, currentDID, namesReady, nameList, groupList, refreshNames, resolveSenderProfile, setError]);
+    }, [keymaster, currentId, currentDID, namesReady, nameList, groupList, refreshNames, resolveAvatar, resolveSenderProfile, setError]);
 
     useEffect(() => {
         if (!keymaster || !namesReady) {
@@ -622,35 +735,6 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
             setIssuedList(issuedList);
         } catch (error: any) {
             setError(error);
-        }
-    }
-
-    async function resolveAvatar(assetDid: string): Promise<string | null> {
-        if (!assetDid || !keymaster) {
-            return null;
-        }
-
-        if (avatarCache.current.has(assetDid)) {
-            return avatarCache.current.get(assetDid)!;
-        }
-
-        try {
-            const imageAsset = await keymaster.getImage(assetDid);
-
-            if (!imageAsset || !imageAsset.data) {
-                return null;
-            }
-
-            const mimeType = imageAsset.type || 'image/png';
-            const raw: any = imageAsset.data as any;
-            const dataPart: BlobPart = raw?.buffer ? new Uint8Array(raw.buffer, raw.byteOffset ?? 0, raw.byteLength ?? raw.length) : new Uint8Array(raw as ArrayBufferLike);
-            const blob = new Blob([dataPart], { type: mimeType });
-            const url = URL.createObjectURL(blob);
-
-            avatarCache.current.set(assetDid, url);
-            return url;
-        } catch {
-            return null;
         }
     }
 

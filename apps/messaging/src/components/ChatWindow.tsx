@@ -30,6 +30,8 @@ import SlideInRight from "./transitions/SlideInRight";
 import { useColorMode } from "../contexts/ColorModeProvider";
 import { addMessagingContact } from "../utils/contacts";
 import {
+    canUpdateGroupProfile,
+    GROUP_PROFILE_PAYLOAD_TYPE,
     avatarDataUrl,
     formatTime,
     getChatMessageText,
@@ -78,6 +80,8 @@ const ChatWindow: React.FC = () => {
         profileList,
         senderProfileList,
         groupList,
+        setGroupList,
+        resolveAvatar,
         resolveSenderProfile,
     } = useVariablesContext();
     const {
@@ -93,10 +97,12 @@ const ChatWindow: React.FC = () => {
     const [imageViewerSrc, setImageViewerSrc] = useState<string>("");
     const [imageViewerOpen, setImageViewerOpen] = useState<boolean>(false);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
+    const groupAvatarInputRef = useRef<HTMLInputElement | null>(null);
     const [imageAttachments, setImageAttachments] = useState<Record<string, { name: string; url: string; mime: string }[]>>({});
     const [currentGroupMembers, setCurrentGroupMembers] = useState<string[]>([]);
     const [groupDetailsOpen, setGroupDetailsOpen] = useState<boolean>(false);
     const [selectedMember, setSelectedMember] = useState<GroupMemberDisplay | null>(null);
+    const [updatingGroupAvatar, setUpdatingGroupAvatar] = useState<boolean>(false);
 
     const { setError, setSuccess } = useSnackbar();
     const { colorMode } = useColorMode();
@@ -249,6 +255,10 @@ const ChatWindow: React.FC = () => {
         : false;
     const selectedMemberCanAdd = !!selectedMember && !selectedMember.isCurrentUser && !selectedMemberAlreadyKnown;
     const memberCountLabel = `${currentGroupMembers.length} ${currentGroupMembers.length === 1 ? "member" : "members"}`;
+    const canUpdateActiveGroupAvatar = isGroup && canUpdateGroupProfile(
+        currentDID,
+        { members: currentGroupMembers.length ? currentGroupMembers : (groupEntry?.members ?? []) }
+    );
 
     const onRemove = () => {
         if (!activePeer) {
@@ -466,6 +476,98 @@ const ChatWindow: React.FC = () => {
         default: return "application/octet-stream";
         }
     }
+
+    const openGroupAvatarPicker = () => {
+        if (!isGroup || updatingGroupAvatar || !groupAvatarInputRef.current) {
+            return;
+        }
+
+        groupAvatarInputRef.current.click();
+    };
+
+    const uploadGroupAvatar = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const fileInput = event.target;
+        const file = fileInput.files?.[0];
+
+        if (!file || !keymaster || !activePeer || !isGroup) {
+            fileInput.value = "";
+            return;
+        }
+
+        if (!isImageName(file.name)) {
+            setError("Please select an image file");
+            fileInput.value = "";
+            return;
+        }
+
+        try {
+            setUpdatingGroupAvatar(true);
+
+            const group = await keymaster.getGroup(activePeer);
+            if (!group?.members) {
+                setError(GROUP_NOT_FOUND);
+                return;
+            }
+
+            if (!canUpdateGroupProfile(currentDID, group)) {
+                setError("Only group members can update the group avatar");
+                return;
+            }
+
+            const arrayBuffer = await file.arrayBuffer();
+            const assetDid = await keymaster.createImage(Buffer.from(arrayBuffer));
+            const avatar = await resolveAvatar(assetDid);
+            if (!avatar) {
+                throw new Error("Group avatar image could not be loaded");
+            }
+
+            const updatedAt = new Date().toISOString();
+            const recipients = Array.from(new Set(group.members));
+            const payload: ChatPayload = {
+                type: GROUP_PROFILE_PAYLOAD_TYPE,
+                version: 1,
+                groupId: activePeer,
+                groupAvatar: assetDid,
+                updatedAt,
+            };
+
+            const dmail = {
+                to: recipients,
+                cc: [],
+                subject: CHAT_SUBJECT,
+                body: stringifyChatPayload(payload),
+            };
+
+            const did = await keymaster.createDmail(dmail, { registry });
+            await keymaster.sendDmail(did);
+
+            setGroupList(prev => {
+                const existing = prev[activePeer] ?? {
+                    name: peerDisplayName,
+                    members: group.members,
+                };
+
+                return {
+                    ...prev,
+                    [activePeer]: {
+                        ...existing,
+                        members: group.members,
+                        avatar,
+                        avatarDid: assetDid,
+                        avatarUpdatedAt: updatedAt,
+                    },
+                };
+            });
+
+            await refreshInbox();
+            setSuccess("Group avatar updated");
+        } catch (error: any) {
+            setError(error);
+        } finally {
+            setUpdatingGroupAvatar(false);
+            fileInput.value = "";
+        }
+    };
 
     const uploadImageAttachment = async (event: React.ChangeEvent<HTMLInputElement>) => {
         if (!keymaster || !activePeer) {
@@ -779,7 +881,11 @@ const ChatWindow: React.FC = () => {
     }, [conversation, keymaster]);
     const profile = uiPeer ? profileList[uiPeer] : undefined;
     const customAvatarUrl = profile?.avatar;
-    const peerAvatar = uiPeer ? (customAvatarUrl ?? avatarDataUrl(peerDid || peerDisplayName)) : "";
+    const peerAvatar = uiPeer
+        ? (isGroup
+            ? (groupEntry?.avatar ?? avatarDataUrl(peerDid || peerDisplayName))
+            : (customAvatarUrl ?? avatarDataUrl(peerDid || peerDisplayName)))
+        : "";
 
     return (
         <>
@@ -812,6 +918,9 @@ const ChatWindow: React.FC = () => {
                 groupName={peerDisplayName}
                 members={groupMemberDisplays}
                 onMemberSelect={(member) => setSelectedMember(member)}
+                onGroupAvatarClick={openGroupAvatarPicker}
+                groupAvatarUpdating={updatingGroupAvatar}
+                canUpdateGroupAvatar={canUpdateActiveGroupAvatar}
             />
 
             {selectedMember && (
@@ -827,12 +936,25 @@ const ChatWindow: React.FC = () => {
                 />
             )}
 
+            <input
+                ref={groupAvatarInputRef}
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={uploadGroupAvatar}
+            />
+
             <SlideInRight isOpen={!!activePeer} bg={colorMode === "dark" ? "gray.900" : "white"} bottomOffset={0} zIndex={2200} position="fixed">
                 {uiPeer && (
                     <ChatContainer style={{ height: "100%" }}>
                         <ConversationHeader>
                             <ConversationHeader.Back onClick={onBack} />
-                            <Avatar src={peerAvatar} name={uiPeer} />
+                            <Avatar
+                                src={peerAvatar}
+                                name={uiPeer}
+                                onClick={isGroup ? openGroupDetails : undefined}
+                                style={isGroup ? { cursor: "pointer" } : undefined}
+                            />
                             <ConversationHeader.Content
                                 userName={isGroup ? (
                                     <Box
