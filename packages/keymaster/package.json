@@ -1,6 +1,6 @@
 {
   "name": "@mdip/keymaster",
-  "version": "2.0.0-beta.1",
+  "version": "2.0.0",
   "description": "MDIP Keymaster",
   "type": "module",
   "module": "./dist/esm/index.js",
@@ -168,7 +168,7 @@
     "url": "git+https://github.com/KeychainMDIP/kc.git"
   },
   "devDependencies": {
-    "@types/pg": "^8.15.5",
-    "@rollup/plugin-json": "^6.1.0"
+    "@rollup/plugin-json": "^6.1.0",
+    "@types/pg": "^8.15.5"
   }
 }
