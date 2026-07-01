@@ -1,6 +1,6 @@
 {
   "name": "hyperswarm-mediator",
-  "version": "2.0.0-beta.1",
+  "version": "2.0.0",
   "type": "module",
   "description": "MDIP hyperswarm network mediator",
   "main": "src/index.js",
