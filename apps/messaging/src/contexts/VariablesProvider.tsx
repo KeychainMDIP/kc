@@ -6,14 +6,19 @@ import { CHAT_SUBJECT, MESSAGING_PROFILE } from "../constants";
 import {
     canUpdateGroupProfile,
     getGroupAvatarDid,
+    getMessageReceiptKey,
+    getMessageReceiptPayload,
     hasRenderableChatContent,
     isGroupProfilePayload,
     makeUniqueContactAlias,
+    MessageReceiptType,
     parseChatPayload,
 } from "../utils/utils";
+import { sendMessageReceipt } from "../utils/receipts";
 
 const REFRESH_INTERVAL = 5_000;
 const UNREAD = "unread";
+const SENT = "sent";
 
 interface VariablesContextValue {
     currentId: string;
@@ -40,6 +45,7 @@ interface VariablesContextValue {
     setIssuedList: Dispatch<SetStateAction<string[]>>;
     dmailList: Record<string, DmailItem>;
     setDmailList: Dispatch<SetStateAction<Record<string, DmailItem>>>;
+    messageReceiptList: MessageReceiptList;
     aliasName: string;
     setAliasName: Dispatch<SetStateAction<string>>;
     aliasDID: string;
@@ -62,6 +68,7 @@ interface VariablesContextValue {
     setActivePeer: Dispatch<SetStateAction<string>>;
     resolveAvatar: (assetDid: string) => Promise<string | null>,
     resolveSenderProfile: (did: string) => Promise<SenderProfile>;
+    sendReadReceipt: (messageId: string) => Promise<void>;
     refreshAll: () => Promise<void>;
     refreshHeld: () => Promise<void>;
     refreshNames: () => Promise<void>;
@@ -98,6 +105,78 @@ export type SenderProfile = {
     avatar?: string;
 };
 
+export type MessageReceiptEntry = {
+    deliveredAt?: string;
+    readAt?: string;
+};
+
+export type MessageReceiptList = Record<string, Record<string, MessageReceiptEntry>>;
+
+function mergeReceipt(
+    target: MessageReceiptList,
+    messageId: string,
+    recipientDid: string,
+    receiptType: MessageReceiptType,
+    at: string
+) {
+    const byRecipient = target[messageId] ?? {};
+    const existing = byRecipient[recipientDid] ?? {};
+
+    if (receiptType === "delivered") {
+        if (existing.deliveredAt && timestampMs(existing.deliveredAt) > timestampMs(at)) {
+            return;
+        }
+        byRecipient[recipientDid] = { ...existing, deliveredAt: at };
+    } else {
+        if (existing.readAt && timestampMs(existing.readAt) > timestampMs(at)) {
+            return;
+        }
+        byRecipient[recipientDid] = { ...existing, readAt: at };
+    }
+
+    target[messageId] = byRecipient;
+}
+
+function mergeReceiptLists(prev: MessageReceiptList, updates: MessageReceiptList): MessageReceiptList {
+    let changed = false;
+    const next: MessageReceiptList = { ...prev };
+
+    for (const [messageId, byRecipient] of Object.entries(updates)) {
+        const existingByRecipient = next[messageId] ?? {};
+        const nextByRecipient = { ...existingByRecipient };
+        let messageChanged = false;
+
+        for (const [recipientDid, receipt] of Object.entries(byRecipient)) {
+            const existing = nextByRecipient[recipientDid] ?? {};
+            const deliveredAt = receipt.deliveredAt && (
+                !existing.deliveredAt || timestampMs(receipt.deliveredAt) >= timestampMs(existing.deliveredAt)
+            )
+                ? receipt.deliveredAt
+                : existing.deliveredAt;
+            const readAt = receipt.readAt && (
+                !existing.readAt || timestampMs(receipt.readAt) >= timestampMs(existing.readAt)
+            )
+                ? receipt.readAt
+                : existing.readAt;
+
+            if (deliveredAt !== existing.deliveredAt || readAt !== existing.readAt) {
+                nextByRecipient[recipientDid] = {
+                    ...(deliveredAt ? { deliveredAt } : {}),
+                    ...(readAt ? { readAt } : {}),
+                };
+                messageChanged = true;
+                changed = true;
+            }
+        }
+
+        if (messageChanged) {
+            next[messageId] = nextByRecipient;
+        }
+    }
+
+    return changed ? next : prev;
+}
+
 export function VariablesProvider({ children }: { children: ReactNode }) {
     const [currentId, setCurrentId] = useState<string>("");
     const [currentDID, setCurrentDID] = useState<string>("");
@@ -120,17 +199,21 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
     const [aliasName, setAliasName] = useState<string>("");
     const [aliasDID, setAliasDID] = useState<string>("");
     const [dmailList, setDmailList] = useState<Record<string, DmailItem>>({});
+    const [messageReceiptList, setMessageReceiptList] = useState<MessageReceiptList>({});
     const [activePeer, setActivePeer] = useState<string>("");
     const [namesReady, setNamesReady] = useState<boolean>(false);
     const inboxRefreshingRef = useRef(false);
     const {
         keymaster,
+        registry,
         setManifest,
     } = useWalletContext();
     const { setError } = useSnackbar();
 
     const avatarCache = useRef<Map<string, string>>(new Map());
     const senderProfileListRef = useRef<Record<string, SenderProfile>>({});
+    const sentReceiptKeysRef = useRef<Set<string>>(new Set());
+    const pendingReadReceiptIdsRef = useRef<Set<string>>(new Set());
 
     useEffect(() => {
         const refresh = async () => {
@@ -477,6 +560,58 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         [keymaster, currentId, groupList, pruneSenderProfilesForKnownDids]
     );
 
+    const sendReadReceiptForItem = useCallback(async (messageId: string, item: DmailItem) => {
+        if (!keymaster || !currentDID) {
+            return;
+        }
+
+        const clearPending = () => {
+            pendingReadReceiptIdsRef.current.delete(messageId);
+        };
+
+        if (!item || item.message?.subject !== CHAT_SUBJECT) {
+            clearPending();
+            return;
+        }
+
+        const payload = parseChatPayload(item.message?.body ?? "");
+        if (!payload || !hasRenderableChatContent(payload)) {
+            clearPending();
+            return;
+        }
+
+        const senderDid = item.docs?.didDocument?.controller;
+        const toDids = item.message?.to ?? [];
+        if (!senderDid || senderDid === currentDID || !toDids.includes(currentDID)) {
+            clearPending();
+            return;
+        }
+
+        const receiptKey = getMessageReceiptKey("read", messageId, currentDID);
+        if (sentReceiptKeysRef.current.has(receiptKey)) {
+            clearPending();
+            return;
+        }
+
+        pendingReadReceiptIdsRef.current.add(messageId);
+
+        const groupId = typeof payload.groupId === "string" ? payload.groupId.trim() : "";
+        const notice = await sendMessageReceipt({
+            keymaster,
+            registry,
+            messageId,
+            senderDid,
+            recipientDid: currentDID,
+            receiptType: "read",
+            ...(groupId ? { groupId } : {}),
+        });
+
+        if (notice) {
+            sentReceiptKeysRef.current.add(receiptKey);
+            clearPending();
+        }
+    }, [currentDID, keymaster, registry]);
+
     const refreshInbox = useCallback( async() => {
         if (!keymaster || !namesReady || !currentId) {
             return;
@@ -494,10 +629,55 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
             const filtered: Record<string, DmailItem> = {};
             const updates: Array<{ did: string; tags: string[] }> = [];
             const groupUpdates: Record<string, GroupInfo> = {};
+            const receiptUpdates: MessageReceiptList = {};
+            const sentReceiptKeys = new Set(sentReceiptKeysRef.current);
             const knownGroups = new Map(Object.entries(groupList));
             const knownNames = { ...nameList };
             const knownDids = new Set(Object.values(knownNames));
             const senderProfilesToResolve = new Set<string>();
+
+            for (const [did, item] of Object.entries(msgs)) {
+                if (item.message?.subject !== CHAT_SUBJECT) {
+                    continue;
+                }
+
+                const tags = item.tags ?? [];
+                const payload = parseChatPayload(item.message?.body ?? "");
+                const receipt = getMessageReceiptPayload(payload);
+
+                if (!receipt) {
+                    continue;
+                }
+
+                const senderDid = item.docs?.didDocument?.controller;
+                const receiptKey = getMessageReceiptKey(receipt.receiptType, receipt.messageId, receipt.recipientDid);
+                if (senderDid === currentDID && receipt.recipientDid === currentDID && tags.includes(SENT)) {
+                    sentReceiptKeys.add(receiptKey);
+                }
+
+                if (senderDid === receipt.recipientDid) {
+                    const original = msgs[receipt.messageId];
+                    const originalSenderDid = original?.docs?.didDocument?.controller;
+                    const originalToDids = original?.message?.to ?? [];
+                    const originalCcDids = original?.message?.cc ?? [];
+                    const originalPayload = parseChatPayload(original?.message?.body ?? "");
+                    const originalGroupId = typeof originalPayload?.groupId === "string" ? originalPayload.groupId.trim() : "";
+                    const originalRecipients = new Set([...originalToDids, ...originalCcDids]);
+
+                    if (
+                        original?.message?.subject === CHAT_SUBJECT &&
+                        originalSenderDid === currentDID &&
+                        originalRecipients.has(receipt.recipientDid) &&
+                        (!receipt.groupId || receipt.groupId === originalGroupId)
+                    ) {
+                        mergeReceipt(receiptUpdates, receipt.messageId, receipt.recipientDid, receipt.receiptType, receipt.at);
+                    }
+                }
+
+                if (tags.includes(UNREAD)) {
+                    updates.push({ did, tags: tags.filter(tag => tag !== UNREAD) });
+                }
+            }
 
             for (const [did, item] of Object.entries(msgs)) {
                 if (item.message?.subject !== CHAT_SUBJECT) {
@@ -520,7 +700,12 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
                 const toDids = item.message?.to ?? [];
                 const isGroupDelivery = !!groupId || toDids.length > 1;
                 const senderDid = item.docs?.didDocument?.controller;
+                const receipt = getMessageReceiptPayload(payload);
                 const isGroupProfile = isGroupProfilePayload(payload);
+
+                if (receipt) {
+                    continue;
+                }
 
                 if (isGroupDelivery) {
                     if (!groupId) {
@@ -605,6 +790,27 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
 
                 filtered[did] = item;
 
+                if (senderDid && senderDid !== currentDID && toDids.includes(currentDID)) {
+                    const deliveredKey = getMessageReceiptKey("delivered", did, currentDID);
+                    if (!sentReceiptKeys.has(deliveredKey)) {
+                        try {
+                            const notice = await sendMessageReceipt({
+                                keymaster,
+                                registry,
+                                messageId: did,
+                                senderDid,
+                                recipientDid: currentDID,
+                                receiptType: "delivered",
+                                ...(groupId ? { groupId } : {}),
+                            });
+
+                            if (notice) {
+                                sentReceiptKeys.add(deliveredKey);
+                            }
+                        } catch {}
+                    }
+                }
+
                 if (senderDid && senderDid !== currentDID) {
                     const alreadyKnown = knownDids.has(senderDid);
                     if (isGroupDelivery) {
@@ -628,6 +834,12 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
                         } catch {}
                     }
                 }
+            }
+
+            sentReceiptKeysRef.current = sentReceiptKeys;
+
+            if (Object.keys(receiptUpdates).length > 0) {
+                setMessageReceiptList(prev => mergeReceiptLists(prev, receiptUpdates));
             }
 
             if (Object.keys(groupUpdates).length > 0) {
@@ -670,6 +882,21 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
                 JSON.stringify(prev) === JSON.stringify(filtered) ? prev : filtered
             );
 
+            const pendingReadReceiptIds = [...pendingReadReceiptIdsRef.current];
+            if (pendingReadReceiptIds.length > 0) {
+                await Promise.allSettled(
+                    pendingReadReceiptIds.map(async messageId => {
+                        const item = filtered[messageId];
+                        if (!item) {
+                            pendingReadReceiptIdsRef.current.delete(messageId);
+                            return;
+                        }
+
+                        await sendReadReceiptForItem(messageId, item);
+                    })
+                );
+            }
+
             if (senderProfilesToResolve.size > 0) {
                 await Promise.all(
                     [...senderProfilesToResolve].map(senderDid => resolveSenderProfile(senderDid))
@@ -688,7 +915,17 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         } finally {
             inboxRefreshingRef.current = false;
         }
-    }, [keymaster, currentId, currentDID, namesReady, nameList, groupList, refreshNames, resolveAvatar, resolveSenderProfile, setError]);
+    }, [keymaster, registry, currentId, currentDID, namesReady, nameList, groupList, refreshNames, resolveAvatar, resolveSenderProfile, sendReadReceiptForItem, setError]);
+
+    const sendReadReceipt = useCallback(async (messageId: string) => {
+        const item = dmailList[messageId];
+        if (!item) {
+            pendingReadReceiptIdsRef.current.delete(messageId);
+            return;
+        }
+
+        await sendReadReceiptForItem(messageId, item);
+    }, [dmailList, sendReadReceiptForItem]);
 
     useEffect(() => {
         if (!keymaster || !namesReady) {
@@ -814,6 +1051,10 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         setVaultList([]);
         setPollList([]);
         setGroupList({});
+        setDmailList({});
+        setMessageReceiptList({});
+        sentReceiptKeysRef.current = new Set();
+        pendingReadReceiptIdsRef.current = new Set();
         setAliasName("");
         setAliasDID("");
         setNamesReady(false);
@@ -901,10 +1142,12 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         setPollList,
         dmailList,
         setDmailList,
+        messageReceiptList,
         activePeer,
         setActivePeer,
         resolveAvatar,
         resolveSenderProfile,
+        sendReadReceipt,
         refreshAll,
         refreshHeld,
         refreshNames,

@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useRef } from "react"
+import React, { useCallback, useMemo, useState, useEffect, useRef } from "react"
 import {
     ChatContainer,
     ConversationHeader,
@@ -55,6 +55,9 @@ type MessageModel = {
     senderAvatar?: string
     senderNameSource?: "keymaster" | "profile" | "fallback"
     showSenderName?: boolean
+    statusText?: string
+    statusTone?: "normal" | "error"
+    canRetry?: boolean
 }
 
 type SenderDisplay = {
@@ -64,6 +67,8 @@ type SenderDisplay = {
 }
 
 const UNREAD = "unread"
+const FAILED = "failed"
+const RETRYING = "retrying"
 const GROUP_NOT_FOUND = "Group not found";
 
 const ChatWindow: React.FC = () => {
@@ -81,8 +86,10 @@ const ChatWindow: React.FC = () => {
         senderProfileList,
         groupList,
         setGroupList,
+        messageReceiptList,
         resolveAvatar,
         resolveSenderProfile,
+        sendReadReceipt,
     } = useVariablesContext();
     const {
         keymaster,
@@ -260,6 +267,62 @@ const ChatWindow: React.FC = () => {
         { members: currentGroupMembers.length ? currentGroupMembers : (groupEntry?.members ?? []) }
     );
 
+    const getOutgoingStatus = useCallback((
+        did: string,
+        tags: string[],
+        payload: ChatPayload,
+        recipientDids: string[]
+    ): Pick<MessageModel, "statusText" | "statusTone" | "canRetry"> => {
+        if (tags.includes(RETRYING)) {
+            return { statusText: "Retrying", statusTone: "normal" };
+        }
+
+        if (tags.includes(FAILED)) {
+            return { statusText: "Failed", statusTone: "error", canRetry: true };
+        }
+
+        const payloadGroupId = typeof payload.groupId === "string" ? payload.groupId.trim() : "";
+        const receipts = messageReceiptList[did] ?? {};
+
+        if (payloadGroupId) {
+            const recipients = Array.from(new Set(
+                recipientDids.filter(recipientDid => recipientDid && recipientDid !== currentDID)
+            ));
+
+            if (recipients.length > 0) {
+                const readCount = recipients.filter(recipientDid => !!receipts[recipientDid]?.readAt).length;
+                const deliveredCount = recipients.filter(recipientDid =>
+                    !!receipts[recipientDid]?.deliveredAt || !!receipts[recipientDid]?.readAt
+                ).length;
+
+                if (readCount > 0) {
+                    return { statusText: `Read ${readCount}/${recipients.length}`, statusTone: "normal" };
+                }
+
+                if (deliveredCount > 0) {
+                    return { statusText: `Delivered ${deliveredCount}/${recipients.length}`, statusTone: "normal" };
+                }
+            }
+        } else {
+            const recipientDid = recipientDids.find(candidateDid => candidateDid !== currentDID) ?? "";
+            const receipt = recipientDid ? receipts[recipientDid] : undefined;
+
+            if (receipt?.readAt) {
+                return { statusText: "Read", statusTone: "normal" };
+            }
+
+            if (receipt?.deliveredAt) {
+                return { statusText: "Delivered", statusTone: "normal" };
+            }
+        }
+
+        if (tags.includes("sent")) {
+            return { statusText: "Sent", statusTone: "normal" };
+        }
+
+        return {};
+    }, [currentDID, messageReceiptList]);
+
     const onRemove = () => {
         if (!activePeer) {
             return;
@@ -321,6 +384,7 @@ const ChatWindow: React.FC = () => {
         }
 
         const updates: Array<{ did: string; newTags: string[] }> = [];
+        const readReceiptMessageIds: string[] = [];
 
         for (const [did, itm] of Object.entries(dmailList || {})) {
             const isGroup = groupList[activePeer] !== undefined;
@@ -344,12 +408,10 @@ const ChatWindow: React.FC = () => {
                 continue;
             }
 
-            if (!tags.includes(UNREAD)) {
-                continue;
-            }
-
             const senderDid = itm.docs?.didDocument?.controller;
             const toDids = itm.message?.to ?? [];
+            let shouldMarkRead = false;
+            let shouldSendReadReceipt = false;
 
             if (isGroup) {
                 if (!payloadGroupId || payloadGroupId !== activePeer) {
@@ -360,6 +422,10 @@ const ChatWindow: React.FC = () => {
                 if (!incoming && !outgoing) {
                     continue;
                 }
+                if (incoming) {
+                    shouldSendReadReceipt = true;
+                }
+                shouldMarkRead = tags.includes(UNREAD);
             } else {
                 if (payloadGroupId) {
                     continue;
@@ -368,30 +434,46 @@ const ChatWindow: React.FC = () => {
                 if (!incoming) {
                     continue;
                 }
+                shouldSendReadReceipt = true;
+                shouldMarkRead = tags.includes(UNREAD);
             }
 
-            updates.push({ did, newTags: tags.filter(t => t !== UNREAD) });
+            if (shouldSendReadReceipt) {
+                readReceiptMessageIds.push(did);
+            }
+
+            if (shouldMarkRead) {
+                updates.push({ did, newTags: tags.filter(t => t !== UNREAD) });
+            }
         }
 
-        if (!updates.length) {
+        if (!updates.length && !readReceiptMessageIds.length) {
             return;
         }
 
         (async () => {
             try {
-                await Promise.all(updates.map(({ did, newTags }) => keymaster.fileDmail(did, newTags)));
+                if (updates.length > 0) {
+                    await Promise.all(updates.map(({ did, newTags }) => keymaster.fileDmail(did, newTags)));
+                }
+                if (readReceiptMessageIds.length > 0) {
+                    await Promise.allSettled(readReceiptMessageIds.map(did => sendReadReceipt(did)));
+                }
                 await refreshInbox();
             } catch (error: any) {
                 setError(error);
             }
         })();
-    }, [activePeer, peerDid, currentDID, currentGroupMembers, dmailList, groupList, keymaster, refreshInbox, setError]);
+    }, [activePeer, peerDid, currentDID, currentGroupMembers, dmailList, groupList, keymaster, refreshInbox, sendReadReceipt, setError]);
 
     const handleSend = async (text: string) => {
         const messageText = (text ?? pendingText).trim();
         if (!messageText || !keymaster || !activePeer) {
             return;
         }
+
+        let dmailDid = "";
+        let sent = false;
 
         try {
             setSending(true)
@@ -428,17 +510,55 @@ const ChatWindow: React.FC = () => {
                 body: stringifyChatPayload(payload),
             }
 
-            const did = await keymaster.createDmail(dmail, { registry })
-            await keymaster.sendDmail(did)
+            dmailDid = await keymaster.createDmail(dmail, { registry })
+            const notice = await keymaster.sendDmail(dmailDid)
+            if (!notice) {
+                await keymaster.fileDmail(dmailDid, [FAILED]);
+                throw new Error("Message send failed");
+            }
+            sent = true;
 
             setPendingText("")
             await refreshInbox()
         } catch (err: any) {
+            if (dmailDid && !sent) {
+                try {
+                    await keymaster.fileDmail(dmailDid, [FAILED]);
+                    await refreshInbox();
+                } catch {}
+            }
             setError(err)
         } finally {
             setSending(false)
         }
     }
+
+    const retrySend = async (did: string) => {
+        if (!keymaster) {
+            return;
+        }
+
+        try {
+            await keymaster.fileDmail(did, [RETRYING]);
+            await refreshInbox();
+
+            const notice = await keymaster.sendDmail(did);
+            if (!notice) {
+                await keymaster.fileDmail(did, [FAILED]);
+                setError("Message send failed");
+                await refreshInbox();
+                return;
+            }
+
+            await refreshInbox();
+        } catch (error: any) {
+            try {
+                await keymaster.fileDmail(did, [FAILED]);
+                await refreshInbox();
+            } catch {}
+            setError(error);
+        }
+    };
 
     const openFilePicker = () => {
         if (!activePeer || !keymaster || uploadingImage) {
@@ -640,16 +760,23 @@ const ChatWindow: React.FC = () => {
                         body: stringifyChatPayload(payload),
                     };
 
-                    const did = await keymaster.createDmail(dmail);
+                    const did = await keymaster.createDmail(dmail, { registry });
 
                     const ok = await keymaster.addDmailAttachment(did, file.name, buffer);
                     if (!ok) {
+                        await keymaster.removeDmail(did);
                         setError(`Error uploading file: ${file.name}`);
                         setUploadingImage(false);
                         return;
                     }
 
-                    await keymaster.sendDmail(did);
+                    const notice = await keymaster.sendDmail(did);
+                    if (!notice) {
+                        await keymaster.fileDmail(did, [FAILED]);
+                        setError("Message send failed");
+                        await refreshInbox();
+                        return;
+                    }
                     await refreshInbox();
                 } catch (err: any) {
                     setError(err);
@@ -710,6 +837,7 @@ const ChatWindow: React.FC = () => {
 
                 const senderDid = itm.docs?.didDocument?.controller;
                 const toDids = itm.message?.to ?? [];
+                const ccDids = itm.message?.cc ?? [];
 
                 if (isGroup) {
                     const payloadGroupId = typeof payload.groupId === "string" ? payload.groupId.trim() : "";
@@ -739,6 +867,9 @@ const ChatWindow: React.FC = () => {
 
                 const senderDisplay = getSenderDisplay(senderDid);
                 const direction = senderDid === currentDID || itm.sender === currentId ? "outgoing" : "incoming";
+                const status = direction === "outgoing"
+                    ? getOutgoingStatus(did, itm.tags ?? [], payload, [...toDids, ...ccDids])
+                    : {};
                 const model: MessageModel = {
                     message: messageText,
                     sender: senderDisplay.name || itm.sender,
@@ -751,6 +882,7 @@ const ChatWindow: React.FC = () => {
                     senderAvatar: senderDisplay.avatar,
                     senderNameSource: senderDisplay.source,
                     showSenderName: false,
+                    ...status,
                 }
                 acc.push({ did, model, date: itm.date });
                 return acc;
@@ -823,7 +955,7 @@ const ChatWindow: React.FC = () => {
         }
 
         return convo;
-    }, [activePeer, currentDID, peerDid, currentId, dmailList, groupList, keymaster, getSenderDisplay])
+    }, [activePeer, currentDID, peerDid, currentId, dmailList, groupList, keymaster, getSenderDisplay, getOutgoingStatus])
 
     useEffect(() => {
         let mounted = true;
@@ -1058,6 +1190,28 @@ const ChatWindow: React.FC = () => {
                                                     )}
                                                 </div>
                                             </Message.CustomContent>
+                                        )}
+                                        {m.model.direction === "outgoing" && m.model.statusText && (
+                                            <Message.Footer>
+                                                <Box
+                                                    color={m.model.statusTone === "error" ? "red.500" : "gray.500"}
+                                                    display="inline-flex"
+                                                    gap={2}
+                                                    fontSize="xs"
+                                                >
+                                                    <span>{m.model.statusText}</span>
+                                                    {m.model.canRetry && (
+                                                        <Box
+                                                            as="button"
+                                                            color="blue.500"
+                                                            fontWeight="medium"
+                                                            onClick={() => retrySend(m.did)}
+                                                        >
+                                                            Retry
+                                                        </Box>
+                                                    )}
+                                                </Box>
+                                            </Message.Footer>
                                         )}
                                     </Message>
                                 )})}

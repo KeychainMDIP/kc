@@ -183,11 +183,25 @@ export type ChatPayload = {
     groupId?: string;
     groupName?: string;
     groupAvatar?: string;
+    receiptType?: string;
+    messageId?: string;
+    recipientDid?: string;
+    at?: string;
     updatedAt?: string;
     [key: string]: unknown;
 };
 
 export const GROUP_PROFILE_PAYLOAD_TYPE = "group-profile";
+export const MESSAGE_RECEIPT_PAYLOAD_TYPE = "message-receipt";
+export type MessageReceiptType = "delivered" | "read";
+export type MessageReceiptPayload = ChatPayload & {
+    type: typeof MESSAGE_RECEIPT_PAYLOAD_TYPE;
+    version: 1;
+    receiptType: MessageReceiptType;
+    messageId: string;
+    recipientDid: string;
+    at: string;
+};
 
 export function getChatMessageText(payload: ChatPayload | null | undefined): string {
     return typeof payload?.message === "string" ? payload.message.trim() : "";
@@ -199,6 +213,49 @@ export function isImageChatPayload(payload: ChatPayload | null | undefined): boo
 
 export function isGroupProfilePayload(payload: ChatPayload | null | undefined): boolean {
     return payload?.type === GROUP_PROFILE_PAYLOAD_TYPE;
+}
+
+export function isMessageReceiptPayload(payload: ChatPayload | null | undefined): boolean {
+    return payload?.type === MESSAGE_RECEIPT_PAYLOAD_TYPE;
+}
+
+export function getMessageReceiptPayload(payload: ChatPayload | null | undefined): MessageReceiptPayload | null {
+    if (!isMessageReceiptPayload(payload)) {
+        return null;
+    }
+
+    const receiptType = payload?.receiptType;
+    const messageId = typeof payload?.messageId === "string" ? payload.messageId.trim() : "";
+    const recipientDid = typeof payload?.recipientDid === "string" ? payload.recipientDid.trim() : "";
+    const at = typeof payload?.at === "string" ? payload.at.trim() : "";
+
+    if (
+        payload?.version !== 1 ||
+        (receiptType !== "delivered" && receiptType !== "read") ||
+        !messageId ||
+        !recipientDid ||
+        !at
+    ) {
+        return null;
+    }
+
+    return {
+        ...payload,
+        type: MESSAGE_RECEIPT_PAYLOAD_TYPE,
+        version: 1,
+        receiptType,
+        messageId,
+        recipientDid,
+        at,
+    };
+}
+
+export function getMessageReceiptKey(
+    receiptType: MessageReceiptType,
+    messageId: string,
+    recipientDid: string
+): string {
+    return `${receiptType}:${messageId}:${recipientDid}`;
 }
 
 export function getGroupAvatarDid(payload: ChatPayload | null | undefined): string {
@@ -251,6 +308,18 @@ export function parseChatPayload(body: string): ChatPayload | null {
         return null;
     }
     if ("groupAvatar" in payload && typeof payload.groupAvatar !== "string") {
+        return null;
+    }
+    if ("receiptType" in payload && typeof payload.receiptType !== "string") {
+        return null;
+    }
+    if ("messageId" in payload && typeof payload.messageId !== "string") {
+        return null;
+    }
+    if ("recipientDid" in payload && typeof payload.recipientDid !== "string") {
+        return null;
+    }
+    if ("at" in payload && typeof payload.at !== "string") {
         return null;
     }
     if ("updatedAt" in payload && typeof payload.updatedAt !== "string") {
