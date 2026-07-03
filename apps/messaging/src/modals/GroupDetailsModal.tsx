@@ -1,6 +1,6 @@
 import React from "react";
 import { Avatar } from "@chatscope/chat-ui-kit-react";
-import { Box, Dialog, Flex, Heading, IconButton, Portal, Spinner, Text } from "@chakra-ui/react";
+import { Box, Button, Dialog, Flex, Heading, IconButton, Portal, Spinner, Text } from "@chakra-ui/react";
 import { LuArrowLeft } from "react-icons/lu";
 import { truncateMiddle } from "../utils/utils";
 
@@ -22,19 +22,26 @@ interface GroupDetailsModalProps {
     onGroupAvatarClick?: () => void;
     groupAvatarUpdating?: boolean;
     canUpdateGroupAvatar?: boolean;
+    canAddMember?: boolean;
+    addMemberDisabled?: boolean;
+    addMemberLoading?: boolean;
+    onAddMemberClick?: () => void;
 }
 
 const GroupDetailsModal: React.FC<GroupDetailsModalProps> = ({
     isOpen,
     onClose,
     groupAvatar,
-    groupId,
     groupName,
     members,
     onMemberSelect,
     onGroupAvatarClick,
     groupAvatarUpdating = false,
     canUpdateGroupAvatar = false,
+    canAddMember = false,
+    addMemberDisabled = false,
+    addMemberLoading = false,
+    onAddMemberClick,
 }) => {
     const handleOpenChange = (e: { open: boolean }) => {
         if (!e.open) {
@@ -90,15 +97,26 @@ const GroupDetailsModal: React.FC<GroupDetailsModalProps> = ({
                                     <Text fontWeight="semibold" fontSize="lg" textAlign="center">
                                         {groupName}
                                     </Text>
-                                    <Text fontSize="sm" maxW="100%" whiteSpace="nowrap">
-                                        {truncateMiddle(groupId)}
-                                    </Text>
                                 </Flex>
 
                                 <Box>
-                                    <Text fontWeight="semibold" mb={3}>
-                                        Members ({members.length})
-                                    </Text>
+                                    <Flex align="center" justify="space-between" mb={3}>
+                                        <Text fontWeight="semibold">
+                                            Members ({members.length})
+                                        </Text>
+                                        {canAddMember && (
+                                            <Button
+                                                colorPalette="blue"
+                                                disabled={addMemberDisabled || addMemberLoading}
+                                                loading={addMemberLoading}
+                                                onClick={onAddMemberClick}
+                                                size="sm"
+                                                variant="outline"
+                                            >
+                                                Add Member
+                                            </Button>
+                                        )}
+                                    </Flex>
 
                                     <Box display="flex" flexDirection="column" gap={2}>
                                         {members.length > 0 ? (

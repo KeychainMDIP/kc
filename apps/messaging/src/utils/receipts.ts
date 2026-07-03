@@ -1,7 +1,6 @@
 import type Keymaster from "@mdip/keymaster";
-import { CHAT_SUBJECT } from "../constants";
+import { CHAT_SUBJECT, MESSAGE_RECEIPT_PAYLOAD_TYPE } from "../constants";
 import {
-    MESSAGE_RECEIPT_PAYLOAD_TYPE,
     MessageReceiptType,
     stringifyChatPayload,
 } from "./utils";

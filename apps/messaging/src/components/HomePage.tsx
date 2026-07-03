@@ -7,7 +7,13 @@ import {
     parseChatPayload,
     truncateMiddle
 } from "../utils/utils";
-import {CHAT_SUBJECT, MESSAGING_PROFILE} from "../constants";
+import {
+    CHAT_SUBJECT,
+    DMAIL_TAG_ARCHIVED,
+    DMAIL_TAG_DELETED,
+    DMAIL_TAG_UNREAD,
+    MESSAGING_PROFILE,
+} from "../constants";
 import { addMessagingContact } from "../utils/contacts";
 import AddUserModal from "../modals/AddUserModal";
 import CreateGroupModal from "../modals/CreateGroupModal";
@@ -83,11 +89,11 @@ export default function HomePage() {
             }
 
             const tags = itm.tags ?? [];
-            if (tags.includes("deleted") || tags.includes("archived")) {
+            if (tags.includes(DMAIL_TAG_DELETED) || tags.includes(DMAIL_TAG_ARCHIVED)) {
                 continue;
             }
 
-            if (!tags.includes("unread")) {
+            if (!tags.includes(DMAIL_TAG_UNREAD)) {
                 continue;
             }
 

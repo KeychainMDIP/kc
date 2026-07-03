@@ -9,6 +9,7 @@ import QRCodeModal from "../modals/QRCodeModal";
 import { useVariablesContext } from "../contexts/VariablesProvider";
 import SettingsMenu from "./settings/SettingsMenu";
 import useAvatarUploader from "../hooks/useAvatarUploader";
+import { IMAGE_FILE_ACCEPT } from "../constants";
 
 export interface ProfileProps {
     isOpen: boolean;
@@ -53,7 +54,7 @@ export default function Profile({ isOpen }: ProfileProps) {
                 type="file"
                 ref={fileInputRef}
                 display="none"
-                accept="image/*"
+                accept={IMAGE_FILE_ACCEPT}
                 onChange={handleFileChange}
             />
 

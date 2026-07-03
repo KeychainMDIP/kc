@@ -21,17 +21,31 @@ import { LuEllipsisVertical, LuInfo, LuQrCode, LuTrash2 } from "react-icons/lu";
 import { useSnackbar } from "../contexts/SnackbarProvider";
 import { useVariablesContext } from "../contexts/VariablesProvider";
 import { useWalletContext } from "../contexts/WalletProvider";
-import { CHAT_SUBJECT } from "../constants";
+import {
+    CHAT_PAYLOAD_TYPE_IMAGE,
+    CHAT_SUBJECT,
+    DMAIL_TAG_ARCHIVED,
+    DMAIL_TAG_DELETED,
+    DMAIL_TAG_FAILED as FAILED,
+    DMAIL_TAG_RETRYING as RETRYING,
+    DMAIL_TAG_SENT,
+    DMAIL_TAG_UNREAD as UNREAD,
+    GROUP_MEMBERSHIP_ACTION_MEMBER_ADDED,
+    GROUP_MEMBERSHIP_PAYLOAD_TYPE,
+    GROUP_NOT_FOUND_MESSAGE as GROUP_NOT_FOUND,
+    GROUP_PROFILE_PAYLOAD_TYPE,
+    IMAGE_FILE_ACCEPT,
+} from "../constants";
 import WarningModal from "../modals/WarningModal";
 import QRCodeModal from "../modals/QRCodeModal";
 import GroupDetailsModal, { GroupMemberDisplay } from "../modals/GroupDetailsModal";
+import AddGroupMemberModal, { AddGroupMemberOption } from "../modals/AddGroupMemberModal";
 import { Buffer } from "buffer";
 import SlideInRight from "./transitions/SlideInRight";
 import { useColorMode } from "../contexts/ColorModeProvider";
 import { addMessagingContact } from "../utils/contacts";
 import {
     canUpdateGroupProfile,
-    GROUP_PROFILE_PAYLOAD_TYPE,
     avatarDataUrl,
     formatTime,
     getChatMessageText,
@@ -66,14 +80,25 @@ type SenderDisplay = {
     source: "keymaster" | "profile" | "fallback"
 }
 
-const UNREAD = "unread"
-const FAILED = "failed"
-const RETRYING = "retrying"
-const GROUP_NOT_FOUND = "Group not found";
+function latestTimestamp(existing?: string, incoming?: string): string | undefined {
+    if (!existing) {
+        return incoming;
+    }
+    if (!incoming) {
+        return existing;
+    }
+
+    const existingMs = Date.parse(existing);
+    const incomingMs = Date.parse(incoming);
+    const safeExistingMs = Number.isFinite(existingMs) ? existingMs : 0;
+    const safeIncomingMs = Number.isFinite(incomingMs) ? incomingMs : 0;
+    return safeIncomingMs >= safeExistingMs ? incoming : existing;
+}
 
 const ChatWindow: React.FC = () => {
     const {
         activePeer,
+        agentList,
         currentId,
         currentDID,
         dmailList,
@@ -89,6 +114,7 @@ const ChatWindow: React.FC = () => {
         messageReceiptList,
         resolveAvatar,
         resolveSenderProfile,
+        hideGroup,
         sendReadReceipt,
     } = useVariablesContext();
     const {
@@ -108,6 +134,8 @@ const ChatWindow: React.FC = () => {
     const [imageAttachments, setImageAttachments] = useState<Record<string, { name: string; url: string; mime: string }[]>>({});
     const [currentGroupMembers, setCurrentGroupMembers] = useState<string[]>([]);
     const [groupDetailsOpen, setGroupDetailsOpen] = useState<boolean>(false);
+    const [addGroupMemberOpen, setAddGroupMemberOpen] = useState<boolean>(false);
+    const [addingGroupMember, setAddingGroupMember] = useState<boolean>(false);
     const [selectedMember, setSelectedMember] = useState<GroupMemberDisplay | null>(null);
     const [updatingGroupAvatar, setUpdatingGroupAvatar] = useState<boolean>(false);
 
@@ -175,8 +203,12 @@ const ChatWindow: React.FC = () => {
         };
     }, [knownDisplayNameByDid, senderProfileList]);
 
+    const activeGroupMembers = useMemo(() => {
+        return Array.from(new Set(currentGroupMembers.length ? currentGroupMembers : (groupEntry?.members ?? [])));
+    }, [currentGroupMembers, groupEntry]);
+
     const groupMemberDisplays = useMemo((): GroupMemberDisplay[] => {
-        return currentGroupMembers.map(memberDid => {
+        return activeGroupMembers.map(memberDid => {
             const isCurrentUser = memberDid === currentDID;
             const contactName = knownDisplayNameByDid[memberDid];
             const senderProfile = senderProfileList[memberDid];
@@ -195,14 +227,36 @@ const ChatWindow: React.FC = () => {
                 name,
             };
         });
-    }, [currentDID, currentGroupMembers, currentId, knownDisplayNameByDid, profileList, senderProfileList]);
+    }, [activeGroupMembers, currentDID, currentId, knownDisplayNameByDid, profileList, senderProfileList]);
+
+    const addableGroupMemberOptions = useMemo((): AddGroupMemberOption[] => {
+        const memberDids = new Set(activeGroupMembers);
+        const seenDids = new Set<string>();
+        const options: AddGroupMemberOption[] = [];
+
+        for (const name of agentList) {
+            const did = displayNameList[name] ?? nameList[name] ?? "";
+            if (!did || did === currentDID || memberDids.has(did) || seenDids.has(did)) {
+                continue;
+            }
+
+            seenDids.add(did);
+            options.push({
+                avatar: profileList[name]?.avatar ?? avatarDataUrl(did),
+                did,
+                name,
+            });
+        }
+
+        return options.sort((left, right) => left.name.localeCompare(right.name));
+    }, [activeGroupMembers, agentList, currentDID, displayNameList, nameList, profileList]);
 
     useEffect(() => {
         if (!groupDetailsOpen || !isGroup) {
             return;
         }
 
-        const unresolvedMembers = currentGroupMembers.filter(memberDid =>
+        const unresolvedMembers = activeGroupMembers.filter(memberDid =>
             memberDid !== currentDID &&
             !knownDisplayNameByDid[memberDid] &&
             !senderProfileList[memberDid]
@@ -221,7 +275,7 @@ const ChatWindow: React.FC = () => {
         })();
     }, [
         currentDID,
-        currentGroupMembers,
+        activeGroupMembers,
         groupDetailsOpen,
         isGroup,
         knownDisplayNameByDid,
@@ -257,15 +311,97 @@ const ChatWindow: React.FC = () => {
         }
     };
 
+    const handleAddGroupMember = async (option: AddGroupMemberOption) => {
+        if (!keymaster || !activePeer || !isGroup || addingGroupMember) {
+            return;
+        }
+
+        try {
+            setAddingGroupMember(true);
+
+            if (!activeGroupMembers.length) {
+                setError(GROUP_NOT_FOUND);
+                return;
+            }
+
+            if (!canUpdateGroupProfile(currentDID, { members: activeGroupMembers })) {
+                setError("Only group members can add members");
+                return;
+            }
+
+            if (activeGroupMembers.includes(option.did)) {
+                setError(`${option.name} is already in this group`);
+                return;
+            }
+
+            const recipients = Array.from(new Set([...activeGroupMembers, option.did]));
+            const groupName = groupEntry?.name || peerDisplayName;
+            const updatedAt = new Date().toISOString();
+            const payload: ChatPayload = {
+                type: GROUP_MEMBERSHIP_PAYLOAD_TYPE,
+                version: 1,
+                groupId: activePeer,
+                groupName,
+                ...(groupEntry?.avatarDid && groupEntry.avatarUpdatedAt
+                    ? {
+                        groupAvatar: groupEntry.avatarDid,
+                        groupAvatarUpdatedAt: groupEntry.avatarUpdatedAt,
+                    }
+                    : {}),
+                action: GROUP_MEMBERSHIP_ACTION_MEMBER_ADDED,
+                memberDid: option.did,
+                updatedAt,
+            };
+            const dmail = {
+                to: recipients,
+                cc: [],
+                subject: CHAT_SUBJECT,
+                body: stringifyChatPayload(payload),
+            };
+            const did = await keymaster.createDmail(dmail, { registry });
+            const notice = await keymaster.sendDmail(did);
+            if (!notice) {
+                await keymaster.fileDmail(did, [FAILED]);
+                throw new Error("Group update send failed");
+            }
+
+            setGroupList(prev => {
+                const existing = prev[activePeer] ?? {
+                    name: groupName,
+                    members: recipients,
+                };
+                const nextMembers = Array.from(new Set([...existing.members, option.did]));
+
+                return {
+                    ...prev,
+                    [activePeer]: {
+                        ...existing,
+                        name: groupName,
+                        members: nextMembers,
+                        membersUpdatedAt: latestTimestamp(existing.membersUpdatedAt, updatedAt),
+                    },
+                };
+            });
+            setAddGroupMemberOpen(false);
+            await refreshInbox();
+            setSuccess(`${option.name} added to ${groupName}`);
+        } catch (error: any) {
+            setError(error);
+        } finally {
+            setAddingGroupMember(false);
+        }
+    };
+
     const selectedMemberAlreadyKnown = selectedMember
         ? Object.values(nameList).includes(selectedMember.did)
         : false;
     const selectedMemberCanAdd = !!selectedMember && !selectedMember.isCurrentUser && !selectedMemberAlreadyKnown;
-    const memberCountLabel = `${currentGroupMembers.length} ${currentGroupMembers.length === 1 ? "member" : "members"}`;
-    const canUpdateActiveGroupAvatar = isGroup && canUpdateGroupProfile(
+    const canManageActiveGroup = isGroup && canUpdateGroupProfile(
         currentDID,
-        { members: currentGroupMembers.length ? currentGroupMembers : (groupEntry?.members ?? []) }
+        { members: activeGroupMembers }
     );
+    const memberCountLabel = `${activeGroupMembers.length} ${activeGroupMembers.length === 1 ? "member" : "members"}`;
+    const canUpdateActiveGroupAvatar = canManageActiveGroup;
 
     const getOutgoingStatus = useCallback((
         did: string,
@@ -316,7 +452,7 @@ const ChatWindow: React.FC = () => {
             }
         }
 
-        if (tags.includes("sent")) {
+        if (tags.includes(DMAIL_TAG_SENT)) {
             return { statusText: "Sent", statusTone: "normal" };
         }
 
@@ -331,10 +467,20 @@ const ChatWindow: React.FC = () => {
     };
 
     const confirmRemove = async () => {
-        if (!keymaster || !activePeer) {
+        if (!activePeer) {
             return;
         }
         try {
+            if (isGroup) {
+                hideGroup(activePeer);
+                setActivePeer("");
+                return;
+            }
+
+            if (!keymaster) {
+                return;
+            }
+
             await keymaster.removeName(canonicalPeerAlias);
             setActivePeer("");
             await refreshNames();
@@ -350,33 +496,18 @@ const ChatWindow: React.FC = () => {
     }
 
     useEffect(() => {
-        if (!activePeer || !keymaster) {
+        if (!activePeer) {
+            setCurrentGroupMembers([]);
             return;
         }
 
         const selectedGroup = groupList[activePeer];
         if (selectedGroup) {
             setCurrentGroupMembers(selectedGroup.members);
-            (async () => {
-                try {
-                    const group = await keymaster.getGroup(activePeer);
-                    if (!group) {
-                        setError(GROUP_NOT_FOUND);
-                        return;
-                    }
-                    if (group?.members) {
-                        setCurrentGroupMembers(group.members);
-                    }
-
-                } catch (err: any) {
-                    setError(err);
-                }
-            })();
         } else {
             setCurrentGroupMembers([]);
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activePeer, groupList, keymaster]);
+    }, [activePeer, groupList]);
 
     useEffect(() => {
         if (!activePeer || !keymaster || !peerDid || !currentDID) {
@@ -404,7 +535,7 @@ const ChatWindow: React.FC = () => {
             const payloadGroupId = typeof payload.groupId === "string" ? payload.groupId.trim() : "";
 
             const tags = itm.tags ?? [];
-            if (tags.includes("deleted") || tags.includes("archived")) {
+            if (tags.includes(DMAIL_TAG_DELETED) || tags.includes(DMAIL_TAG_ARCHIVED)) {
                 continue;
             }
 
@@ -482,15 +613,10 @@ const ChatWindow: React.FC = () => {
             let recipients: string[] = [];
 
             if (isGroup) {
-                try {
-                    const group = await keymaster.getGroup(activePeer);
-                    if (!group) {
-                        setError(GROUP_NOT_FOUND);
-                        return;
-                    }
-                    recipients = group.members;
-                } catch (error: any) {
-                    setError(error);
+                recipients = activeGroupMembers;
+                if (recipients.length === 0) {
+                    setError(GROUP_NOT_FOUND);
+                    return;
                 }
             } else {
                 recipients = [peerDid];
@@ -567,7 +693,7 @@ const ChatWindow: React.FC = () => {
 
         const temp = document.createElement("input");
         temp.type = "file";
-        temp.accept = "image/*";
+        temp.accept = IMAGE_FILE_ACCEPT;
         temp.hidden = true;
         const onTempChange = async (e: Event) => {
             await uploadImageAttachment(e as unknown as React.ChangeEvent<HTMLInputElement>);
@@ -623,13 +749,12 @@ const ChatWindow: React.FC = () => {
         try {
             setUpdatingGroupAvatar(true);
 
-            const group = await keymaster.getGroup(activePeer);
-            if (!group?.members) {
+            if (!activeGroupMembers.length) {
                 setError(GROUP_NOT_FOUND);
                 return;
             }
 
-            if (!canUpdateGroupProfile(currentDID, group)) {
+            if (!canUpdateGroupProfile(currentDID, { members: activeGroupMembers })) {
                 setError("Only group members can update the group avatar");
                 return;
             }
@@ -642,7 +767,7 @@ const ChatWindow: React.FC = () => {
             }
 
             const updatedAt = new Date().toISOString();
-            const recipients = Array.from(new Set(group.members));
+            const recipients = activeGroupMembers;
             const payload: ChatPayload = {
                 type: GROUP_PROFILE_PAYLOAD_TYPE,
                 version: 1,
@@ -659,19 +784,23 @@ const ChatWindow: React.FC = () => {
             };
 
             const did = await keymaster.createDmail(dmail, { registry });
-            await keymaster.sendDmail(did);
+            const notice = await keymaster.sendDmail(did);
+            if (!notice) {
+                await keymaster.fileDmail(did, [FAILED]);
+                throw new Error("Group avatar update send failed");
+            }
 
             setGroupList(prev => {
                 const existing = prev[activePeer] ?? {
                     name: peerDisplayName,
-                    members: group.members,
+                    members: recipients,
                 };
 
                 return {
                     ...prev,
                     [activePeer]: {
                         ...existing,
-                        members: group.members,
+                        members: recipients,
                         avatar,
                         avatarDid: assetDid,
                         avatarUpdatedAt: updatedAt,
@@ -732,22 +861,17 @@ const ChatWindow: React.FC = () => {
                     let recipients: string[] = [];
 
                     if (isGroup) {
-                        try {
-                            const group = await keymaster.getGroup(activePeer);
-                            if (!group) {
-                                setError(GROUP_NOT_FOUND);
-                                return;
-                            }
-                            recipients = group.members;
-                        } catch (error: any) {
-                            setError(error);
+                        recipients = activeGroupMembers;
+                        if (recipients.length === 0) {
+                            setError(GROUP_NOT_FOUND);
+                            return;
                         }
                     } else {
                         recipients = [peerDid];
                     }
 
                     const payload: ChatPayload = {
-                        type: "image",
+                        type: CHAT_PAYLOAD_TYPE_IMAGE,
                     };
                     if (isGroup) {
                         payload.groupId = activePeer;
@@ -817,7 +941,7 @@ const ChatWindow: React.FC = () => {
 
         const convo = Object.entries(dmailList || {})
             .reduce((acc, [did, itm]: any) => {
-                const notDeleted = !itm.tags?.includes("deleted");
+                const notDeleted = !itm.tags?.includes(DMAIL_TAG_DELETED);
                 const isChat = itm.message?.subject === CHAT_SUBJECT;
 
                 if (!isChat || !notDeleted) {
@@ -1053,6 +1177,18 @@ const ChatWindow: React.FC = () => {
                 onGroupAvatarClick={openGroupAvatarPicker}
                 groupAvatarUpdating={updatingGroupAvatar}
                 canUpdateGroupAvatar={canUpdateActiveGroupAvatar}
+                canAddMember={canManageActiveGroup}
+                addMemberDisabled={addingGroupMember}
+                addMemberLoading={addingGroupMember}
+                onAddMemberClick={() => setAddGroupMemberOpen(true)}
+            />
+
+            <AddGroupMemberModal
+                isOpen={addGroupMemberOpen}
+                onClose={() => setAddGroupMemberOpen(false)}
+                options={addableGroupMemberOptions}
+                adding={addingGroupMember}
+                onSubmit={handleAddGroupMember}
             />
 
             {selectedMember && (
@@ -1071,7 +1207,7 @@ const ChatWindow: React.FC = () => {
             <input
                 ref={groupAvatarInputRef}
                 type="file"
-                accept="image/*"
+                accept={IMAGE_FILE_ACCEPT}
                 hidden
                 onChange={uploadGroupAvatar}
             />
@@ -1231,7 +1367,7 @@ const ChatWindow: React.FC = () => {
                         <input
                             ref={fileInputRef}
                             type="file"
-                            accept="image/*"
+                            accept={IMAGE_FILE_ACCEPT}
                             hidden
                             onChange={uploadImageAttachment}
                         />

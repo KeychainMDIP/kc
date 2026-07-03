@@ -1,7 +1,17 @@
 import {BarcodeScanner} from "@capacitor-mlkit/barcode-scanning";
 import { toSvg } from "jdenticon";
-
-const MAX_KEYMASTER_NAME_LENGTH = 32;
+import {
+    CHAT_PAYLOAD_TYPE_IMAGE,
+    GROUP_MEMBERSHIP_ACTION_CREATED,
+    GROUP_MEMBERSHIP_ACTION_MEMBER_ADDED,
+    GROUP_MEMBERSHIP_ACTION_MEMBERS_SYNCED,
+    GROUP_MEMBERSHIP_PAYLOAD_TYPE,
+    GROUP_PROFILE_PAYLOAD_TYPE,
+    MAX_KEYMASTER_NAME_LENGTH,
+    MESSAGE_RECEIPT_PAYLOAD_TYPE,
+    MESSAGE_RECEIPT_TYPE_DELIVERED,
+    MESSAGE_RECEIPT_TYPE_READ,
+} from "../constants";
 
 export function avatarDataUrl(seed: string, size = 64) {
     const svg = toSvg(seed || "anonymous", size);
@@ -183,6 +193,10 @@ export type ChatPayload = {
     groupId?: string;
     groupName?: string;
     groupAvatar?: string;
+    groupAvatarUpdatedAt?: string;
+    action?: string;
+    memberDid?: string;
+    members?: string[];
     receiptType?: string;
     messageId?: string;
     recipientDid?: string;
@@ -191,9 +205,25 @@ export type ChatPayload = {
     [key: string]: unknown;
 };
 
-export const GROUP_PROFILE_PAYLOAD_TYPE = "group-profile";
-export const MESSAGE_RECEIPT_PAYLOAD_TYPE = "message-receipt";
-export type MessageReceiptType = "delivered" | "read";
+export type GroupMembershipAction =
+    | typeof GROUP_MEMBERSHIP_ACTION_CREATED
+    | typeof GROUP_MEMBERSHIP_ACTION_MEMBER_ADDED
+    | typeof GROUP_MEMBERSHIP_ACTION_MEMBERS_SYNCED;
+export type GroupMembershipPayload = ChatPayload & {
+    type: typeof GROUP_MEMBERSHIP_PAYLOAD_TYPE;
+    version: 1;
+    groupId: string;
+    groupName?: string;
+    groupAvatar?: string;
+    groupAvatarUpdatedAt?: string;
+    action: GroupMembershipAction;
+    memberDid?: string;
+    members?: string[];
+    updatedAt: string;
+};
+export type MessageReceiptType =
+    | typeof MESSAGE_RECEIPT_TYPE_DELIVERED
+    | typeof MESSAGE_RECEIPT_TYPE_READ;
 export type MessageReceiptPayload = ChatPayload & {
     type: typeof MESSAGE_RECEIPT_PAYLOAD_TYPE;
     version: 1;
@@ -208,11 +238,68 @@ export function getChatMessageText(payload: ChatPayload | null | undefined): str
 }
 
 export function isImageChatPayload(payload: ChatPayload | null | undefined): boolean {
-    return payload?.type === "image";
+    return payload?.type === CHAT_PAYLOAD_TYPE_IMAGE;
 }
 
 export function isGroupProfilePayload(payload: ChatPayload | null | undefined): boolean {
     return payload?.type === GROUP_PROFILE_PAYLOAD_TYPE;
+}
+
+export function isGroupMembershipPayload(payload: ChatPayload | null | undefined): boolean {
+    return payload?.type === GROUP_MEMBERSHIP_PAYLOAD_TYPE;
+}
+
+export function getGroupMembershipPayload(payload: ChatPayload | null | undefined): GroupMembershipPayload | null {
+    if (!isGroupMembershipPayload(payload)) {
+        return null;
+    }
+
+    const action = payload?.action;
+    const groupId = typeof payload?.groupId === "string" ? payload.groupId.trim() : "";
+    const groupName = typeof payload?.groupName === "string" ? payload.groupName.trim() : "";
+    const groupAvatar = typeof payload?.groupAvatar === "string" ? payload.groupAvatar.trim() : "";
+    const groupAvatarUpdatedAt = typeof payload?.groupAvatarUpdatedAt === "string" ? payload.groupAvatarUpdatedAt.trim() : "";
+    const memberDid = typeof payload?.memberDid === "string" ? payload.memberDid.trim() : "";
+    const members = Array.isArray(payload?.members)
+        ? payload.members.map(member => typeof member === "string" ? member.trim() : "").filter(Boolean)
+        : [];
+    const updatedAt = typeof payload?.updatedAt === "string" ? payload.updatedAt.trim() : "";
+
+    const uniqueMembers = Array.from(new Set(members));
+
+    if (
+        payload?.version !== 1 ||
+        (
+            action !== GROUP_MEMBERSHIP_ACTION_CREATED &&
+            action !== GROUP_MEMBERSHIP_ACTION_MEMBER_ADDED &&
+            action !== GROUP_MEMBERSHIP_ACTION_MEMBERS_SYNCED
+        ) ||
+        !groupId ||
+        !updatedAt
+    ) {
+        return null;
+    }
+
+    if (action === GROUP_MEMBERSHIP_ACTION_CREATED && uniqueMembers.length === 0) {
+        return null;
+    }
+
+    if (action === GROUP_MEMBERSHIP_ACTION_MEMBER_ADDED && !memberDid) {
+        return null;
+    }
+
+    return {
+        type: GROUP_MEMBERSHIP_PAYLOAD_TYPE,
+        version: 1,
+        groupId,
+        ...(groupName ? { groupName } : {}),
+        ...(groupAvatar ? { groupAvatar } : {}),
+        ...(groupAvatarUpdatedAt ? { groupAvatarUpdatedAt } : {}),
+        action,
+        ...(memberDid ? { memberDid } : {}),
+        ...(action === GROUP_MEMBERSHIP_ACTION_CREATED ? { members: uniqueMembers } : {}),
+        updatedAt,
+    };
 }
 
 export function isMessageReceiptPayload(payload: ChatPayload | null | undefined): boolean {
@@ -231,7 +318,7 @@ export function getMessageReceiptPayload(payload: ChatPayload | null | undefined
 
     if (
         payload?.version !== 1 ||
-        (receiptType !== "delivered" && receiptType !== "read") ||
+        (receiptType !== MESSAGE_RECEIPT_TYPE_DELIVERED && receiptType !== MESSAGE_RECEIPT_TYPE_READ) ||
         !messageId ||
         !recipientDid ||
         !at
@@ -308,6 +395,21 @@ export function parseChatPayload(body: string): ChatPayload | null {
         return null;
     }
     if ("groupAvatar" in payload && typeof payload.groupAvatar !== "string") {
+        return null;
+    }
+    if ("groupAvatarUpdatedAt" in payload && typeof payload.groupAvatarUpdatedAt !== "string") {
+        return null;
+    }
+    if ("action" in payload && typeof payload.action !== "string") {
+        return null;
+    }
+    if ("memberDid" in payload && typeof payload.memberDid !== "string") {
+        return null;
+    }
+    if ("members" in payload && (
+        !Array.isArray(payload.members) ||
+        payload.members.some(member => typeof member !== "string")
+    )) {
         return null;
     }
     if ("receiptType" in payload && typeof payload.receiptType !== "string") {

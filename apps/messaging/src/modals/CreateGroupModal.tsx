@@ -4,7 +4,13 @@ import { useVariablesContext } from "../contexts/VariablesProvider";
 import { useWalletContext } from "../contexts/WalletProvider";
 import { useSnackbar } from "../contexts/SnackbarProvider";
 import { LuX } from "react-icons/lu";
-import { CHAT_SUBJECT } from "../constants";
+import {
+    CHAT_SUBJECT,
+    DMAIL_TAG_FAILED,
+    GROUP_MEMBERSHIP_ACTION_CREATED,
+    GROUP_MEMBERSHIP_PAYLOAD_TYPE,
+    LOCAL_GROUP_ID_PREFIX,
+} from "../constants";
 import { stringifyChatPayload } from "../utils/utils";
 
 interface CreateGroupModalProps {
@@ -19,7 +25,8 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({ isOpen, onClose }) 
         currentDID,
         nameList,
         displayNameList,
-        refreshNames,
+        setGroupList,
+        refreshInbox,
     } = useVariablesContext();
     const { keymaster, registry } = useWalletContext();
     const { setError, setSuccess } = useSnackbar();
@@ -152,20 +159,30 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({ isOpen, onClose }) 
         try {
             setCreating(true);
 
-            const groupId = await keymaster.createGroup(trimmed);
             const memberDids = selectedMembers
                 .filter(member => member !== currentId)
                 .map(member => displayNameList[member] ?? nameList[member] ?? member)
                 .filter(member => !!member && member !== currentDID);
             const recipients = Array.from(new Set([currentDID, ...memberDids]));
 
-            for (const memberDid of recipients) {
-                await keymaster.addGroupMember(groupId, memberDid);
+            if (!currentDID || recipients.length < 2) {
+                setError("At least one other member is required");
+                return;
             }
 
+            const randomId = typeof crypto !== "undefined" && "randomUUID" in crypto
+                ? crypto.randomUUID()
+                : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+            const groupId = `${LOCAL_GROUP_ID_PREFIX}:${randomId}`;
+            const updatedAt = new Date().toISOString();
             const body = stringifyChatPayload({
+                type: GROUP_MEMBERSHIP_PAYLOAD_TYPE,
+                version: 1,
                 groupId,
                 groupName: trimmed,
+                action: GROUP_MEMBERSHIP_ACTION_CREATED,
+                members: recipients,
+                updatedAt,
             });
             const dmail = {
                 to: recipients,
@@ -174,9 +191,21 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({ isOpen, onClose }) 
                 body,
             };
             const did = await keymaster.createDmail(dmail, { registry });
-            await keymaster.sendDmail(did);
+            const notice = await keymaster.sendDmail(did);
+            if (!notice) {
+                await keymaster.fileDmail(did, [DMAIL_TAG_FAILED]);
+                throw new Error("Group creation send failed");
+            }
 
-            await refreshNames();
+            setGroupList(prev => ({
+                ...prev,
+                [groupId]: {
+                    name: trimmed,
+                    members: recipients,
+                    membersUpdatedAt: updatedAt,
+                },
+            }));
+            await refreshInbox();
             setSuccess(`Group "${trimmed}" created`);
             onClose();
         } catch (error: any) {

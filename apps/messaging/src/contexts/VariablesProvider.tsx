@@ -2,10 +2,25 @@ import { createContext, Dispatch, ReactNode, SetStateAction, useContext, useStat
 import { DmailItem } from "@mdip/keymaster/types";
 import { useWalletContext } from "./WalletProvider";
 import { useSnackbar } from "./SnackbarProvider";
-import { CHAT_SUBJECT, MESSAGING_PROFILE } from "../constants";
+import {
+    CHAT_SUBJECT,
+    DMAIL_TAG_FAILED as FAILED,
+    DMAIL_TAG_SENT as SENT,
+    DMAIL_TAG_UNREAD as UNREAD,
+    GROUP_MEMBERSHIP_ACTION_MEMBER_ADDED,
+    GROUP_MEMBERSHIP_ACTION_MEMBERS_SYNCED,
+    GROUP_MEMBERSHIP_PAYLOAD_TYPE,
+    HIDDEN_GROUPS_STORAGE_PREFIX,
+    MESSAGE_RECEIPT_TYPE_DELIVERED,
+    MESSAGE_RECEIPT_TYPE_READ,
+    MESSAGING_PROFILE,
+    REFRESH_INTERVAL,
+} from "../constants";
 import {
     canUpdateGroupProfile,
+    type GroupMembershipPayload,
     getGroupAvatarDid,
+    getGroupMembershipPayload,
     getMessageReceiptKey,
     getMessageReceiptPayload,
     hasRenderableChatContent,
@@ -13,12 +28,9 @@ import {
     makeUniqueContactAlias,
     MessageReceiptType,
     parseChatPayload,
+    stringifyChatPayload,
 } from "../utils/utils";
 import { sendMessageReceipt } from "../utils/receipts";
-
-const REFRESH_INTERVAL = 5_000;
-const UNREAD = "unread";
-const SENT = "sent";
 
 interface VariablesContextValue {
     currentId: string;
@@ -68,6 +80,7 @@ interface VariablesContextValue {
     setActivePeer: Dispatch<SetStateAction<string>>;
     resolveAvatar: (assetDid: string) => Promise<string | null>,
     resolveSenderProfile: (did: string) => Promise<SenderProfile>;
+    hideGroup: (groupId: string) => void;
     sendReadReceipt: (messageId: string) => Promise<void>;
     refreshAll: () => Promise<void>;
     refreshHeld: () => Promise<void>;
@@ -81,10 +94,43 @@ const VariablesContext = createContext<VariablesContextValue | null>(null);
 type GroupInfo = {
     name: string;
     members: string[];
+    membersUpdatedAt?: string;
     avatar?: string;
     avatarDid?: string;
     avatarUpdatedAt?: string;
 };
+
+function hiddenGroupsStorageKey(currentDID: string): string {
+    return `${HIDDEN_GROUPS_STORAGE_PREFIX}:${currentDID}`;
+}
+
+function readHiddenGroupIds(currentDID: string): Set<string> {
+    if (!currentDID || typeof window === "undefined") {
+        return new Set();
+    }
+
+    try {
+        const stored = window.localStorage.getItem(hiddenGroupsStorageKey(currentDID));
+        const parsed = stored ? JSON.parse(stored) : [];
+        if (!Array.isArray(parsed)) {
+            return new Set();
+        }
+
+        return new Set(parsed.filter((groupId): groupId is string => typeof groupId === "string" && !!groupId.trim()));
+    } catch {
+        return new Set();
+    }
+}
+
+function writeHiddenGroupIds(currentDID: string, groupIds: Set<string>) {
+    if (!currentDID || typeof window === "undefined") {
+        return;
+    }
+
+    try {
+        window.localStorage.setItem(hiddenGroupsStorageKey(currentDID), JSON.stringify([...groupIds]));
+    } catch {}
+}
 
 function timestampMs(value?: string): number {
     if (!value) {
@@ -95,8 +141,23 @@ function timestampMs(value?: string): number {
     return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
+function latestTimestamp(existing?: string, incoming?: string): string | undefined {
+    if (!existing) {
+        return incoming;
+    }
+    if (!incoming) {
+        return existing;
+    }
+    return timestampMs(incoming) >= timestampMs(existing) ? incoming : existing;
+}
+
 function shouldApplyGroupAvatarUpdate(existing?: string, incoming?: string): boolean {
     return timestampMs(incoming) >= timestampMs(existing);
+}
+
+function groupRosterSyncKey(groupId: string, members: string[]): string {
+    const uniqueMembers = Array.from(new Set(members.map(member => member.trim()).filter(Boolean))).sort();
+    return `${groupId}:${uniqueMembers.join("|")}`;
 }
 
 export type SenderProfile = {
@@ -122,7 +183,7 @@ function mergeReceipt(
     const byRecipient = target[messageId] ?? {};
     const existing = byRecipient[recipientDid] ?? {};
 
-    if (receiptType === "delivered") {
+    if (receiptType === MESSAGE_RECEIPT_TYPE_DELIVERED) {
         if (existing.deliveredAt && timestampMs(existing.deliveredAt) > timestampMs(at)) {
             return;
         }
@@ -213,7 +274,10 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
     const avatarCache = useRef<Map<string, string>>(new Map());
     const senderProfileListRef = useRef<Record<string, SenderProfile>>({});
     const sentReceiptKeysRef = useRef<Set<string>>(new Set());
+    const sentGroupSyncKeysRef = useRef<Set<string>>(new Set());
     const pendingReadReceiptIdsRef = useRef<Set<string>>(new Set());
+    const hiddenGroupIdsRef = useRef<Set<string>>(new Set());
+    const currentDIDRef = useRef<string>("");
 
     useEffect(() => {
         const refresh = async () => {
@@ -222,6 +286,35 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         void refresh();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    useEffect(() => {
+        const previousDID = currentDIDRef.current;
+        currentDIDRef.current = currentDID;
+        hiddenGroupIdsRef.current = readHiddenGroupIds(currentDID);
+
+        if (!currentDID) {
+            return;
+        }
+
+        if (previousDID && previousDID !== currentDID) {
+            setGroupList({});
+            return;
+        }
+
+        setGroupList(prev => {
+            let changed = false;
+            const next = { ...prev };
+
+            for (const groupId of hiddenGroupIdsRef.current) {
+                if (next[groupId]) {
+                    delete next[groupId];
+                    changed = true;
+                }
+            }
+
+            return changed ? next : prev;
+        });
+    }, [currentDID]);
 
     useEffect(() => {
         senderProfileListRef.current = senderProfileList;
@@ -339,6 +432,28 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
 
         return cacheSenderProfile(profile);
     }, [cacheSenderProfile, keymaster, resolveAvatar]);
+
+    const hideGroup = useCallback((groupId: string) => {
+        const trimmedGroupId = groupId.trim();
+        if (!trimmedGroupId || !currentDID) {
+            return;
+        }
+
+        const nextHiddenGroupIds = new Set(hiddenGroupIdsRef.current);
+        nextHiddenGroupIds.add(trimmedGroupId);
+        hiddenGroupIdsRef.current = nextHiddenGroupIds;
+        writeHiddenGroupIds(currentDID, nextHiddenGroupIds);
+
+        setGroupList(prev => {
+            if (!prev[trimmedGroupId]) {
+                return prev;
+            }
+
+            const next = { ...prev };
+            delete next[trimmedGroupId];
+            return next;
+        });
+    }, [currentDID]);
 
     const refreshNames = useCallback(
         async () => {
@@ -469,17 +584,6 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
                     displayNameToDid[alias] = did;
                     canonicalAliasToDid[alias] = did;
 
-                    if (data.group) {
-                        const group = await keymaster.getGroup(alias);
-                        if (group?.members) {
-                            const name = typeof group.name === "string" && group.name.trim()
-                                ? group.name.trim()
-                                : alias;
-                            groupListLocal[did] = { name, members: group.members };
-                        }
-                        continue;
-                    }
-
                     if (data.schema) {
                         schemaList.push(alias);
                         continue;
@@ -508,23 +612,6 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
                 catch {}
             }
 
-            try {
-                const ownedGroups = await keymaster.listGroups();
-                for (const groupDid of ownedGroups) {
-                    if (groupListLocal[groupDid]) {
-                        continue;
-                    }
-                    const group = await keymaster.getGroup(groupDid);
-                    if (!group?.members) {
-                        continue;
-                    }
-                    const name = typeof group.name === "string" && group.name.trim()
-                        ? group.name.trim()
-                        : groupDid;
-                    groupListLocal[groupDid] = { name, members: group.members };
-                }
-            } catch {}
-
             setNameList(canonicalAliasToDid);
             setDisplayNameList(displayNameToDid);
             setNameRegistry(registryMap);
@@ -537,11 +624,16 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
 
             const mergedGroupList: Record<string, GroupInfo> = { ...groupListLocal };
             for (const [groupId, info] of Object.entries(groupList)) {
+                if (hiddenGroupIdsRef.current.has(groupId)) {
+                    continue;
+                }
+
                 if (!mergedGroupList[groupId]) {
                     mergedGroupList[groupId] = info;
                 } else {
                     mergedGroupList[groupId] = {
                         ...mergedGroupList[groupId],
+                        membersUpdatedAt: latestTimestamp(mergedGroupList[groupId].membersUpdatedAt, info.membersUpdatedAt),
                         avatar: mergedGroupList[groupId].avatar ?? info.avatar,
                         avatarDid: mergedGroupList[groupId].avatarDid ?? info.avatarDid,
                         avatarUpdatedAt: mergedGroupList[groupId].avatarUpdatedAt ?? info.avatarUpdatedAt,
@@ -587,7 +679,7 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
             return;
         }
 
-        const receiptKey = getMessageReceiptKey("read", messageId, currentDID);
+        const receiptKey = getMessageReceiptKey(MESSAGE_RECEIPT_TYPE_READ, messageId, currentDID);
         if (sentReceiptKeysRef.current.has(receiptKey)) {
             clearPending();
             return;
@@ -602,7 +694,7 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
             messageId,
             senderDid,
             recipientDid: currentDID,
-            receiptType: "read",
+            receiptType: MESSAGE_RECEIPT_TYPE_READ,
             ...(groupId ? { groupId } : {}),
         });
 
@@ -629,12 +721,122 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
             const filtered: Record<string, DmailItem> = {};
             const updates: Array<{ did: string; tags: string[] }> = [];
             const groupUpdates: Record<string, GroupInfo> = {};
+            const additiveGroupMembershipUpdates = new Set<string>();
+            const groupSyncCandidateIds = new Set<string>();
             const receiptUpdates: MessageReceiptList = {};
             const sentReceiptKeys = new Set(sentReceiptKeysRef.current);
+            const sentGroupSyncKeys = new Set(sentGroupSyncKeysRef.current);
             const knownGroups = new Map(Object.entries(groupList));
             const knownNames = { ...nameList };
             const knownDids = new Set(Object.values(knownNames));
             const senderProfilesToResolve = new Set<string>();
+            const hiddenGroupIds = hiddenGroupIdsRef.current;
+            const applyGroupMembership = async (
+                groupMembership: GroupMembershipPayload,
+                senderDid: string | undefined,
+                envelopeRecipients: string[]
+            ) => {
+                const groupId = groupMembership.groupId;
+                const payloadMembers = groupMembership.members ?? [];
+                const isMemberAdded = groupMembership.action === GROUP_MEMBERSHIP_ACTION_MEMBER_ADDED;
+                const isMembersSynced = groupMembership.action === GROUP_MEMBERSHIP_ACTION_MEMBERS_SYNCED;
+                const isAdditiveMembership = isMemberAdded || isMembersSynced;
+                const memberDid = groupMembership.memberDid ?? "";
+                const deliveryMembers = Array.from(new Set(
+                    [...envelopeRecipients, senderDid ?? "", memberDid]
+                        .map(member => member.trim())
+                        .filter(Boolean)
+                ));
+
+                if (
+                    hiddenGroupIds.has(groupId) ||
+                    !currentDID ||
+                    !senderDid ||
+                    (isMemberAdded && !memberDid)
+                ) {
+                    return;
+                }
+
+                const existing = groupUpdates[groupId] ?? knownGroups.get(groupId);
+                let nextMembers: string[];
+
+                if (isAdditiveMembership) {
+                    if (
+                        !deliveryMembers.includes(currentDID) ||
+                        !deliveryMembers.includes(senderDid) ||
+                        (isMemberAdded && !deliveryMembers.includes(memberDid))
+                    ) {
+                        return;
+                    }
+
+                    if (existing && !existing.members.includes(senderDid)) {
+                        return;
+                    }
+
+                    nextMembers = existing
+                        ? Array.from(new Set([...existing.members, ...deliveryMembers]))
+                        : deliveryMembers;
+                    additiveGroupMembershipUpdates.add(groupId);
+
+                    if (
+                        isMemberAdded &&
+                        senderDid !== currentDID &&
+                        existing &&
+                        (nextMembers.length > existing.members.length || nextMembers.length > deliveryMembers.length)
+                    ) {
+                        groupSyncCandidateIds.add(groupId);
+                    }
+                } else {
+                    if (
+                        !payloadMembers.includes(currentDID) ||
+                        !payloadMembers.includes(senderDid)
+                    ) {
+                        return;
+                    }
+
+                    if (
+                        existing?.membersUpdatedAt &&
+                        timestampMs(existing.membersUpdatedAt) > timestampMs(groupMembership.updatedAt)
+                    ) {
+                        return;
+                    }
+
+                    nextMembers = payloadMembers;
+                }
+
+                const membersUpdatedAt = latestTimestamp(existing?.membersUpdatedAt, groupMembership.updatedAt);
+
+                const groupAvatarDid = getGroupAvatarDid(groupMembership);
+                const groupAvatarUpdatedAt = typeof groupMembership.groupAvatarUpdatedAt === "string"
+                    ? groupMembership.groupAvatarUpdatedAt.trim()
+                    : "";
+                let avatarUpdate: Partial<GroupInfo> = {};
+                const missingCurrentAvatar = groupAvatarDid === existing?.avatarDid && !existing?.avatar;
+                const shouldApplyMembershipAvatar = !!groupAvatarUpdatedAt && (
+                    !existing?.avatarDid ||
+                    missingCurrentAvatar ||
+                    shouldApplyGroupAvatarUpdate(existing?.avatarUpdatedAt, groupAvatarUpdatedAt)
+                );
+
+                if (groupAvatarDid && shouldApplyMembershipAvatar) {
+                    const avatar = await resolveAvatar(groupAvatarDid);
+                    if (avatar) {
+                        avatarUpdate = {
+                            avatar,
+                            avatarDid: groupAvatarDid,
+                            avatarUpdatedAt: groupAvatarUpdatedAt,
+                        };
+                    }
+                }
+
+                groupUpdates[groupId] = {
+                    ...existing,
+                    name: groupMembership.groupName || existing?.name || groupId,
+                    members: nextMembers,
+                    membersUpdatedAt,
+                    ...avatarUpdate,
+                };
+            };
 
             for (const [did, item] of Object.entries(msgs)) {
                 if (item.message?.subject !== CHAT_SUBJECT) {
@@ -679,6 +881,99 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
                 }
             }
 
+            for (const item of Object.values(msgs)) {
+                if (item.message?.subject !== CHAT_SUBJECT) {
+                    continue;
+                }
+
+                const tags = item.tags ?? [];
+                const payload = parseChatPayload(item.message?.body ?? "");
+                const groupMembership = getGroupMembershipPayload(payload);
+                if (!groupMembership) {
+                    continue;
+                }
+                const senderDid = item.docs?.didDocument?.controller;
+                const envelopeRecipients = [...(item.message?.to ?? []), ...(item.message?.cc ?? [])];
+
+                if (
+                    groupMembership.action === GROUP_MEMBERSHIP_ACTION_MEMBERS_SYNCED &&
+                    senderDid === currentDID &&
+                    tags.includes(SENT)
+                ) {
+                    sentGroupSyncKeys.add(groupRosterSyncKey(
+                        groupMembership.groupId,
+                        [...envelopeRecipients, senderDid]
+                    ));
+                }
+
+                if (senderDid === currentDID && !tags.includes(SENT)) {
+                    continue;
+                }
+
+                await applyGroupMembership(
+                    groupMembership,
+                    senderDid,
+                    envelopeRecipients
+                );
+            }
+
+            for (const groupId of groupSyncCandidateIds) {
+                const groupInfo = groupUpdates[groupId] ?? knownGroups.get(groupId);
+                if (!groupInfo || hiddenGroupIds.has(groupId)) {
+                    continue;
+                }
+
+                const recipients = Array.from(new Set(groupInfo.members));
+                if (!currentDID || !recipients.includes(currentDID) || recipients.length < 2) {
+                    continue;
+                }
+
+                const syncKey = groupRosterSyncKey(groupId, recipients);
+                if (sentGroupSyncKeys.has(syncKey)) {
+                    continue;
+                }
+
+                const updatedAt = new Date().toISOString();
+                const body = stringifyChatPayload({
+                    type: GROUP_MEMBERSHIP_PAYLOAD_TYPE,
+                    version: 1,
+                    groupId,
+                    groupName: groupInfo.name,
+                    ...(groupInfo.avatarDid && groupInfo.avatarUpdatedAt
+                        ? {
+                            groupAvatar: groupInfo.avatarDid,
+                            groupAvatarUpdatedAt: groupInfo.avatarUpdatedAt,
+                        }
+                        : {}),
+                    action: GROUP_MEMBERSHIP_ACTION_MEMBERS_SYNCED,
+                    updatedAt,
+                });
+                const dmail = {
+                    to: recipients,
+                    cc: [],
+                    subject: CHAT_SUBJECT,
+                    body,
+                };
+
+                let did = "";
+                try {
+                    did = await keymaster.createDmail(dmail, { registry });
+                    const notice = await keymaster.sendDmail(did);
+                    if (notice) {
+                        sentGroupSyncKeys.add(syncKey);
+                    } else {
+                        await keymaster.fileDmail(did, [FAILED]);
+                    }
+                } catch {
+                    if (did) {
+                        try {
+                            await keymaster.fileDmail(did, [FAILED]);
+                        } catch {}
+                    }
+                }
+            }
+            sentGroupSyncKeysRef.current = sentGroupSyncKeys;
+
             for (const [did, item] of Object.entries(msgs)) {
                 if (item.message?.subject !== CHAT_SUBJECT) {
                     continue;
@@ -701,6 +996,7 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
                 const isGroupDelivery = !!groupId || toDids.length > 1;
                 const senderDid = item.docs?.didDocument?.controller;
                 const receipt = getMessageReceiptPayload(payload);
+                const groupMembership = getGroupMembershipPayload(payload);
                 const isGroupProfile = isGroupProfilePayload(payload);
 
                 if (receipt) {
@@ -715,36 +1011,39 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
                         continue;
                     }
 
-                    let groupInfo = groupUpdates[groupId] ?? knownGroups.get(groupId);
-                    if (!groupInfo) {
-                        try {
-                            const group = await keymaster.getGroup(groupId);
-                            if (group?.members) {
-                                groupInfo = {
-                                    name: groupName || groupId,
-                                    members: group.members,
-                                };
-                            }
-                        } catch {}
+                    if (hiddenGroupIds.has(groupId)) {
+                        if (tags.includes(UNREAD)) {
+                            updates.push({ did, tags: tags.filter(tag => tag !== UNREAD) });
+                        }
+                        continue;
                     }
 
+                    let groupInfo = groupUpdates[groupId] ?? knownGroups.get(groupId);
+
                     if (!groupInfo) {
-                        if (isGroupProfile) {
-                            if (tags.includes(UNREAD)) {
-                                updates.push({ did, tags: tags.filter(tag => tag !== UNREAD) });
-                            }
-                            continue;
+                        if (tags.includes(UNREAD)) {
+                            updates.push({ did, tags: tags.filter(tag => tag !== UNREAD) });
                         }
-                        groupInfo = { name: groupName || groupId, members: [] };
+                        continue;
                     }
 
                     const senderCanUpdateGroup = canUpdateGroupProfile(senderDid, groupInfo);
 
-                    if (groupName && groupInfo.name !== groupName && (!isGroupProfile || senderCanUpdateGroup)) {
-                        groupInfo = { ...groupInfo, name: groupName };
+                    if (groupName && groupInfo.name !== groupName && senderCanUpdateGroup) {
+                        groupInfo = {
+                            ...groupInfo,
+                            name: groupName,
+                        };
                     }
 
                     groupUpdates[groupId] = groupInfo;
+
+                    if (groupMembership) {
+                        if (tags.includes(UNREAD)) {
+                            updates.push({ did, tags: tags.filter(tag => tag !== UNREAD) });
+                        }
+                        continue;
+                    }
 
                     if (isGroupProfile) {
                         const groupAvatarDid = getGroupAvatarDid(payload);
@@ -781,6 +1080,13 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
                         }
                         continue;
                     }
+
+                    if (!senderCanUpdateGroup) {
+                        if (tags.includes(UNREAD)) {
+                            updates.push({ did, tags: tags.filter(tag => tag !== UNREAD) });
+                        }
+                        continue;
+                    }
                 } else if (!hasRenderableContent) {
                     if (tags.includes(UNREAD)) {
                         updates.push({ did, tags: tags.filter(tag => tag !== UNREAD) });
@@ -791,7 +1097,7 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
                 filtered[did] = item;
 
                 if (senderDid && senderDid !== currentDID && toDids.includes(currentDID)) {
-                    const deliveredKey = getMessageReceiptKey("delivered", did, currentDID);
+                    const deliveredKey = getMessageReceiptKey(MESSAGE_RECEIPT_TYPE_DELIVERED, did, currentDID);
                     if (!sentReceiptKeys.has(deliveredKey)) {
                         try {
                             const notice = await sendMessageReceipt({
@@ -800,7 +1106,7 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
                                 messageId: did,
                                 senderDid,
                                 recipientDid: currentDID,
-                                receiptType: "delivered",
+                                receiptType: MESSAGE_RECEIPT_TYPE_DELIVERED,
                                 ...(groupId ? { groupId } : {}),
                             });
 
@@ -847,13 +1153,24 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
                     let changed = false;
                     const merged = { ...prev };
                     for (const [groupId, info] of Object.entries(groupUpdates)) {
+                        if (hiddenGroupIdsRef.current.has(groupId)) {
+                            continue;
+                        }
+
                         const existing = merged[groupId];
-                        const nextInfo: GroupInfo = {
+                        let nextInfo: GroupInfo = {
                             ...info,
+                            membersUpdatedAt: latestTimestamp(existing?.membersUpdatedAt, info.membersUpdatedAt),
                             avatar: info.avatar ?? existing?.avatar,
                             avatarDid: info.avatarDid ?? existing?.avatarDid,
                             avatarUpdatedAt: info.avatarUpdatedAt ?? existing?.avatarUpdatedAt,
                         };
+                        if (existing && additiveGroupMembershipUpdates.has(groupId)) {
+                            nextInfo = {
+                                ...nextInfo,
+                                members: Array.from(new Set([...existing.members, ...nextInfo.members])),
+                            };
+                        }
                         let membersChanged = false;
                         if (!existing) {
                             membersChanged = true;
@@ -866,6 +1183,7 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
                             !existing ||
                             existing.name !== nextInfo.name ||
                             membersChanged ||
+                            existing.membersUpdatedAt !== nextInfo.membersUpdatedAt ||
                             existing.avatar !== nextInfo.avatar ||
                             existing.avatarDid !== nextInfo.avatarDid ||
                             existing.avatarUpdatedAt !== nextInfo.avatarUpdatedAt
@@ -1054,7 +1372,10 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         setDmailList({});
         setMessageReceiptList({});
         sentReceiptKeysRef.current = new Set();
+        sentGroupSyncKeysRef.current = new Set();
         pendingReadReceiptIdsRef.current = new Set();
+        hiddenGroupIdsRef.current = new Set();
+        currentDIDRef.current = "";
         setAliasName("");
         setAliasDID("");
         setNamesReady(false);
@@ -1147,6 +1468,7 @@ export function VariablesProvider({ children }: { children: ReactNode }) {
         setActivePeer,
         resolveAvatar,
         resolveSenderProfile,
+        hideGroup,
         sendReadReceipt,
         refreshAll,
         refreshHeld,

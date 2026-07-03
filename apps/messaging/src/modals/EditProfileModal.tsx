@@ -5,7 +5,7 @@ import useAvatarUploader from "../hooks/useAvatarUploader";
 import { useVariablesContext } from "../contexts/VariablesProvider";
 import { useWalletContext } from "../contexts/WalletProvider";
 import { useSnackbar } from "../contexts/SnackbarProvider";
-import {MESSAGING_PROFILE} from "../constants";
+import { IMAGE_FILE_ACCEPT, MESSAGING_PROFILE } from "../constants";
 
 interface EditProfileModalProps {
     isOpen: boolean;
@@ -91,7 +91,7 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose }) 
                         </Field.Root>
                     </Box>
 
-                    <input type="file" ref={fileInputRef} style={{ display: "none" }} accept="image/*" onChange={handleFileChange} />
+                    <input type="file" ref={fileInputRef} style={{ display: "none" }} accept={IMAGE_FILE_ACCEPT} onChange={handleFileChange} />
                 </Box>
             </Dialog.Content>
         </Dialog.Root>

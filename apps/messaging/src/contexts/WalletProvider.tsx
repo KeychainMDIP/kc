@@ -20,6 +20,7 @@ import {
     DEFAULT_SEARCH_SERVER_URL,
     GATEKEEPER_KEY,
     SEARCH_SERVER_KEY,
+    SERVICE_READY_TIMEOUT_MS,
     WALLET_NAME
 } from "../constants";
 import {
@@ -35,7 +36,6 @@ import WarningModal from "../modals/WarningModal";
 import { encMnemonic } from "@mdip/keymaster/encryption";
 
 const cipher = new CipherWeb();
-const SERVICE_READY_TIMEOUT_MS = 3_000;
 
 type ServiceClients = {
     gatekeeper: GatekeeperClient;
