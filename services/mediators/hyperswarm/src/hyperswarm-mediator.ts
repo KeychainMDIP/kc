@@ -3850,6 +3850,20 @@ async function syncGatekeeperIndexToStore(source: string): Promise<void> {
     }
 }
 
+async function waitForInitialGatekeeperIndexSync(): Promise<void> {
+    while (true) {
+        try {
+            const bootstrap = await bootstrapSyncStoreFromGatekeeper(syncStore, gatekeeper);
+            log.info({ bootstrap }, 'sync-store bootstrap complete');
+            return;
+        }
+        catch (error) {
+            log.error({ error }, 'Error in sync-store bootstrap');
+            await new Promise(resolve => setTimeout(resolve, config.exportInterval * 1000));
+        }
+    }
+}
+
 async function exportLoop(): Promise<void> {
     try {
         await syncGatekeeperIndexToStore('exportLoop');
@@ -3953,8 +3967,7 @@ async function main(): Promise<void> {
         chatty: true,
     });
 
-    const bootstrap = await bootstrapSyncStoreFromGatekeeper(syncStore, gatekeeper);
-    log.info({ bootstrap }, 'sync-store bootstrap complete');
+    await waitForInitialGatekeeperIndexSync();
 
     await initNegentropyAdapter();
 
