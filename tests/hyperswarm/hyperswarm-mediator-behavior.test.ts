@@ -100,12 +100,7 @@ describe('hyperswarm mediator behavior', () => {
         await driver.startSync();
         await driver.driveUntilQuiescent(expectedIds);
 
-        const pings = driver.transcript.filter(entry => entry.messageType === 'ping');
-        expect(pings).toHaveLength(2);
-        expect(pings.map(entry => entry.direction)).toStrictEqual(['a-to-b', 'b-to-a']);
-        expect(pings.every(entry => !entry.framed)).toBe(true);
-
-        const protocolEntries = driver.transcript.filter(entry => entry.messageType !== 'ping');
+        const protocolEntries = driver.transcript;
         expect(protocolEntries.length).toBeGreaterThan(0);
         expect(protocolEntries.every(entry => entry.framed)).toBe(true);
 
@@ -138,5 +133,46 @@ describe('hyperswarm mediator behavior', () => {
         expect(driver.nodeB.run(
             () => driver!.nodeB.mediator.__test.getConnectionState(peerKeyA)?.activeSession,
         )).toBeNull();
+    });
+
+    it('negotiates raw initial pings before switching to framed protocol traffic', async () => {
+        const fixtures = await createOperationFixtures();
+        const operationsA = [fixtures.controllerCreate, fixtures.controllerUpdate];
+        const operationsB = [fixtures.independentCreate];
+        const expectedIds = operationIds([...operationsA, ...operationsB]);
+        driver = await createMediatorDriver({
+            operationsA,
+            operationsB,
+            connectionMode: 'unknown',
+        });
+
+        await driver.startSync();
+        await driver.driveUntilQuiescent(expectedIds);
+
+        const pings = driver.transcript.filter(entry => entry.messageType === 'ping');
+        expect(pings).toHaveLength(2);
+        expect(pings.map(entry => entry.direction)).toStrictEqual(['a-to-b', 'b-to-a']);
+        expect(pings.every(entry => entry.transportMode === 'legacy')).toBe(true);
+
+        const protocolEntries = driver.transcript.filter(entry => entry.messageType !== 'ping');
+        expect(protocolEntries.length).toBeGreaterThan(0);
+        expect(protocolEntries.every(entry => entry.transportMode === 'framed')).toBe(true);
+
+        const peerKeyA = driver.nodeA.publicKey.toString('hex');
+        const peerKeyB = driver.nodeB.publicKey.toString('hex');
+        const stateA = driver.nodeA.run(
+            () => driver!.nodeA.mediator.__test.getConnectionState(peerKeyB),
+        );
+        const stateB = driver.nodeB.run(
+            () => driver!.nodeB.mediator.__test.getConnectionState(peerKeyA),
+        );
+        expect(stateA).toMatchObject({
+            transportMode: 'framed',
+            inboundTransportMode: 'framed',
+        });
+        expect(stateB).toMatchObject({
+            transportMode: 'framed',
+            inboundTransportMode: 'framed',
+        });
     });
 });

@@ -1,4 +1,3 @@
-import { EventEmitter } from 'node:events';
 import { jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 
@@ -10,12 +9,16 @@ import {
     mapAcceptedOperationsToSyncRecords,
 } from '../../services/mediators/hyperswarm/src/sync-persistence.ts';
 import { resolveAcceptedOperationsToPersist } from '../../services/mediators/hyperswarm/src/sync-store-mirroring.ts';
-import { decodeFramedMessages } from '../../services/mediators/hyperswarm/src/transport-framing.ts';
+import { normalizePeerCapabilities } from '../../services/mediators/hyperswarm/src/negentropy/protocol.ts';
 import {
     createMediatorNode,
     getMediatorNodeContext,
     type MediatorNode,
 } from './hyperswarm-mediator-harness.ts';
+import {
+    createRecordingDuplexPair,
+    type RecordedTransportWrite,
+} from './recording-duplex.ts';
 
 const DEFAULT_MAX_STEPS = 2_000;
 const REQUIRED_STABLE_OBSERVATIONS = 3;
@@ -27,21 +30,10 @@ export interface MediatorDriverOptions {
     publicKeyB?: Buffer;
     maxRecordsPerWindow?: number;
     maxRoundsPerSession?: number;
+    connectionMode?: 'framed' | 'unknown';
 }
 
-export interface MediatorTranscriptEntry {
-    sequence: number;
-    direction: 'a-to-b' | 'b-to-a';
-    raw: Buffer;
-    framed: boolean;
-    messageType: string | null;
-}
-
-interface PendingDelivery {
-    source: MediatorNode;
-    target: MediatorNode;
-    entry: MediatorTranscriptEntry;
-}
+export type MediatorTranscriptEntry = RecordedTransportWrite;
 
 interface WorkTracker {
     pending: number;
@@ -51,125 +43,6 @@ interface WorkTracker {
 interface NodeWork {
     tracker: WorkTracker;
     readIds(): Promise<string[]>;
-}
-
-function decodeTranscriptEntry(raw: Buffer): Pick<MediatorTranscriptEntry, 'framed' | 'messageType'> {
-    const firstContentByte = raw.find(byte => ![0x20, 0x09, 0x0a, 0x0d].includes(byte));
-    if (firstContentByte === 0x7b) {
-        try {
-            const parsed = JSON.parse(raw.toString('utf8')) as { type?: unknown };
-            return {
-                framed: false,
-                messageType: typeof parsed.type === 'string' ? parsed.type : null,
-            };
-        }
-        catch {
-            return { framed: false, messageType: null };
-        }
-    }
-
-    const decoded = decodeFramedMessages(raw);
-    if (decoded.error || decoded.messages.length !== 1 || decoded.remaining.length !== 0) {
-        return { framed: true, messageType: null };
-    }
-
-    try {
-        const parsed = JSON.parse(decoded.messages[0].toString('utf8')) as { type?: unknown };
-        return {
-            framed: true,
-            messageType: typeof parsed.type === 'string' ? parsed.type : null,
-        };
-    }
-    catch {
-        return { framed: true, messageType: null };
-    }
-}
-
-class InMemoryConnection extends EventEmitter {
-    readonly remotePublicKey: Buffer;
-    private isDestroyed = false;
-
-    constructor(remotePublicKey: Buffer, private readonly enqueue: (raw: Buffer) => void) {
-        super();
-        this.remotePublicKey = Buffer.from(remotePublicKey);
-    }
-
-    get destroyed(): boolean {
-        return this.isDestroyed;
-    }
-
-    write(data: string | Uint8Array): boolean {
-        if (this.isDestroyed) {
-            throw new Error('in-memory connection is destroyed');
-        }
-        this.enqueue(Buffer.from(data));
-        return true;
-    }
-
-    destroy(): void {
-        if (this.isDestroyed) {
-            return;
-        }
-        this.isDestroyed = true;
-        this.emit('close');
-    }
-}
-
-export class RecordedMediatorTransport {
-    readonly transcript: MediatorTranscriptEntry[] = [];
-    readonly connectionA: InMemoryConnection;
-    readonly connectionB: InMemoryConnection;
-    private readonly pending: PendingDelivery[] = [];
-    private sequence = 0;
-
-    constructor(private readonly nodeA: MediatorNode, private readonly nodeB: MediatorNode) {
-        this.connectionA = new InMemoryConnection(nodeB.publicKey, raw => {
-            this.enqueue('a-to-b', nodeA, nodeB, raw);
-        });
-        this.connectionB = new InMemoryConnection(nodeA.publicKey, raw => {
-            this.enqueue('b-to-a', nodeB, nodeA, raw);
-        });
-    }
-
-    get pendingCount(): number {
-        return this.pending.length;
-    }
-
-    async deliverNext(): Promise<boolean> {
-        const delivery = this.pending.shift();
-        if (!delivery) {
-            return false;
-        }
-
-        const sourceKey = delivery.source.publicKey.toString('hex');
-        await delivery.target.run(() => delivery.target.mediator.__test.processInboundPeerData(
-            sourceKey,
-            delivery.entry.raw,
-        ));
-        return true;
-    }
-
-    destroy(): void {
-        this.connectionB.destroy();
-        this.connectionA.destroy();
-    }
-
-    private enqueue(
-        direction: MediatorTranscriptEntry['direction'],
-        source: MediatorNode,
-        target: MediatorNode,
-        raw: Buffer,
-    ): void {
-        const copied = Buffer.from(raw);
-        const entry: MediatorTranscriptEntry = {
-            sequence: ++this.sequence,
-            direction,
-            raw: copied,
-            ...decodeTranscriptEntry(copied),
-        };
-        this.transcript.push(entry);
-        this.pending.push({ source, target, entry });
-    }
 }
 
 function normalizeIds(ids: Iterable<string>): string[] {
@@ -285,6 +158,7 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
     const publicKeyB = Buffer.from(options.publicKeyB ?? Buffer.alloc(32, 0x22));
     const maxRecordsPerWindow = options.maxRecordsPerWindow ?? 25_000;
     const maxRoundsPerSession = options.maxRoundsPerSession ?? 64;
+    const connectionMode = options.connectionMode ?? 'framed';
 
     if (publicKeyA.compare(publicKeyB) === 0) {
         throw new Error('node public keys must differ');
@@ -342,9 +216,18 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
 
         const workA = trackNodeWork(nodeA, storeA);
         const workB = trackNodeWork(nodeB, storeB);
-        const transport = new RecordedMediatorTransport(nodeA, nodeB);
         const peerKeyA = publicKeyA.toString('hex');
         const peerKeyB = publicKeyB.toString('hex');
+        const transport = createRecordingDuplexPair({
+            publicKeyA,
+            publicKeyB,
+            receiveAtA: chunk => nodeA!.run(
+                () => nodeA!.mediator.__test.processInboundPeerData(peerKeyB, chunk),
+            ),
+            receiveAtB: chunk => nodeB!.run(
+                () => nodeB!.mediator.__test.processInboundPeerData(peerKeyA, chunk),
+            ),
+        });
         let started = false;
         let quiescent = true;
         let disposed = false;
@@ -364,14 +247,34 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
                 }
                 started = true;
                 quiescent = false;
+                const createConnectionOverrides = () => connectionMode === 'framed'
+                    ? {
+                        capabilities: normalizePeerCapabilities({
+                            negentropy: true,
+                            negentropyVersion: 1,
+                            orderedCatchup: false,
+                        }),
+                        transportMode: 'framed',
+                        inboundTransportMode: 'framed',
+                        peerTransportFramingVersion: 1,
+                    }
+                    : {};
                 nodeA!.run(() => nodeA!.mediator.__test.addConnection(peerKeyB, {
                     connection: transport.connectionA,
+                    ...createConnectionOverrides(),
                 }));
                 nodeB!.run(() => nodeB!.mediator.__test.addConnection(peerKeyA, {
                     connection: transport.connectionB,
+                    ...createConnectionOverrides(),
                 }));
-                await nodeA!.run(() => nodeA!.mediator.__test.sendPingToPeer(peerKeyB, 'initial'));
-                await nodeB!.run(() => nodeB!.mediator.__test.sendPingToPeer(peerKeyA, 'initial'));
+                if (connectionMode === 'unknown') {
+                    await nodeA!.run(() => nodeA!.mediator.__test.sendPingToPeer(peerKeyB, 'initial'));
+                    await nodeB!.run(() => nodeB!.mediator.__test.sendPingToPeer(peerKeyA, 'initial'));
+                }
+                else {
+                    await nodeA!.run(() => nodeA!.mediator.__test.maybeStartPeerSync(peerKeyB));
+                    await nodeB!.run(() => nodeB!.mediator.__test.maybeStartPeerSync(peerKeyA));
+                }
             },
             async driveUntilQuiescent(expectedIds: Iterable<string>): Promise<void> {
                 if (!started) {
@@ -398,6 +301,7 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
                     const matchesExpected = JSON.stringify(idsA) === JSON.stringify(expected)
                         && JSON.stringify(idsB) === JSON.stringify(expected);
                     const ready = transport.pendingCount === 0
+                        && transport.pendingInboundCount === 0
                         && !hasActiveSession(stateA)
                         && !hasActiveSession(stateB)
                         && pendingWork === 0
@@ -406,6 +310,7 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
                         idsA,
                         idsB,
                         transcriptLength: transport.transcript.length,
+                        deliveryVersion: transport.deliveryVersion,
                         workVersion,
                     });
 
@@ -419,6 +324,7 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
                         idsB,
                         expected,
                         pendingDeliveries: transport.pendingCount,
+                        pendingInbound: transport.pendingInboundCount,
                         pendingWork,
                         workVersion,
                         stateA,
@@ -437,9 +343,17 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
                     framed: entry.framed,
                     type: entry.messageType,
                 }));
+                const recentDeliveries = transport.deliveries.slice(-20).map(entry => ({
+                    sequence: entry.sequence,
+                    writeSequences: entry.writeSequences,
+                    direction: entry.direction,
+                    action: entry.action,
+                    types: entry.messageTypes,
+                }));
                 throw new Error(`mediator driver did not quiesce: ${JSON.stringify({
                     ...lastObservation,
                     recentMessages,
+                    recentDeliveries,
                 })}`);
             },
             async dispose(): Promise<void> {
@@ -449,7 +363,12 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
                 disposed = true;
                 const unfinished = started && !quiescent;
                 const errors: unknown[] = [];
-                transport.destroy();
+                try {
+                    await transport.destroy();
+                }
+                catch (error) {
+                    errors.push(error);
+                }
                 for (const node of [nodeB!, nodeA!]) {
                     try {
                         await node.dispose();
