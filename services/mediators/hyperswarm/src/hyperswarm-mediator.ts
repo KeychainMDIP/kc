@@ -2042,9 +2042,8 @@ async function buildInitialHistoryWindowForSession(): Promise<ReconciliationWind
         throw new Error('negentropy adapter unavailable');
     }
 
-    const earliestTs = await negentropyAdapter.getEarliestTimestamp();
     return buildInitialHistoryWindow(
-        earliestTs ?? MDIP_EPOCH_SECONDS,
+        MDIP_EPOCH_SECONDS,
         currentSyncTimestampSeconds(),
         config.negentropyMaxRecordsPerWindow,
     );
