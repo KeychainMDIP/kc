@@ -1,0 +1,443 @@
+import CipherNode from '@mdip/cipher/node';
+import Gatekeeper from '@mdip/gatekeeper';
+import DbJsonMemory from '@mdip/gatekeeper/db/json-memory.ts';
+import type { Operation } from '@mdip/gatekeeper/types';
+import { jest } from '@jest/globals';
+
+import InMemoryOperationSyncStore from '../../services/mediators/hyperswarm/src/db/memory.ts';
+import {
+    decodeUnknownTransportMessages,
+    encodeFramedMessage,
+} from '../../services/mediators/hyperswarm/src/transport-framing.ts';
+import TestHelper from '../gatekeeper/helper.ts';
+import {
+    createMediatorNode,
+    getMediatorNodeContext,
+    installMediatorMocks,
+    type MediatorNode,
+    type TrackedHyperswarm,
+} from './hyperswarm-mediator-harness.ts';
+import {
+    createRecordingDuplexPair,
+    type RecordingDuplexPair,
+} from './recording-duplex.ts';
+
+installMediatorMocks();
+
+const FRAMING_VERSION = 1;
+const NEGENTROPY_VERSION = 1;
+
+interface RunningNode {
+    node: MediatorNode;
+    store: InMemoryOperationSyncStore;
+    startSpy: jest.SpiedFunction<InMemoryOperationSyncStore['start']>;
+    stopSpy: jest.SpiedFunction<InMemoryOperationSyncStore['stop']>;
+}
+
+interface ConnectedPeer {
+    pair: RecordingDuplexPair;
+    peerKey: string;
+}
+
+function nextTurn(): Promise<void> {
+    return new Promise(resolve => setImmediate(resolve));
+}
+
+async function settle(turns = 5): Promise<void> {
+    for (let turn = 0; turn < turns; turn += 1) {
+        await nextTurn();
+    }
+}
+
+async function eventually(assertion: () => boolean | Promise<boolean>, turns = 100): Promise<void> {
+    for (let turn = 0; turn < turns; turn += 1) {
+        if (await assertion()) {
+            return;
+        }
+        await nextTurn();
+    }
+    throw new Error(`observable mediator condition did not settle after ${turns} turns`);
+}
+
+function peerPing(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+        type: 'ping',
+        time: new Date().toISOString(),
+        node: 'peer',
+        peers: [],
+        capabilities: {
+            negentropy: true,
+            negentropyVersion: NEGENTROPY_VERSION,
+        },
+        transportFramingVersion: FRAMING_VERSION,
+        ...overrides,
+    };
+}
+
+async function makeOperations(count: number): Promise<Operation[]> {
+    const gatekeeper = new Gatekeeper({
+        db: new DbJsonMemory('hyperswarm-lifecycle-fixtures'),
+        didPrefix: 'did:test',
+        ipfsEnabled: false,
+        registries: ['hyperswarm'],
+    });
+    const cipher = new CipherNode();
+    const helper = new TestHelper(gatekeeper, cipher);
+    const operations: Operation[] = [];
+
+    for (let index = 0; index < count; index += 1) {
+        const operation = await helper.createAgentOp(cipher.generateRandomJwk(), {
+            registry: 'hyperswarm',
+        });
+        operation.signature!.signed = new Date(Date.now() - ((count - index + 1) * 60_000)).toISOString();
+        operations.push(operation);
+    }
+    return operations;
+}
+
+describe('hyperswarm mediator startup and lifecycle characterization', () => {
+    const nodes: MediatorNode[] = [];
+    const pairs: RecordingDuplexPair[] = [];
+    let fakeTimersActive = false;
+    let nodeNumber = 0;
+
+    async function createRunningNode(options: {
+        keyByte?: number;
+        env?: Record<string, string | undefined>;
+        beforeStart?: (node: MediatorNode, store: InMemoryOperationSyncStore) => Promise<void>;
+    } = {}): Promise<RunningNode> {
+        const node = await createMediatorNode({
+            name: `lifecycle-node-${++nodeNumber}`,
+            publicKey: Buffer.alloc(32, options.keyByte ?? 0x11),
+            env: {
+                KC_HYPR_NEGENTROPY_ENABLE: 'true',
+                KC_HYPR_ORDERED_CATCHUP_ENABLE: 'false',
+                KC_HYPR_LEGACY_SYNC_ENABLE: 'true',
+                KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW: '16',
+                KC_HYPR_NEGENTROPY_MAX_ROUNDS_PER_SESSION: '8',
+                KC_HYPR_NEGENTROPY_INTERVAL: '1',
+                KC_HYPR_EXPORT_INTERVAL: '2',
+                ...options.env,
+            },
+        });
+        nodes.push(node);
+
+        const store = new InMemoryOperationSyncStore();
+        const startSpy = jest.spyOn(store, 'start');
+        const stopSpy = jest.spyOn(store, 'stop');
+        node.run(() => {
+            getMediatorNodeContext().syncStore = store;
+        });
+        await options.beforeStart?.(node, store);
+
+        const systemTime = Date.now();
+        jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+        jest.setSystemTime(systemTime);
+        fakeTimersActive = true;
+        await node.run(() => node.mediator.runMediator({ syncStore: store }));
+
+        return { node, store, startSpy, stopSpy };
+    }
+
+    async function attachConnection(
+        running: RunningNode,
+        peerKeyByte: number,
+    ): Promise<ConnectedPeer> {
+        const publicKeyB = Buffer.alloc(32, peerKeyByte);
+        const peerKey = publicKeyB.toString('hex');
+        const pair = createRecordingDuplexPair({
+            publicKeyA: running.node.publicKey,
+            publicKeyB,
+            receiveAtA: async () => undefined,
+            receiveAtB: async () => undefined,
+        });
+        pairs.push(pair);
+        const swarm = running.node.swarms.at(-1);
+        if (!swarm) {
+            throw new Error('expected running mediator swarm');
+        }
+        running.node.run(() => swarm.emit('connection', pair.connectionA));
+        await eventually(() => pair.transcript.some(entry => entry.messageType === 'ping'));
+        return { pair, peerKey };
+    }
+
+    async function sendPeerMessage(peer: ConnectedPeer, message: Record<string, unknown>): Promise<void> {
+        peer.pair.connectionB.write(Buffer.from(JSON.stringify(message)));
+        await peer.pair.pumpUntilIdle();
+    }
+
+    afterEach(async () => {
+        for (const pair of pairs.splice(0).reverse()) {
+            await pair.destroy();
+        }
+        await settle();
+        if (fakeTimersActive) {
+            jest.clearAllTimers();
+        }
+        for (const node of nodes.splice(0).reverse()) {
+            await node.dispose();
+        }
+        if (fakeTimersActive) {
+            jest.useRealTimers();
+            fakeTimersActive = false;
+        }
+        jest.restoreAllMocks();
+    });
+
+    it('starts with an in-memory store and leaves IPFS clients disabled', async () => {
+        const running = await createRunningNode();
+        const swarm = running.node.swarms[0];
+
+        expect(running.startSpy).toHaveBeenCalledTimes(1);
+        expect(running.node.gatekeeperClient.connect).toHaveBeenCalledTimes(1);
+        expect(running.node.keymasterClient.connect).not.toHaveBeenCalled();
+        expect(running.node.kuboClient.connect).not.toHaveBeenCalled();
+        expect(running.node.kuboClient.resetPeeringPeers).not.toHaveBeenCalled();
+        expect(running.node.swarms).toHaveLength(1);
+        expect(swarm.join).toHaveBeenCalledWith(expect.any(Buffer), { client: true, server: true });
+        expect(swarm.destroyed).toBe(false);
+        expect(running.node.run(() => getMediatorNodeContext().shutdownHook)).toEqual(expect.any(Function));
+        expect(jest.getTimerCount()).toBeGreaterThanOrEqual(2);
+    });
+
+    it('handles real swarm connection, close, error, and malformed-data events', async () => {
+        const running = await createRunningNode();
+        const closedPeer = await attachConnection(running, 0x22);
+
+        expect(closedPeer.pair.transcript[0]).toMatchObject({
+            direction: 'a-to-b',
+            messageType: 'ping',
+            transportMode: 'legacy',
+        });
+        await sendPeerMessage(closedPeer, peerPing());
+        expect(running.node.run(
+            () => running.node.mediator.__test.getConnectionState(closedPeer.peerKey),
+        )).toMatchObject({ transportMode: 'framed', activeSession: { mode: 'negentropy' } });
+
+        running.node.run(() => closedPeer.pair.connectionA.emit('close'));
+        expect(running.node.run(
+            () => running.node.mediator.__test.getConnectionState(closedPeer.peerKey),
+        )).toBeNull();
+
+        const erroredPeer = await attachConnection(running, 0x33);
+        running.node.run(() => erroredPeer.pair.connectionA.emit('error', new Error('connection failed')));
+        await settle();
+        expect(erroredPeer.pair.connectionA.destroyed).toBe(true);
+        expect(running.node.run(
+            () => running.node.mediator.__test.getConnectionState(erroredPeer.peerKey),
+        )).toBeNull();
+
+        const malformedPeer = await attachConnection(running, 0x44);
+        malformedPeer.pair.connectionB.write(Buffer.alloc(4));
+        await malformedPeer.pair.pumpUntilIdle();
+        await settle();
+        expect(malformedPeer.pair.connectionA.destroyed).toBe(true);
+        expect(running.node.run(
+            () => running.node.mediator.__test.getConnectionState(malformedPeer.peerKey),
+        )).toBeNull();
+    });
+
+    it('recreates the swarm from the connection loop when no peers remain', async () => {
+        const running = await createRunningNode({
+            env: { KC_HYPR_EXPORT_INTERVAL: '3600' },
+        });
+        const firstSwarm = running.node.swarms[0];
+
+        await running.node.run(() => jest.advanceTimersByTimeAsync(60_000));
+
+        expect(firstSwarm.destroyed).toBe(true);
+        expect(running.node.swarms).toHaveLength(2);
+        expect(running.node.swarms[1].destroyed).toBe(false);
+        expect(running.node.swarms[1].join).toHaveBeenCalledTimes(1);
+    });
+
+    it('starts periodic repair from the recurring connection loop', async () => {
+        const running = await createRunningNode({
+            env: { KC_HYPR_EXPORT_INTERVAL: '3600' },
+        });
+        const peer = await attachConnection(running, 0x22);
+        await sendPeerMessage(peer, peerPing());
+        const negOpenEntries = () => peer.pair.transcript.filter(
+            entry => entry.direction === 'a-to-b' && entry.messageType === 'neg_open',
+        );
+        const initialOpenEntry = negOpenEntries().at(-1);
+        if (!initialOpenEntry) {
+            throw new Error('expected initial neg_open');
+        }
+        const [initialOpenPayload] = decodeUnknownTransportMessages(initialOpenEntry.raw).messages;
+        const initialOpen = JSON.parse(initialOpenPayload.toString('utf8')) as {
+            sessionId?: unknown;
+            windowId?: unknown;
+        };
+        if (typeof initialOpen.sessionId !== 'string' || typeof initialOpen.windowId !== 'string') {
+            throw new Error('initial neg_open is missing session or window ID');
+        }
+        const initialNegOpenCount = negOpenEntries().length;
+
+        peer.pair.connectionB.write(encodeFramedMessage(JSON.stringify({
+            type: 'neg_close',
+            sessionId: initialOpen.sessionId,
+            windowId: initialOpen.windowId,
+            reason: 'interrupted',
+        })));
+        await peer.pair.pumpUntilIdle();
+        expect(running.node.run(
+            () => running.node.mediator.__test.getConnectionState(peer.peerKey)?.activeSession,
+        )).toBeNull();
+        expect(negOpenEntries()).toHaveLength(initialNegOpenCount);
+
+        await running.node.run(() => jest.advanceTimersByTimeAsync(60_000));
+        await eventually(() => {
+            const state = running.node.run(
+                () => running.node.mediator.__test.getConnectionState(peer.peerKey),
+            );
+            const sessionId = (state?.activeSession as { sessionId?: string } | null)?.sessionId;
+            return typeof sessionId === 'string'
+                && sessionId !== initialOpen.sessionId
+                && negOpenEntries().length > initialNegOpenCount;
+        });
+
+        const repairedState = running.node.run(
+            () => running.node.mediator.__test.getConnectionState(peer.peerKey),
+        );
+        const repairedSessionId = (repairedState?.activeSession as { sessionId?: string } | null)?.sessionId;
+        expect(repairedSessionId).toEqual(expect.any(String));
+        expect(repairedSessionId).not.toBe(initialOpen.sessionId);
+        expect(negOpenEntries()).toHaveLength(initialNegOpenCount + 1);
+        expect(negOpenEntries().at(-1)).toMatchObject({ transportMode: 'framed' });
+    });
+
+    it('flushes Gatekeeper queue entries on the recurring export loop', async () => {
+        const [operation] = await makeOperations(1);
+        const running = await createRunningNode();
+        const peer = await attachConnection(running, 0x22);
+        await sendPeerMessage(peer, peerPing());
+        running.node.gatekeeperClient.getQueue.mockResolvedValueOnce([operation]);
+
+        await running.node.run(() => jest.advanceTimersByTimeAsync(2_000));
+        await eventually(async () => await running.store.has(operation.signature!.hash));
+
+        expect(running.node.gatekeeperClient.clearQueue).toHaveBeenCalledWith(
+            'hyperswarm',
+            [operation.signature!.hash],
+        );
+        expect(peer.pair.transcript).toEqual(expect.arrayContaining([
+            expect.objectContaining({ messageType: 'queue', transportMode: 'framed' }),
+        ]));
+    });
+
+    it('resets synchronized state and restarts peer sync after a Gatekeeper epoch change', async () => {
+        const [oldOperation, newOperation] = await makeOperations(2);
+        let resetSpy: jest.SpiedFunction<InMemoryOperationSyncStore['reset']>;
+        const running = await createRunningNode({
+            beforeStart: async (node, store) => {
+                resetSpy = jest.spyOn(store, 'reset');
+                await node.gatekeeper.createDID(oldOperation);
+            },
+        });
+        const peer = await attachConnection(running, 0x22);
+        await sendPeerMessage(peer, peerPing());
+        const firstState = running.node.run(
+            () => running.node.mediator.__test.getConnectionState(peer.peerKey),
+        );
+        const firstSessionId = (firstState?.activeSession as { sessionId?: string } | null)?.sessionId;
+        const negOpenCount = () => peer.pair.transcript.filter(
+            entry => entry.direction === 'a-to-b' && entry.messageType === 'neg_open',
+        ).length;
+        const initialNegOpenCount = negOpenCount();
+        expect(firstSessionId).toEqual(expect.any(String));
+        expect(initialNegOpenCount).toBeGreaterThan(0);
+        expect(await running.store.has(oldOperation.signature!.hash)).toBe(true);
+
+        await running.node.gatekeeper.resetDb();
+        await running.node.gatekeeper.createDID(newOperation);
+        await running.node.run(() => jest.advanceTimersByTimeAsync(2_000));
+        await eventually(async () => await running.store.has(newOperation.signature!.hash));
+        await eventually(() => {
+            const state = running.node.run(
+                () => running.node.mediator.__test.getConnectionState(peer.peerKey),
+            );
+            const sessionId = (state?.activeSession as { sessionId?: string } | null)?.sessionId;
+            return typeof sessionId === 'string'
+                && sessionId !== firstSessionId
+                && negOpenCount() > initialNegOpenCount;
+        });
+
+        expect(resetSpy!).toHaveBeenCalledTimes(1);
+        expect(await running.store.has(oldOperation.signature!.hash)).toBe(false);
+        const resetState = running.node.run(
+            () => running.node.mediator.__test.getConnectionState(peer.peerKey),
+        );
+        const resetSessionId = (resetState?.activeSession as { sessionId?: string } | null)?.sessionId;
+        expect(resetSessionId).toEqual(expect.any(String));
+        expect(resetSessionId).not.toBe(firstSessionId);
+        expect(negOpenCount()).toBeGreaterThan(initialNegOpenCount);
+    });
+
+    it('defers legacy inbound and outbound work until active Negentropy finishes', async () => {
+        const [operation] = await makeOperations(1);
+        const running = await createRunningNode({
+            beforeStart: async node => {
+                await node.gatekeeper.createDID(operation);
+            },
+        });
+        const negentropyPeer = await attachConnection(running, 0x22);
+        await sendPeerMessage(negentropyPeer, peerPing());
+        expect(running.node.run(
+            () => running.node.mediator.__test.getConnectionState(negentropyPeer.peerKey)?.activeSession,
+        )).toEqual(expect.objectContaining({ mode: 'negentropy' }));
+
+        const legacyPeer = await attachConnection(running, 0x33);
+        await sendPeerMessage(legacyPeer, peerPing({
+            capabilities: undefined,
+            transportFramingVersion: undefined,
+        }));
+        await sendPeerMessage(legacyPeer, {
+            type: 'sync',
+            time: new Date().toISOString(),
+            node: 'legacy-peer',
+            relays: [],
+        });
+        expect(running.node.run(
+            () => running.node.mediator.__test.getConnectionState(legacyPeer.peerKey),
+        )).toMatchObject({
+            syncMode: 'legacy',
+            activeSession: null,
+        });
+        const sentByMediator = (messageType: string) => legacyPeer.pair.transcript.some(
+            entry => entry.direction === 'a-to-b' && entry.messageType === messageType,
+        );
+        expect(sentByMediator('sync')).toBe(false);
+        expect(sentByMediator('batch')).toBe(false);
+
+        running.node.run(() => negentropyPeer.pair.connectionA.emit('close'));
+        await eventually(() => sentByMediator('sync'));
+        await eventually(() => sentByMediator('batch'));
+
+        expect(legacyPeer.pair.transcript.filter(entry => entry.direction === 'a-to-b'
+            && ['sync', 'batch'].includes(entry.messageType ?? ''))).toEqual(expect.arrayContaining([
+            expect.objectContaining({ messageType: 'sync', transportMode: 'legacy' }),
+            expect.objectContaining({ messageType: 'batch', transportMode: 'legacy' }),
+        ]));
+        expect(running.node.run(
+            () => running.node.mediator.__test.getConnectionState(legacyPeer.peerKey),
+        )).toMatchObject({ activeSession: { mode: 'legacy' } });
+    });
+
+    it('destroys the active swarm and stops the injected store during graceful shutdown', async () => {
+        const running = await createRunningNode();
+        const swarm: TrackedHyperswarm = running.node.swarms[0];
+        const shutdown = running.node.run(() => getMediatorNodeContext().shutdownHook);
+        if (!shutdown) {
+            throw new Error('expected graceful shutdown callback');
+        }
+
+        await running.node.run(() => shutdown());
+
+        expect(swarm.destroyed).toBe(true);
+        expect(running.stopSpy).toHaveBeenCalledTimes(1);
+        running.node.run(() => {
+            getMediatorNodeContext().shutdownHook = null;
+        });
+    });
+});
