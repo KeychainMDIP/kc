@@ -122,6 +122,22 @@ export class RecordingDuplexPair {
         return this.pending.length;
     }
 
+    get pendingAToB(): number {
+        return this.pending.filter(entry => entry.direction === 'a-to-b').length;
+    }
+
+    get pendingBToA(): number {
+        return this.pending.filter(entry => entry.direction === 'b-to-a').length;
+    }
+
+    get pendingInboundAtA(): number {
+        return this.pendingInboundA;
+    }
+
+    get pendingInboundAtB(): number {
+        return this.pendingInboundB;
+    }
+
     get pendingInboundCount(): number {
         return this.pendingInboundA + this.pendingInboundB;
     }

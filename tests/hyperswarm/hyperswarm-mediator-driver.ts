@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 import { jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 
@@ -20,7 +22,8 @@ import {
     type RecordedTransportWrite,
 } from './recording-duplex.ts';
 
-const DEFAULT_MAX_STEPS = 2_000;
+const DEFAULT_MAX_ITERATIONS = 2_000;
+const DEFAULT_TIMEOUT_MS = 5_000;
 const REQUIRED_STABLE_OBSERVATIONS = 3;
 
 export interface MediatorDriverOptions {
@@ -35,14 +38,68 @@ export interface MediatorDriverOptions {
 
 export type MediatorTranscriptEntry = RecordedTransportWrite;
 
-interface WorkTracker {
-    pending: number;
-    version: number;
+export interface QuiescenceOptions {
+    maxIterations?: number;
+    timeoutMs?: number;
+}
+
+export interface QuiescenceReport {
+    iterations: number;
+    elapsedMs: number;
+    stableTurns: number;
+    framedWrites: number;
+    deliveries: number;
+}
+
+export interface DeferClientCallOptions {
+    node: 'a' | 'b';
+    client: 'gatekeeper' | 'keymaster' | 'kubo';
+    method: string;
+    label?: string;
+}
+
+export interface TrackedDeferredCall {
+    readonly started: Promise<void>;
+    readonly settled: boolean;
+    resolve(): void;
+    reject(error: unknown): void;
+}
+
+interface ActiveCallSummary {
+    label: string;
+    active: number;
+}
+
+interface HistoryCursorSummary {
+    ts: number;
+    id: string;
+}
+
+interface OrderedCursorSummary {
+    syncOrder: number;
+    id: string;
+}
+
+interface HistorySummary {
+    count: number;
+    digest: string;
+    sample: string[];
+}
+
+interface StoreSummary extends HistorySummary {
+    orderedCount: number;
+    firstCursor: HistoryCursorSummary | null;
+    lastCursor: HistoryCursorSummary | null;
+    lastOrderedCursor: OrderedCursorSummary | null;
+}
+
+interface NodeSummary {
+    gatekeeper: HistorySummary;
+    store: StoreSummary;
 }
 
 interface NodeWork {
-    tracker: WorkTracker;
-    readIds(): Promise<string[]>;
+    readSummary(): Promise<NodeSummary>;
 }
 
 function normalizeIds(ids: Iterable<string>): string[] {
@@ -51,6 +108,14 @@ function normalizeIds(ids: Iterable<string>): string[] {
 
 function operationIds(operations: Operation[]): string[] {
     return normalizeIds(operations.flatMap(operation => operation.signature?.hash ?? []));
+}
+
+function digestIds(ids: string[]): string {
+    return createHash('sha256').update(ids.join('\n')).digest('hex');
+}
+
+function sampleIds(ids: string[]): string[] {
+    return ids.length <= 6 ? [...ids] : [...ids.slice(0, 3), ...ids.slice(-3)];
 }
 
 async function seedNode(
@@ -93,54 +158,247 @@ async function seedNode(
     await store.upsertMany(mapped.records);
 }
 
-function trackAsync<Args extends unknown[], Result>(
-    tracker: WorkTracker,
-    implementation: (...args: Args) => Promise<Result>,
-): (...args: Args) => Promise<Result> {
-    return async (...args: Args): Promise<Result> => {
-        tracker.pending += 1;
-        tracker.version += 1;
-        try {
-            return await implementation(...args);
-        }
-        finally {
-            tracker.pending -= 1;
-            tracker.version += 1;
-        }
-    };
-}
+class DeferredCall implements TrackedDeferredCall {
+    readonly started: Promise<void>;
+    private readonly release: Promise<void>;
+    private resolveStarted!: () => void;
+    private resolveRelease!: () => void;
+    private rejectRelease!: (error: unknown) => void;
+    private isStarted = false;
+    private isSettled = false;
 
-function requireMockImplementation<Args extends unknown[], Result>(
-    mock: Mock<(...args: Args) => Promise<Result>>,
-    name: string,
-): (...args: Args) => Promise<Result> {
-    const implementation = mock.getMockImplementation();
-    if (!implementation) {
-        throw new Error(`${name} mock implementation is unavailable`);
+    constructor(readonly label: string, private readonly onSettle: () => void) {
+        this.started = new Promise(resolve => {
+            this.resolveStarted = resolve;
+        });
+        this.release = new Promise((resolve, reject) => {
+            this.resolveRelease = resolve;
+            this.rejectRelease = reject;
+        });
+        this.release.catch(() => undefined);
     }
-    return implementation;
+
+    get settled(): boolean {
+        return this.isSettled;
+    }
+
+    markStarted(): void {
+        if (this.isStarted) {
+            return;
+        }
+        this.isStarted = true;
+        this.resolveStarted();
+    }
+
+    wait(): Promise<void> {
+        return this.release;
+    }
+
+    resolve(): void {
+        if (this.isSettled) {
+            return;
+        }
+        this.isSettled = true;
+        this.onSettle();
+        this.resolveRelease();
+    }
+
+    reject(error: unknown): void {
+        if (this.isSettled) {
+            return;
+        }
+        this.isSettled = true;
+        this.onSettle();
+        this.rejectRelease(error);
+    }
 }
 
-function trackNodeWork(node: MediatorNode, store: InMemoryOperationSyncStore): NodeWork {
-    const tracker: WorkTracker = { pending: 0, version: 0 };
+class CallTracker {
+    private readonly active = new Map<string, number>();
+    private readonly unsettled = new Set<DeferredCall>();
+    private callVersion = 0;
+    private deferralVersion = 0;
+
+    get activeCount(): number {
+        return Array.from(this.active.values()).reduce((total, count) => total + count, 0);
+    }
+
+    get version(): number {
+        return this.callVersion;
+    }
+
+    get deferredVersion(): number {
+        return this.deferralVersion;
+    }
+
+    get activeCalls(): ActiveCallSummary[] {
+        return Array.from(this.active.entries())
+            .filter(([, count]) => count > 0)
+            .map(([label, active]) => ({ label, active }))
+            .sort((a, b) => a.label.localeCompare(b.label));
+    }
+
+    get unsettledLabels(): string[] {
+        return Array.from(this.unsettled, deferred => deferred.label).sort();
+    }
+
+    wrap<Args extends unknown[], Result>(
+        label: string,
+        implementation: (...args: Args) => Promise<Result>,
+        nextDeferred?: () => DeferredCall | undefined,
+    ): (...args: Args) => Promise<Result> {
+        return async (...args: Args): Promise<Result> => {
+            this.begin(label);
+            try {
+                const deferred = nextDeferred?.();
+                if (deferred) {
+                    deferred.markStarted();
+                    await deferred.wait();
+                }
+                return await implementation(...args);
+            }
+            finally {
+                this.finish(label);
+            }
+        };
+    }
+
+    createDeferred(label: string): DeferredCall {
+        let deferred: DeferredCall;
+        deferred = new DeferredCall(label, () => {
+            this.unsettled.delete(deferred);
+            this.deferralVersion += 1;
+        });
+        this.unsettled.add(deferred);
+        this.deferralVersion += 1;
+        return deferred;
+    }
+
+    private begin(label: string): void {
+        this.active.set(label, (this.active.get(label) ?? 0) + 1);
+        this.callVersion += 1;
+    }
+
+    private finish(label: string): void {
+        const active = this.active.get(label) ?? 0;
+        if (active <= 1) {
+            this.active.delete(label);
+        }
+        else {
+            this.active.set(label, active - 1);
+        }
+        this.callVersion += 1;
+    }
+}
+
+class TrackedMethodControl {
+    private readonly deferred: DeferredCall[] = [];
+
+    constructor(private readonly tracker: CallTracker, private readonly label: string) {}
+
+    deferNext(label?: string): TrackedDeferredCall {
+        const deferred = this.tracker.createDeferred(label ?? this.label);
+        this.deferred.push(deferred);
+        return deferred;
+    }
+
+    takeDeferred(): DeferredCall | undefined {
+        return this.deferred.shift();
+    }
+}
+
+type UnknownAsyncMock = Mock<(...args: never[]) => Promise<unknown>>;
+
+function trackClientDelegates(
+    node: 'a' | 'b',
+    client: DeferClientCallOptions['client'],
+    delegates: object,
+    tracker: CallTracker,
+    controls: Map<string, TrackedMethodControl>,
+): void {
+    for (const [method, candidate] of Object.entries(delegates)) {
+        if (!jest.isMockFunction(candidate)) {
+            continue;
+        }
+        const mock = candidate as unknown as UnknownAsyncMock;
+        const implementation = mock.getMockImplementation();
+        if (!implementation) {
+            throw new Error(`${node}.${client}.${method} mock implementation is unavailable`);
+        }
+        const key = `${node}.${client}.${method}`;
+        const control = new TrackedMethodControl(tracker, key);
+        mock.mockImplementation(tracker.wrap(key, implementation, () => control.takeDeferred()));
+        controls.set(key, control);
+    }
+}
+
+function trackNodeWork(
+    nodeId: 'a' | 'b',
+    node: MediatorNode,
+    store: InMemoryOperationSyncStore,
+    tracker: CallTracker,
+): NodeWork {
     const readSorted = store.iterateSorted.bind(store);
-    const importBatch = requireMockImplementation(node.gatekeeperClient.importBatch, 'GatekeeperClient.importBatch');
-    const processEvents = requireMockImplementation(node.gatekeeperClient.processEvents, 'GatekeeperClient.processEvents');
+    const readOrdered = store.iterateOrdered.bind(store);
+    const readCount = store.count.bind(store);
+    const readOrderedCount = store.countOrdered.bind(store);
     const upsertMany = store.upsertMany.bind(store);
     const iterateSorted = store.iterateSorted.bind(store);
+    const iterateOrdered = store.iterateOrdered.bind(store);
     const getByIds = store.getByIds.bind(store);
+    const count = store.count.bind(store);
+    const countOrdered = store.countOrdered.bind(store);
+    const applySyncPage = store.applySyncPage.bind(store);
+    const loadSyncState = store.loadSyncState.bind(store);
+    const saveSyncState = store.saveSyncState.bind(store);
+    const has = store.has.bind(store);
+    const reset = store.reset.bind(store);
 
-    node.gatekeeperClient.importBatch.mockImplementation(trackAsync(tracker, importBatch));
-    node.gatekeeperClient.processEvents.mockImplementation(trackAsync(tracker, processEvents));
-    jest.spyOn(store, 'upsertMany').mockImplementation(trackAsync(tracker, upsertMany));
-    jest.spyOn(store, 'iterateSorted').mockImplementation(trackAsync(tracker, iterateSorted));
-    jest.spyOn(store, 'getByIds').mockImplementation(trackAsync(tracker, getByIds));
+    jest.spyOn(store, 'upsertMany').mockImplementation(tracker.wrap(`${nodeId}.syncStore.upsertMany`, upsertMany));
+    jest.spyOn(store, 'iterateSorted').mockImplementation(tracker.wrap(`${nodeId}.syncStore.iterateSorted`, iterateSorted));
+    jest.spyOn(store, 'iterateOrdered').mockImplementation(tracker.wrap(`${nodeId}.syncStore.iterateOrdered`, iterateOrdered));
+    jest.spyOn(store, 'getByIds').mockImplementation(tracker.wrap(`${nodeId}.syncStore.getByIds`, getByIds));
+    jest.spyOn(store, 'count').mockImplementation(tracker.wrap(`${nodeId}.syncStore.count`, count));
+    jest.spyOn(store, 'countOrdered').mockImplementation(tracker.wrap(`${nodeId}.syncStore.countOrdered`, countOrdered));
+    jest.spyOn(store, 'applySyncPage').mockImplementation(tracker.wrap(`${nodeId}.syncStore.applySyncPage`, applySyncPage));
+    jest.spyOn(store, 'loadSyncState').mockImplementation(tracker.wrap(`${nodeId}.syncStore.loadSyncState`, loadSyncState));
+    jest.spyOn(store, 'saveSyncState').mockImplementation(tracker.wrap(`${nodeId}.syncStore.saveSyncState`, saveSyncState));
+    jest.spyOn(store, 'has').mockImplementation(tracker.wrap(`${nodeId}.syncStore.has`, has));
+    jest.spyOn(store, 'reset').mockImplementation(tracker.wrap(`${nodeId}.syncStore.reset`, reset));
 
     return {
-        tracker,
-        async readIds(): Promise<string[]> {
-            const rows = await readSorted({ limit: Number.MAX_SAFE_INTEGER });
-            return rows.map(row => row.id).sort();
+        async readSummary(): Promise<NodeSummary> {
+            const [events, rows, orderedRows, countValue, orderedCountValue] = await Promise.all([
+                node.gatekeeper.exportBatch(),
+                readSorted({ limit: Number.MAX_SAFE_INTEGER }),
+                readOrdered({ limit: Number.MAX_SAFE_INTEGER }),
+                readCount(),
+                readOrderedCount(),
+            ]);
+            const gatekeeperIds = operationIds(events.map(event => event.operation));
+            const storeIds = normalizeIds(rows.map(row => row.id));
+            const first = rows[0];
+            const last = rows.at(-1);
+            const lastOrdered = orderedRows.at(-1);
+
+            return {
+                gatekeeper: {
+                    count: events.length,
+                    digest: digestIds(gatekeeperIds),
+                    sample: sampleIds(gatekeeperIds),
+                },
+                store: {
+                    count: countValue,
+                    orderedCount: orderedCountValue,
+                    digest: digestIds(storeIds),
+                    sample: sampleIds(storeIds),
+                    firstCursor: first ? { ts: first.ts, id: first.id } : null,
+                    lastCursor: last ? { ts: last.ts, id: last.id } : null,
+                    lastOrderedCursor: lastOrdered?.syncOrder !== undefined
+                        ? { syncOrder: lastOrdered.syncOrder, id: lastOrdered.id }
+                        : null,
+                },
+            };
         },
     };
 }
@@ -151,6 +409,28 @@ function hasActiveSession(state: Record<string, unknown> | null): boolean {
 
 function nextTurn(): Promise<void> {
     return new Promise(resolve => setImmediate(resolve));
+}
+
+class QuiescenceDeadlineError extends Error {}
+
+async function beforeDeadline<Result>(work: () => Promise<Result>, deadline: number): Promise<Result> {
+    const remaining = deadline - performance.now();
+    if (remaining <= 0) {
+        throw new QuiescenceDeadlineError();
+    }
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+        const timeout = new Promise<never>((_resolve, reject) => {
+            timer = setTimeout(() => reject(new QuiescenceDeadlineError()), remaining);
+        });
+        return await Promise.race([work(), timeout]);
+    }
+    finally {
+        if (timer) {
+            clearTimeout(timer);
+        }
+    }
 }
 
 export async function createMediatorDriver(options: MediatorDriverOptions) {
@@ -214,8 +494,16 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
             nodeB!.mediator.__test.setNegentropyAdapter(adapterB);
         });
 
-        const workA = trackNodeWork(nodeA, storeA);
-        const workB = trackNodeWork(nodeB, storeB);
+        const tracker = new CallTracker();
+        const clientControls = new Map<string, TrackedMethodControl>();
+        trackClientDelegates('a', 'gatekeeper', nodeA.gatekeeperClient, tracker, clientControls);
+        trackClientDelegates('a', 'keymaster', nodeA.keymasterClient, tracker, clientControls);
+        trackClientDelegates('a', 'kubo', nodeA.kuboClient, tracker, clientControls);
+        trackClientDelegates('b', 'gatekeeper', nodeB.gatekeeperClient, tracker, clientControls);
+        trackClientDelegates('b', 'keymaster', nodeB.keymasterClient, tracker, clientControls);
+        trackClientDelegates('b', 'kubo', nodeB.kuboClient, tracker, clientControls);
+        const workA = trackNodeWork('a', nodeA, storeA, tracker);
+        const workB = trackNodeWork('b', nodeB, storeB, tracker);
         const peerKeyA = publicKeyA.toString('hex');
         const peerKeyB = publicKeyB.toString('hex');
         const transport = createRecordingDuplexPair({
@@ -241,6 +529,14 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
             adapterB,
             transport,
             transcript: transport.transcript,
+            deferNextClientCall(options: DeferClientCallOptions): TrackedDeferredCall {
+                const key = `${options.node}.${options.client}.${options.method}`;
+                const control = clientControls.get(key);
+                if (!control) {
+                    throw new Error(`tracked client method is unavailable: ${key}`);
+                }
+                return control.deferNext(options.label);
+            },
             async startSync(): Promise<void> {
                 if (started) {
                     throw new Error('mediator driver synchronization already started');
@@ -276,72 +572,154 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
                     await nodeB!.run(() => nodeB!.mediator.__test.maybeStartPeerSync(peerKeyA));
                 }
             },
-            async driveUntilQuiescent(expectedIds: Iterable<string>): Promise<void> {
+            async driveUntilQuiescent(
+                expectedIds: Iterable<string>,
+                quiescenceOptions: QuiescenceOptions = {},
+            ): Promise<QuiescenceReport> {
                 if (!started) {
                     throw new Error('mediator driver synchronization has not started');
                 }
 
                 const expected = normalizeIds(expectedIds);
+                const expectedDigest = digestIds(expected);
+                const maxIterations = quiescenceOptions.maxIterations ?? DEFAULT_MAX_ITERATIONS;
+                const timeoutMs = quiescenceOptions.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+                if (!Number.isInteger(maxIterations) || maxIterations <= 0) {
+                    throw new Error('quiescence maxIterations must be a positive integer');
+                }
+                if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+                    throw new Error('quiescence timeoutMs must be positive');
+                }
+
+                const startedAt = performance.now();
+                const deadline = startedAt + timeoutMs;
                 let stableObservations = 0;
                 let previousSignature = '';
                 let lastObservation: Record<string, unknown> = {};
-
-                for (let step = 0; step < DEFAULT_MAX_STEPS; step += 1) {
-                    await transport.deliverNext();
-                    await nextTurn();
-
-                    const [idsA, idsB, stateA, stateB] = await Promise.all([
-                        workA.readIds(),
-                        workB.readIds(),
-                        nodeA!.run(() => nodeA!.mediator.__test.getConnectionState(peerKeyB)),
-                        nodeB!.run(() => nodeB!.mediator.__test.getConnectionState(peerKeyA)),
-                    ]);
-                    const pendingWork = workA.tracker.pending + workB.tracker.pending;
-                    const workVersion = workA.tracker.version + workB.tracker.version;
-                    const matchesExpected = JSON.stringify(idsA) === JSON.stringify(expected)
-                        && JSON.stringify(idsB) === JSON.stringify(expected);
-                    const ready = transport.pendingCount === 0
-                        && transport.pendingInboundCount === 0
-                        && !hasActiveSession(stateA)
-                        && !hasActiveSession(stateB)
-                        && pendingWork === 0
-                        && matchesExpected;
-                    const signature = JSON.stringify({
-                        idsA,
-                        idsB,
-                        transcriptLength: transport.transcript.length,
-                        deliveryVersion: transport.deliveryVersion,
-                        workVersion,
-                    });
-
-                    stableObservations = ready && signature === previousSignature
-                        ? stableObservations + 1
-                        : ready ? 1 : 0;
-                    previousSignature = signature;
-                    lastObservation = {
-                        step,
-                        idsA,
-                        idsB,
-                        expected,
-                        pendingDeliveries: transport.pendingCount,
-                        pendingInbound: transport.pendingInboundCount,
-                        pendingWork,
-                        workVersion,
-                        stateA,
-                        stateB,
+                let guardReason = 'iteration_limit';
+                let iterations = 0;
+                let summaryA: NodeSummary | null = null;
+                let summaryB: NodeSummary | null = null;
+                let stateA: Record<string, unknown> | null = null;
+                let stateB: Record<string, unknown> | null = null;
+                const readState = () => Promise.all([
+                    workA.readSummary(),
+                    workB.readSummary(),
+                    nodeA!.run(() => nodeA!.mediator.__test.getConnectionState(peerKeyB)),
+                    nodeB!.run(() => nodeB!.mediator.__test.getConnectionState(peerKeyA)),
+                ] as const);
+                const readLinkState = () => {
+                    const nextPending = transport.peekNext();
+                    return {
+                        pendingAToB: transport.pendingAToB,
+                        pendingBToA: transport.pendingBToA,
+                        pendingInboundAtA: transport.pendingInboundAtA,
+                        pendingInboundAtB: transport.pendingInboundAtB,
+                        next: nextPending
+                            ? {
+                                sequence: nextPending.sequence,
+                                direction: nextPending.direction,
+                                types: nextPending.messageTypes,
+                            }
+                            : null,
                     };
+                };
 
-                    if (stableObservations >= REQUIRED_STABLE_OBSERVATIONS) {
-                        quiescent = true;
-                        return;
+                try {
+                    [summaryA, summaryB, stateA, stateB] = await beforeDeadline(readState, deadline);
+
+                    for (let iteration = 1; iteration <= maxIterations; iteration += 1) {
+                        iterations = iteration;
+                        await beforeDeadline(() => transport.deliverNext(), deadline);
+                        await beforeDeadline(nextTurn, deadline);
+
+                        [summaryA, summaryB, stateA, stateB] = await beforeDeadline(readState, deadline);
+                        const framedMessages = transport.transcript.filter(entry => entry.framed);
+                        const latestFramedWriteSequence = framedMessages.at(-1)?.sequence ?? 0;
+                        const linkState = readLinkState();
+                        const activeCalls = tracker.activeCalls;
+                        const unsettledDeferrals = tracker.unsettledLabels;
+                        const matchesExpected = [summaryA, summaryB].every(summary => (
+                            summary.gatekeeper.count === expected.length
+                            && summary.gatekeeper.digest === expectedDigest
+                            && summary.store.count === expected.length
+                            && summary.store.digest === expectedDigest
+                        ));
+                        const ready = linkState.pendingAToB === 0
+                            && linkState.pendingBToA === 0
+                            && linkState.pendingInboundAtA === 0
+                            && linkState.pendingInboundAtB === 0
+                            && !hasActiveSession(stateA)
+                            && !hasActiveSession(stateB)
+                            && tracker.activeCount === 0
+                            && unsettledDeferrals.length === 0
+                            && matchesExpected;
+                        const signature = JSON.stringify({
+                            latestFramedWriteSequence,
+                            framedWrites: framedMessages.length,
+                            deliveryVersion: transport.deliveryVersion,
+                            callVersion: tracker.version,
+                            deferredVersion: tracker.deferredVersion,
+                            summaryA,
+                            summaryB,
+                        });
+
+                        stableObservations = ready && signature === previousSignature
+                            ? stableObservations + 1
+                            : ready ? 1 : 0;
+                        previousSignature = signature;
+                        const elapsedMs = performance.now() - startedAt;
+                        lastObservation = {
+                            iteration,
+                            elapsedMs: Math.round(elapsedMs),
+                            stableObservations,
+                            expected: {
+                                count: expected.length,
+                                digest: expectedDigest,
+                                sample: sampleIds(expected),
+                            },
+                            linkState,
+                            activeCalls,
+                            callVersion: tracker.version,
+                            unsettledDeferrals,
+                            deferredVersion: tracker.deferredVersion,
+                            latestFramedWriteSequence,
+                            framedWrites: framedMessages.length,
+                            nodeA: summaryA,
+                            nodeB: summaryB,
+                            stateA,
+                            stateB,
+                        };
+
+                        if (elapsedMs >= timeoutMs) {
+                            guardReason = 'wall_clock_timeout';
+                            break;
+                        }
+                        if (stableObservations >= REQUIRED_STABLE_OBSERVATIONS) {
+                            quiescent = true;
+                            return {
+                                iterations: iteration,
+                                elapsedMs: Math.round(elapsedMs),
+                                stableTurns: stableObservations,
+                                framedWrites: framedMessages.length,
+                                deliveries: transport.deliveryVersion,
+                            };
+                        }
                     }
+                }
+                catch (error) {
+                    if (!(error instanceof QuiescenceDeadlineError)) {
+                        throw error;
+                    }
+                    guardReason = 'wall_clock_timeout';
                 }
 
                 const recentMessages = transport.transcript.slice(-20).map(entry => ({
                     sequence: entry.sequence,
                     direction: entry.direction,
-                    framed: entry.framed,
-                    type: entry.messageType,
+                    transportMode: entry.transportMode,
+                    types: entry.messageTypes,
+                    bytes: entry.raw.length,
                 }));
                 const recentDeliveries = transport.deliveries.slice(-20).map(entry => ({
                     sequence: entry.sequence,
@@ -349,9 +727,20 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
                     direction: entry.direction,
                     action: entry.action,
                     types: entry.messageTypes,
+                    bytes: entry.raw.length,
                 }));
                 throw new Error(`mediator driver did not quiesce: ${JSON.stringify({
                     ...lastObservation,
+                    guardReason,
+                    iterations,
+                    elapsedMs: Math.round(performance.now() - startedAt),
+                    linkState: readLinkState(),
+                    activeCalls: tracker.activeCalls,
+                    unsettledDeferrals: tracker.unsettledLabels,
+                    nodeA: summaryA,
+                    nodeB: summaryB,
+                    stateA,
+                    stateB,
                     recentMessages,
                     recentDeliveries,
                 })}`);

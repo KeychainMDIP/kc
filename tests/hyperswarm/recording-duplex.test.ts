@@ -40,6 +40,8 @@ describe('recording duplex', () => {
         expect(receivedA).toHaveLength(0);
         expect(receivedB).toHaveLength(0);
         expect(pair.pendingCount).toBe(2);
+        expect(pair.pendingAToB).toBe(1);
+        expect(pair.pendingBToA).toBe(1);
         expect(pair.transcript.map(entry => [entry.sequence, entry.direction])).toStrictEqual([
             [1, 'a-to-b'],
             [2, 'b-to-a'],
@@ -48,6 +50,8 @@ describe('recording duplex', () => {
         expect(pair.transcript.every(entry => entry.transportMode === 'legacy')).toBe(true);
 
         await pair.deliverNext();
+        expect(pair.pendingAToB).toBe(0);
+        expect(pair.pendingBToA).toBe(1);
         await pair.deliverNext();
 
         expect(receivedB).toStrictEqual([expectedA]);

@@ -2,6 +2,7 @@ import CipherNode from '@mdip/cipher/node';
 import Gatekeeper from '@mdip/gatekeeper';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory.ts';
 import type { Operation } from '@mdip/gatekeeper/types';
+import { jest } from '@jest/globals';
 import TestHelper from '../gatekeeper/helper.ts';
 import { installMediatorMocks } from './hyperswarm-mediator-harness.ts';
 import { createMediatorDriver } from './hyperswarm-mediator-driver.ts';
@@ -98,7 +99,8 @@ describe('hyperswarm mediator behavior', () => {
         driver = await createMediatorDriver({ operationsA, operationsB, publicKeyA, publicKeyB });
 
         await driver.startSync();
-        await driver.driveUntilQuiescent(expectedIds);
+        const report = await driver.driveUntilQuiescent(expectedIds);
+        expect(report.stableTurns).toBe(3);
 
         const protocolEntries = driver.transcript;
         expect(protocolEntries.length).toBeGreaterThan(0);
@@ -174,5 +176,77 @@ describe('hyperswarm mediator behavior', () => {
             transportMode: 'framed',
             inboundTransportMode: 'framed',
         });
+    });
+
+    it('waits for deferred client work and reports observable state on bounded failure', async () => {
+        const fixtures = await createOperationFixtures();
+        const operationsA = [fixtures.controllerCreate, fixtures.controllerUpdate];
+        const operationsB = [fixtures.independentCreate];
+        const expectedIds = operationIds([...operationsA, ...operationsB]);
+        driver = await createMediatorDriver({ operationsA, operationsB });
+        const deferred = driver.deferNextClientCall({
+            node: 'b',
+            client: 'gatekeeper',
+            method: 'importBatch',
+            label: 'delayed node-b import',
+        });
+
+        await driver.startSync();
+        let releaseDelivery!: () => void;
+        const deliveryBlock = new Promise<void>(resolve => {
+            releaseDelivery = resolve;
+        });
+        let finishDelivery!: () => void;
+        const deliveryFinished = new Promise<void>(resolve => {
+            finishDelivery = resolve;
+        });
+        const deliverNextSpy = jest.spyOn(driver.transport, 'deliverNext').mockImplementationOnce(async () => {
+            try {
+                await deliveryBlock;
+                return false;
+            }
+            finally {
+                finishDelivery();
+            }
+        });
+        const wallClockError = await driver.driveUntilQuiescent(expectedIds, {
+            maxIterations: 2_000,
+            timeoutMs: 100,
+        }).then(
+            () => null,
+            error => error as Error,
+        );
+        releaseDelivery();
+        await deliveryFinished;
+        deliverNextSpy.mockRestore();
+        expect(wallClockError).toBeInstanceOf(Error);
+        expect(wallClockError!.message).toContain('"guardReason":"wall_clock_timeout"');
+        expect(wallClockError!.message).toContain('"linkState"');
+        expect(wallClockError!.message).toContain('"nodeA"');
+        expect(wallClockError!.message).toContain('"nodeB"');
+
+        const attempt = driver.driveUntilQuiescent(expectedIds, {
+            maxIterations: 100,
+            timeoutMs: 1_000,
+        }).then(
+            () => null,
+            error => error as Error,
+        );
+        await deferred.started;
+        const error = await attempt;
+
+        expect(error).toBeInstanceOf(Error);
+        expect(error!.message).toContain('"guardReason":"iteration_limit"');
+        expect(error!.message).toContain('"label":"b.gatekeeper.importBatch"');
+        expect(error!.message).toContain('"unsettledDeferrals":["delayed node-b import"]');
+        expect(error!.message).toContain('"linkState"');
+        expect(error!.message).toContain('"nodeA"');
+        expect(error!.message).toContain('"recentMessages"');
+        expect(deferred.settled).toBe(false);
+
+        deferred.resolve();
+        const report = await driver.driveUntilQuiescent(expectedIds);
+        expect(report.stableTurns).toBe(3);
+        expect(deferred.settled).toBe(true);
     });
 });
