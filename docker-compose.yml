@@ -81,7 +81,7 @@ services:
       - KC_MONGODB_URL=mongodb://mongodb:27017/?replicaSet=rs0
       - KC_REDIS_URL=redis://redis:6379
       - PGPASSWORD=${KC_POSTGRES_PASSWORD:-mdip}
-      - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
+      - KC_POSTGRES_URL=${KC_POSTGRES_URL:-postgresql://${KC_POSTGRES_USER:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}}
       - KC_IPFS_ENABLE=${KC_IPFS_ENABLE}
       - KC_IPFS_URL=http://ipfs:5001/api/v0
       - KC_IPFS_CLUSTER_URL=${KC_IPFS_CLUSTER_URL}
@@ -126,7 +126,7 @@ services:
       - KC_MONGODB_URL=mongodb://mongodb:27017/?replicaSet=rs0
       - KC_REDIS_URL=redis://redis:6379
       - PGPASSWORD=${KC_POSTGRES_PASSWORD:-mdip}
-      - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
+      - KC_POSTGRES_URL=${KC_POSTGRES_URL:-postgresql://${KC_POSTGRES_USER:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}}
     volumes:
       - ./data:/app/keymaster/data
     user: "${KC_UID}:${KC_GID}"
@@ -159,7 +159,8 @@ services:
       - KC_MDIP_PROTOCOL=${KC_MDIP_PROTOCOL}
       - KC_HYPR_DB=${KC_HYPR_DB:-sqlite}
       - PGPASSWORD=${KC_POSTGRES_PASSWORD:-mdip}
-      - KC_HYPR_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
+      - KC_HYPR_POSTGRES_URL=${KC_HYPR_POSTGRES_URL:-}
+      - KC_POSTGRES_URL=${KC_POSTGRES_URL:-postgresql://${KC_POSTGRES_USER:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}}
       - KC_HYPR_EXPORT_INTERVAL=${KC_HYPR_EXPORT_INTERVAL}
       - KC_HYPR_NEGENTROPY_ENABLE=${KC_HYPR_NEGENTROPY_ENABLE}
       - KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT=${KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT}
@@ -192,7 +193,7 @@ services:
       - KC_MONGODB_URL=mongodb://mongodb:27017/?replicaSet=rs0
       - KC_REDIS_URL=redis://redis:6379
       - PGPASSWORD=${KC_POSTGRES_PASSWORD:-mdip}
-      - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
+      - KC_POSTGRES_URL=${KC_POSTGRES_URL:-postgresql://${KC_POSTGRES_USER:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}}
       - KC_NODE_ID=${KC_NODE_ID}
       - KC_SAT_CHAIN=TFTC
       - KC_SAT_NETWORK=testnet
@@ -237,7 +238,7 @@ services:
       - KC_MONGODB_URL=mongodb://mongodb:27017/?replicaSet=rs0
       - KC_REDIS_URL=redis://redis:6379
       - PGPASSWORD=${KC_POSTGRES_PASSWORD:-mdip}
-      - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
+      - KC_POSTGRES_URL=${KC_POSTGRES_URL:-postgresql://${KC_POSTGRES_USER:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}}
       - KC_NODE_ID=${KC_NODE_ID}
       - KC_SAT_CHAIN=BTC
       - KC_SAT_NETWORK=bitcoin
@@ -280,7 +281,7 @@ services:
       - KC_MONGODB_URL=mongodb://mongodb:27017/?replicaSet=rs0
       - KC_REDIS_URL=redis://redis:6379
       - PGPASSWORD=${KC_POSTGRES_PASSWORD:-mdip}
-      - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
+      - KC_POSTGRES_URL=${KC_POSTGRES_URL:-postgresql://${KC_POSTGRES_USER:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}}
       - KC_NODE_ID=${KC_NODE_ID}
       - KC_SAT_CHAIN=TBTC
       - KC_SAT_NETWORK=testnet
@@ -325,7 +326,7 @@ services:
       - KC_MONGODB_URL=mongodb://mongodb:27017/?replicaSet=rs0
       - KC_REDIS_URL=redis://redis:6379
       - PGPASSWORD=${KC_POSTGRES_PASSWORD:-mdip}
-      - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
+      - KC_POSTGRES_URL=${KC_POSTGRES_URL:-postgresql://${KC_POSTGRES_USER:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}}
       - KC_NODE_ID=${KC_NODE_ID}
       - KC_SAT_CHAIN=Signet
       - KC_SAT_NETWORK=testnet
@@ -363,7 +364,7 @@ services:
       - KC_MONGODB_URL=mongodb://mongodb:27017/?replicaSet=rs0
       - KC_REDIS_URL=redis://redis:6379
       - PGPASSWORD=${KC_POSTGRES_PASSWORD:-mdip}
-      - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
+      - KC_POSTGRES_URL=${KC_POSTGRES_URL:-postgresql://${KC_POSTGRES_USER:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}}
       - KC_NODE_ID=${KC_NODE_ID}
       - KC_SAT_CHAIN=Signet
       - KC_SAT_NETWORK=testnet
@@ -434,7 +435,7 @@ services:
       - KC_SEARCH_SERVER_DB=${KC_SEARCH_SERVER_DB:-sqlite}
       - KC_SEARCH_SERVER_POSTGRES_URL=${KC_SEARCH_SERVER_POSTGRES_URL:-}
       - PGPASSWORD=${KC_POSTGRES_PASSWORD:-mdip}
-      - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
+      - KC_POSTGRES_URL=${KC_POSTGRES_URL:-postgresql://${KC_POSTGRES_USER:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}}
       - KC_SEARCH_SERVER_TRUST_PROXY=${KC_SEARCH_SERVER_TRUST_PROXY:-false}
       - KC_SEARCH_SERVER_RATE_LIMIT_ENABLED=${KC_SEARCH_SERVER_RATE_LIMIT_ENABLED:-false}
       - KC_SEARCH_SERVER_RATE_LIMIT_WINDOW_VALUE=${KC_SEARCH_SERVER_RATE_LIMIT_WINDOW_VALUE:-1}
