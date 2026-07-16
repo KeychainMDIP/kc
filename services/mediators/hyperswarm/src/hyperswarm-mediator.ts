@@ -4160,6 +4160,10 @@ export const __test = {
         } as ConnectionInfo;
     },
 
+    disconnectPeer(peerKey: string): void {
+        closeConnection(peerKey);
+    },
+
     async sendOrderedCatchupPage(peerKey: string, msg: OrderedCatchupReqMessage): Promise<void> {
         await sendOrderedCatchupPage(peerKey, msg);
     },

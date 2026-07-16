@@ -20,6 +20,7 @@ import {
 import {
     createRecordingDuplexPair,
     type RecordedTransportWrite,
+    type RecordingDuplexPair,
 } from './recording-duplex.ts';
 
 const DEFAULT_MAX_ITERATIONS = 2_000;
@@ -33,10 +34,16 @@ export interface MediatorDriverOptions {
     publicKeyB?: Buffer;
     maxRecordsPerWindow?: number;
     maxRoundsPerSession?: number;
+    frameSizeLimit?: number;
     connectionMode?: 'framed' | 'unknown';
 }
 
 export type MediatorTranscriptEntry = RecordedTransportWrite;
+
+export type QuiescenceExpectation = Iterable<string> | {
+    a: Iterable<string>;
+    b: Iterable<string>;
+};
 
 export interface QuiescenceOptions {
     maxIterations?: number;
@@ -468,12 +475,14 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
 
         const adapterA = await NegentropyAdapter.create({
             syncStore: storeA,
+            frameSizeLimit: options.frameSizeLimit,
             maxRecordsPerWindow,
             maxRoundsPerSession,
             deferInitialBuild: true,
         });
         const adapterB = await NegentropyAdapter.create({
             syncStore: storeB,
+            frameSizeLimit: options.frameSizeLimit,
             maxRecordsPerWindow,
             maxRoundsPerSession,
             deferInitialBuild: true,
@@ -506,7 +515,7 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
         const workB = trackNodeWork('b', nodeB, storeB, tracker);
         const peerKeyA = publicKeyA.toString('hex');
         const peerKeyB = publicKeyB.toString('hex');
-        const transport = createRecordingDuplexPair({
+        const createTransport = (): RecordingDuplexPair => createRecordingDuplexPair({
             publicKeyA,
             publicKeyB,
             receiveAtA: chunk => nodeA!.run(
@@ -516,6 +525,8 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
                 () => nodeB!.mediator.__test.processInboundPeerData(peerKeyA, chunk),
             ),
         });
+        let transport = createTransport();
+        const links = [transport];
         let started = false;
         let quiescent = true;
         let disposed = false;
@@ -527,8 +538,13 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
             storeB,
             adapterA,
             adapterB,
-            transport,
-            transcript: transport.transcript,
+            links,
+            get transport(): RecordingDuplexPair {
+                return transport;
+            },
+            get transcript(): RecordedTransportWrite[] {
+                return links.flatMap(link => link.transcript);
+            },
             deferNextClientCall(options: DeferClientCallOptions): TrackedDeferredCall {
                 const key = `${options.node}.${options.client}.${options.method}`;
                 const control = clientControls.get(key);
@@ -537,9 +553,41 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
                 }
                 return control.deferNext(options.label);
             },
-            async startSync(): Promise<void> {
+            async disconnect(): Promise<void> {
+                if (!started) {
+                    throw new Error('mediator driver synchronization has not started');
+                }
+                quiescent = false;
+                nodeA!.run(() => nodeA!.mediator.__test.disconnectPeer(peerKeyB));
+                nodeB!.run(() => nodeB!.mediator.__test.disconnectPeer(peerKeyA));
+                while (transport.dropNext()) {
+                    // In-flight writes are lost when the connection closes.
+                }
+                try {
+                    await transport.destroy();
+                }
+                finally {
+                    while (transport.dropNext()) {
+                        // Inbound work may have written while the duplex was settling.
+                    }
+                }
+            },
+            async reconnect(): Promise<void> {
+                if (started && !quiescent) {
+                    throw new Error('mediator driver cannot reconnect before quiescence');
+                }
+                await transport.destroy();
+                transport = createTransport();
+                links.push(transport);
+                started = false;
+                quiescent = true;
+            },
+            async startSync(source: 'connect' | 'periodic' = 'connect'): Promise<void> {
                 if (started) {
                     throw new Error('mediator driver synchronization already started');
+                }
+                if (source === 'periodic' && connectionMode !== 'framed') {
+                    throw new Error('periodic synchronization requires a negotiated framed connection');
                 }
                 started = true;
                 quiescent = false;
@@ -553,6 +601,7 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
                         transportMode: 'framed',
                         inboundTransportMode: 'framed',
                         peerTransportFramingVersion: 1,
+                        ...(source === 'periodic' ? { syncMode: 'negentropy' } : {}),
                     }
                     : {};
                 nodeA!.run(() => nodeA!.mediator.__test.addConnection(peerKeyB, {
@@ -568,20 +617,31 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
                     await nodeB!.run(() => nodeB!.mediator.__test.sendPingToPeer(peerKeyA, 'initial'));
                 }
                 else {
-                    await nodeA!.run(() => nodeA!.mediator.__test.maybeStartPeerSync(peerKeyB));
-                    await nodeB!.run(() => nodeB!.mediator.__test.maybeStartPeerSync(peerKeyA));
+                    await nodeA!.run(() => nodeA!.mediator.__test.maybeStartPeerSync(peerKeyB, source));
+                    await nodeB!.run(() => nodeB!.mediator.__test.maybeStartPeerSync(peerKeyA, source));
                 }
             },
             async driveUntilQuiescent(
-                expectedIds: Iterable<string>,
+                expectedIds: QuiescenceExpectation,
                 quiescenceOptions: QuiescenceOptions = {},
             ): Promise<QuiescenceReport> {
                 if (!started) {
                     throw new Error('mediator driver synchronization has not started');
                 }
 
-                const expected = normalizeIds(expectedIds);
-                const expectedDigest = digestIds(expected);
+                const expectedByNode = 'a' in Object(expectedIds)
+                    ? {
+                        a: normalizeIds((expectedIds as Exclude<QuiescenceExpectation, Iterable<string>>).a),
+                        b: normalizeIds((expectedIds as Exclude<QuiescenceExpectation, Iterable<string>>).b),
+                    }
+                    : {
+                        a: normalizeIds(expectedIds as Iterable<string>),
+                        b: normalizeIds(expectedIds as Iterable<string>),
+                    };
+                const expectedDigest = {
+                    a: digestIds(expectedByNode.a),
+                    b: digestIds(expectedByNode.b),
+                };
                 const maxIterations = quiescenceOptions.maxIterations ?? DEFAULT_MAX_ITERATIONS;
                 const timeoutMs = quiescenceOptions.timeoutMs ?? DEFAULT_TIMEOUT_MS;
                 if (!Number.isInteger(maxIterations) || maxIterations <= 0) {
@@ -639,12 +699,17 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
                         const linkState = readLinkState();
                         const activeCalls = tracker.activeCalls;
                         const unsettledDeferrals = tracker.unsettledLabels;
-                        const matchesExpected = [summaryA, summaryB].every(summary => (
-                            summary.gatekeeper.count === expected.length
-                            && summary.gatekeeper.digest === expectedDigest
-                            && summary.store.count === expected.length
-                            && summary.store.digest === expectedDigest
-                        ));
+                        const matchesExpected = [
+                            [summaryA, expectedByNode.a, expectedDigest.a],
+                            [summaryB, expectedByNode.b, expectedDigest.b],
+                        ].every(([summary, expected, digest]) => {
+                            const nodeSummary = summary as NodeSummary;
+                            const nodeExpected = expected as string[];
+                            return nodeSummary.gatekeeper.count === nodeExpected.length
+                                && nodeSummary.gatekeeper.digest === digest
+                                && nodeSummary.store.count === nodeExpected.length
+                                && nodeSummary.store.digest === digest;
+                        });
                         const ready = linkState.pendingAToB === 0
                             && linkState.pendingBToA === 0
                             && linkState.pendingInboundAtA === 0
@@ -674,9 +739,16 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
                             elapsedMs: Math.round(elapsedMs),
                             stableObservations,
                             expected: {
-                                count: expected.length,
-                                digest: expectedDigest,
-                                sample: sampleIds(expected),
+                                a: {
+                                    count: expectedByNode.a.length,
+                                    digest: expectedDigest.a,
+                                    sample: sampleIds(expectedByNode.a),
+                                },
+                                b: {
+                                    count: expectedByNode.b.length,
+                                    digest: expectedDigest.b,
+                                    sample: sampleIds(expectedByNode.b),
+                                },
                             },
                             linkState,
                             activeCalls,
@@ -752,11 +824,13 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
                 disposed = true;
                 const unfinished = started && !quiescent;
                 const errors: unknown[] = [];
-                try {
-                    await transport.destroy();
-                }
-                catch (error) {
-                    errors.push(error);
+                for (const link of [...links].reverse()) {
+                    try {
+                        await link.destroy();
+                    }
+                    catch (error) {
+                        errors.push(error);
+                    }
                 }
                 for (const node of [nodeB!, nodeA!]) {
                     try {
