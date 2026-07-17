@@ -848,6 +848,75 @@ describe('hyperswarm mediator protocol characterization', () => {
         },
     );
 
+    it('recovers from a missing background snapshot with the queued rebuild', async () => {
+        const operations = await makeOperations(2);
+        const protocolNode = await createNode();
+        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const buildSnapshot = protocolNode.adapter.buildSnapshotForWindow.bind(protocolNode.adapter);
+        let buildCalls = 0;
+        let markFirstBuildStarted!: () => void;
+        const firstBuildStarted = new Promise<void>(resolve => {
+            markFirstBuildStarted = resolve;
+        });
+        let releaseFirstBuild!: () => void;
+        const firstBuildBlocked = new Promise<void>(resolve => {
+            releaseFirstBuild = resolve;
+        });
+        let markSecondBuildFinished!: () => void;
+        const secondBuildFinished = new Promise<void>(resolve => {
+            markSecondBuildFinished = resolve;
+        });
+        jest.spyOn(protocolNode.adapter, 'buildSnapshotForWindow').mockImplementation(async window => {
+            const call = ++buildCalls;
+            if (call === 1) {
+                markFirstBuildStarted();
+                await firstBuildBlocked;
+                return null as never;
+            }
+
+            try {
+                return await buildSnapshot(window);
+            }
+            finally {
+                if (call === 2) {
+                    markSecondBuildFinished();
+                }
+            }
+        });
+        const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(Date.now());
+
+        try {
+            await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
+                peerKey,
+                encodeFramedMessage(JSON.stringify({ type: 'batch', data: [operations[0]] })),
+            ));
+            await firstBuildStarted;
+            await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
+                peerKey,
+                encodeFramedMessage(JSON.stringify({ type: 'batch', data: [operations[1]] })),
+            ));
+            await eventually(async () => (await protocolNode.store.count()) === 2);
+            await nextTurn();
+
+            releaseFirstBuild();
+            await eventually(() => buildCalls >= 2);
+            await secondBuildFinished;
+            await protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey),
+            );
+
+            expect(buildCalls).toBe(2);
+            expect(pair.transcript.some(entry => entry.messageType === 'neg_open')).toBe(true);
+            expect(protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+            )).toEqual(expect.objectContaining({ mode: 'negentropy' }));
+        }
+        finally {
+            releaseFirstBuild();
+            nowSpy.mockRestore();
+        }
+    });
+
     it.each(['responder snapshot', 'frame reconciliation'] as const)(
         'does not send stale traffic after replacement during %s',
         async boundary => {
@@ -1278,6 +1347,72 @@ describe('hyperswarm mediator protocol characterization', () => {
             await peerStore.stop();
             expect(peerStopSpy).toHaveBeenCalledTimes(1);
         }
+    });
+
+    it('closes without a continuation when a remote round cap cannot split the window', async () => {
+        const protocolNode = await createNode({ maxRecords: 1 });
+        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        await protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey),
+        );
+        const open = decodeWrites(pair).find(message => message.type === 'neg_open');
+        if (!open) {
+            throw new Error('expected local neg_open');
+        }
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
+            peerKey,
+            encodeFramedMessage(JSON.stringify({
+                type: 'neg_close',
+                sessionId: open.sessionId,
+                windowId: open.windowId,
+                reason: 'max_rounds_reached',
+            })),
+        ));
+
+        expect(decodeWrites(pair).filter(message => message.type === 'neg_open')).toHaveLength(1);
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+        )).toBeNull();
+    });
+
+    it('waits for the initiator close after responder-side terminal completion', async () => {
+        const open = await createRemoteOpen();
+        const protocolNode = await createNode({ keyByte: 0x33 });
+        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
+        jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
+            const engine = createEngine(snapshot);
+            jest.spyOn(engine, 'reconcile').mockResolvedValueOnce({
+                nextMsg: null,
+                haveIds: [],
+                needIds: [],
+            });
+            return engine;
+        });
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
+            peerKey,
+            encodeFramedMessage(JSON.stringify(open)),
+        ));
+
+        expect(pair.transcript).toHaveLength(0);
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+        )).toEqual({ mode: 'negentropy', sessionId: open.sessionId });
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
+            peerKey,
+            encodeFramedMessage(JSON.stringify({
+                type: 'neg_close',
+                sessionId: open.sessionId,
+                windowId: open.windowId,
+                reason: 'complete',
+            })),
+        ));
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+        )).toBeNull();
     });
 
     it('imports queue gossip, suppresses relays, and filters known operations', async () => {
