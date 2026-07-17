@@ -466,6 +466,150 @@ describe('hyperswarm mediator protocol characterization', () => {
         )).not.toBeNull();
     });
 
+    it('rejects invalid framed neg_open windows and window IDs', async () => {
+        const open = await createRemoteOpen();
+        const protocolNode = await createNode({ keyByte: 0x33 });
+        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const destroySpy = jest.spyOn(pair.connectionA, 'destroy');
+        const buildSnapshot = jest.spyOn(protocolNode.adapter, 'buildSnapshotForWindow');
+        const window = open.window as Record<string, unknown>;
+        const invalidMessages = [
+            {
+                ...open,
+                sessionId: 'invalid-window',
+                window: { ...window, fromTs: 2, toTs: 1 },
+            },
+            {
+                ...open,
+                sessionId: 'invalid-window-id',
+                windowId: '',
+            },
+        ];
+
+        for (const message of invalidMessages) {
+            await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
+                peerKey,
+                encodeFramedMessage(JSON.stringify(message)),
+            ));
+        }
+
+        expect(buildSnapshot).not.toHaveBeenCalled();
+        expect(pair.transcript).toHaveLength(0);
+        expect(destroySpy).not.toHaveBeenCalled();
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+        )).toBeNull();
+    });
+
+    it('ignores framed neg_open while ordered catch-up is active', async () => {
+        const open = await createRemoteOpen();
+        const protocolNode = await createNode({
+            keyByte: 0x33,
+            env: { KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true' },
+        });
+        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const buildSnapshot = jest.spyOn(protocolNode.adapter, 'buildSnapshotForWindow');
+        protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.createOrderedCatchupClientSession(peerKey, 'catchup-session'),
+        );
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
+            peerKey,
+            encodeFramedMessage(JSON.stringify(open)),
+        ));
+
+        expect(buildSnapshot).not.toHaveBeenCalled();
+        expect(pair.transcript).toHaveLength(0);
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
+        )).toMatchObject({
+            activeSession: { mode: 'ordered_catchup', sessionId: 'catchup-session' },
+            orderedCatchupClientSessionId: 'catchup-session',
+        });
+    });
+
+    it('rejects stale-window neg_msg and unknown-session ops_req frames', async () => {
+        const protocolNode = await createNode();
+        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        await protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey),
+        );
+        const open = decodeWrites(pair).find(message => message.type === 'neg_open');
+        if (!open) {
+            throw new Error('expected local neg_open');
+        }
+        const getByIds = jest.spyOn(protocolNode.store, 'getByIds');
+        const writesBefore = pair.transcript.length;
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
+            peerKey,
+            encodeFramedMessage(JSON.stringify({
+                type: 'neg_msg',
+                sessionId: open.sessionId,
+                windowId: 'stale-window',
+                frame: 'invalid-frame-must-not-be-decoded',
+            })),
+        ));
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
+            peerKey,
+            encodeFramedMessage(JSON.stringify({
+                type: 'ops_req',
+                sessionId: 'unknown-session',
+                windowId: open.windowId,
+                ids: [hash('a')],
+            })),
+        ));
+
+        expect(getByIds).not.toHaveBeenCalled();
+        expect(pair.transcript).toHaveLength(writesBefore);
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+        )).toEqual({ mode: 'negentropy', sessionId: open.sessionId });
+    });
+
+    it('reprocesses repeated framed neg_open for the existing window without replacing its session', async () => {
+        const [operation] = await makeOperations(1);
+        const open = await createRemoteOpen([operation]);
+        const protocolNode = await createNode({ keyByte: 0x33 });
+        const { peerKey } = attachPeer(protocolNode, { mode: 'framed' });
+        const createEngine = jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot');
+        const framedOpen = encodeFramedMessage(JSON.stringify(open));
+
+        await protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.processInboundPeerData(peerKey, framedOpen),
+        );
+        const firstSession = protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+        );
+        await protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.processInboundPeerData(peerKey, framedOpen),
+        );
+
+        expect(createEngine).toHaveBeenCalledTimes(2);
+        expect(firstSession).toEqual({ mode: 'negentropy', sessionId: open.sessionId });
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+        )).toEqual(firstSession);
+    });
+
+    it('ignores an unknown framed message type without disconnecting the peer', async () => {
+        const protocolNode = await createNode();
+        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const destroySpy = jest.spyOn(pair.connectionA, 'destroy');
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
+            peerKey,
+            encodeFramedMessage(JSON.stringify({ type: 'future_protocol_message', data: 'ignored' })),
+        ));
+
+        expect(pair.transcript).toHaveLength(0);
+        expect(destroySpy).not.toHaveBeenCalled();
+        expect(protocolNode.node.gatekeeperClient.importBatch).not.toHaveBeenCalled();
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+        )).toBeNull();
+    });
+
     it('replaces Negentropy sessions and ignores stale sessions and windows', async () => {
         const protocolNode = await createNode();
         const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
