@@ -220,7 +220,7 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         },
     );
 
-    it('does not let an old deferred import finalize a replacement session', async () => {
+    it('does not let an old deferred persistence finalize a replacement session', async () => {
         const operations = await createIndependentOperations(1);
         const expectedIds = operationIds(operations);
         driver = await createMediatorDriver({
@@ -229,11 +229,23 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
             publicKeyA: Buffer.alloc(32, 0x22),
             publicKeyB: Buffer.alloc(32, 0x11),
         });
-        const deferred = driver.deferNextClientCall({
-            node: 'b',
-            client: 'gatekeeper',
-            method: 'importBatch',
-            label: 'old node B session import',
+        const upsertMany = jest.mocked(driver.storeB.upsertMany);
+        const upsertManyImplementation = upsertMany.getMockImplementation();
+        if (!upsertManyImplementation) {
+            throw new Error('tracked node B upsertMany implementation is unavailable');
+        }
+        let markPersistenceStarted!: () => void;
+        const persistenceStarted = new Promise<void>(resolve => {
+            markPersistenceStarted = resolve;
+        });
+        let releasePersistence!: () => void;
+        const persistenceBlocked = new Promise<void>(resolve => {
+            releasePersistence = resolve;
+        });
+        upsertMany.mockImplementationOnce(async records => {
+            markPersistenceStarted();
+            await persistenceBlocked;
+            return upsertManyImplementation(records);
         });
         const peerKeyA = driver.nodeA.publicKey.toString('hex');
         let delivery: Promise<boolean> | null = null;
@@ -241,7 +253,7 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         let syncStarted = false;
         let oldSessionId: unknown;
         let replacementSessionId: unknown;
-        let stateAfterImport: Record<string, unknown> | null = null;
+        let stateAfterPersistence: Record<string, unknown> | null = null;
         let replacementMessages: WireMessage[] = [];
 
         try {
@@ -249,7 +261,7 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
             syncStarted = true;
             await pumpUntilPendingMessage(driver.transport, 'a-to-b', 'ops_push');
             delivery = driver.transport.deliverNext();
-            await deferred.started;
+            await persistenceStarted;
             oldSessionId = (driver.nodeB.run(
                 () => driver!.nodeB.mediator.__test.getConnectionState(peerKeyA),
             )?.activeSession as { sessionId?: unknown } | null)?.sessionId;
@@ -279,15 +291,15 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
                 () => driver!.nodeB.mediator.__test.getConnectionState(peerKeyA),
             )?.activeSession as { sessionId?: unknown } | null)?.sessionId;
 
-            deferred.resolve();
+            releasePersistence();
             await delivery;
-            stateAfterImport = driver.nodeB.run(
+            stateAfterPersistence = driver.nodeB.run(
                 () => driver!.nodeB.mediator.__test.getConnectionState(peerKeyA),
             );
             replacementMessages = decodeWire(replacement);
         }
         finally {
-            deferred.resolve();
+            releasePersistence();
             await delivery?.catch(() => undefined);
             if (syncStarted) {
                 await driver.disconnect().catch(() => undefined);
@@ -299,16 +311,14 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         expect(typeof oldSessionId).toBe('string');
         expect(typeof replacementSessionId).toBe('string');
         expect(replacementSessionId).not.toBe(oldSessionId);
-        expect(stateAfterImport?.activeSession).toEqual({
+        expect(stateAfterPersistence?.activeSession).toEqual({
             mode: 'negentropy',
             sessionId: replacementSessionId,
         });
         expect(replacementMessages).toEqual(expect.arrayContaining([
             expect.objectContaining({ body: expect.objectContaining({ type: 'neg_open' }) }),
         ]));
-        expect(replacementMessages.some(message => (
-            message.body.type === 'neg_close' && message.body.sessionId === oldSessionId
-        ))).toBe(false);
+        expect(replacementMessages.some(message => message.body.sessionId === oldSessionId)).toBe(false);
     });
 
     it('waits for a later controller push to persist an earlier requested asset', async () => {

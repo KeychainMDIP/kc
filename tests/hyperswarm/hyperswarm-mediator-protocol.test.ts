@@ -514,68 +514,84 @@ describe('hyperswarm mediator protocol characterization', () => {
         )).toBeNull();
     });
 
-    it('does not open a stale window after its session is replaced during snapshot creation', async () => {
-        const protocolNode = await createNode();
-        const initialPeer = attachPeer(protocolNode, { mode: 'framed' });
-        const buildSnapshot = protocolNode.adapter.buildSnapshotForWindow.bind(protocolNode.adapter);
-        let noteBuildStarted!: () => void;
-        const buildStarted = new Promise<void>(resolve => {
-            noteBuildStarted = resolve;
-        });
-        let releaseBuild!: () => void;
-        const buildBlocked = new Promise<void>(resolve => {
-            releaseBuild = resolve;
-        });
-        jest.spyOn(protocolNode.adapter, 'buildSnapshotForWindow').mockImplementationOnce(async window => {
-            noteBuildStarted();
-            await buildBlocked;
-            return buildSnapshot(window);
-        });
+    it.each(['snapshot rebuild', 'initiator reconciliation'] as const)(
+        'does not open a stale window after its session is replaced during %s',
+        async boundary => {
+            const protocolNode = await createNode();
+            const initialPeer = attachPeer(protocolNode, { mode: 'framed' });
+            let noteAwaitStarted!: () => void;
+            const awaitStarted = new Promise<void>(resolve => {
+                noteAwaitStarted = resolve;
+            });
+            let releaseAwait!: () => void;
+            const awaitBlocked = new Promise<void>(resolve => {
+                releaseAwait = resolve;
+            });
+            if (boundary === 'snapshot rebuild') {
+                const buildSnapshot = protocolNode.adapter.buildSnapshotForWindow.bind(protocolNode.adapter);
+                jest.spyOn(protocolNode.adapter, 'buildSnapshotForWindow').mockImplementationOnce(async window => {
+                    noteAwaitStarted();
+                    await awaitBlocked;
+                    return buildSnapshot(window);
+                });
+            }
+            else {
+                const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
+                jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
+                    const engine = createEngine(snapshot);
+                    const initiate = engine.initiate.bind(engine);
+                    jest.spyOn(engine, 'initiate').mockImplementationOnce(async () => {
+                        noteAwaitStarted();
+                        await awaitBlocked;
+                        return initiate();
+                    });
+                    return engine;
+                });
+            }
 
-        const start = protocolNode.node.run(
-            () => protocolNode.node.mediator.__test.maybeStartPeerSync(initialPeer.peerKey),
-        );
-        let oldSessionId: unknown;
-        let replacementState: Record<string, unknown> | null = null;
-        let replacementMessages: Record<string, unknown>[] = [];
-        try {
-            await buildStarted;
-            oldSessionId = (protocolNode.node.run(
-                () => protocolNode.node.mediator.__test.getConnectionState(initialPeer.peerKey),
-            )?.activeSession as { sessionId?: unknown } | null)?.sessionId;
-            protocolNode.node.run(
-                () => protocolNode.node.mediator.__test.disconnectPeer(initialPeer.peerKey),
+            const start = protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.maybeStartPeerSync(initialPeer.peerKey),
             );
-            const replacementPeer = attachPeer(protocolNode, { mode: 'framed' });
-            protocolNode.node.run(() => protocolNode.node.mediator.__test.createOrderedCatchupClientSession(
-                replacementPeer.peerKey,
-                'replacement-session',
-            ));
+            let oldSessionId: unknown;
+            let replacementState: Record<string, unknown> | null = null;
+            let replacementMessages: Record<string, unknown>[] = [];
+            try {
+                await awaitStarted;
+                oldSessionId = (protocolNode.node.run(
+                    () => protocolNode.node.mediator.__test.getConnectionState(initialPeer.peerKey),
+                )?.activeSession as { sessionId?: unknown } | null)?.sessionId;
+                protocolNode.node.run(
+                    () => protocolNode.node.mediator.__test.disconnectPeer(initialPeer.peerKey),
+                );
+                const replacementPeer = attachPeer(protocolNode, { mode: 'framed' });
+                protocolNode.node.run(() => protocolNode.node.mediator.__test.createOrderedCatchupClientSession(
+                    replacementPeer.peerKey,
+                    'replacement-session',
+                ));
 
-            releaseBuild();
-            await start;
-            replacementState = protocolNode.node.run(
-                () => protocolNode.node.mediator.__test.getConnectionState(replacementPeer.peerKey),
-            );
-            replacementMessages = decodeWrites(replacementPeer.pair);
-        }
-        finally {
-            releaseBuild();
-            await start.catch(() => undefined);
-            protocolNode.node.run(
-                () => protocolNode.node.mediator.__test.disconnectPeer(initialPeer.peerKey),
-            );
-        }
+                releaseAwait();
+                await start;
+                replacementState = protocolNode.node.run(
+                    () => protocolNode.node.mediator.__test.getConnectionState(replacementPeer.peerKey),
+                );
+                replacementMessages = decodeWrites(replacementPeer.pair);
+            }
+            finally {
+                releaseAwait();
+                await start.catch(() => undefined);
+                protocolNode.node.run(
+                    () => protocolNode.node.mediator.__test.disconnectPeer(initialPeer.peerKey),
+                );
+            }
 
-        expect(typeof oldSessionId).toBe('string');
-        expect(replacementState?.activeSession).toEqual({
-            mode: 'ordered_catchup',
-            sessionId: 'replacement-session',
-        });
-        expect(replacementMessages.some(message => (
-            message.type === 'neg_open' && message.sessionId === oldSessionId
-        ))).toBe(false);
-    });
+            expect(typeof oldSessionId).toBe('string');
+            expect(replacementState?.activeSession).toEqual({
+                mode: 'ordered_catchup',
+                sessionId: 'replacement-session',
+            });
+            expect(replacementMessages.some(message => message.sessionId === oldSessionId)).toBe(false);
+        },
+    );
 
     it.each(['count', 'countOrdered'] as const)(
         'does not start sync on a replacement connection after awaiting %s',
