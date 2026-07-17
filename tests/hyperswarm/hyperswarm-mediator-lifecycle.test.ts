@@ -139,10 +139,10 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         return { node, store, startSpy, stopSpy };
     }
 
-    async function attachConnection(
+    function emitConnection(
         running: RunningNode,
         peerKeyByte: number,
-    ): Promise<ConnectedPeer> {
+    ): ConnectedPeer {
         const publicKeyB = Buffer.alloc(32, peerKeyByte);
         const peerKey = publicKeyB.toString('hex');
         const pair = createRecordingDuplexPair({
@@ -157,8 +157,41 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
             throw new Error('expected running mediator swarm');
         }
         running.node.run(() => swarm.emit('connection', pair.connectionA));
-        await eventually(() => pair.transcript.some(entry => entry.messageType === 'ping'));
         return { pair, peerKey };
+    }
+
+    async function attachConnection(
+        running: RunningNode,
+        peerKeyByte: number,
+    ): Promise<ConnectedPeer> {
+        const peer = emitConnection(running, peerKeyByte);
+        const { pair } = peer;
+        await eventually(() => pair.transcript.some(entry => entry.messageType === 'ping'));
+        return peer;
+    }
+
+    async function strikeMalformedFramedPeer(
+        running: RunningNode,
+        peer: ConnectedPeer,
+    ): Promise<void> {
+        peer.pair.connectionB.write(encodeFramedMessage(JSON.stringify({
+            type: 'neg_close',
+            sessionId: 'stale-session',
+            windowId: 'stale-window',
+            reason: 'test',
+        })));
+        await peer.pair.pumpUntilIdle();
+        expect(running.node.run(
+            () => running.node.mediator.__test.getConnectionState(peer.peerKey),
+        )).toMatchObject({ inboundTransportMode: 'framed' });
+
+        peer.pair.connectionB.write(Buffer.alloc(4));
+        await peer.pair.pumpUntilIdle();
+        await settle();
+        expect(peer.pair.connectionA.destroyed).toBe(true);
+        expect(running.node.run(
+            () => running.node.mediator.__test.getConnectionState(peer.peerKey),
+        )).toBeNull();
     }
 
     async function sendPeerMessage(peer: ConnectedPeer, message: Record<string, unknown>): Promise<void> {
@@ -235,6 +268,75 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         expect(running.node.run(
             () => running.node.mediator.__test.getConnectionState(malformedPeer.peerKey),
         )).toBeNull();
+    });
+
+    it('cools down malformed framed connections and accepts them after expiry', async () => {
+        const running = await createRunningNode({
+            env: {
+                KC_HYPR_EXPORT_INTERVAL: '3600',
+                KC_HYPR_LEGACY_SYNC_ENABLE: 'false',
+            },
+        });
+        const peerKeyByte = 0x44;
+
+        for (let strike = 0; strike < 3; strike += 1) {
+            await strikeMalformedFramedPeer(running, await attachConnection(running, peerKeyByte));
+        }
+
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+            const rejected = emitConnection(running, peerKeyByte);
+            await eventually(() => rejected.pair.connectionA.destroyed);
+            expect(rejected.pair.transcript.filter(entry => entry.direction === 'a-to-b')).toHaveLength(0);
+            expect(running.node.run(
+                () => running.node.mediator.__test.getConnectionState(rejected.peerKey),
+            )).toBeNull();
+        }
+
+        running.node.run(() => jest.setSystemTime(Date.now() + (5 * 60 * 1_000) + 1));
+        const accepted = await attachConnection(running, peerKeyByte);
+        expect(accepted.pair.connectionA.destroyed).toBe(false);
+        expect(running.node.run(
+            () => running.node.mediator.__test.getConnectionState(accepted.peerKey),
+        )).not.toBeNull();
+    });
+
+    it('clears malformed-peer strikes after a valid framed ping', async () => {
+        const running = await createRunningNode({
+            env: {
+                KC_HYPR_EXPORT_INTERVAL: '3600',
+                KC_HYPR_LEGACY_SYNC_ENABLE: 'false',
+            },
+        });
+        const peerKeyByte = 0x55;
+
+        await strikeMalformedFramedPeer(running, await attachConnection(running, peerKeyByte));
+
+        const cleared = await attachConnection(running, peerKeyByte);
+        cleared.pair.connectionB.write(encodeFramedMessage(JSON.stringify(peerPing())));
+        await cleared.pair.pumpUntilIdle();
+        expect(running.node.run(
+            () => running.node.mediator.__test.getConnectionState(cleared.peerKey),
+        )).toMatchObject({ inboundTransportMode: 'framed' });
+        cleared.pair.connectionB.write(Buffer.alloc(4));
+        await cleared.pair.pumpUntilIdle();
+        await settle();
+        expect(cleared.pair.connectionA.destroyed).toBe(true);
+        expect(running.node.run(
+            () => running.node.mediator.__test.getConnectionState(cleared.peerKey),
+        )).toBeNull();
+
+        await strikeMalformedFramedPeer(running, await attachConnection(running, peerKeyByte));
+
+        const accepted = emitConnection(running, peerKeyByte);
+        await eventually(() => (
+            accepted.pair.connectionA.destroyed
+            || accepted.pair.transcript.some(entry => entry.messageType === 'ping')
+        ));
+        expect(accepted.pair.connectionA.destroyed).toBe(false);
+        expect(accepted.pair.transcript.some(entry => entry.messageType === 'ping')).toBe(true);
+        expect(running.node.run(
+            () => running.node.mediator.__test.getConnectionState(accepted.peerKey),
+        )).not.toBeNull();
     });
 
     it('recreates the swarm from the connection loop when no peers remain', async () => {
