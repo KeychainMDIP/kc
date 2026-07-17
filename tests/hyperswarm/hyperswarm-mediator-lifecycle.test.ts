@@ -409,6 +409,77 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         expect(negOpenEntries().at(-1)).toMatchObject({ transportMode: 'framed' });
     });
 
+    it('expires an idle ordered catch-up server session without closing its connection', async () => {
+        const operations = await makeOperations(257);
+        const running = await createRunningNode({
+            keyByte: 0x33,
+            env: {
+                KC_HYPR_EXPORT_INTERVAL: '3600',
+                KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true',
+                KC_HYPR_LEGACY_SYNC_ENABLE: 'false',
+            },
+        });
+        await running.store.upsertMany(operations.map((operation, index) => ({
+            id: operation.signature!.hash,
+            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            syncOrder: index + 1,
+            operation,
+        })));
+        const peer = await attachConnection(running, 0x22);
+        peer.pair.connectionB.write(encodeFramedMessage(JSON.stringify(peerPing({
+            capabilities: {
+                negentropy: true,
+                negentropyVersion: NEGENTROPY_VERSION,
+                orderedCatchup: true,
+                orderedCatchupVersion: 1,
+                orderedCatchupReady: true,
+                operationCount: 0,
+                orderedOperationCount: 0,
+            },
+        }))));
+        await peer.pair.pumpUntilIdle();
+
+        peer.pair.connectionB.write(encodeFramedMessage(JSON.stringify({
+            type: 'ordered_catchup_req',
+            sessionId: 'idle-server-session',
+        })));
+        await peer.pair.pumpUntilIdle();
+
+        const pushEntry = peer.pair.transcript.find(entry => (
+            entry.direction === 'a-to-b' && entry.messageType === 'ordered_catchup_push'
+        ));
+        if (!pushEntry) {
+            throw new Error('expected an ordered catch-up push');
+        }
+        const [pushPayload] = decodeUnknownTransportMessages(pushEntry.raw).messages;
+        expect(JSON.parse(pushPayload.toString('utf8'))).toMatchObject({
+            type: 'ordered_catchup_push',
+            sessionId: 'idle-server-session',
+            hasMore: true,
+        });
+        expect(running.node.run(
+            () => running.node.mediator.__test.getConnectionState(peer.peerKey),
+        )).toMatchObject({
+            orderedCatchupServerSessionId: 'idle-server-session',
+            orderedCatchupServerLastActivity: expect.any(Number),
+        });
+
+        await running.node.run(() => jest.advanceTimersByTimeAsync(3 * 60 * 1_000));
+        await eventually(() => running.node.run(
+            () => running.node.mediator.__test.getConnectionState(peer.peerKey)
+                ?.orderedCatchupServerSessionId === null,
+        ));
+
+        expect(running.node.run(
+            () => running.node.mediator.__test.getConnectionState(peer.peerKey),
+        )).toMatchObject({
+            activeSession: null,
+            orderedCatchupServerSessionId: null,
+            orderedCatchupServerLastActivity: 0,
+        });
+        expect(peer.pair.connectionA.destroyed).toBe(false);
+    });
+
     it('flushes Gatekeeper queue entries on the recurring export loop', async () => {
         const [operation] = await makeOperations(1);
         const running = await createRunningNode();
