@@ -905,14 +905,16 @@ describe('hyperswarm mediator behavior', () => {
 
         await driver.startSync();
         await pumpUntilPendingMessage(driver.transport, 'a-to-b', 'ops_push');
-        await driver.transport.deliverNext();
+        const delivery = driver.transport.deliverNext();
         await deferred.started;
         let wasSettledAtDisconnect!: boolean;
         let writesAfterDisconnect!: number;
         try {
-            await driver.disconnect();
+            const disconnect = driver.disconnect();
             wasSettledAtDisconnect = deferred.settled;
             writesAfterDisconnect = driver.transport.transcript.length;
+            deferred.resolve();
+            await Promise.all([delivery, disconnect]);
         }
         finally {
             deferred.resolve();
@@ -1015,26 +1017,42 @@ describe('hyperswarm mediator behavior', () => {
         expect(wallClockError!.message).toContain('"nodeA"');
         expect(wallClockError!.message).toContain('"nodeB"');
 
+        const deliverNext = driver.transport.deliverNext.bind(driver.transport);
+        let timedOutDelivery: Promise<boolean> | null = null;
+        const timedOutDeliverySpy = jest.spyOn(driver.transport, 'deliverNext').mockImplementationOnce(() => {
+            timedOutDelivery = deliverNext();
+            return timedOutDelivery;
+        });
         const attempt = driver.driveUntilQuiescent(expectedIds, {
-            maxIterations: 100,
-            timeoutMs: 1_000,
+            maxIterations: 2_000,
+            timeoutMs: 100,
         }).then(
             () => null,
             error => error as Error,
         );
         await deferred.started;
         const error = await attempt;
+        const wasSettledBeforeRelease = deferred.settled;
+        deferred.resolve();
+        try {
+            if (!timedOutDelivery) {
+                throw new Error('timed-out delivery was not captured');
+            }
+            await timedOutDelivery;
+        }
+        finally {
+            timedOutDeliverySpy.mockRestore();
+        }
 
         expect(error).toBeInstanceOf(Error);
-        expect(error!.message).toContain('"guardReason":"iteration_limit"');
+        expect(error!.message).toContain('"guardReason":"wall_clock_timeout"');
         expect(error!.message).toContain('"label":"b.gatekeeper.importBatch"');
         expect(error!.message).toContain('"unsettledDeferrals":["delayed node-b import"]');
         expect(error!.message).toContain('"linkState"');
         expect(error!.message).toContain('"nodeA"');
         expect(error!.message).toContain('"recentMessages"');
-        expect(deferred.settled).toBe(false);
+        expect(wasSettledBeforeRelease).toBe(false);
 
-        deferred.resolve();
         const report = await driver.driveUntilQuiescent(expectedIds);
         expect(report.stableTurns).toBe(3);
         expect(deferred.settled).toBe(true);

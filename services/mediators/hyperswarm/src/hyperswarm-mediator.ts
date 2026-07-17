@@ -32,7 +32,6 @@ import {
     chooseConnectSyncMode,
     decodeNegentropyFrame,
     encodeNegentropyFrame,
-    extractOperationHashes,
     normalizeNegentropyIds,
     normalizePeerCapabilities,
     supportsPeerNegentropy,
@@ -1576,7 +1575,11 @@ async function startNegentropySessionForPeer(
 
     const initiator = nodeKey.localeCompare(peerKey) < 0;
     const session = createPeerSession(peerKey, 'negentropy', initiator);
-    session.windows = [await buildInitialHistoryWindowForSession()];
+    const initialWindow = await buildInitialHistoryWindowForSession();
+    if (peerSessions.get(peerKey) !== session) {
+        return;
+    }
+    session.windows = [initialWindow];
     session.windowIndex = 0;
     log.info(
         {
@@ -1625,6 +1628,11 @@ async function startOrderedCatchupSessionForPeer(
 async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic' = 'connect'): Promise<void> {
     const conn = connectionInfo[peerKey];
     if (!conn) {
+        return;
+    }
+
+    if (orderedCatchupPostImportPeers.has(peerKey)) {
+        logNegentropySuppressedByOrderedCatchup(peerKey, source);
         return;
     }
 
@@ -1706,6 +1714,9 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
     }
 
     const localOperationCount = await syncStore.count();
+    if (connectionInfo[peerKey] !== conn) {
+        return;
+    }
     const orderedCatchupDecision = getOrderedCatchupDecision({
         enabled: config.orderedCatchupEnabled && !conn.orderedCatchupAttempted,
         localOperationCount,
@@ -1728,6 +1739,9 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
         && !hasActiveSession
         && activeNegentropySessions === 0) {
         const localOrderedOperationCount = await syncStore.countOrdered();
+        if (connectionInfo[peerKey] !== conn) {
+            return;
+        }
         const expectedOrderedCatchupRequest = getExpectedOrderedCatchupRequestDecision({
             enabled: config.orderedCatchupEnabled,
             localOperationCount,
@@ -1754,6 +1768,7 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
             hasActiveSession,
             orderedCatchupActive,
             importQueueLength: importQueue.length(),
+            importQueueRunning: importQueue.running(),
             activeNegentropySessions,
             lastAttemptAtMs: conn.lastNegentropyAttemptAt,
             nowMs: Date.now(),
@@ -1773,6 +1788,9 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
         return;
     }
 
+    if (connectionInfo[peerKey] !== conn) {
+        return;
+    }
     await startNegentropySessionForPeer(peerKey, source, modeReason);
 }
 
@@ -2166,10 +2184,16 @@ async function startNextNegentropyWindow(peerKey: string, session: PeerSyncSessi
 
     const windowId = makeWindowId(window);
     const snapshot = await ensureWindowAdapterFresh(window, 'session_open_initiator');
+    if (peerSessions.get(peerKey) !== session) {
+        return;
+    }
     initializeSessionWindowState(session, window, windowId, cloneWindowStats(snapshot.stats)!);
     session.currentWindowSnapshot = snapshot;
     session.currentWindowEngine = negentropyAdapter.createEngineForSnapshot(snapshot);
     const firstFrame = await session.currentWindowEngine.initiate();
+    if (peerSessions.get(peerKey) !== session) {
+        return;
+    }
     const msg: NegOpenMessage = {
         ...createBaseMessage('neg_open'),
         sessionId: session.sessionId,
@@ -2447,7 +2471,11 @@ async function sendOpsPushForIds(peerKey: string, session: PeerSyncSession, ids:
     const rows: SyncOperationRecord[] = [];
 
     for (const idBatch of idLookupBatches) {
-        rows.push(...await syncStore.getByIds(idBatch));
+        const batchRows = await syncStore.getByIds(idBatch);
+        if (peerSessions.get(peerKey) !== session) {
+            return;
+        }
+        rows.push(...batchRows);
     }
 
     const operations = orderSyncRecordsForPush(rows).map(row => row.operation);
@@ -2522,6 +2550,11 @@ function getOrderedCursorFromRow(row: SyncOperationRecord): SyncStoreOrderedCurs
     };
 }
 
+function isOrderedCursorAfter(next: SyncStoreOrderedCursor, previous: SyncStoreOrderedCursor): boolean {
+    return next.syncOrder > previous.syncOrder
+        || (next.syncOrder === previous.syncOrder && next.id > previous.id);
+}
+
 function sendOrderedCatchupDone(peerKey: string, sessionId: string): boolean {
     const msg: OrderedCatchupDoneMessage = {
         ...createBaseMessage('ordered_catchup_done'),
@@ -2578,6 +2611,9 @@ async function sendOrderedCatchupPage(peerKey: string, msg: OrderedCatchupReqMes
     setOrderedCatchupServerState(peerKey, msg.sessionId);
 
     const status = await getLocalOrderedCatchupStatus();
+    if (connectionInfo[peerKey] !== conn) {
+        return;
+    }
     if (!status.ready) {
         log.info(
             {
@@ -2596,6 +2632,9 @@ async function sendOrderedCatchupPage(peerKey: string, msg: OrderedCatchupReqMes
         after: cursor,
         limit: NEG_MAX_OPS_PER_PUSH + 1,
     });
+    if (connectionInfo[peerKey] !== conn) {
+        return;
+    }
     const candidateRows = rows.slice(0, NEG_MAX_OPS_PER_PUSH);
     const [opBatch = []] = chunkOperationsForPush(candidateRows.map(row => row.operation), {
         maxOpsPerPush: NEG_MAX_OPS_PER_PUSH,
@@ -2667,6 +2706,7 @@ function queueOrderedCatchupPostImport(peerKey: string, reason: string): void {
     (async () => {
         await waitForImportQueueIdle('ordered_catchup_complete');
         await syncGatekeeperIndexToStore('ordered_catchup_complete');
+        orderedCatchupPostImportPeers.delete(peerKey);
         markNegentropyAdapterDirty();
         await maybeStartPostOrderedCatchupNegentropy(peerKey, reason);
     })()
@@ -2724,9 +2764,20 @@ async function handleOrderedCatchupPush(peerKey: string, msg: OrderedCatchupPush
     }
 
     const cursor = parseOrderedCatchupCursor(msg.cursor);
-    if (cursor === null) {
+    if (cursor === null || cursor === undefined) {
         log.warn({ peer: shortName(peerKey), sessionId: msg.sessionId }, 'ignoring ordered catch-up push with invalid cursor');
         closePeerSession(peerKey, 'invalid_ordered_catchup_cursor');
+        return;
+    }
+
+    if (session.orderedCatchupCursor && !isOrderedCursorAfter(cursor, session.orderedCatchupCursor)) {
+        log.warn({
+            peer: shortName(peerKey),
+            sessionId: msg.sessionId,
+            previousCursor: session.orderedCatchupCursor,
+            cursor,
+        }, 'ignoring ordered catch-up push with non-advancing cursor');
+        closePeerSession(peerKey, 'non_advancing_ordered_catchup_cursor');
         return;
     }
 
@@ -2743,9 +2794,7 @@ async function handleOrderedCatchupPush(peerKey: string, msg: OrderedCatchupPush
         });
     }
 
-    if (cursor) {
-        session.orderedCatchupCursor = cursor;
-    }
+    session.orderedCatchupCursor = cursor;
 
     touchPeerSession(peerKey);
 
@@ -2823,6 +2872,9 @@ async function reconcileNegentropyFrame(
     const result = session.currentWindowEngine
         ? await session.currentWindowEngine.reconcile(frame)
         : await negentropyAdapter.reconcile(frame);
+    if (peerSessions.get(peerKey) !== session) {
+        return null;
+    }
     session.rounds += 1;
     if (session.currentWindowStats) {
         session.currentWindowStats.rounds += 1;
@@ -2894,6 +2946,10 @@ async function trackRequestedKnownOpsPush(session: PeerSyncSession, operations: 
 }
 
 async function maybeFinalizeInitiatorSession(peerKey: string, session: PeerSyncSession): Promise<void> {
+    if (peerSessions.get(peerKey) !== session) {
+        return;
+    }
+
     if (!session.initiator) {
         return;
     }
@@ -2907,7 +2963,7 @@ async function maybeFinalizeInitiatorSession(peerKey: string, session: PeerSyncS
     }
 
     const continued = await maybeContinueCappedWindowPaging(peerKey, session);
-    if (continued) {
+    if (continued || peerSessions.get(peerKey) !== session) {
         return;
     }
 
@@ -2937,10 +2993,16 @@ async function handleNegentropyRoundAsInitiator(
 
     if (newHaveIds.length > 0) {
         await sendOpsPushForIds(peerKey, session, newHaveIds);
+        if (peerSessions.get(peerKey) !== session) {
+            return;
+        }
     }
 
     if (newNeedIds.length > 0) {
         await sendOpsReq(peerKey, session, newNeedIds);
+        if (peerSessions.get(peerKey) !== session) {
+            return;
+        }
     }
 
     log.debug(
@@ -3243,7 +3305,7 @@ async function mergeBatch(batch: Operation[]): Promise<void> {
 }
 
 let importQueue = asyncLib.queue<ImportQueueTask, asyncLib.ErrorCallback>(
-    async function (task, callback) {
+    async function (task) {
         const { name, msg } = task;
         try {
             const ready = await gatekeeper.isReady();
@@ -3293,7 +3355,6 @@ let importQueue = asyncLib.queue<ImportQueueTask, asyncLib.ErrorCallback>(
         catch (error) {
             log.error({ error }, 'mergeBatch error');
         }
-        callback();
     }, 1); // concurrency is 1
 
 let exportQueue = asyncLib.queue<ExportQueueTask, asyncLib.ErrorCallback>(
@@ -3696,6 +3757,9 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
             session.windowIndex = session.windows.length - 1;
         }
         const snapshot = await ensureWindowAdapterFresh(window, 'session_open_responder');
+        if (peerSessions.get(peerKey) !== session) {
+            return;
+        }
         initializeSessionWindowState(session, window, msg.windowId, cloneWindowStats(snapshot.stats)!);
         session.currentWindowSnapshot = snapshot;
         session.currentWindowEngine = negentropyAdapter.createEngineForSnapshot(snapshot);
@@ -3739,7 +3803,9 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
             : [];
         syncStats.negentropyOpsReqReceived += requestedIds.length;
         await sendOpsPushForIds(peerKey, session, requestedIds);
-        touchPeerSession(peerKey);
+        if (peerSessions.get(peerKey) === session) {
+            touchPeerSession(peerKey);
+        }
         return;
     }
 
@@ -3758,26 +3824,32 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
             syncStats.negentropyOpsPushReceived += batch.length;
             trackReceivedWindowOperations(session, batch);
             await trackRequestedKnownOpsPush(session, batch);
-            const pushedIdList = extractOperationHashes(batch);
-            const pushedIds = new Set(pushedIdList);
-            for (const id of pushedIds) {
-                session.pendingNeedIds.delete(id);
+            await importQueue.pushAsync({
+                name: peerKey,
+                msg: {
+                    ...createBaseMessage('batch'),
+                    data: batch,
+                },
+            });
+
+            const receivedPendingIds = Array.from(session.receivedPushIds)
+                .filter(id => session.pendingNeedIds.has(id));
+            if (receivedPendingIds.length > 0) {
+                const persistedRows = await syncStore.getByIds(receivedPendingIds);
+                for (const row of persistedRows) {
+                    session.pendingNeedIds.delete(row.id);
+                }
             }
 
-            if (newBatch(batch)) {
-                importQueue.push({
-                    name: peerKey,
-                    msg: {
-                        ...createBaseMessage('batch'),
-                        data: batch,
-                    },
-                });
+            if (peerSessions.get(peerKey) !== session) {
+                return;
             }
-
             await maybeFinalizeInitiatorSession(peerKey, session);
         }
 
-        touchPeerSession(peerKey);
+        if (peerSessions.get(peerKey) === session) {
+            touchPeerSession(peerKey);
+        }
         return;
     }
 

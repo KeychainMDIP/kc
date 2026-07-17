@@ -30,6 +30,9 @@ const REQUIRED_STABLE_OBSERVATIONS = 3;
 export interface MediatorDriverOptions {
     operationsA: Operation[];
     operationsB: Operation[];
+    orderedCatchupEnabled?: boolean;
+    syncOrderByIdA?: ReadonlyMap<string, number>;
+    syncOrderByIdB?: ReadonlyMap<string, number>;
     publicKeyA?: Buffer;
     publicKeyB?: Buffer;
     maxRecordsPerWindow?: number;
@@ -129,6 +132,7 @@ async function seedNode(
     node: MediatorNode,
     store: InMemoryOperationSyncStore,
     operations: Operation[],
+    syncOrderById?: ReadonlyMap<string, number>,
 ): Promise<void> {
     if (operations.length === 0) {
         return;
@@ -162,7 +166,10 @@ async function seedNode(
     if (mapped.invalid !== 0 || mapped.records.length !== expectedIds.length) {
         throw new Error(`failed to map seeded operations for ${node.name}`);
     }
-    await store.upsertMany(mapped.records);
+    await store.upsertMany(mapped.records.map(record => {
+        const syncOrder = syncOrderById?.get(record.id);
+        return syncOrder === undefined ? record : { ...record, syncOrder };
+    }));
 }
 
 class DeferredCall implements TrackedDeferredCall {
@@ -453,7 +460,7 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
 
     const env = {
         KC_HYPR_NEGENTROPY_ENABLE: 'true',
-        KC_HYPR_ORDERED_CATCHUP_ENABLE: 'false',
+        KC_HYPR_ORDERED_CATCHUP_ENABLE: String(options.orderedCatchupEnabled ?? false),
         KC_HYPR_LEGACY_SYNC_ENABLE: 'false',
         KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW: String(maxRecordsPerWindow),
         KC_HYPR_NEGENTROPY_MAX_ROUNDS_PER_SESSION: String(maxRoundsPerSession),
@@ -470,8 +477,8 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
         storeB = new InMemoryOperationSyncStore();
         await storeA.start();
         await storeB.start();
-        await seedNode(nodeA, storeA, options.operationsA);
-        await seedNode(nodeB, storeB, options.operationsB);
+        await seedNode(nodeA, storeA, options.operationsA, options.syncOrderByIdA);
+        await seedNode(nodeB, storeB, options.operationsB, options.syncOrderByIdB);
 
         const adapterA = await NegentropyAdapter.create({
             syncStore: storeA,
