@@ -504,6 +504,83 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         expect(firstProtocolMessage?.body.type).toBe(expectOrdered ? 'ordered_catchup_req' : 'neg_open');
     });
 
+    it('waits for a lagging higher-key peer to request ordered catch-up', async () => {
+        const operationsA = await createIndependentOperations(5);
+        const operationsB = operationsA.slice(0, 1);
+        const expectedIds = operationIds(operationsA);
+        driver = await createMediatorDriver({
+            operationsA,
+            operationsB,
+            orderedCatchupEnabled: true,
+            syncOrderByIdA: syncOrders(operationsA),
+            syncOrderByIdB: syncOrders(operationsB),
+            maxRecordsPerWindow: 4,
+            connectionMode: 'unknown',
+            publicKeyA: Buffer.alloc(32, 0x11),
+            publicKeyB: Buffer.alloc(32, 0x22),
+        });
+        jest.spyOn(Date, 'now').mockReturnValue(Date.now());
+
+        await driver.startSync();
+        expect(driver.transport.peekNext()).toMatchObject({
+            direction: 'a-to-b',
+            messageTypes: ['ping'],
+        });
+        await driver.transport.deliverNext();
+        expect(driver.transport.peekNext()).toMatchObject({
+            direction: 'b-to-a',
+            messageTypes: ['ping'],
+        });
+        await driver.transport.deliverNext();
+        expect(driver.transport.peekNext()).toMatchObject({
+            direction: 'b-to-a',
+            messageTypes: ['ordered_catchup_req'],
+        });
+
+        const peerKeyB = driver.nodeB.publicKey.toString('hex');
+        await driver.nodeA.run(
+            () => driver!.nodeA.mediator.__test.maybeStartPeerSync(peerKeyB, 'periodic'),
+        );
+        expect(decodeWire(driver.transport).some(message => message.body.type === 'neg_open')).toBe(false);
+
+        await driver.driveUntilQuiescent(expectedIds, { timeoutMs: 15_000 });
+        const handoffMessages = decodeWire(driver.transport);
+        expect(handoffMessages).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                direction: 'b-to-a',
+                body: expect.objectContaining({ type: 'ordered_catchup_req' }),
+            }),
+            expect.objectContaining({
+                direction: 'a-to-b',
+                body: expect.objectContaining({ type: 'ordered_catchup_push' }),
+            }),
+        ]));
+        expect(handoffMessages.some(message => message.body.type === 'neg_open')).toBe(false);
+
+        const finalCatchupSequence = Math.max(...handoffMessages
+            .filter(message => message.body.type === 'ordered_catchup_push')
+            .map(message => message.sequence));
+        await driver.nodeA.run(
+            () => driver!.nodeA.mediator.__test.maybeStartPeerSync(peerKeyB, 'periodic'),
+        );
+        await driver.driveUntilQuiescent(expectedIds, { timeoutMs: 15_000 });
+
+        const messages = decodeWire(driver.transport);
+        const open = messages.find(message => message.body.type === 'neg_open');
+        expect(open).toMatchObject({
+            direction: 'a-to-b',
+            body: {
+                type: 'neg_open',
+                sessionId: expect.any(String),
+                windowId: expect.any(String),
+            },
+        });
+        expect(open!.sequence).toBeGreaterThan(finalCatchupSequence);
+        expect(await gatekeeperIds(driver.nodeA.gatekeeper)).toStrictEqual(expectedIds);
+        expect(await gatekeeperIds(driver.nodeB.gatekeeper)).toStrictEqual(expectedIds);
+        assertCompletedNegentropyExchange(messages);
+    });
+
     it('suppresses Negentropy until ordered imports settle, then converges through the handoff', async () => {
         const operationsA = await createIndependentOperations(6);
         const [uniqueB] = await createIndependentOperations(1);

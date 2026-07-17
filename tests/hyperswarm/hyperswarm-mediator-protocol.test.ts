@@ -843,6 +843,79 @@ describe('hyperswarm mediator protocol characterization', () => {
         )).toEqual(expect.objectContaining({ mode: 'negentropy' }));
     });
 
+    it('starts periodic Negentropy after an expected catch-up request expires', async () => {
+        const operations = await makeOperations(5);
+        const protocolNode = await createNode({
+            keyByte: 0x11,
+            maxRecords: 4,
+            env: {
+                KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true',
+                KC_HYPR_LEGACY_SYNC_ENABLE: 'false',
+            },
+        });
+        await protocolNode.store.upsertMany(operations.map((operation, index) => ({
+            id: operation.signature!.hash,
+            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            syncOrder: index + 1,
+            operation,
+        })));
+        const { peerKey, pair } = attachPeer(protocolNode, {
+            peerKeyByte: 0x22,
+            mode: 'framed',
+            overrides: {
+                capabilities: compatibleCapabilities({
+                    orderedCatchup: true,
+                    orderedCatchupVersion: 1,
+                    orderedCatchupReady: true,
+                    operationCount: 1,
+                    orderedOperationCount: 1,
+                }),
+            },
+        });
+        const now = Date.now();
+        const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(now);
+        let expiredState: Record<string, unknown> | null = null;
+
+        try {
+            await protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey),
+            );
+            await protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey, 'periodic'),
+            );
+            expect(pair.transcript.some(entry => entry.messageType === 'neg_open')).toBe(false);
+
+            const pendingState = protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
+            );
+            const pendingUntil = pendingState?.orderedCatchupServerPendingUntil;
+            expect(pendingState).toMatchObject({
+                orderedCatchupServerPendingReason: 'enabled',
+                orderedCatchupServerPendingGap: 4,
+            });
+            expect(typeof pendingUntil).toBe('number');
+
+            nowSpy.mockReturnValue((pendingUntil as number) + 1);
+            await protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey, 'periodic'),
+            );
+            expiredState = protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
+            );
+        }
+        finally {
+            nowSpy.mockRestore();
+        }
+
+        expect(pair.transcript.filter(entry => entry.messageType === 'neg_open')).toHaveLength(1);
+        expect(expiredState).toMatchObject({
+            orderedCatchupServerPendingUntil: 0,
+            orderedCatchupServerPendingReason: null,
+            orderedCatchupServerPendingGap: 0,
+            activeSession: { mode: 'negentropy' },
+        });
+    });
+
     it('closes a session when a one-record window reaches its round limit', async () => {
         const [localOperation, peerOperation] = await makeOperations(2);
         const protocolNode = await createNode({ maxRecords: 1, maxRounds: 1 });
