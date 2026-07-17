@@ -67,6 +67,7 @@ const config = {
         "/packages/gatekeeper/src/db/postgres\\.ts$",
         "/packages/gatekeeper/src/db/redis\\.ts$",
         "/packages/gatekeeper/src/db/sqlite\\.ts$",
+        "/services/mediators/hyperswarm/src/db/postgres\\.ts$",
         "/services/mediators/hyperswarm/src/negentropy/Negentropy\\.cjs$",
     ]
 };
