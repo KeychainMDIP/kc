@@ -180,7 +180,7 @@ export function installMediatorMocks(): void {
     });
 
     jest.unstable_mockModule('hyperswarm', hyperswarmFactory, { virtual: true });
-    // These dependencies are installed below the mediator, outside the root test resolver.
+    // These dependencies may resolve below the mediator, outside the root test resolver.
     jest.unstable_mockModule(hyperswarmModulePath, hyperswarmFactory);
     jest.unstable_mockModule('@mdip/gatekeeper/client', () => ({
         default: class GatekeeperClientMock {
