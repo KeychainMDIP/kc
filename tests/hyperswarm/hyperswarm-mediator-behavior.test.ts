@@ -47,6 +47,7 @@ interface WireBody {
     type: string;
     sessionId?: string;
     windowId?: string;
+    reason?: string;
     window?: WireWindow;
     windowProgress?: {
         cappedByRecords?: boolean;
@@ -157,15 +158,6 @@ function operationCursor(operation: Operation): Cursor {
         throw new Error(`fixture operation cannot be mapped: ${mapped.error}`);
     }
     return { ts: mapped.value.ts, id: mapped.value.idHex };
-}
-
-function cursorOrderedIds(operations: Operation[]): string[] {
-    const unique = new Map<string, Cursor>();
-    for (const operation of operations) {
-        const cursor = operationCursor(operation);
-        unique.set(cursor.id, cursor);
-    }
-    return Array.from(unique.values()).sort(compareSyncCursor).map(cursor => cursor.id);
 }
 
 function sameCursor(left?: Cursor, right?: Cursor): boolean {
@@ -346,6 +338,16 @@ function assertWindowProtocol(link: RecordingDuplexPair, knowledge: WireKnowledg
         expect(observedLocalOnlyContinuation).toBe(true);
     }
 
+    expect(messages.at(-1)).toMatchObject({
+        direction: initiatorDirection,
+        body: {
+            type: 'neg_close',
+            sessionId: opens[0].body.sessionId,
+            windowId: currentWindowId,
+            reason: 'complete',
+        },
+    });
+
     return messages;
 }
 
@@ -353,6 +355,16 @@ function assertNoOperationTransfer(link: RecordingDuplexPair): void {
     const messages = decodeWire(link);
     expect(messages.filter(message => message.body.type === 'ops_req').flatMap(message => message.body.ids ?? [])).toEqual([]);
     expect(messages.filter(message => message.body.type === 'ops_push').flatMap(message => message.body.data ?? [])).toEqual([]);
+    expect(messages
+        .filter(message => message.body.type === 'batch' || message.body.type === 'queue')
+        .flatMap(message => message.body.data ?? [])).toEqual([]);
+}
+
+function uniqueOperations(operations: Operation[]): Operation[] {
+    return Array.from(new Map(operations.map(operation => [
+        operation.signature!.hash.toLowerCase(),
+        operation,
+    ])).values()).sort((a, b) => a.signature!.hash.localeCompare(b.signature!.hash));
 }
 
 async function assertConverged(
@@ -360,14 +372,25 @@ async function assertConverged(
     operations: Operation[],
 ): Promise<void> {
     const expectedIds = operationIds(operations);
-    const expectedCursorIds = cursorOrderedIds(operations);
-    expect(await gatekeeperIds(currentDriver.nodeA.gatekeeper)).toStrictEqual(expectedIds);
-    expect(await gatekeeperIds(currentDriver.nodeB.gatekeeper)).toStrictEqual(expectedIds);
-    expect((await currentDriver.storeA.iterateSorted({ limit: Number.MAX_SAFE_INTEGER })).map(row => row.id))
-        .toStrictEqual(expectedCursorIds);
-    expect((await currentDriver.storeB.iterateSorted({ limit: Number.MAX_SAFE_INTEGER })).map(row => row.id))
-        .toStrictEqual(expectedCursorIds);
+    const expectedHistory = uniqueOperations(operations);
+    const historyA = uniqueOperations((await currentDriver.nodeA.gatekeeper.exportBatch()).map(event => event.operation));
+    const historyB = uniqueOperations((await currentDriver.nodeB.gatekeeper.exportBatch()).map(event => event.operation));
+    const expectedCursors = expectedHistory.map(operationCursor).sort(compareSyncCursor);
+    const cursorsA = (await currentDriver.storeA.iterateSorted({ limit: Number.MAX_SAFE_INTEGER }))
+        .map(row => ({ ts: row.ts, id: row.id }));
+    const cursorsB = (await currentDriver.storeB.iterateSorted({ limit: Number.MAX_SAFE_INTEGER }))
+        .map(row => ({ ts: row.ts, id: row.id }));
+
+    expect(operationIds(historyA)).toStrictEqual(expectedIds);
+    expect(operationIds(historyB)).toStrictEqual(expectedIds);
+    expect(historyA).toStrictEqual(expectedHistory);
+    expect(historyB).toStrictEqual(expectedHistory);
+    expect(historyA).toStrictEqual(historyB);
+    expect(cursorsA).toStrictEqual(expectedCursors);
+    expect(cursorsB).toStrictEqual(expectedCursors);
+    expect(cursorsA).toStrictEqual(cursorsB);
     expect(currentDriver.transport.pendingCount).toBe(0);
+    expect(currentDriver.transport.pendingInboundCount).toBe(0);
 }
 
 async function createIndependentOperations(timestamps: number[]): Promise<Operation[]> {
@@ -540,11 +563,12 @@ describe('hyperswarm mediator behavior', () => {
         expect(opens).toHaveLength(1);
         expect(opens[0].direction).toBe(expectedOpenDirection);
 
-        expect(await gatekeeperIds(driver.nodeA.gatekeeper)).toStrictEqual(expectedIds);
-        expect(await gatekeeperIds(driver.nodeB.gatekeeper)).toStrictEqual(expectedIds);
-        expect((await driver.storeA.iterateSorted({ limit: 100 })).map(row => row.id).sort()).toStrictEqual(expectedIds);
-        expect((await driver.storeB.iterateSorted({ limit: 100 })).map(row => row.id).sort()).toStrictEqual(expectedIds);
-        expect(driver.transport.pendingCount).toBe(0);
+        assertWindowProtocol(driver.transport, {
+            operationsA,
+            operationsB,
+            expectedOperations: [...operationsA, ...operationsB],
+        });
+        await assertConverged(driver, [...operationsA, ...operationsB]);
 
         const peerKeyA = driver.nodeA.publicKey.toString('hex');
         const peerKeyB = driver.nodeB.publicKey.toString('hex');
@@ -713,6 +737,7 @@ describe('hyperswarm mediator behavior', () => {
             expectedOperations: union,
         });
         assertNoOperationTransfer(driver.transport);
+        await assertConverged(driver, union);
     });
 
     it.each([
@@ -771,6 +796,7 @@ describe('hyperswarm mediator behavior', () => {
             expectedOperations: operations,
         });
         assertNoOperationTransfer(driver.transport);
+        await assertConverged(driver, operations);
     });
 
     it.each([
@@ -832,6 +858,7 @@ describe('hyperswarm mediator behavior', () => {
             expectedOperations: operations,
         });
         assertNoOperationTransfer(driver.transport);
+        await assertConverged(driver, operations);
     });
 
     it('closes mediator state and drains writes created while blocked inbound work settles', async () => {

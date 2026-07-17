@@ -33,6 +33,7 @@ interface WireMessage {
         sessionId?: string;
         windowId?: string;
         round?: number;
+        ids?: string[];
         data?: Operation[];
     };
 }
@@ -61,6 +62,31 @@ function decodeWire(link: RecordingDuplexPair): WireMessage[] {
             body: JSON.parse(message.toString('utf8')) as WireMessage['body'],
         }));
     });
+}
+
+function assertCompletedNegentropyExchange(messages: WireMessage[]): void {
+    const finalOpen = messages.filter(message => message.body.type === 'neg_open').at(-1);
+    if (!finalOpen) {
+        throw new Error('completed Negentropy exchange has no neg_open');
+    }
+    expect(finalOpen.body).toMatchObject({
+        sessionId: expect.any(String),
+        windowId: expect.any(String),
+    });
+    const finalMessage = messages.filter(message => (
+        ['neg_open', 'neg_msg', 'ops_req', 'ops_push', 'neg_close'].includes(message.body.type)
+    )).at(-1);
+
+    expect(finalMessage).toMatchObject({
+        direction: finalOpen.direction,
+        body: {
+            type: 'neg_close',
+            reason: 'complete',
+            sessionId: finalOpen.body.sessionId,
+            windowId: finalOpen.body.windowId,
+        },
+    });
+    expect(finalMessage!.sequence).toBeGreaterThan(finalOpen.sequence);
 }
 
 async function gatekeeperIds(gatekeeper: Gatekeeper): Promise<string[]> {
@@ -497,6 +523,23 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         });
         await driver.storeB.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotComplete, 'true');
         await driver.storeB.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor, '0');
+        const assertSourceOrderMirrored = async (): Promise<void> => {
+            const sourceIds = new Set(operationIds(operationsA));
+            const sourceCursors = (await driver!.storeA.iterateOrdered({ limit: Number.MAX_SAFE_INTEGER }))
+                .map(row => ({ syncOrder: row.syncOrder!, id: row.id }));
+            const targetRows = await driver!.storeB.iterateOrdered({ limit: Number.MAX_SAFE_INTEGER });
+            const targetCursors = targetRows
+                .filter(row => sourceIds.has(row.id))
+                .map(row => ({ syncOrder: row.syncOrder!, id: row.id }));
+
+            expect(targetRows.map(row => row.id).sort()).toStrictEqual(expectedIds);
+            expect(targetCursors.map(cursor => cursor.id))
+                .toStrictEqual(sourceCursors.map(cursor => cursor.id));
+            expect(targetCursors.every((cursor, index) => (
+                index === 0 || cursor.syncOrder > targetCursors[index - 1].syncOrder
+            ))).toBe(true);
+            expect(targetCursors.at(-1)?.id).toBe(sourceCursors.at(-1)?.id);
+        };
         const deferred = driver.deferNextClientCall({
             node: 'b',
             client: 'gatekeeper',
@@ -561,10 +604,7 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
 
             releaseApply();
             await applyFinished;
-            const orderedIds = (await driver.storeB.iterateOrdered({ limit: Number.MAX_SAFE_INTEGER }))
-                .map(row => row.id)
-                .sort();
-            expect(orderedIds).toStrictEqual(expectedIds);
+            await assertSourceOrderMirrored();
             expect(await driver.storeB.countOrdered()).toBe(expectedIds.length);
 
             await driver.driveUntilQuiescent(expectedIds, { timeoutMs: 15_000 });
@@ -591,6 +631,27 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
             expect(await driver.storeB.count()).toBe(expectedIds.length);
             expect(driver.nodeB.gatekeeperClient.exportIndex).toHaveBeenCalled();
             expect(driver.storeB.applySyncPage).toHaveBeenCalled();
+
+            assertCompletedNegentropyExchange(messages);
+
+            await driver.reconnect();
+            await driver.startSync();
+            await driver.driveUntilQuiescent(expectedIds, { timeoutMs: 15_000 });
+            const secondMessages = decodeWire(driver.transport);
+            assertCompletedNegentropyExchange(secondMessages);
+            expect(secondMessages
+                .filter(message => message.body.type === 'ops_req')
+                .flatMap(message => message.body.ids ?? [])).toStrictEqual([]);
+            expect(secondMessages
+                .filter(message => ['ops_push', 'ordered_catchup_push', 'batch', 'queue'].includes(message.body.type))
+                .flatMap(message => message.body.data ?? [])).toStrictEqual([]);
+
+            const canonicalA = (await driver.storeA.iterateSorted({ limit: Number.MAX_SAFE_INTEGER }))
+                .map(row => ({ ts: row.ts, id: row.id }));
+            const canonicalB = (await driver.storeB.iterateSorted({ limit: Number.MAX_SAFE_INTEGER }))
+                .map(row => ({ ts: row.ts, id: row.id }));
+            expect(canonicalA).toStrictEqual(canonicalB);
+            await assertSourceOrderMirrored();
         }
         finally {
             deferred.resolve();

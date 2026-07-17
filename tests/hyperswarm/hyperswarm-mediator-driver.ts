@@ -93,11 +93,15 @@ interface OrderedCursorSummary {
 interface HistorySummary {
     count: number;
     digest: string;
+    contentDigest: string;
+    ids: string[];
     sample: string[];
 }
 
 interface StoreSummary extends HistorySummary {
     orderedCount: number;
+    cursors: HistoryCursorSummary[];
+    orderedCursors: OrderedCursorSummary[];
     firstCursor: HistoryCursorSummary | null;
     lastCursor: HistoryCursorSummary | null;
     lastOrderedCursor: OrderedCursorSummary | null;
@@ -122,6 +126,13 @@ function operationIds(operations: Operation[]): string[] {
 
 function digestIds(ids: string[]): string {
     return createHash('sha256').update(ids.join('\n')).digest('hex');
+}
+
+function digestOperations(operations: Operation[]): string {
+    const sorted = [...operations].sort((a, b) => (
+        (a.signature?.hash ?? '').localeCompare(b.signature?.hash ?? '')
+    ));
+    return createHash('sha256').update(JSON.stringify(sorted)).digest('hex');
 }
 
 function sampleIds(ids: string[]): string[] {
@@ -389,8 +400,14 @@ function trackNodeWork(
                 readCount(),
                 readOrderedCount(),
             ]);
-            const gatekeeperIds = operationIds(events.map(event => event.operation));
+            const gatekeeperOperations = events.map(event => event.operation);
+            const gatekeeperIds = operationIds(gatekeeperOperations);
             const storeIds = normalizeIds(rows.map(row => row.id));
+            const cursors = rows.map(row => ({ ts: row.ts, id: row.id }));
+            const orderedCursors = orderedRows.map(row => ({
+                syncOrder: row.syncOrder!,
+                id: row.id,
+            }));
             const first = rows[0];
             const last = rows.at(-1);
             const lastOrdered = orderedRows.at(-1);
@@ -399,13 +416,19 @@ function trackNodeWork(
                 gatekeeper: {
                     count: events.length,
                     digest: digestIds(gatekeeperIds),
+                    contentDigest: digestOperations(gatekeeperOperations),
+                    ids: gatekeeperIds,
                     sample: sampleIds(gatekeeperIds),
                 },
                 store: {
                     count: countValue,
                     orderedCount: orderedCountValue,
                     digest: digestIds(storeIds),
+                    contentDigest: digestOperations(rows.map(row => row.operation)),
+                    ids: rows.map(row => row.id),
                     sample: sampleIds(storeIds),
+                    cursors,
+                    orderedCursors,
                     firstCursor: first ? { ts: first.ts, id: first.id } : null,
                     lastCursor: last ? { ts: last.ts, id: last.id } : null,
                     lastOrderedCursor: lastOrdered?.syncOrder !== undefined
@@ -649,6 +672,7 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
                     a: digestIds(expectedByNode.a),
                     b: digestIds(expectedByNode.b),
                 };
+                const expectEqualNodes = JSON.stringify(expectedByNode.a) === JSON.stringify(expectedByNode.b);
                 const maxIterations = quiescenceOptions.maxIterations ?? DEFAULT_MAX_ITERATIONS;
                 const timeoutMs = quiescenceOptions.timeoutMs ?? DEFAULT_TIMEOUT_MS;
                 if (!Number.isInteger(maxIterations) || maxIterations <= 0) {
@@ -714,9 +738,17 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
                             const nodeExpected = expected as string[];
                             return nodeSummary.gatekeeper.count === nodeExpected.length
                                 && nodeSummary.gatekeeper.digest === digest
+                                && JSON.stringify(nodeSummary.gatekeeper.ids) === JSON.stringify(nodeExpected)
                                 && nodeSummary.store.count === nodeExpected.length
-                                && nodeSummary.store.digest === digest;
+                                && nodeSummary.store.digest === digest
+                                && JSON.stringify(normalizeIds(nodeSummary.store.ids)) === JSON.stringify(nodeExpected);
                         });
+                        // syncOrder is source-local; canonical cursors and operation content are shared invariants.
+                        const matchingNodeState = !expectEqualNodes || (
+                            summaryA.gatekeeper.contentDigest === summaryB.gatekeeper.contentDigest
+                            && JSON.stringify(summaryA.store.cursors) === JSON.stringify(summaryB.store.cursors)
+                            && summaryA.store.contentDigest === summaryB.store.contentDigest
+                        );
                         const ready = linkState.pendingAToB === 0
                             && linkState.pendingBToA === 0
                             && linkState.pendingInboundAtA === 0
@@ -725,7 +757,8 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
                             && !hasActiveSession(stateB)
                             && tracker.activeCount === 0
                             && unsettledDeferrals.length === 0
-                            && matchesExpected;
+                            && matchesExpected
+                            && matchingNodeState;
                         const signature = JSON.stringify({
                             latestFramedWriteSequence,
                             framedWrites: framedMessages.length,
