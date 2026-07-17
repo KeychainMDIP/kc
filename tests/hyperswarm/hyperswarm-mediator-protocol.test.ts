@@ -281,6 +281,36 @@ describe('hyperswarm mediator protocol characterization', () => {
         return replacement;
     }
 
+    async function expectFailedNegentropySessionCanRetry(
+        protocolNode: ProtocolNode,
+        peerKey: string,
+        pair: RecordingDuplexPair,
+        failedSessionId: unknown,
+    ): Promise<void> {
+        const opensBefore = decodeWrites(pair).filter(message => message.type === 'neg_open');
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+        )).toBeNull();
+
+        const now = Date.now();
+        const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(now + 301_000);
+        try {
+            await protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey, 'periodic'),
+            );
+        }
+        finally {
+            nowSpy.mockRestore();
+        }
+
+        const opensAfter = decodeWrites(pair).filter(message => message.type === 'neg_open');
+        expect(opensAfter).toHaveLength(opensBefore.length + 1);
+        expect(opensAfter.at(-1)?.sessionId).not.toBe(failedSessionId);
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+        )).toEqual({ mode: 'negentropy', sessionId: opensAfter.at(-1)?.sessionId });
+    }
+
     afterEach(async () => {
         for (const pair of pairs.splice(0).reverse()) {
             await pair.destroy();
@@ -981,6 +1011,118 @@ describe('hyperswarm mediator protocol characterization', () => {
         )).toBeNull();
     });
 
+    it.each(['ops_req', 'neg_close'] as const)(
+        'closes an incomplete session when sending %s fails and permits repair',
+        async failedType => {
+            const [operation] = await makeOperations(1);
+            const protocolNode = await createNode();
+            const peerNode = await createNode({ keyByte: 0x33 });
+            if (failedType === 'neg_close') {
+                await protocolNode.store.upsertMany([{
+                    id: operation.signature!.hash,
+                    ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+                    operation,
+                }]);
+            }
+            await peerNode.store.upsertMany([{
+                id: operation.signature!.hash,
+                ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+                operation,
+            }]);
+            const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+            await protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey),
+            );
+            const open = decodeWrites(pair).find(message => message.type === 'neg_open');
+            if (!open) {
+                throw new Error('expected local neg_open');
+            }
+            const peerSnapshot = await peerNode.adapter.buildSnapshotForWindow(open.window as any);
+            const peerEngine = peerNode.adapter.createEngineForSnapshot(peerSnapshot);
+            const peerOutcome = await peerEngine.reconcile(decodeNegentropyFrame(open.frame as any));
+            if (peerOutcome.nextMsg === null) {
+                throw new Error(`expected peer response before ${failedType}`);
+            }
+            const write = jest.spyOn(pair.connectionA, 'write').mockImplementationOnce(() => {
+                throw new Error(`${failedType} write failed`);
+            });
+
+            await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
+                peerKey,
+                encodeFramedMessage(JSON.stringify({
+                    type: 'neg_msg',
+                    sessionId: open.sessionId,
+                    windowId: open.windowId,
+                    frame: encodeNegentropyFrame(peerOutcome.nextMsg!),
+                })),
+            ));
+
+            const attemptedChunk = write.mock.calls[0]?.[0] as Uint8Array;
+            expect(JSON.parse(
+                decodeUnknownTransportMessages(Buffer.from(attemptedChunk)).messages[0].toString('utf8'),
+            )).toMatchObject({ type: failedType, sessionId: open.sessionId });
+            await expectFailedNegentropySessionCanRetry(protocolNode, peerKey, pair, open.sessionId);
+        },
+    );
+
+    it('closes an incomplete session when sending neg_msg fails and permits repair', async () => {
+        const [operation] = await makeOperations(1);
+        const open = await createRemoteOpen([operation]);
+        const protocolNode = await createNode();
+        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const write = jest.spyOn(pair.connectionA, 'write').mockImplementationOnce(() => {
+            throw new Error('neg_msg write failed');
+        });
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
+            peerKey,
+            encodeFramedMessage(JSON.stringify(open)),
+        ));
+
+        const attemptedChunk = write.mock.calls[0]?.[0] as Uint8Array;
+        expect(JSON.parse(
+            decodeUnknownTransportMessages(Buffer.from(attemptedChunk)).messages[0].toString('utf8'),
+        )).toMatchObject({ type: 'neg_msg', sessionId: open.sessionId });
+        await expectFailedNegentropySessionCanRetry(protocolNode, peerKey, pair, open.sessionId);
+    });
+
+    it('closes an incomplete session when sending ops_push fails and permits repair', async () => {
+        const [operation] = await makeOperations(1);
+        const protocolNode = await createNode();
+        await protocolNode.store.upsertMany([{
+            id: operation.signature!.hash,
+            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            operation,
+        }]);
+        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        await protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey),
+        );
+        const open = decodeWrites(pair).find(message => message.type === 'neg_open');
+        if (!open) {
+            throw new Error('expected local neg_open');
+        }
+        const write = jest.spyOn(pair.connectionA, 'write').mockImplementationOnce(() => {
+            throw new Error('ops_push write failed');
+        });
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
+            peerKey,
+            encodeFramedMessage(JSON.stringify({
+                type: 'ops_req',
+                sessionId: open.sessionId,
+                windowId: open.windowId,
+                ids: [operation.signature!.hash],
+            })),
+        ));
+
+        const attemptedChunk = write.mock.calls[0]?.[0] as Uint8Array;
+        expect(JSON.parse(
+            decodeUnknownTransportMessages(Buffer.from(attemptedChunk)).messages[0].toString('utf8'),
+        )).toMatchObject({ type: 'ops_push', sessionId: open.sessionId });
+        await expectFailedNegentropySessionCanRetry(protocolNode, peerKey, pair, open.sessionId);
+    });
+
     it('starts eligible periodic repair without requiring a timer loop', async () => {
         const protocolNode = await createNode();
         const { peerKey, pair } = attachPeer(protocolNode, {
@@ -1272,8 +1414,11 @@ describe('hyperswarm mediator protocol characterization', () => {
         );
         expect(initialWrite).toHaveBeenCalledTimes(1);
         expect(initialNode.node.run(
-            () => initialNode.node.mediator.__test.getConnectionState(initialPeer.peerKey)?.activeSession,
-        )).toBeNull();
+            () => initialNode.node.mediator.__test.getConnectionState(initialPeer.peerKey),
+        )).toMatchObject({
+            activeSession: null,
+            orderedCatchupClientSessionId: null,
+        });
 
         const continuationNode = await createNode({
             keyByte: 0x33,
@@ -1308,51 +1453,69 @@ describe('hyperswarm mediator protocol characterization', () => {
         ));
         expect(continuationWrite).toHaveBeenCalledTimes(1);
         expect(continuationNode.node.run(
-            () => continuationNode.node.mediator.__test.getConnectionState(continuationPeer.peerKey)?.activeSession,
-        )).toBeNull();
-    });
-
-    it('clears ordered catch-up server state when a push send fails', async () => {
-        const [operation] = await makeOperations(1);
-        const protocolNode = await createNode({
-            env: { KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true' },
-        });
-        await protocolNode.store.upsertMany([{
-            id: operation.signature!.hash,
-            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
-            syncOrder: 1,
-            operation,
-        }]);
-        const { peerKey, pair } = attachPeer(protocolNode, {
-            mode: 'framed',
-            overrides: {
-                capabilities: compatibleCapabilities({
-                    orderedCatchup: true,
-                    orderedCatchupVersion: 1,
-                    orderedCatchupReady: true,
-                }),
-            },
-        });
-        const write = jest.spyOn(pair.connectionA, 'write').mockImplementation(() => {
-            throw new Error('push write failed');
-        });
-
-        await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
-            peerKey,
-            encodeFramedMessage(JSON.stringify({
-                type: 'ordered_catchup_req',
-                sessionId: 'push-failure-session',
-            })),
-        ));
-
-        expect(write).toHaveBeenCalledTimes(1);
-        expect(protocolNode.node.run(
-            () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
+            () => continuationNode.node.mediator.__test.getConnectionState(continuationPeer.peerKey),
         )).toMatchObject({
-            orderedCatchupServerSessionId: null,
-            orderedCatchupServerLastActivity: 0,
+            activeSession: null,
+            orderedCatchupClientSessionId: null,
         });
+        await nextTurn();
+        expect(initialNode.node.gatekeeperClient.exportIndex).not.toHaveBeenCalled();
+        expect(continuationNode.node.gatekeeperClient.exportIndex).not.toHaveBeenCalled();
     });
+
+    it.each(['ordered_catchup_push', 'ordered_catchup_done'] as const)(
+        'clears ordered catch-up server state when sending %s fails',
+        async failedType => {
+            const operations = failedType === 'ordered_catchup_push' ? await makeOperations(1) : [];
+            const protocolNode = await createNode({
+                env: { KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true' },
+            });
+            if (operations.length > 0) {
+                await protocolNode.store.upsertMany([{
+                    id: operations[0].signature!.hash,
+                    ts: Math.floor(Date.parse(operations[0].signature!.signed) / 1000),
+                    syncOrder: 1,
+                    operation: operations[0],
+                }]);
+            }
+            const { peerKey, pair } = attachPeer(protocolNode, {
+                mode: 'framed',
+                overrides: {
+                    capabilities: compatibleCapabilities({
+                        orderedCatchup: true,
+                        orderedCatchupVersion: 1,
+                        orderedCatchupReady: true,
+                    }),
+                },
+            });
+            const write = jest.spyOn(pair.connectionA, 'write').mockImplementation(() => {
+                throw new Error(`${failedType} write failed`);
+            });
+
+            await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
+                peerKey,
+                encodeFramedMessage(JSON.stringify({
+                    type: 'ordered_catchup_req',
+                    sessionId: 'send-failure-session',
+                })),
+            ));
+
+            expect(write).toHaveBeenCalledTimes(1);
+            const attemptedChunk = write.mock.calls[0]?.[0] as Uint8Array;
+            expect(JSON.parse(
+                decodeUnknownTransportMessages(Buffer.from(attemptedChunk)).messages[0].toString('utf8'),
+            )).toMatchObject({ type: failedType, sessionId: 'send-failure-session' });
+            expect(protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
+            )).toMatchObject({
+                activeSession: null,
+                orderedCatchupServerSessionId: null,
+                orderedCatchupServerLastActivity: 0,
+            });
+            await nextTurn();
+            expect(protocolNode.node.gatekeeperClient.exportIndex).not.toHaveBeenCalled();
+        },
+    );
 
     it('coalesces duplicate ordered catch-up post-import continuations', async () => {
         const protocolNode = await createNode({
