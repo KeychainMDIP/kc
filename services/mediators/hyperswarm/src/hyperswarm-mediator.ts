@@ -2950,6 +2950,7 @@ async function trackRequestedKnownOpsPush(session: PeerSyncSession, operations: 
 
     for (const row of rows) {
         session.receivedKnownPushIds.add(row.id);
+        session.pendingNeedIds.delete(row.id);
     }
 }
 
@@ -3240,15 +3241,15 @@ async function importBatch(batch: Operation[]): Promise<Operation[]> {
     }
 }
 
-async function persistAcceptedOperations(operations: Operation[], source: string): Promise<void> {
+async function persistAcceptedOperations(operations: Operation[], source: string): Promise<string[]> {
     if (!Array.isArray(operations) || operations.length === 0) {
-        return;
+        return [];
     }
 
     const { records, invalid } = mapAcceptedOperationsToSyncRecords(operations);
     if (records.length === 0) {
         log.debug({ source, attempted: operations.length, invalid }, 'sync-store persist skipped');
-        return;
+        return [];
     }
 
     const result = await syncStore.upsertMany(records);
@@ -3267,12 +3268,13 @@ async function persistAcceptedOperations(operations: Operation[], source: string
         },
         'sync-store persist accepted ops'
     );
+    return records.map(record => record.id);
 }
 
-async function mergeBatch(batch: Operation[]): Promise<void> {
+async function mergeBatch(batch: Operation[]): Promise<string[]> {
 
     if (!batch) {
-        return;
+        return [];
     }
 
     let chunk = [];
@@ -3309,11 +3311,11 @@ async function mergeBatch(batch: Operation[]): Promise<void> {
         response.acceptedHashes,
         response.acceptedEvents,
     );
-    await persistAcceptedOperations(acceptedToPersist, 'mergeBatch');
+    return persistAcceptedOperations(acceptedToPersist, 'mergeBatch');
 }
 
 let importQueue = asyncLib.queue<ImportQueueTask, asyncLib.ErrorCallback>(
-    async function (task) {
+    async function (task): Promise<string[]> {
         const { name, msg } = task;
         try {
             const ready = await gatekeeper.isReady();
@@ -3322,7 +3324,7 @@ let importQueue = asyncLib.queue<ImportQueueTask, asyncLib.ErrorCallback>(
                 const batch = msg.data || [];
 
                 if (batch.length === 0) {
-                    return;
+                    return [];
                 }
 
                 if (msg.type === 'queue') {
@@ -3350,18 +3352,21 @@ let importQueue = asyncLib.queue<ImportQueueTask, asyncLib.ErrorCallback>(
                 }
 
                 if (filtered.operations.length === 0) {
-                    return;
+                    return [];
                 }
 
                 const nodeName = msg.node || 'anon';
                 log.debug(
                     `* merging batch (${filtered.operations.length}/${batch.length} events) from: ${shortName(name)} (${nodeName}) *`
                 );
-                await mergeBatch(filtered.operations);
+                const persistedIds = await mergeBatch(filtered.operations);
+                return persistedIds;
             }
+            return [];
         }
         catch (error) {
             log.error({ error }, 'mergeBatch error');
+            return [];
         }
     }, 1); // concurrency is 1
 
@@ -3832,7 +3837,7 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
             syncStats.negentropyOpsPushReceived += batch.length;
             trackReceivedWindowOperations(session, batch);
             await trackRequestedKnownOpsPush(session, batch);
-            await importQueue.pushAsync({
+            const persistedIds = await importQueue.pushAsync<string[]>({
                 name: peerKey,
                 msg: {
                     ...createBaseMessage('batch'),
@@ -3840,17 +3845,11 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
                 },
             });
 
-            const receivedPendingIds = Array.from(session.receivedPushIds)
-                .filter(id => session.pendingNeedIds.has(id));
-            for (const idBatch of chunkIds(receivedPendingIds, NEG_MAX_IDS_PER_LOOKUP)) {
-                const persistedRows = await syncStore.getByIds(idBatch);
-                for (const row of persistedRows) {
-                    session.pendingNeedIds.delete(row.id);
-                }
-            }
-
             if (peerSessions.get(peerKey) !== session) {
                 return;
+            }
+            for (const id of persistedIds) {
+                session.pendingNeedIds.delete(id);
             }
             await maybeFinalizeInitiatorSession(peerKey, session);
         }

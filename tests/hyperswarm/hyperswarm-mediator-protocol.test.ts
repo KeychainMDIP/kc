@@ -1064,7 +1064,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(replacementMessages.some(message => message.type === 'ops_push')).toBe(false);
     });
 
-    it('chunks persistence confirmation lookups for accumulated rejected pushes', async () => {
+    it('keeps rejected push lookups linear', async () => {
         const requestedIds = Array.from(
             { length: 1_001 },
             (_, index) => index.toString(16).padStart(64, '0'),
@@ -1098,9 +1098,6 @@ describe('hyperswarm mediator protocol characterization', () => {
         const lookupSizes: number[] = [];
         jest.spyOn(protocolNode.store, 'getByIds').mockImplementation(async ids => {
             lookupSizes.push(ids.length);
-            if (ids.length > 1_000) {
-                throw new Error(`lookup exceeded limit: ${ids.length}`);
-            }
             return getByIds(ids);
         });
 
@@ -1127,7 +1124,9 @@ describe('hyperswarm mediator protocol characterization', () => {
             }));
         }
 
-        expect(lookupSizes.slice(-2)).toStrictEqual([1_000, 1]);
+        expect(lookupSizes).toHaveLength(16);
+        expect(Math.max(...lookupSizes)).toBe(256);
+        expect(lookupSizes.reduce((total, size) => total + size, 0)).toBe(requestedIds.length * 2);
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
         )).toEqual({ mode: 'negentropy', sessionId: open.sessionId });
