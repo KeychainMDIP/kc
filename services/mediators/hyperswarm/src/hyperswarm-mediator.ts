@@ -2937,11 +2937,12 @@ function filterUnprovenPushOperations(session: PeerSyncSession, operations: Oper
     });
 }
 
-function trackProvenStoredOpsPush(session: PeerSyncSession, operations: Operation[]): void {
+function trackProvenStoredOpsPush(session: PeerSyncSession, operations: Operation[]): boolean {
     if (!session.initiator || session.pendingNeedIds.size === 0) {
-        return;
+        return false;
     }
 
+    let progressed = false;
     for (const operation of operations) {
         const mapped = mapOperationToSyncKey(operation);
         if (!mapped.ok
@@ -2950,7 +2951,9 @@ function trackProvenStoredOpsPush(session: PeerSyncSession, operations: Operatio
             continue;
         }
         session.receivedKnownPushIds.add(mapped.value.idHex);
+        progressed = true;
     }
+    return progressed;
 }
 
 async function trackRequestedKnownOpsPush(session: PeerSyncSession, operations: Operation[]): Promise<void> {
@@ -3925,9 +3928,12 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
         if (batch.length > 0) {
             syncStats.negentropyOpsPushReceived += batch.length;
             trackReceivedWindowOperations(session, batch);
-            trackProvenStoredOpsPush(session, batch);
+            const cachedProgress = trackProvenStoredOpsPush(session, batch);
             const unprovenBatch = filterUnprovenPushOperations(session, batch);
             if (unprovenBatch.length === 0) {
+                if (cachedProgress && peerSessions.get(peerKey) === session) {
+                    touchPeerSession(peerKey);
+                }
                 await maybeFinalizeInitiatorSession(peerKey, session);
                 return;
             }

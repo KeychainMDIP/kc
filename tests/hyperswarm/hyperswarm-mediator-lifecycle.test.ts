@@ -5,6 +5,8 @@ import type { Operation } from '@mdip/gatekeeper/types';
 import { jest } from '@jest/globals';
 
 import InMemoryOperationSyncStore from '../../services/mediators/hyperswarm/src/db/memory.ts';
+import NegentropyAdapter from '../../services/mediators/hyperswarm/src/negentropy/adapter.ts';
+import { encodeNegentropyFrame } from '../../services/mediators/hyperswarm/src/negentropy/protocol.ts';
 import {
     decodeUnknownTransportMessages,
     encodeFramedMessage,
@@ -407,6 +409,114 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         expect(repairedSessionId).not.toBe(initialOpen.sessionId);
         expect(negOpenEntries()).toHaveLength(initialNegOpenCount + 1);
         expect(negOpenEntries().at(-1)).toMatchObject({ transportMode: 'framed' });
+    });
+
+    it('refreshes idle activity for cached progress but not exact duplicates', async () => {
+        const [operation] = await makeOperations(1);
+        const operationId = operation.signature!.hash;
+        const running = await createRunningNode({
+            env: {
+                KC_HYPR_EXPORT_INTERVAL: '3600',
+                KC_HYPR_LEGACY_SYNC_ENABLE: 'false',
+            },
+        });
+        const adapter = await NegentropyAdapter.create({
+            syncStore: running.store,
+            maxRecordsPerWindow: 16,
+            maxRoundsPerSession: 8,
+            deferInitialBuild: true,
+        });
+        running.node.run(() => {
+            getMediatorNodeContext().negentropyAdapter = adapter;
+            running.node.mediator.__test.setNegentropyAdapter(adapter);
+        });
+        const createEngine = adapter.createEngineForSnapshot.bind(adapter);
+        jest.spyOn(adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
+            const engine = createEngine(snapshot);
+            jest.spyOn(engine, 'reconcile')
+                .mockResolvedValueOnce({
+                    nextMsg: 'first-response',
+                    haveIds: [],
+                    needIds: [operationId],
+                })
+                .mockResolvedValueOnce({
+                    nextMsg: 'second-response',
+                    haveIds: [],
+                    needIds: [operationId],
+                });
+            return engine;
+        });
+
+        const peer = await attachConnection(running, 0x22);
+        peer.pair.connectionB.write(encodeFramedMessage(JSON.stringify(peerPing())));
+        await peer.pair.pumpUntilIdle();
+        await eventually(() => peer.pair.transcript.some(entry => entry.messageType === 'neg_open'));
+        const openEntry = peer.pair.transcript.find(entry => entry.messageType === 'neg_open')!;
+        const [openPayload] = decodeUnknownTransportMessages(openEntry.raw).messages;
+        const open = JSON.parse(openPayload.toString('utf8')) as {
+            sessionId: string;
+            windowId: string;
+        };
+        const messages = () => peer.pair.transcript.flatMap(entry => (
+            decodeUnknownTransportMessages(entry.raw).messages.map(message => (
+                JSON.parse(message.toString('utf8')) as { type?: string }
+            ))
+        ));
+        const sendFramed = async (message: Record<string, unknown>): Promise<void> => {
+            peer.pair.connectionB.write(encodeFramedMessage(JSON.stringify(message)));
+            await peer.pair.pumpUntilIdle();
+            await settle();
+        };
+
+        await sendFramed({
+            type: 'neg_msg',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            frame: encodeNegentropyFrame('first-round'),
+        });
+        await eventually(() => messages().filter(message => message.type === 'ops_req').length === 1);
+        await sendFramed({
+            type: 'ops_push',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            data: [operation],
+        });
+        await eventually(() => running.store.has(operationId));
+        await sendFramed({
+            type: 'neg_msg',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            frame: encodeNegentropyFrame('second-round'),
+        });
+        await eventually(() => messages().filter(message => message.type === 'ops_req').length === 2);
+
+        await running.node.run(() => jest.advanceTimersByTimeAsync(119_000));
+        await sendFramed({
+            type: 'ops_push',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            data: [operation],
+        });
+        await running.node.run(() => jest.advanceTimersByTimeAsync(2_000));
+        expect(running.node.run(
+            () => running.node.mediator.__test.getConnectionState(peer.peerKey)?.activeSession,
+        )).toEqual({ mode: 'negentropy', sessionId: open.sessionId });
+
+        await sendFramed({
+            type: 'ops_push',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            data: [operation],
+        });
+        await running.node.run(() => jest.advanceTimersByTimeAsync(60_000));
+        expect(running.node.run(
+            () => running.node.mediator.__test.getConnectionState(peer.peerKey)?.activeSession,
+        )).toEqual({ mode: 'negentropy', sessionId: open.sessionId });
+
+        await running.node.run(() => jest.advanceTimersByTimeAsync(60_000));
+        await eventually(() => running.node.run(
+            () => running.node.mediator.__test.getConnectionState(peer.peerKey)?.activeSession === null,
+        ));
     });
 
     it('expires an idle ordered catch-up server session without closing its connection', async () => {
