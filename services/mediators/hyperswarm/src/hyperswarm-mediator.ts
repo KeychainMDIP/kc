@@ -3275,21 +3275,37 @@ async function importBatch(batch: Operation[]): Promise<Operation[]> {
     }
 }
 
-async function persistAcceptedOperations(operations: Operation[], source: string): Promise<string[]> {
+async function persistAcceptedOperations(
+    operations: Operation[],
+    source: string,
+    retryIds: Iterable<string> = [],
+): Promise<string[]> {
     const { records, invalid } = mapAcceptedOperationsToSyncRecords(operations);
+    const recordsToPersist = new Map<string, SyncOperationWriteRecord>();
     for (const record of records) {
         pendingAcceptedSyncRecords.set(record.id, record);
+        recordsToPersist.set(record.id, record);
     }
 
-    const pendingRecords = Array.from(pendingAcceptedSyncRecords.values());
-    if (pendingRecords.length === 0) {
+    let retryCandidates = 0;
+    for (const id of new Set(retryIds)) {
+        const pending = pendingAcceptedSyncRecords.get(id);
+        if (!pending || recordsToPersist.has(id)) {
+            continue;
+        }
+        retryCandidates += 1;
+        recordsToPersist.set(id, pending);
+    }
+
+    const attemptedRecords = Array.from(recordsToPersist.values());
+    if (attemptedRecords.length === 0) {
         log.debug({ source, attempted: operations.length, invalid }, 'sync-store persist skipped');
         return [];
     }
 
     let result;
     try {
-        result = await syncStore.upsertMany(pendingRecords);
+        result = await syncStore.upsertMany(attemptedRecords);
     }
     catch (error) {
         log.error(
@@ -3298,14 +3314,16 @@ async function persistAcceptedOperations(operations: Operation[], source: string
                 source,
                 attempted: operations.length,
                 mapped: records.length,
-                pending: pendingRecords.length,
+                retryCandidates,
+                recordsAttempted: attemptedRecords.length,
+                pending: pendingAcceptedSyncRecords.size,
             },
             'sync-store persist accepted ops failed'
         );
         throw error;
     }
 
-    for (const record of pendingRecords) {
+    for (const record of attemptedRecords) {
         if (pendingAcceptedSyncRecords.get(record.id) === record) {
             pendingAcceptedSyncRecords.delete(record.id);
         }
@@ -3320,7 +3338,8 @@ async function persistAcceptedOperations(operations: Operation[], source: string
             source,
             attempted: operations.length,
             mapped: records.length,
-            pendingAttempted: pendingRecords.length,
+            retryCandidates,
+            recordsAttempted: attemptedRecords.length,
             pendingRemaining: pendingAcceptedSyncRecords.size,
             invalid,
             inserted: result.inserted,
@@ -3328,7 +3347,7 @@ async function persistAcceptedOperations(operations: Operation[], source: string
         },
         'sync-store persist accepted ops'
     );
-    return pendingRecords.map(record => record.id);
+    return attemptedRecords.map(record => record.id);
 }
 
 async function mergeBatch(batch: Operation[]): Promise<string[]> {
@@ -3371,7 +3390,14 @@ async function mergeBatch(batch: Operation[]): Promise<string[]> {
         response.acceptedHashes,
         response.acceptedEvents,
     );
-    return persistAcceptedOperations(acceptedToPersist, 'mergeBatch');
+    const retryIds = new Set<string>();
+    for (const operation of batch) {
+        const mapped = mapOperationToSyncKey(operation);
+        if (mapped.ok) {
+            retryIds.add(mapped.value.idHex);
+        }
+    }
+    return persistAcceptedOperations(acceptedToPersist, 'mergeBatch', retryIds);
 }
 
 let importQueue = asyncLib.queue<ImportQueueTask, asyncLib.ErrorCallback>(

@@ -471,6 +471,66 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         ))).toBe(true);
     });
 
+    it('retries only retained operations named by the current push', async () => {
+        const operations = await createIndependentOperations(2);
+        const expectedIds = operationIds(operations);
+        driver = await createMediatorDriver({
+            operationsA: operations,
+            operationsB: [],
+            publicKeyA: Buffer.alloc(32, 0x22),
+            publicKeyB: Buffer.alloc(32, 0x11),
+        });
+        const upsertMany = jest.mocked(driver.storeB.upsertMany);
+        const upsertManyImplementation = upsertMany.getMockImplementation();
+        if (!upsertManyImplementation) {
+            throw new Error('tracked node B upsertMany implementation is unavailable');
+        }
+        const attempts: string[][] = [];
+        upsertMany
+            .mockImplementationOnce(async records => {
+                attempts.push(records.map(record => record.id).sort());
+                throw new Error('transient sync-store failure');
+            })
+            .mockImplementationOnce(async records => {
+                attempts.push(records.map(record => record.id).sort());
+                throw new Error('transient sync-store failure');
+            })
+            .mockImplementation(async records => {
+                attempts.push(records.map(record => record.id).sort());
+                return upsertManyImplementation(records);
+            });
+
+        await driver.startSync();
+        await pumpUntilPendingMessage(driver.transport, 'a-to-b', 'ops_push');
+        const originalPush = decodeWire(driver.transport).at(-1)!.body;
+        expect(driver.transport.dropNext()).toBe(true);
+
+        writeOperationPush(driver.transport, originalPush, operations[0]);
+        expect(await driver.transport.deliverNext()).toBe(true);
+        writeOperationPush(driver.transport, originalPush, operations[1]);
+        expect(await driver.transport.deliverNext()).toBe(true);
+
+        expect(attempts).toStrictEqual([[operationId(operations[0])], [operationId(operations[1])]]);
+        expect(await gatekeeperIds(driver.nodeB.gatekeeper)).toStrictEqual(expectedIds);
+        expect(await driver.storeB.count()).toBe(0);
+
+        writeOperationPush(driver.transport, originalPush, operations[0]);
+        expect(await driver.transport.deliverNext()).toBe(true);
+        expect(await driver.storeB.has(operationId(operations[0]))).toBe(true);
+        expect(await driver.storeB.has(operationId(operations[1]))).toBe(false);
+
+        writeOperationPush(driver.transport, originalPush, operations[1]);
+        expect(await driver.transport.deliverNext()).toBe(true);
+        await driver.driveUntilQuiescent(expectedIds);
+
+        expect(attempts).toStrictEqual([
+            [operationId(operations[0])],
+            [operationId(operations[1])],
+            [operationId(operations[0])],
+            [operationId(operations[1])],
+        ]);
+    });
+
     it('clears retained accepted operations when the sync store is replaced', async () => {
         const operations = await createIndependentOperations(1);
         const expectedIds = operationIds(operations);
