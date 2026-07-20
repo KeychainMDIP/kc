@@ -83,6 +83,7 @@ import {
     filterKnownOperations,
     filterIndexRejectedOperations,
     mapAcceptedOperationsToSyncRecords,
+    prunePersistedSyncRecords,
 } from './sync-persistence.js';
 import { resolveAcceptedOperationsToPersist } from './sync-store-mirroring.js';
 import {
@@ -4021,6 +4022,22 @@ async function syncGatekeeperIndexToStore(source: string): Promise<void> {
     const sync = await bootstrapSyncStoreFromGatekeeper(syncStore, gatekeeper);
     if (sync.resetReason) {
         resetRuntimeSyncStateAfterGatekeeperReset(sync);
+    }
+    else if (pendingAcceptedSyncRecords.size > 0) {
+        try {
+            const pruned = await prunePersistedSyncRecords(
+                pendingAcceptedSyncRecords,
+                syncStore,
+                NEG_MAX_IDS_PER_LOOKUP,
+            );
+            log.debug({ source, ...pruned, remaining: pendingAcceptedSyncRecords.size }, 'pruned persisted sync-store retries');
+        }
+        catch (error) {
+            log.warn(
+                { error, source, remaining: pendingAcceptedSyncRecords.size },
+                'failed to prune persisted sync-store retries'
+            );
+        }
     }
 
     if (!sync.resetReason && (sync.inserted > 0 || sync.updated > 0)) {

@@ -11,6 +11,7 @@ import {
     filterIndexRejectedOperations,
     mapAcceptedOperationsToSyncRecords,
     mapIndexExportOperationsToSyncRecords,
+    prunePersistedSyncRecords,
     sortOperationsBySyncKey,
 } from '../../services/mediators/hyperswarm/src/sync-persistence.ts';
 import {
@@ -37,6 +38,67 @@ function makeCreateOp(hashChar: string, signed: string): Operation {
 }
 
 describe('sync-persistence helpers', () => {
+    it('skips persisted-record pruning when there is nothing pending', async () => {
+        const getByIds = jest.fn(async () => []);
+
+        await expect(prunePersistedSyncRecords(new Map(), { getByIds }, 1)).resolves.toStrictEqual({
+            checked: 0,
+            removed: 0,
+        });
+        expect(getByIds).not.toHaveBeenCalled();
+    });
+
+    it('prunes stored retry records in bounded chunks and retains missing records', async () => {
+        const operations = [
+            makeCreateOp('a', '2026-02-10T10:00:00.000Z'),
+            makeCreateOp('b', '2026-02-10T11:00:00.000Z'),
+            makeCreateOp('c', '2026-02-10T12:00:00.000Z'),
+        ];
+        const records = mapAcceptedOperationsToSyncRecords(operations).records;
+        const pending = new Map(records.map(record => [record.id, record]));
+        const store = new InMemoryOperationSyncStore();
+        await store.upsertMany([records[0], records[2]]);
+        const getByIds = jest.spyOn(store, 'getByIds');
+
+        await expect(prunePersistedSyncRecords(pending, store, 2)).resolves.toStrictEqual({
+            checked: 3,
+            removed: 2,
+        });
+        expect(getByIds).toHaveBeenNthCalledWith(1, [records[0].id, records[1].id]);
+        expect(getByIds).toHaveBeenNthCalledWith(2, [records[2].id]);
+        expect(Array.from(pending.keys())).toStrictEqual([records[1].id]);
+    });
+
+    it('does not prune a retry record replaced during its lookup', async () => {
+        const operation = makeCreateOp('a', '2026-02-10T10:00:00.000Z');
+        const record = mapAcceptedOperationsToSyncRecords([operation]).records[0];
+        const replacement = { ...record };
+        const pending = new Map([[record.id, record]]);
+        let releaseLookup!: () => void;
+        const getByIds = jest.fn(() => new Promise<Awaited<ReturnType<InMemoryOperationSyncStore['getByIds']>>>(resolve => {
+            releaseLookup = () => resolve([{ ...record, insertedAt: 1 }]);
+        }));
+
+        const pruning = prunePersistedSyncRecords(pending, { getByIds }, 1);
+        pending.set(record.id, replacement);
+        releaseLookup();
+
+        await expect(pruning).resolves.toStrictEqual({ checked: 1, removed: 0 });
+        expect(pending.get(record.id)).toBe(replacement);
+    });
+
+    it('retains unverified retry records when pruning fails', async () => {
+        const operation = makeCreateOp('a', '2026-02-10T10:00:00.000Z');
+        const record = mapAcceptedOperationsToSyncRecords([operation]).records[0];
+        const pending = new Map([[record.id, record]]);
+        const getByIds = jest.fn(async () => {
+            throw new Error('lookup failed');
+        });
+
+        await expect(prunePersistedSyncRecords(pending, { getByIds }, 1)).rejects.toThrow('lookup failed');
+        expect(pending.get(record.id)).toBe(record);
+    });
+
     it('returns empty array when filterIndexRejectedOperations receives empty batch', () => {
         expect(filterIndexRejectedOperations([], [0, 1])).toStrictEqual([]);
     });

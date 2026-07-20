@@ -2,7 +2,10 @@ import {
     IndexExportOperationRecord,
     Operation,
 } from '@mdip/gatekeeper/types';
-import type { OperationSyncStore } from './db/types.js';
+import type {
+    OperationSyncStore,
+    SyncOperationWriteRecord,
+} from './db/types.js';
 import { mapOperationToSyncKey } from './sync-mapping.js';
 
 export interface SyncPersistenceRecord {
@@ -32,6 +35,29 @@ export interface FilterKnownOperationsResult {
     mapped: number;
     known: number;
     invalid: number;
+}
+
+export async function prunePersistedSyncRecords(
+    pending: Map<string, SyncOperationWriteRecord>,
+    syncStore: Pick<OperationSyncStore, 'getByIds'>,
+    lookupChunkSize: number,
+): Promise<{ checked: number; removed: number }> {
+    const snapshot = new Map(pending);
+    const ids = Array.from(snapshot.keys());
+    let removed = 0;
+
+    for (let i = 0; i < ids.length; i += lookupChunkSize) {
+        const rows = await syncStore.getByIds(ids.slice(i, i + lookupChunkSize));
+        for (const row of rows) {
+            const captured = snapshot.get(row.id);
+            if (captured && pending.get(row.id) === captured) {
+                pending.delete(row.id);
+                removed += 1;
+            }
+        }
+    }
+
+    return { checked: ids.length, removed };
 }
 
 export function filterIndexRejectedOperations(batch: Operation[], rejectedIndices: number[] = []): Operation[] {

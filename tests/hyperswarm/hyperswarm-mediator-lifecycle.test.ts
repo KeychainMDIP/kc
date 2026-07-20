@@ -609,6 +609,37 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         ]));
     });
 
+    it('prunes retained persistence retries after an index backfill', async () => {
+        const [operation] = await makeOperations(1);
+        const operationId = operation.signature!.hash;
+        let persistenceFailed = false;
+        const running = await createRunningNode({
+            beforeStart: async (node, store) => {
+                const upsertMany = store.upsertMany.bind(store);
+                jest.spyOn(store, 'upsertMany').mockImplementation(async records => {
+                    if (!persistenceFailed && records.some(record => record.id === operationId)) {
+                        persistenceFailed = true;
+                        throw new Error('transient sync-store failure');
+                    }
+                    return upsertMany(records);
+                });
+                node.gatekeeperClient.getQueue
+                    .mockResolvedValueOnce([operation])
+                    .mockResolvedValue([]);
+            },
+        });
+
+        expect(persistenceFailed).toBe(true);
+        expect(await running.store.has(operationId)).toBe(false);
+
+        await running.node.gatekeeper.createDID(operation);
+        const getByIds = jest.spyOn(running.store, 'getByIds');
+        await running.node.run(() => jest.advanceTimersByTimeAsync(2_000));
+        await eventually(async () => await running.store.has(operationId));
+
+        expect(getByIds).toHaveBeenCalledWith([operationId]);
+    });
+
     it('resets synchronized state and restarts peer sync after a Gatekeeper epoch change', async () => {
         const [oldOperation, newOperation] = await makeOperations(2);
         let resetSpy: jest.SpiedFunction<InMemoryOperationSyncStore['reset']>;
