@@ -1124,9 +1124,9 @@ describe('hyperswarm mediator protocol characterization', () => {
             }));
         }
 
-        expect(lookupSizes).toHaveLength(16);
-        expect(Math.max(...lookupSizes)).toBe(256);
-        expect(lookupSizes.reduce((total, size) => total + size, 0)).toBe(requestedIds.length * 2);
+        expect(lookupSizes).toHaveLength(12);
+        expect(Math.max(...lookupSizes)).toBe(100);
+        expect(lookupSizes.reduce((total, size) => total + size, 0)).toBe(requestedIds.length);
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
         )).toEqual({ mode: 'negentropy', sessionId: open.sessionId });

@@ -586,9 +586,11 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         const originalPush = decodeWire(driver.transport).at(-1)!.body;
         expect(driver.transport.dropNext()).toBe(true);
 
+        const getByIds = jest.mocked(driver.storeB.getByIds);
+        const getByIdsCallsBeforeFirstPush = getByIds.mock.calls.length;
         writeOperationPush(driver.transport, originalPush, operations[0]);
         expect(await driver.transport.deliverNext()).toBe(true);
-        const getByIds = jest.mocked(driver.storeB.getByIds);
+        expect(getByIds).toHaveBeenCalledTimes(getByIdsCallsBeforeFirstPush + 1);
         const getByIdsCalls = getByIds.mock.calls.length;
         const importBatchCalls = driver.nodeB.gatekeeperClient.importBatch.mock.calls.length;
         const processEventsCalls = driver.nodeB.gatekeeperClient.processEvents.mock.calls.length;

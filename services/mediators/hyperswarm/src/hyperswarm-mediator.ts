@@ -240,6 +240,11 @@ interface ImportQueueTask {
     msg: BatchMessage;
 }
 
+interface ImportQueueResult {
+    knownIds: string[];
+    persistedIds: string[];
+}
+
 interface ExportQueueTask {
     name: string;
     msg: SyncMessage;
@@ -2958,42 +2963,6 @@ function trackProvenStoredOpsPush(session: PeerSyncSession, operations: Operatio
     return progressed;
 }
 
-async function trackRequestedKnownOpsPush(session: PeerSyncSession, operations: Operation[]): Promise<void> {
-    if (!session.initiator || session.pendingNeedIds.size === 0 || operations.length === 0) {
-        return;
-    }
-
-    const candidateIds: string[] = [];
-
-    for (const operation of operations) {
-        const mapped = mapOperationToSyncKey(operation);
-        if (!mapped.ok || !session.pendingNeedIds.has(mapped.value.idHex)) {
-            continue;
-        }
-
-        if (session.receivedKnownPushIds.has(mapped.value.idHex)) {
-            continue;
-        }
-
-        candidateIds.push(mapped.value.idHex);
-    }
-
-    if (candidateIds.length === 0) {
-        return;
-    }
-
-    const rows = await syncStore.getByIds(candidateIds);
-    if (rows.length === 0) {
-        return;
-    }
-
-    for (const row of rows) {
-        session.receivedKnownPushIds.add(row.id);
-        session.provenStoredPushIds.add(row.id);
-        session.pendingNeedIds.delete(row.id);
-    }
-}
-
 async function maybeFinalizeInitiatorSession(peerKey: string, session: PeerSyncSession): Promise<void> {
     if (peerSessions.get(peerKey) !== session) {
         return;
@@ -3416,10 +3385,13 @@ async function mergeBatch(batch: Operation[]): Promise<string[]> {
     return persistAcceptedOperations(acceptedToPersist, 'mergeBatch', retryIds);
 }
 
-let importQueue = asyncLib.queue<ImportQueueTask, asyncLib.ErrorCallback>(
-    async function (task): Promise<string[]> {
+let importQueue = asyncLib.queue<ImportQueueTask, ImportQueueResult>(
+    async function (task): Promise<ImportQueueResult> {
         const { name, msg } = task;
-        let knownIds: string[] = [];
+        const result: ImportQueueResult = {
+            knownIds: [],
+            persistedIds: [],
+        };
         try {
             const ready = await gatekeeper.isReady();
 
@@ -3427,7 +3399,7 @@ let importQueue = asyncLib.queue<ImportQueueTask, asyncLib.ErrorCallback>(
                 const batch = msg.data || [];
 
                 if (batch.length === 0) {
-                    return [];
+                    return result;
                 }
 
                 if (msg.type === 'queue') {
@@ -3439,7 +3411,7 @@ let importQueue = asyncLib.queue<ImportQueueTask, asyncLib.ErrorCallback>(
                 }
 
                 const filtered = await filterKnownOperations(batch, syncStore, BATCH_SIZE);
-                knownIds = filtered.knownIds;
+                result.knownIds = filtered.knownIds;
                 if (filtered.known > 0) {
                     log.debug(
                         {
@@ -3456,22 +3428,20 @@ let importQueue = asyncLib.queue<ImportQueueTask, asyncLib.ErrorCallback>(
                 }
 
                 if (filtered.operations.length === 0) {
-                    return knownIds;
+                    return result;
                 }
 
                 const nodeName = msg.node || 'anon';
                 log.debug(
                     `* merging batch (${filtered.operations.length}/${batch.length} events) from: ${shortName(name)} (${nodeName}) *`
                 );
-                const persistedIds = await mergeBatch(filtered.operations);
-                return Array.from(new Set([...knownIds, ...persistedIds]));
+                result.persistedIds = await mergeBatch(filtered.operations);
             }
-            return [];
         }
         catch (error) {
             log.error({ error }, 'mergeBatch error');
-            return knownIds;
         }
+        return result;
     }, 1); // concurrency is 1
 
 let exportQueue = asyncLib.queue<ExportQueueTask, asyncLib.ErrorCallback>(
@@ -3950,26 +3920,24 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
                 return;
             }
 
-            await trackRequestedKnownOpsPush(session, unprovenBatch);
-            if (peerSessions.get(peerKey) !== session) {
-                return;
-            }
-
-            const operationsToImport = filterUnprovenPushOperations(session, unprovenBatch);
-            const storedIds = operationsToImport.length > 0
-                ? await importQueue.pushAsync<string[]>({
-                    name: peerKey,
-                    msg: {
-                        ...createBaseMessage('batch'),
-                        data: operationsToImport,
-                    },
-                })
-                : [];
+            const imported = await importQueue.pushAsync<ImportQueueResult>({
+                name: peerKey,
+                msg: {
+                    ...createBaseMessage('batch'),
+                    data: unprovenBatch,
+                },
+            });
 
             if (peerSessions.get(peerKey) !== session) {
                 return;
             }
-            for (const id of storedIds) {
+            for (const id of imported.knownIds) {
+                session.provenStoredPushIds.add(id);
+                if (session.initiator && session.pendingNeedIds.delete(id)) {
+                    session.receivedKnownPushIds.add(id);
+                }
+            }
+            for (const id of imported.persistedIds) {
                 session.provenStoredPushIds.add(id);
                 session.pendingNeedIds.delete(id);
             }
