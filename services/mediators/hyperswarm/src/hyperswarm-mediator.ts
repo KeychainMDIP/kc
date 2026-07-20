@@ -15,6 +15,7 @@ import config from './config.js';
 import type {
     OperationSyncStore,
     SyncOperationRecord,
+    SyncOperationWriteRecord,
     SyncStoreCursor,
     SyncStoreOrderedCursor,
 } from './db/types.js';
@@ -388,6 +389,7 @@ function createConfiguredSyncStore(): OperationSyncStore {
 }
 
 let syncStore: OperationSyncStore = createConfiguredSyncStore();
+const pendingAcceptedSyncRecords = new Map<string, SyncOperationWriteRecord>();
 let negentropyAdapter: NegentropyAdapter | null = null;
 let adapterChangeSeq = 0;
 let adapterBuiltSeq = -1;
@@ -396,6 +398,11 @@ let adapterBuiltWindowId: string | null = null;
 let adapterBuiltSnapshot: NegentropyWindowSnapshot | null = null;
 let rebuildPromise: Promise<void> | null = null;
 let backgroundPrebuildQueued = false;
+
+function replaceSyncStore(store: OperationSyncStore): void {
+    pendingAcceptedSyncRecords.clear();
+    syncStore = store;
+}
 
 EventEmitter.defaultMaxListeners = 100;
 
@@ -1063,6 +1070,7 @@ function resetRuntimeSyncStateAfterGatekeeperReset(sync: BootstrapResult): void 
 
     peerSessions.clear();
     orderedCatchupPostImportPeers.clear();
+    pendingAcceptedSyncRecords.clear();
     invalidateNegentropyAdapterCache();
 
     for (const conn of Object.values(connectionInfo)) {
@@ -3242,17 +3250,41 @@ async function importBatch(batch: Operation[]): Promise<Operation[]> {
 }
 
 async function persistAcceptedOperations(operations: Operation[], source: string): Promise<string[]> {
-    if (!Array.isArray(operations) || operations.length === 0) {
-        return [];
+    const { records, invalid } = mapAcceptedOperationsToSyncRecords(operations);
+    for (const record of records) {
+        pendingAcceptedSyncRecords.set(record.id, record);
     }
 
-    const { records, invalid } = mapAcceptedOperationsToSyncRecords(operations);
-    if (records.length === 0) {
+    const pendingRecords = Array.from(pendingAcceptedSyncRecords.values());
+    if (pendingRecords.length === 0) {
         log.debug({ source, attempted: operations.length, invalid }, 'sync-store persist skipped');
         return [];
     }
 
-    const result = await syncStore.upsertMany(records);
+    let result;
+    try {
+        result = await syncStore.upsertMany(pendingRecords);
+    }
+    catch (error) {
+        log.error(
+            {
+                error,
+                source,
+                attempted: operations.length,
+                mapped: records.length,
+                pending: pendingRecords.length,
+            },
+            'sync-store persist accepted ops failed'
+        );
+        throw error;
+    }
+
+    for (const record of pendingRecords) {
+        if (pendingAcceptedSyncRecords.get(record.id) === record) {
+            pendingAcceptedSyncRecords.delete(record.id);
+        }
+    }
+
     if (result.inserted > 0 || result.updated > 0) {
         markNegentropyAdapterDirty();
         maybeStartBackgroundPrebuild(`persist_${source}`);
@@ -3262,13 +3294,15 @@ async function persistAcceptedOperations(operations: Operation[], source: string
             source,
             attempted: operations.length,
             mapped: records.length,
+            pendingAttempted: pendingRecords.length,
+            pendingRemaining: pendingAcceptedSyncRecords.size,
             invalid,
             inserted: result.inserted,
             updated: result.updated,
         },
         'sync-store persist accepted ops'
     );
-    return records.map(record => record.id);
+    return pendingRecords.map(record => record.id);
 }
 
 async function mergeBatch(batch: Operation[]): Promise<string[]> {
@@ -4152,7 +4186,7 @@ async function initNegentropyAdapter(): Promise<void> {
 
 export async function runMediator(options: MediatorMainOptions = {}): Promise<void> {
     if (options.syncStore) {
-        syncStore = options.syncStore;
+        replaceSyncStore(options.syncStore);
     }
 
     if (options.startLoops === false) {
@@ -4171,7 +4205,7 @@ export const __test = {
         peerSessions.clear();
         orderedCatchupPostImportPeers.clear();
         nodeKey = '';
-        syncStore = createConfiguredSyncStore();
+        replaceSyncStore(createConfiguredSyncStore());
         negentropyAdapter = null;
         adapterChangeSeq = 0;
         adapterBuiltSeq = -1;
@@ -4187,7 +4221,7 @@ export const __test = {
     },
 
     setSyncStore(store: OperationSyncStore): void {
-        syncStore = store;
+        replaceSyncStore(store);
     },
 
     setNegentropyAdapter(adapter: unknown): void {

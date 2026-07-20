@@ -417,6 +417,95 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         ))).toBe(true);
     });
 
+    it('retains accepted operations across sync-store failures and completes on an identical retry', async () => {
+        const operations = await createIndependentOperations(1);
+        const expectedIds = operationIds(operations);
+        driver = await createMediatorDriver({
+            operationsA: operations,
+            operationsB: [],
+            publicKeyA: Buffer.alloc(32, 0x22),
+            publicKeyB: Buffer.alloc(32, 0x11),
+        });
+        const upsertMany = jest.mocked(driver.storeB.upsertMany);
+        upsertMany
+            .mockRejectedValueOnce(new Error('transient sync-store failure'))
+            .mockRejectedValueOnce(new Error('transient sync-store failure'));
+
+        await driver.startSync();
+        await pumpUntilPendingMessage(driver.transport, 'a-to-b', 'ops_push');
+        const push = driver.transport.peekNext();
+        if (!push || push.direction !== 'a-to-b') {
+            throw new Error('expected a pending A-to-B ops_push');
+        }
+        expect(driver.transport.dropNext()).toBe(true);
+
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+            driver.transport.connectionA.write(push.raw);
+            expect(await driver.transport.deliverNext()).toBe(true);
+            expect(await gatekeeperIds(driver.nodeB.gatekeeper)).toStrictEqual(expectedIds);
+            expect(await driver.storeB.count()).toBe(0);
+            expect(decodeWire(driver.transport).some(message => (
+                message.body.type === 'neg_close' && message.body.reason === 'complete'
+            ))).toBe(false);
+        }
+
+        driver.transport.connectionA.write(push.raw);
+        expect(await driver.transport.deliverNext()).toBe(true);
+        await driver.driveUntilQuiescent(expectedIds);
+
+        expect(upsertMany).toHaveBeenCalledTimes(3);
+        expect(driver.nodeB.gatekeeperClient.importBatch).toHaveBeenCalledTimes(3);
+        const processResults = await Promise.all(
+            driver.nodeB.gatekeeperClient.processEvents.mock.results.map(result => result.value),
+        );
+        expect(processResults[0]?.added).toBe(1);
+        expect(processResults.slice(1).every(result => (result.added ?? 0) === 0)).toBe(true);
+        expect(await driver.storeB.count()).toBe(1);
+        expect(decodeWire(driver.transport).some(message => (
+            message.body.type === 'neg_close' && message.body.reason === 'complete'
+        ))).toBe(true);
+    });
+
+    it('clears retained accepted operations when the sync store is replaced', async () => {
+        const operations = await createIndependentOperations(1);
+        const expectedIds = operationIds(operations);
+        driver = await createMediatorDriver({
+            operationsA: operations,
+            operationsB: [],
+            publicKeyA: Buffer.alloc(32, 0x22),
+            publicKeyB: Buffer.alloc(32, 0x11),
+        });
+        const upsertMany = jest.mocked(driver.storeB.upsertMany);
+        upsertMany.mockRejectedValueOnce(new Error('transient sync-store failure'));
+
+        await driver.startSync();
+        await pumpUntilPendingMessage(driver.transport, 'a-to-b', 'ops_push');
+        const push = driver.transport.peekNext();
+        if (!push || push.direction !== 'a-to-b') {
+            throw new Error('expected a pending A-to-B ops_push');
+        }
+        expect(driver.transport.dropNext()).toBe(true);
+
+        driver.transport.connectionA.write(push.raw);
+        expect(await driver.transport.deliverNext()).toBe(true);
+        expect(await driver.storeB.count()).toBe(0);
+
+        driver.nodeB.run(() => driver!.nodeB.mediator.__test.setSyncStore(driver!.storeB));
+        driver.transport.connectionA.write(push.raw);
+        expect(await driver.transport.deliverNext()).toBe(true);
+
+        expect(upsertMany).toHaveBeenCalledTimes(1);
+        expect(await driver.storeB.count()).toBe(0);
+        expect(decodeWire(driver.transport).some(message => (
+            message.body.type === 'neg_close' && message.body.reason === 'complete'
+        ))).toBe(false);
+
+        await driver.storeB.upsertMany(mapAcceptedOperationsToSyncRecords(operations).records);
+        driver.transport.connectionA.write(push.raw);
+        expect(await driver.transport.deliverNext()).toBe(true);
+        await driver.driveUntilQuiescent(expectedIds);
+    });
+
     it('backfills a merged operation once and ignores a duplicate delivery', async () => {
         const [operation] = await createIndependentOperations(1, 'TFTC');
         const id = operationId(operation);
