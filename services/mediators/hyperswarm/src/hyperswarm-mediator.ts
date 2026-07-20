@@ -2037,6 +2037,7 @@ function initializeSessionWindowState(
     session.reconciliationComplete = false;
     session.receivedPushIds = new Set<string>();
     session.receivedKnownPushIds = new Set<string>();
+    session.provenStoredPushIds.clear();
     session.receivedPushMaxCursor = null;
     session.remoteWindowCappedByRecords = false;
     session.remoteWindowLastCursor = null;

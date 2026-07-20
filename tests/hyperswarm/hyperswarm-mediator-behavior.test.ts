@@ -666,6 +666,60 @@ describe('hyperswarm mediator behavior', () => {
         });
     });
 
+    it('rechecks a proven operation when it reappears in a continuation window', async () => {
+        const operations = await createIndependentOperations([
+            Date.now() - (60 * 60 * 1_000),
+            Date.now() - (59 * 60 * 1_000),
+        ]);
+        const expectedIds = operationIds(operations);
+        driver = await createMediatorDriver({
+            operationsA: operations,
+            operationsB: [],
+            maxRecordsPerWindow: 1,
+            publicKeyA: Buffer.alloc(32, 0x22),
+            publicKeyB: Buffer.alloc(32, 0x11),
+        });
+
+        await driver.startSync();
+        await pumpUntilPendingMessage(driver.transport, 'a-to-b', 'ops_push');
+        const firstPush = decodeWire(driver.transport)
+            .filter(message => message.body.type === 'ops_push')
+            .at(-1);
+        const firstOperation = firstPush?.body.data?.[0];
+        if (!firstOperation) {
+            throw new Error('first capped window did not send an operation');
+        }
+        expect(await driver.transport.deliverNext()).toBe(true);
+
+        await pumpUntilPendingMessage(driver.transport, 'b-to-a', 'neg_open');
+        const continuationOpen = decodeWire(driver.transport)
+            .filter(message => message.body.type === 'neg_open')
+            .at(-1);
+        expect(continuationOpen?.body.window?.order).toBe(1);
+        expect(await driver.transport.deliverNext()).toBe(true);
+
+        const continuationResponse = driver.transport.peekNext();
+        if (!continuationResponse || continuationResponse.direction !== 'a-to-b') {
+            throw new Error('continuation window did not produce a responder message');
+        }
+        expect(driver.transport.dropNext()).toBe(true);
+
+        const getByIds = jest.mocked(driver.storeB.getByIds);
+        const lookupCount = getByIds.mock.calls.length;
+        driver.transport.connectionA.write(encodeFramedMessage(JSON.stringify({
+            type: 'ops_push',
+            sessionId: continuationOpen!.body.sessionId,
+            windowId: continuationOpen!.body.windowId,
+            data: [firstOperation],
+        })));
+        expect(await driver.transport.deliverNext()).toBe(true);
+        expect(getByIds.mock.calls.length).toBeGreaterThan(lookupCount);
+
+        driver.transport.connectionA.write(continuationResponse.raw);
+        await driver.driveUntilQuiescent(expectedIds, { timeoutMs: 10_000 });
+        await assertConverged(driver, operations);
+    });
+
     it.each([
         ['node A initiates', 0x11, 0x22],
         ['node B initiates', 0x22, 0x11],
