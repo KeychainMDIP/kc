@@ -640,6 +640,88 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         expect(getByIds).toHaveBeenCalledWith([operationId]);
     });
 
+    it('bounds failed persistence retries and backfills an evicted operation', async () => {
+        const [oldestOperation] = await makeOperations(1);
+        const fillerOperations: Operation[] = Array.from({ length: 1_000 }, (_, index) => {
+            const signed = new Date(Date.now() - ((1_001 - index) * 1_000)).toISOString();
+            return {
+                type: 'create',
+                created: signed,
+                mdip: {
+                    version: 1,
+                    type: 'agent',
+                    registry: 'hyperswarm',
+                },
+                signature: {
+                    signed,
+                    hash: (index + 1).toString(16).padStart(64, '0'),
+                    value: `test-${index}`,
+                },
+            };
+        });
+        const operations = [oldestOperation, ...fillerOperations];
+        const newestOperation = operations.at(-1)!;
+        let persistenceFailed = false;
+        let upsertMany!: jest.SpiedFunction<InMemoryOperationSyncStore['upsertMany']>;
+        const running = await createRunningNode({
+            beforeStart: async (node, store) => {
+                const persist = store.upsertMany.bind(store);
+                upsertMany = jest.spyOn(store, 'upsertMany')
+                    .mockImplementation(async records => {
+                        if (!persistenceFailed && records.length === operations.length) {
+                            persistenceFailed = true;
+                            throw new Error('persistent sync-store failure');
+                        }
+                        return persist(records);
+                    });
+                node.gatekeeperClient.getQueue
+                    .mockResolvedValueOnce(operations)
+                    .mockResolvedValue([]);
+                node.gatekeeperClient.importBatch.mockImplementation(async events => ({
+                    queued: 0,
+                    processed: events.length,
+                    rejected: 0,
+                    total: events.length,
+                    rejectedIndices: [],
+                }));
+                node.gatekeeperClient.processEvents.mockResolvedValue({
+                    added: 0,
+                    merged: 0,
+                    rejected: 0,
+                    pending: 0,
+                    acceptedHashes: [],
+                    acceptedEvents: [],
+                });
+            },
+        });
+        expect(persistenceFailed).toBe(true);
+        const callsAfterFailure = upsertMany.mock.calls.length;
+
+        const peer = await attachConnection(running, 0x22);
+        const queueMessage = (operation: Operation) => ({
+            type: 'queue',
+            time: new Date().toISOString(),
+            node: 'peer',
+            relays: [],
+            data: [operation],
+        });
+
+        await sendPeerMessage(peer, queueMessage(oldestOperation));
+        await eventually(() => running.node.gatekeeperClient.processEvents.mock.calls.length >= 1);
+        await settle();
+        expect(upsertMany).toHaveBeenCalledTimes(callsAfterFailure);
+
+        await sendPeerMessage(peer, queueMessage(newestOperation));
+        await eventually(() => upsertMany.mock.calls.length > callsAfterFailure);
+        expect(upsertMany.mock.calls[callsAfterFailure][0].map(record => record.id)).toStrictEqual([
+            newestOperation.signature!.hash,
+        ]);
+
+        await running.node.gatekeeper.createDID(oldestOperation);
+        await running.node.run(() => jest.advanceTimersByTimeAsync(2_000));
+        await eventually(async () => await running.store.has(oldestOperation.signature!.hash));
+    });
+
     it('resets synchronized state and restarts peer sync after a Gatekeeper epoch change', async () => {
         const [oldOperation, newOperation] = await makeOperations(2);
         let resetSpy: jest.SpiedFunction<InMemoryOperationSyncStore['reset']>;

@@ -418,6 +418,7 @@ const NEG_SESSION_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
 const NEG_MAX_IDS_PER_OPS_REQ = 1_000;
 const NEG_MAX_IDS_PER_LOOKUP = 1_000;
 const NEG_MAX_OPS_PER_PUSH = 256;
+const MAX_PENDING_ACCEPTED_SYNC_RECORDS = NEG_MAX_IDS_PER_LOOKUP;
 const NEG_MAX_BYTES_PER_PUSH = 512 * 1024;
 const NEG_REPAIR_INTERVAL_MS = config.negentropyIntervalSeconds * 1000;
 const NEG_ADAPTER_MAX_AGE_MS = 60 * 1000;
@@ -3288,6 +3289,7 @@ async function persistAcceptedOperations(
     const { records, invalid } = mapAcceptedOperationsToSyncRecords(operations);
     const recordsToPersist = new Map<string, SyncOperationWriteRecord>();
     for (const record of records) {
+        pendingAcceptedSyncRecords.delete(record.id);
         pendingAcceptedSyncRecords.set(record.id, record);
         recordsToPersist.set(record.id, record);
     }
@@ -3313,6 +3315,14 @@ async function persistAcceptedOperations(
         result = await syncStore.upsertMany(attemptedRecords);
     }
     catch (error) {
+        const pendingBeforeTrim = pendingAcceptedSyncRecords.size;
+        while (pendingAcceptedSyncRecords.size > MAX_PENDING_ACCEPTED_SYNC_RECORDS) {
+            const oldestId = pendingAcceptedSyncRecords.keys().next().value;
+            if (oldestId === undefined) {
+                break;
+            }
+            pendingAcceptedSyncRecords.delete(oldestId);
+        }
         log.error(
             {
                 error,
@@ -3322,6 +3332,7 @@ async function persistAcceptedOperations(
                 retryCandidates,
                 recordsAttempted: attemptedRecords.length,
                 pending: pendingAcceptedSyncRecords.size,
+                pendingEvicted: pendingBeforeTrim - pendingAcceptedSyncRecords.size,
             },
             'sync-store persist accepted ops failed'
         );
