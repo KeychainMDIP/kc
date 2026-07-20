@@ -3838,8 +3838,8 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
 
             const receivedPendingIds = Array.from(session.receivedPushIds)
                 .filter(id => session.pendingNeedIds.has(id));
-            if (receivedPendingIds.length > 0) {
-                const persistedRows = await syncStore.getByIds(receivedPendingIds);
+            for (const idBatch of chunkIds(receivedPendingIds, NEG_MAX_IDS_PER_LOOKUP)) {
+                const persistedRows = await syncStore.getByIds(idBatch);
                 for (const row of persistedRows) {
                     session.pendingNeedIds.delete(row.id);
                 }

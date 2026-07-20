@@ -1064,6 +1064,78 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(replacementMessages.some(message => message.type === 'ops_push')).toBe(false);
     });
 
+    it('chunks persistence confirmation lookups for accumulated rejected pushes', async () => {
+        const requestedIds = Array.from(
+            { length: 1_001 },
+            (_, index) => index.toString(16).padStart(64, '0'),
+        );
+        const operations = requestedIds.map(id => ({
+            signature: {
+                hash: id,
+                signed: '2026-01-01T00:00:00.000Z',
+            },
+        } as Operation));
+        const protocolNode = await createNode({ maxRecords: requestedIds.length });
+        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
+        jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
+            const engine = createEngine(snapshot);
+            jest.spyOn(engine, 'reconcile').mockResolvedValueOnce({
+                nextMsg: null,
+                haveIds: [],
+                needIds: requestedIds,
+            });
+            return engine;
+        });
+        protocolNode.node.gatekeeperClient.importBatch.mockImplementation(async events => ({
+            queued: 0,
+            processed: 0,
+            rejected: events.length,
+            total: 0,
+            rejectedIndices: events.map((_, index) => index),
+        }));
+        const getByIds = protocolNode.store.getByIds.bind(protocolNode.store);
+        const lookupSizes: number[] = [];
+        jest.spyOn(protocolNode.store, 'getByIds').mockImplementation(async ids => {
+            lookupSizes.push(ids.length);
+            if (ids.length > 1_000) {
+                throw new Error(`lookup exceeded limit: ${ids.length}`);
+            }
+            return getByIds(ids);
+        });
+
+        await protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey),
+        );
+        const open = decodeWrites(pair).find(message => message.type === 'neg_open');
+        if (!open) {
+            throw new Error('expected local neg_open');
+        }
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'neg_msg',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            frame: encodeNegentropyFrame('persistence-confirmation'),
+        }));
+
+        for (let offset = 0; offset < operations.length; offset += 256) {
+            await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+                type: 'ops_push',
+                sessionId: open.sessionId,
+                windowId: open.windowId,
+                data: operations.slice(offset, offset + 256),
+            }));
+        }
+
+        expect(lookupSizes.slice(-2)).toStrictEqual([1_000, 1]);
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+        )).toEqual({ mode: 'negentropy', sessionId: open.sessionId });
+        expect(decodeWrites(pair).some(message => (
+            message.type === 'neg_close' && message.reason === 'complete'
+        ))).toBe(false);
+    });
+
     it('closes a session when sending neg_open throws', async () => {
         const protocolNode = await createNode();
         const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
