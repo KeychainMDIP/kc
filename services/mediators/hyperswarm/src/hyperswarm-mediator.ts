@@ -1584,7 +1584,7 @@ async function startNegentropySessionForPeer(
         return;
     }
 
-    if (peerSessions.has(peerKey) || getActiveNegentropySessions() > 0) {
+    if (conn.negentropySynced || peerSessions.has(peerKey) || getActiveNegentropySessions() > 0) {
         return;
     }
 
@@ -1621,7 +1621,7 @@ async function startOrderedCatchupSessionForPeer(
         return;
     }
 
-    if (peerSessions.has(peerKey) || getActiveNegentropySessions() > 0) {
+    if (conn.negentropySynced || peerSessions.has(peerKey) || getActiveNegentropySessions() > 0) {
         return;
     }
 
