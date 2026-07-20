@@ -321,6 +321,7 @@ describe('sync-persistence helpers', () => {
         const filtered = await filterKnownOperations([known, unknown, invalid], store, 1);
 
         expect(filtered.operations).toStrictEqual([unknown, invalid]);
+        expect(filtered.knownIds).toStrictEqual([h('a')]);
         expect(filtered.mapped).toBe(2);
         expect(filtered.known).toBe(1);
         expect(filtered.invalid).toBe(1);
@@ -346,6 +347,7 @@ describe('sync-persistence helpers', () => {
         );
 
         expect(filtered.operations).toStrictEqual([unknown]);
+        expect(filtered.knownIds).toStrictEqual([h('a')]);
         expect(filtered.mapped).toBe(3);
         expect(filtered.known).toBe(2);
         expect(filtered.invalid).toBe(0);

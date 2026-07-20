@@ -317,6 +317,7 @@ interface PeerSyncSession {
     localClosed: boolean;
     receivedPushIds: Set<string>;
     receivedKnownPushIds: Set<string>;
+    provenStoredPushIds: Set<string>;
     receivedPushMaxCursor: SyncStoreCursor | null;
     remoteWindowCappedByRecords: boolean;
     remoteWindowLastCursor: SyncStoreCursor | null;
@@ -978,6 +979,7 @@ function createPeerSession(peerKey: string, mode: PeerSessionMode, initiator: bo
         localClosed: false,
         receivedPushIds: new Set<string>(),
         receivedKnownPushIds: new Set<string>(),
+        provenStoredPushIds: new Set<string>(),
         receivedPushMaxCursor: null,
         remoteWindowCappedByRecords: false,
         remoteWindowLastCursor: null,
@@ -2927,6 +2929,29 @@ function trackReceivedWindowOperations(session: PeerSyncSession, operations: Ope
     }
 }
 
+function filterUnprovenPushOperations(session: PeerSyncSession, operations: Operation[]): Operation[] {
+    return operations.filter(operation => {
+        const mapped = mapOperationToSyncKey(operation);
+        return !mapped.ok || !session.provenStoredPushIds.has(mapped.value.idHex);
+    });
+}
+
+function trackProvenStoredOpsPush(session: PeerSyncSession, operations: Operation[]): void {
+    if (!session.initiator || session.pendingNeedIds.size === 0) {
+        return;
+    }
+
+    for (const operation of operations) {
+        const mapped = mapOperationToSyncKey(operation);
+        if (!mapped.ok
+            || !session.provenStoredPushIds.has(mapped.value.idHex)
+            || !session.pendingNeedIds.delete(mapped.value.idHex)) {
+            continue;
+        }
+        session.receivedKnownPushIds.add(mapped.value.idHex);
+    }
+}
+
 async function trackRequestedKnownOpsPush(session: PeerSyncSession, operations: Operation[]): Promise<void> {
     if (!session.initiator || session.pendingNeedIds.size === 0 || operations.length === 0) {
         return;
@@ -2958,6 +2983,7 @@ async function trackRequestedKnownOpsPush(session: PeerSyncSession, operations: 
 
     for (const row of rows) {
         session.receivedKnownPushIds.add(row.id);
+        session.provenStoredPushIds.add(row.id);
         session.pendingNeedIds.delete(row.id);
     }
 }
@@ -3351,6 +3377,7 @@ async function mergeBatch(batch: Operation[]): Promise<string[]> {
 let importQueue = asyncLib.queue<ImportQueueTask, asyncLib.ErrorCallback>(
     async function (task): Promise<string[]> {
         const { name, msg } = task;
+        let knownIds: string[] = [];
         try {
             const ready = await gatekeeper.isReady();
 
@@ -3370,6 +3397,7 @@ let importQueue = asyncLib.queue<ImportQueueTask, asyncLib.ErrorCallback>(
                 }
 
                 const filtered = await filterKnownOperations(batch, syncStore, BATCH_SIZE);
+                knownIds = filtered.knownIds;
                 if (filtered.known > 0) {
                     log.debug(
                         {
@@ -3386,7 +3414,7 @@ let importQueue = asyncLib.queue<ImportQueueTask, asyncLib.ErrorCallback>(
                 }
 
                 if (filtered.operations.length === 0) {
-                    return [];
+                    return knownIds;
                 }
 
                 const nodeName = msg.node || 'anon';
@@ -3394,13 +3422,13 @@ let importQueue = asyncLib.queue<ImportQueueTask, asyncLib.ErrorCallback>(
                     `* merging batch (${filtered.operations.length}/${batch.length} events) from: ${shortName(name)} (${nodeName}) *`
                 );
                 const persistedIds = await mergeBatch(filtered.operations);
-                return persistedIds;
+                return Array.from(new Set([...knownIds, ...persistedIds]));
             }
             return [];
         }
         catch (error) {
             log.error({ error }, 'mergeBatch error');
-            return [];
+            return knownIds;
         }
     }, 1); // concurrency is 1
 
@@ -3870,19 +3898,34 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
         if (batch.length > 0) {
             syncStats.negentropyOpsPushReceived += batch.length;
             trackReceivedWindowOperations(session, batch);
-            await trackRequestedKnownOpsPush(session, batch);
-            const persistedIds = await importQueue.pushAsync<string[]>({
-                name: peerKey,
-                msg: {
-                    ...createBaseMessage('batch'),
-                    data: batch,
-                },
-            });
+            trackProvenStoredOpsPush(session, batch);
+            const unprovenBatch = filterUnprovenPushOperations(session, batch);
+            if (unprovenBatch.length === 0) {
+                await maybeFinalizeInitiatorSession(peerKey, session);
+                return;
+            }
+
+            await trackRequestedKnownOpsPush(session, unprovenBatch);
+            if (peerSessions.get(peerKey) !== session) {
+                return;
+            }
+
+            const operationsToImport = filterUnprovenPushOperations(session, unprovenBatch);
+            const storedIds = operationsToImport.length > 0
+                ? await importQueue.pushAsync<string[]>({
+                    name: peerKey,
+                    msg: {
+                        ...createBaseMessage('batch'),
+                        data: operationsToImport,
+                    },
+                })
+                : [];
 
             if (peerSessions.get(peerKey) !== session) {
                 return;
             }
-            for (const id of persistedIds) {
+            for (const id of storedIds) {
+                session.provenStoredPushIds.add(id);
                 session.pendingNeedIds.delete(id);
             }
             await maybeFinalizeInitiatorSession(peerKey, session);

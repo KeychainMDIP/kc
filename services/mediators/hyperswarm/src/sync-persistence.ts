@@ -28,6 +28,7 @@ export interface MapAcceptedResult {
 
 export interface FilterKnownOperationsResult {
     operations: Operation[];
+    knownIds: string[];
     mapped: number;
     known: number;
     invalid: number;
@@ -161,6 +162,7 @@ export async function filterKnownOperations(
     if (!Array.isArray(operations) || operations.length === 0) {
         return {
             operations: [],
+            knownIds: [],
             mapped: 0,
             known: 0,
             invalid: 0,
@@ -185,6 +187,7 @@ export async function filterKnownOperations(
     if (mappedIdsByIndex.size === 0) {
         return {
             operations: [...operations],
+            knownIds: [],
             mapped: 0,
             known: 0,
             invalid,
@@ -205,11 +208,13 @@ export async function filterKnownOperations(
     }
 
     const filtered: Operation[] = [];
+    const knownIds = new Set<string>();
     let known = 0;
 
     for (const [index, operation] of operations.entries()) {
         const mappedId = mappedIdsByIndex.get(index);
         if (mappedId && existingIds.has(mappedId)) {
+            knownIds.add(mappedId);
             known += 1;
             continue;
         }
@@ -219,6 +224,7 @@ export async function filterKnownOperations(
 
     return {
         operations: filtered,
+        knownIds: Array.from(knownIds),
         mapped: mappedIdsByIndex.size,
         known,
         invalid,

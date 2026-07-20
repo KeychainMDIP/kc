@@ -64,6 +64,17 @@ function decodeWire(link: RecordingDuplexPair): WireMessage[] {
     });
 }
 
+function writeOperationPush(
+    link: RecordingDuplexPair,
+    base: WireMessage['body'],
+    operation: Operation,
+): void {
+    link.connectionA.write(encodeFramedMessage(JSON.stringify({
+        ...base,
+        data: [operation],
+    })));
+}
+
 function assertCompletedNegentropyExchange(messages: WireMessage[]): void {
     const finalOpen = messages.filter(message => message.body.type === 'neg_open').at(-1);
     if (!finalOpen) {
@@ -335,20 +346,14 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         await pumpUntilPendingMessage(driver.transport, 'a-to-b', 'ops_push');
         const originalPush = decodeWire(driver.transport).at(-1)!.body;
         expect(driver.transport.dropNext()).toBe(true);
-        const writePush = (operation: Operation): void => {
-            driver!.transport.connectionA.write(encodeFramedMessage(JSON.stringify({
-                ...originalPush,
-                data: [operation],
-            })));
-        };
 
-        writePush(asset);
+        writeOperationPush(driver.transport, originalPush, asset);
         await driver.transport.deliverNext();
         await eventually(() => driver!.nodeB.gatekeeperClient.processEvents.mock.calls.length >= 1);
         expect(await driver.storeB.has(operationId(asset))).toBe(false);
         expect(decodeWire(driver.transport).some(message => message.body.type === 'neg_close')).toBe(false);
 
-        writePush(controller);
+        writeOperationPush(driver.transport, originalPush, controller);
         await driver.transport.deliverNext();
         await driver.driveUntilQuiescent(expectedIds);
 
@@ -502,6 +507,45 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
 
         await driver.storeB.upsertMany(mapAcceptedOperationsToSyncRecords(operations).records);
         driver.transport.connectionA.write(push.raw);
+        expect(await driver.transport.deliverNext()).toBe(true);
+        await driver.driveUntilQuiescent(expectedIds);
+    });
+
+    it('skips database and Gatekeeper work for a persisted duplicate push', async () => {
+        const operations = await createIndependentOperations(2);
+        const expectedIds = operationIds(operations);
+        driver = await createMediatorDriver({
+            operationsA: operations,
+            operationsB: [],
+            publicKeyA: Buffer.alloc(32, 0x22),
+            publicKeyB: Buffer.alloc(32, 0x11),
+        });
+
+        await driver.startSync();
+        await pumpUntilPendingMessage(driver.transport, 'a-to-b', 'ops_push');
+        const originalPush = decodeWire(driver.transport).at(-1)!.body;
+        expect(driver.transport.dropNext()).toBe(true);
+
+        writeOperationPush(driver.transport, originalPush, operations[0]);
+        expect(await driver.transport.deliverNext()).toBe(true);
+        const getByIds = jest.mocked(driver.storeB.getByIds);
+        const getByIdsCalls = getByIds.mock.calls.length;
+        const importBatchCalls = driver.nodeB.gatekeeperClient.importBatch.mock.calls.length;
+        const processEventsCalls = driver.nodeB.gatekeeperClient.processEvents.mock.calls.length;
+        expect(await driver.storeB.count()).toBe(1);
+        expect(decodeWire(driver.transport).some(message => (
+            message.body.type === 'neg_close' && message.body.reason === 'complete'
+        ))).toBe(false);
+
+        writeOperationPush(driver.transport, originalPush, operations[0]);
+        expect(await driver.transport.deliverNext()).toBe(true);
+
+        expect(getByIds).toHaveBeenCalledTimes(getByIdsCalls);
+        expect(driver.nodeB.gatekeeperClient.importBatch).toHaveBeenCalledTimes(importBatchCalls);
+        expect(driver.nodeB.gatekeeperClient.processEvents).toHaveBeenCalledTimes(processEventsCalls);
+        expect(await driver.storeB.count()).toBe(1);
+
+        writeOperationPush(driver.transport, originalPush, operations[1]);
         expect(await driver.transport.deliverNext()).toBe(true);
         await driver.driveUntilQuiescent(expectedIds);
     });
