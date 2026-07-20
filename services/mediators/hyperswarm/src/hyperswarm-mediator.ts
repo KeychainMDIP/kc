@@ -1610,6 +1610,10 @@ async function startOrderedCatchupSessionForPeer(
         return;
     }
 
+    if (peerSessions.has(peerKey) || getActiveNegentropySessions() > 0) {
+        return;
+    }
+
     conn.orderedCatchupAttempted = true;
     const session = createPeerSession(peerKey, 'ordered_catchup', true);
     setOrderedCatchupClientState(peerKey, session.sessionId);

@@ -1347,6 +1347,66 @@ describe('hyperswarm mediator protocol characterization', () => {
         }
     });
 
+    it('does not replace an ordered session when an older store count resumes', async () => {
+        const protocolNode = await createNode({
+            maxRecords: 4,
+            env: {
+                KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true',
+                KC_HYPR_LEGACY_SYNC_ENABLE: 'false',
+            },
+        });
+        const { peerKey, pair } = attachPeer(protocolNode, {
+            mode: 'framed',
+            overrides: {
+                capabilities: compatibleCapabilities({
+                    orderedCatchup: true,
+                    orderedCatchupVersion: 1,
+                    orderedCatchupReady: true,
+                    operationCount: 5,
+                    orderedOperationCount: 5,
+                }),
+            },
+        });
+        const count = protocolNode.store.count.bind(protocolNode.store);
+        let markCountStarted!: () => void;
+        const countStarted = new Promise<void>(resolve => {
+            markCountStarted = resolve;
+        });
+        let releaseCount!: () => void;
+        const countBlocked = new Promise<void>(resolve => {
+            releaseCount = resolve;
+        });
+        jest.spyOn(protocolNode.store, 'count').mockImplementationOnce(async () => {
+            markCountStarted();
+            await countBlocked;
+            return count();
+        });
+
+        const staleStart = protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey),
+        );
+        try {
+            await countStarted;
+            protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.createOrderedCatchupClientSession(
+                    peerKey,
+                    'replacement-session',
+                ),
+            );
+            releaseCount();
+            await staleStart;
+
+            expect(decodeWrites(pair).filter(message => message.type === 'ordered_catchup_req')).toHaveLength(0);
+            expect(protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+            )).toEqual({ mode: 'ordered_catchup', sessionId: 'replacement-session' });
+        }
+        finally {
+            releaseCount();
+            await staleStart.catch(() => undefined);
+        }
+    });
+
     it('starts periodic Negentropy after an expected catch-up request expires', async () => {
         const operations = await makeOperations(5);
         const protocolNode = await createNode({
