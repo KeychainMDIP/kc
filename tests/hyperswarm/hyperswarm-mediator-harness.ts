@@ -369,8 +369,9 @@ export async function createMediatorNode(options: CreateMediatorNodeOptions): Pr
         KC_IPFS_ENABLE: 'false',
         KC_NODE_NAME: options.name,
     };
-    const previousEnv = { ...process.env };
+    const previousEnv = new Map<string, string | undefined>();
     for (const [key, value] of Object.entries(envValues)) {
+        previousEnv.set(key, process.env[key]);
         if (value === undefined) {
             delete process.env[key];
         }
@@ -459,7 +460,14 @@ export async function createMediatorNode(options: CreateMediatorNodeOptions): Pr
         throw error;
     }
     finally {
-        process.env = previousEnv;
+        for (const [key, value] of previousEnv) {
+            if (value === undefined) {
+                delete process.env[key];
+            }
+            else {
+                process.env[key] = value;
+            }
+        }
         isolatedImportActive = false;
     }
 }

@@ -64,6 +64,38 @@ describe('hyperswarm mediator test harness', () => {
         expect(nodeB.gatekeeperClient.getQueue).not.toHaveBeenCalled();
     });
 
+    it('restores only environment keys owned by an isolated import', async () => {
+        const originalEnv = process.env;
+        const originalExportInterval = process.env.KC_HYPR_EXPORT_INTERVAL;
+        const unrelatedKey = 'KC_HARNESS_UNRELATED_CHANGE';
+        const originalUnrelatedValue = process.env[unrelatedKey];
+
+        try {
+            process.env.KC_HYPR_EXPORT_INTERVAL = 'before-import';
+            const creatingNode = createNode('node-a', 0x11);
+            process.env[unrelatedKey] = 'during-import';
+            await creatingNode;
+
+            expect(process.env).toBe(originalEnv);
+            expect(process.env.KC_HYPR_EXPORT_INTERVAL).toBe('before-import');
+            expect(process.env[unrelatedKey]).toBe('during-import');
+        }
+        finally {
+            if (originalExportInterval === undefined) {
+                delete process.env.KC_HYPR_EXPORT_INTERVAL;
+            }
+            else {
+                process.env.KC_HYPR_EXPORT_INTERVAL = originalExportInterval;
+            }
+            if (originalUnrelatedValue === undefined) {
+                delete process.env[unrelatedKey];
+            }
+            else {
+                process.env[unrelatedKey] = originalUnrelatedValue;
+            }
+        }
+    });
+
     it('captures shutdown callbacks and Hyperswarm instances for their owning nodes', async () => {
         const nodeA = await createNode('node-a', 0x11);
         const nodeB = await createNode('node-b', 0x22);
@@ -118,7 +150,7 @@ describe('hyperswarm mediator test harness', () => {
             expect(nodeA.kuboClient.connect).not.toHaveBeenCalled();
             expect(nodeB.kuboClient.connect).not.toHaveBeenCalled();
             expect(setTimeoutSpy).not.toHaveBeenCalled();
-            expect(process.env.KC_HARNESS_IMPORT_TEST).toBe(originalInjectedEnv);
+            expect(process.env.KC_HARNESS_IMPORT_TEST).toBe('loaded');
             await expect(access(path.join(tempDir, 'data/hyperswarm/operations.db'))).rejects.toMatchObject({
                 code: 'ENOENT',
             });
@@ -132,6 +164,12 @@ describe('hyperswarm mediator test harness', () => {
         }
         finally {
             process.chdir(originalCwd);
+            if (originalInjectedEnv === undefined) {
+                delete process.env.KC_HARNESS_IMPORT_TEST;
+            }
+            else {
+                process.env.KC_HARNESS_IMPORT_TEST = originalInjectedEnv;
+            }
             await rm(tempDir, { recursive: true, force: true });
         }
     });
