@@ -3410,7 +3410,7 @@ let importQueue = asyncLib.queue<ImportQueueTask, ImportQueueResult>(
                     }
                 }
 
-                const filtered = await filterKnownOperations(batch, syncStore, BATCH_SIZE);
+                const filtered = await filterKnownOperations(batch, syncStore, NEG_MAX_OPS_PER_PUSH);
                 result.knownIds = filtered.knownIds;
                 if (filtered.known > 0) {
                     log.debug(
