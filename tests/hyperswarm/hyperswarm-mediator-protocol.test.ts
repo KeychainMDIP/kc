@@ -1214,6 +1214,67 @@ describe('hyperswarm mediator protocol characterization', () => {
         )).toEqual(expect.objectContaining({ mode: 'negentropy' }));
     });
 
+    it('does not replace a periodic session when an older connect-time count resumes', async () => {
+        const protocolNode = await createNode();
+        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const originalCount = protocolNode.store.count.bind(protocolNode.store);
+        let markConnectCountStarted!: () => void;
+        const connectCountStarted = new Promise<void>(resolve => {
+            markConnectCountStarted = resolve;
+        });
+        let releaseConnectCount!: () => void;
+        const connectCountBlocked = new Promise<void>(resolve => {
+            releaseConnectCount = resolve;
+        });
+        let markPeriodicCountStarted!: () => void;
+        const periodicCountStarted = new Promise<void>(resolve => {
+            markPeriodicCountStarted = resolve;
+        });
+        let releasePeriodicCount!: () => void;
+        const periodicCountBlocked = new Promise<void>(resolve => {
+            releasePeriodicCount = resolve;
+        });
+        jest.spyOn(protocolNode.store, 'count')
+            .mockImplementationOnce(async () => {
+                markConnectCountStarted();
+                await connectCountBlocked;
+                return originalCount();
+            })
+            .mockImplementationOnce(async () => {
+                markPeriodicCountStarted();
+                await periodicCountBlocked;
+                return originalCount();
+            });
+
+        const connectStart = protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey),
+        );
+        const periodicStart = protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey, 'periodic'),
+        );
+
+        try {
+            await Promise.all([connectCountStarted, periodicCountStarted]);
+            releasePeriodicCount();
+            await periodicStart;
+            const firstOpen = decodeWrites(pair).find(message => message.type === 'neg_open');
+
+            expect(firstOpen?.sessionId).toEqual(expect.any(String));
+            releaseConnectCount();
+            await connectStart;
+
+            expect(decodeWrites(pair).filter(message => message.type === 'neg_open')).toHaveLength(1);
+            expect(protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+            )).toEqual({ mode: 'negentropy', sessionId: firstOpen?.sessionId });
+        }
+        finally {
+            releasePeriodicCount();
+            releaseConnectCount();
+            await Promise.allSettled([periodicStart, connectStart]);
+        }
+    });
+
     it('starts periodic Negentropy after an expected catch-up request expires', async () => {
         const operations = await makeOperations(5);
         const protocolNode = await createNode({

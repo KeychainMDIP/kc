@@ -1573,6 +1573,10 @@ async function startNegentropySessionForPeer(
         return;
     }
 
+    if (peerSessions.has(peerKey) || getActiveNegentropySessions() > 0) {
+        return;
+    }
+
     const initiator = nodeKey.localeCompare(peerKey) < 0;
     const session = createPeerSession(peerKey, 'negentropy', initiator);
     const initialWindow = await buildInitialHistoryWindowForSession();
