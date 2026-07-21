@@ -1022,11 +1022,12 @@ function closePeerSession(peerKey: string, reason: string): void {
         return;
     }
 
+    const retryOnNextPeriodic = session.mode === 'negentropy' && reason === 'ordered_catchup_active';
     peerSessions.delete(peerKey);
     addAggregateSample(syncStats.syncDurationMs, Date.now() - session.startedAt);
     const conn = connectionInfo[peerKey];
     if (conn && session.mode === 'negentropy') {
-        conn.lastNegentropyAttemptAt = Date.now();
+        conn.lastNegentropyAttemptAt = retryOnNextPeriodic ? 0 : Date.now();
         syncStats.negentropySessionsClosed += 1;
         if (reason === 'complete') {
             conn.negentropySynced = true;
@@ -1046,7 +1047,9 @@ function closePeerSession(peerKey: string, reason: string): void {
 
     if (session.mode !== 'ordered_catchup') {
         maybeStartBackgroundPrebuild('session_closed');
-        void maybeSchedulePreferredSyncs(`session_closed:${reason}`);
+        if (!retryOnNextPeriodic) {
+            void maybeSchedulePreferredSyncs(`session_closed:${reason}`);
+        }
     }
 
     log.debug({
@@ -3889,8 +3892,21 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
             activeOrderedCatchupSessionId,
             remoteSessionId,
         });
+        const globalOrderedCatchupActive = hasActiveOutboundOrderedCatchup();
+        const peerOrderedCatchupActive = hasOrderedCatchupOutboundGuardForPeer(conn);
 
-        if (conflictDecision.action === 'ignore') {
+        if (conflictDecision.action === 'ignore' || globalOrderedCatchupActive || peerOrderedCatchupActive) {
+            const remoteWindowId = typeof msg.windowId === 'string' ? msg.windowId : '';
+            const rejectionSent = remoteSessionId.length > 0
+                && remoteWindowId.length > 0
+                && supportsPeerNegentropyTransport(conn)
+                && sendToPeer(peerKey, {
+                    ...createBaseMessage('neg_close'),
+                    sessionId: remoteSessionId,
+                    windowId: remoteWindowId,
+                    round: Number.isInteger(msg.round) ? msg.round : 0,
+                    reason: 'ordered_catchup_active',
+                });
             log.warn(
                 {
                     peer: shortName(peerKey),
@@ -3898,8 +3914,12 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
                     activeSessionMode: session?.mode ?? null,
                     activeSessionId: session?.sessionId ?? null,
                     activeOrderedCatchupSessionId,
+                    globalOrderedCatchupActive,
+                    peerOrderedCatchupActive,
+                    postImportActive: orderedCatchupPostImportPeers.size > 0,
+                    rejectionSent,
                 },
-                'ignoring neg_open while ordered catch-up active'
+                'rejecting neg_open while ordered catch-up active'
             );
             return;
         }

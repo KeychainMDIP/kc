@@ -761,6 +761,23 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
             publicKeyA: Buffer.alloc(32, 0x11),
             publicKeyB: Buffer.alloc(32, 0x22),
         });
+        const exportIndex = driver.nodeB.gatekeeperClient.exportIndex;
+        const exportIndexImplementation = exportIndex.getMockImplementation();
+        if (!exportIndexImplementation) {
+            throw new Error('node B exportIndex implementation is unavailable');
+        }
+        let markPostImportExportFinished!: () => void;
+        const postImportExportFinished = new Promise<void>(resolve => {
+            markPostImportExportFinished = resolve;
+        });
+        exportIndex.mockImplementationOnce(async request => {
+            try {
+                return await exportIndexImplementation(request);
+            }
+            finally {
+                markPostImportExportFinished();
+            }
+        });
         jest.spyOn(Date, 'now').mockReturnValue(Date.now());
 
         await driver.startSync();
@@ -807,9 +824,20 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         );
         await driver.driveUntilQuiescent(expectedIds, { timeoutMs: 15_000 });
 
-        const messages = decodeWire(driver.transport);
-        const open = messages.find(message => message.body.type === 'neg_open');
-        expect(open).toMatchObject({
+        const rejectedMessages = decodeWire(driver.transport);
+        const rejectedOpen = rejectedMessages.find(message => message.body.type === 'neg_open');
+        expect(rejectedMessages.filter(message => message.body.type === 'neg_open')).toHaveLength(1);
+        expect(rejectedMessages).toContainEqual(expect.objectContaining({
+            direction: 'b-to-a',
+            body: expect.objectContaining({
+                type: 'neg_close',
+                sessionId: rejectedOpen?.body.sessionId,
+                windowId: rejectedOpen?.body.windowId,
+                reason: 'ordered_catchup_active',
+            }),
+        }));
+
+        expect(rejectedOpen).toMatchObject({
             direction: 'a-to-b',
             body: {
                 type: 'neg_open',
@@ -817,10 +845,21 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
                 windowId: expect.any(String),
             },
         });
-        expect(open!.sequence).toBeGreaterThan(finalCatchupSequence);
+        expect(rejectedOpen!.sequence).toBeGreaterThan(finalCatchupSequence);
+
+        await postImportExportFinished;
+        await nextTurn();
+        await driver.nodeA.run(
+            () => driver!.nodeA.mediator.__test.maybeStartPeerSync(peerKeyB, 'periodic'),
+        );
+        await driver.driveUntilQuiescent(expectedIds, { timeoutMs: 15_000 });
+
+        const messages = decodeWire(driver.transport);
+        const finalOpen = messages.filter(message => message.body.type === 'neg_open').at(-1);
+        expect(finalOpen?.body.sessionId).not.toBe(rejectedOpen?.body.sessionId);
+        assertCompletedNegentropyExchange(messages);
         expect(await gatekeeperIds(driver.nodeA.gatekeeper)).toStrictEqual(expectedIds);
         expect(await gatekeeperIds(driver.nodeB.gatekeeper)).toStrictEqual(expectedIds);
-        assertCompletedNegentropyExchange(messages);
     });
 
     it('suppresses Negentropy until ordered imports settle, then converges through the handoff', async () => {

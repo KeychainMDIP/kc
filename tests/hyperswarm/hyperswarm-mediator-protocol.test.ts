@@ -557,7 +557,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         )).toBeNull();
     });
 
-    it('ignores framed neg_open while ordered catch-up is active', async () => {
+    it('rejects framed neg_open while ordered catch-up is active', async () => {
         const open = await createRemoteOpen();
         const protocolNode = await createNode({
             keyByte: 0x33,
@@ -575,7 +575,14 @@ describe('hyperswarm mediator protocol characterization', () => {
         ));
 
         expect(buildSnapshot).not.toHaveBeenCalled();
-        expect(pair.transcript).toHaveLength(0);
+        expect(decodeWrites(pair)).toEqual([
+            expect.objectContaining({
+                type: 'neg_close',
+                sessionId: open.sessionId,
+                windowId: open.windowId,
+                reason: 'ordered_catchup_active',
+            }),
+        ]);
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
         )).toMatchObject({
@@ -1707,6 +1714,7 @@ describe('hyperswarm mediator protocol characterization', () => {
 
     it('starts periodic Negentropy after an expected catch-up request expires', async () => {
         const operations = await makeOperations(5);
+        const remoteOpen = await createRemoteOpen();
         const protocolNode = await createNode({
             keyByte: 0x11,
             maxRecords: 4,
@@ -1734,6 +1742,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 }),
             },
         });
+        const createEngine = jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot');
         const now = Date.now();
         const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(now);
         let expiredState: Record<string, unknown> | null = null;
@@ -1756,6 +1765,22 @@ describe('hyperswarm mediator protocol characterization', () => {
                 orderedCatchupServerPendingGap: 4,
             });
             expect(typeof pendingUntil).toBe('number');
+            await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
+                peerKey,
+                encodeFramedMessage(JSON.stringify(remoteOpen)),
+            ));
+            expect(decodeWrites(pair)).toEqual([
+                expect.objectContaining({
+                    type: 'neg_close',
+                    sessionId: remoteOpen.sessionId,
+                    windowId: remoteOpen.windowId,
+                    reason: 'ordered_catchup_active',
+                }),
+            ]);
+            expect(createEngine).not.toHaveBeenCalled();
+            expect(protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+            )).toBeNull();
 
             nowSpy.mockReturnValue((pendingUntil as number) + 1);
             await protocolNode.node.run(
@@ -2231,6 +2256,7 @@ describe('hyperswarm mediator protocol characterization', () => {
 
     it('blocks other peers until ordered catch-up imports and index sync hand off to Negentropy', async () => {
         const [operation] = await makeOperations(1);
+        const remoteOpen = await createRemoteOpen();
         const protocolNode = await createNode({
             keyByte: 0x11,
             env: {
@@ -2266,6 +2292,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const processEventsImplementation = processEvents.getMockImplementation();
         const exportIndex = protocolNode.node.gatekeeperClient.exportIndex;
         const exportIndexImplementation = exportIndex.getMockImplementation();
+        const createEngine = jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot');
         if (!processEventsImplementation || !exportIndexImplementation) {
             throw new Error('Gatekeeper client implementation is unavailable');
         }
@@ -2318,20 +2345,50 @@ describe('hyperswarm mediator protocol characterization', () => {
             await protocolNode.node.run(
                 () => protocolNode.node.mediator.__test.maybeStartPeerSync(otherPeer.peerKey),
             );
-            expect(decodeWrites(otherPeer.pair)).toHaveLength(0);
+            await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
+                otherPeer.peerKey,
+                encodeFramedMessage(JSON.stringify(remoteOpen)),
+            ));
+            expect(decodeWrites(otherPeer.pair)).toEqual([
+                expect.objectContaining({
+                    type: 'neg_close',
+                    sessionId: remoteOpen.sessionId,
+                    windowId: remoteOpen.windowId,
+                    reason: 'ordered_catchup_active',
+                }),
+            ]);
+            expect(createEngine).not.toHaveBeenCalled();
+            expect(protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.getConnectionState(otherPeer.peerKey)?.activeSession,
+            )).toBeNull();
 
             releaseProcess();
             await exportStarted;
             await protocolNode.node.run(
                 () => protocolNode.node.mediator.__test.maybeStartPeerSync(otherPeer.peerKey),
             );
-            expect(decodeWrites(otherPeer.pair)).toHaveLength(0);
+            await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
+                catchupPeer.peerKey,
+                encodeFramedMessage(JSON.stringify(remoteOpen)),
+            ));
+            expect(decodeWrites(catchupPeer.pair)).toEqual([
+                expect.objectContaining({
+                    type: 'neg_close',
+                    sessionId: remoteOpen.sessionId,
+                    windowId: remoteOpen.windowId,
+                    reason: 'ordered_catchup_active',
+                }),
+            ]);
+            expect(createEngine).not.toHaveBeenCalled();
+            expect(protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.getConnectionState(catchupPeer.peerKey)?.activeSession,
+            )).toBeNull();
 
             releaseExport();
             await eventually(() => catchupPeer.pair.transcript.some(entry => entry.messageType === 'neg_open'));
 
             expect(decodeWrites(catchupPeer.pair).filter(message => message.type === 'neg_open')).toHaveLength(1);
-            expect(decodeWrites(otherPeer.pair)).toHaveLength(0);
+            expect(decodeWrites(otherPeer.pair).filter(message => message.type === 'neg_open')).toHaveLength(0);
             expect(protocolNode.node.run(
                 () => protocolNode.node.mediator.__test.getConnectionState(catchupPeer.peerKey)?.activeSession,
             )).toEqual(expect.objectContaining({ mode: 'negentropy' }));
