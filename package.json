@@ -20,6 +20,9 @@
     "sharp": "^0.34.5",
     "uuid": "^13.0.0"
   },
+  "overrides": {
+    "@libp2p/http": "2.0.1"
+  },
   "devDependencies": {
     "@eslint/js": "^9.39.3",
     "@babel/plugin-proposal-private-property-in-object": "^7.21.11",

@@ -1,0 +1,104 @@
+.dark .cs-main-container,
+.dark .cs-chat-container {
+    background: #0b0f14;
+    color: #e7e9ee;
+}
+
+.dark .cs-sidebar,
+.dark .cs-conversation-list {
+    background: #0e131a;
+    border-right: 1px solid #1f2733;
+}
+
+.dark .cs-conversation { color: #cfd6e4; background: transparent; }
+.dark .cs-conversation:hover { background: rgba(255,255,255,0.03); }
+.dark .cs-conversation--active { background: rgba(59,130,246,0.12); }
+.dark .cs-conversation__name { color: #e7e9ee; }
+.dark .cs-conversation__info,
+.dark .cs-message__sent-time { color: #a9b2c3; }
+
+.dark .cs-conversation-header {
+    background: #0e131a;
+    border-bottom: 1px solid #1f2733;
+    color: #e7e9ee;
+}
+.dark .cs-conversation-header__user-name { color: #e7e9ee; }
+.dark .cs-conversation-header__info { color: #a9b2c3; }
+
+.dark .cs-message-list,
+.dark .cs-message-list__scroll-wrapper {
+    background: #0b0f14;
+}
+
+.dark .cs-message--incoming .cs-message__content {
+    background: #0f1620; color: #e7e9ee; border: 1px solid transparent;
+}
+.dark .cs-message--outgoing .cs-message__content {
+    background: #1b6fff; color: #ffffff; border: 1px solid transparent;
+}
+
+.dark .cs-message-input {
+    background: #0e131a; border-top: 1px solid #1f2733;
+}
+.dark .cs-message-input__content-editor-wrapper,
+.dark .cs-message-input__content-editor-container,
+.dark .cs-message-input__content-editor {
+    background: #151b24; color: #e7e9ee;
+}
+.dark .cs-message-input__content-editor[data-placeholder]:empty:before {
+    color: #7f8aa3;
+}
+.dark .cs-message-input__tools,
+.dark .cs-button { color: #7fb2ff; }
+
+.dark .cs-message-list::-webkit-scrollbar,
+.dark .cs-sidebar::-webkit-scrollbar { width: 10px; height: 10px; }
+.dark .cs-message-list::-webkit-scrollbar-thumb,
+.dark .cs-sidebar::-webkit-scrollbar-thumb { background: #1a2230; border-radius: 8px; }
+
+.dark .cs-conversation-header__content,
+.dark .cs-conversation-header__avatar,
+.dark .cs-conversation-header__actions,
+.dark .cs-conversation-header__back {
+    background: transparent !important;
+}
+
+.dark .cs-conversation-header .cs-conversation-header__content .cs-conversation-header__user-name {
+    color: #e7e9ee !important;
+    background: transparent !important;
+}
+.dark .cs-conversation-header .cs-conversation-header__content .cs-conversation-header__info {
+    color: #a9b2c3 !important;
+    background: transparent !important;
+}
+
+.dark .cs-conversation-header {
+    background: #0e131a !important;
+    border-bottom: 1px solid #1f2733;
+}
+.dark .cs-conversation-header > * {
+    background: transparent !important;
+}
+
+.dark .cs-conversation__name {
+    color: #f0f3fa !important;
+    font-weight: 600;
+}
+
+.dark .cs-conversation__info {
+    color: #b8c3d6 !important;
+}
+
+.dark .cs-message--outgoing .cs-message__content,
+.dark .cs-message-group--outgoing .cs-message-group__messages .cs-message .cs-message__content {
+    background: #1b6fff !important;
+    color: #fff !important;
+    border: 1px solid transparent;
+}
+
+.dark .cs-message--incoming .cs-message__content,
+.dark .cs-message-group--incoming .cs-message-group__messages .cs-message .cs-message__content {
+    background: #0f1620 !important;
+    color: #e7e9ee !important;
+    border: 1px solid transparent;
+}

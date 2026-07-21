@@ -1,0 +1,165 @@
+import React from "react";
+import { Avatar } from "@chatscope/chat-ui-kit-react";
+import { Box, Button, Dialog, Flex, Heading, IconButton, Portal, Spinner, Text } from "@chakra-ui/react";
+import { LuArrowLeft } from "react-icons/lu";
+import { truncateMiddle } from "../utils/utils";
+
+export type GroupMemberDisplay = {
+    avatar: string;
+    did: string;
+    isCurrentUser: boolean;
+    name: string;
+};
+
+interface GroupDetailsModalProps {
+    isOpen: boolean;
+    onClose: () => void;
+    groupAvatar: string;
+    groupId: string;
+    groupName: string;
+    members: GroupMemberDisplay[];
+    onMemberSelect: (member: GroupMemberDisplay) => void;
+    onGroupAvatarClick?: () => void;
+    groupAvatarUpdating?: boolean;
+    canUpdateGroupAvatar?: boolean;
+    canAddMember?: boolean;
+    addMemberDisabled?: boolean;
+    addMemberLoading?: boolean;
+    onAddMemberClick?: () => void;
+}
+
+const GroupDetailsModal: React.FC<GroupDetailsModalProps> = ({
+    isOpen,
+    onClose,
+    groupAvatar,
+    groupName,
+    members,
+    onMemberSelect,
+    onGroupAvatarClick,
+    groupAvatarUpdating = false,
+    canUpdateGroupAvatar = false,
+    canAddMember = false,
+    addMemberDisabled = false,
+    addMemberLoading = false,
+    onAddMemberClick,
+}) => {
+    const handleOpenChange = (e: { open: boolean }) => {
+        if (!e.open) {
+            onClose();
+        }
+    };
+
+    return (
+        <Dialog.Root open={isOpen} onOpenChange={handleOpenChange}>
+            <Portal>
+                <Dialog.Backdrop zIndex={2310} bg="blackAlpha.600" />
+                <Dialog.Positioner zIndex={2320}>
+                    <Dialog.Content zIndex={2320} bg={{ base: "white", _dark: "gray.800" }}>
+                        <Box display="flex" flexDir="column" minH="100%">
+                            <Flex as="header" align="center" gap={3} px={2} py={3}>
+                                <IconButton variant="ghost" onClick={onClose}>
+                                    <LuArrowLeft />
+                                </IconButton>
+                                <Heading size="sm">Group Details</Heading>
+                            </Flex>
+
+                            <Box as="main" flex={1} overflowY="auto" px={4} py={6}>
+                                <Flex direction="column" align="center" gap={2} mb={6}>
+                                    <Box
+                                        as="button"
+                                        aria-label="Update group avatar"
+                                        aria-disabled={!canUpdateGroupAvatar || groupAvatarUpdating}
+                                        borderRadius="full"
+                                        cursor={canUpdateGroupAvatar && !groupAvatarUpdating ? "pointer" : "default"}
+                                        display="inline-flex"
+                                        p={0}
+                                        position="relative"
+                                        onClick={() => {
+                                            if (canUpdateGroupAvatar && !groupAvatarUpdating) {
+                                                onGroupAvatarClick?.();
+                                            }
+                                        }}
+                                    >
+                                        <Avatar size="lg" src={groupAvatar} name={groupName} />
+                                        {groupAvatarUpdating && (
+                                            <Flex
+                                                align="center"
+                                                bg="blackAlpha.500"
+                                                borderRadius="full"
+                                                inset={0}
+                                                justify="center"
+                                                position="absolute"
+                                            >
+                                                <Spinner color="white" size="sm" />
+                                            </Flex>
+                                        )}
+                                    </Box>
+                                    <Text fontWeight="semibold" fontSize="lg" textAlign="center">
+                                        {groupName}
+                                    </Text>
+                                </Flex>
+
+                                <Box>
+                                    <Flex align="center" justify="space-between" mb={3}>
+                                        <Text fontWeight="semibold">
+                                            Members ({members.length})
+                                        </Text>
+                                        {canAddMember && (
+                                            <Button
+                                                colorPalette="blue"
+                                                disabled={addMemberDisabled || addMemberLoading}
+                                                loading={addMemberLoading}
+                                                onClick={onAddMemberClick}
+                                                size="sm"
+                                                variant="outline"
+                                            >
+                                                Add Member
+                                            </Button>
+                                        )}
+                                    </Flex>
+
+                                    <Box display="flex" flexDirection="column" gap={2}>
+                                        {members.length > 0 ? (
+                                            members.map(member => (
+                                                <Flex
+                                                    key={member.did}
+                                                    as="button"
+                                                    align="center"
+                                                    gap={3}
+                                                    width="100%"
+                                                    px={3}
+                                                    py={2}
+                                                    borderWidth="1px"
+                                                    borderRadius="md"
+                                                    bg={{ base: "white", _dark: "gray.800" }}
+                                                    textAlign="left"
+                                                    cursor="pointer"
+                                                    _hover={{ bg: { base: "gray.50", _dark: "gray.700" } }}
+                                                    onClick={() => onMemberSelect(member)}
+                                                >
+                                                    <Avatar size="sm" src={member.avatar} name={member.name} />
+                                                    <Box minW={0} flex={1}>
+                                                        <Text fontWeight="medium" overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap">
+                                                            {member.name}{member.isCurrentUser ? " (You)" : ""}
+                                                        </Text>
+                                                        <Text fontSize="sm" color="gray.500" overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap">
+                                                            {truncateMiddle(member.did, 32)}
+                                                        </Text>
+                                                    </Box>
+                                                </Flex>
+                                            ))
+                                        ) : (
+                                            <Text color="gray.500">No members found</Text>
+                                        )}
+                                    </Box>
+                                </Box>
+                            </Box>
+                        </Box>
+                    </Dialog.Content>
+                </Dialog.Positioner>
+            </Portal>
+        </Dialog.Root>
+    );
+};
+
+export default GroupDetailsModal;
