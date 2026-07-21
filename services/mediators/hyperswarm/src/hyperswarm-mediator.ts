@@ -1713,7 +1713,7 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
         conn.syncMode = 'negentropy';
     }
 
-    if (hasActiveOutboundOrderedCatchup()) {
+    if (mode === 'negentropy' && hasActiveOutboundOrderedCatchup()) {
         logNegentropySuppressedByOrderedCatchup(peerKey, source);
         return;
     }

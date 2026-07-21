@@ -376,6 +376,32 @@ describe('hyperswarm mediator protocol characterization', () => {
         )).toMatchObject({ syncMode: expectedMode, activeSession: { mode: 'legacy' } });
     });
 
+    it('does not suppress legacy sync while ordered catch-up is active', async () => {
+        const protocolNode = await createNode({
+            env: { KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true' },
+        });
+        const catchupPeer = attachPeer(protocolNode, { mode: 'framed' });
+        protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.createOrderedCatchupClientSession(
+                catchupPeer.peerKey,
+                'active-catchup',
+            ),
+        );
+        const legacyPeer = attachPeer(protocolNode, { peerKeyByte: 0x33 });
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(
+            legacyPeer.peerKey,
+            peerPing({
+                capabilities: undefined,
+                transportFramingVersion: undefined,
+            }),
+        ));
+
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(legacyPeer.peerKey),
+        )).toMatchObject({ syncMode: 'legacy', activeSession: { mode: 'legacy' } });
+    });
+
     it('selects no mode for an incompatible peer when legacy synchronization is disabled', async () => {
         const protocolNode = await createNode({
             env: { KC_HYPR_LEGACY_SYNC_ENABLE: 'false' },
