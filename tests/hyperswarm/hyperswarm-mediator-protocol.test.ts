@@ -1283,68 +1283,94 @@ describe('hyperswarm mediator protocol characterization', () => {
         )).toEqual(expect.objectContaining({ mode: 'negentropy' }));
     });
 
-    it('does not replace a periodic session when an older connect-time count resumes', async () => {
-        const protocolNode = await createNode();
-        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+    it('serializes peer sync decisions while a store count is pending', async () => {
+        const protocolNode = await createNode({
+            maxRecords: 4,
+            env: {
+                KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true',
+                KC_HYPR_LEGACY_SYNC_ENABLE: 'false',
+            },
+        });
+        const firstPeer = attachPeer(protocolNode, {
+            peerKeyByte: 0x22,
+            mode: 'framed',
+            overrides: {
+                capabilities: compatibleCapabilities({
+                    orderedCatchup: true,
+                    orderedCatchupVersion: 1,
+                    orderedCatchupReady: true,
+                    operationCount: 5,
+                    orderedOperationCount: 5,
+                }),
+            },
+        });
+        const secondPeer = attachPeer(protocolNode, {
+            peerKeyByte: 0x33,
+            mode: 'framed',
+            overrides: {
+                capabilities: compatibleCapabilities({
+                    orderedCatchup: true,
+                    orderedCatchupVersion: 1,
+                    orderedCatchupReady: true,
+                    operationCount: 5,
+                    orderedOperationCount: 5,
+                }),
+            },
+        });
         const originalCount = protocolNode.store.count.bind(protocolNode.store);
-        let markConnectCountStarted!: () => void;
-        const connectCountStarted = new Promise<void>(resolve => {
-            markConnectCountStarted = resolve;
+        let markCountStarted!: () => void;
+        const countStarted = new Promise<void>(resolve => {
+            markCountStarted = resolve;
         });
-        let releaseConnectCount!: () => void;
-        const connectCountBlocked = new Promise<void>(resolve => {
-            releaseConnectCount = resolve;
+        let releaseCount!: () => void;
+        const countBlocked = new Promise<void>(resolve => {
+            releaseCount = resolve;
         });
-        let markPeriodicCountStarted!: () => void;
-        const periodicCountStarted = new Promise<void>(resolve => {
-            markPeriodicCountStarted = resolve;
+        const count = jest.spyOn(protocolNode.store, 'count').mockImplementationOnce(async () => {
+            markCountStarted();
+            await countBlocked;
+            return originalCount();
         });
-        let releasePeriodicCount!: () => void;
-        const periodicCountBlocked = new Promise<void>(resolve => {
-            releasePeriodicCount = resolve;
-        });
-        jest.spyOn(protocolNode.store, 'count')
-            .mockImplementationOnce(async () => {
-                markConnectCountStarted();
-                await connectCountBlocked;
-                return originalCount();
-            })
-            .mockImplementationOnce(async () => {
-                markPeriodicCountStarted();
-                await periodicCountBlocked;
-                return originalCount();
-            });
 
-        const connectStart = protocolNode.node.run(
-            () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey),
-        );
-        const periodicStart = protocolNode.node.run(
-            () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey, 'periodic'),
+        const firstStart = protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.maybeStartPeerSync(firstPeer.peerKey),
         );
 
         try {
-            await Promise.all([connectCountStarted, periodicCountStarted]);
-            releasePeriodicCount();
-            await periodicStart;
-            const firstOpen = decodeWrites(pair).find(message => message.type === 'neg_open');
+            await countStarted;
+            await protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.maybeStartPeerSync(secondPeer.peerKey),
+            );
+            expect(count).toHaveBeenCalledTimes(1);
+            expect(decodeWrites(firstPeer.pair)).toHaveLength(0);
+            expect(decodeWrites(secondPeer.pair)).toHaveLength(0);
 
-            expect(firstOpen?.sessionId).toEqual(expect.any(String));
-            releaseConnectCount();
-            await connectStart;
+            releaseCount();
+            await firstStart;
 
-            expect(decodeWrites(pair).filter(message => message.type === 'neg_open')).toHaveLength(1);
+            expect(decodeWrites(firstPeer.pair).filter(
+                message => message.type === 'ordered_catchup_req',
+            )).toHaveLength(1);
+            expect(decodeWrites(secondPeer.pair)).toHaveLength(0);
             expect(protocolNode.node.run(
-                () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
-            )).toEqual({ mode: 'negentropy', sessionId: firstOpen?.sessionId });
+                () => protocolNode.node.mediator.__test.getConnectionState(firstPeer.peerKey)?.activeSession,
+            )).toEqual(expect.objectContaining({ mode: 'ordered_catchup' }));
+            expect(protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.getConnectionState(secondPeer.peerKey),
+            )).toMatchObject({
+                syncMode: 'negentropy',
+                syncStarted: false,
+                activeSession: null,
+            });
         }
         finally {
-            releasePeriodicCount();
-            releaseConnectCount();
-            await Promise.allSettled([periodicStart, connectStart]);
+            releaseCount();
+            await firstStart.catch(() => undefined);
         }
     });
 
     it('does not restart Negentropy when an older store count resumes after completion', async () => {
+        const remoteOpen = await createRemoteOpen();
         const protocolNode = await createNode();
         const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
         const count = protocolNode.store.count.bind(protocolNode.store);
@@ -1368,26 +1394,18 @@ describe('hyperswarm mediator protocol characterization', () => {
         );
         try {
             await countStarted;
-            await protocolNode.node.run(
-                () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey, 'periodic'),
-            );
-            const open = decodeWrites(pair).find(message => message.type === 'neg_open');
-            expect(open).toMatchObject({
-                sessionId: expect.any(String),
-                windowId: expect.any(String),
-            });
-
+            await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, remoteOpen));
             await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
                 type: 'neg_close',
-                sessionId: open?.sessionId,
-                windowId: open?.windowId,
+                sessionId: remoteOpen.sessionId,
+                windowId: remoteOpen.windowId,
                 reason: 'complete',
             }));
             const engineCount = createEngine.mock.calls.length;
             releaseCount();
             await staleStart;
 
-            expect(decodeWrites(pair).filter(message => message.type === 'neg_open')).toHaveLength(1);
+            expect(decodeWrites(pair).filter(message => message.type === 'neg_open')).toHaveLength(0);
             expect(createEngine).toHaveBeenCalledTimes(engineCount);
             expect(protocolNode.node.run(
                 () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
@@ -2042,6 +2060,126 @@ describe('hyperswarm mediator protocol characterization', () => {
         }
         finally {
             release();
+        }
+    });
+
+    it('blocks other peers until ordered catch-up imports and index sync hand off to Negentropy', async () => {
+        const [operation] = await makeOperations(1);
+        const protocolNode = await createNode({
+            keyByte: 0x11,
+            env: {
+                KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true',
+                KC_HYPR_LEGACY_SYNC_ENABLE: 'false',
+            },
+        });
+        const catchupPeer = attachPeer(protocolNode, {
+            peerKeyByte: 0x22,
+            mode: 'framed',
+            overrides: {
+                capabilities: compatibleCapabilities({
+                    orderedCatchup: true,
+                    orderedCatchupVersion: 1,
+                    orderedCatchupReady: true,
+                }),
+            },
+        });
+        const otherPeer = attachPeer(protocolNode, {
+            peerKeyByte: 0x33,
+            mode: 'framed',
+            overrides: {
+                capabilities: compatibleCapabilities({
+                    orderedCatchup: true,
+                    orderedCatchupVersion: 1,
+                    orderedCatchupReady: true,
+                    operationCount: 5,
+                    orderedOperationCount: 5,
+                }),
+            },
+        });
+        const processEvents = protocolNode.node.gatekeeperClient.processEvents;
+        const processEventsImplementation = processEvents.getMockImplementation();
+        const exportIndex = protocolNode.node.gatekeeperClient.exportIndex;
+        const exportIndexImplementation = exportIndex.getMockImplementation();
+        if (!processEventsImplementation || !exportIndexImplementation) {
+            throw new Error('Gatekeeper client implementation is unavailable');
+        }
+        let markProcessStarted!: () => void;
+        const processStarted = new Promise<void>(resolve => {
+            markProcessStarted = resolve;
+        });
+        let releaseProcess!: () => void;
+        const processBlocked = new Promise<void>(resolve => {
+            releaseProcess = resolve;
+        });
+        let markExportStarted!: () => void;
+        const exportStarted = new Promise<void>(resolve => {
+            markExportStarted = resolve;
+        });
+        let releaseExport!: () => void;
+        const exportBlocked = new Promise<void>(resolve => {
+            releaseExport = resolve;
+        });
+        processEvents.mockImplementationOnce(async () => {
+            markProcessStarted();
+            await processBlocked;
+            return processEventsImplementation();
+        });
+        exportIndex.mockImplementationOnce(async request => {
+            markExportStarted();
+            await exportBlocked;
+            return exportIndexImplementation(request);
+        });
+
+        try {
+            protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.createOrderedCatchupClientSession(
+                    catchupPeer.peerKey,
+                    'draining-session',
+                ),
+            );
+            await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
+                catchupPeer.peerKey,
+                encodeFramedMessage(JSON.stringify({
+                    type: 'ordered_catchup_push',
+                    sessionId: 'draining-session',
+                    cursor: { syncOrder: 1, id: operation.signature!.hash },
+                    hasMore: false,
+                    data: [operation],
+                })),
+            ));
+            await processStarted;
+
+            await protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.maybeStartPeerSync(otherPeer.peerKey),
+            );
+            expect(decodeWrites(otherPeer.pair)).toHaveLength(0);
+
+            releaseProcess();
+            await exportStarted;
+            await protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.maybeStartPeerSync(otherPeer.peerKey),
+            );
+            expect(decodeWrites(otherPeer.pair)).toHaveLength(0);
+
+            releaseExport();
+            await eventually(() => catchupPeer.pair.transcript.some(entry => entry.messageType === 'neg_open'));
+
+            expect(decodeWrites(catchupPeer.pair).filter(message => message.type === 'neg_open')).toHaveLength(1);
+            expect(decodeWrites(otherPeer.pair)).toHaveLength(0);
+            expect(protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.getConnectionState(catchupPeer.peerKey)?.activeSession,
+            )).toEqual(expect.objectContaining({ mode: 'negentropy' }));
+            expect(protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.getConnectionState(otherPeer.peerKey),
+            )).toMatchObject({
+                syncMode: 'negentropy',
+                syncStarted: false,
+                activeSession: null,
+            });
+        }
+        finally {
+            releaseProcess();
+            releaseExport();
         }
     });
 

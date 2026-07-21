@@ -298,12 +298,19 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
             await driver.nodeB.run(
                 () => driver!.nodeB.mediator.__test.maybeStartPeerSync(peerKeyA, 'connect'),
             );
-            replacementSessionId = (driver.nodeB.run(
+            expect(driver.nodeB.run(
                 () => driver!.nodeB.mediator.__test.getConnectionState(peerKeyA),
-            )?.activeSession as { sessionId?: unknown } | null)?.sessionId;
+            )?.activeSession).toBeNull();
+            expect(decodeWire(replacement)).toHaveLength(0);
 
             releasePersistence();
             await delivery;
+            await driver.nodeB.run(
+                () => driver!.nodeB.mediator.__test.maybeStartPeerSync(peerKeyA, 'periodic'),
+            );
+            replacementSessionId = (driver.nodeB.run(
+                () => driver!.nodeB.mediator.__test.getConnectionState(peerKeyA),
+            )?.activeSession as { sessionId?: unknown } | null)?.sessionId;
             stateAfterPersistence = driver.nodeB.run(
                 () => driver!.nodeB.mediator.__test.getConnectionState(peerKeyA),
             );
