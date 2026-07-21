@@ -243,6 +243,7 @@ interface ImportQueueTask {
 interface ImportQueueResult {
     knownIds: string[];
     persistedIds: string[];
+    retryable: boolean;
 }
 
 interface ExportQueueTask {
@@ -317,6 +318,7 @@ interface PeerSyncSession {
     lastActivity: number;
     pendingHaveIds: Set<string>;
     pendingNeedIds: Set<string>;
+    unresolvedNeedIds: Set<string>;
     rounds: number;
     maxRounds: number;
     reconciliationComplete: boolean;
@@ -981,6 +983,7 @@ function createPeerSession(peerKey: string, mode: PeerSessionMode, initiator: bo
         lastActivity: now,
         pendingHaveIds: new Set<string>(),
         pendingNeedIds: new Set<string>(),
+        unresolvedNeedIds: new Set<string>(),
         rounds: 0,
         maxRounds: config.negentropyMaxRoundsPerSession,
         reconciliationComplete: false,
@@ -1052,6 +1055,7 @@ function closePeerSession(peerKey: string, reason: string): void {
         rounds: session.rounds,
         pendingHave: session.pendingHaveIds.size,
         pendingNeed: session.pendingNeedIds.size,
+        unresolvedNeed: session.unresolvedNeedIds.size,
         reason,
     }, 'peer sync session closed');
 }
@@ -2993,10 +2997,49 @@ function trackProvenStoredOpsPush(session: PeerSyncSession, operations: Operatio
             || !session.pendingNeedIds.delete(mapped.value.idHex)) {
             continue;
         }
+        session.unresolvedNeedIds.delete(mapped.value.idHex);
         session.receivedKnownPushIds.add(mapped.value.idHex);
         progressed = true;
     }
     return progressed;
+}
+
+function carryReceivedUnresolvedNeeds(session: PeerSyncSession): boolean {
+    for (const id of session.pendingNeedIds) {
+        if (!session.receivedPushIds.has(id)) {
+            return false;
+        }
+    }
+
+    for (const id of session.pendingNeedIds) {
+        session.unresolvedNeedIds.add(id);
+    }
+    session.pendingNeedIds.clear();
+    return true;
+}
+
+async function refreshStoredUnresolvedNeeds(peerKey: string, session: PeerSyncSession): Promise<void> {
+    if (session.unresolvedNeedIds.size === 0) {
+        return;
+    }
+
+    try {
+        for (const ids of chunkIds(Array.from(session.unresolvedNeedIds), NEG_MAX_IDS_PER_LOOKUP)) {
+            const rows = await syncStore.getByIds(ids);
+            if (peerSessions.get(peerKey) !== session) {
+                return;
+            }
+            for (const row of rows) {
+                session.unresolvedNeedIds.delete(row.id);
+            }
+        }
+    }
+    catch (error) {
+        log.warn(
+            { error, peer: shortName(peerKey), unresolved: session.unresolvedNeedIds.size },
+            'failed to confirm unresolved negentropy operations'
+        );
+    }
 }
 
 async function maybeFinalizeInitiatorSession(peerKey: string, session: PeerSyncSession): Promise<void> {
@@ -3012,12 +3055,34 @@ async function maybeFinalizeInitiatorSession(peerKey: string, session: PeerSyncS
         return;
     }
 
-    if (session.pendingNeedIds.size > 0) {
+    if (!carryReceivedUnresolvedNeeds(session)) {
         return;
     }
 
     const continued = await maybeContinueCappedWindowPaging(peerKey, session);
     if (continued || peerSessions.get(peerKey) !== session) {
+        return;
+    }
+
+    await refreshStoredUnresolvedNeeds(peerKey, session);
+    if (peerSessions.get(peerKey) !== session) {
+        return;
+    }
+
+    if (session.unresolvedNeedIds.size > 0) {
+        log.warn(
+            {
+                peer: shortName(peerKey),
+                sessionId: session.sessionId,
+                unresolvedIds: summarizeSyncIds(session.unresolvedNeedIds),
+            },
+            'negentropy session completed with unresolved operations'
+        );
+        if (!sendNegClose(peerKey, session, 'unresolved_operations')) {
+            closePeerSession(peerKey, 'send_neg_close_failed');
+            return;
+        }
+        closePeerSession(peerKey, 'unresolved_operations');
         return;
     }
 
@@ -3282,7 +3347,7 @@ async function importBatch(batch: Operation[]): Promise<Operation[]> {
     }
     catch (error) {
         log.error({ error }, 'importBatch error');
-        return [];
+        throw error;
     }
 }
 
@@ -3399,6 +3464,9 @@ async function mergeBatch(batch: Operation[]): Promise<string[]> {
     const response = await gatekeeper.processEvents();
     const processDurationMs = Date.now() - processStart;
     log.debug({ durationMs: processDurationMs }, 'processEvents');
+    if (response.busy) {
+        throw new Error('gatekeeper processEvents busy');
+    }
     const processSummary = { ...response };
     delete processSummary.acceptedHashes;
     delete processSummary.acceptedEvents;
@@ -3427,54 +3495,59 @@ let importQueue = asyncLib.queue<ImportQueueTask, ImportQueueResult>(
         const result: ImportQueueResult = {
             knownIds: [],
             persistedIds: [],
+            retryable: false,
         };
         try {
             const ready = await gatekeeper.isReady();
 
-            if (ready) {
-                const batch = msg.data || [];
-
-                if (batch.length === 0) {
-                    return result;
-                }
-
-                if (msg.type === 'queue') {
-                    syncStats.queueOpsImported += batch.length;
-                    const samples = collectQueueDelaySamples(batch);
-                    for (const sample of samples) {
-                        addAggregateSample(syncStats.queueDelayMs, sample);
-                    }
-                }
-
-                const filtered = await filterKnownOperations(batch, syncStore, NEG_MAX_OPS_PER_PUSH);
-                result.knownIds = filtered.knownIds;
-                if (filtered.known > 0) {
-                    log.debug(
-                        {
-                            peer: shortName(name),
-                            node: msg.node || 'anon',
-                            received: batch.length,
-                            forwarded: filtered.operations.length,
-                            knownDropped: filtered.known,
-                            mapped: filtered.mapped,
-                            invalid: filtered.invalid,
-                        },
-                        'filtered inbound operations against sync-store'
-                    );
-                }
-
-                if (filtered.operations.length === 0) {
-                    return result;
-                }
-
-                const nodeName = msg.node || 'anon';
-                log.debug(
-                    `* merging batch (${filtered.operations.length}/${batch.length} events) from: ${shortName(name)} (${nodeName}) *`
-                );
-                result.persistedIds = await mergeBatch(filtered.operations);
+            if (!ready) {
+                result.retryable = true;
+                return result;
             }
+
+            const batch = msg.data || [];
+
+            if (batch.length === 0) {
+                return result;
+            }
+
+            if (msg.type === 'queue') {
+                syncStats.queueOpsImported += batch.length;
+                const samples = collectQueueDelaySamples(batch);
+                for (const sample of samples) {
+                    addAggregateSample(syncStats.queueDelayMs, sample);
+                }
+            }
+
+            const filtered = await filterKnownOperations(batch, syncStore, NEG_MAX_OPS_PER_PUSH);
+            result.knownIds = filtered.knownIds;
+            if (filtered.known > 0) {
+                log.debug(
+                    {
+                        peer: shortName(name),
+                        node: msg.node || 'anon',
+                        received: batch.length,
+                        forwarded: filtered.operations.length,
+                        knownDropped: filtered.known,
+                        mapped: filtered.mapped,
+                        invalid: filtered.invalid,
+                    },
+                    'filtered inbound operations against sync-store'
+                );
+            }
+
+            if (filtered.operations.length === 0) {
+                return result;
+            }
+
+            const nodeName = msg.node || 'anon';
+            log.debug(
+                `* merging batch (${filtered.operations.length}/${batch.length} events) from: ${shortName(name)} (${nodeName}) *`
+            );
+            result.persistedIds = await mergeBatch(filtered.operations);
         }
         catch (error) {
+            result.retryable = true;
             log.error({ error }, 'mergeBatch error');
         }
         return result;
@@ -3969,6 +4042,7 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
             }
             for (const id of imported.knownIds) {
                 session.provenStoredPushIds.add(id);
+                session.unresolvedNeedIds.delete(id);
                 if (session.initiator && session.pendingNeedIds.delete(id)) {
                     session.receivedKnownPushIds.add(id);
                 }
@@ -3976,6 +4050,15 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
             for (const id of imported.persistedIds) {
                 session.provenStoredPushIds.add(id);
                 session.pendingNeedIds.delete(id);
+                session.unresolvedNeedIds.delete(id);
+            }
+            if (imported.retryable) {
+                for (const operation of unprovenBatch) {
+                    const mapped = mapOperationToSyncKey(operation);
+                    if (mapped.ok && !session.provenStoredPushIds.has(mapped.value.idHex)) {
+                        session.receivedPushIds.delete(mapped.value.idHex);
+                    }
+                }
             }
             await maybeFinalizeInitiatorSession(peerKey, session);
         }

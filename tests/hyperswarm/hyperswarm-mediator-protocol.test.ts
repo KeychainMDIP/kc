@@ -1154,9 +1154,149 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
         )).toEqual({ mode: 'negentropy', sessionId: open.sessionId });
+        expect(decodeWrites(pair).filter(message => message.type === 'neg_open')).toHaveLength(2);
         expect(decodeWrites(pair).some(message => (
             message.type === 'neg_close' && message.reason === 'complete'
         ))).toBe(false);
+    });
+
+    it('closes immediately when a final window contains a received rejected operation', async () => {
+        const rejectedId = hash('a');
+        const rejectedOperation = {
+            signature: {
+                hash: rejectedId,
+                signed: '2026-01-01T00:00:00.000Z',
+            },
+        } as Operation;
+        const protocolNode = await createNode();
+        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
+        jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
+            const engine = createEngine(snapshot);
+            jest.spyOn(engine, 'reconcile').mockResolvedValueOnce({
+                nextMsg: null,
+                haveIds: [],
+                needIds: [rejectedId],
+            });
+            return engine;
+        });
+        const getByIds = protocolNode.store.getByIds.bind(protocolNode.store);
+        const rejectedLookups: string[][] = [];
+        jest.spyOn(protocolNode.store, 'getByIds').mockImplementation(async ids => {
+            if (ids.includes(rejectedId)) {
+                rejectedLookups.push([...ids]);
+            }
+            return getByIds(ids);
+        });
+
+        await protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey),
+        );
+        const open = decodeWrites(pair).find(message => message.type === 'neg_open');
+        if (!open) {
+            throw new Error('expected local neg_open');
+        }
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'neg_msg',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            frame: encodeNegentropyFrame('rejected-final-window'),
+        }));
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'ops_push',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            data: [rejectedOperation],
+        }));
+
+        expect(rejectedLookups).toStrictEqual([[rejectedId], [rejectedId]]);
+        expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
+            type: 'neg_close',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            reason: 'unresolved_operations',
+        }));
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+        )).toBeNull();
+    });
+
+    it('advances past a rejected operation and completes after index backfill', async () => {
+        const [localA, localB, rejectedOperation] = await makeOperations(3);
+        const rejectedId = rejectedOperation.signature!.hash;
+        const protocolNode = await createNode({ maxRecords: 1 });
+        await protocolNode.store.upsertMany([localA, localB].map(operation => ({
+            id: operation.signature!.hash,
+            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            operation,
+        })));
+        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
+        const outcomes = [
+            { nextMsg: null, haveIds: [], needIds: [rejectedId] },
+            { nextMsg: null, haveIds: [], needIds: [] },
+        ];
+        jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementation(snapshot => {
+            const engine = createEngine(snapshot);
+            jest.spyOn(engine, 'reconcile').mockResolvedValueOnce(outcomes.shift()!);
+            return engine;
+        });
+        protocolNode.node.gatekeeperClient.importBatch.mockImplementationOnce(async events => ({
+            queued: 0,
+            processed: 0,
+            rejected: events.length,
+            total: 0,
+            rejectedIndices: events.map((_, index) => index),
+        }));
+
+        await protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey),
+        );
+        const firstOpen = decodeWrites(pair).find(message => message.type === 'neg_open');
+        if (!firstOpen) {
+            throw new Error('expected first neg_open');
+        }
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'neg_msg',
+            sessionId: firstOpen.sessionId,
+            windowId: firstOpen.windowId,
+            frame: encodeNegentropyFrame('rejected-capped-window'),
+        }));
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'ops_push',
+            sessionId: firstOpen.sessionId,
+            windowId: firstOpen.windowId,
+            data: [rejectedOperation],
+        }));
+
+        const opens = decodeWrites(pair).filter(message => message.type === 'neg_open');
+        expect(opens).toHaveLength(2);
+        expect(opens[1]).toMatchObject({
+            sessionId: firstOpen.sessionId,
+            window: { order: 1, after: expect.any(Object) },
+        });
+
+        await protocolNode.store.upsertMany([{
+            id: rejectedId,
+            ts: Math.floor(Date.parse(rejectedOperation.signature!.signed) / 1000),
+            operation: rejectedOperation,
+        }]);
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'neg_msg',
+            sessionId: opens[1].sessionId,
+            windowId: opens[1].windowId,
+            frame: encodeNegentropyFrame('final-window-after-backfill'),
+        }));
+
+        expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
+            type: 'neg_close',
+            sessionId: firstOpen.sessionId,
+            windowId: opens[1].windowId,
+            reason: 'complete',
+        }));
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+        )).toBeNull();
     });
 
     it('closes a session when sending neg_open throws', async () => {

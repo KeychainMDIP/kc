@@ -429,6 +429,36 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         ))).toBe(true);
     });
 
+    it.each(['unready', 'busy'] as const)(
+        'retries an identical requested push when Gatekeeper is %s',
+        async state => {
+            const operations = await createIndependentOperations(1);
+            const expectedIds = operationIds(operations);
+            driver = await createMediatorDriver({
+                operationsA: operations,
+                operationsB: [],
+                publicKeyA: Buffer.alloc(32, 0x22),
+                publicKeyB: Buffer.alloc(32, 0x11),
+            });
+            if (state === 'unready') {
+                driver.nodeB.gatekeeperClient.isReady.mockResolvedValueOnce(false);
+            } else {
+                driver.nodeB.gatekeeperClient.processEvents.mockResolvedValueOnce({ busy: true });
+            }
+
+            await driver.startSync();
+            await pumpUntilPendingMessage(driver.transport, 'a-to-b', 'ops_push');
+            expect(await driver.transport.duplicateNext()).toBe(true);
+            await driver.driveUntilQuiescent(expectedIds);
+
+            expect(await gatekeeperIds(driver.nodeB.gatekeeper)).toStrictEqual(expectedIds);
+            expect(await driver.storeB.count()).toBe(1);
+            expect(decodeWire(driver.transport).some(message => (
+                message.body.type === 'neg_close' && message.body.reason === 'complete'
+            ))).toBe(true);
+        },
+    );
+
     it('retains accepted operations across sync-store failures and completes on an identical retry', async () => {
         const operations = await createIndependentOperations(1);
         const expectedIds = operationIds(operations);
