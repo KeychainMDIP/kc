@@ -2826,8 +2826,9 @@ async function maybeStartPostOrderedCatchupNegentropy(peerKey: string, reason: s
 }
 
 async function handleOrderedCatchupPush(peerKey: string, msg: OrderedCatchupPushMessage): Promise<void> {
+    const conn = connectionInfo[peerKey];
     const session = peerSessions.get(peerKey);
-    if (!session || session.mode !== 'ordered_catchup' || session.sessionId !== msg.sessionId) {
+    if (!conn || !session || session.mode !== 'ordered_catchup' || session.sessionId !== msg.sessionId) {
         log.warn({ peer: shortName(peerKey), sessionId: msg.sessionId }, 'ignoring ordered catch-up push for unknown session');
         return;
     }
@@ -2853,14 +2854,23 @@ async function handleOrderedCatchupPush(peerKey: string, msg: OrderedCatchupPush
     const batch = normalizeInboundOpsPushBatch(msg.data);
     syncStats.orderedCatchupPagesReceived += 1;
     syncStats.orderedCatchupOpsReceived += batch.length;
+    touchPeerSession(peerKey);
     if (batch.length > 0) {
-        importQueue.push({
+        const imported = await importQueue.pushAsync<ImportQueueResult>({
             name: peerKey,
             msg: {
                 ...createBaseMessage('batch'),
                 data: batch,
             },
         });
+
+        if (connectionInfo[peerKey] !== conn || peerSessions.get(peerKey) !== session) {
+            return;
+        }
+        if (imported.retryable) {
+            closePeerSession(peerKey, 'ordered_catchup_import_retryable');
+            return;
+        }
     }
 
     session.orderedCatchupCursor = cursor;

@@ -778,8 +778,6 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
                 markPostImportExportFinished();
             }
         });
-        jest.spyOn(Date, 'now').mockReturnValue(Date.now());
-
         await driver.startSync();
         expect(driver.transport.peekNext()).toMatchObject({
             direction: 'a-to-b',
@@ -819,34 +817,6 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         const finalCatchupSequence = Math.max(...handoffMessages
             .filter(message => message.body.type === 'ordered_catchup_push')
             .map(message => message.sequence));
-        await driver.nodeA.run(
-            () => driver!.nodeA.mediator.__test.maybeStartPeerSync(peerKeyB, 'periodic'),
-        );
-        await driver.driveUntilQuiescent(expectedIds, { timeoutMs: 15_000 });
-
-        const rejectedMessages = decodeWire(driver.transport);
-        const rejectedOpen = rejectedMessages.find(message => message.body.type === 'neg_open');
-        expect(rejectedMessages.filter(message => message.body.type === 'neg_open')).toHaveLength(1);
-        expect(rejectedMessages).toContainEqual(expect.objectContaining({
-            direction: 'b-to-a',
-            body: expect.objectContaining({
-                type: 'neg_close',
-                sessionId: rejectedOpen?.body.sessionId,
-                windowId: rejectedOpen?.body.windowId,
-                reason: 'ordered_catchup_active',
-            }),
-        }));
-
-        expect(rejectedOpen).toMatchObject({
-            direction: 'a-to-b',
-            body: {
-                type: 'neg_open',
-                sessionId: expect.any(String),
-                windowId: expect.any(String),
-            },
-        });
-        expect(rejectedOpen!.sequence).toBeGreaterThan(finalCatchupSequence);
-
         await postImportExportFinished;
         await nextTurn();
         await driver.nodeA.run(
@@ -855,8 +825,14 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         await driver.driveUntilQuiescent(expectedIds, { timeoutMs: 15_000 });
 
         const messages = decodeWire(driver.transport);
-        const finalOpen = messages.filter(message => message.body.type === 'neg_open').at(-1);
-        expect(finalOpen?.body.sessionId).not.toBe(rejectedOpen?.body.sessionId);
+        const opens = messages.filter(message => message.body.type === 'neg_open');
+        expect(opens.length).toBeGreaterThan(0);
+        expect(opens.every(message => (
+            message.direction === 'a-to-b' && message.sequence > finalCatchupSequence
+        ))).toBe(true);
+        expect(messages.some(message => (
+            message.body.type === 'neg_close' && message.body.reason === 'ordered_catchup_active'
+        ))).toBe(false);
         assertCompletedNegentropyExchange(messages);
         expect(await gatekeeperIds(driver.nodeA.gatekeeper)).toStrictEqual(expectedIds);
         expect(await gatekeeperIds(driver.nodeB.gatekeeper)).toStrictEqual(expectedIds);
@@ -931,6 +907,7 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
                 markApplyFinished();
             }
         });
+        const exportCallsBeforeCatchup = driver.nodeB.gatekeeperClient.exportIndex.mock.calls.length;
 
         try {
             await driver.startSync();
@@ -949,6 +926,10 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
             await nextTurn();
             const negentropyStartedWhileImportBlocked = decodeWire(driver.transport)
                 .some(message => message.body.type === 'neg_open');
+            expect(driver.nodeB.run(
+                () => driver!.nodeB.mediator.__test.getConnectionState(peerKeyA)?.activeSession,
+            )).toEqual(expect.objectContaining({ mode: 'ordered_catchup' }));
+            expect(driver.nodeB.gatekeeperClient.exportIndex).toHaveBeenCalledTimes(exportCallsBeforeCatchup);
 
             deferred.resolve();
             await delivery;
