@@ -61,6 +61,12 @@ KC_LOG_LEVEL=info
     - `200 OK` + JSON DID Document if present.
     - `404 Not Found` if no cached doc is found for the given `:did`.
 
+### `GET /api/v1/did/:did/events`
+- **Description**: Returns all indexed events for the DID in operation order.
+- **Returns**:
+    - `200 OK` + an array of Gatekeeper events.
+    - `200 OK` + `[]` if the DID has no indexed events.
+
 ### `GET /api/v1/search`
 - **Description**: Performs a text search across all DID documents. Returns an array of matching DIDs.
 - **Query Param**: q (string)

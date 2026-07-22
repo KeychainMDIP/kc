@@ -122,6 +122,15 @@ async function main() {
         }
     });
 
+    v1router.get("/did/:did/events", async (req, res) => {
+        try {
+            res.json(await didDb.getDIDEvents(req.params.did));
+        } catch (error) {
+            log.error({ error }, 'Get DID events error');
+            res.status(500).json({ error: String(error) });
+        }
+    });
+
     v1router.get("/did/:did", async (req, res) => {
         try {
             const { did } = req.params;
