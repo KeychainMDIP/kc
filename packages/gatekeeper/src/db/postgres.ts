@@ -342,29 +342,27 @@ export default class DbPostgres implements GatekeeperDb {
 
     async addEvent(did: string, event: GatekeeperEvent): Promise<number> {
         const id = this.splitSuffix(did);
+        const serializedEvent = JSON.stringify(event);
+        const result = await this.getPool().query<LengthRow>(
+            `WITH inserted_event AS (
+                INSERT INTO gatekeeper_events (namespace, id, seq, event)
+                SELECT $1, $2, COALESCE(MAX(seq), -1) + 1, $3::jsonb
+                FROM gatekeeper_events
+                WHERE namespace = $1 AND id = $2
+                RETURNING 1
+             ), inserted_change AS (
+                INSERT INTO gatekeeper_index_changes
+                    (namespace, kind, did, registry, block, removed, event)
+                SELECT $1, 'did', $4, NULL, NULL, FALSE, $3::jsonb
+                FROM inserted_event
+                RETURNING 1
+             )
+             SELECT COUNT(*) AS length
+             FROM inserted_change`,
+            [this.dbName, id, serializedEvent, did]
+        );
 
-        return this.withTx(async client => {
-            const nextSeq = await client.query<SeqRow>(
-                `SELECT COALESCE(MAX(seq), -1) + 1 AS seq
-                 FROM gatekeeper_events
-                 WHERE namespace = $1 AND id = $2`,
-                [this.dbName, id]
-            );
-
-            const result = await client.query(
-                `INSERT INTO gatekeeper_events (namespace, id, seq, event)
-                 VALUES ($1, $2, $3, $4::jsonb)`,
-                [this.dbName, id, this.toNumber(nextSeq.rows[0].seq), JSON.stringify(event)]
-            );
-
-            await this.recordIndexChange(client, {
-                kind: 'did',
-                did,
-                event,
-            });
-
-            return result.rowCount ?? 0;
-        });
+        return this.toNumber(result.rows[0]?.length ?? 0);
     }
 
     async setEvents(did: string, events: GatekeeperEvent[], options?: SetEventsOptions): Promise<number> {
