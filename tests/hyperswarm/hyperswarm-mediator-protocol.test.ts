@@ -2994,13 +2994,28 @@ describe('hyperswarm mediator protocol characterization', () => {
         ));
         await eventually(() => exportIndex.mock.calls.length === 1);
         await Promise.allSettled(exportIndex.mock.results.map(result => result.value));
-        await nextTurn();
+        await eventually(() => {
+            const stats = protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.getSyncStatsSnapshot(),
+            ) as { orderedCatchup: { sessionsFailed: number } };
+            return stats.orderedCatchup.sessionsFailed === 1;
+        });
 
         expect(applySyncPage).not.toHaveBeenCalled();
         expect(pair.transcript.some(entry => entry.messageType === 'neg_open')).toBe(false);
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
         )).toBeNull();
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getSyncStatsSnapshot(),
+        )).toMatchObject({
+            orderedCatchup: {
+                sessionsStarted: 1,
+                sessionsCompleted: 0,
+                sessionsFailed: 1,
+            },
+            syncDurationMs: { sessions: 1 },
+        });
     });
 
     it.each(['status lookup', 'page lookup'] as const)(

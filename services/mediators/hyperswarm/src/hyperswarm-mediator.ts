@@ -1033,11 +1033,15 @@ function closePeerSession(peerKey: string, reason: string): void {
     }
 
     const retryOnNextPeriodic = session.mode === 'negentropy' && reason === 'ordered_catchup_active';
+    const orderedCatchupHandoffPending = session.mode === 'ordered_catchup'
+        && (reason === 'ordered_catchup_complete' || reason === 'ordered_catchup_done');
     if (session.mode === 'negentropy') {
         orderedCatchupTransitionPeers.delete(peerKey);
     }
     peerSessions.delete(peerKey);
-    addAggregateSample(syncStats.syncDurationMs, Date.now() - session.startedAt);
+    if (!orderedCatchupHandoffPending) {
+        addAggregateSample(syncStats.syncDurationMs, Date.now() - session.startedAt);
+    }
     const conn = connectionInfo[peerKey];
     if (conn && session.mode === 'negentropy') {
         conn.lastNegentropyAttemptAt = retryOnNextPeriodic ? 0 : Date.now();
@@ -1051,9 +1055,7 @@ function closePeerSession(peerKey: string, reason: string): void {
         }
     } else if (conn && session.mode === 'ordered_catchup') {
         clearOrderedCatchupClientState(peerKey, session.sessionId, reason);
-        if (reason === 'ordered_catchup_complete' || reason === 'ordered_catchup_done') {
-            syncStats.orderedCatchupSessionsCompleted += 1;
-        } else {
+        if (!orderedCatchupHandoffPending) {
             syncStats.orderedCatchupSessionsFailed += 1;
         }
     }
@@ -2790,7 +2792,7 @@ function completeOrderedCatchup(peerKey: string, session: PeerSyncSession, reaso
     conn.orderedCatchupAttempted = true;
     session.reconciliationComplete = true;
     closePeerSession(peerKey, reason);
-    queueOrderedCatchupPostImport(peerKey, reason);
+    queueOrderedCatchupPostImport(peerKey, reason, session.startedAt);
 }
 
 function maybeCompleteOrderedCatchup(peerKey: string, session: PeerSyncSession): void {
@@ -2872,7 +2874,7 @@ async function waitForImportQueueIdle(reason: string): Promise<void> {
     }
 }
 
-function queueOrderedCatchupPostImport(peerKey: string, reason: string): void {
+function queueOrderedCatchupPostImport(peerKey: string, reason: string, startedAt: number): void {
     if (orderedCatchupTransitionPeers.has(peerKey)) {
         log.debug({ peer: shortName(peerKey), reason }, 'ordered catch-up post-import continuation already queued');
         return;
@@ -2886,10 +2888,18 @@ function queueOrderedCatchupPostImport(peerKey: string, reason: string): void {
             await waitForImportQueueIdle('ordered_catchup_complete');
             await syncGatekeeperIndexToStore('ordered_catchup_complete');
             postImportCompleted = true;
+            const durationMs = Date.now() - startedAt;
+            syncStats.orderedCatchupSessionsCompleted += 1;
+            addAggregateSample(syncStats.syncDurationMs, durationMs);
+            log.debug({ peer: shortName(peerKey), reason, durationMs }, 'ordered catch-up handoff ready');
             markNegentropyAdapterDirty();
             handoffStarted = await maybeStartPostOrderedCatchupNegentropy(peerKey, reason);
         }
         catch (error) {
+            if (!postImportCompleted) {
+                syncStats.orderedCatchupSessionsFailed += 1;
+                addAggregateSample(syncStats.syncDurationMs, Date.now() - startedAt);
+            }
             log.error({ error, peer: shortName(peerKey), reason }, 'ordered catch-up post-import continuation failed');
         }
         finally {
@@ -4687,6 +4697,10 @@ export const __test = {
             inboundTransportMode: conn.inboundTransportMode,
             peerTransportFramingVersion: conn.peerTransportFramingVersion,
         };
+    },
+
+    getSyncStatsSnapshot(): object {
+        return buildSyncStatsSnapshot();
     },
 };
 

@@ -899,6 +899,9 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
             }
         });
         const exportCallsBeforeCatchup = driver.nodeB.gatekeeperClient.exportIndex.mock.calls.length;
+        const getNodeBTelemetry = () => driver!.nodeB.run(
+            () => driver!.nodeB.mediator.__test.getSyncStatsSnapshot(),
+        );
 
         try {
             await driver.startSync();
@@ -921,6 +924,14 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
                 () => driver!.nodeB.mediator.__test.getConnectionState(peerKeyA)?.activeSession,
             )).toEqual(expect.objectContaining({ mode: 'ordered_catchup' }));
             expect(driver.nodeB.gatekeeperClient.exportIndex).toHaveBeenCalledTimes(exportCallsBeforeCatchup);
+            expect(getNodeBTelemetry()).toMatchObject({
+                orderedCatchup: {
+                    sessionsStarted: 1,
+                    sessionsCompleted: 0,
+                    sessionsFailed: 0,
+                },
+                syncDurationMs: { sessions: 0 },
+            });
 
             deferred.resolve();
             await delivery;
@@ -931,11 +942,33 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
             await nextTurn();
             const negentropyStartedWhileRefreshBlocked = decodeWire(driver.transport)
                 .some(message => message.body.type === 'neg_open');
+            expect(getNodeBTelemetry()).toMatchObject({
+                orderedCatchup: {
+                    sessionsStarted: 1,
+                    sessionsCompleted: 0,
+                    sessionsFailed: 0,
+                },
+                syncDurationMs: { sessions: 0 },
+            });
 
             releaseApply();
             await applyFinished;
             await assertSourceOrderMirrored();
             expect(await driver.storeB.countOrdered()).toBe(expectedIds.length);
+            await eventually(() => {
+                const stats = getNodeBTelemetry() as {
+                    orderedCatchup: { sessionsCompleted: number };
+                };
+                return stats.orderedCatchup.sessionsCompleted === 1;
+            });
+            expect(getNodeBTelemetry()).toMatchObject({
+                orderedCatchup: {
+                    sessionsStarted: 1,
+                    sessionsCompleted: 1,
+                    sessionsFailed: 0,
+                },
+                syncDurationMs: { sessions: 1 },
+            });
 
             await driver.driveUntilQuiescent(expectedIds, { timeoutMs: 15_000 });
 
