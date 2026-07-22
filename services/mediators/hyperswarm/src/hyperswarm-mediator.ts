@@ -238,6 +238,7 @@ type HyperMessage =
 interface ImportQueueTask {
     name: string;
     msg: BatchMessage;
+    orderedCatchupSession?: PeerSyncSession;
 }
 
 interface ImportQueueResult {
@@ -330,6 +331,10 @@ interface PeerSyncSession {
     remoteWindowCappedByRecords: boolean;
     remoteWindowLastCursor: SyncStoreCursor | null;
     orderedCatchupCursor: SyncStoreOrderedCursor | null;
+    orderedCatchupPendingImports: number;
+    orderedCatchupRequestOutstanding: boolean;
+    orderedCatchupTerminalReason: 'ordered_catchup_complete' | 'ordered_catchup_done' | null;
+    orderedCatchupImportsAborted: boolean;
 }
 
 interface MediatorSyncStats {
@@ -427,6 +432,7 @@ const NEG_MAX_IDS_PER_LOOKUP = 1_000;
 const NEG_MAX_OPS_PER_PUSH = 256;
 const MAX_PENDING_ACCEPTED_SYNC_RECORDS = NEG_MAX_IDS_PER_LOOKUP;
 const NEG_MAX_BYTES_PER_PUSH = 512 * 1024;
+const ORDERED_CATCHUP_PREFETCH_BATCHES = 2;
 const NEG_REPAIR_INTERVAL_MS = config.negentropyIntervalSeconds * 1000;
 const NEG_ADAPTER_MAX_AGE_MS = 60 * 1000;
 const LEGACY_CAPABILITY_GRACE_MS = 5 * 1000;
@@ -995,6 +1001,10 @@ function createPeerSession(peerKey: string, mode: PeerSessionMode, initiator: bo
         remoteWindowCappedByRecords: false,
         remoteWindowLastCursor: null,
         orderedCatchupCursor: null,
+        orderedCatchupPendingImports: 0,
+        orderedCatchupRequestOutstanding: false,
+        orderedCatchupTerminalReason: null,
+        orderedCatchupImportsAborted: false,
     };
     peerSessions.set(peerKey, session);
     connectionInfo[peerKey].syncMode = mode === 'ordered_catchup' ? 'negentropy' : mode;
@@ -2652,7 +2662,22 @@ function sendOrderedCatchupReq(peerKey: string, session: PeerSyncSession): boole
         cursor: session.orderedCatchupCursor ?? undefined,
     };
 
-    return sendToPeer(peerKey, msg);
+    const sent = sendToPeer(peerKey, msg);
+    if (sent) {
+        session.orderedCatchupRequestOutstanding = true;
+    }
+    return sent;
+}
+
+function refillOrderedCatchupPrefetch(peerKey: string, session: PeerSyncSession): boolean {
+    if (peerSessions.get(peerKey) !== session
+        || session.orderedCatchupTerminalReason
+        || session.orderedCatchupRequestOutstanding
+        || session.orderedCatchupPendingImports > ORDERED_CATCHUP_PREFETCH_BATCHES) {
+        return true;
+    }
+
+    return sendOrderedCatchupReq(peerKey, session);
 }
 
 async function sendOrderedCatchupPage(peerKey: string, msg: OrderedCatchupReqMessage): Promise<void> {
@@ -2764,6 +2789,71 @@ function completeOrderedCatchup(peerKey: string, session: PeerSyncSession, reaso
     queueOrderedCatchupPostImport(peerKey, reason);
 }
 
+function maybeCompleteOrderedCatchup(peerKey: string, session: PeerSyncSession): void {
+    if (peerSessions.get(peerKey) !== session
+        || session.orderedCatchupPendingImports > 0
+        || !session.orderedCatchupTerminalReason) {
+        return;
+    }
+
+    completeOrderedCatchup(peerKey, session, session.orderedCatchupTerminalReason);
+}
+
+function settleOrderedCatchupImport(
+    peerKey: string,
+    session: PeerSyncSession,
+    retryable: boolean,
+): void {
+    session.orderedCatchupPendingImports = Math.max(0, session.orderedCatchupPendingImports - 1);
+    if (retryable) {
+        session.orderedCatchupImportsAborted = true;
+    }
+    if (peerSessions.get(peerKey) !== session) {
+        return;
+    }
+
+    if (retryable) {
+        closePeerSession(peerKey, 'ordered_catchup_import_retryable');
+        return;
+    }
+
+    touchPeerSession(peerKey);
+    if (!refillOrderedCatchupPrefetch(peerKey, session)) {
+        closePeerSession(peerKey, 'send_ordered_catchup_req_failed');
+        return;
+    }
+    maybeCompleteOrderedCatchup(peerKey, session);
+}
+
+function queueOrderedCatchupImport(peerKey: string, session: PeerSyncSession, batch: Operation[]): void {
+    session.orderedCatchupPendingImports += 1;
+    importQueue.push<ImportQueueResult>({
+        name: peerKey,
+        msg: {
+            ...createBaseMessage('batch'),
+            data: batch,
+        },
+        orderedCatchupSession: session,
+    }, (error, imported) => {
+        try {
+            if (error || !imported) {
+                if (error) {
+                    log.error({ error, peer: shortName(peerKey), sessionId: session.sessionId }, 'ordered catch-up import failed');
+                }
+                settleOrderedCatchupImport(peerKey, session, true);
+                return;
+            }
+            settleOrderedCatchupImport(peerKey, session, imported.retryable);
+        }
+        catch (completionError) {
+            log.error(
+                { error: completionError, peer: shortName(peerKey), sessionId: session.sessionId },
+                'ordered catch-up import completion failed'
+            );
+        }
+    });
+}
+
 async function waitForImportQueueIdle(reason: string): Promise<void> {
     while (importQueue.length() > 0 || importQueue.running() > 0) {
         log.debug(
@@ -2860,6 +2950,24 @@ async function handleOrderedCatchupPush(peerKey: string, msg: OrderedCatchupPush
         log.warn({ peer: shortName(peerKey), sessionId: msg.sessionId }, 'ignoring ordered catch-up push for unknown session');
         return;
     }
+    if (session.orderedCatchupTerminalReason) {
+        log.debug({
+            peer: shortName(peerKey),
+            sessionId: msg.sessionId,
+            terminalReason: session.orderedCatchupTerminalReason,
+        }, 'ignoring ordered catch-up push after terminal message');
+        return;
+    }
+    if (!session.orderedCatchupRequestOutstanding
+        && session.orderedCatchupPendingImports > ORDERED_CATCHUP_PREFETCH_BATCHES) {
+        log.warn({
+            peer: shortName(peerKey),
+            sessionId: msg.sessionId,
+            pendingImports: session.orderedCatchupPendingImports,
+        }, 'closing ordered catch-up session after unsolicited prefetched push');
+        closePeerSession(peerKey, 'ordered_catchup_prefetch_overflow');
+        return;
+    }
 
     const cursor = parseOrderedCatchupCursor(msg.cursor);
     if (cursor === null || cursor === undefined) {
@@ -2879,45 +2987,25 @@ async function handleOrderedCatchupPush(peerKey: string, msg: OrderedCatchupPush
         return;
     }
 
+    session.orderedCatchupRequestOutstanding = false;
     const batch = normalizeInboundOpsPushBatch(msg.data);
     syncStats.orderedCatchupPagesReceived += 1;
     syncStats.orderedCatchupOpsReceived += batch.length;
     touchPeerSession(peerKey);
-    const importPromise = batch.length > 0
-        ? importQueue.pushAsync<ImportQueueResult>({
-            name: peerKey,
-            msg: {
-                ...createBaseMessage('batch'),
-                data: batch,
-            },
-        })
-        : null;
-
     session.orderedCatchupCursor = cursor;
-    const nextRequestSent = msg.hasMore !== true || sendOrderedCatchupReq(peerKey, session);
-
-    if (importPromise) {
-        const imported = await importPromise;
-
-        if (connectionInfo[peerKey] !== conn || peerSessions.get(peerKey) !== session) {
-            return;
-        }
-        if (imported.retryable) {
-            closePeerSession(peerKey, 'ordered_catchup_import_retryable');
-            return;
-        }
+    if (batch.length > 0) {
+        queueOrderedCatchupImport(peerKey, session, batch);
     }
 
-    touchPeerSession(peerKey);
-
     if (msg.hasMore === true) {
-        if (!nextRequestSent) {
+        if (!refillOrderedCatchupPrefetch(peerKey, session)) {
             closePeerSession(peerKey, 'send_ordered_catchup_req_failed');
         }
         return;
     }
 
-    completeOrderedCatchup(peerKey, session, 'ordered_catchup_complete');
+    session.orderedCatchupTerminalReason = 'ordered_catchup_complete';
+    maybeCompleteOrderedCatchup(peerKey, session);
 }
 
 async function handleOrderedCatchupDone(peerKey: string, msg: OrderedCatchupDoneMessage): Promise<void> {
@@ -2927,7 +3015,10 @@ async function handleOrderedCatchupDone(peerKey: string, msg: OrderedCatchupDone
         return;
     }
 
-    completeOrderedCatchup(peerKey, session, 'ordered_catchup_done');
+    session.orderedCatchupRequestOutstanding = false;
+    session.orderedCatchupTerminalReason = 'ordered_catchup_done';
+    touchPeerSession(peerKey);
+    maybeCompleteOrderedCatchup(peerKey, session);
 }
 
 function sendNegMsg(peerKey: string, session: PeerSyncSession, frame: string | Uint8Array): boolean {
@@ -3543,6 +3634,9 @@ let importQueue = asyncLib.queue<ImportQueueTask, ImportQueueResult>(
             persistedIds: [],
             retryable: false,
         };
+        if (task.orderedCatchupSession?.orderedCatchupImportsAborted) {
+            return result;
+        }
         try {
             const ready = await gatekeeper.isReady();
 

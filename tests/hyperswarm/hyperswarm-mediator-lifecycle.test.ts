@@ -519,8 +519,8 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         ));
     });
 
-    it('buffers a prefetched ordered catch-up page behind the current import', async () => {
-        const operations = await makeOperations(2);
+    it('keeps two ordered catch-up batches queued behind the current import', async () => {
+        const operations = await makeOperations(4);
         const running = await createRunningNode({
             keyByte: 0x33,
             env: {
@@ -554,6 +554,14 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         const secondStarted = new Promise<void>(resolve => {
             markSecondStarted = resolve;
         });
+        let releaseSecond!: () => void;
+        const secondBlocked = new Promise<void>(resolve => {
+            releaseSecond = resolve;
+        });
+        let markThirdStarted!: () => void;
+        const thirdStarted = new Promise<void>(resolve => {
+            markThirdStarted = resolve;
+        });
         processEvents
             .mockImplementationOnce(async () => {
                 markFirstStarted();
@@ -562,13 +570,18 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
             })
             .mockImplementationOnce(async () => {
                 markSecondStarted();
+                await secondBlocked;
+                return processEventsImplementation();
+            })
+            .mockImplementationOnce(async () => {
+                markThirdStarted();
                 return processEventsImplementation();
             });
 
         running.node.run(
             () => running.node.mediator.__test.createOrderedCatchupClientSession(peer.peerKey, 'buffered-session'),
         );
-        for (const [index, operation] of operations.entries()) {
+        for (const [index, operation] of operations.slice(0, 3).entries()) {
             peer.pair.connectionB.write(encodeFramedMessage(JSON.stringify({
                 type: 'ordered_catchup_push',
                 sessionId: 'buffered-session',
@@ -581,21 +594,47 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         try {
             await peer.pair.pumpUntilIdle();
             await firstStarted;
+            const requestCount = () => peer.pair.transcript.filter(entry => (
+                entry.direction === 'a-to-b' && entry.messageType === 'ordered_catchup_req'
+            )).length;
+            await eventually(() => requestCount() === 2);
             expect(processEvents).toHaveBeenCalledTimes(1);
             expect(await running.store.has(operations[1].signature!.hash)).toBe(false);
+            expect(await running.store.has(operations[2].signature!.hash)).toBe(false);
 
             releaseFirst();
             await secondStarted;
+            await eventually(() => requestCount() === 3);
+            peer.pair.connectionB.write(encodeFramedMessage(JSON.stringify({
+                type: 'ordered_catchup_push',
+                sessionId: 'buffered-session',
+                cursor: { syncOrder: 4, id: operations[3].signature!.hash },
+                hasMore: false,
+                data: [operations[3]],
+            })));
+            await peer.pair.pumpUntilIdle();
             expect(processEvents).toHaveBeenCalledTimes(2);
+            expect(await running.store.has(operations[3].signature!.hash)).toBe(false);
+            expect(running.node.run(
+                () => running.node.mediator.__test.getConnectionState(peer.peerKey)?.activeSession,
+            )).toEqual({ mode: 'ordered_catchup', sessionId: 'buffered-session' });
+
+            releaseSecond();
+            await thirdStarted;
             await eventually(async () => {
                 const stored = await Promise.all(operations.map(
                     operation => running.store.has(operation.signature!.hash),
                 ));
                 return stored.every(Boolean);
             });
+            await eventually(() => running.node.run(
+                () => running.node.mediator.__test.getConnectionState(peer.peerKey)?.activeSession === null,
+            ));
+            expect(processEvents).toHaveBeenCalledTimes(4);
         }
         finally {
             releaseFirst();
+            releaseSecond();
         }
     });
 

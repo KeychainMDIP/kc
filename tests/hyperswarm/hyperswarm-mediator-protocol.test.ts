@@ -2068,7 +2068,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(pair.transcript).toHaveLength(writesBefore);
     });
 
-    it('prefetches one ordered catch-up page while the current page imports', async () => {
+    it('requests an ordered catch-up continuation while the current page imports', async () => {
         const [operation] = await makeOperations(1);
         const protocolNode = await createNode({
             keyByte: 0x33,
@@ -2125,7 +2125,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             release();
             await delivery;
 
-            expect(await protocolNode.store.has(operation.signature!.hash)).toBe(true);
+            await eventually(() => protocolNode.store.has(operation.signature!.hash));
             expect(decodeWrites(pair)).toEqual([
                 expect.objectContaining({
                     type: 'ordered_catchup_req',
@@ -2140,57 +2140,230 @@ describe('hyperswarm mediator protocol characterization', () => {
         }
     });
 
-    it('stops ordered catch-up without advancing after a retryable import result', async () => {
-        const [operation] = await makeOperations(1);
+    it('ignores ordered catch-up pushes after a terminal page while its import drains', async () => {
+        const [acceptedOperation, lateOperation] = await makeOperations(2);
+        const protocolNode = await createNode({
+            keyByte: 0x33,
+            env: {
+                KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true',
+                KC_HYPR_LEGACY_SYNC_ENABLE: 'false',
+            },
+        });
+        const { peerKey } = attachPeer(protocolNode, {
+            peerKeyByte: 0x22,
+            mode: 'framed',
+            overrides: {
+                capabilities: compatibleCapabilities({ negentropy: false }),
+            },
+        });
+        const processEvents = protocolNode.node.gatekeeperClient.processEvents;
+        const processEventsImplementation = processEvents.getMockImplementation();
+        if (!processEventsImplementation) {
+            throw new Error('Gatekeeper processEvents implementation is unavailable');
+        }
+        let markStarted!: () => void;
+        const started = new Promise<void>(resolve => {
+            markStarted = resolve;
+        });
+        let release!: () => void;
+        const blocked = new Promise<void>(resolve => {
+            release = resolve;
+        });
+        processEvents.mockImplementationOnce(async () => {
+            markStarted();
+            await blocked;
+            return processEventsImplementation();
+        });
+        protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.createOrderedCatchupClientSession(peerKey, 'terminal-import-session'),
+        );
+
+        const finalPage = {
+            type: 'ordered_catchup_push',
+            sessionId: 'terminal-import-session',
+            cursor: { syncOrder: 1, id: acceptedOperation.signature!.hash },
+            hasMore: false,
+            data: [acceptedOperation],
+        };
+        const sendPage = async (message: Record<string, unknown>) => protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.processInboundPeerData(
+                peerKey,
+                encodeFramedMessage(JSON.stringify(message)),
+            ),
+        );
+
+        try {
+            await sendPage(finalPage);
+            await started;
+            await sendPage(finalPage);
+            expect(protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+            )).toEqual({ mode: 'ordered_catchup', sessionId: 'terminal-import-session' });
+
+            await sendPage({
+                ...finalPage,
+                cursor: { syncOrder: 2, id: lateOperation.signature!.hash },
+                data: [lateOperation],
+            });
+            expect(protocolNode.node.gatekeeperClient.importBatch).toHaveBeenCalledTimes(1);
+            expect(protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+            )).toEqual({ mode: 'ordered_catchup', sessionId: 'terminal-import-session' });
+
+            release();
+            await eventually(() => protocolNode.store.has(acceptedOperation.signature!.hash));
+            await eventually(() => protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession === null,
+            ));
+            await nextTurn();
+
+            expect(protocolNode.node.gatekeeperClient.importBatch).toHaveBeenCalledTimes(1);
+            expect(await protocolNode.store.has(lateOperation.signature!.hash)).toBe(false);
+        }
+        finally {
+            release();
+        }
+    });
+
+    it('drops prefetched ordered catch-up pages after a retryable import result', async () => {
+        const operations = await makeOperations(3);
         const protocolNode = await createNode({
             keyByte: 0x33,
             env: { KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true' },
         });
         const { peerKey, pair } = attachPeer(protocolNode, { peerKeyByte: 0x22, mode: 'framed' });
-        protocolNode.node.gatekeeperClient.isReady.mockResolvedValueOnce(false);
+        let markStarted!: () => void;
+        const started = new Promise<void>(resolve => {
+            markStarted = resolve;
+        });
+        let release!: () => void;
+        const blocked = new Promise<void>(resolve => {
+            release = resolve;
+        });
+        protocolNode.node.gatekeeperClient.isReady.mockImplementationOnce(async () => {
+            markStarted();
+            await blocked;
+            return false;
+        });
         protocolNode.node.run(
             () => protocolNode.node.mediator.__test.createOrderedCatchupClientSession(peerKey, 'retryable-session'),
         );
 
-        await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
-            peerKey,
-            encodeFramedMessage(JSON.stringify({
-                type: 'ordered_catchup_push',
-                sessionId: 'retryable-session',
-                cursor: { syncOrder: 1, id: operation.signature!.hash },
-                hasMore: true,
-                data: [operation],
-            })),
-        ));
+        const sendPage = async (index: number) => protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.processInboundPeerData(
+                peerKey,
+                encodeFramedMessage(JSON.stringify({
+                    type: 'ordered_catchup_push',
+                    sessionId: 'retryable-session',
+                    cursor: { syncOrder: index + 1, id: operations[index].signature!.hash },
+                    hasMore: true,
+                    data: [operations[index]],
+                })),
+            ),
+        );
 
-        expect(decodeWrites(pair)).toEqual([
-            expect.objectContaining({
-                type: 'ordered_catchup_req',
-                sessionId: 'retryable-session',
-                cursor: { syncOrder: 1, id: operation.signature!.hash },
-            }),
-        ]);
-        expect(await protocolNode.store.has(operation.signature!.hash)).toBe(false);
-        expect(protocolNode.node.run(
-            () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
-        )).toMatchObject({
-            activeSession: null,
-            orderedCatchupClientSessionId: null,
+        try {
+            await sendPage(0);
+            await started;
+            await sendPage(1);
+            await sendPage(2);
+            expect(protocolNode.node.gatekeeperClient.importBatch).not.toHaveBeenCalled();
+
+            release();
+            await eventually(() => protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession === null,
+            ));
+            await nextTurn();
+            await nextTurn();
+
+            expect(protocolNode.node.gatekeeperClient.isReady).toHaveBeenCalledTimes(1);
+            expect(protocolNode.node.gatekeeperClient.importBatch).not.toHaveBeenCalled();
+            for (const operation of operations) {
+                expect(await protocolNode.store.has(operation.signature!.hash)).toBe(false);
+            }
+            expect(protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
+            )).toMatchObject({
+                activeSession: null,
+                orderedCatchupClientSessionId: null,
+            });
+
+            const importsBefore = protocolNode.node.gatekeeperClient.importBatch.mock.calls.length;
+            await sendPage(0);
+            expect(protocolNode.node.gatekeeperClient.importBatch).toHaveBeenCalledTimes(importsBefore);
+            expect(pair.transcript).toHaveLength(2);
+        }
+        finally {
+            release();
+        }
+    });
+
+    it('drops prefetched pages when a replaced ordered catch-up session returns retryable', async () => {
+        const operations = await makeOperations(3);
+        const protocolNode = await createNode({
+            keyByte: 0x33,
+            env: { KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true' },
         });
-
-        const importsBefore = protocolNode.node.gatekeeperClient.importBatch.mock.calls.length;
-        await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
-            peerKey,
-            encodeFramedMessage(JSON.stringify({
-                type: 'ordered_catchup_push',
-                sessionId: 'retryable-session',
-                cursor: { syncOrder: 2, id: hash('b') },
-                hasMore: true,
-                data: [operation],
-            })),
+        const initialPeer = attachPeer(protocolNode, { peerKeyByte: 0x22, mode: 'framed' });
+        let markStarted!: () => void;
+        const started = new Promise<void>(resolve => {
+            markStarted = resolve;
+        });
+        let release!: () => void;
+        const blocked = new Promise<void>(resolve => {
+            release = resolve;
+        });
+        protocolNode.node.gatekeeperClient.isReady.mockImplementationOnce(async () => {
+            markStarted();
+            await blocked;
+            return false;
+        });
+        protocolNode.node.run(() => protocolNode.node.mediator.__test.createOrderedCatchupClientSession(
+            initialPeer.peerKey,
+            'replaced-retryable-session',
         ));
-        expect(protocolNode.node.gatekeeperClient.importBatch).toHaveBeenCalledTimes(importsBefore);
-        expect(pair.transcript).toHaveLength(1);
+
+        const sendPage = async (index: number) => protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.processInboundPeerData(
+                initialPeer.peerKey,
+                encodeFramedMessage(JSON.stringify({
+                    type: 'ordered_catchup_push',
+                    sessionId: 'replaced-retryable-session',
+                    cursor: { syncOrder: index + 1, id: operations[index].signature!.hash },
+                    hasMore: true,
+                    data: [operations[index]],
+                })),
+            ),
+        );
+
+        try {
+            await sendPage(0);
+            await started;
+            await sendPage(1);
+            await sendPage(2);
+            const replacement = replaceWithOrderedSession(
+                protocolNode,
+                initialPeer.peerKey,
+                'replacement-after-retryable',
+            );
+
+            release();
+            await nextTurn();
+            await nextTurn();
+
+            expect(protocolNode.node.gatekeeperClient.isReady).toHaveBeenCalledTimes(1);
+            expect(protocolNode.node.gatekeeperClient.importBatch).not.toHaveBeenCalled();
+            for (const operation of operations) {
+                expect(await protocolNode.store.has(operation.signature!.hash)).toBe(false);
+            }
+            expect(decodeWrites(replacement.pair)).toStrictEqual([]);
+            expect(protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.getConnectionState(replacement.peerKey)?.activeSession,
+            )).toEqual({ mode: 'ordered_catchup', sessionId: 'replacement-after-retryable' });
+        }
+        finally {
+            release();
+        }
     });
 
     it('does not continue an ordered catch-up page on a replacement connection', async () => {
@@ -2251,6 +2424,7 @@ describe('hyperswarm mediator protocol characterization', () => {
 
             release();
             await delivery;
+            await eventually(() => protocolNode.store.has(operation.signature!.hash));
 
             expect(decodeWrites(replacement.pair)).toStrictEqual([]);
             expect(protocolNode.node.run(
@@ -2333,7 +2507,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             })),
         ));
         expect(continuationWrite).toHaveBeenCalledTimes(1);
-        expect(await continuationNode.store.has(continuationOperation.signature!.hash)).toBe(true);
+        await eventually(() => continuationNode.store.has(continuationOperation.signature!.hash));
         expect(continuationNode.node.run(
             () => continuationNode.node.mediator.__test.getConnectionState(continuationPeer.peerKey),
         )).toMatchObject({
