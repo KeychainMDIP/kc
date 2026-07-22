@@ -984,6 +984,86 @@ describe('hyperswarm mediator protocol characterization', () => {
         }
     });
 
+    it('defers a queued background rebuild until ordered catch-up completes', async () => {
+        const operations = await makeOperations(3);
+        const protocolNode = await createNode({
+            env: {
+                KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true',
+                KC_HYPR_LEGACY_SYNC_ENABLE: 'false',
+            },
+        });
+        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const buildSnapshot = protocolNode.adapter.buildSnapshotForWindow.bind(protocolNode.adapter);
+        let buildCalls = 0;
+        let markFirstBuildStarted!: () => void;
+        const firstBuildStarted = new Promise<void>(resolve => {
+            markFirstBuildStarted = resolve;
+        });
+        let releaseFirstBuild!: () => void;
+        const firstBuildBlocked = new Promise<void>(resolve => {
+            releaseFirstBuild = resolve;
+        });
+        let markFirstBuildFinished!: () => void;
+        const firstBuildFinished = new Promise<void>(resolve => {
+            markFirstBuildFinished = resolve;
+        });
+        let lastBuiltRecordCount = 0;
+        jest.spyOn(protocolNode.adapter, 'buildSnapshotForWindow').mockImplementation(async window => {
+            buildCalls += 1;
+            const call = buildCalls;
+            if (call === 1) {
+                markFirstBuildStarted();
+                await firstBuildBlocked;
+            }
+            const snapshot = await buildSnapshot(window);
+            lastBuiltRecordCount = snapshot.stats.loaded;
+            if (call === 1) {
+                markFirstBuildFinished();
+            }
+            return snapshot;
+        });
+
+        const send = async (message: Record<string, unknown>) => protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.receiveMsg(peerKey, message),
+        );
+
+        try {
+            await send({ type: 'batch', data: [operations[0]] });
+            await firstBuildStarted;
+            protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.createOrderedCatchupClientSession(peerKey, 'deferred-build-session'),
+            );
+            await send({
+                type: 'ordered_catchup_push',
+                sessionId: 'deferred-build-session',
+                cursor: { syncOrder: 1, id: operations[1].signature!.hash },
+                hasMore: true,
+                data: [operations[1]],
+            });
+            await eventually(() => protocolNode.store.has(operations[1].signature!.hash));
+
+            releaseFirstBuild();
+            await firstBuildFinished;
+            await nextTurn();
+            expect(buildCalls).toBe(1);
+
+            await send({
+                type: 'ordered_catchup_push',
+                sessionId: 'deferred-build-session',
+                cursor: { syncOrder: 2, id: operations[2].signature!.hash },
+                hasMore: false,
+                data: [operations[2]],
+            });
+            await eventually(() => decodeWrites(pair).some(message => message.type === 'neg_open'));
+
+            expect(buildCalls).toBe(2);
+            expect(lastBuiltRecordCount).toBe(3);
+        }
+        finally {
+            releaseFirstBuild();
+        }
+    });
+
     it.each(['responder snapshot', 'frame reconciliation'] as const)(
         'does not send stale traffic after replacement during %s',
         async boundary => {
@@ -2223,6 +2303,53 @@ describe('hyperswarm mediator protocol characterization', () => {
         finally {
             release();
         }
+    });
+
+    it('rebuilds the Negentropy adapter only after ordered catch-up imports finish', async () => {
+        const operations = await makeOperations(3);
+        const protocolNode = await createNode({
+            env: {
+                KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true',
+                KC_HYPR_LEGACY_SYNC_ENABLE: 'false',
+            },
+        });
+        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const buildSnapshotForWindow = protocolNode.adapter.buildSnapshotForWindow.bind(protocolNode.adapter);
+        let lastBuiltRecordCount = 0;
+        const buildSnapshot = jest.spyOn(protocolNode.adapter, 'buildSnapshotForWindow').mockImplementation(async window => {
+            const snapshot = await buildSnapshotForWindow(window);
+            lastBuiltRecordCount = snapshot.stats.loaded;
+            return snapshot;
+        });
+        protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.createOrderedCatchupClientSession(peerKey, 'deferred-prebuild-session'),
+        );
+
+        const sendPage = async (index: number, hasMore: boolean) => protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.processInboundPeerData(
+                peerKey,
+                encodeFramedMessage(JSON.stringify({
+                    type: 'ordered_catchup_push',
+                    sessionId: 'deferred-prebuild-session',
+                    cursor: { syncOrder: index + 1, id: operations[index].signature!.hash },
+                    hasMore,
+                    data: [operations[index]],
+                })),
+            ),
+        );
+
+        await sendPage(0, true);
+        await eventually(() => protocolNode.store.has(operations[0].signature!.hash));
+        await sendPage(1, true);
+        await eventually(() => protocolNode.store.has(operations[1].signature!.hash));
+        await nextTurn();
+        expect(buildSnapshot).not.toHaveBeenCalled();
+
+        await sendPage(2, false);
+        await eventually(() => decodeWrites(pair).some(message => message.type === 'neg_open'));
+
+        expect(buildSnapshot).toHaveBeenCalledTimes(1);
+        expect(lastBuiltRecordCount).toBe(3);
     });
 
     it('drops prefetched ordered catch-up pages after a retryable import result', async () => {

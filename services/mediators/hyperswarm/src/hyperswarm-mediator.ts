@@ -2165,6 +2165,10 @@ function maybeStartBackgroundPrebuild(reason: string): void {
         return;
     }
 
+    if (hasActiveOutboundOrderedCatchup()) {
+        return;
+    }
+
     if (getActiveNegentropySessions() > 0) {
         return;
     }
