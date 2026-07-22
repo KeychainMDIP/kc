@@ -2855,14 +2855,21 @@ async function handleOrderedCatchupPush(peerKey: string, msg: OrderedCatchupPush
     syncStats.orderedCatchupPagesReceived += 1;
     syncStats.orderedCatchupOpsReceived += batch.length;
     touchPeerSession(peerKey);
-    if (batch.length > 0) {
-        const imported = await importQueue.pushAsync<ImportQueueResult>({
+    const importPromise = batch.length > 0
+        ? importQueue.pushAsync<ImportQueueResult>({
             name: peerKey,
             msg: {
                 ...createBaseMessage('batch'),
                 data: batch,
             },
-        });
+        })
+        : null;
+
+    session.orderedCatchupCursor = cursor;
+    const nextRequestSent = msg.hasMore !== true || sendOrderedCatchupReq(peerKey, session);
+
+    if (importPromise) {
+        const imported = await importPromise;
 
         if (connectionInfo[peerKey] !== conn || peerSessions.get(peerKey) !== session) {
             return;
@@ -2873,12 +2880,10 @@ async function handleOrderedCatchupPush(peerKey: string, msg: OrderedCatchupPush
         }
     }
 
-    session.orderedCatchupCursor = cursor;
-
     touchPeerSession(peerKey);
 
     if (msg.hasMore === true) {
-        if (!sendOrderedCatchupReq(peerKey, session)) {
+        if (!nextRequestSent) {
             closePeerSession(peerKey, 'send_ordered_catchup_req_failed');
         }
         return;

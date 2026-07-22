@@ -519,6 +519,86 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         ));
     });
 
+    it('buffers a prefetched ordered catch-up page behind the current import', async () => {
+        const operations = await makeOperations(2);
+        const running = await createRunningNode({
+            keyByte: 0x33,
+            env: {
+                KC_HYPR_EXPORT_INTERVAL: '3600',
+                KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true',
+                KC_HYPR_LEGACY_SYNC_ENABLE: 'false',
+            },
+        });
+        const peer = await attachConnection(running, 0x22);
+        await sendPeerMessage(peer, peerPing({
+            capabilities: { negentropy: false },
+        }));
+        expect(running.node.run(
+            () => running.node.mediator.__test.getConnectionState(peer.peerKey),
+        )).toMatchObject({ transportMode: 'framed', inboundTransportMode: 'framed' });
+
+        const processEvents = running.node.gatekeeperClient.processEvents;
+        const processEventsImplementation = processEvents.getMockImplementation();
+        if (!processEventsImplementation) {
+            throw new Error('Gatekeeper processEvents implementation is unavailable');
+        }
+        let markFirstStarted!: () => void;
+        const firstStarted = new Promise<void>(resolve => {
+            markFirstStarted = resolve;
+        });
+        let releaseFirst!: () => void;
+        const firstBlocked = new Promise<void>(resolve => {
+            releaseFirst = resolve;
+        });
+        let markSecondStarted!: () => void;
+        const secondStarted = new Promise<void>(resolve => {
+            markSecondStarted = resolve;
+        });
+        processEvents
+            .mockImplementationOnce(async () => {
+                markFirstStarted();
+                await firstBlocked;
+                return processEventsImplementation();
+            })
+            .mockImplementationOnce(async () => {
+                markSecondStarted();
+                return processEventsImplementation();
+            });
+
+        running.node.run(
+            () => running.node.mediator.__test.createOrderedCatchupClientSession(peer.peerKey, 'buffered-session'),
+        );
+        for (const [index, operation] of operations.entries()) {
+            peer.pair.connectionB.write(encodeFramedMessage(JSON.stringify({
+                type: 'ordered_catchup_push',
+                sessionId: 'buffered-session',
+                cursor: { syncOrder: index + 1, id: operation.signature!.hash },
+                hasMore: true,
+                data: [operation],
+            })));
+        }
+
+        try {
+            await peer.pair.pumpUntilIdle();
+            await firstStarted;
+            expect(processEvents).toHaveBeenCalledTimes(1);
+            expect(await running.store.has(operations[1].signature!.hash)).toBe(false);
+
+            releaseFirst();
+            await secondStarted;
+            expect(processEvents).toHaveBeenCalledTimes(2);
+            await eventually(async () => {
+                const stored = await Promise.all(operations.map(
+                    operation => running.store.has(operation.signature!.hash),
+                ));
+                return stored.every(Boolean);
+            });
+        }
+        finally {
+            releaseFirst();
+        }
+    });
+
     it('expires an idle ordered catch-up server session without closing its connection', async () => {
         const operations = await makeOperations(257);
         const running = await createRunningNode({
