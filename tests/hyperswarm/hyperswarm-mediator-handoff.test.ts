@@ -812,28 +812,19 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
                 body: expect.objectContaining({ type: 'ordered_catchup_push' }),
             }),
         ]));
-        expect(handoffMessages.some(message => message.body.type === 'neg_open')).toBe(false);
-
         const finalCatchupSequence = Math.max(...handoffMessages
             .filter(message => message.body.type === 'ordered_catchup_push')
             .map(message => message.sequence));
         await postImportExportFinished;
-        await nextTurn();
-        await driver.nodeA.run(
-            () => driver!.nodeA.mediator.__test.maybeStartPeerSync(peerKeyB, 'periodic'),
-        );
-        await driver.driveUntilQuiescent(expectedIds, { timeoutMs: 15_000 });
-
-        const messages = decodeWire(driver.transport);
-        const opens = messages.filter(message => message.body.type === 'neg_open');
+        const opens = handoffMessages.filter(message => message.body.type === 'neg_open');
         expect(opens.length).toBeGreaterThan(0);
         expect(opens.every(message => (
-            message.direction === 'a-to-b' && message.sequence > finalCatchupSequence
+            message.direction === 'b-to-a' && message.sequence > finalCatchupSequence
         ))).toBe(true);
-        expect(messages.some(message => (
+        expect(handoffMessages.some(message => (
             message.body.type === 'neg_close' && message.body.reason === 'ordered_catchup_active'
         ))).toBe(false);
-        assertCompletedNegentropyExchange(messages);
+        assertCompletedNegentropyExchange(handoffMessages);
         expect(await gatekeeperIds(driver.nodeA.gatekeeper)).toStrictEqual(expectedIds);
         expect(await gatekeeperIds(driver.nodeB.gatekeeper)).toStrictEqual(expectedIds);
     });

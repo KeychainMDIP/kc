@@ -2474,11 +2474,12 @@ describe('hyperswarm mediator protocol characterization', () => {
 
             release();
             await eventually(() => applySyncPage.mock.calls.length === 1);
-            await nextTurn();
+            await eventually(() => pair.transcript.some(entry => entry.messageType === 'neg_open'));
             expect(exportIndex).toHaveBeenCalledTimes(1);
+            expect(decodeWrites(pair).filter(message => message.type === 'neg_open')).toHaveLength(1);
             expect(protocolNode.node.run(
                 () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
-            )).toBeNull();
+            )).toEqual(expect.objectContaining({ mode: 'negentropy' }));
         }
         finally {
             release();
@@ -2625,6 +2626,12 @@ describe('hyperswarm mediator protocol characterization', () => {
             expect(protocolNode.node.run(
                 () => protocolNode.node.mediator.__test.getConnectionState(catchupPeer.peerKey)?.activeSession,
             )).toEqual(expect.objectContaining({ mode: 'negentropy' }));
+            await protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.maybeStartPeerSync(otherPeer.peerKey, 'periodic'),
+            );
+            expect(decodeWrites(otherPeer.pair).filter(message => (
+                message.type === 'neg_open' || message.type === 'ordered_catchup_req'
+            ))).toHaveLength(0);
             expect(protocolNode.node.run(
                 () => protocolNode.node.mediator.__test.getConnectionState(otherPeer.peerKey),
             )).toMatchObject({
@@ -2632,6 +2639,14 @@ describe('hyperswarm mediator protocol characterization', () => {
                 syncStarted: false,
                 activeSession: null,
             });
+
+            protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.disconnectPeer(catchupPeer.peerKey),
+            );
+            await protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.maybeStartPeerSync(otherPeer.peerKey, 'periodic'),
+            );
+            await eventually(() => otherPeer.pair.transcript.some(entry => entry.messageType === 'neg_open'));
         }
         finally {
             releaseProcess();
@@ -2772,6 +2787,63 @@ describe('hyperswarm mediator protocol characterization', () => {
             expect(replacementMessages).toHaveLength(0);
         },
     );
+
+    it('continues an admitted ordered session while new rows await sync order', async () => {
+        const operations = await makeOperations(258);
+        const protocolNode = await createNode({
+            env: { KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true' },
+        });
+        await protocolNode.store.upsertMany(operations.slice(0, 257).map((operation, index) => ({
+            id: operation.signature!.hash,
+            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            syncOrder: index + 1,
+            operation,
+        })));
+        const count = jest.spyOn(protocolNode.store, 'count');
+        const countOrdered = jest.spyOn(protocolNode.store, 'countOrdered');
+        const { peerKey, pair } = attachPeer(protocolNode, {
+            mode: 'framed',
+            overrides: {
+                capabilities: compatibleCapabilities({
+                    orderedCatchup: true,
+                    orderedCatchupVersion: 1,
+                    orderedCatchupReady: true,
+                }),
+            },
+        });
+        const request = {
+            type: 'ordered_catchup_req',
+            sessionId: 'admitted-session',
+        };
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
+            peerKey,
+            encodeFramedMessage(JSON.stringify(request)),
+        ));
+        const firstPush = decodeWrites(pair).find(message => message.type === 'ordered_catchup_push');
+        expect(firstPush).toMatchObject({ hasMore: true });
+
+        await protocolNode.store.upsertMany([{
+            id: operations[257].signature!.hash,
+            ts: Math.floor(Date.parse(operations[257].signature!.signed) / 1000),
+            operation: operations[257],
+        }]);
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
+            peerKey,
+            encodeFramedMessage(JSON.stringify({ ...request, cursor: firstPush?.cursor })),
+        ));
+
+        const messages = decodeWrites(pair);
+        const pushes = messages.filter(message => message.type === 'ordered_catchup_push');
+        expect(pushes).toHaveLength(2);
+        expect(pushes[1]).toMatchObject({
+            hasMore: false,
+            data: [operations[256]],
+        });
+        expect(messages.some(message => message.type === 'ordered_catchup_done')).toBe(false);
+        expect(count).toHaveBeenCalledTimes(1);
+        expect(countOrdered).toHaveBeenCalledTimes(1);
+    });
 
     it.each([256, 257])('serves an ordered catch-up history of %i operations without gaps', async count => {
         const operations = await makeOperations(count);
