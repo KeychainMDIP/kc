@@ -639,7 +639,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
     });
 
     it('expires an idle ordered catch-up server session without closing its connection', async () => {
-        const operations = await makeOperations(257);
+        const operations = await makeOperations(301);
         const running = await createRunningNode({
             keyByte: 0x33,
             env: {
@@ -757,6 +757,103 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         await eventually(async () => await running.store.has(operationId));
 
         expect(getByIds).toHaveBeenCalledWith([operationId]);
+    });
+
+    it('prunes active-session unresolved operations after an index backfill', async () => {
+        const [operation] = await makeOperations(1);
+        const operationId = operation.signature!.hash;
+        const running = await createRunningNode({
+            keyByte: 0x33,
+            env: { KC_HYPR_LEGACY_SYNC_ENABLE: 'false' },
+        });
+        const adapter = await NegentropyAdapter.create({
+            syncStore: running.store,
+            maxRecordsPerWindow: 16,
+            maxRoundsPerSession: 8,
+            deferInitialBuild: true,
+        });
+        running.node.run(() => {
+            getMediatorNodeContext().negentropyAdapter = adapter;
+            running.node.mediator.__test.setNegentropyAdapter(adapter);
+        });
+        const createEngine = adapter.createEngineForSnapshot.bind(adapter);
+        jest.spyOn(adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
+            const engine = createEngine(snapshot);
+            jest.spyOn(engine, 'reconcile').mockResolvedValueOnce({
+                nextMsg: null,
+                haveIds: [],
+                needIds: [],
+            });
+            return engine;
+        });
+
+        const peer = await attachConnection(running, 0x22);
+        await sendPeerMessage(peer, peerPing());
+        const window = {
+            name: 'index-backfill',
+            fromTs: 0,
+            toTs: Math.floor(Date.now() / 1_000),
+            maxRecords: 16,
+            order: 0,
+        };
+        const sessionId = 'index-backfill-session';
+        const windowId = 'index-backfill-window';
+        peer.pair.connectionB.write(encodeFramedMessage(JSON.stringify({
+            type: 'neg_open',
+            sessionId,
+            windowId,
+            round: 0,
+            window,
+            frame: encodeNegentropyFrame('index-backfill-open'),
+        })));
+        await peer.pair.pumpUntilIdle();
+
+        running.node.gatekeeperClient.importBatch.mockImplementationOnce(async events => ({
+            queued: 0,
+            processed: 0,
+            rejected: events.length,
+            total: 0,
+            rejectedIndices: events.map((_, index) => index),
+        }));
+        const getByIds = jest.spyOn(running.store, 'getByIds');
+        peer.pair.connectionB.write(encodeFramedMessage(JSON.stringify({
+            type: 'ops_push',
+            sessionId,
+            windowId,
+            data: [operation],
+        })));
+        await peer.pair.pumpUntilIdle();
+        expect(await running.store.has(operationId)).toBe(false);
+        getByIds.mockClear();
+
+        await running.node.gatekeeper.createDID(operation);
+        await running.node.run(() => jest.advanceTimersByTimeAsync(2_000));
+        await eventually(async () => await running.store.has(operationId));
+        expect(getByIds).toHaveBeenCalledWith([operationId]);
+        getByIds.mockClear();
+
+        peer.pair.connectionB.write(encodeFramedMessage(JSON.stringify({
+            type: 'neg_close',
+            sessionId,
+            windowId,
+            reason: 'complete',
+        })));
+        await peer.pair.pumpUntilIdle();
+        await settle();
+
+        expect(getByIds).not.toHaveBeenCalled();
+        expect(peer.pair.connectionA.destroyed).toBe(false);
+        expect(running.node.run(
+            () => running.node.mediator.__test.getConnectionState(peer.peerKey)?.activeSession,
+        )).toBeNull();
+        expect(running.node.run(
+            () => running.node.mediator.__test.getSyncStatsSnapshot(),
+        )).toMatchObject({
+            negentropy: {
+                sessionsCompleted: 1,
+                sessionsFailed: 0,
+            },
+        });
     });
 
     it('bounds failed persistence retries and backfills an evicted operation', async () => {

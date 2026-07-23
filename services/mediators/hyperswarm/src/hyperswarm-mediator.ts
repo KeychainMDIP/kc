@@ -429,7 +429,7 @@ const MAX_FRAMED_MESSAGE_BYTES = DEFAULT_MAX_FRAMED_MESSAGE_BYTES;
 const NEG_SESSION_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
 const NEG_MAX_IDS_PER_OPS_REQ = 1_000;
 const NEG_MAX_IDS_PER_LOOKUP = 1_000;
-const NEG_MAX_OPS_PER_PUSH = 256;
+const NEG_MAX_OPS_PER_PUSH = 300;
 const MAX_PENDING_ACCEPTED_SYNC_RECORDS = NEG_MAX_IDS_PER_LOOKUP;
 const NEG_MAX_BYTES_PER_PUSH = 512 * 1024;
 const ORDERED_CATCHUP_PREFETCH_BATCHES = 2;
@@ -3170,7 +3170,7 @@ function carryReceivedUnresolvedNeeds(session: PeerSyncSession): boolean {
 }
 
 async function refreshStoredUnresolvedNeeds(peerKey: string, session: PeerSyncSession): Promise<void> {
-    if (session.unresolvedNeedIds.size === 0) {
+    if (peerSessions.get(peerKey) !== session || session.unresolvedNeedIds.size === 0) {
         return;
     }
 
@@ -4211,6 +4211,12 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
             if (peerSessions.get(peerKey) !== session) {
                 return;
             }
+            for (const operation of unprovenBatch) {
+                const mapped = mapOperationToSyncKey(operation);
+                if (mapped.ok && !session.provenStoredPushIds.has(mapped.value.idHex)) {
+                    session.unresolvedNeedIds.add(mapped.value.idHex);
+                }
+            }
             for (const id of imported.knownIds) {
                 session.provenStoredPushIds.add(id);
                 session.unresolvedNeedIds.delete(id);
@@ -4248,6 +4254,24 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
                 finalizeCurrentWindowStats(session, { completed: false, cappedByRounds: true });
                 const split = await maybeSplitWindowOnRoundCap(peerKey, session, 'remote_max_rounds_reached');
                 if (split) {
+                    return;
+                }
+            }
+            if (msg.reason === 'complete') {
+                await refreshStoredUnresolvedNeeds(peerKey, session);
+                if (peerSessions.get(peerKey) !== session) {
+                    return;
+                }
+                if (session.unresolvedNeedIds.size > 0) {
+                    log.warn(
+                        {
+                            peer: shortName(peerKey),
+                            sessionId: session.sessionId,
+                            unresolvedIds: summarizeSyncIds(session.unresolvedNeedIds),
+                        },
+                        'rejecting remote negentropy completion with unresolved operations'
+                    );
+                    terminatePeerConnection(peerKey, 'unresolved_operations');
                     return;
                 }
             }
@@ -4311,6 +4335,11 @@ async function syncGatekeeperIndexToStore(source: string): Promise<void> {
 
     if (!sync.resetReason && (sync.inserted > 0 || sync.updated > 0)) {
         markNegentropyAdapterDirty();
+        for (const [peerKey, session] of peerSessions.entries()) {
+            if (session.mode === 'negentropy' && session.unresolvedNeedIds.size > 0) {
+                await refreshStoredUnresolvedNeeds(peerKey, session);
+            }
+        }
     }
 
     if (sync.resetReason || sync.inserted > 0 || sync.updated > 0) {

@@ -268,6 +268,19 @@ describe('hyperswarm mediator protocol characterization', () => {
         return open;
     }
 
+    function mockTerminalResponder(protocolNode: ProtocolNode): void {
+        const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
+        jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementation(snapshot => {
+            const engine = createEngine(snapshot);
+            jest.spyOn(engine, 'reconcile').mockResolvedValueOnce({
+                nextMsg: null,
+                haveIds: [],
+                needIds: [],
+            });
+            return engine;
+        });
+    }
+
     function replaceWithOrderedSession(
         protocolNode: ProtocolNode,
         peerKey: string,
@@ -1262,16 +1275,16 @@ describe('hyperswarm mediator protocol characterization', () => {
             frame: encodeNegentropyFrame('persistence-confirmation'),
         }));
 
-        for (let offset = 0; offset < operations.length; offset += 256) {
+        for (let offset = 0; offset < operations.length; offset += 300) {
             await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
                 type: 'ops_push',
                 sessionId: open.sessionId,
                 windowId: open.windowId,
-                data: operations.slice(offset, offset + 256),
+                data: operations.slice(offset, offset + 300),
             }));
         }
 
-        expect(lookupSizes).toStrictEqual([256, 256, 256, 233]);
+        expect(lookupSizes).toStrictEqual([300, 300, 300, 101]);
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
         )).toEqual({ mode: 'negentropy', sessionId: open.sessionId });
@@ -2010,16 +2023,8 @@ describe('hyperswarm mediator protocol characterization', () => {
         const open = await createRemoteOpen();
         const protocolNode = await createNode({ keyByte: 0x33 });
         const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
-        const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
-        jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
-            const engine = createEngine(snapshot);
-            jest.spyOn(engine, 'reconcile').mockResolvedValueOnce({
-                nextMsg: null,
-                haveIds: [],
-                needIds: [],
-            });
-            return engine;
-        });
+        const getByIds = jest.spyOn(protocolNode.store, 'getByIds');
+        mockTerminalResponder(protocolNode);
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
             peerKey,
@@ -2043,6 +2048,223 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
         )).toBeNull();
+        expect(getByIds).not.toHaveBeenCalled();
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getSyncStatsSnapshot(),
+        )).toMatchObject({
+            negentropy: {
+                sessionsStarted: 1,
+                sessionsCompleted: 1,
+                sessionsFailed: 0,
+            },
+        });
+    });
+
+    it('rejects remote completion when a responder still has an unresolved operation from an earlier window', async () => {
+        const [rejectedOperation] = await makeOperations(1);
+        const rejectedId = rejectedOperation.signature!.hash;
+        const open = await createRemoteOpen();
+        const protocolNode = await createNode({ keyByte: 0x33 });
+        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const getByIds = jest.spyOn(protocolNode.store, 'getByIds');
+        mockTerminalResponder(protocolNode);
+        protocolNode.node.gatekeeperClient.importBatch.mockImplementationOnce(async events => ({
+            queued: 0,
+            processed: 0,
+            rejected: events.length,
+            total: 0,
+            rejectedIndices: events.map((_, index) => index),
+        }));
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, open));
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'ops_push',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            data: [rejectedOperation],
+        }));
+
+        const remoteOpen = open as any;
+        const continuation = {
+            ...remoteOpen,
+            windowId: 'continuation-window',
+            window: {
+                ...remoteOpen.window,
+                name: 'continuation',
+                order: Number(remoteOpen.window.order) + 1,
+            },
+        };
+        await protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.receiveMsg(peerKey, continuation),
+        );
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'neg_close',
+            sessionId: open.sessionId,
+            windowId: continuation.windowId,
+            reason: 'complete',
+        }));
+
+        expect(getByIds.mock.calls.filter(([ids]) => ids.includes(rejectedId))).toHaveLength(2);
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+        )).toBeNull();
+        expect(pair.connectionA.destroyed).toBe(true);
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getSyncStatsSnapshot(),
+        )).toMatchObject({
+            negentropy: {
+                sessionsStarted: 1,
+                sessionsCompleted: 0,
+                sessionsFailed: 1,
+            },
+        });
+    });
+
+    it('accepts remote completion after an unresolved responder operation is backfilled', async () => {
+        const [operation] = await makeOperations(1);
+        const open = await createRemoteOpen();
+        const protocolNode = await createNode({ keyByte: 0x33 });
+        const { peerKey } = attachPeer(protocolNode, { mode: 'framed' });
+        mockTerminalResponder(protocolNode);
+        protocolNode.node.gatekeeperClient.importBatch.mockImplementationOnce(async events => ({
+            queued: 0,
+            processed: 0,
+            rejected: events.length,
+            total: 0,
+            rejectedIndices: events.map((_, index) => index),
+        }));
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, open));
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'ops_push',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            data: [operation],
+        }));
+        await protocolNode.store.upsertMany([{
+            id: operation.signature!.hash,
+            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            operation,
+        }]);
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'neg_close',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            reason: 'complete',
+        }));
+
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getSyncStatsSnapshot(),
+        )).toMatchObject({
+            negentropy: {
+                sessionsStarted: 1,
+                sessionsCompleted: 1,
+                sessionsFailed: 0,
+            },
+        });
+    });
+
+    it('clears responder unresolved state when a retryable push later persists', async () => {
+        const [operation] = await makeOperations(1);
+        const open = await createRemoteOpen();
+        const protocolNode = await createNode({ keyByte: 0x33 });
+        const { peerKey } = attachPeer(protocolNode, { mode: 'framed' });
+        mockTerminalResponder(protocolNode);
+        protocolNode.node.gatekeeperClient.importBatch.mockRejectedValueOnce(new Error('temporary import failure'));
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, open));
+        const push = {
+            type: 'ops_push',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            data: [operation],
+        };
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, push));
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, push));
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'neg_close',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            reason: 'complete',
+        }));
+
+        expect(await protocolNode.store.has(operation.signature!.hash)).toBe(true);
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getSyncStatsSnapshot(),
+        )).toMatchObject({
+            negentropy: {
+                sessionsCompleted: 1,
+                sessionsFailed: 0,
+            },
+        });
+    });
+
+    it('does not let a delayed responder completion audit close a replacement session', async () => {
+        const [operation] = await makeOperations(1);
+        const open = await createRemoteOpen();
+        const protocolNode = await createNode({ keyByte: 0x33 });
+        const initialPeer = attachPeer(protocolNode, { mode: 'framed' });
+        mockTerminalResponder(protocolNode);
+        protocolNode.node.gatekeeperClient.importBatch.mockImplementationOnce(async events => ({
+            queued: 0,
+            processed: 0,
+            rejected: events.length,
+            total: 0,
+            rejectedIndices: events.map((_, index) => index),
+        }));
+
+        await protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.receiveMsg(initialPeer.peerKey, open),
+        );
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(initialPeer.peerKey, {
+            type: 'ops_push',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            data: [operation],
+        }));
+
+        const getByIds = protocolNode.store.getByIds.bind(protocolNode.store);
+        let noteLookupStarted!: () => void;
+        const lookupStarted = new Promise<void>(resolve => {
+            noteLookupStarted = resolve;
+        });
+        let releaseLookup!: () => void;
+        const lookupBlocked = new Promise<void>(resolve => {
+            releaseLookup = resolve;
+        });
+        jest.spyOn(protocolNode.store, 'getByIds').mockImplementation(async ids => {
+            noteLookupStarted();
+            await lookupBlocked;
+            return getByIds(ids);
+        });
+
+        const closing = protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.receiveMsg(initialPeer.peerKey, {
+                type: 'neg_close',
+                sessionId: open.sessionId,
+                windowId: open.windowId,
+                reason: 'complete',
+            }),
+        );
+        let replacement: AttachedPeer | null = null;
+        try {
+            await lookupStarted;
+            replacement = replaceWithOrderedSession(protocolNode, initialPeer.peerKey);
+            releaseLookup();
+            await closing;
+        }
+        finally {
+            releaseLookup();
+            await closing.catch(() => undefined);
+        }
+
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(initialPeer.peerKey)?.activeSession,
+        )).toEqual({
+            mode: 'ordered_catchup',
+            sessionId: 'replacement-session',
+        });
+        expect(replacement).not.toBeNull();
     });
 
     it('imports queue gossip, suppresses relays, and filters known operations', async () => {
@@ -3105,11 +3327,11 @@ describe('hyperswarm mediator protocol characterization', () => {
     );
 
     it('continues an admitted ordered session while new rows await sync order', async () => {
-        const operations = await makeOperations(258);
+        const operations = await makeOperations(302);
         const protocolNode = await createNode({
             env: { KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true' },
         });
-        await protocolNode.store.upsertMany(operations.slice(0, 257).map((operation, index) => ({
+        await protocolNode.store.upsertMany(operations.slice(0, 301).map((operation, index) => ({
             id: operation.signature!.hash,
             ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
             syncOrder: index + 1,
@@ -3140,9 +3362,9 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(firstPush).toMatchObject({ hasMore: true });
 
         await protocolNode.store.upsertMany([{
-            id: operations[257].signature!.hash,
-            ts: Math.floor(Date.parse(operations[257].signature!.signed) / 1000),
-            operation: operations[257],
+            id: operations[301].signature!.hash,
+            ts: Math.floor(Date.parse(operations[301].signature!.signed) / 1000),
+            operation: operations[301],
         }]);
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
             peerKey,
@@ -3154,14 +3376,14 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(pushes).toHaveLength(2);
         expect(pushes[1]).toMatchObject({
             hasMore: false,
-            data: [operations[256]],
+            data: [operations[300]],
         });
         expect(messages.some(message => message.type === 'ordered_catchup_done')).toBe(false);
         expect(count).toHaveBeenCalledTimes(1);
         expect(countOrdered).toHaveBeenCalledTimes(1);
     });
 
-    it.each([256, 257])('serves an ordered catch-up history of %i operations without gaps', async count => {
+    it.each([300, 301])('serves an ordered catch-up history of %i operations without gaps', async count => {
         const operations = await makeOperations(count);
         const protocolNode = await createNode({
             env: { KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true' },
@@ -3192,10 +3414,10 @@ describe('hyperswarm mediator protocol characterization', () => {
             encodeFramedMessage(JSON.stringify(request)),
         ));
         let pushes = decodeWrites(pair).filter(message => message.type === 'ordered_catchup_push');
-        expect((pushes[0].data as Operation[])).toHaveLength(Math.min(count, 256));
-        expect(pushes[0].hasMore).toBe(count > 256);
+        expect((pushes[0].data as Operation[])).toHaveLength(Math.min(count, 300));
+        expect(pushes[0].hasMore).toBe(count > 300);
 
-        if (count === 257) {
+        if (count === 301) {
             await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
                 peerKey,
                 encodeFramedMessage(JSON.stringify(request)),
@@ -3216,11 +3438,11 @@ describe('hyperswarm mediator protocol characterization', () => {
             pushes = decodeWrites(pair).filter(message => message.type === 'ordered_catchup_push');
             expect(pushes[2]).toMatchObject({
                 hasMore: false,
-                cursor: { syncOrder: 257, id: operations[256].signature!.hash },
+                cursor: { syncOrder: 301, id: operations[300].signature!.hash },
             });
         }
 
-        const delivered = count === 257
+        const delivered = count === 301
             ? [...pushes[0].data as Operation[], ...pushes[2].data as Operation[]]
             : pushes[0].data as Operation[];
         expect(delivered.map(operation => operation.signature!.hash)).toStrictEqual(
@@ -3258,7 +3480,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         let pushes = decodeWrites(pair).filter(message => message.type === 'ordered_catchup_push');
         const firstPage = pushes[0].data as Operation[];
         const firstPageBytes = firstPage.reduce((total, operation) => total + estimateOperationBytes(operation), 0);
-        expect(firstPage.length).toBeLessThan(256);
+        expect(firstPage.length).toBeLessThan(operations.length);
         expect(firstPageBytes).toBeLessThanOrEqual(512 * 1024);
         expect(firstPageBytes + estimateOperationBytes(operations[firstPage.length])).toBeGreaterThan(512 * 1024);
         expect(pushes[0].hasMore).toBe(true);
