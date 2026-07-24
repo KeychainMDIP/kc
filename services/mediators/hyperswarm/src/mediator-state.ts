@@ -1,4 +1,5 @@
 import type { HyperswarmConnection } from 'hyperswarm';
+import type { Operation } from '@mdip/gatekeeper/types';
 import type {
     OperationSyncStore,
     SyncStoreCursor,
@@ -97,6 +98,7 @@ export interface PeerSyncSession {
     pendingHaveIds: Set<string>;
     pendingNeedIds: Set<string>;
     unresolvedNeedIds: Set<string>;
+    unresolvedLegacyOperations: Map<string, Operation>;
     rounds: number;
     maxRounds: number;
     reconciliationComplete: boolean;
@@ -207,6 +209,7 @@ export function createPeerSyncSessionState(options: PeerSyncSessionOptions): Pee
         pendingHaveIds: new Set<string>(),
         pendingNeedIds: new Set<string>(),
         unresolvedNeedIds: new Set<string>(),
+        unresolvedLegacyOperations: new Map<string, Operation>(),
         rounds: 0,
         maxRounds: options.maxRounds,
         reconciliationComplete: false,

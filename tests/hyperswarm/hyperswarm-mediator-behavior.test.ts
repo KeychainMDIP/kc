@@ -176,6 +176,41 @@ async function createForkFixtures(): Promise<{
     return { controllerCreate, branchA, branchB };
 }
 
+async function createDeferredLegacyForkFixtures(): Promise<{
+    controllerCreate: Operation;
+    deactivation: Operation;
+    legacyUpdate: Operation;
+}> {
+    const gatekeeper = new Gatekeeper({
+        db: new DbJsonMemory('hyperswarm-mediator-deferred-legacy-fork-fixtures'),
+        didPrefix: 'did:test',
+        ipfsEnabled: false,
+        registries: ['hyperswarm'],
+    });
+    const cipher = new CipherNode();
+    const helper = new TestHelper(gatekeeper, cipher);
+    const keys = cipher.generateRandomJwk();
+    const baseTime = Date.now() - (10 * 60 * 1_000);
+    const controllerCreate = await helper.createAgentOp(keys, {
+        version: 1,
+        registry: 'hyperswarm',
+    });
+    setSignedTime(controllerCreate, baseTime);
+    const did = await gatekeeper.createDID(controllerCreate);
+    const current = await gatekeeper.resolveDID(did);
+    const legacyDocument = structuredClone(current);
+    legacyDocument.didDocumentData = { branch: 'legacy' };
+    const deactivation = await helper.createDeleteOp(keys, did);
+    const legacyUpdate = await helper.createUpdateOp(keys, did, legacyDocument, {
+        excludePrevid: true,
+    });
+    setSignedTime(deactivation, baseTime + 60_000);
+    setSignedTime(legacyUpdate, baseTime + 120_000);
+    await gatekeeper.resetDb();
+
+    return { controllerCreate, deactivation, legacyUpdate };
+}
+
 function operationIds(operations: Operation[]): string[] {
     return Array.from(new Set(
         operations.map(operation => operation.signature!.hash.toLowerCase()),
@@ -654,6 +689,68 @@ describe('hyperswarm mediator behavior', () => {
         expect((await driver.storeA.getByIds([fixtures.branchB.signature!.hash]))[0].syncOrder)
             .toBe(Number.MAX_SAFE_INTEGER);
         expect((await driver.storeB.getByIds([fixtures.branchA.signature!.hash]))[0].syncOrder)
+            .toBe(Number.MAX_SAFE_INTEGER);
+        expect(decodeWire(driver.transport)).toContainEqual(expect.objectContaining({
+            body: expect.objectContaining({ type: 'neg_close', reason: 'complete' }),
+        }));
+        expect(decodeWire(driver.transport).some(message => (
+            message.body.type === 'neg_close' && message.body.reason === 'unresolved_operations'
+        ))).toBe(false);
+
+        await driver.reconnect();
+        await driver.startSync();
+        await driver.driveUntilQuiescent(expected, { timeoutMs: 10_000 });
+        assertNoOperationTransfer(driver.transport);
+    });
+
+    it.each([
+        ['initiator', 0x11, 0x22],
+        ['responder', 0x22, 0x11],
+    ])('terminally indexes a genuinely deferred no-previd update when its receiver is the %s', async (
+        _role,
+        publicKeyByteA,
+        publicKeyByteB,
+    ) => {
+        const fixtures = await createDeferredLegacyForkFixtures();
+        const operationsA = [fixtures.controllerCreate, fixtures.deactivation];
+        const operationsB = [fixtures.controllerCreate, fixtures.legacyUpdate];
+        const idsA = operationIds(operationsA);
+        const idsB = operationIds(operationsB);
+        const unionIds = operationIds([...operationsA, ...operationsB]);
+        driver = await createMediatorDriver({
+            operationsA,
+            operationsB,
+            publicKeyA: Buffer.alloc(32, publicKeyByteA),
+            publicKeyB: Buffer.alloc(32, publicKeyByteB),
+            syncOrderByIdA: new Map(operationsA.map((operation, index) => [
+                operation.signature!.hash,
+                index + 1,
+            ])),
+            syncOrderByIdB: new Map(operationsB.map((operation, index) => [
+                operation.signature!.hash,
+                index + 1,
+            ])),
+        });
+        const expected = {
+            a: { gatekeeper: idsA, store: unionIds },
+            b: { gatekeeper: idsB, store: unionIds },
+        };
+
+        await driver.startSync();
+        await driver.driveUntilQuiescent(expected, { timeoutMs: 10_000 });
+
+        expect(fixtures.legacyUpdate.previd).toBeUndefined();
+        expect((await driver.nodeA.gatekeeper.resolveDID(fixtures.deactivation.did))
+            .didDocumentMetadata?.deactivated).toBe(true);
+        expect(await gatekeeperIds(driver.nodeA.gatekeeper)).toStrictEqual(idsA);
+        expect(await gatekeeperIds(driver.nodeB.gatekeeper)).toStrictEqual(idsB);
+        const deferredIds = operationIds(
+            (await driver.nodeA.gatekeeper.checkDIDs()).eventsQueue.map(event => event.operation),
+        );
+        expect(deferredIds).toContain(fixtures.legacyUpdate.signature!.hash);
+        expect((await driver.storeA.getByIds([fixtures.legacyUpdate.signature!.hash]))[0].syncOrder)
+            .toBe(Number.MAX_SAFE_INTEGER);
+        expect((await driver.storeB.getByIds([fixtures.deactivation.signature!.hash]))[0].syncOrder)
             .toBe(Number.MAX_SAFE_INTEGER);
         expect(decodeWire(driver.transport)).toContainEqual(expect.objectContaining({
             body: expect.objectContaining({ type: 'neg_close', reason: 'complete' }),

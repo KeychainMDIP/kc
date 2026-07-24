@@ -111,6 +111,23 @@ async function makeOperations(count: number): Promise<Operation[]> {
     return operations;
 }
 
+async function makeLegacyUpdateWithoutPrevid(): Promise<Operation> {
+    const gatekeeper = new Gatekeeper({
+        db: new DbJsonMemory('hyperswarm-protocol-legacy-update-fixture'),
+        didPrefix: 'did:test',
+        ipfsEnabled: false,
+        registries: ['hyperswarm'],
+    });
+    const cipher = new CipherNode();
+    const helper = new TestHelper(gatekeeper, cipher);
+    const keys = cipher.generateRandomJwk();
+    const create = await helper.createAgentOp(keys, { registry: 'hyperswarm' });
+    const did = await gatekeeper.createDID(create);
+    const document = await gatekeeper.resolveDID(did);
+    document.didDocumentData = { legacy: true };
+    return helper.createUpdateOp(keys, did, document, { excludePrevid: true });
+}
+
 function makeStructurallyRejectedOperation(): Operation {
     const cipher = new CipherNode();
     const unsignedOperation: Operation = {
@@ -1384,6 +1401,67 @@ describe('hyperswarm mediator protocol characterization', () => {
         )).toBeNull();
     });
 
+    it('terminally indexes an unresolved pre-v0.5 update without previd at final completion', async () => {
+        const operation = await makeLegacyUpdateWithoutPrevid();
+        const operationId = operation.signature!.hash;
+        const protocolNode = await createNode();
+        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
+        jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
+            const engine = createEngine(snapshot);
+            jest.spyOn(engine, 'reconcile').mockResolvedValueOnce({
+                nextMsg: null,
+                haveIds: [],
+                needIds: [operationId],
+            });
+            return engine;
+        });
+        protocolNode.node.gatekeeperClient.importBatch.mockResolvedValueOnce({
+            queued: 1,
+            processed: 0,
+            rejected: 0,
+            total: 1,
+            rejectedIndices: [],
+        });
+        protocolNode.node.gatekeeperClient.processEvents.mockResolvedValueOnce({
+            added: 0,
+            merged: 0,
+            rejected: 0,
+            pending: 1,
+            acceptedHashes: [],
+            acceptedEvents: [],
+        });
+
+        await protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey),
+        );
+        const open = decodeWrites(pair).find(message => message.type === 'neg_open');
+        if (!open) {
+            throw new Error('expected local neg_open');
+        }
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'neg_msg',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            frame: encodeNegentropyFrame('legacy-without-previd'),
+        }));
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'ops_push',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            data: [operation],
+        }));
+
+        expect((await protocolNode.store.getByIds([operationId]))[0].syncOrder)
+            .toBe(Number.MAX_SAFE_INTEGER);
+        expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
+            type: 'neg_close',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            reason: 'complete',
+        }));
+    });
+
     it.each([
         ['deferred', { added: 0, merged: 0, rejected: 0, pending: 1 }],
         ['processed but unproven', { added: 0, merged: 0, rejected: 0, pending: 0 }],
@@ -2301,6 +2379,56 @@ describe('hyperswarm mediator protocol characterization', () => {
         )).toMatchObject({
             negentropy: {
                 sessionsStarted: 1,
+                sessionsCompleted: 1,
+                sessionsFailed: 0,
+            },
+        });
+    });
+
+    it('accepts remote completion after terminally indexing a pre-v0.5 update without previd', async () => {
+        const operation = await makeLegacyUpdateWithoutPrevid();
+        const operationId = operation.signature!.hash;
+        const open = await createRemoteOpen();
+        const protocolNode = await createNode({ keyByte: 0x33 });
+        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        mockTerminalResponder(protocolNode);
+        protocolNode.node.gatekeeperClient.importBatch.mockResolvedValueOnce({
+            queued: 1,
+            processed: 0,
+            rejected: 0,
+            total: 1,
+            rejectedIndices: [],
+        });
+        protocolNode.node.gatekeeperClient.processEvents.mockResolvedValueOnce({
+            added: 0,
+            merged: 0,
+            rejected: 0,
+            pending: 1,
+            acceptedHashes: [],
+            acceptedEvents: [],
+        });
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, open));
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'ops_push',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            data: [operation],
+        }));
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'neg_close',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            reason: 'complete',
+        }));
+
+        expect((await protocolNode.store.getByIds([operationId]))[0].syncOrder)
+            .toBe(Number.MAX_SAFE_INTEGER);
+        expect(pair.connectionA.destroyed).toBe(false);
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getSyncStatsSnapshot(),
+        )).toMatchObject({
+            negentropy: {
                 sessionsCompleted: 1,
                 sessionsFailed: 0,
             },

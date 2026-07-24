@@ -2565,6 +2565,7 @@ function trackProvenStoredOpsPush(session: PeerSyncSession, operations: Operatio
             continue;
         }
         session.unresolvedNeedIds.delete(mapped.value.idHex);
+        session.unresolvedLegacyOperations.delete(mapped.value.idHex);
         session.receivedKnownPushIds.add(mapped.value.idHex);
         progressed = true;
     }
@@ -2585,26 +2586,67 @@ function carryReceivedUnresolvedNeeds(session: PeerSyncSession): boolean {
     return true;
 }
 
-async function refreshStoredUnresolvedNeeds(peerKey: string, session: PeerSyncSession): Promise<void> {
+async function refreshStoredUnresolvedNeeds(peerKey: string, session: PeerSyncSession): Promise<boolean> {
     if (peerSessions.get(peerKey) !== session || session.unresolvedNeedIds.size === 0) {
-        return;
+        return true;
     }
 
     try {
         for (const ids of chunkIds(Array.from(session.unresolvedNeedIds), NEG_MAX_IDS_PER_LOOKUP)) {
             const rows = await syncStore.getByIds(ids);
             if (peerSessions.get(peerKey) !== session) {
-                return;
+                return false;
             }
             for (const row of rows) {
                 session.unresolvedNeedIds.delete(row.id);
+                session.unresolvedLegacyOperations.delete(row.id);
             }
         }
+        return true;
     }
     catch (error) {
         log.warn(
             { error, peer: shortName(peerKey), unresolved: session.unresolvedNeedIds.size },
             'failed to confirm unresolved negentropy operations'
+        );
+        return false;
+    }
+}
+
+async function persistUnresolvedLegacyOperations(peerKey: string, session: PeerSyncSession): Promise<void> {
+    if (peerSessions.get(peerKey) !== session || session.unresolvedNeedIds.size === 0) {
+        return;
+    }
+
+    const operations: Operation[] = [];
+    for (const id of session.unresolvedNeedIds) {
+        const operation = session.unresolvedLegacyOperations.get(id);
+        if (!operation) {
+            return;
+        }
+        operations.push(operation);
+    }
+
+    try {
+        const persistedIds = await persistProcessedOperations(
+            [],
+            operations,
+            'negentropy_legacy_without_previd',
+        );
+        if (peerSessions.get(peerKey) !== session) {
+            return;
+        }
+        for (const id of persistedIds) {
+            session.provenStoredPushIds.add(id);
+            session.pendingNeedIds.delete(id);
+            session.unresolvedNeedIds.delete(id);
+            session.unresolvedLegacyOperations.delete(id);
+        }
+    }
+    catch (error) {
+        log.warn(
+            { error, peer: shortName(peerKey), operations: operations.length },
+            'failed to persist unresolved legacy operations'
         );
     }
 }
@@ -2631,9 +2673,16 @@ async function maybeFinalizeInitiatorSession(peerKey: string, session: PeerSyncS
         return;
     }
 
-    await refreshStoredUnresolvedNeeds(peerKey, session);
+    const unresolvedRefreshed = await refreshStoredUnresolvedNeeds(peerKey, session);
     if (peerSessions.get(peerKey) !== session) {
         return;
+    }
+
+    if (unresolvedRefreshed) {
+        await persistUnresolvedLegacyOperations(peerKey, session);
+        if (peerSessions.get(peerKey) !== session) {
+            return;
+        }
     }
 
     if (session.unresolvedNeedIds.size > 0) {
@@ -3604,6 +3653,7 @@ async function handleOpsPushMessage(peerKey: string, msg: OpsPushMessage): Promi
         for (const id of imported.knownIds) {
             session.provenStoredPushIds.add(id);
             session.unresolvedNeedIds.delete(id);
+            session.unresolvedLegacyOperations.delete(id);
             if (session.initiator && session.pendingNeedIds.delete(id)) {
                 session.receivedKnownPushIds.add(id);
             }
@@ -3612,12 +3662,25 @@ async function handleOpsPushMessage(peerKey: string, msg: OpsPushMessage): Promi
             session.provenStoredPushIds.add(id);
             session.pendingNeedIds.delete(id);
             session.unresolvedNeedIds.delete(id);
+            session.unresolvedLegacyOperations.delete(id);
         }
         if (imported.retryable) {
             for (const operation of unprovenBatch) {
                 const mapped = mapOperationToSyncKey(operation);
                 if (mapped.ok && !session.provenStoredPushIds.has(mapped.value.idHex)) {
                     session.receivedPushIds.delete(mapped.value.idHex);
+                    session.unresolvedLegacyOperations.delete(mapped.value.idHex);
+                }
+            }
+        }
+        else {
+            for (const operation of unprovenBatch) {
+                const mapped = mapOperationToSyncKey(operation);
+                if (mapped.ok
+                    && operation.type !== 'create'
+                    && operation.previd === undefined
+                    && session.unresolvedNeedIds.has(mapped.value.idHex)) {
+                    session.unresolvedLegacyOperations.set(mapped.value.idHex, operation);
                 }
             }
         }
@@ -3641,9 +3704,15 @@ async function handleNegCloseMessage(peerKey: string, msg: NegCloseMessage): Pro
             }
         }
         if (msg.reason === 'complete') {
-            await refreshStoredUnresolvedNeeds(peerKey, session);
+            const unresolvedRefreshed = await refreshStoredUnresolvedNeeds(peerKey, session);
             if (peerSessions.get(peerKey) !== session) {
                 return;
+            }
+            if (unresolvedRefreshed) {
+                await persistUnresolvedLegacyOperations(peerKey, session);
+                if (peerSessions.get(peerKey) !== session) {
+                    return;
+                }
             }
             if (session.unresolvedNeedIds.size > 0) {
                 log.warn(
