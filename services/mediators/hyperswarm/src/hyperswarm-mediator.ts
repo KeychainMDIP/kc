@@ -2613,6 +2613,8 @@ async function refreshStoredUnresolvedNeeds(peerKey: string, session: PeerSyncSe
     }
 }
 
+// Pre-0.5 operations without previd were ordered by time and can remain deferred
+// when received out of DID-chain order. Store them until restart, then retry them.
 async function persistUnresolvedLegacyOperations(peerKey: string, session: PeerSyncSession): Promise<void> {
     if (peerSessions.get(peerKey) !== session || session.unresolvedNeedIds.size === 0) {
         return;
