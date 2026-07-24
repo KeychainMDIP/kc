@@ -60,15 +60,10 @@ export async function prunePersistedSyncRecords(
     return { checked: ids.length, removed };
 }
 
-export function filterIndexRejectedOperations(batch: Operation[], rejectedIndices: number[] = []): Operation[] {
-    if (!Array.isArray(batch) || batch.length === 0) {
-        return [];
-    }
-
-    if (!Array.isArray(rejectedIndices) || rejectedIndices.length === 0) {
-        return [...batch];
-    }
-
+export function partitionImportBatchOperations(
+    batch: Operation[],
+    rejectedIndices: number[] = [],
+): { processCandidates: Operation[]; rejectedOperations: Operation[] } {
     const rejectedSet = new Set<number>();
     for (const index of rejectedIndices) {
         if (Number.isInteger(index) && index >= 0 && index < batch.length) {
@@ -76,7 +71,12 @@ export function filterIndexRejectedOperations(batch: Operation[], rejectedIndice
         }
     }
 
-    return batch.filter((_operation, index) => !rejectedSet.has(index));
+    const processCandidates: Operation[] = [];
+    const rejectedOperations: Operation[] = [];
+    batch.forEach((operation, index) => {
+        (rejectedSet.has(index) ? rejectedOperations : processCandidates).push(operation);
+    });
+    return { processCandidates, rejectedOperations };
 }
 
 export function filterOperationsByAcceptedHashes(

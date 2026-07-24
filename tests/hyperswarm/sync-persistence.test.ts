@@ -8,9 +8,9 @@ import {
     dedupeOperationsByHash,
     filterKnownOperations,
     filterOperationsByAcceptedHashes,
-    filterIndexRejectedOperations,
     mapAcceptedOperationsToSyncRecords,
     mapIndexExportOperationsToSyncRecords,
+    partitionImportBatchOperations,
     prunePersistedSyncRecords,
     sortOperationsBySyncKey,
 } from '../../services/mediators/hyperswarm/src/sync-persistence.ts';
@@ -99,28 +99,36 @@ describe('sync-persistence helpers', () => {
         expect(pending.get(record.id)).toBe(record);
     });
 
-    it('returns empty array when filterIndexRejectedOperations receives empty batch', () => {
-        expect(filterIndexRejectedOperations([], [0, 1])).toStrictEqual([]);
+    it('returns empty partitions for an empty import batch', () => {
+        expect(partitionImportBatchOperations([], [0, 1])).toStrictEqual({
+            processCandidates: [],
+            rejectedOperations: [],
+        });
     });
 
-    it('filters rejected indices in original submitted order', () => {
+    it('partitions rejected indices in original submitted order', () => {
         // eslint-disable-next-line sonarjs/no-duplicate-string
         const a = makeCreateOp('a', '2026-02-10T10:00:00.000Z');
         // eslint-disable-next-line sonarjs/no-duplicate-string
         const b = makeCreateOp('b', '2026-02-10T11:00:00.000Z');
         const c = makeCreateOp('c', '2026-02-10T12:00:00.000Z');
 
-        const filtered = filterIndexRejectedOperations([a, b, c], [1, 0, 999, -1, 1]);
+        const partitioned = partitionImportBatchOperations([a, b, c], [1, 0, 999, -1, 1]);
 
-        expect(filtered).toStrictEqual([c]);
+        expect(partitioned).toStrictEqual({
+            processCandidates: [c],
+            rejectedOperations: [a, b],
+        });
     });
 
-    it('returns original batch when rejected indices are missing/empty', () => {
+    it('returns the batch as process candidates when rejected indices are missing', () => {
         const a = makeCreateOp('a', '2026-02-10T10:00:00.000Z');
         const b = makeCreateOp('b', '2026-02-10T11:00:00.000Z');
 
-        expect(filterIndexRejectedOperations([a, b], undefined)).toStrictEqual([a, b]);
-        expect(filterIndexRejectedOperations([a, b], [])).toStrictEqual([a, b]);
+        expect(partitionImportBatchOperations([a, b], undefined)).toStrictEqual({
+            processCandidates: [a, b],
+            rejectedOperations: [],
+        });
     });
 
     it('maps accepted operations to sync records and counts invalid operations', () => {

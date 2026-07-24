@@ -80,9 +80,10 @@ import {
 } from './negentropy/windows.js';
 import { bootstrapSyncStoreFromGatekeeper, type BootstrapResult } from './bootstrap.js';
 import {
+    dedupeOperationsByHash,
     filterKnownOperations,
-    filterIndexRejectedOperations,
     mapAcceptedOperationsToSyncRecords,
+    partitionImportBatchOperations,
     prunePersistedSyncRecords,
 } from './sync-persistence.js';
 import { resolveAcceptedOperationsToPersist } from './sync-store-mirroring.js';
@@ -403,7 +404,7 @@ function createConfiguredSyncStore(): OperationSyncStore {
 }
 
 let syncStore: OperationSyncStore = createConfiguredSyncStore();
-const pendingAcceptedSyncRecords = new Map<string, SyncOperationWriteRecord>();
+const pendingSyncRecords = new Map<string, SyncOperationWriteRecord>();
 let negentropyAdapter: NegentropyAdapter | null = null;
 let adapterChangeSeq = 0;
 let adapterBuiltSeq = -1;
@@ -414,7 +415,7 @@ let rebuildPromise: Promise<void> | null = null;
 let backgroundPrebuildQueued = false;
 
 function replaceSyncStore(store: OperationSyncStore): void {
-    pendingAcceptedSyncRecords.clear();
+    pendingSyncRecords.clear();
     syncStore = store;
 }
 
@@ -430,7 +431,8 @@ const NEG_SESSION_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
 const NEG_MAX_IDS_PER_OPS_REQ = 1_000;
 const NEG_MAX_IDS_PER_LOOKUP = 1_000;
 const NEG_MAX_OPS_PER_PUSH = 300;
-const MAX_PENDING_ACCEPTED_SYNC_RECORDS = NEG_MAX_IDS_PER_LOOKUP;
+const MAX_PENDING_SYNC_RECORDS = NEG_MAX_IDS_PER_LOOKUP;
+const TERMINAL_REJECTED_SYNC_ORDER = Number.MAX_SAFE_INTEGER;
 const NEG_MAX_BYTES_PER_PUSH = 512 * 1024;
 const ORDERED_CATCHUP_PREFETCH_BATCHES = 2;
 const NEG_REPAIR_INTERVAL_MS = config.negentropyIntervalSeconds * 1000;
@@ -1102,7 +1104,7 @@ function resetRuntimeSyncStateAfterGatekeeperReset(sync: BootstrapResult): void 
 
     peerSessions.clear();
     orderedCatchupTransitionPeers.clear();
-    pendingAcceptedSyncRecords.clear();
+    pendingSyncRecords.clear();
     invalidateNegentropyAdapterCache();
 
     for (const conn of Object.values(connectionInfo)) {
@@ -3467,7 +3469,7 @@ async function relayMsg(msg: HyperMessage): Promise<void> {
     }
 }
 
-async function importBatch(batch: Operation[]): Promise<Operation[]> {
+async function importBatch(batch: Operation[]) {
     // The batch we receive from other hyperswarm nodes includes just operations.
     // We have to wrap the operations in new events before submitting to our gatekeeper for importing
     try {
@@ -3494,7 +3496,7 @@ async function importBatch(batch: Operation[]): Promise<Operation[]> {
         log.debug(`* ${JSON.stringify(response)}`);
         syncStats.opsRejected += response.rejected ?? 0;
 
-        return filterIndexRejectedOperations(batch, response.rejectedIndices);
+        return partitionImportBatchOperations(batch, response.rejectedIndices);
     }
     catch (error) {
         log.error({ error }, 'importBatch error');
@@ -3502,22 +3504,54 @@ async function importBatch(batch: Operation[]): Promise<Operation[]> {
     }
 }
 
-async function persistAcceptedOperations(
-    operations: Operation[],
+function hasContentVerifiedOperationId(operation: Operation): boolean {
+    const claimedHash = operation.signature?.hash;
+    if (typeof claimedHash !== 'string') {
+        return false;
+    }
+
+    try {
+        const unsignedOperation = { ...operation };
+        delete unsignedOperation.signature;
+        return cipher.hashJSON(unsignedOperation).toLowerCase() === claimedHash.toLowerCase();
+    }
+    catch {
+        return false;
+    }
+}
+
+async function persistProcessedOperations(
+    acceptedOperations: Operation[],
+    rejectedOperations: Operation[],
     source: string,
     retryIds: Iterable<string> = [],
 ): Promise<string[]> {
-    const { records, invalid } = mapAcceptedOperationsToSyncRecords(operations);
+    const accepted = mapAcceptedOperationsToSyncRecords(acceptedOperations);
+    const verifiedRejectedOperations = rejectedOperations.filter(hasContentVerifiedOperationId);
+    const rejectedHashMismatches = rejectedOperations.length - verifiedRejectedOperations.length;
+    const rejected = mapAcceptedOperationsToSyncRecords(verifiedRejectedOperations.map(operation => ({
+        operation,
+        syncOrder: TERMINAL_REJECTED_SYNC_ORDER,
+    })));
+    if (rejectedHashMismatches > 0) {
+        log.warn(
+            { source, rejectedHashMismatches },
+            'skipping terminal sync records with unverified operation IDs'
+        );
+    }
+    const records = [...rejected.records, ...accepted.records];
+    const invalid = accepted.invalid + rejected.invalid;
+    const operationCount = acceptedOperations.length + rejectedOperations.length;
     const recordsToPersist = new Map<string, SyncOperationWriteRecord>();
     for (const record of records) {
-        pendingAcceptedSyncRecords.delete(record.id);
-        pendingAcceptedSyncRecords.set(record.id, record);
+        pendingSyncRecords.delete(record.id);
+        pendingSyncRecords.set(record.id, record);
         recordsToPersist.set(record.id, record);
     }
 
     let retryCandidates = 0;
     for (const id of new Set(retryIds)) {
-        const pending = pendingAcceptedSyncRecords.get(id);
+        const pending = pendingSyncRecords.get(id);
         if (!pending || recordsToPersist.has(id)) {
             continue;
         }
@@ -3527,7 +3561,14 @@ async function persistAcceptedOperations(
 
     const attemptedRecords = Array.from(recordsToPersist.values());
     if (attemptedRecords.length === 0) {
-        log.debug({ source, attempted: operations.length, invalid }, 'sync-store persist skipped');
+        log.debug({
+            source,
+            accepted: acceptedOperations.length,
+            rejected: rejectedOperations.length,
+            rejectedHashMismatches,
+            attempted: operationCount,
+            invalid,
+        }, 'sync-store persist skipped');
         return [];
     }
 
@@ -3536,33 +3577,36 @@ async function persistAcceptedOperations(
         result = await syncStore.upsertMany(attemptedRecords);
     }
     catch (error) {
-        const pendingBeforeTrim = pendingAcceptedSyncRecords.size;
-        while (pendingAcceptedSyncRecords.size > MAX_PENDING_ACCEPTED_SYNC_RECORDS) {
-            const oldestId = pendingAcceptedSyncRecords.keys().next().value;
+        const pendingBeforeTrim = pendingSyncRecords.size;
+        while (pendingSyncRecords.size > MAX_PENDING_SYNC_RECORDS) {
+            const oldestId = pendingSyncRecords.keys().next().value;
             if (oldestId === undefined) {
                 break;
             }
-            pendingAcceptedSyncRecords.delete(oldestId);
+            pendingSyncRecords.delete(oldestId);
         }
         log.error(
             {
                 error,
                 source,
-                attempted: operations.length,
+                accepted: acceptedOperations.length,
+                rejected: rejectedOperations.length,
+                rejectedHashMismatches,
+                attempted: operationCount,
                 mapped: records.length,
                 retryCandidates,
                 recordsAttempted: attemptedRecords.length,
-                pending: pendingAcceptedSyncRecords.size,
-                pendingEvicted: pendingBeforeTrim - pendingAcceptedSyncRecords.size,
+                pending: pendingSyncRecords.size,
+                pendingEvicted: pendingBeforeTrim - pendingSyncRecords.size,
             },
-            'sync-store persist accepted ops failed'
+            'sync-store persist processed ops failed'
         );
         throw error;
     }
 
     for (const record of attemptedRecords) {
-        if (pendingAcceptedSyncRecords.get(record.id) === record) {
-            pendingAcceptedSyncRecords.delete(record.id);
+        if (pendingSyncRecords.get(record.id) === record) {
+            pendingSyncRecords.delete(record.id);
         }
     }
 
@@ -3573,16 +3617,19 @@ async function persistAcceptedOperations(
     log.debug(
         {
             source,
-            attempted: operations.length,
+            accepted: acceptedOperations.length,
+            rejected: rejectedOperations.length,
+            rejectedHashMismatches,
+            attempted: operationCount,
             mapped: records.length,
             retryCandidates,
             recordsAttempted: attemptedRecords.length,
-            pendingRemaining: pendingAcceptedSyncRecords.size,
+            pendingRemaining: pendingSyncRecords.size,
             invalid,
             inserted: result.inserted,
             updated: result.updated,
         },
-        'sync-store persist accepted ops'
+        'sync-store persist processed ops'
     );
     return attemptedRecords.map(record => record.id);
 }
@@ -3594,21 +3641,24 @@ async function mergeBatch(batch: Operation[]): Promise<string[]> {
     }
 
     let chunk = [];
-    const acceptedCandidates: Operation[] = [];
+    const processCandidates: Operation[] = [];
+    const structurallyRejected: Operation[] = [];
 
     for (const operation of batch) {
         chunk.push(operation);
 
         if (chunk.length >= BATCH_SIZE) {
-            const candidates = await importBatch(chunk);
-            acceptedCandidates.push(...candidates);
+            const imported = await importBatch(chunk);
+            processCandidates.push(...imported.processCandidates);
+            structurallyRejected.push(...imported.rejectedOperations);
             chunk = [];
         }
     }
 
     if (chunk.length > 0) {
-        const candidates = await importBatch(chunk);
-        acceptedCandidates.push(...candidates);
+        const imported = await importBatch(chunk);
+        processCandidates.push(...imported.processCandidates);
+        structurallyRejected.push(...imported.rejectedOperations);
     }
 
     const processStart = Date.now();
@@ -3621,15 +3671,30 @@ async function mergeBatch(batch: Operation[]): Promise<string[]> {
     const processSummary = { ...response };
     delete processSummary.acceptedHashes;
     delete processSummary.acceptedEvents;
+    delete processSummary.rejectedOperations;
     log.debug(`mergeBatch: ${JSON.stringify(processSummary)}`);
     syncStats.opsApplied += (response.added ?? 0) + (response.merged ?? 0);
     syncStats.opsRejected += response.rejected ?? 0;
 
     const acceptedToPersist = resolveAcceptedOperationsToPersist(
-        acceptedCandidates,
+        processCandidates,
         response.acceptedHashes,
         response.acceptedEvents,
     );
+    const candidateHashes = new Set(
+        processCandidates
+            .map(operation => operation.signature?.hash?.toLowerCase())
+            .filter((hash): hash is string => typeof hash === 'string')
+    );
+    const processRejected = dedupeOperationsByHash(response.rejectedOperations ?? [])
+        .filter(operation => {
+            const hash = operation.signature?.hash?.toLowerCase();
+            return typeof hash === 'string' && candidateHashes.has(hash);
+        });
+    const rejectedToPersist = dedupeOperationsByHash([
+        ...structurallyRejected,
+        ...processRejected,
+    ]);
     const retryIds = new Set<string>();
     for (const operation of batch) {
         const mapped = mapOperationToSyncKey(operation);
@@ -3637,7 +3702,12 @@ async function mergeBatch(batch: Operation[]): Promise<string[]> {
             retryIds.add(mapped.value.idHex);
         }
     }
-    return persistAcceptedOperations(acceptedToPersist, 'mergeBatch', retryIds);
+    return persistProcessedOperations(
+        acceptedToPersist,
+        rejectedToPersist,
+        'mergeBatch',
+        retryIds,
+    );
 }
 
 let importQueue = asyncLib.queue<ImportQueueTask, ImportQueueResult>(
@@ -4287,7 +4357,7 @@ async function flushQueue(): Promise<void> {
     const batch = await gatekeeper.getQueue(REGISTRY);
 
     if (batch.length > 0) {
-        await persistAcceptedOperations(batch, 'flushQueue');
+        await persistProcessedOperations(batch, [], 'flushQueue');
         syncStats.queueOpsRelayed += batch.length;
         const samples = collectQueueDelaySamples(batch);
         for (const sample of samples) {
@@ -4316,18 +4386,18 @@ async function syncGatekeeperIndexToStore(source: string): Promise<void> {
     if (sync.resetReason) {
         resetRuntimeSyncStateAfterGatekeeperReset(sync);
     }
-    else if (pendingAcceptedSyncRecords.size > 0) {
+    else if (pendingSyncRecords.size > 0) {
         try {
             const pruned = await prunePersistedSyncRecords(
-                pendingAcceptedSyncRecords,
+                pendingSyncRecords,
                 syncStore,
                 NEG_MAX_IDS_PER_LOOKUP,
             );
-            log.debug({ source, ...pruned, remaining: pendingAcceptedSyncRecords.size }, 'pruned persisted sync-store retries');
+            log.debug({ source, ...pruned, remaining: pendingSyncRecords.size }, 'pruned persisted sync-store retries');
         }
         catch (error) {
             log.warn(
-                { error, source, remaining: pendingAcceptedSyncRecords.size },
+                { error, source, remaining: pendingSyncRecords.size },
                 'failed to prune persisted sync-store retries'
             );
         }

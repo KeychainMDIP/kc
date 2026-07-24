@@ -141,6 +141,41 @@ async function createOperationFixtures(): Promise<{
     return { controllerCreate, controllerUpdate, independentCreate };
 }
 
+async function createForkFixtures(): Promise<{
+    controllerCreate: Operation;
+    branchA: Operation;
+    branchB: Operation;
+}> {
+    const gatekeeper = new Gatekeeper({
+        db: new DbJsonMemory('hyperswarm-mediator-fork-fixtures'),
+        didPrefix: 'did:test',
+        ipfsEnabled: false,
+        registries: ['hyperswarm'],
+    });
+    const cipher = new CipherNode();
+    const helper = new TestHelper(gatekeeper, cipher);
+    const keys = cipher.generateRandomJwk();
+    const baseTime = Date.now() - (10 * 60 * 1_000);
+    const controllerCreate = await helper.createAgentOp(keys, {
+        version: 1,
+        registry: 'hyperswarm',
+    });
+    setSignedTime(controllerCreate, baseTime);
+    const did = await gatekeeper.createDID(controllerCreate);
+    const current = await gatekeeper.resolveDID(did);
+    const branchADocument = structuredClone(current);
+    const branchBDocument = structuredClone(current);
+    branchADocument.didDocumentData = { branch: 'a' };
+    branchBDocument.didDocumentData = { branch: 'b' };
+    const branchA = await helper.createUpdateOp(keys, did, branchADocument);
+    const branchB = await helper.createUpdateOp(keys, did, branchBDocument);
+    setSignedTime(branchA, baseTime + 60_000);
+    setSignedTime(branchB, baseTime + 120_000);
+    await gatekeeper.resetDb();
+
+    return { controllerCreate, branchA, branchB };
+}
+
 function operationIds(operations: Operation[]): string[] {
     return Array.from(new Set(
         operations.map(operation => operation.signature!.hash.toLowerCase()),
@@ -578,6 +613,59 @@ describe('hyperswarm mediator behavior', () => {
         expect(driver.nodeB.run(
             () => driver!.nodeB.mediator.__test.getConnectionState(peerKeyA)?.activeSession,
         )).toBeNull();
+    });
+
+    it('records terminal fork operations and completes without changing either Gatekeeper history', async () => {
+        const fixtures = await createForkFixtures();
+        const operationsA = [fixtures.controllerCreate, fixtures.branchA];
+        const operationsB = [fixtures.controllerCreate, fixtures.branchB];
+        const idsA = operationIds(operationsA);
+        const idsB = operationIds(operationsB);
+        const union = [fixtures.controllerCreate, fixtures.branchA, fixtures.branchB];
+        const unionIds = operationIds(union);
+        driver = await createMediatorDriver({
+            operationsA,
+            operationsB,
+            syncOrderByIdA: new Map(operationsA.map((operation, index) => [
+                operation.signature!.hash,
+                index + 1,
+            ])),
+            syncOrderByIdB: new Map(operationsB.map((operation, index) => [
+                operation.signature!.hash,
+                index + 1,
+            ])),
+        });
+        const expected = {
+            a: { gatekeeper: idsA, store: unionIds },
+            b: { gatekeeper: idsB, store: unionIds },
+        };
+
+        await driver.startSync();
+        await driver.driveUntilQuiescent(expected, { timeoutMs: 10_000 });
+
+        expect(await gatekeeperIds(driver.nodeA.gatekeeper)).toStrictEqual(idsA);
+        expect(await gatekeeperIds(driver.nodeB.gatekeeper)).toStrictEqual(idsB);
+        expect((await driver.storeA.iterateSorted({ limit: Number.MAX_SAFE_INTEGER }))
+            .map(row => row.id).sort()).toStrictEqual(unionIds);
+        expect((await driver.storeB.iterateSorted({ limit: Number.MAX_SAFE_INTEGER }))
+            .map(row => row.id).sort()).toStrictEqual(unionIds);
+        expect(await driver.storeA.countOrdered()).toBe(unionIds.length);
+        expect(await driver.storeB.countOrdered()).toBe(unionIds.length);
+        expect((await driver.storeA.getByIds([fixtures.branchB.signature!.hash]))[0].syncOrder)
+            .toBe(Number.MAX_SAFE_INTEGER);
+        expect((await driver.storeB.getByIds([fixtures.branchA.signature!.hash]))[0].syncOrder)
+            .toBe(Number.MAX_SAFE_INTEGER);
+        expect(decodeWire(driver.transport)).toContainEqual(expect.objectContaining({
+            body: expect.objectContaining({ type: 'neg_close', reason: 'complete' }),
+        }));
+        expect(decodeWire(driver.transport).some(message => (
+            message.body.type === 'neg_close' && message.body.reason === 'unresolved_operations'
+        ))).toBe(false);
+
+        await driver.reconnect();
+        await driver.startSync();
+        await driver.driveUntilQuiescent(expected, { timeoutMs: 10_000 });
+        assertNoOperationTransfer(driver.transport);
     });
 
     describe.each([

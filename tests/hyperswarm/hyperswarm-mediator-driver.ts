@@ -7,8 +7,8 @@ import type { GatekeeperEvent, Operation } from '@mdip/gatekeeper/types';
 import InMemoryOperationSyncStore from '../../services/mediators/hyperswarm/src/db/memory.ts';
 import NegentropyAdapter from '../../services/mediators/hyperswarm/src/negentropy/adapter.ts';
 import {
-    filterIndexRejectedOperations,
     mapAcceptedOperationsToSyncRecords,
+    partitionImportBatchOperations,
 } from '../../services/mediators/hyperswarm/src/sync-persistence.ts';
 import { resolveAcceptedOperationsToPersist } from '../../services/mediators/hyperswarm/src/sync-store-mirroring.ts';
 import { normalizePeerCapabilities } from '../../services/mediators/hyperswarm/src/negentropy/protocol.ts';
@@ -43,9 +43,16 @@ export interface MediatorDriverOptions {
 
 export type MediatorTranscriptEntry = RecordedTransportWrite;
 
+export interface NodeQuiescenceExpectation {
+    gatekeeper: Iterable<string>;
+    store: Iterable<string>;
+}
+
+type NodeExpectedIds = Iterable<string> | NodeQuiescenceExpectation;
+
 export type QuiescenceExpectation = Iterable<string> | {
-    a: Iterable<string>;
-    b: Iterable<string>;
+    a: NodeExpectedIds;
+    b: NodeExpectedIds;
 };
 
 export interface QuiescenceOptions {
@@ -120,6 +127,21 @@ function normalizeIds(ids: Iterable<string>): string[] {
     return Array.from(new Set(Array.from(ids, id => id.toLowerCase()))).sort();
 }
 
+function normalizeNodeExpectation(expected: NodeExpectedIds): {
+    gatekeeper: string[];
+    store: string[];
+} {
+    if ('gatekeeper' in Object(expected)) {
+        const split = expected as NodeQuiescenceExpectation;
+        return {
+            gatekeeper: normalizeIds(split.gatekeeper),
+            store: normalizeIds(split.store),
+        };
+    }
+    const ids = normalizeIds(expected as Iterable<string>);
+    return { gatekeeper: ids, store: ids };
+}
+
 function operationIds(operations: Operation[]): string[] {
     return normalizeIds(operations.flatMap(operation => operation.signature?.hash ?? []));
 }
@@ -156,10 +178,10 @@ async function seedNode(
         operation,
     }));
     const imported = await node.gatekeeper.importBatch(events);
-    const acceptedCandidates = filterIndexRejectedOperations(operations, imported.rejectedIndices);
+    const { processCandidates } = partitionImportBatchOperations(operations, imported.rejectedIndices);
     const processed = await node.gatekeeper.processEvents();
     const accepted = resolveAcceptedOperationsToPersist(
-        acceptedCandidates,
+        processCandidates,
         processed.acceptedHashes,
         processed.acceptedEvents,
     );
@@ -661,18 +683,31 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
 
                 const expectedByNode = 'a' in Object(expectedIds)
                     ? {
-                        a: normalizeIds((expectedIds as Exclude<QuiescenceExpectation, Iterable<string>>).a),
-                        b: normalizeIds((expectedIds as Exclude<QuiescenceExpectation, Iterable<string>>).b),
+                        a: normalizeNodeExpectation(
+                            (expectedIds as Exclude<QuiescenceExpectation, Iterable<string>>).a
+                        ),
+                        b: normalizeNodeExpectation(
+                            (expectedIds as Exclude<QuiescenceExpectation, Iterable<string>>).b
+                        ),
                     }
                     : {
-                        a: normalizeIds(expectedIds as Iterable<string>),
-                        b: normalizeIds(expectedIds as Iterable<string>),
+                        a: normalizeNodeExpectation(expectedIds as Iterable<string>),
+                        b: normalizeNodeExpectation(expectedIds as Iterable<string>),
                     };
                 const expectedDigest = {
-                    a: digestIds(expectedByNode.a),
-                    b: digestIds(expectedByNode.b),
+                    a: {
+                        gatekeeper: digestIds(expectedByNode.a.gatekeeper),
+                        store: digestIds(expectedByNode.a.store),
+                    },
+                    b: {
+                        gatekeeper: digestIds(expectedByNode.b.gatekeeper),
+                        store: digestIds(expectedByNode.b.store),
+                    },
                 };
-                const expectEqualNodes = JSON.stringify(expectedByNode.a) === JSON.stringify(expectedByNode.b);
+                const expectEqualGatekeepers = JSON.stringify(expectedByNode.a.gatekeeper)
+                    === JSON.stringify(expectedByNode.b.gatekeeper);
+                const expectEqualStores = JSON.stringify(expectedByNode.a.store)
+                    === JSON.stringify(expectedByNode.b.store);
                 const maxIterations = quiescenceOptions.maxIterations ?? DEFAULT_MAX_ITERATIONS;
                 const timeoutMs = quiescenceOptions.timeoutMs ?? DEFAULT_TIMEOUT_MS;
                 if (!Number.isInteger(maxIterations) || maxIterations <= 0) {
@@ -735,19 +770,25 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
                             [summaryB, expectedByNode.b, expectedDigest.b],
                         ].every(([summary, expected, digest]) => {
                             const nodeSummary = summary as NodeSummary;
-                            const nodeExpected = expected as string[];
-                            return nodeSummary.gatekeeper.count === nodeExpected.length
-                                && nodeSummary.gatekeeper.digest === digest
-                                && JSON.stringify(nodeSummary.gatekeeper.ids) === JSON.stringify(nodeExpected)
-                                && nodeSummary.store.count === nodeExpected.length
-                                && nodeSummary.store.digest === digest
-                                && JSON.stringify(normalizeIds(nodeSummary.store.ids)) === JSON.stringify(nodeExpected);
+                            const nodeExpected = expected as { gatekeeper: string[]; store: string[] };
+                            const nodeDigest = digest as { gatekeeper: string; store: string };
+                            return nodeSummary.gatekeeper.count === nodeExpected.gatekeeper.length
+                                && nodeSummary.gatekeeper.digest === nodeDigest.gatekeeper
+                                && JSON.stringify(nodeSummary.gatekeeper.ids) === JSON.stringify(nodeExpected.gatekeeper)
+                                && nodeSummary.store.count === nodeExpected.store.length
+                                && nodeSummary.store.digest === nodeDigest.store
+                                && JSON.stringify(normalizeIds(nodeSummary.store.ids)) === JSON.stringify(nodeExpected.store);
                         });
                         // syncOrder is source-local; canonical cursors and operation content are shared invariants.
-                        const matchingNodeState = !expectEqualNodes || (
-                            summaryA.gatekeeper.contentDigest === summaryB.gatekeeper.contentDigest
-                            && JSON.stringify(summaryA.store.cursors) === JSON.stringify(summaryB.store.cursors)
-                            && summaryA.store.contentDigest === summaryB.store.contentDigest
+                        const matchingNodeState = (
+                            !expectEqualGatekeepers
+                            || summaryA.gatekeeper.contentDigest === summaryB.gatekeeper.contentDigest
+                        ) && (
+                            !expectEqualStores
+                            || (
+                                JSON.stringify(summaryA.store.cursors) === JSON.stringify(summaryB.store.cursors)
+                                && summaryA.store.contentDigest === summaryB.store.contentDigest
+                            )
                         );
                         const ready = linkState.pendingAToB === 0
                             && linkState.pendingBToA === 0
@@ -780,14 +821,28 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
                             stableObservations,
                             expected: {
                                 a: {
-                                    count: expectedByNode.a.length,
-                                    digest: expectedDigest.a,
-                                    sample: sampleIds(expectedByNode.a),
+                                    gatekeeper: {
+                                        count: expectedByNode.a.gatekeeper.length,
+                                        digest: expectedDigest.a.gatekeeper,
+                                        sample: sampleIds(expectedByNode.a.gatekeeper),
+                                    },
+                                    store: {
+                                        count: expectedByNode.a.store.length,
+                                        digest: expectedDigest.a.store,
+                                        sample: sampleIds(expectedByNode.a.store),
+                                    },
                                 },
                                 b: {
-                                    count: expectedByNode.b.length,
-                                    digest: expectedDigest.b,
-                                    sample: sampleIds(expectedByNode.b),
+                                    gatekeeper: {
+                                        count: expectedByNode.b.gatekeeper.length,
+                                        digest: expectedDigest.b.gatekeeper,
+                                        sample: sampleIds(expectedByNode.b.gatekeeper),
+                                    },
+                                    store: {
+                                        count: expectedByNode.b.store.length,
+                                        digest: expectedDigest.b.store,
+                                        sample: sampleIds(expectedByNode.b.store),
+                                    },
                                 },
                             },
                             linkState,

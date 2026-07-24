@@ -809,12 +809,20 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         await peer.pair.pumpUntilIdle();
 
         running.node.gatekeeperClient.importBatch.mockImplementationOnce(async events => ({
-            queued: 0,
+            queued: events.length,
             processed: 0,
-            rejected: events.length,
-            total: 0,
-            rejectedIndices: events.map((_, index) => index),
+            rejected: 0,
+            total: events.length,
+            rejectedIndices: [],
         }));
+        running.node.gatekeeperClient.processEvents.mockResolvedValueOnce({
+            added: 0,
+            merged: 0,
+            rejected: 1,
+            pending: 0,
+            acceptedHashes: [],
+            acceptedEvents: [],
+        });
         const getByIds = jest.spyOn(running.store, 'getByIds');
         peer.pair.connectionB.write(encodeFramedMessage(JSON.stringify({
             type: 'ops_push',

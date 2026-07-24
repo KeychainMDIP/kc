@@ -111,6 +111,28 @@ async function makeOperations(count: number): Promise<Operation[]> {
     return operations;
 }
 
+function makeStructurallyRejectedOperation(): Operation {
+    const cipher = new CipherNode();
+    const unsignedOperation: Operation = {
+        type: 'create',
+        created: '2026-01-01T00:00:00.000Z',
+        mdip: {
+            version: 1,
+            type: 'agent',
+            registry: 'hyperswarm',
+        },
+    };
+    const hashValue = cipher.hashJSON(unsignedOperation);
+    return {
+        ...unsignedOperation,
+        signature: {
+            hash: hashValue,
+            signed: '2026-01-01T00:00:00.000Z',
+            value: 'invalid-signature',
+        },
+    };
+}
+
 async function makeDependencyChain(): Promise<Operation[]> {
     const gatekeeper = new Gatekeeper({
         db: new DbJsonMemory('hyperswarm-protocol-dependency-fixtures'),
@@ -1294,14 +1316,138 @@ describe('hyperswarm mediator protocol characterization', () => {
         ))).toBe(false);
     });
 
-    it('closes immediately when a final window contains a received rejected operation', async () => {
-        const rejectedId = hash('a');
-        const rejectedOperation = {
-            signature: {
-                hash: rejectedId,
-                signed: '2026-01-01T00:00:00.000Z',
-            },
-        } as Operation;
+    it('persists terminal Gatekeeper rejects after accepted history and completes the session', async () => {
+        const [acceptedOperation, rejectedOperation] = await makeOperations(2);
+        const acceptedId = acceptedOperation.signature!.hash;
+        const rejectedId = rejectedOperation.signature!.hash;
+        const protocolNode = await createNode();
+        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
+        jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
+            const engine = createEngine(snapshot);
+            jest.spyOn(engine, 'reconcile').mockResolvedValueOnce({
+                nextMsg: null,
+                haveIds: [],
+                needIds: [acceptedId, rejectedId],
+            });
+            return engine;
+        });
+        protocolNode.node.gatekeeperClient.importBatch.mockResolvedValueOnce({
+            queued: 2,
+            processed: 0,
+            rejected: 0,
+            total: 2,
+            rejectedIndices: [],
+        });
+        protocolNode.node.gatekeeperClient.processEvents.mockResolvedValueOnce({
+            added: 1,
+            merged: 0,
+            rejected: 1,
+            pending: 0,
+            acceptedHashes: [acceptedId],
+            acceptedEvents: [],
+            rejectedOperations: [rejectedOperation],
+        });
+
+        await protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey),
+        );
+        const open = decodeWrites(pair).find(message => message.type === 'neg_open');
+        if (!open) {
+            throw new Error('expected local neg_open');
+        }
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'neg_msg',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            frame: encodeNegentropyFrame('terminal-reject'),
+        }));
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'ops_push',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            data: [acceptedOperation, rejectedOperation],
+        }));
+
+        const records = await protocolNode.store.getByIds([acceptedId, rejectedId]);
+        expect(records).toHaveLength(2);
+        expect(records.find(record => record.id === acceptedId)?.syncOrder).toBeUndefined();
+        expect(records.find(record => record.id === rejectedId)?.syncOrder).toBe(Number.MAX_SAFE_INTEGER);
+        expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
+            type: 'neg_close',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            reason: 'complete',
+        }));
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+        )).toBeNull();
+    });
+
+    it.each([
+        ['deferred', { added: 0, merged: 0, rejected: 0, pending: 1 }],
+        ['processed but unproven', { added: 0, merged: 0, rejected: 0, pending: 0 }],
+        ['legacy rejection count without operations', { added: 0, merged: 0, rejected: 1, pending: 0 }],
+    ])('does not persist %s operations as terminal rejects', async (_case, processResult) => {
+        const [operation] = await makeOperations(1);
+        const operationId = operation.signature!.hash;
+        const protocolNode = await createNode();
+        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
+        jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
+            const engine = createEngine(snapshot);
+            jest.spyOn(engine, 'reconcile').mockResolvedValueOnce({
+                nextMsg: null,
+                haveIds: [],
+                needIds: [operationId],
+            });
+            return engine;
+        });
+        protocolNode.node.gatekeeperClient.importBatch.mockResolvedValueOnce({
+            queued: 1,
+            processed: 0,
+            rejected: 0,
+            total: 1,
+            rejectedIndices: [],
+        });
+        protocolNode.node.gatekeeperClient.processEvents.mockResolvedValueOnce({
+            ...processResult,
+            acceptedHashes: [],
+            acceptedEvents: [],
+        });
+
+        await protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey),
+        );
+        const open = decodeWrites(pair).find(message => message.type === 'neg_open');
+        if (!open) {
+            throw new Error('expected local neg_open');
+        }
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'neg_msg',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            frame: encodeNegentropyFrame('non-terminal-reject'),
+        }));
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'ops_push',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            data: [operation],
+        }));
+
+        expect(await protocolNode.store.has(operationId)).toBe(false);
+        expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
+            type: 'neg_close',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            reason: 'unresolved_operations',
+        }));
+    });
+
+    it('terminally indexes a structurally rejected operation and completes the final window', async () => {
+        const rejectedOperation = makeStructurallyRejectedOperation();
+        const rejectedId = rejectedOperation.signature!.hash;
         const protocolNode = await createNode();
         const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
         const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
@@ -1313,14 +1459,6 @@ describe('hyperswarm mediator protocol characterization', () => {
                 needIds: [rejectedId],
             });
             return engine;
-        });
-        const getByIds = protocolNode.store.getByIds.bind(protocolNode.store);
-        const rejectedLookups: string[][] = [];
-        jest.spyOn(protocolNode.store, 'getByIds').mockImplementation(async ids => {
-            if (ids.includes(rejectedId)) {
-                rejectedLookups.push([...ids]);
-            }
-            return getByIds(ids);
         });
 
         await protocolNode.node.run(
@@ -1343,19 +1481,86 @@ describe('hyperswarm mediator protocol characterization', () => {
             data: [rejectedOperation],
         }));
 
-        expect(rejectedLookups).toStrictEqual([[rejectedId], [rejectedId]]);
+        expect((await protocolNode.store.getByIds([rejectedId]))[0].syncOrder)
+            .toBe(Number.MAX_SAFE_INTEGER);
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
             type: 'neg_close',
             sessionId: open.sessionId,
             windowId: open.windowId,
-            reason: 'unresolved_operations',
+            reason: 'complete',
         }));
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
         )).toBeNull();
     });
 
-    it('advances past a rejected operation and completes after index backfill', async () => {
+    it('does not let a structural reject reserve a mismatched operation ID', async () => {
+        const [legitimateOperation] = await makeOperations(1);
+        const legitimateId = legitimateOperation.signature!.hash;
+        const malformedOperation = { ...legitimateOperation };
+        delete malformedOperation.publicJwk;
+        const protocolNode = await createNode();
+        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
+        jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
+            const engine = createEngine(snapshot);
+            jest.spyOn(engine, 'reconcile').mockResolvedValueOnce({
+                nextMsg: null,
+                haveIds: [],
+                needIds: [legitimateId],
+            });
+            return engine;
+        });
+
+        await protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey),
+        );
+        const open = decodeWrites(pair).find(message => message.type === 'neg_open');
+        if (!open) {
+            throw new Error('expected local neg_open');
+        }
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'neg_msg',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            frame: encodeNegentropyFrame('mismatched-operation-id'),
+        }));
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'ops_push',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            data: [malformedOperation],
+        }));
+
+        expect(await protocolNode.store.has(legitimateId)).toBe(false);
+        expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
+            type: 'neg_close',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            reason: 'unresolved_operations',
+        }));
+        expect(decodeWrites(pair)).not.toContainEqual(expect.objectContaining({
+            type: 'neg_close',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            reason: 'complete',
+        }));
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'queue',
+            time: new Date().toISOString(),
+            node: 'peer',
+            relays: [],
+            data: [legitimateOperation],
+        }));
+        await eventually(() => protocolNode.store.has(legitimateId));
+
+        const [stored] = await protocolNode.store.getByIds([legitimateId]);
+        expect(stored.operation).toStrictEqual(legitimateOperation);
+        expect(await protocolNode.node.gatekeeper.getDIDs()).toHaveLength(1);
+    });
+
+    it('advances past a terminal structural rejection across capped windows', async () => {
         const [localA, localB, rejectedOperation] = await makeOperations(3);
         const rejectedId = rejectedOperation.signature!.hash;
         const protocolNode = await createNode({ maxRecords: 1 });
@@ -1368,6 +1573,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
         const outcomes = [
             { nextMsg: null, haveIds: [], needIds: [rejectedId] },
+            { nextMsg: null, haveIds: [], needIds: [] },
             { nextMsg: null, haveIds: [], needIds: [] },
         ];
         jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementation(snapshot => {
@@ -1410,22 +1616,31 @@ describe('hyperswarm mediator protocol characterization', () => {
             window: { order: 1, after: expect.any(Object) },
         });
 
-        await protocolNode.store.upsertMany([{
-            id: rejectedId,
-            ts: Math.floor(Date.parse(rejectedOperation.signature!.signed) / 1000),
-            operation: rejectedOperation,
-        }]);
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'neg_msg',
             sessionId: opens[1].sessionId,
             windowId: opens[1].windowId,
-            frame: encodeNegentropyFrame('final-window-after-backfill'),
+            frame: encodeNegentropyFrame('second-capped-window'),
         }));
 
+        const finalOpen = decodeWrites(pair).filter(message => message.type === 'neg_open')[2];
+        expect(finalOpen).toMatchObject({
+            sessionId: firstOpen.sessionId,
+            window: { order: 2, after: expect.any(Object) },
+        });
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'neg_msg',
+            sessionId: finalOpen.sessionId,
+            windowId: finalOpen.windowId,
+            frame: encodeNegentropyFrame('final-window-after-terminal-reject'),
+        }));
+
+        expect((await protocolNode.store.getByIds([rejectedId]))[0].syncOrder)
+            .toBe(Number.MAX_SAFE_INTEGER);
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
             type: 'neg_close',
             sessionId: firstOpen.sessionId,
-            windowId: opens[1].windowId,
+            windowId: finalOpen.windowId,
             reason: 'complete',
         }));
         expect(protocolNode.node.run(
@@ -2060,7 +2275,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         });
     });
 
-    it('rejects remote completion when a responder still has an unresolved operation from an earlier window', async () => {
+    it('retains a terminal structural rejection across responder continuation windows', async () => {
         const [rejectedOperation] = await makeOperations(1);
         const rejectedId = rejectedOperation.signature!.hash;
         const open = await createRemoteOpen();
@@ -2104,18 +2319,20 @@ describe('hyperswarm mediator protocol characterization', () => {
             reason: 'complete',
         }));
 
-        expect(getByIds.mock.calls.filter(([ids]) => ids.includes(rejectedId))).toHaveLength(2);
+        expect(getByIds.mock.calls.filter(([ids]) => ids.includes(rejectedId))).toHaveLength(1);
+        expect((await protocolNode.store.getByIds([rejectedId]))[0].syncOrder)
+            .toBe(Number.MAX_SAFE_INTEGER);
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
         )).toBeNull();
-        expect(pair.connectionA.destroyed).toBe(true);
+        expect(pair.connectionA.destroyed).toBe(false);
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getSyncStatsSnapshot(),
         )).toMatchObject({
             negentropy: {
                 sessionsStarted: 1,
-                sessionsCompleted: 0,
-                sessionsFailed: 1,
+                sessionsCompleted: 1,
+                sessionsFailed: 0,
             },
         });
     });
@@ -2127,12 +2344,20 @@ describe('hyperswarm mediator protocol characterization', () => {
         const { peerKey } = attachPeer(protocolNode, { mode: 'framed' });
         mockTerminalResponder(protocolNode);
         protocolNode.node.gatekeeperClient.importBatch.mockImplementationOnce(async events => ({
-            queued: 0,
+            queued: events.length,
             processed: 0,
-            rejected: events.length,
-            total: 0,
-            rejectedIndices: events.map((_, index) => index),
+            rejected: 0,
+            total: events.length,
+            rejectedIndices: [],
         }));
+        protocolNode.node.gatekeeperClient.processEvents.mockResolvedValueOnce({
+            added: 0,
+            merged: 0,
+            rejected: 1,
+            pending: 0,
+            acceptedHashes: [],
+            acceptedEvents: [],
+        });
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, open));
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
@@ -2206,12 +2431,20 @@ describe('hyperswarm mediator protocol characterization', () => {
         const initialPeer = attachPeer(protocolNode, { mode: 'framed' });
         mockTerminalResponder(protocolNode);
         protocolNode.node.gatekeeperClient.importBatch.mockImplementationOnce(async events => ({
-            queued: 0,
+            queued: events.length,
             processed: 0,
-            rejected: events.length,
-            total: 0,
-            rejectedIndices: events.map((_, index) => index),
+            rejected: 0,
+            total: events.length,
+            rejectedIndices: [],
         }));
+        protocolNode.node.gatekeeperClient.processEvents.mockResolvedValueOnce({
+            added: 0,
+            merged: 0,
+            rejected: 1,
+            pending: 0,
+            acceptedHashes: [],
+            acceptedEvents: [],
+        });
 
         await protocolNode.node.run(
             () => protocolNode.node.mediator.__test.receiveMsg(initialPeer.peerKey, open),
