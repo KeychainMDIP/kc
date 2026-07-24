@@ -4033,6 +4033,13 @@ const topic = Buffer.from(b4a.from(networkID, 'hex'));
 async function main(): Promise<void> {
     log.info({ db: config.db }, 'sync-store backend selected');
     await syncStore.start();
+    const deletedRejectedOperations = await syncStore.deleteBySyncOrder(
+        TERMINAL_REJECTED_SYNC_ORDER,
+    );
+    log.info(
+        { deletedRejectedOperations },
+        'removed terminal rejected operations from sync store',
+    );
 
     await gatekeeper.connect({
         url: config.gatekeeperURL,

@@ -116,6 +116,20 @@ export default class SqliteOperationSyncStore implements OperationSyncStore {
         });
     }
 
+    async deleteBySyncOrder(syncOrder: number): Promise<number> {
+        if (!this.db) {
+            throw new Error(SQLITE_NOT_STARTED_ERROR);
+        }
+
+        return this.runExclusive(async () => {
+            const result = await this.db!.run(
+                'DELETE FROM operations WHERE sync_order = ?',
+                syncOrder,
+            );
+            return result.changes ?? 0;
+        });
+    }
+
     async upsertMany(records: SyncOperationWriteRecord[]): Promise<SyncStoreWriteResult> {
         if (!this.db) {
             throw new Error(SQLITE_NOT_STARTED_ERROR);

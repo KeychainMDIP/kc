@@ -153,6 +153,10 @@ async function runStoreContractTests(store: OperationSyncStore): Promise<void> {
         after: { syncOrder: Number.MAX_SAFE_INTEGER, id: recB.id },
     })).toEqual([expect.objectContaining({ id: recC.id })]);
 
+    expect(await store.deleteBySyncOrder(Number.MAX_SAFE_INTEGER)).toBe(2);
+    expect(await store.deleteBySyncOrder(Number.MAX_SAFE_INTEGER)).toBe(0);
+    expect((await store.iterateSorted()).map(item => item.id)).toStrictEqual([recA.id]);
+
     await store.reset();
     expect(await store.count()).toBe(0);
     expect(await store.countOrdered()).toBe(0);

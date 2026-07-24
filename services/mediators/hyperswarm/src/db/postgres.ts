@@ -128,6 +128,19 @@ export default class PostgresOperationSyncStore implements OperationSyncStore {
         });
     }
 
+    async deleteBySyncOrder(syncOrder: number): Promise<number> {
+        this.getPool();
+
+        return this.runExclusive(async () => {
+            const result = await this.getPool().query(
+                `DELETE FROM hyperswarm_sync_operations
+                 WHERE sync_order = $1`,
+                [syncOrder],
+            );
+            return result.rowCount ?? 0;
+        });
+    }
+
     async upsertMany(records: SyncOperationWriteRecord[]): Promise<SyncStoreWriteResult> {
         this.getPool();
 

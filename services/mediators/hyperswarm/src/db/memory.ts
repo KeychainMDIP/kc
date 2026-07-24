@@ -26,6 +26,19 @@ export default class InMemoryOperationSyncStore implements OperationSyncStore {
         this.syncState.clear();
     }
 
+    async deleteBySyncOrder(syncOrder: number): Promise<number> {
+        let deleted = 0;
+
+        for (const [id, record] of this.records) {
+            if (record.syncOrder === syncOrder) {
+                this.records.delete(id);
+                deleted += 1;
+            }
+        }
+
+        return deleted;
+    }
+
     async upsertMany(records: SyncOperationWriteRecord[]): Promise<SyncStoreWriteResult> {
         if (!Array.isArray(records) || records.length === 0) {
             return { inserted: 0, updated: 0 };

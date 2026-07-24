@@ -235,6 +235,38 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         expect(jest.getTimerCount()).toBeGreaterThanOrEqual(2);
     });
 
+    it('removes terminal rejected operations before Gatekeeper bootstrap', async () => {
+        const [normalOperation, rejectedOperation] = await makeOperations(2);
+        let deleteBySyncOrder!: jest.SpiedFunction<InMemoryOperationSyncStore['deleteBySyncOrder']>;
+        const running = await createRunningNode({
+            beforeStart: async (_node, store) => {
+                await store.start();
+                await store.upsertMany([
+                    {
+                        id: normalOperation.signature!.hash,
+                        syncOrder: 1,
+                        signedTs: 1,
+                        operation: normalOperation,
+                    },
+                    {
+                        id: rejectedOperation.signature!.hash,
+                        syncOrder: Number.MAX_SAFE_INTEGER,
+                        signedTs: 2,
+                        operation: rejectedOperation,
+                    },
+                ]);
+                deleteBySyncOrder = jest.spyOn(store, 'deleteBySyncOrder');
+            },
+        });
+
+        expect(deleteBySyncOrder).toHaveBeenCalledWith(Number.MAX_SAFE_INTEGER);
+        expect(deleteBySyncOrder.mock.invocationCallOrder[0]).toBeLessThan(
+            running.node.gatekeeperClient.exportIndex.mock.invocationCallOrder[0],
+        );
+        expect(await running.store.has(normalOperation.signature!.hash)).toBe(true);
+        expect(await running.store.has(rejectedOperation.signature!.hash)).toBe(false);
+    });
+
     it('handles real swarm connection, close, error, and malformed-data events', async () => {
         const running = await createRunningNode();
         const closedPeer = await attachConnection(running, 0x22);
