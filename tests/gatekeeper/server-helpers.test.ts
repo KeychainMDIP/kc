@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import { Server } from 'http';
 import { BlockList } from 'net';
 import { jest } from '@jest/globals';
 
@@ -155,6 +156,64 @@ describe('gatekeeper server helpers', () => {
 
         db.isReady.mockRejectedValue(new Error('db down'));
         await expect(helpers.isGatekeeperReady(true, db)).resolves.toBe(false);
+    });
+
+    it('keeps database shutdown blocked for work added during draining', async () => {
+        let closeServer = () => {};
+        let finishFirst = () => {};
+        const server = {
+            close: jest.fn((callback: () => void) => {
+                closeServer = callback;
+                return server;
+            }),
+        } as unknown as Server;
+        const first = new Promise<void>(resolve => {
+            finishFirst = resolve;
+        });
+        const activeWork = new Set<Promise<unknown>>();
+        const stopDatabase = jest.fn<() => Promise<void>>().mockResolvedValue();
+        const shutdown = helpers.drainServer(server, activeWork).then(async () => {
+            await stopDatabase();
+        });
+
+        activeWork.add(first);
+        closeServer();
+        await Promise.resolve();
+        expect(stopDatabase).not.toHaveBeenCalled();
+
+        let finishSecond = () => {};
+        const second = new Promise<void>(resolve => {
+            finishSecond = resolve;
+        });
+        activeWork.add(second);
+        finishFirst();
+        await new Promise<void>(resolve => setImmediate(resolve));
+        expect(stopDatabase).not.toHaveBeenCalled();
+
+        finishSecond();
+        await shutdown;
+        expect(stopDatabase).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports a server close failure after maintenance drains', async () => {
+        const closeError = new Error('close failed');
+        let closeServer = () => {};
+        let finishMaintenance = () => {};
+        const server = {
+            close: jest.fn((callback: (error?: Error) => void) => {
+                closeServer = () => callback(closeError);
+                return server;
+            }),
+        } as unknown as Server;
+        const maintenance = new Promise<void>(resolve => {
+            finishMaintenance = resolve;
+        });
+        const drain = helpers.drainServer(server, new Set([maintenance]));
+
+        closeServer();
+        finishMaintenance();
+
+        await expect(drain).rejects.toBe(closeError);
     });
 
     it('classifies database connectivity errors', () => {

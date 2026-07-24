@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { type RequestHandler } from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -22,6 +22,7 @@ import ClusterClient from '@mdip/ipfs/cluster';
 import config from './config.js';
 import {
     createWhitelistBlockList,
+    drainServer,
     formatBytes,
     formatDuration,
     DatabaseUnavailableError,
@@ -172,14 +173,14 @@ let serverReady = false;
  *             schema:
  *               type: boolean
  */
-v1router.get('/ready', async (req, res) => {
+v1router.get('/ready', trackedRoute(async (req, res) => {
     try {
         const ready = await isGatekeeperReady(serverReady, db);
         res.status(ready ? 200 : 503).json(ready);
     } catch (error: any) {
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -196,13 +197,13 @@ v1router.get('/ready', async (req, res) => {
  *       500:
  *         description: Internal Server Error.
  */
-v1router.get('/version', async (req, res) => {
+v1router.get('/version', trackedRoute(async (req, res) => {
     try {
         res.json(1);
     } catch (error: any) {
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -284,14 +285,14 @@ v1router.get('/version', async (req, res) => {
  *       500:
  *         description: Internal Server Error.
  */
-v1router.get('/status', async (req, res) => {
+v1router.get('/status', trackedRoute(async (req, res) => {
     try {
         const status = await getStatus();
         res.json(status);
     } catch (error: any) {
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -446,7 +447,7 @@ v1router.get('/status', async (req, res) => {
  *             schema:
  *               type: string
  */
-v1router.post('/did', async (req, res) => {
+v1router.post('/did', trackedRoute(async (req, res) => {
     try {
         const operation = req.body;
         let result;
@@ -461,7 +462,7 @@ v1router.post('/did', async (req, res) => {
         log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -542,7 +543,7 @@ v1router.post('/did', async (req, res) => {
  *                 error:
  *                   type: string
  */
-v1router.post("/did/generate", async (req, res) => {
+v1router.post("/did/generate", trackedRoute(async (req, res) => {
     try {
         const operation = req.body as Operation;
 
@@ -556,7 +557,7 @@ v1router.post("/did/generate", async (req, res) => {
     } catch (err: any) {
         res.status(400).json(err?.response?.data ?? err);
     }
-});
+}));
 
 /**
  * @swagger
@@ -719,7 +720,7 @@ v1router.post("/did/generate", async (req, res) => {
  *       500:
  *         description: Internal Server Error.
  */
-v1router.get('/did/:did', async (req, res) => {
+v1router.get('/did/:did', trackedRoute(async (req, res) => {
     try {
         const options: ResolveDIDOptions = {};
         const { versionTime, versionSequence, confirm, verify } = req.query;
@@ -748,7 +749,7 @@ v1router.get('/did/:did', async (req, res) => {
     } catch {
         res.status(404).send({ error: 'DID not found' });
     }
-});
+}));
 
 /**
  * @deprecated
@@ -808,7 +809,7 @@ v1router.get('/did/:did', async (req, res) => {
  *             schema:
  *               type: string
  */
-v1router.post('/did/:did', async (req, res) => {
+v1router.post('/did/:did', trackedRoute(async (req, res) => {
     try {
         const operation = req.body;
         const ok = await gatekeeper.updateDID(operation);
@@ -817,7 +818,7 @@ v1router.post('/did/:did', async (req, res) => {
         log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @deprecated
@@ -867,7 +868,7 @@ v1router.post('/did/:did', async (req, res) => {
  *       500:
  *         description: Internal Server Error.
  */
-v1router.delete('/did/:did', async (req, res) => {
+v1router.delete('/did/:did', trackedRoute(async (req, res) => {
     try {
         const operation = req.body;
         const ok = await gatekeeper.deleteDID(operation);
@@ -876,7 +877,7 @@ v1router.delete('/did/:did', async (req, res) => {
         log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -947,7 +948,7 @@ v1router.delete('/did/:did', async (req, res) => {
  *             schema:
  *               type: string
  */
-v1router.post('/dids/', async (req, res) => {
+v1router.post('/dids/', trackedRoute(async (req, res) => {
     try {
         const dids = await gatekeeper.getDIDs(req.body);
         res.json(dids);
@@ -955,7 +956,7 @@ v1router.post('/dids/', async (req, res) => {
         log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -1062,7 +1063,7 @@ v1router.post('/dids/', async (req, res) => {
  *       500:
  *         description: Internal Server Error.
  */
-v1router.post('/index/export', async (req, res) => {
+v1router.post('/index/export', trackedRoute(async (req, res) => {
     let request: ReturnType<typeof parseIndexExportRequest>;
 
     try {
@@ -1085,7 +1086,7 @@ v1router.post('/index/export', async (req, res) => {
         log.error({ err: error }, 'Index export error');
         res.status(500).json({ error: error.toString() });
     }
-});
+}));
 
 /**
  * @swagger
@@ -1117,7 +1118,7 @@ v1router.post('/index/export', async (req, res) => {
  *             schema:
  *               type: string
  */
-v1router.post('/dids/remove', async (req, res) => {
+v1router.post('/dids/remove', trackedRoute(async (req, res) => {
     try {
         const dids = req.body;
         const response = await gatekeeper.removeDIDs(dids);
@@ -1126,7 +1127,7 @@ v1router.post('/dids/remove', async (req, res) => {
         log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -1191,7 +1192,7 @@ v1router.post('/dids/remove', async (req, res) => {
  *             schema:
  *               type: string
  */
-v1router.post('/dids/export', async (req, res) => {
+v1router.post('/dids/export', trackedRoute(async (req, res) => {
     try {
         const { dids } = req.body;
         const response = await gatekeeper.exportDIDs(dids);
@@ -1200,7 +1201,7 @@ v1router.post('/dids/export', async (req, res) => {
         log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -1299,7 +1300,7 @@ v1router.post('/dids/export', async (req, res) => {
  *             schema:
  *               type: string
  */
-v1router.post('/dids/import', async (req, res) => {
+v1router.post('/dids/import', trackedRoute(async (req, res) => {
     try {
         const dids = req.body;
         const response = await gatekeeper.importDIDs(dids);
@@ -1308,7 +1309,7 @@ v1router.post('/dids/import', async (req, res) => {
         log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -1379,7 +1380,7 @@ v1router.post('/dids/import', async (req, res) => {
  *             schema:
  *               type: string
  */
-v1router.post('/batch/export', async (req, res) => {
+v1router.post('/batch/export', trackedRoute(async (req, res) => {
     try {
         const dids = req.body?.dids;
         const response = await gatekeeper.exportBatch(dids);
@@ -1388,7 +1389,7 @@ v1router.post('/batch/export', async (req, res) => {
         log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -1481,7 +1482,7 @@ v1router.post('/batch/export', async (req, res) => {
  *             schema:
  *               type: string
  */
-v1router.post('/batch/import', async (req, res) => {
+v1router.post('/batch/import', trackedRoute(async (req, res) => {
     try {
         const batch = req.body;
         const response = await gatekeeper.importBatch(batch);
@@ -1490,7 +1491,7 @@ v1router.post('/batch/import', async (req, res) => {
         log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -1558,7 +1559,7 @@ v1router.post('/batch/import', async (req, res) => {
  *             schema:
  *               type: string
  */
-v1router.get('/queue/:registry', async (req, res) => {
+v1router.get('/queue/:registry', trackedRoute(async (req, res) => {
     try {
         const queue = await gatekeeper.getQueue(req.params.registry);
         res.json(queue);
@@ -1566,7 +1567,7 @@ v1router.get('/queue/:registry', async (req, res) => {
         log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -1637,7 +1638,7 @@ v1router.get('/queue/:registry', async (req, res) => {
  *             schema:
  *               type: string
  */
-v1router.post('/queue/:registry/clear', async (req, res) => {
+v1router.post('/queue/:registry/clear', trackedRoute(async (req, res) => {
     try {
         const eventsOrHashes = req.body;
         const queue = await gatekeeper.clearQueue(req.params.registry, eventsOrHashes);
@@ -1646,7 +1647,7 @@ v1router.post('/queue/:registry/clear', async (req, res) => {
         log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -1669,7 +1670,7 @@ v1router.post('/queue/:registry/clear', async (req, res) => {
  *             schema:
  *               type: string
  */
-v1router.get('/registries', async (req, res) => {
+v1router.get('/registries', trackedRoute(async (req, res) => {
     try {
         const registries = await gatekeeper.listRegistries();
         res.json(registries);
@@ -1677,7 +1678,7 @@ v1router.get('/registries', async (req, res) => {
         log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -1699,14 +1700,14 @@ v1router.get('/registries', async (req, res) => {
  *             schema:
  *               type: string
  */
-v1router.get('/db/reset', async (req, res) => {
+v1router.get('/db/reset', trackedRoute(async (req, res) => {
     try {
         await gatekeeper.resetDb();
         res.json(true);
     } catch (error: any) {
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -1741,14 +1742,14 @@ v1router.get('/db/reset', async (req, res) => {
  *             schema:
  *               type: string
  */
-v1router.get('/db/verify', async (req, res) => {
+v1router.get('/db/verify', trackedRoute(async (req, res) => {
     try {
         const response = await gatekeeper.verifyDb();
         res.json(response);
     } catch (error: any) {
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -1805,14 +1806,14 @@ v1router.get('/db/verify', async (req, res) => {
  *             schema:
  *               type: string
  */
-v1router.post('/events/process', async (req, res) => {
+v1router.post('/events/process', trackedRoute(async (req, res) => {
     try {
         const response = await gatekeeper.processEvents();
         res.json(response);
     } catch (error: any) {
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -1844,7 +1845,7 @@ v1router.post('/events/process', async (req, res) => {
  *             schema:
  *               type: string
  */
-v1router.post('/cas/json', async (req, res) => {
+v1router.post('/cas/json', trackedRoute(async (req, res) => {
     try {
         const response = await gatekeeper.addJSON(req.body);
         res.send(response);
@@ -1856,7 +1857,7 @@ v1router.post('/cas/json', async (req, res) => {
         }
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -1891,7 +1892,7 @@ v1router.post('/cas/json', async (req, res) => {
  *             schema:
  *               type: string
  */
-v1router.get('/cas/json/:cid', async (req, res) => {
+v1router.get('/cas/json/:cid', trackedRoute(async (req, res) => {
     try {
         const response = await gatekeeper.getJSON(req.params.cid);
         res.json(response);
@@ -1902,7 +1903,7 @@ v1router.get('/cas/json/:cid', async (req, res) => {
         }
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -1934,7 +1935,7 @@ v1router.get('/cas/json/:cid', async (req, res) => {
  *             schema:
  *               type: string
  */
-v1router.post('/cas/text', express.text({ type: 'text/plain', limit: '10mb' }), async (req, res) => {
+v1router.post('/cas/text', express.text({ type: 'text/plain', limit: '10mb' }), trackedRoute(async (req, res) => {
     try {
         const response = await gatekeeper.addText(req.body);
         res.send(response);
@@ -1945,7 +1946,7 @@ v1router.post('/cas/text', express.text({ type: 'text/plain', limit: '10mb' }), 
         }
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -1980,7 +1981,7 @@ v1router.post('/cas/text', express.text({ type: 'text/plain', limit: '10mb' }), 
  *             schema:
  *               type: string
  */
-v1router.get('/cas/text/:cid', async (req, res) => {
+v1router.get('/cas/text/:cid', trackedRoute(async (req, res) => {
     try {
         const response = await gatekeeper.getText(req.params.cid);
         res.send(response);
@@ -1991,7 +1992,7 @@ v1router.get('/cas/text/:cid', async (req, res) => {
         }
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -2024,7 +2025,7 @@ v1router.get('/cas/text/:cid', async (req, res) => {
  *             schema:
  *               type: string
  */
-v1router.post('/cas/data', express.raw({ type: 'application/octet-stream', limit: '10mb' }), async (req, res) => {
+v1router.post('/cas/data', express.raw({ type: 'application/octet-stream', limit: '10mb' }), trackedRoute(async (req, res) => {
     try {
         const data = req.body;
         const response = await gatekeeper.addData(data);
@@ -2036,7 +2037,7 @@ v1router.post('/cas/data', express.raw({ type: 'application/octet-stream', limit
         }
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -2072,7 +2073,7 @@ v1router.post('/cas/data', express.raw({ type: 'application/octet-stream', limit
  *             schema:
  *               type: string
  */
-v1router.get('/cas/data/:cid', async (req, res) => {
+v1router.get('/cas/data/:cid', trackedRoute(async (req, res) => {
     try {
         const response = await gatekeeper.getData(req.params.cid);
         res.set('Content-Type', 'application/octet-stream');
@@ -2084,7 +2085,7 @@ v1router.get('/cas/data/:cid', async (req, res) => {
         }
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -2122,7 +2123,7 @@ v1router.get('/cas/data/:cid', async (req, res) => {
  *             schema:
  *               type: string
  */
-v1router.get('/block/:registry/latest', async (req, res) => {
+v1router.get('/block/:registry/latest', trackedRoute(async (req, res) => {
     try {
         const { registry } = req.params;
         const block = await gatekeeper.getBlock(registry);
@@ -2130,7 +2131,7 @@ v1router.get('/block/:registry/latest', async (req, res) => {
     } catch (error: any) {
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -2183,7 +2184,7 @@ v1router.get('/block/:registry/latest', async (req, res) => {
  *             schema:
  *               type: string
  */
-v1router.get('/block/:registry/:blockId', async (req, res) => {
+v1router.get('/block/:registry/:blockId', trackedRoute(async (req, res) => {
     try {
         const { registry, blockId } = req.params;
         const parsedBlockId = /^\d+$/.test(blockId) ? parseInt(blockId, 10) : blockId;
@@ -2192,7 +2193,7 @@ v1router.get('/block/:registry/:blockId', async (req, res) => {
     } catch (error: any) {
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -2241,7 +2242,7 @@ v1router.get('/block/:registry/:blockId', async (req, res) => {
  *             schema:
  *               type: string
  */
-v1router.post('/block/:registry', async (req, res) => {
+v1router.post('/block/:registry', trackedRoute(async (req, res) => {
     try {
         const { registry } = req.params;
         const block = req.body;
@@ -2250,7 +2251,7 @@ v1router.post('/block/:registry', async (req, res) => {
     } catch (error: any) {
         res.status(500).send(error.toString());
     }
-});
+}));
 
 if (apiRateLimiter) {
     app.use('/api', apiRateLimiter);
@@ -2263,6 +2264,37 @@ app.use('/api', (req, res) => {
     res.status(404).json({ message: 'Endpoint not found' });
 });
 
+let shuttingDown = false;
+let statusTimer: ReturnType<typeof setInterval> | undefined;
+let gcTimer: ReturnType<typeof setTimeout> | undefined;
+const activeWork = new Set<Promise<unknown>>();
+
+function trackActiveWork<T>(task: Promise<T>) {
+    activeWork.add(task);
+    task.then(
+        () => activeWork.delete(task),
+        () => activeWork.delete(task),
+    );
+    return task;
+}
+
+function trackedRoute(
+    handler: RequestHandler<Record<string, string>>,
+): RequestHandler<Record<string, string>> {
+    return (req, res, next) =>
+        trackActiveWork(Promise.resolve(handler(req, res, next)));
+}
+
+function scheduleGc() {
+    if (!shuttingDown) {
+        gcTimer = setTimeout(() => {
+            if (!shuttingDown) {
+                trackActiveWork(gcLoop());
+            }
+        }, config.gcInterval * 60 * 1000);
+    }
+}
+
 async function gcLoop() {
     try {
         const response = await gatekeeper.verifyDb();
@@ -2272,7 +2304,7 @@ async function gcLoop() {
     catch (error: any) {
         log.error(`Error in DID garbage collection: ${error}`);
     }
-    setTimeout(gcLoop, config.gcInterval * 60 * 1000);
+    scheduleGc();
 }
 
 let didCheck: CheckDIDsResult;
@@ -2346,7 +2378,13 @@ async function main() {
 
     if (config.statusInterval > 0) {
         log.info(`Starting status update every ${config.statusInterval} minutes`);
-        setInterval(reportStatus, config.statusInterval * 60 * 1000);
+        statusTimer = setInterval(() => {
+            if (!shuttingDown) {
+                trackActiveWork(reportStatus()).catch((error: any) => {
+                    log.error({ error }, 'Error reporting status');
+                });
+            }
+        }, config.statusInterval * 60 * 1000);
     }
     else {
         log.info(`Status update disabled`);
@@ -2354,7 +2392,7 @@ async function main() {
 
     if (config.gcInterval > 0) {
         log.info(`Starting DID garbage collection in ${config.gcInterval} minutes`);
-        setTimeout(gcLoop, config.gcInterval * 60 * 1000);
+        scheduleGc();
     }
     else {
         log.info(`DID garbage collection disabled`);
@@ -2368,17 +2406,43 @@ async function main() {
         serverReady = true;
     });
 
-    const shutdown = async () => {
-        try {
-            server.close();
-            if (db) {
-                db.stop();
-            }
-        } catch (error: any) {
-            log.error({ error }, 'Error during shutdown');
-        } finally {
-            process.exit(0);
+    let shutdownPromise: Promise<void> | undefined;
+    const shutdown = () => {
+        if (shutdownPromise) {
+            return shutdownPromise;
         }
+
+        shutdownPromise = (async () => {
+            serverReady = false;
+            shuttingDown = true;
+
+            if (statusTimer) {
+                clearInterval(statusTimer);
+                statusTimer = undefined;
+            }
+            if (gcTimer) {
+                clearTimeout(gcTimer);
+                gcTimer = undefined;
+            }
+
+            try {
+                await drainServer(server, activeWork);
+            } catch (error: any) {
+                log.error({ error }, 'Error closing Gatekeeper server');
+            }
+
+            try {
+                if (db) {
+                    await db.stop();
+                }
+            } catch (error: any) {
+                log.error({ error }, 'Error stopping Gatekeeper database');
+            }
+        })().finally(() => {
+            process.exit(0);
+        });
+
+        return shutdownPromise;
     };
 
     process.on('SIGTERM', shutdown);
