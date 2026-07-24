@@ -37,6 +37,25 @@ export interface FilterKnownOperationsResult {
     invalid: number;
 }
 
+export function hasContentVerifiedOperationId(
+    operation: Operation,
+    hashProvider: { hashJSON(value: unknown): string },
+): boolean {
+    const claimedHash = operation.signature?.hash;
+    if (typeof claimedHash !== 'string') {
+        return false;
+    }
+
+    try {
+        const unsignedOperation = { ...operation };
+        delete unsignedOperation.signature;
+        return hashProvider.hashJSON(unsignedOperation).toLowerCase() === claimedHash.toLowerCase();
+    }
+    catch {
+        return false;
+    }
+}
+
 export async function prunePersistedSyncRecords(
     pending: Map<string, SyncOperationWriteRecord>,
     syncStore: Pick<OperationSyncStore, 'getByIds'>,

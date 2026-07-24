@@ -1,4 +1,11 @@
-import type { NegotiatedPeerCapabilities } from './negentropy/protocol.js';
+import type {
+    SyncOperationRecord,
+    SyncStoreOrderedCursor,
+} from './db/types.js';
+import {
+    NEG_SYNC_ID_RE,
+    type NegotiatedPeerCapabilities,
+} from './negentropy/protocol.js';
 
 export type OrderedCatchupDecisionReason =
     | 'cold_start'
@@ -51,6 +58,46 @@ export interface ExpectedOrderedCatchupRequestDecision {
 }
 
 const ORDERED_CATCHUP_MIN_MISSING_RATIO = 0.5;
+
+export function parseOrderedCatchupCursor(cursor: unknown): SyncStoreOrderedCursor | undefined | null {
+    if (cursor == null) {
+        return undefined;
+    }
+
+    if (typeof cursor !== 'object') {
+        return null;
+    }
+
+    const raw = cursor as Partial<SyncStoreOrderedCursor>;
+    if (!Number.isSafeInteger(raw.syncOrder) || raw.syncOrder! < 0) {
+        return null;
+    }
+
+    if (typeof raw.id !== 'string' || !NEG_SYNC_ID_RE.test(raw.id)) {
+        return null;
+    }
+
+    return {
+        syncOrder: raw.syncOrder!,
+        id: raw.id.toLowerCase(),
+    };
+}
+
+export function getOrderedCursorFromRow(row: SyncOperationRecord): SyncStoreOrderedCursor | null {
+    if (!Number.isSafeInteger(row.syncOrder)) {
+        return null;
+    }
+
+    return {
+        syncOrder: row.syncOrder!,
+        id: row.id,
+    };
+}
+
+export function isOrderedCursorAfter(next: SyncStoreOrderedCursor, previous: SyncStoreOrderedCursor): boolean {
+    return next.syncOrder > previous.syncOrder
+        || (next.syncOrder === previous.syncOrder && next.id > previous.id);
+}
 
 export function getOrderedCatchupDecision(options: OrderedCatchupDecisionOptions): OrderedCatchupDecision {
     const peer = options.peerCapabilities;

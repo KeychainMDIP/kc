@@ -1,4 +1,6 @@
 import { Operation } from '@mdip/gatekeeper/types';
+import type { SyncStoreCursor } from '../db/types.js';
+import type { ReconciliationWindow } from './adapter.js';
 
 export type SyncMode = 'legacy' | 'negentropy';
 export type NegentropyFrameEncoding = 'utf8' | 'base64';
@@ -48,6 +50,67 @@ export interface ConnectSyncModeDecision {
 export interface NegentropyFrame {
     encoding: NegentropyFrameEncoding;
     data: string;
+}
+
+export interface NegentropyWindowPayload {
+    name: string;
+    fromTs: number;
+    toTs: number;
+    maxRecords: number;
+    order: number;
+    after?: {
+        ts: number;
+        id: string;
+    };
+}
+
+export function parseRemoteWindow(
+    raw: NegentropyWindowPayload,
+    maxRecordsLimit: number,
+): ReconciliationWindow | null {
+    if (!raw || typeof raw !== 'object') {
+        return null;
+    }
+
+    const fromTs = Number(raw.fromTs);
+    const toTs = Number(raw.toTs);
+    const order = Number(raw.order);
+    const remoteMaxRecords = Number(raw.maxRecords);
+    const maxRecords = Number.isInteger(remoteMaxRecords) && remoteMaxRecords > 0
+        ? Math.min(remoteMaxRecords, maxRecordsLimit)
+        : maxRecordsLimit;
+
+    if (!Number.isFinite(fromTs) || !Number.isFinite(toTs) || fromTs > toTs) {
+        return null;
+    }
+
+    if (!Number.isInteger(order) || order < 0) {
+        return null;
+    }
+
+    let after: SyncStoreCursor | undefined;
+    if (raw.after !== undefined) {
+        const afterTs = Number(raw.after?.ts);
+        const afterId = String(raw.after?.id ?? '').toLowerCase();
+
+        if (!Number.isInteger(afterTs) || !NEG_SYNC_ID_RE.test(afterId)) {
+            return null;
+        }
+
+        after = {
+            ts: afterTs,
+            id: afterId,
+        };
+    }
+
+    return {
+        name: String(raw.name || `window_${order}`),
+        fromTs,
+        toTs,
+        order,
+        maxRecords,
+        after,
+    };
 }
 
 export function normalizePeerCapabilities(capabilities?: PeerCapabilities): NegotiatedPeerCapabilities {
