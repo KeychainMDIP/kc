@@ -1798,6 +1798,38 @@ describe('hyperswarm mediator protocol characterization', () => {
         )).toEqual(expect.objectContaining({ mode: 'negentropy' }));
     });
 
+    it('uses Negentropy for a one-window gap between mature stores', async () => {
+        const protocolNode = await createNode({
+            maxRecords: 25_000,
+            env: {
+                KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true',
+                KC_HYPR_LEGACY_SYNC_ENABLE: 'false',
+            },
+        });
+        const { peerKey, pair } = attachPeer(protocolNode, {
+            mode: 'framed',
+            overrides: {
+                capabilities: compatibleCapabilities({
+                    orderedCatchup: true,
+                    orderedCatchupVersion: 1,
+                    orderedCatchupReady: true,
+                    operationCount: 275_000,
+                    orderedOperationCount: 275_000,
+                }),
+            },
+        });
+        jest.spyOn(protocolNode.store, 'count').mockResolvedValue(250_000);
+        jest.spyOn(protocolNode.store, 'countOrdered').mockResolvedValue(250_000);
+
+        await protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey),
+        );
+
+        const messages = decodeWrites(pair);
+        expect(messages.filter(message => message.type === 'ordered_catchup_req')).toHaveLength(0);
+        expect(messages.filter(message => message.type === 'neg_open')).toHaveLength(1);
+    });
+
     it('serializes peer sync decisions while a store count is pending', async () => {
         const protocolNode = await createNode({
             maxRecords: 4,
@@ -2103,7 +2135,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             );
             const pendingUntil = pendingState?.orderedCatchupServerPendingUntil;
             expect(pendingState).toMatchObject({
-                orderedCatchupServerPendingReason: 'enabled',
+                orderedCatchupServerPendingReason: 'cold_start',
                 orderedCatchupServerPendingGap: 4,
             });
             expect(typeof pendingUntil).toBe('number');
@@ -3268,9 +3300,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             mode: 'framed',
             overrides: {
                 capabilities: compatibleCapabilities({
-                    orderedCatchup: true,
-                    orderedCatchupVersion: 1,
-                    orderedCatchupReady: true,
+                    orderedCatchup: false,
                     operationCount: 5,
                     orderedOperationCount: 5,
                 }),

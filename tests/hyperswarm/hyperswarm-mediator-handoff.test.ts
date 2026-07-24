@@ -720,12 +720,12 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
 
     it.each([
         ['empty local store', 'empty', true],
-        ['gap below threshold', 'below', false],
-        ['gap at threshold', 'exact', true],
+        ['relative gap below half', 'below', false],
+        ['relative gap at half', 'exact', true],
         ['unready peer', 'unready', false],
         ['peer not ahead', 'not-ahead', false],
     ] as const)('selects the expected initial mode for %s', async (_case, scenario, expectOrdered) => {
-        const operations = await createIndependentOperations(6);
+        const operations = await createIndependentOperations(8);
         let operationsA: Operation[];
         let operationsB: Operation[];
         let syncOrderByIdA: ReadonlyMap<string, number>;
@@ -736,23 +736,23 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
             syncOrderByIdA = syncOrders(operationsA);
         }
         else if (scenario === 'below') {
-            operationsA = operations.slice(0, 5);
-            operationsB = operations.slice(0, 2);
+            operationsA = operations.slice(0, 6);
+            operationsB = operations.slice(0, 4);
             syncOrderByIdA = syncOrders(operationsA);
         }
         else if (scenario === 'exact') {
-            operationsA = operations.slice(0, 5);
-            operationsB = operations.slice(0, 1);
+            operationsA = operations;
+            operationsB = operations.slice(0, 4);
             syncOrderByIdA = syncOrders(operationsA);
         }
         else if (scenario === 'unready') {
-            operationsA = operations.slice(0, 5);
-            operationsB = operations.slice(0, 1);
-            syncOrderByIdA = syncOrders(operationsA.slice(0, 4));
+            operationsA = operations;
+            operationsB = operations.slice(0, 4);
+            syncOrderByIdA = syncOrders(operationsA.slice(0, 7));
         }
         else {
-            operationsA = operations.slice(0, 2);
-            operationsB = operations.slice(0, 2);
+            operationsA = operations.slice(0, 4);
+            operationsB = operations.slice(0, 4);
             syncOrderByIdA = syncOrders(operationsA);
         }
 

@@ -1810,7 +1810,7 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
             localOperationCount,
             peerCapabilities: conn.capabilities,
             requiredVersion: ORDERED_CATCHUP_VERSION,
-            threshold: config.orderedCatchupThreshold,
+            windowSize: config.negentropyMaxRecordsPerWindow,
         });
         if (orderedCatchupDecision.useOrderedCatchup && !hasActiveSession && activeNegentropySessions === 0) {
             await startOrderedCatchupSessionForPeer(
@@ -1836,7 +1836,7 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
                 localOrderedOperationCount,
                 peerCapabilities: conn.capabilities,
                 requiredVersion: ORDERED_CATCHUP_VERSION,
-                threshold: config.orderedCatchupThreshold,
+                windowSize: config.negentropyMaxRecordsPerWindow,
             });
 
             if (expectedOrderedCatchupRequest.expectRequest) {
