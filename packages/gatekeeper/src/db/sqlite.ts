@@ -296,12 +296,8 @@ export default class DbSqlite implements GatekeeperDb {
             throw new Error(SQLITE_NOT_STARTED_ERROR)
         }
 
-        try {
-            const id = this.splitSuffix(did);
-            return await this.getEventsStrict(id);
-        } catch {
-            return [];
-        }
+        const id = this.splitSuffix(did);
+        return this.getEventsStrict(id);
     }
 
     async deleteEvents(did: string): Promise<number> {

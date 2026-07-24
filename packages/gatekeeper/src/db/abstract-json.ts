@@ -101,14 +101,10 @@ export abstract class AbstractJson implements GatekeeperDb {
     }
 
     async getEvents(did: string): Promise<GatekeeperEvent[]> {
-        try {
-            const db = this.loadDb();
-            const suffix = this.splitSuffix(did);
-            const updates = db.dids[suffix] || [];
-            return JSON.parse(JSON.stringify(updates));
-        } catch {
-            return [];
-        }
+        const db = this.loadDb();
+        const suffix = this.splitSuffix(did);
+        const updates = db.dids[suffix] || [];
+        return JSON.parse(JSON.stringify(updates));
     }
 
     async setEvents(did: string, events: GatekeeperEvent[], options?: SetEventsOptions): Promise<void> {

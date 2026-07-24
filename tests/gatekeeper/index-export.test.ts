@@ -177,6 +177,16 @@ function createPostgresFixture(): AdapterFixture {
             return { rows: [{ seq: nextChangeSeq }], rowCount: 1 };
         }
 
+        if (text.includes('WITH inserted_event AS')) {
+            const id = String(params[1]);
+            const event = parseStoredEvent(params[2]);
+            const events = eventsByKey.get(id) ?? [];
+            events.push(event);
+            eventsByKey.set(id, events);
+            recordChange([params[0], 'did', params[3], null, null, false, params[2]]);
+            return { rows: [{ length: 1 }], rowCount: 1 };
+        }
+
         if (text.includes('SELECT COALESCE(MAX(seq)')) {
             const id = String(params[1]);
             return { rows: [{ seq: eventsByKey.get(id)?.length ?? 0 }] };
@@ -799,6 +809,10 @@ function createPostgresIndexChangeFailureFixture(): DbPostgres {
             return { rows: [], rowCount: 0 };
         }
 
+        if (text.includes('WITH inserted_event AS')) {
+            throw new Error('index change insert failed');
+        }
+
         if (text.includes('SELECT COALESCE(MAX(seq)')) {
             const id = String(params[1]);
             const events = transactional
@@ -1306,6 +1320,23 @@ describe('Gatekeeper DB index snapshot export', () => {
 });
 
 describe('Gatekeeper Postgres index change transaction rollback', () => {
+    it('records an event and its index change in one query', async () => {
+        const fixture = createPostgresFixture();
+        const pool = (fixture.db as any).pool;
+        const query = jest.fn(pool.query);
+        const connect = jest.fn(pool.connect);
+        pool.query = query;
+        pool.connect = connect;
+        const didC = 'did:test:z3';
+        const eventC = createEvent(didC, '2026-01-01T00:00:03.000Z');
+
+        await expect(fixture.db.addEvent(didC, eventC)).resolves.toBe(1);
+
+        expect(query).toHaveBeenCalledTimes(1);
+        expect(connect).not.toHaveBeenCalled();
+        await expect(fixture.db.getEvents(didC)).resolves.toStrictEqual([eventC]);
+    });
+
     it('rolls back addEvent when index change recording fails', async () => {
         const db = createPostgresIndexChangeFailureFixture();
         const didC = 'did:test:z3';

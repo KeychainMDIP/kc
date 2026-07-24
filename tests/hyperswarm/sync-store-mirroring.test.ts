@@ -5,8 +5,8 @@ import HeliaClient from '@mdip/ipfs/helia';
 import type { GatekeeperEvent, Operation } from '@mdip/gatekeeper/types';
 import InMemoryOperationSyncStore from '../../services/mediators/hyperswarm/src/db/memory.ts';
 import {
-    filterIndexRejectedOperations,
     mapAcceptedOperationsToSyncRecords,
+    partitionImportBatchOperations,
 } from '../../services/mediators/hyperswarm/src/sync-persistence.ts';
 import { resolveAcceptedOperationsToPersist } from '../../services/mediators/hyperswarm/src/sync-store-mirroring.ts';
 import TestHelper from '../gatekeeper/helper.ts';
@@ -40,10 +40,10 @@ async function mirrorCurrentMediatorMergeBatch(
 ): Promise<{ acceptedHashes: string[]; rejectedIndices: number[] }> {
     const events = batch.map((operation, index) => wrapOperation(operation, ordinalBase + index));
     const imported = await gatekeeper.importBatch(events);
-    const acceptedCandidates = filterIndexRejectedOperations(batch, imported.rejectedIndices);
+    const { processCandidates } = partitionImportBatchOperations(batch, imported.rejectedIndices);
     const processed = await gatekeeper.processEvents();
     const acceptedToPersist = resolveAcceptedOperationsToPersist(
-        acceptedCandidates,
+        processCandidates,
         processed.acceptedHashes,
         processed.acceptedEvents,
     );

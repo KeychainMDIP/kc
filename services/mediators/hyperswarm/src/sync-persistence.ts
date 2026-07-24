@@ -2,7 +2,10 @@ import {
     IndexExportOperationRecord,
     Operation,
 } from '@mdip/gatekeeper/types';
-import type { OperationSyncStore } from './db/types.js';
+import type {
+    OperationSyncStore,
+    SyncOperationWriteRecord,
+} from './db/types.js';
 import { mapOperationToSyncKey } from './sync-mapping.js';
 
 export interface SyncPersistenceRecord {
@@ -28,20 +31,39 @@ export interface MapAcceptedResult {
 
 export interface FilterKnownOperationsResult {
     operations: Operation[];
+    knownIds: string[];
     mapped: number;
     known: number;
     invalid: number;
 }
 
-export function filterIndexRejectedOperations(batch: Operation[], rejectedIndices: number[] = []): Operation[] {
-    if (!Array.isArray(batch) || batch.length === 0) {
-        return [];
+export async function prunePersistedSyncRecords(
+    pending: Map<string, SyncOperationWriteRecord>,
+    syncStore: Pick<OperationSyncStore, 'getByIds'>,
+    lookupChunkSize: number,
+): Promise<{ checked: number; removed: number }> {
+    const snapshot = new Map(pending);
+    const ids = Array.from(snapshot.keys());
+    let removed = 0;
+
+    for (let i = 0; i < ids.length; i += lookupChunkSize) {
+        const rows = await syncStore.getByIds(ids.slice(i, i + lookupChunkSize));
+        for (const row of rows) {
+            const captured = snapshot.get(row.id);
+            if (captured && pending.get(row.id) === captured) {
+                pending.delete(row.id);
+                removed += 1;
+            }
+        }
     }
 
-    if (!Array.isArray(rejectedIndices) || rejectedIndices.length === 0) {
-        return [...batch];
-    }
+    return { checked: ids.length, removed };
+}
 
+export function partitionImportBatchOperations(
+    batch: Operation[],
+    rejectedIndices: number[] = [],
+): { processCandidates: Operation[]; rejectedOperations: Operation[] } {
     const rejectedSet = new Set<number>();
     for (const index of rejectedIndices) {
         if (Number.isInteger(index) && index >= 0 && index < batch.length) {
@@ -49,7 +71,12 @@ export function filterIndexRejectedOperations(batch: Operation[], rejectedIndice
         }
     }
 
-    return batch.filter((_operation, index) => !rejectedSet.has(index));
+    const processCandidates: Operation[] = [];
+    const rejectedOperations: Operation[] = [];
+    batch.forEach((operation, index) => {
+        (rejectedSet.has(index) ? rejectedOperations : processCandidates).push(operation);
+    });
+    return { processCandidates, rejectedOperations };
 }
 
 export function filterOperationsByAcceptedHashes(
@@ -161,6 +188,7 @@ export async function filterKnownOperations(
     if (!Array.isArray(operations) || operations.length === 0) {
         return {
             operations: [],
+            knownIds: [],
             mapped: 0,
             known: 0,
             invalid: 0,
@@ -185,6 +213,7 @@ export async function filterKnownOperations(
     if (mappedIdsByIndex.size === 0) {
         return {
             operations: [...operations],
+            knownIds: [],
             mapped: 0,
             known: 0,
             invalid,
@@ -205,11 +234,13 @@ export async function filterKnownOperations(
     }
 
     const filtered: Operation[] = [];
+    const knownIds = new Set<string>();
     let known = 0;
 
     for (const [index, operation] of operations.entries()) {
         const mappedId = mappedIdsByIndex.get(index);
         if (mappedId && existingIds.has(mappedId)) {
+            knownIds.add(mappedId);
             known += 1;
             continue;
         }
@@ -219,6 +250,7 @@ export async function filterKnownOperations(
 
     return {
         operations: filtered,
+        knownIds: Array.from(knownIds),
         mapped: mappedIdsByIndex.size,
         known,
         invalid,

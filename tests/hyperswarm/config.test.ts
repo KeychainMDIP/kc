@@ -59,7 +59,6 @@ describe('hyperswarm config', () => {
         expect(config.negentropyEnabled).toBe(true);
         expect(config.legacySyncEnabled).toBe(true);
         expect(config.orderedCatchupEnabled).toBe(true);
-        expect(config.orderedCatchupThreshold).toBe(config.negentropyMaxRecordsPerWindow);
     });
 
     it('uses built-in defaults when basic service env vars are blank', async () => {
@@ -180,7 +179,6 @@ describe('hyperswarm config', () => {
 
         expect(config.orderedCatchupEnabled).toBe(false);
         expect(config.negentropyMaxRecordsPerWindow).toBe(500);
-        expect(config.orderedCatchupThreshold).toBe(500);
     });
 
     it('throws when KC_HYPR_DB is empty or whitespace', async () => {
