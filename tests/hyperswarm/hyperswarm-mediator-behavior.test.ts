@@ -176,6 +176,70 @@ async function createForkFixtures(): Promise<{
     return { controllerCreate, branchA, branchB };
 }
 
+async function createModernForkDescendantFixtures(): Promise<{
+    controllerCreate: Operation;
+    branchA: Operation;
+    branchAChild: Operation;
+    branchAGrandchild: Operation;
+    branchB: Operation;
+    branchBChild: Operation;
+}> {
+    const gatekeeper = new Gatekeeper({
+        db: new DbJsonMemory('hyperswarm-mediator-modern-fork-descendant-fixtures'),
+        didPrefix: 'did:test',
+        ipfsEnabled: false,
+        registries: ['hyperswarm'],
+    });
+    const cipher = new CipherNode();
+    const helper = new TestHelper(gatekeeper, cipher);
+    const keys = cipher.generateRandomJwk();
+    const baseTime = Date.now() - (10 * 60 * 1_000);
+    const controllerCreate = await helper.createAgentOp(keys, {
+        version: 1,
+        registry: 'hyperswarm',
+    });
+    setSignedTime(controllerCreate, baseTime);
+    const did = await gatekeeper.createDID(controllerCreate);
+    const rootDocument = await gatekeeper.resolveDID(did);
+
+    const branchADocument = structuredClone(rootDocument);
+    branchADocument.didDocumentData = { branch: 'a', version: 1 };
+    const branchA = await helper.createUpdateOp(keys, did, branchADocument);
+    setSignedTime(branchA, baseTime + 60_000);
+    await gatekeeper.updateDID(branchA);
+    const branchAChildDocument = await gatekeeper.resolveDID(did);
+    branchAChildDocument.didDocumentData = { branch: 'a', version: 2 };
+    const branchAChild = await helper.createUpdateOp(keys, did, branchAChildDocument);
+    setSignedTime(branchAChild, baseTime + 120_000);
+    await gatekeeper.updateDID(branchAChild);
+    const branchAGrandchildDocument = await gatekeeper.resolveDID(did);
+    branchAGrandchildDocument.didDocumentData = { branch: 'a', version: 3 };
+    const branchAGrandchild = await helper.createUpdateOp(keys, did, branchAGrandchildDocument);
+    setSignedTime(branchAGrandchild, baseTime + 180_000);
+
+    await gatekeeper.resetDb();
+    await gatekeeper.createDID(controllerCreate);
+    const branchBDocument = await gatekeeper.resolveDID(did);
+    branchBDocument.didDocumentData = { branch: 'b', version: 1 };
+    const branchB = await helper.createUpdateOp(keys, did, branchBDocument);
+    setSignedTime(branchB, baseTime + 240_000);
+    await gatekeeper.updateDID(branchB);
+    const branchBChildDocument = await gatekeeper.resolveDID(did);
+    branchBChildDocument.didDocumentData = { branch: 'b', version: 2 };
+    const branchBChild = await helper.createUpdateOp(keys, did, branchBChildDocument);
+    setSignedTime(branchBChild, baseTime + 300_000);
+    await gatekeeper.resetDb();
+
+    return {
+        controllerCreate,
+        branchA,
+        branchAChild,
+        branchAGrandchild,
+        branchB,
+        branchBChild,
+    };
+}
+
 async function createDeferredLegacyForkFixtures(): Promise<{
     controllerCreate: Operation;
     deactivation: Operation;
@@ -690,6 +754,69 @@ describe('hyperswarm mediator behavior', () => {
             .toBe(Number.MAX_SAFE_INTEGER);
         expect((await driver.storeB.getByIds([fixtures.branchA.signature!.hash]))[0].syncOrder)
             .toBe(Number.MAX_SAFE_INTEGER);
+        expect(decodeWire(driver.transport)).toContainEqual(expect.objectContaining({
+            body: expect.objectContaining({ type: 'neg_close', reason: 'complete' }),
+        }));
+        expect(decodeWire(driver.transport).some(message => (
+            message.body.type === 'neg_close' && message.body.reason === 'unresolved_operations'
+        ))).toBe(false);
+
+        await driver.reconnect();
+        await driver.startSync();
+        await driver.driveUntilQuiescent(expected, { timeoutMs: 10_000 });
+        assertNoOperationTransfer(driver.transport);
+    });
+
+    it('terminally indexes modern descendants of a rejected fork root', async () => {
+        const fixtures = await createModernForkDescendantFixtures();
+        const operationsA = [
+            fixtures.controllerCreate,
+            fixtures.branchA,
+            fixtures.branchAChild,
+            fixtures.branchAGrandchild,
+        ];
+        const operationsB = [
+            fixtures.controllerCreate,
+            fixtures.branchB,
+            fixtures.branchBChild,
+        ];
+        const idsA = operationIds(operationsA);
+        const idsB = operationIds(operationsB);
+        const unionIds = operationIds([...operationsA, ...operationsB]);
+        driver = await createMediatorDriver({
+            operationsA,
+            operationsB,
+            syncOrderByIdA: new Map(operationsA.map((operation, index) => [
+                operation.signature!.hash,
+                index + 1,
+            ])),
+            syncOrderByIdB: new Map(operationsB.map((operation, index) => [
+                operation.signature!.hash,
+                index + 1,
+            ])),
+        });
+        const expected = {
+            a: { gatekeeper: idsA, store: unionIds },
+            b: { gatekeeper: idsB, store: unionIds },
+        };
+
+        await driver.startSync();
+        await driver.driveUntilQuiescent(expected, { timeoutMs: 10_000 });
+
+        expect(await gatekeeperIds(driver.nodeA.gatekeeper)).toStrictEqual(idsA);
+        expect(await gatekeeperIds(driver.nodeB.gatekeeper)).toStrictEqual(idsB);
+        for (const operation of [fixtures.branchB, fixtures.branchBChild]) {
+            expect((await driver.storeA.getByIds([operation.signature!.hash]))[0].syncOrder)
+                .toBe(Number.MAX_SAFE_INTEGER);
+        }
+        for (const operation of [
+            fixtures.branchA,
+            fixtures.branchAChild,
+            fixtures.branchAGrandchild,
+        ]) {
+            expect((await driver.storeB.getByIds([operation.signature!.hash]))[0].syncOrder)
+                .toBe(Number.MAX_SAFE_INTEGER);
+        }
         expect(decodeWire(driver.transport)).toContainEqual(expect.objectContaining({
             body: expect.objectContaining({ type: 'neg_close', reason: 'complete' }),
         }));

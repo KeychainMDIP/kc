@@ -8,6 +8,7 @@ import { EventEmitter } from 'events';
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import KeymasterClient from '@mdip/keymaster/client';
 import KuboClient from '@mdip/ipfs/kubo';
+import { generateCID } from '@mdip/ipfs/utils';
 import { GatekeeperEvent, Operation } from '@mdip/gatekeeper/types';
 import CipherNode from '@mdip/cipher/node';
 import { childLogger } from '@mdip/common/logger';
@@ -152,6 +153,11 @@ const keymaster = new KeymasterClient();
 const ipfs = new KuboClient();
 const cipher = new CipherNode();
 
+async function generateOperationCid(operation: Operation): Promise<string> {
+    const canonical = cipher.canonicalizeJSON(operation);
+    return generateCID(JSON.parse(canonical));
+}
+
 function createConfiguredSyncStore(): OperationSyncStore {
     if (config.db === 'postgres') {
         return new PostgresOperationSyncStore(config.postgresURL);
@@ -162,6 +168,7 @@ function createConfiguredSyncStore(): OperationSyncStore {
 
 let syncStore: OperationSyncStore = createConfiguredSyncStore();
 const pendingSyncRecords = new Map<string, SyncOperationWriteRecord>();
+const terminalOperationCids = new Set<string>();
 let negentropyAdapter: NegentropyAdapter | null = null;
 let adapterChangeSeq = 0;
 let adapterBuiltSeq = -1;
@@ -173,6 +180,7 @@ let backgroundPrebuildQueued = false;
 
 function replaceSyncStore(store: OperationSyncStore): void {
     pendingSyncRecords.clear();
+    terminalOperationCids.clear();
     syncStore = store;
 }
 
@@ -733,6 +741,7 @@ function resetRuntimeSyncStateAfterGatekeeperReset(sync: BootstrapResult): void 
     peerSessions.clear();
     orderedCatchupTransitionPeers.clear();
     pendingSyncRecords.clear();
+    terminalOperationCids.clear();
     invalidateNegentropyAdapterCache();
 
     for (const conn of Object.values(connectionInfo)) {
@@ -2565,7 +2574,7 @@ function trackProvenStoredOpsPush(session: PeerSyncSession, operations: Operatio
             continue;
         }
         session.unresolvedNeedIds.delete(mapped.value.idHex);
-        session.unresolvedLegacyOperations.delete(mapped.value.idHex);
+        session.unresolvedOperations.delete(mapped.value.idHex);
         session.receivedKnownPushIds.add(mapped.value.idHex);
         progressed = true;
     }
@@ -2599,7 +2608,7 @@ async function refreshStoredUnresolvedNeeds(peerKey: string, session: PeerSyncSe
             }
             for (const row of rows) {
                 session.unresolvedNeedIds.delete(row.id);
-                session.unresolvedLegacyOperations.delete(row.id);
+                session.unresolvedOperations.delete(row.id);
             }
         }
         return true;
@@ -2613,27 +2622,87 @@ async function refreshStoredUnresolvedNeeds(peerKey: string, session: PeerSyncSe
     }
 }
 
-// Pre-0.5 operations without previd were ordered by time and can remain deferred
-// when received out of DID-chain order. Store them until restart, then retry them.
-async function persistUnresolvedLegacyOperations(peerKey: string, session: PeerSyncSession): Promise<void> {
+async function collectTerminalUnresolvedOperations(session: PeerSyncSession): Promise<Operation[]> {
+    const operationsByPrevid = new Map<string, Array<{ id: string; operation: Operation }>>();
+    const selected = new Map<string, Operation>();
+    const queuedCids = new Set<string>();
+    const cidQueue: string[] = [];
+
+    const queueCid = (cid: string): void => {
+        if (!queuedCids.has(cid)) {
+            queuedCids.add(cid);
+            cidQueue.push(cid);
+        }
+    };
+
+    for (const cid of terminalOperationCids) {
+        queueCid(cid);
+    }
+
+    for (const [id, operation] of session.unresolvedOperations) {
+        if (!session.unresolvedNeedIds.has(id)
+            || !hasContentVerifiedOperationId(operation, cipher)) {
+            continue;
+        }
+
+        if (operation.type !== 'create' && operation.previd === undefined) {
+            selected.set(id, operation);
+            try {
+                queueCid(await generateOperationCid(operation));
+            }
+            catch (error) {
+                log.warn({ error, id }, 'failed to derive terminal legacy operation CID');
+            }
+            continue;
+        }
+
+        if (typeof operation.previd !== 'string') {
+            continue;
+        }
+
+        const children = operationsByPrevid.get(operation.previd) ?? [];
+        children.push({ id, operation });
+        operationsByPrevid.set(operation.previd, children);
+    }
+
+    let queueIndex = 0;
+    while (queueIndex < cidQueue.length) {
+        const cid = cidQueue[queueIndex++];
+        for (const child of operationsByPrevid.get(cid) ?? []) {
+            if (selected.has(child.id)) {
+                continue;
+            }
+
+            selected.set(child.id, child.operation);
+            try {
+                queueCid(await generateOperationCid(child.operation));
+            }
+            catch (error) {
+                log.warn({ error, id: child.id }, 'failed to derive terminal fork descendant CID');
+            }
+        }
+    }
+
+    return Array.from(selected.values());
+}
+
+// Store pre-0.5 operations without previd and descendants of terminal modern forks
+// until restart so completed reconciliation does not retry permanently losing history.
+async function persistTerminalUnresolvedOperations(peerKey: string, session: PeerSyncSession): Promise<void> {
     if (peerSessions.get(peerKey) !== session || session.unresolvedNeedIds.size === 0) {
         return;
     }
 
-    const operations: Operation[] = [];
-    for (const id of session.unresolvedNeedIds) {
-        const operation = session.unresolvedLegacyOperations.get(id);
-        if (!operation) {
-            return;
-        }
-        operations.push(operation);
+    const operations = await collectTerminalUnresolvedOperations(session);
+    if (peerSessions.get(peerKey) !== session || operations.length === 0) {
+        return;
     }
 
     try {
         const persistedIds = await persistProcessedOperations(
             [],
             operations,
-            'negentropy_legacy_without_previd',
+            'negentropy_terminal_unresolved',
         );
         if (peerSessions.get(peerKey) !== session) {
             return;
@@ -2642,13 +2711,13 @@ async function persistUnresolvedLegacyOperations(peerKey: string, session: PeerS
             session.provenStoredPushIds.add(id);
             session.pendingNeedIds.delete(id);
             session.unresolvedNeedIds.delete(id);
-            session.unresolvedLegacyOperations.delete(id);
+            session.unresolvedOperations.delete(id);
         }
     }
     catch (error) {
         log.warn(
             { error, peer: shortName(peerKey), operations: operations.length },
-            'failed to persist unresolved legacy operations'
+            'failed to persist terminal unresolved operations'
         );
     }
 }
@@ -2681,7 +2750,7 @@ async function maybeFinalizeInitiatorSession(peerKey: string, session: PeerSyncS
     }
 
     if (unresolvedRefreshed) {
-        await persistUnresolvedLegacyOperations(peerKey, session);
+        await persistTerminalUnresolvedOperations(peerKey, session);
         if (peerSessions.get(peerKey) !== session) {
             return;
         }
@@ -2969,6 +3038,17 @@ async function importBatch(batch: Operation[]) {
     }
 }
 
+async function recordTerminalOperationCids(operations: Operation[], source: string): Promise<void> {
+    for (const operation of operations) {
+        try {
+            terminalOperationCids.add(await generateOperationCid(operation));
+        }
+        catch (error) {
+            log.warn({ error, source }, 'failed to record terminal operation CID');
+        }
+    }
+}
+
 async function persistProcessedOperations(
     acceptedOperations: Operation[],
     rejectedOperations: Operation[],
@@ -3060,6 +3140,18 @@ async function persistProcessedOperations(
             pendingSyncRecords.delete(record.id);
         }
     }
+    const terminalRecordIds = new Set(
+        attemptedRecords
+            .filter(record => record.syncOrder === TERMINAL_REJECTED_SYNC_ORDER)
+            .map(record => record.id)
+    );
+    await recordTerminalOperationCids(
+        verifiedRejectedOperations.filter(operation => {
+            const mapped = mapOperationToSyncKey(operation);
+            return mapped.ok && terminalRecordIds.has(mapped.value.idHex);
+        }),
+        source,
+    );
 
     if (result.inserted > 0 || result.updated > 0) {
         markNegentropyAdapterDirty();
@@ -3132,16 +3224,7 @@ async function mergeBatch(batch: Operation[]): Promise<string[]> {
         response.acceptedHashes,
         response.acceptedEvents,
     );
-    const candidateHashes = new Set(
-        processCandidates
-            .map(operation => operation.signature?.hash?.toLowerCase())
-            .filter((hash): hash is string => typeof hash === 'string')
-    );
-    const processRejected = dedupeOperationsByHash(response.rejectedOperations ?? [])
-        .filter(operation => {
-            const hash = operation.signature?.hash?.toLowerCase();
-            return typeof hash === 'string' && candidateHashes.has(hash);
-        });
+    const processRejected = dedupeOperationsByHash(response.rejectedOperations ?? []);
     const rejectedToPersist = dedupeOperationsByHash([
         ...structurallyRejected,
         ...processRejected,
@@ -3655,7 +3738,7 @@ async function handleOpsPushMessage(peerKey: string, msg: OpsPushMessage): Promi
         for (const id of imported.knownIds) {
             session.provenStoredPushIds.add(id);
             session.unresolvedNeedIds.delete(id);
-            session.unresolvedLegacyOperations.delete(id);
+            session.unresolvedOperations.delete(id);
             if (session.initiator && session.pendingNeedIds.delete(id)) {
                 session.receivedKnownPushIds.add(id);
             }
@@ -3664,14 +3747,14 @@ async function handleOpsPushMessage(peerKey: string, msg: OpsPushMessage): Promi
             session.provenStoredPushIds.add(id);
             session.pendingNeedIds.delete(id);
             session.unresolvedNeedIds.delete(id);
-            session.unresolvedLegacyOperations.delete(id);
+            session.unresolvedOperations.delete(id);
         }
         if (imported.retryable) {
             for (const operation of unprovenBatch) {
                 const mapped = mapOperationToSyncKey(operation);
                 if (mapped.ok && !session.provenStoredPushIds.has(mapped.value.idHex)) {
                     session.receivedPushIds.delete(mapped.value.idHex);
-                    session.unresolvedLegacyOperations.delete(mapped.value.idHex);
+                    session.unresolvedOperations.delete(mapped.value.idHex);
                 }
             }
         }
@@ -3679,10 +3762,8 @@ async function handleOpsPushMessage(peerKey: string, msg: OpsPushMessage): Promi
             for (const operation of unprovenBatch) {
                 const mapped = mapOperationToSyncKey(operation);
                 if (mapped.ok
-                    && operation.type !== 'create'
-                    && operation.previd === undefined
                     && session.unresolvedNeedIds.has(mapped.value.idHex)) {
-                    session.unresolvedLegacyOperations.set(mapped.value.idHex, operation);
+                    session.unresolvedOperations.set(mapped.value.idHex, operation);
                 }
             }
         }
@@ -3711,7 +3792,7 @@ async function handleNegCloseMessage(peerKey: string, msg: NegCloseMessage): Pro
                 return;
             }
             if (unresolvedRefreshed) {
-                await persistUnresolvedLegacyOperations(peerKey, session);
+                await persistTerminalUnresolvedOperations(peerKey, session);
                 if (peerSessions.get(peerKey) !== session) {
                     return;
                 }
@@ -4035,9 +4116,11 @@ const topic = Buffer.from(b4a.from(networkID, 'hex'));
 async function main(): Promise<void> {
     log.info({ db: config.db }, 'sync-store backend selected');
     await syncStore.start();
+    // Retry pre-0.5 out-of-order operations and modern losing-fork descendants after restart.
     const deletedRejectedOperations = await syncStore.deleteBySyncOrder(
         TERMINAL_REJECTED_SYNC_ORDER,
     );
+    terminalOperationCids.clear();
     log.info(
         { deletedRejectedOperations },
         'removed terminal rejected operations from sync store',
