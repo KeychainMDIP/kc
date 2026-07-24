@@ -1793,6 +1793,11 @@ v1router.get('/db/verify', async (req, res) => {
  *                       description: Lower-case signature hashes of events accepted during this processing run (added or merged).
  *                       items:
  *                         type: string
+ *                     rejectedOperations:
+ *                       type: array
+ *                       description: Operations rejected during this processing run.
+ *                       items:
+ *                         type: object
  *       500:
  *         description: Internal Server Error.
  *         content:

@@ -399,21 +399,16 @@ export default class DbPostgres implements GatekeeperDb {
 
     async getEvents(did: string): Promise<GatekeeperEvent[]> {
         const pool = this.getPool();
+        const id = this.splitSuffix(did);
+        const result = await pool.query<EventRow>(
+            `SELECT event
+             FROM gatekeeper_events
+             WHERE namespace = $1 AND id = $2
+             ORDER BY seq ASC`,
+            [this.dbName, id]
+        );
 
-        try {
-            const id = this.splitSuffix(did);
-            const result = await pool.query<EventRow>(
-                `SELECT event
-                 FROM gatekeeper_events
-                 WHERE namespace = $1 AND id = $2
-                 ORDER BY seq ASC`,
-                [this.dbName, id]
-            );
-
-            return result.rows.map(row => this.parseEvent(row.event));
-        } catch {
-            return [];
-        }
+        return result.rows.map(row => this.parseEvent(row.event));
     }
 
     async deleteEvents(did: string): Promise<number> {

@@ -27,6 +27,7 @@ export interface ProcessEventsResult {
     pending?: number;
     acceptedHashes?: string[];
     acceptedEvents?: GatekeeperEvent[];
+    rejectedOperations?: Operation[];
 }
 
 export interface VerifyDbResult {
@@ -232,6 +233,7 @@ export interface ImportEventsResult {
     rejected: number;
     acceptedHashes: string[];
     acceptedEvents: GatekeeperEvent[];
+    rejectedOperations?: Operation[];
 }
 
 export interface GatekeeperClientOptions {

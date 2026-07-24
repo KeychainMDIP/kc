@@ -4,6 +4,7 @@ import DbJsonMemory from '@mdip/gatekeeper/db/json-memory.ts';
 import { copyJSON } from '@mdip/common/utils';
 import { ExpectedExceptionError } from '@mdip/common/errors';
 import HeliaClient from '@mdip/ipfs/helia';
+import { jest } from '@jest/globals';
 import TestHelper from './helper.ts';
 
 const mockConsole = {
@@ -1233,6 +1234,19 @@ describe('processEvents', () => {
         const response1 = await gatekeeper.processEvents();
         expect(response1.added).toBe(2);
         expect(response1.rejected).toBe(2);
+        expect(response1.rejectedOperations).toStrictEqual([
+            ops[1].operation,
+            ops[3].operation,
+        ]);
+
+        await expect(gatekeeper.importBatch([ops[1]])).resolves.toMatchObject({
+            queued: 1,
+            processed: 0,
+        });
+        await expect(gatekeeper.processEvents()).resolves.toMatchObject({
+            rejected: 1,
+            rejectedOperations: [ops[1].operation],
+        });
     });
 
     it('should return busy when already proccessing events', async () => {
@@ -1244,16 +1258,156 @@ describe('processEvents', () => {
         expect(response.busy).toBe(true);
     });
 
-    it('should gracefully handle expections', async () => {
+    it('should retain an event after a transient database failure', async () => {
+        const operation = await helper.createAgentOp(cipher.generateRandomJwk());
+        const event = {
+            registry: 'hyperswarm',
+            time: new Date().toISOString(),
+            ordinal: [1],
+            operation,
+        };
+        await gatekeeper.importBatch([event]);
+        const addEvent = jest.spyOn(db, 'addEvent')
+            .mockRejectedValueOnce(new Error('temporary database failure'));
+
+        await expect(gatekeeper.processEvents()).rejects.toThrow('temporary database failure');
+        addEvent.mockRestore();
+
+        await expect(gatekeeper.importBatch([event])).resolves.toMatchObject({
+            queued: 0,
+            processed: 1,
+        });
+        await expect(gatekeeper.processEvents()).resolves.toMatchObject({
+            added: 1,
+            rejected: 0,
+            pending: 0,
+            acceptedHashes: [operation.signature!.hash.toLowerCase()],
+        });
+    });
+
+    it('should replay a partial pass and preserve concurrently queued events after failure', async () => {
+        const operations = await Promise.all([
+            helper.createAgentOp(cipher.generateRandomJwk()),
+            helper.createAgentOp(cipher.generateRandomJwk()),
+            helper.createAgentOp(cipher.generateRandomJwk()),
+        ]);
+        const events = operations.map((operation, index) => ({
+            registry: 'hyperswarm',
+            time: new Date().toISOString(),
+            ordinal: [index + 1],
+            operation,
+        }));
+        await gatekeeper.importBatch(events.slice(0, 2));
+
+        const originalAddEvent = db.addEvent.bind(db);
+        let calls = 0;
+        let noteFailureStarted!: () => void;
+        const failureStarted = new Promise<void>(resolve => {
+            noteFailureStarted = resolve;
+        });
+        let releaseFailure!: () => void;
+        const failureBlocked = new Promise<void>(resolve => {
+            releaseFailure = resolve;
+        });
+        const addEvent = jest.spyOn(db, 'addEvent').mockImplementation(async (did, event) => {
+            calls += 1;
+            if (calls === 2) {
+                noteFailureStarted();
+                await failureBlocked;
+                throw new Error('second event database failure');
+            }
+            return originalAddEvent(did, event);
+        });
+
+        const processing = gatekeeper.processEvents();
+        await failureStarted;
+        await gatekeeper.importBatch([events[2]]);
+        releaseFailure();
+        await expect(processing).rejects.toThrow('second event database failure');
+        addEvent.mockRestore();
+
+        await expect(gatekeeper.importBatch(events)).resolves.toMatchObject({
+            queued: 0,
+            processed: 3,
+        });
+        const retried = await gatekeeper.processEvents();
+        expect(retried).toMatchObject({
+            added: 2,
+            merged: 1,
+            rejected: 0,
+            pending: 0,
+        });
+        expect(retried.acceptedHashes).toStrictEqual(
+            operations.map(operation => operation.signature!.hash.toLowerCase())
+        );
+    });
+
+    it('should replay successful earlier passes after a later dependency write fails', async () => {
+        const controllerKeys = cipher.generateRandomJwk();
+        const controllerCreate = await helper.createAgentOp(
+            controllerKeys,
+            { version: 1, registry: 'hyperswarm' }
+        );
+        const controllerDid = await gatekeeper.generateDID(controllerCreate);
+        const assetCreate = await helper.createAssetOp(
+            controllerDid,
+            controllerKeys,
+            { registry: 'hyperswarm' }
+        );
+        const assetDid = await gatekeeper.generateDID(assetCreate);
+        const events = [assetCreate, controllerCreate].map((operation, index) => ({
+            registry: 'hyperswarm',
+            time: operation.signature!.signed,
+            ordinal: [index + 1],
+            operation,
+        }));
+        await gatekeeper.importBatch(events);
+
+        const originalAddEvent = db.addEvent.bind(db);
+        let calls = 0;
+        const addEvent = jest.spyOn(db, 'addEvent').mockImplementation(async (did, event) => {
+            calls += 1;
+            if (calls === 2) {
+                throw new Error('asset database failure');
+            }
+            return originalAddEvent(did, event);
+        });
+
+        try {
+            await expect(gatekeeper.processEvents()).rejects.toThrow('asset database failure');
+
+            const retried = await gatekeeper.processEvents();
+            expect(retried).toMatchObject({
+                added: 1,
+                merged: 1,
+                rejected: 0,
+                pending: 0,
+            });
+            expect(retried.acceptedHashes).toEqual(expect.arrayContaining([
+                controllerCreate.signature!.hash.toLowerCase(),
+                assetCreate.signature!.hash.toLowerCase(),
+            ]));
+            expect(addEvent.mock.calls.map(([did]) => did)).toStrictEqual([
+                controllerDid,
+                assetDid,
+                assetDid,
+            ]);
+            expect(await db.getEvents(controllerDid)).toHaveLength(1);
+            expect(await db.getEvents(assetDid)).toHaveLength(1);
+        }
+        finally {
+            addEvent.mockRestore();
+        }
+    });
+
+    it('should propagate unexpected processing exceptions', async () => {
         const gk = new Gatekeeper({ db, ipfs, console: mockConsole });
         // @ts-expect-error Testing private state
         gk.eventsQueue = null;
-        const response = await gk.processEvents();
 
-        expect(response.added).toBe(0);
-        expect(response.merged).toBe(0);
-        expect(response.rejected).toBe(0);
-        expect(response.pending).toBe(0);
+        await expect(gk.processEvents()).rejects.toThrow();
+        // @ts-expect-error Testing private state
+        expect(gk.isProcessingEvents).toBe(false);
     });
 });
 
