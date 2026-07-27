@@ -1130,6 +1130,13 @@
                           "items": {
                             "type": "object"
                           }
+                        },
+                        "removedOperations": {
+                          "type": "array",
+                          "description": "Optional ordered operation removals. Returned only when includeOperations is true.",
+                          "items": {
+                            "type": "object"
+                          }
                         }
                       }
                     }
