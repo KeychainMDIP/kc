@@ -164,11 +164,12 @@ export default class PostgresOperationSyncStore implements OperationSyncStore {
         return this.runExclusive(async () => {
             try {
                 return await this.withTx(async (client) => {
+                    const deleted = await this.deleteRecordsInTx(client, page.deleteIds ?? []);
                     const result = await this.insertRecordsInTx(client, page.records);
                     for (const [key, value] of Object.entries(page.syncStateUpdates ?? {})) {
                         await this.saveSyncStateInTx(client, key, value);
                     }
-                    return result;
+                    return { ...result, deleted };
                 });
             } catch (error) {
                 log.error({ error }, 'applySyncPage failed');
@@ -390,6 +391,19 @@ export default class PostgresOperationSyncStore implements OperationSyncStore {
         }
 
         return { inserted, updated };
+    }
+
+    private async deleteRecordsInTx(client: PoolClient, ids: string[]): Promise<number> {
+        if (ids.length === 0) {
+            return 0;
+        }
+
+        const result = await client.query(
+            `DELETE FROM hyperswarm_sync_operations
+             WHERE id = ANY($1::text[])`,
+            [Array.from(new Set(ids))],
+        );
+        return result.rowCount ?? 0;
     }
 
     private async saveSyncStateInTx(client: PoolClient, key: string, value: string | null): Promise<void> {

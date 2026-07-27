@@ -1056,6 +1056,11 @@ v1router.post('/dids/', trackedRoute(async (req, res) => {
  *                       description: Optional ordered operation records. Returned only when includeOperations is true.
  *                       items:
  *                         type: object
+ *                     removedOperations:
+ *                       type: array
+ *                       description: Optional ordered operation removals. Returned only when includeOperations is true.
+ *                       items:
+ *                         type: object
  *       400:
  *         description: Invalid request body.
  *       503:

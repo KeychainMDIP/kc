@@ -77,13 +77,23 @@ export default class InMemoryOperationSyncStore implements OperationSyncStore {
     }
 
     async applySyncPage(page: SyncStorePage): Promise<ApplySyncStorePageResult> {
+        for (const record of page.records) {
+            this.getSignedTs(record);
+        }
+
+        let deleted = 0;
+        for (const id of new Set(page.deleteIds ?? [])) {
+            if (this.records.delete(id)) {
+                deleted += 1;
+            }
+        }
         const result = await this.upsertMany(page.records);
 
         for (const [key, value] of Object.entries(page.syncStateUpdates ?? {})) {
             await this.saveSyncState(key, value);
         }
 
-        return result;
+        return { ...result, deleted };
     }
 
     async loadSyncState(key: string): Promise<string | null> {

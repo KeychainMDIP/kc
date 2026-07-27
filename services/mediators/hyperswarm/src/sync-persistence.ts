@@ -1,5 +1,6 @@
 import {
     IndexExportOperationRecord,
+    IndexExportRemovedOperationRecord,
     Operation,
 } from '@mdip/gatekeeper/types';
 import type {
@@ -27,6 +28,10 @@ export type AcceptedOperationInput = Operation | AcceptedOperationWithSyncOrder;
 export interface MapAcceptedResult {
     records: SyncPersistenceRecord[];
     invalid: number;
+}
+
+export interface MapIndexExportChangesResult extends MapAcceptedResult {
+    deleteIds: string[];
 }
 
 export interface FilterKnownOperationsResult {
@@ -197,6 +202,52 @@ export function mapIndexExportOperationsToSyncRecords(operations: IndexExportOpe
         operation: record.event.operation,
         syncOrder: record.seq,
     })));
+}
+
+export function mapIndexExportChangesToSyncPage(
+    operations: IndexExportOperationRecord[],
+    removedOperations: IndexExportRemovedOperationRecord[] = [],
+): MapIndexExportChangesResult {
+    const actions = new Map<string, SyncPersistenceRecord | null>();
+    let invalid = 0;
+    const changes = [
+        ...operations.map(record => ({ kind: 'upsert' as const, record })),
+        ...removedOperations.map(record => ({ kind: 'delete' as const, record })),
+    ].sort((a, b) => a.record.seq - b.record.seq);
+
+    for (const change of changes) {
+        if (change.kind === 'delete') {
+            if (typeof change.record.operationHash !== 'string') {
+                invalid += 1;
+                continue;
+            }
+            const id = change.record.operationHash.toLowerCase();
+            if (!/^[a-f0-9]{64}$/.test(id)) {
+                invalid += 1;
+                continue;
+            }
+            actions.set(id, null);
+            continue;
+        }
+
+        const mapped = mapIndexExportOperationsToSyncRecords([change.record]);
+        invalid += mapped.invalid;
+        if (mapped.records[0]) {
+            actions.set(mapped.records[0].id, mapped.records[0]);
+        }
+    }
+
+    const records: SyncPersistenceRecord[] = [];
+    const deleteIds: string[] = [];
+    for (const [id, record] of actions) {
+        if (record) {
+            records.push(record);
+        } else {
+            deleteIds.push(id);
+        }
+    }
+
+    return { records, deleteIds, invalid };
 }
 
 export async function filterKnownOperations(

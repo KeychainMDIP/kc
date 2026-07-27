@@ -9,6 +9,7 @@ import {
     filterKnownOperations,
     filterOperationsByAcceptedHashes,
     mapAcceptedOperationsToSyncRecords,
+    mapIndexExportChangesToSyncPage,
     mapIndexExportOperationsToSyncRecords,
     partitionImportBatchOperations,
     prunePersistedSyncRecords,
@@ -171,6 +172,39 @@ describe('sync-persistence helpers', () => {
             },
         ]);
         expect(result.invalid).toBe(0);
+    });
+
+    it('reduces ordered index additions and removals to the final action per ID', () => {
+        const opA = makeCreateOp('a', '2026-02-10T10:00:00.000Z');
+        const opB = makeCreateOp('b', '2026-02-10T11:00:00.000Z');
+        const eventA: GatekeeperEvent = {
+            registry: 'hyperswarm',
+            time: opA.signature!.signed,
+            did: 'did:test:a',
+            operation: opA,
+        };
+        const eventB: GatekeeperEvent = {
+            registry: 'hyperswarm',
+            time: opB.signature!.signed,
+            did: 'did:test:b',
+            operation: opB,
+        };
+
+        const result = mapIndexExportChangesToSyncPage(
+            [
+                { seq: 1, did: 'did:test:a', event: eventA },
+                { seq: 4, did: 'did:test:b', event: eventB },
+            ],
+            [
+                { seq: 2, did: 'did:test:a', operationHash: h('a').toUpperCase() },
+                { seq: 3, did: 'did:test:b', operationHash: h('b') },
+                { seq: 5, did: 'did:test:bad', operationHash: 'not-a-hash' },
+            ],
+        );
+
+        expect(result.records).toEqual([expect.objectContaining({ id: h('b'), syncOrder: 4 })]);
+        expect(result.deleteIds).toStrictEqual([h('a')]);
+        expect(result.invalid).toBe(1);
     });
 
     it('maps pre-MDIP signed timestamp to MDIP epoch seconds', () => {

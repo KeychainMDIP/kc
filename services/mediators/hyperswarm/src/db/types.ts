@@ -43,6 +43,7 @@ export interface SyncStoreOrderedListOptions {
 
 export interface SyncStorePage {
     records: SyncOperationWriteRecord[];
+    deleteIds?: string[];
     syncStateUpdates?: Record<string, string | null>;
 }
 
@@ -51,7 +52,9 @@ export interface SyncStoreWriteResult {
     updated: number;
 }
 
-export type ApplySyncStorePageResult = SyncStoreWriteResult;
+export interface ApplySyncStorePageResult extends SyncStoreWriteResult {
+    deleted: number;
+}
 
 export interface OperationSyncStore {
     start(): Promise<void>;

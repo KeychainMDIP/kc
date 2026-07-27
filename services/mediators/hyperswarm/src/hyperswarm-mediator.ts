@@ -3987,16 +3987,20 @@ async function syncGatekeeperIndexToStore(source: string): Promise<void> {
         }
     }
 
-    if (!sync.resetReason && (sync.inserted > 0 || sync.updated > 0)) {
+    if (!sync.resetReason && (sync.inserted > 0 || sync.updated > 0 || sync.deleted > 0)) {
         markNegentropyAdapterDirty();
         for (const [peerKey, session] of peerSessions.entries()) {
-            if (session.mode === 'negentropy' && session.unresolvedNeedIds.size > 0) {
+            if (
+                (sync.inserted > 0 || sync.updated > 0)
+                && session.mode === 'negentropy'
+                && session.unresolvedNeedIds.size > 0
+            ) {
                 await refreshStoredUnresolvedNeeds(peerKey, session);
             }
         }
     }
 
-    if (sync.resetReason || sync.inserted > 0 || sync.updated > 0) {
+    if (sync.resetReason || sync.inserted > 0 || sync.updated > 0 || sync.deleted > 0) {
         maybeStartBackgroundPrebuild(`gatekeeper_index_${source}`);
     }
 

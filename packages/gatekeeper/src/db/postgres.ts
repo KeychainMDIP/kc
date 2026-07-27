@@ -415,16 +415,18 @@ export default class DbPostgres implements GatekeeperDb {
         const id = this.splitSuffix(did);
 
         return this.withTx(async client => {
-            const result = await client.query(
+            const result = await client.query<EventRow>(
                 `DELETE FROM gatekeeper_events
-                 WHERE namespace = $1 AND id = $2`,
+                 WHERE namespace = $1 AND id = $2
+                 RETURNING event`,
                 [this.dbName, id]
             );
 
-            if ((result.rowCount ?? 0) > 0) {
+            for (const row of result.rows) {
                 await this.recordIndexChange(client, {
                     kind: 'did',
                     did,
+                    event: this.parseEvent(row.event),
                     removed: true,
                 });
             }

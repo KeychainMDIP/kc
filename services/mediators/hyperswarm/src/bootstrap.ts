@@ -8,7 +8,7 @@ import { childLogger } from '@mdip/common/logger';
 import type { OperationSyncStore } from './db/types.js';
 import {
     mapAcceptedOperationsToSyncRecords,
-    mapIndexExportOperationsToSyncRecords,
+    mapIndexExportChangesToSyncPage,
 } from './sync-persistence.js';
 
 const DEFAULT_INDEX_EXPORT_PAGE_LIMIT = 500;
@@ -47,6 +47,7 @@ export interface BootstrapResult {
     invalid: number;
     inserted: number;
     updated: number;
+    deleted: number;
     snapshotComplete: boolean;
     durationMs: number;
     resetReason?: string;
@@ -67,6 +68,7 @@ interface ImportTotals {
     invalid: number;
     inserted: number;
     updated: number;
+    deleted: number;
 }
 
 class StaleSyncStoreError extends Error {
@@ -101,6 +103,7 @@ interface SnapshotLogState {
     invalid: number;
     inserted: number;
     updated: number;
+    deleted: number;
     requestCursor: string | null | undefined;
     nextCursor: string | null | undefined;
     checkpointCursor: string | null | undefined;
@@ -159,6 +162,7 @@ async function applySnapshotPage(
         invalid,
         inserted: result.inserted,
         updated: result.updated,
+        deleted: result.deleted,
     };
 }
 
@@ -170,19 +174,27 @@ async function applyChangesPage(
     if (response.mode !== 'changes' || !Array.isArray(response.operations)) {
         throw new Error('Changes export response missing operations');
     }
+    if (response.removedOperations !== undefined && !Array.isArray(response.removedOperations)) {
+        throw new Error('Changes export response has invalid removedOperations');
+    }
 
-    const { records, invalid } = mapIndexExportOperationsToSyncRecords(response.operations);
+    const { records, deleteIds, invalid } = mapIndexExportChangesToSyncPage(
+        response.operations,
+        response.removedOperations,
+    );
     const result = await syncStore.applySyncPage({
         records,
+        deleteIds,
         syncStateUpdates,
     });
 
     return {
-        exported: response.operations.length,
-        mapped: records.length,
+        exported: response.operations.length + (response.removedOperations?.length ?? 0),
+        mapped: records.length + deleteIds.length,
         invalid,
         inserted: result.inserted,
         updated: result.updated,
+        deleted: result.deleted,
     };
 }
 
@@ -192,6 +204,7 @@ function addTotals(totals: ImportTotals, page: Omit<ImportTotals, 'pages'>): voi
     totals.invalid += page.invalid;
     totals.inserted += page.inserted;
     totals.updated += page.updated;
+    totals.deleted += page.deleted;
     totals.pages += 1;
 }
 
@@ -242,6 +255,7 @@ function buildSnapshotLogState(params: {
         invalid: params.totals.invalid,
         inserted: params.totals.inserted,
         updated: params.totals.updated,
+        deleted: params.totals.deleted,
         requestCursor: params.requestCursor,
         nextCursor: params.nextCursor,
         checkpointCursor: params.checkpointCursor,
@@ -263,6 +277,7 @@ async function syncSnapshot(
         invalid: 0,
         inserted: 0,
         updated: 0,
+        deleted: 0,
     };
     let cursor = await syncStore.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotCursor);
     let checkpointCursor = await syncStore.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotCheckpointCursor);
@@ -402,6 +417,7 @@ async function syncChanges(
         invalid: 0,
         inserted: 0,
         updated: 0,
+        deleted: 0,
     };
     let cursor = await syncStore.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor);
 
@@ -499,6 +515,7 @@ export async function bootstrapSyncStoreFromGatekeeper(
         invalid: imported.invalid,
         inserted: imported.inserted,
         updated: imported.updated,
+        deleted: imported.deleted,
         snapshotComplete: snapshotCompleteAfter,
         durationMs: Date.now() - startedAt,
         ...(resetReason ? { resetReason } : {}),

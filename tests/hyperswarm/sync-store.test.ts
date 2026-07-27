@@ -65,6 +65,7 @@ async function runStoreContractTests(store: OperationSyncStore): Promise<void> {
 
     const pageResult = await store.applySyncPage({
         records: [],
+        deleteIds: [recB.id, recB.id, h('d')],
         syncStateUpdates: {
             cursor: '20',
             mode: 'snapshot',
@@ -72,8 +73,11 @@ async function runStoreContractTests(store: OperationSyncStore): Promise<void> {
     });
     expect(pageResult.inserted).toBe(0);
     expect(pageResult.updated).toBe(0);
+    expect(pageResult.deleted).toBe(1);
     expect(await store.loadSyncState('cursor')).toBe('20');
     expect(await store.loadSyncState('mode')).toBe('snapshot');
+    expect(await store.has(recB.id)).toBe(false);
+    await store.upsertMany([recB]);
 
     expect(await store.count()).toBe(3);
     expect(await store.countOrdered()).toBe(2);
@@ -196,6 +200,18 @@ describe('InMemoryOperationSyncStore', () => {
             id: h('d'),
             operation: opA,
         } as any])).rejects.toThrow('Sync operation record signedTs must be an integer');
+    });
+
+    it('does not delete records when another in-memory page record is invalid', async () => {
+        const store = new InMemoryOperationSyncStore();
+        await store.start();
+        await store.upsertMany([recA]);
+
+        await expect(store.applySyncPage({
+            records: [{ id: h('d'), operation: opA } as any],
+            deleteIds: [recA.id],
+        })).rejects.toThrow('Sync operation record signedTs must be an integer');
+        expect(await store.has(recA.id)).toBe(true);
     });
 });
 
@@ -341,6 +357,7 @@ describe('SqliteOperationSyncStore', () => {
         const store = new SqliteOperationSyncStore('operations.db', path.join(tmpRoot, 'data/hyperswarm'));
         await store.start();
         await store.reset();
+        await store.upsertMany([recB]);
 
         const circular: any = { type: 'create' };
         circular.self = circular;
@@ -354,12 +371,13 @@ describe('SqliteOperationSyncStore', () => {
                     operation: circular,
                 } as any,
             ],
+            deleteIds: [recB.id],
             syncStateUpdates: {
                 cursor: '99',
             },
         })).rejects.toThrow();
 
-        expect(await store.count()).toBe(0);
+        await expect(store.getByIds([recB.id])).resolves.toHaveLength(1);
         expect(await store.loadSyncState('cursor')).toBeNull();
     });
 

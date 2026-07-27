@@ -267,6 +267,42 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         expect(await running.store.has(rejectedOperation.signature!.hash)).toBe(false);
     });
 
+    it('rebuilds Negentropy after Gatekeeper removes indexed operations', async () => {
+        const [operation] = await makeOperations(1);
+        let did = '';
+        const running = await createRunningNode({
+            beforeStart: async node => {
+                await node.gatekeeper.importBatch([{
+                    registry: 'hyperswarm',
+                    time: operation.signature!.signed,
+                    operation,
+                }]);
+                await node.gatekeeper.processEvents();
+                did = (await node.gatekeeper.getDIDs())[0] as string;
+            },
+        });
+        const adapter = await NegentropyAdapter.create({
+            syncStore: running.store,
+            maxRecordsPerWindow: 16,
+            maxRoundsPerSession: 8,
+            deferInitialBuild: true,
+        });
+        running.node.run(() => running.node.mediator.__test.setNegentropyAdapter(adapter));
+        const buildSnapshot = jest.spyOn(adapter, 'buildSnapshotForWindow');
+        expect(await running.store.has(operation.signature!.hash)).toBe(true);
+
+        await running.node.gatekeeperDb.deleteEvents(did);
+        await running.node.run(() => jest.advanceTimersByTimeAsync(2_000));
+        await eventually(async () => (
+            !await running.store.has(operation.signature!.hash)
+            && buildSnapshot.mock.calls.length > 0
+        ));
+
+        await expect(buildSnapshot.mock.results.at(-1)!.value).resolves.toMatchObject({
+            stats: { loaded: 0 },
+        });
+    });
+
     it('handles real swarm connection, close, error, and malformed-data events', async () => {
         const running = await createRunningNode();
         const closedPeer = await attachConnection(running, 0x22);

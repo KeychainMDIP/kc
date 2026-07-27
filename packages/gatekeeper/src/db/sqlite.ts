@@ -308,13 +308,15 @@ export default class DbSqlite implements GatekeeperDb {
         return this.runExclusive(() =>
             this.withTx(async () => {
                 const id = this.splitSuffix(did);
+                const events = await this.getEventsStrict(id);
                 const result = await this.db!.run('DELETE FROM dids WHERE id = ?', id);
                 if ((result.changes ?? 0) > 0) {
-                    await this.recordIndexChangeStrict({
-                        kind: 'did',
-                        did,
-                        removed: true,
-                    });
+                    if (events.length === 0) {
+                        await this.recordIndexChangeStrict({ kind: 'did', did, removed: true });
+                    }
+                    for (const event of events) {
+                        await this.recordIndexChangeStrict({ kind: 'did', did, event, removed: true });
+                    }
                 }
                 return result.changes ?? 0;
             })

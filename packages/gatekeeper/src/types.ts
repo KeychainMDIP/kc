@@ -171,6 +171,12 @@ export interface IndexExportOperationRecord {
     operationHash?: string;
 }
 
+export interface IndexExportRemovedOperationRecord {
+    seq: number;
+    did: string;
+    operationHash: string;
+}
+
 export interface IndexExportBaseResponse {
     indexEpoch: string;
     cursor: string | null;
@@ -178,6 +184,7 @@ export interface IndexExportBaseResponse {
     dids: IndexExportDIDRecord[];
     blocks: IndexExportBlockRecord[];
     operations?: IndexExportOperationRecord[];
+    removedOperations?: IndexExportRemovedOperationRecord[];
 }
 
 export interface IndexExportSnapshotResponse extends IndexExportBaseResponse {

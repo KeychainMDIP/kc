@@ -250,7 +250,7 @@ describe('DidIndexer gatekeeper read boundary', () => {
         expect(await db.loadSyncState('index.changes.cursor')).toBe('9');
     });
 
-    it('does not request operations and ignores them when they are present in changes responses', async () => {
+    it('does not request operation payloads and ignores them when present in changes responses', async () => {
         const db = new DIDsDbMemory();
         const applyIndexPage = jest.spyOn(db, 'applyIndexPage');
         await db.saveSyncState('index.snapshot.complete', 'true');
@@ -275,6 +275,11 @@ describe('DidIndexer gatekeeper read boundary', () => {
                         event: operationsOnlyEvent,
                         operationHash: 'ignored-operation-hash',
                     }],
+                    removedOperations: [{
+                        seq: 9,
+                        did: operationsOnlyDid,
+                        operationHash: 'f'.repeat(64),
+                    }],
                 }),
         };
         const indexer = new DidIndexer(gatekeeper as any, db, { intervalMs: 60_000 });
@@ -298,6 +303,7 @@ describe('DidIndexer gatekeeper read boundary', () => {
             blocks: [],
         });
         expect(applyIndexPage.mock.calls[1][0]).not.toHaveProperty('operations');
+        expect(applyIndexPage.mock.calls[1][0]).not.toHaveProperty('removedOperations');
         await expect(db.getDIDEvents(changesDid)).resolves.toHaveLength(1);
         await expect(db.getDIDEvents(operationsOnlyDid)).resolves.toStrictEqual([]);
         expect(await db.loadSyncState('index.changes.cursor')).toBe('8');
