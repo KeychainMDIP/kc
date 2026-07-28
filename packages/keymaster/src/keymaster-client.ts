@@ -534,7 +534,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async verifyResponse(
         responseDID: string,
-        options?: { retries?: number; delay?: number }
+        options?: { retries?: number; delay?: number; publish?: boolean }
     ): Promise<ChallengeResponse> {
         try {
             const response = await axios.post(`${this.API}/response/verify`, { response: responseDID, options });

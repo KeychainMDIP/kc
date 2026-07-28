@@ -138,6 +138,7 @@ describe('verifyResponse', () => {
         const responseDID = await keymaster.createResponse(challengeDID);
 
         await keymaster.setCurrentId('Alice');
+        const publishReceipts = jest.spyOn(keymaster, 'publishChallengeReceipts');
         const verify = await keymaster.verifyResponse(responseDID);
 
         const expected = {
@@ -152,6 +153,12 @@ describe('verifyResponse', () => {
         };
 
         expect(verify).toStrictEqual(expected);
+        expect(publishReceipts).toHaveBeenCalledWith(responseDID, { verification: verify });
+
+        publishReceipts.mockClear();
+        await expect(keymaster.verifyResponse(responseDID, { publish: false })).resolves.toStrictEqual(expected);
+        expect(publishReceipts).not.toHaveBeenCalled();
+        publishReceipts.mockRestore();
     });
 
     it('should verify a valid response to a single credential challenge', async () => {
@@ -219,6 +226,7 @@ describe('verifyResponse', () => {
 
         await keymaster.setCurrentId('Victor');
 
+        const publishReceipts = jest.spyOn(keymaster, 'publishChallengeReceipts');
         const verify1 = await keymaster.verifyResponse(responseDID);
 
         expect(verify1.match).toBe(false);
@@ -226,6 +234,26 @@ describe('verifyResponse', () => {
         expect(verify1.requested).toBe(1);
         expect(verify1.fulfilled).toBe(0);
         expect(verify1.vps!.length).toBe(0);
+        expect(publishReceipts).not.toHaveBeenCalled();
+        publishReceipts.mockRestore();
+    });
+
+    it('should propagate receipt publication failures', async () => {
+        await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+
+        await keymaster.setCurrentId('Alice');
+        const challengeDID = await keymaster.createChallenge();
+
+        await keymaster.setCurrentId('Bob');
+        const responseDID = await keymaster.createResponse(challengeDID);
+
+        await keymaster.setCurrentId('Alice');
+        const publishReceipts = jest.spyOn(keymaster, 'publishChallengeReceipts')
+            .mockRejectedValueOnce(new Error('receipt publication failed'));
+
+        await expect(keymaster.verifyResponse(responseDID)).rejects.toThrow('receipt publication failed');
+        publishReceipts.mockRestore();
     });
 
     it('should verify a response if credential is updated', async () => {
@@ -341,7 +369,7 @@ describe('verifyResponse', () => {
 
         await keymaster.setCurrentId('Victor');
 
-        const verify1 = await keymaster.verifyResponse(responseDID);
+        const verify1 = await keymaster.verifyResponse(responseDID, { publish: false });
         expect(verify1.match).toBe(true);
         expect(verify1.vps!.length).toBe(4);
 
@@ -358,7 +386,7 @@ describe('verifyResponse', () => {
         await keymaster.setCurrentId('Victor');
         await keymaster.rotateKeys();
 
-        const verify2 = await keymaster.verifyResponse(responseDID);
+        const verify2 = await keymaster.verifyResponse(responseDID, { publish: false });
         expect(verify2.match).toBe(true);
         expect(verify2.vps!.length).toBe(4);
 
@@ -366,7 +394,7 @@ describe('verifyResponse', () => {
         await keymaster.revokeCredential(vc1);
 
         await keymaster.setCurrentId('Victor');
-        const verify3 = await keymaster.verifyResponse(responseDID)
+        const verify3 = await keymaster.verifyResponse(responseDID, { publish: false })
         expect(verify3.match).toBe(false);
         expect(verify3.vps!.length).toBe(3);
 
@@ -374,7 +402,7 @@ describe('verifyResponse', () => {
         await keymaster.revokeCredential(vc3);
 
         await keymaster.setCurrentId('Victor');
-        const verify4 = await keymaster.verifyResponse(responseDID);
+        const verify4 = await keymaster.verifyResponse(responseDID, { publish: false });
         expect(verify4.match).toBe(false);
         expect(verify4.vps!.length).toBe(2);
     });
@@ -487,8 +515,16 @@ describe('challenge receipts', () => {
         const receiptDoc = await keymaster.resolveDID(receiptDIDs[0]);
         expect(receiptDoc.didDocument?.controller).toBe(victor);
 
+        const verifyResponse = jest.spyOn(keymaster, 'verifyResponse');
         const defaultReceiptDIDs = await keymaster.publishChallengeReceipts(responseDID);
         expect(defaultReceiptDIDs).toHaveLength(1);
+        expect(verifyResponse).toHaveBeenCalledTimes(1);
+        expect(verifyResponse).toHaveBeenCalledWith(responseDID, {
+            retries: undefined,
+            delay: undefined,
+            publish: false,
+        });
+        verifyResponse.mockRestore();
 
         const defaultReceiptAsset = await keymaster.resolveAsset(defaultReceiptDIDs[0]) as { challengeReceipt: ChallengeReceipt };
         expect(defaultReceiptAsset.challengeReceipt).toStrictEqual(expectedReceipt);

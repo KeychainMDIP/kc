@@ -289,7 +289,7 @@ def test_challenge_response():
     assert_equal(response["response"]["challenge"], challenge_did)
     assert_equal(response["response"]["credentials"], [])
 
-    response = keymaster.verify_response(response_did)
+    response = keymaster.verify_response(response_did, publish=False)
     assert_equal(response["challenge"], challenge_did)
     assert_equal(response["responder"], bob_id)
 

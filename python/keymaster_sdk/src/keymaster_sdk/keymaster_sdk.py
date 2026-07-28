@@ -410,9 +410,8 @@ def create_response(challenge, options=None):
     return response["did"]
 
 
-def verify_response(response, options=None):
-    if options is None:
-        options = {}
+def verify_response(response, options=None, publish=True):
+    options = {**(options or {}), "publish": publish}
     response = proxy_request(
         "POST",
         f"{_keymaster_api}/response/verify",

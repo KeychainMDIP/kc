@@ -664,7 +664,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
                 return;
             }
 
-            const verify = await keymaster.verifyResponse(response);
+            const verify = await keymaster.verifyResponse(response, { publish: false });
 
             if (verify.match) {
                 showError("Response is VALID");
