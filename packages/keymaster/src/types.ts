@@ -408,7 +408,7 @@ export interface KeymasterInterface {
     // Challenges
     createChallenge(challenge?: Challenge, options?: { registry?: string; validUntil?: string }): Promise<string>;
     createResponse(challengeDid: string, options?: CreateResponseOptions): Promise<string>;
-    verifyResponse(responseDid: string, options?: { retries?: number; delay?: number }): Promise<ChallengeResponse>;
+    verifyResponse(responseDid: string, options?: { retries?: number; delay?: number; publish?: boolean }): Promise<ChallengeResponse>;
     publishChallengeReceipts(responseDid: string, options?: PublishChallengeReceiptOptions): Promise<string[]>;
 
     // Polls

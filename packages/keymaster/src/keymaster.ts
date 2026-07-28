@@ -2059,9 +2059,9 @@ export default class Keymaster implements KeymasterInterface {
 
     async verifyResponse(
         responseDID: string,
-        options: { retries?: number; delay?: number } = {}
+        options: { retries?: number; delay?: number; publish?: boolean } = {}
     ): Promise<ChallengeResponse> {
-        let { retries = 0, delay = 1000 } = options;
+        let { retries = 0, delay = 1000, publish = true } = options;
 
         let responseDoc;
 
@@ -2150,6 +2150,10 @@ export default class Keymaster implements KeymasterInterface {
         response.match = vps.length === (challenge.credentials?.length ?? 0);
         response.responder = responseDoc.didDocument?.controller;
 
+        if (publish && response.match) {
+            await this.publishChallengeReceipts(responseDID, { verification: response });
+        }
+
         return response;
     }
 
@@ -2165,7 +2169,7 @@ export default class Keymaster implements KeymasterInterface {
         options: BuildChallengeReceiptOptions = {}
     ): Promise<ChallengeReceipt[]> {
         const { verification, retries, delay } = options;
-        const response = verification ?? await this.verifyResponse(responseDID, { retries, delay });
+        const response = verification ?? await this.verifyResponse(responseDID, { retries, delay, publish: false });
 
         if (!response.match) {
             throw new InvalidParameterError('verification.match');

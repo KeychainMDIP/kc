@@ -1809,6 +1809,10 @@ v1router.post('/response', async (req, res) => {
  *                     type: integer
  *                     description: How many milliseconds to wait between resolution retries.
  *                     default: 1000
+ *                   publish:
+ *                     type: boolean
+ *                     description: Publish challenge receipts when the response matches.
+ *                     default: true
  *                   versionTime:
  *                     type: string
  *                     format: date-time
