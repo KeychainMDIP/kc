@@ -2,7 +2,7 @@ import { Operation } from '@mdip/gatekeeper/types';
 import type { SyncStoreCursor } from '../db/types.js';
 import type { ReconciliationWindow } from './adapter.js';
 
-export type SyncMode = 'legacy' | 'negentropy';
+export type SyncMode = 'negentropy';
 export type NegentropyFrameEncoding = 'utf8' | 'base64';
 export const NEG_SYNC_ID_RE = /^[a-f0-9]{64}$/i;
 
@@ -39,8 +39,7 @@ export type ConnectSyncModeReason =
     | 'missing_capabilities'
     | 'negentropy_disabled'
     | 'version_mismatch'
-    | 'transport_framing_unsupported'
-    | 'legacy_disabled';
+    | 'transport_framing_unsupported';
 
 export interface ConnectSyncModeDecision {
     mode: SyncMode | null;
@@ -183,41 +182,40 @@ export function chooseSyncMode(
 
     return supportsPeerNegentropy(capabilities, requiredVersion)
         ? 'negentropy'
-        : 'legacy';
+        : null;
 }
 
 export function chooseConnectSyncMode(
     capabilities: NegotiatedPeerCapabilities,
     requiredVersion: number,
-    legacySyncEnabled: boolean,
     negentropyEnabled = true,
     transportFramingSupported = true,
 ): ConnectSyncModeDecision {
-    const fallback = (reason: ConnectSyncModeReason): ConnectSyncModeDecision => ({
-        mode: legacySyncEnabled ? 'legacy' : null,
+    const unavailable = (reason: ConnectSyncModeReason): ConnectSyncModeDecision => ({
+        mode: null,
         reason,
     });
 
     if (negentropyEnabled && supportsPeerNegentropy(capabilities, requiredVersion)) {
         if (!transportFramingSupported) {
-            return fallback('transport_framing_unsupported');
+            return unavailable('transport_framing_unsupported');
         }
         return { mode: 'negentropy', reason: 'negentropy_supported' };
     }
 
     if (!negentropyEnabled) {
-        return fallback('negentropy_disabled');
+        return unavailable('negentropy_disabled');
     }
 
     if (!capabilities.advertised) {
-        return fallback('missing_capabilities');
+        return unavailable('missing_capabilities');
     }
 
     if (!capabilities.negentropy) {
-        return fallback('negentropy_disabled');
+        return unavailable('negentropy_disabled');
     }
 
-    return fallback('version_mismatch');
+    return unavailable('version_mismatch');
 }
 
 export function encodeNegentropyFrame(frame: string | Uint8Array): NegentropyFrame {

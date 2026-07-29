@@ -20,13 +20,9 @@ export interface PingMessage extends HyperMessageBase {
     transportFramingVersion?: number;
 }
 
-export interface BatchMessage extends HyperMessageBase {
-    type: 'batch' | 'queue';
+export interface QueueMessage extends HyperMessageBase {
+    type: 'queue';
     data: Operation[];
-}
-
-export interface SyncMessage extends HyperMessageBase {
-    type: 'sync';
 }
 
 export type NativeNegentropyFrame = string | Uint8Array;
@@ -108,8 +104,7 @@ export interface OrderedCatchupDoneMessage extends HyperMessageBase {
 }
 
 export type HyperMessage =
-    | BatchMessage
-    | SyncMessage
+    | QueueMessage
     | PingMessage
     | NegOpenMessage
     | NegMsgMessage

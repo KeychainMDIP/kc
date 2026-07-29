@@ -77,17 +77,10 @@ const config = {
     negentropyMaxRoundsPerSession: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_MAX_ROUNDS_PER_SESSION', 64),
     negentropyIntervalSeconds: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_INTERVAL', 300),
     orderedCatchupEnabled: parseBooleanEnv('KC_HYPR_ORDERED_CATCHUP_ENABLE', true),
-    legacySyncEnabled: parseBooleanEnv('KC_HYPR_LEGACY_SYNC_ENABLE', true),
     db: parseSyncDbEnv(),
     postgresURL: process.env.KC_HYPR_POSTGRES_URL
         || process.env.KC_POSTGRES_URL
         || 'postgresql://mdip:mdip@localhost:5432/mdip',
 };
-
-if (!config.negentropyEnabled && !config.legacySyncEnabled) {
-    throw new Error(
-        'Invalid sync configuration; at least one of KC_HYPR_NEGENTROPY_ENABLE or KC_HYPR_LEGACY_SYNC_ENABLE must be true'
-    );
-}
 
 export default config;

@@ -24,40 +24,23 @@ describe('hyperswarm config', () => {
         jest.resetModules();
     });
 
-    it('throws when both negentropy and legacy sync are disabled', async () => {
+    it('allows Negentropy to be disabled explicitly', async () => {
         process.env.KC_HYPR_NEGENTROPY_ENABLE = 'false';
-        process.env.KC_HYPR_LEGACY_SYNC_ENABLE = 'false';
-
-        await expect(
-            jest.isolateModulesAsync(async () => {
-                await import(CONFIG_PATH);
-            })
-        ).rejects.toThrow(
-            'Invalid sync configuration; at least one of KC_HYPR_NEGENTROPY_ENABLE or KC_HYPR_LEGACY_SYNC_ENABLE must be true'
-        );
-    });
-
-    it('allows startup when at least one sync mode is enabled', async () => {
-        process.env.KC_HYPR_NEGENTROPY_ENABLE = 'false';
-        process.env.KC_HYPR_LEGACY_SYNC_ENABLE = 'true';
 
         const config = await importConfigIsolated();
 
         expect(config.negentropyEnabled).toBe(false);
-        expect(config.legacySyncEnabled).toBe(true);
     });
 
     it('uses defaults when optional env vars are empty', async () => {
         process.env.KC_HYPR_EXPORT_INTERVAL = '';
         process.env.KC_HYPR_NEGENTROPY_ENABLE = '';
-        process.env.KC_HYPR_LEGACY_SYNC_ENABLE = '';
         process.env.KC_HYPR_ORDERED_CATCHUP_ENABLE = '';
 
         const config = await importConfigIsolated();
 
         expect(config.exportInterval).toBe(2);
         expect(config.negentropyEnabled).toBe(true);
-        expect(config.legacySyncEnabled).toBe(true);
         expect(config.orderedCatchupEnabled).toBe(true);
     });
 
@@ -162,7 +145,6 @@ describe('hyperswarm config', () => {
 
     it('throws on invalid boolean env values', async () => {
         process.env.KC_HYPR_NEGENTROPY_ENABLE = 'maybe';
-        process.env.KC_HYPR_LEGACY_SYNC_ENABLE = 'true';
 
         await expect(
             jest.isolateModulesAsync(async () => {

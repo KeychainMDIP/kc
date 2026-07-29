@@ -15,10 +15,6 @@ import type {
     NegotiatedPeerCapabilities,
     SyncMode,
 } from './negentropy/protocol.js';
-import type {
-    BatchMessage,
-    SyncMessage,
-} from './protocol-messages.js';
 
 export interface MediatorMainOptions {
     syncStore?: OperationSyncStore;
@@ -30,30 +26,18 @@ export interface NodeInfo {
     ipfs: any;
 }
 
-export interface ExportQueueTask {
-    name: string;
-    msg: SyncMessage;
-    conn: HyperswarmConnection;
-}
-
-export interface DeferredLegacyInboundTask extends ExportQueueTask {}
-
 export interface ConnectionInfo {
     connection: HyperswarmConnection;
     key: string;
     peerName: string;
     nodeName: string;
     did: string;
-    connectedAt: number;
     lastSeen: number;
     capabilities: NegotiatedPeerCapabilities;
     syncMode: SyncMode | 'unknown';
     syncStarted: boolean;
     lastNegentropyAttemptAt: number;
     negentropySynced: boolean;
-    legacyOutboundDeferred: boolean;
-    legacyInboundDeferred: DeferredLegacyInboundTask | null;
-    legacyFallbackNoted: boolean;
     orderedCatchupAttempted: boolean;
     orderedCatchupClientSessionId: string | null;
     orderedCatchupServerSessionId: string | null;
@@ -118,7 +102,9 @@ export interface PeerSyncSession {
 
 export interface ImportQueueTask {
     name: string;
-    msg: BatchMessage;
+    node?: string;
+    data: Operation[];
+    queueGossip?: boolean;
     orderedCatchupSession?: PeerSyncSession;
 }
 
@@ -145,7 +131,6 @@ export function createConnectionInfo(options: ConnectionInfoOptions): Connection
         peerName: options.peerName,
         nodeName: options.nodeName ?? 'anon',
         did: '',
-        connectedAt: now,
         lastSeen: now,
         capabilities: {
             advertised: false,
@@ -161,9 +146,6 @@ export function createConnectionInfo(options: ConnectionInfoOptions): Connection
         syncStarted: false,
         lastNegentropyAttemptAt: 0,
         negentropySynced: false,
-        legacyOutboundDeferred: false,
-        legacyInboundDeferred: null,
-        legacyFallbackNoted: false,
         orderedCatchupAttempted: false,
         orderedCatchupClientSessionId: null,
         orderedCatchupServerSessionId: null,

@@ -57,8 +57,6 @@ export function classifyPendingBuffer(buffer: Buffer): PendingBufferClassificati
 
 export function supportsLegacyRawTransportMessage(messageType: string): boolean {
     return messageType === 'ping'
-        || messageType === 'sync'
-        || messageType === 'batch'
         || messageType === 'queue';
 }
 

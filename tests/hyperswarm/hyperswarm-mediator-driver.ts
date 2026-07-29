@@ -506,7 +506,6 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
     const env = {
         KC_HYPR_NEGENTROPY_ENABLE: 'true',
         KC_HYPR_ORDERED_CATCHUP_ENABLE: String(options.orderedCatchupEnabled ?? false),
-        KC_HYPR_LEGACY_SYNC_ENABLE: 'false',
         KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW: String(maxRecordsPerWindow),
         KC_HYPR_NEGENTROPY_MAX_ROUNDS_PER_SESSION: String(maxRoundsPerSession),
     };

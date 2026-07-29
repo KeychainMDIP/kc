@@ -114,7 +114,6 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
             env: {
                 KC_HYPR_NEGENTROPY_ENABLE: 'true',
                 KC_HYPR_ORDERED_CATCHUP_ENABLE: 'false',
-                KC_HYPR_LEGACY_SYNC_ENABLE: 'true',
                 KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW: '16',
                 KC_HYPR_NEGENTROPY_MAX_ROUNDS_PER_SESSION: '8',
                 KC_HYPR_NEGENTROPY_INTERVAL: '1',
@@ -344,7 +343,6 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         const running = await createRunningNode({
             env: {
                 KC_HYPR_EXPORT_INTERVAL: '3600',
-                KC_HYPR_LEGACY_SYNC_ENABLE: 'false',
             },
         });
         const peerKeyByte = 0x44;
@@ -374,7 +372,6 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         const running = await createRunningNode({
             env: {
                 KC_HYPR_EXPORT_INTERVAL: '3600',
-                KC_HYPR_LEGACY_SYNC_ENABLE: 'false',
             },
         });
         const peerKeyByte = 0x55;
@@ -485,7 +482,6 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         const running = await createRunningNode({
             env: {
                 KC_HYPR_EXPORT_INTERVAL: '3600',
-                KC_HYPR_LEGACY_SYNC_ENABLE: 'false',
             },
         });
         const adapter = await NegentropyAdapter.create({
@@ -594,7 +590,6 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
             env: {
                 KC_HYPR_EXPORT_INTERVAL: '3600',
                 KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true',
-                KC_HYPR_LEGACY_SYNC_ENABLE: 'false',
             },
         });
         const peer = await attachConnection(running, 0x22);
@@ -713,7 +708,6 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
             env: {
                 KC_HYPR_EXPORT_INTERVAL: '3600',
                 KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true',
-                KC_HYPR_LEGACY_SYNC_ENABLE: 'false',
             },
         });
         await running.store.upsertMany(operations.map((operation, index) => ({
@@ -830,10 +824,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
     it('prunes active-session unresolved operations after an index backfill', async () => {
         const [operation] = await makeOperations(1);
         const operationId = operation.signature!.hash;
-        const running = await createRunningNode({
-            keyByte: 0x33,
-            env: { KC_HYPR_LEGACY_SYNC_ENABLE: 'false' },
-        });
+        const running = await createRunningNode({ keyByte: 0x33 });
         const adapter = await NegentropyAdapter.create({
             syncStore: running.store,
             maxRecordsPerWindow: 16,
@@ -1060,56 +1051,6 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         expect(resetSessionId).toEqual(expect.any(String));
         expect(resetSessionId).not.toBe(firstSessionId);
         expect(negOpenCount()).toBeGreaterThan(initialNegOpenCount);
-    });
-
-    it('defers legacy inbound and outbound work until active Negentropy finishes', async () => {
-        const [operation] = await makeOperations(1);
-        const running = await createRunningNode({
-            beforeStart: async node => {
-                await node.gatekeeper.createDID(operation);
-            },
-        });
-        const negentropyPeer = await attachConnection(running, 0x22);
-        await sendPeerMessage(negentropyPeer, peerPing());
-        expect(running.node.run(
-            () => running.node.mediator.__test.getConnectionState(negentropyPeer.peerKey)?.activeSession,
-        )).toEqual(expect.objectContaining({ mode: 'negentropy' }));
-
-        const legacyPeer = await attachConnection(running, 0x33);
-        await sendPeerMessage(legacyPeer, peerPing({
-            capabilities: undefined,
-            transportFramingVersion: undefined,
-        }));
-        await sendPeerMessage(legacyPeer, {
-            type: 'sync',
-            time: new Date().toISOString(),
-            node: 'legacy-peer',
-            relays: [],
-        });
-        expect(running.node.run(
-            () => running.node.mediator.__test.getConnectionState(legacyPeer.peerKey),
-        )).toMatchObject({
-            syncMode: 'legacy',
-            activeSession: null,
-        });
-        const sentByMediator = (messageType: string) => legacyPeer.pair.transcript.some(
-            entry => entry.direction === 'a-to-b' && entry.messageType === messageType,
-        );
-        expect(sentByMediator('sync')).toBe(false);
-        expect(sentByMediator('batch')).toBe(false);
-
-        running.node.run(() => negentropyPeer.pair.connectionA.emit('close'));
-        await eventually(() => sentByMediator('sync'));
-        await eventually(() => sentByMediator('batch'));
-
-        expect(legacyPeer.pair.transcript.filter(entry => entry.direction === 'a-to-b'
-            && ['sync', 'batch'].includes(entry.messageType ?? ''))).toEqual(expect.arrayContaining([
-            expect.objectContaining({ messageType: 'sync', transportMode: 'legacy' }),
-            expect.objectContaining({ messageType: 'batch', transportMode: 'legacy' }),
-        ]));
-        expect(running.node.run(
-            () => running.node.mediator.__test.getConnectionState(legacyPeer.peerKey),
-        )).toMatchObject({ activeSession: { mode: 'legacy' } });
     });
 
     it('destroys the active swarm and stops the injected store during graceful shutdown', async () => {
