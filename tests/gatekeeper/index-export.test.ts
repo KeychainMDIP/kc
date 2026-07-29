@@ -177,6 +177,16 @@ function createPostgresFixture(): AdapterFixture {
             return { rows: [{ seq: nextChangeSeq }], rowCount: 1 };
         }
 
+        if (text.includes('WITH inserted_event AS')) {
+            const id = String(params[1]);
+            const event = parseStoredEvent(params[2]);
+            const events = eventsByKey.get(id) ?? [];
+            events.push(event);
+            eventsByKey.set(id, events);
+            recordChange([params[0], 'did', params[3], null, null, false, params[2]]);
+            return { rows: [{ length: 1 }], rowCount: 1 };
+        }
+
         if (text.includes('SELECT COALESCE(MAX(seq)')) {
             const id = String(params[1]);
             return { rows: [{ seq: eventsByKey.get(id)?.length ?? 0 }] };
@@ -184,9 +194,12 @@ function createPostgresFixture(): AdapterFixture {
 
         if (text.includes('DELETE FROM gatekeeper_events')) {
             const id = String(params[1]);
-            const existed = eventsByKey.has(id);
+            const events = eventsByKey.get(id) ?? [];
             eventsByKey.delete(id);
-            return { rows: [], rowCount: existed ? 1 : 0 };
+            return {
+                rows: events.map(event => ({ event })),
+                rowCount: events.length,
+            };
         }
 
         if (text.includes('DELETE FROM gatekeeper_queue') ||
@@ -447,10 +460,16 @@ function createRedisFixture(): AdapterFixture {
             }
 
             if (keyCount === 4 && args.length === 2) {
+                const events = lists.get(keys[0]) ?? [];
                 const removed = del(keys[0]);
                 zsets.get(keys[3])?.delete(args[1]);
                 if (removed > 0) {
-                    recordChange(JSON.parse(args[0]) as Omit<IndexChangeRecord, 'seq'>);
+                    for (const event of events) {
+                        recordChange({
+                            ...JSON.parse(args[0]) as Omit<IndexChangeRecord, 'seq'>,
+                            event: JSON.parse(event) as GatekeeperEvent,
+                        });
+                    }
                 }
                 return removed;
             }
@@ -799,6 +818,10 @@ function createPostgresIndexChangeFailureFixture(): DbPostgres {
             return { rows: [], rowCount: 0 };
         }
 
+        if (text.includes('WITH inserted_event AS')) {
+            throw new Error('index change insert failed');
+        }
+
         if (text.includes('SELECT COALESCE(MAX(seq)')) {
             const id = String(params[1]);
             const events = transactional
@@ -810,9 +833,12 @@ function createPostgresIndexChangeFailureFixture(): DbPostgres {
         if (text.includes('DELETE FROM gatekeeper_events')) {
             const id = String(params[1]);
             const events = requireActiveMap(transactionEvents, 'Postgres events');
-            const rowCount = events.get(id)?.length ?? 0;
+            const removedEvents = events.get(id) ?? [];
             events.delete(id);
-            return { rows: [], rowCount };
+            return {
+                rows: removedEvents.map(event => ({ event })),
+                rowCount: removedEvents.length,
+            };
         }
 
         if (text.includes('INSERT INTO gatekeeper_events')) {
@@ -1306,6 +1332,23 @@ describe('Gatekeeper DB index snapshot export', () => {
 });
 
 describe('Gatekeeper Postgres index change transaction rollback', () => {
+    it('records an event and its index change in one query', async () => {
+        const fixture = createPostgresFixture();
+        const pool = (fixture.db as any).pool;
+        const query = jest.fn(pool.query);
+        const connect = jest.fn(pool.connect);
+        pool.query = query;
+        pool.connect = connect;
+        const didC = 'did:test:z3';
+        const eventC = createEvent(didC, '2026-01-01T00:00:03.000Z');
+
+        await expect(fixture.db.addEvent(didC, eventC)).resolves.toBe(1);
+
+        expect(query).toHaveBeenCalledTimes(1);
+        expect(connect).not.toHaveBeenCalled();
+        await expect(fixture.db.getEvents(didC)).resolves.toStrictEqual([eventC]);
+    });
+
     it('rolls back addEvent when index change recording fails', async () => {
         const db = createPostgresIndexChangeFailureFixture();
         const didC = 'did:test:z3';
@@ -1622,6 +1665,52 @@ describe.each(adapterFactories)('Gatekeeper DB index export adapter: %s', (_name
             registry: 'local',
             block: block2,
         });
+    });
+
+    it('exports deleted operation hashes in paged change order', async () => {
+        const didC = 'did:test:z3';
+        const firstHash = 'A'.repeat(64);
+        const secondHash = 'b'.repeat(64);
+        await fixture.db.addEvent(
+            didC,
+            withOperationHash(createEvent(didC, '2026-01-01T00:00:03.000Z'), firstHash),
+        );
+        await fixture.db.addEvent(
+            didC,
+            withOperationHash(createEvent(didC, '2026-01-01T00:00:04.000Z', 'update'), secondHash),
+        );
+        const checkpoint = await fixture.db.exportIndexChanges();
+
+        await fixture.db.deleteEvents(didC);
+
+        const firstPage = await fixture.db.exportIndexChanges({
+            cursor: checkpoint.cursor,
+            limit: 1,
+            includeOperations: true,
+        });
+        expect(firstPage).toMatchObject({
+            hasMore: true,
+            operations: [],
+            removedOperations: [{
+                did: didC,
+                operationHash: firstHash.toLowerCase(),
+            }],
+        });
+
+        const secondPage = await fixture.db.exportIndexChanges({
+            cursor: firstPage.cursor,
+            limit: 1,
+            includeOperations: true,
+        });
+        expect(secondPage).toMatchObject({
+            hasMore: false,
+            operations: [],
+            removedOperations: [{
+                did: didC,
+                operationHash: secondHash,
+            }],
+        });
+        expect(Number(secondPage.cursor)).toBe(Number(firstPage.cursor) + 1);
     });
 
     it('records index changes for every accepted mutation type', async () => {

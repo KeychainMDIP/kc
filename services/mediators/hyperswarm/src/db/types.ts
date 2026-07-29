@@ -43,6 +43,7 @@ export interface SyncStoreOrderedListOptions {
 
 export interface SyncStorePage {
     records: SyncOperationWriteRecord[];
+    deleteIds?: string[];
     syncStateUpdates?: Record<string, string | null>;
 }
 
@@ -51,12 +52,15 @@ export interface SyncStoreWriteResult {
     updated: number;
 }
 
-export type ApplySyncStorePageResult = SyncStoreWriteResult;
+export interface ApplySyncStorePageResult extends SyncStoreWriteResult {
+    deleted: number;
+}
 
 export interface OperationSyncStore {
     start(): Promise<void>;
     stop(): Promise<void>;
     reset(): Promise<void>;
+    deleteBySyncOrder(syncOrder: number): Promise<number>;
     /**
      * Inserts missing operations and preserves existing operation identity. Existing
      * rows may only be updated to backfill a missing syncOrder from an incoming

@@ -77,7 +77,6 @@ const config = {
     negentropyMaxRoundsPerSession: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_MAX_ROUNDS_PER_SESSION', 64),
     negentropyIntervalSeconds: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_INTERVAL', 300),
     orderedCatchupEnabled: parseBooleanEnv('KC_HYPR_ORDERED_CATCHUP_ENABLE', true),
-    orderedCatchupThreshold: negentropyMaxRecordsPerWindow,
     legacySyncEnabled: parseBooleanEnv('KC_HYPR_LEGACY_SYNC_ENABLE', true),
     db: parseSyncDbEnv(),
     postgresURL: process.env.KC_HYPR_POSTGRES_URL

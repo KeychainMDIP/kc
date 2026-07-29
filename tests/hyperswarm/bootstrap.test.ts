@@ -1,5 +1,10 @@
 import { jest } from '@jest/globals';
-import type { GatekeeperEvent, IndexExportResponse, Operation } from '@mdip/gatekeeper/types';
+import type {
+    GatekeeperEvent,
+    IndexExportRemovedOperationRecord,
+    IndexExportResponse,
+    Operation,
+} from '@mdip/gatekeeper/types';
 import InMemoryOperationSyncStore from '../../services/mediators/hyperswarm/src/db/memory.ts';
 import {
     bootstrapSyncStoreFromGatekeeper,
@@ -56,6 +61,7 @@ function changesResponse(params: {
     checkpointCursor?: string | null;
     indexEpoch?: string;
     operations?: GatekeeperEvent[];
+    removedOperations?: IndexExportRemovedOperationRecord[];
     didEvents?: GatekeeperEvent[];
     hasMore?: boolean;
 }): IndexExportResponse {
@@ -78,6 +84,7 @@ function changesResponse(params: {
                 operationHash: event.operation?.signature?.hash,
             })),
         }),
+        ...(params.removedOperations && { removedOperations: params.removedOperations }),
     };
 }
 
@@ -228,6 +235,42 @@ describe('bootstrapSyncStoreFromGatekeeper', () => {
         }]);
         expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor)).toBe('13');
         expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.gatekeeperIndexEpoch)).toBe('epoch-a');
+    });
+
+    it('deletes operations exported by incremental Gatekeeper changes', async () => {
+        const store = new InMemoryOperationSyncStore();
+        await store.start();
+        const operation = makeOperation('a', '2026-02-10T10:00:00.000Z');
+        await store.upsertMany([{
+            id: h('a'),
+            signedTs: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            operation,
+        }]);
+        await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotComplete, 'true');
+        await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor, '12');
+
+        const gatekeeper = {
+            exportIndex: jest.fn(async () => changesResponse({
+                cursor: '13',
+                operations: [],
+                removedOperations: [{
+                    seq: 13,
+                    did: 'did:test:a',
+                    operationHash: h('a'),
+                }],
+            })),
+        };
+
+        const result = await bootstrapSyncStoreFromGatekeeper(store, gatekeeper);
+
+        expect(result).toMatchObject({
+            exported: 1,
+            mapped: 1,
+            deleted: 1,
+            countAfter: 0,
+        });
+        expect(await store.has(h('a'))).toBe(false);
+        expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor)).toBe('13');
     });
 
     it('resets the sync store when the local gatekeeper index epoch changes', async () => {
@@ -585,6 +628,7 @@ describe('bootstrapSyncStoreFromGatekeeper', () => {
             .rejects
             .toThrow('persist failed');
         expect(store.applySyncPage).toHaveBeenCalledWith({
+            deleteIds: [],
             records: [expect.objectContaining({
                 id: h('a'),
                 syncOrder: 1,

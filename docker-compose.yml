@@ -62,6 +62,7 @@ services:
       context: .
       dockerfile: Dockerfile.gatekeeper
     image: keychainmdip/gatekeeper
+    stop_grace_period: 60s
     environment:
       - KC_GATEKEEPER_PORT=4224
       - KC_GATEKEEPER_DB=${KC_GATEKEEPER_DB}

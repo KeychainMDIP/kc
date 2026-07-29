@@ -14,6 +14,12 @@ describe('database readiness checks', () => {
         const db = new DbJsonMemory('health-json-memory');
 
         await expect(db.isReady()).resolves.toBe(true);
+        const loadDb = jest.spyOn(db as any, 'loadDb')
+            .mockImplementationOnce(() => {
+                throw new Error('json read failed');
+            });
+        await expect(db.getEvents('did:test:missing')).rejects.toThrow('json read failed');
+        loadDb.mockRestore();
     });
 
     it('reports SQLite readiness from the open handle', async () => {
@@ -24,6 +30,10 @@ describe('database readiness checks', () => {
             await expect(db.isReady()).resolves.toBe(false);
             await db.start();
             await expect(db.isReady()).resolves.toBe(true);
+            const get = jest.spyOn((db as any).db, 'get')
+                .mockRejectedValueOnce(new Error('sqlite read failed'));
+            await expect(db.getEvents('did:test:missing')).rejects.toThrow('sqlite read failed');
+            get.mockRestore();
             await db.stop();
             await expect(db.isReady()).resolves.toBe(false);
         }
@@ -85,6 +95,7 @@ describe('database readiness checks', () => {
 
         query.mockRejectedValue(new Error('postgres down'));
         await expect(db.isReady()).resolves.toBe(false);
+        await expect(db.getEvents('did:test:missing')).rejects.toThrow('postgres down');
     });
 
     it('bounds health checks with a timeout', async () => {

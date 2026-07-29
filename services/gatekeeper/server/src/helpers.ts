@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
+import type { Server } from 'http';
 import { BlockList, isIP } from 'net';
 
 import type { GatekeeperDb, IndexExportRequest, IndexExportResponse } from '@mdip/gatekeeper/types';
@@ -48,6 +49,26 @@ export const rateLimitWindowUnits = {
     minute: 60 * 1000,
     hour: 60 * 60 * 1000,
 } as const;
+
+export async function drainServer(
+    server: Server,
+    activeWork: Set<Promise<unknown>>,
+): Promise<void> {
+    const close = new Promise<void>((resolve, reject) => {
+        server.close(error => error ? reject(error) : resolve());
+    });
+    const [closeResult] = await Promise.allSettled([close]);
+
+    while (activeWork.size > 0) {
+        const work = [...activeWork];
+        await Promise.allSettled(work);
+        work.forEach(task => activeWork.delete(task));
+    }
+
+    if (closeResult.status === 'rejected') {
+        throw closeResult.reason;
+    }
+}
 
 export function logRequest(req: Request, res: Response, next: NextFunction): void {
     const startTime = process.hrtime.bigint();

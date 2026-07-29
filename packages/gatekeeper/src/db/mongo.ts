@@ -407,13 +407,15 @@ export default class DbMongo implements GatekeeperDb {
         const id = this.splitSuffix(did);
 
         return this.withTransaction(async session => {
+            const row = await this.db!.collection<DidsDoc>('dids').findOne({ id }, { session });
             const result = await this.db!.collection('dids').deleteOne({ id }, { session });
             if ((result.deletedCount ?? 0) > 0) {
-                await this.recordIndexChange({
-                    kind: 'did',
-                    did,
-                    removed: true,
-                }, session);
+                if (!row || row.events.length === 0) {
+                    await this.recordIndexChange({ kind: 'did', did, removed: true }, session);
+                }
+                for (const event of row?.events ?? []) {
+                    await this.recordIndexChange({ kind: 'did', did, event, removed: true }, session);
+                }
             }
             return result.deletedCount ?? 0
         });

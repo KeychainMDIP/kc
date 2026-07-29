@@ -101,14 +101,10 @@ export abstract class AbstractJson implements GatekeeperDb {
     }
 
     async getEvents(did: string): Promise<GatekeeperEvent[]> {
-        try {
-            const db = this.loadDb();
-            const suffix = this.splitSuffix(did);
-            const updates = db.dids[suffix] || [];
-            return JSON.parse(JSON.stringify(updates));
-        } catch {
-            return [];
-        }
+        const db = this.loadDb();
+        const suffix = this.splitSuffix(did);
+        const updates = db.dids[suffix] || [];
+        return JSON.parse(JSON.stringify(updates));
     }
 
     async setEvents(did: string, events: GatekeeperEvent[], options?: SetEventsOptions): Promise<void> {
@@ -139,9 +135,15 @@ export abstract class AbstractJson implements GatekeeperDb {
         const suffix = this.splitSuffix(did);
         return this.runExclusive(async () => {
             const db = this.loadDb();
-            if (db.dids[suffix]) {
+            const events = db.dids[suffix];
+            if (events) {
                 delete db.dids[suffix];
-                this.recordIndexChange(db, { kind: 'did', did, removed: true });
+                if (events.length === 0) {
+                    this.recordIndexChange(db, { kind: 'did', did, removed: true });
+                }
+                for (const event of events) {
+                    this.recordIndexChange(db, { kind: 'did', did, event, removed: true });
+                }
                 this.writeDb(db);
             }
         });

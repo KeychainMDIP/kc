@@ -3,6 +3,7 @@ import {
     IndexChangeRecord,
     IndexExportDIDRecord,
     IndexExportOperationRecord,
+    IndexExportRemovedOperationRecord,
     IndexExportResponse,
     IndexExportChangesOptions,
     IndexExportSnapshotOptions,
@@ -157,13 +158,25 @@ export async function buildIndexChangesResponse(
         : afterSeq.toString();
     const operations: IndexExportOperationRecord[] | undefined = options.includeOperations
         ? changes
-            .filter(change => change.kind === 'did' && change.did && change.event)
+            .filter(change => change.kind === 'did' && change.did && change.event && !change.removed)
             .map(change => ({
                 seq: change.seq,
                 did: change.did!,
                 event: change.event!,
                 operationHash: getOperationHash(change.event!),
             }))
+        : undefined;
+    const removedOperations: IndexExportRemovedOperationRecord[] | undefined = options.includeOperations
+        ? changes.flatMap(change => {
+            const operationHash = change.event && getOperationHash(change.event);
+            return change.kind === 'did' && change.did && change.removed && operationHash
+                ? [{
+                    seq: change.seq,
+                    did: change.did,
+                    operationHash: operationHash.toLowerCase(),
+                }]
+                : [];
+        })
         : undefined;
     const didChanges = new Map<string, IndexChangeRecord>();
     const blockChanges = new Map<string, IndexChangeRecord>();
@@ -217,6 +230,9 @@ export async function buildIndexChangesResponse(
 
     if (operations) {
         response.operations = operations;
+        if (removedOperations && removedOperations.length > 0) {
+            response.removedOperations = removedOperations;
+        }
     }
 
     return response;

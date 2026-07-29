@@ -1130,6 +1130,13 @@
                           "items": {
                             "type": "object"
                           }
+                        },
+                        "removedOperations": {
+                          "type": "array",
+                          "description": "Optional ordered operation removals. Returned only when includeOperations is true.",
+                          "items": {
+                            "type": "object"
+                          }
                         }
                       }
                     }
@@ -1978,6 +1985,13 @@
                           "description": "Lower-case signature hashes of events accepted during this processing run (added or merged).",
                           "items": {
                             "type": "string"
+                          }
+                        },
+                        "rejectedOperations": {
+                          "type": "array",
+                          "description": "Operations rejected during this processing run.",
+                          "items": {
+                            "type": "object"
                           }
                         }
                       }

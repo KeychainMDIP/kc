@@ -5,6 +5,7 @@ export interface RepairSchedulingInput {
     hasActiveSession: boolean;
     orderedCatchupActive?: boolean;
     importQueueLength: number;
+    importQueueRunning?: number;
     activeNegentropySessions: number;
     lastAttemptAtMs: number;
     nowMs: number;
@@ -136,7 +137,7 @@ export function shouldSchedulePeriodicRepair(input: RepairSchedulingInput): bool
         return false;
     }
 
-    if (input.importQueueLength > 0) {
+    if (input.importQueueLength > 0 || (input.importQueueRunning ?? 0) > 0) {
         return false;
     }
 

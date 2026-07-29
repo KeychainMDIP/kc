@@ -133,6 +133,7 @@ describe('negentropy sync policy', () => {
         expect(shouldSchedulePeriodicRepair({ ...base, isInitiator: false })).toBe(false);
         expect(shouldSchedulePeriodicRepair({ ...base, hasActiveSession: true })).toBe(false);
         expect(shouldSchedulePeriodicRepair({ ...base, importQueueLength: 1 })).toBe(false);
+        expect(shouldSchedulePeriodicRepair({ ...base, importQueueRunning: 1 })).toBe(false);
         expect(shouldSchedulePeriodicRepair({ ...base, activeNegentropySessions: 1 })).toBe(false);
         expect(shouldSchedulePeriodicRepair({ ...base, syncMode: 'legacy' })).toBe(false);
         expect(shouldSchedulePeriodicRepair({ ...base, syncCompleted: true })).toBe(false);

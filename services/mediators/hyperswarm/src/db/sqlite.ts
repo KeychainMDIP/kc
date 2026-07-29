@@ -116,6 +116,20 @@ export default class SqliteOperationSyncStore implements OperationSyncStore {
         });
     }
 
+    async deleteBySyncOrder(syncOrder: number): Promise<number> {
+        if (!this.db) {
+            throw new Error(SQLITE_NOT_STARTED_ERROR);
+        }
+
+        return this.runExclusive(async () => {
+            const result = await this.db!.run(
+                'DELETE FROM operations WHERE sync_order = ?',
+                syncOrder,
+            );
+            return result.changes ?? 0;
+        });
+    }
+
     async upsertMany(records: SyncOperationWriteRecord[]): Promise<SyncStoreWriteResult> {
         if (!this.db) {
             throw new Error(SQLITE_NOT_STARTED_ERROR);
@@ -143,11 +157,12 @@ export default class SqliteOperationSyncStore implements OperationSyncStore {
         return this.runExclusive(async () => {
             try {
                 return await this.withTx(async () => {
+                    const deleted = await this.deleteRecordsInTx(page.deleteIds ?? []);
                     const result = await this.insertRecordsInTx(page.records);
                     for (const [key, value] of Object.entries(page.syncStateUpdates ?? {})) {
                         await this.saveSyncStateInTx(key, value);
                     }
-                    return result;
+                    return { ...result, deleted };
                 });
             } catch (error) {
                 log.error({ error }, 'applySyncPage failed');
@@ -355,6 +370,23 @@ export default class SqliteOperationSyncStore implements OperationSyncStore {
         }
 
         return { inserted, updated };
+    }
+
+    private async deleteRecordsInTx(ids: string[]): Promise<number> {
+        const uniqueIds = Array.from(new Set(ids));
+        let deleted = 0;
+
+        for (let i = 0; i < uniqueIds.length; i += 1000) {
+            const chunk = uniqueIds.slice(i, i + 1000);
+            const placeholders = chunk.map(() => '?').join(', ');
+            const result = await this.db!.run(
+                `DELETE FROM operations WHERE id IN (${placeholders})`,
+                ...chunk,
+            );
+            deleted += result.changes ?? 0;
+        }
+
+        return deleted;
     }
 
     private async saveSyncStateInTx(key: string, value: string | null): Promise<void> {

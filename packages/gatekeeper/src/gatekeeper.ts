@@ -354,6 +354,15 @@ export default class Gatekeeper implements GatekeeperInterface {
         return true;
     }
 
+    private verifySignature(msgHash: string, value: string, publicJwk: NonNullable<Operation['publicJwk']>): boolean {
+        try {
+            return this.cipher.verifySig(msgHash, value, publicJwk);
+        }
+        catch {
+            return false;
+        }
+    }
+
     async verifyCreateOperation(operation: Operation): Promise<boolean> {
         if (!operation) {
             throw new InvalidOperationError('missing');
@@ -405,7 +414,7 @@ export default class Gatekeeper implements GatekeeperInterface {
             delete operationCopy.signature;
 
             const msgHash = this.cipher.hashJSON(operationCopy);
-            return this.cipher.verifySig(msgHash, operation.signature!.value, operation.publicJwk);
+            return this.verifySignature(msgHash, operation.signature!.value, operation.publicJwk);
         }
 
         if (operation.mdip.type === 'asset') {
@@ -438,7 +447,7 @@ export default class Gatekeeper implements GatekeeperInterface {
             }
             // TBD select the right key here, not just the first one
             const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-            return this.cipher.verifySig(msgHash, operation.signature!.value, publicJwk);
+            return this.verifySignature(msgHash, operation.signature!.value, publicJwk);
         }
 
         throw new InvalidOperationError(`mdip.type=${operation.mdip.type}`);
@@ -490,7 +499,7 @@ export default class Gatekeeper implements GatekeeperInterface {
 
         // TBD get the right signature, not just the first one
         const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
-        return this.cipher.verifySig(msgHash, signature.value, publicJwk);
+        return this.verifySignature(msgHash, signature.value, publicJwk);
     }
 
     async queueOperation(registry: string, operation: Operation) {
@@ -800,58 +809,65 @@ export default class Gatekeeper implements GatekeeperInterface {
                 // Could be an event with a controller DID that hasn't been imported yet
                 return ImportStatus.DEFERRED;
             }
+            throw error;
         }
-
-        return ImportStatus.REJECTED;
     }
 
     async importEvents(): Promise<ImportEventsResult> {
-        let tempQueue = this.eventsQueue;
-        const total = tempQueue.length;
-        let event = tempQueue.shift();
+        const passQueue = this.eventsQueue;
+        const passEvents = new Set(passQueue);
+        const total = passQueue.length;
         let i = 0;
         let added = 0;
         let merged = 0;
         let rejected = 0;
         const acceptedHashes: string[] = [];
         const acceptedEvents: GatekeeperEvent[] = [];
+        const rejectedOperations: Operation[] = [];
 
         this.eventsQueue = [];
 
-        while (event) {
-            i += 1;
+        try {
+            for (const event of passQueue) {
+                i += 1;
 
-            const status = await this.importEvent(event);
+                const status = await this.importEvent(event);
 
-            if (status === ImportStatus.ADDED) {
-                added += 1;
-                if (event.operation.signature?.hash) {
-                    acceptedHashes.push(event.operation.signature.hash.toLowerCase());
+                if (status === ImportStatus.ADDED) {
+                    added += 1;
+                    if (event.operation.signature?.hash) {
+                        acceptedHashes.push(event.operation.signature.hash.toLowerCase());
+                    }
+                    acceptedEvents.push(event);
+                    this.log.debug(`import ${i}/${total}: added event for ${event.did}`);
                 }
-                acceptedEvents.push(event);
-                this.log.debug(`import ${i}/${total}: added event for ${event.did}`);
-            }
-            else if (status === ImportStatus.MERGED) {
-                merged += 1;
-                if (event.operation.signature?.hash) {
-                    acceptedHashes.push(event.operation.signature.hash.toLowerCase());
+                else if (status === ImportStatus.MERGED) {
+                    merged += 1;
+                    if (event.operation.signature?.hash) {
+                        acceptedHashes.push(event.operation.signature.hash.toLowerCase());
+                    }
+                    acceptedEvents.push(event);
+                    this.log.debug(`import ${i}/${total}: merged event for ${event.did}`);
                 }
-                acceptedEvents.push(event);
-                this.log.debug(`import ${i}/${total}: merged event for ${event.did}`);
+                else if (status === ImportStatus.REJECTED) {
+                    rejected += 1;
+                    rejectedOperations.push(event.operation);
+                    delete this.eventsSeen[`${event.registry}/${event.operation.signature?.hash}`];
+                    this.log.debug(`import ${i}/${total}: rejected event for ${event.did}`);
+                }
+                else if (status === ImportStatus.DEFERRED) {
+                    this.eventsQueue.push(event);
+                    this.log.debug(`import ${i}/${total}: deferred event for ${event.did}`);
+                }
             }
-            else if (status === ImportStatus.REJECTED) {
-                rejected += 1;
-                this.log.debug(`import ${i}/${total}: rejected event for ${event.did}`);
-            }
-            else if (status === ImportStatus.DEFERRED) {
-                this.eventsQueue.push(event);
-                this.log.debug(`import ${i}/${total}: deferred event for ${event.did}`);
-            }
-
-            event = tempQueue.shift();
+        }
+        catch (error) {
+            const concurrentlyQueued = this.eventsQueue.filter(event => !passEvents.has(event));
+            this.eventsQueue = [...passQueue, ...concurrentlyQueued];
+            throw error;
         }
 
-        return { added, merged, rejected, acceptedHashes, acceptedEvents };
+        return { added, merged, rejected, acceptedHashes, acceptedEvents, rejectedOperations };
     }
 
     async processEvents(): Promise<ProcessEventsResult> {
@@ -865,11 +881,20 @@ export default class Gatekeeper implements GatekeeperInterface {
         let done = false;
         const acceptedHashes = new Set<string>();
         const acceptedEventsByHash = new Map<string, GatekeeperEvent>();
+        const rejectedOperations: Operation[] = [];
+        const attemptedEvents: GatekeeperEvent[] = [];
+        const attemptedEventSet = new Set<GatekeeperEvent>();
 
         try {
             this.isProcessingEvents = true;
 
             while (!done) {
+                for (const event of this.eventsQueue) {
+                    if (!attemptedEventSet.has(event)) {
+                        attemptedEventSet.add(event);
+                        attemptedEvents.push(event);
+                    }
+                }
                 const response = await this.importEvents();
 
                 added += response.added;
@@ -884,13 +909,18 @@ export default class Gatekeeper implements GatekeeperInterface {
                         acceptedEventsByHash.set(hash, event);
                     }
                 }
+                rejectedOperations.push(...(response.rejectedOperations ?? []));
 
                 done = (response.added === 0 && response.merged === 0);
             }
         }
         catch (error) {
+            if (attemptedEvents.length > 0) {
+                const concurrentlyQueued = this.eventsQueue.filter(event => !attemptedEventSet.has(event));
+                this.eventsQueue = [...attemptedEvents, ...concurrentlyQueued];
+            }
             this.log.error({ error }, 'processEvents error');
-            this.eventsQueue = [];
+            throw error;
         }
         finally {
             this.isProcessingEvents = false;
@@ -904,12 +934,14 @@ export default class Gatekeeper implements GatekeeperInterface {
             pending,
             acceptedHashes: Array.from(acceptedHashes),
             acceptedEvents: Array.from(acceptedEventsByHash.values()),
+            ...(rejectedOperations.length > 0 && { rejectedOperations }),
         };
 
-        const { acceptedEvents, ...logResponseBase } = response;
+        const { acceptedEvents, rejectedOperations: rejectedOperationList, ...logResponseBase } = response;
         const logResponse = {
             ...logResponseBase,
             acceptedEventsCount: acceptedEvents.length,
+            rejectedOperationsCount: rejectedOperationList?.length ?? 0,
         };
         this.log.debug(`processEvents: ${JSON.stringify(logResponse)}`);
 

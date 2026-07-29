@@ -380,12 +380,22 @@ export default class DbRedis implements GatekeeperDb {
             ${this.checkRedisTypesScript(['list', 'string', 'zset', 'zset'])}
             local change = cjson.decode(ARGV[1])
             local id = ARGV[2]
+            local events = redis.call('LRANGE', KEYS[1], 0, -1)
             local removed = redis.call('DEL', KEYS[1])
             redis.call('ZREM', KEYS[4], id)
             if removed > 0 then
-                local seq = redis.call('INCR', KEYS[2])
-                change.seq = seq
-                redis.call('ZADD', KEYS[3], seq, cjson.encode(change))
+                if #events == 0 then
+                    local seq = redis.call('INCR', KEYS[2])
+                    change.seq = seq
+                    redis.call('ZADD', KEYS[3], seq, cjson.encode(change))
+                else
+                    for _, event in ipairs(events) do
+                        local seq = redis.call('INCR', KEYS[2])
+                        change.seq = seq
+                        change.event = cjson.decode(event)
+                        redis.call('ZADD', KEYS[3], seq, cjson.encode(change))
+                    end
+                end
             end
             return removed
         `;

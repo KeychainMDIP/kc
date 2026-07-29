@@ -8,6 +8,7 @@ import { EventEmitter } from 'events';
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import KeymasterClient from '@mdip/keymaster/client';
 import KuboClient from '@mdip/ipfs/kubo';
+import { generateCID } from '@mdip/ipfs/utils';
 import { GatekeeperEvent, Operation } from '@mdip/gatekeeper/types';
 import CipherNode from '@mdip/cipher/node';
 import { childLogger } from '@mdip/common/logger';
@@ -15,13 +16,12 @@ import config from './config.js';
 import type {
     OperationSyncStore,
     SyncOperationRecord,
+    SyncOperationWriteRecord,
     SyncStoreCursor,
-    SyncStoreOrderedCursor,
 } from './db/types.js';
 import SqliteOperationSyncStore from './db/sqlite.js';
 import PostgresOperationSyncStore from './db/postgres.js';
 import NegentropyAdapter, {
-    NegentropyWindowEngine,
     type NegentropyWindowSnapshot,
     type NegentropyWindowStats,
     type ReconciliationWindow,
@@ -32,13 +32,11 @@ import {
     chooseConnectSyncMode,
     decodeNegentropyFrame,
     encodeNegentropyFrame,
-    extractOperationHashes,
     normalizeNegentropyIds,
     normalizePeerCapabilities,
+    parseRemoteWindow,
     supportsPeerNegentropy,
     type ConnectSyncModeReason,
-    type NegentropyFrame,
-    type NegotiatedPeerCapabilities,
     type PeerCapabilities,
     type SyncMode,
 } from './negentropy/protocol.js';
@@ -53,11 +51,7 @@ import {
 } from './negentropy/policy.js';
 import {
     addAggregateSample,
-    averageAggregate,
     collectQueueDelaySamples,
-    createAggregateMetric,
-    safeRate,
-    type AggregateMetric,
 } from './negentropy/observability.js';
 import {
     collectNewIds,
@@ -76,13 +70,21 @@ import {
     buildInitialHistoryWindow,
     buildNextHistoryPage,
     buildRoundCapSplitWindow,
+    cloneCursor,
+    cloneWindowSnapshot,
+    cloneWindowStats,
+    makeWindowId,
     MDIP_EPOCH_SECONDS,
+    windowLabel,
 } from './negentropy/windows.js';
 import { bootstrapSyncStoreFromGatekeeper, type BootstrapResult } from './bootstrap.js';
 import {
+    dedupeOperationsByHash,
     filterKnownOperations,
-    filterIndexRejectedOperations,
+    hasContentVerifiedOperationId,
     mapAcceptedOperationsToSyncRecords,
+    partitionImportBatchOperations,
+    prunePersistedSyncRecords,
 } from './sync-persistence.js';
 import { resolveAcceptedOperationsToPersist } from './sync-store-mirroring.js';
 import {
@@ -91,8 +93,12 @@ import {
 import {
     getExpectedOrderedCatchupRequestDecision,
     getOrderedCatchupDecision,
+    getOrderedCursorFromRow,
+    isOrderedCursorAfter,
+    parseOrderedCatchupCursor,
 } from './ordered-catchup.js';
 import {
+    classifyPendingBuffer,
     DEFAULT_MAX_FRAMED_MESSAGE_BYTES,
     decodeFramedMessages,
     decodeLegacyJsonMessages,
@@ -100,285 +106,57 @@ import {
     encodeFramedMessage,
     supportsLegacyRawTransportMessage,
 } from './transport-framing.js';
+import type {
+    BatchMessage,
+    HyperMessage,
+    HyperMessageBase,
+    NativeNegentropyFrame,
+    NegCloseMessage,
+    NegentropyRoundOutcome,
+    NegMsgMessage,
+    NegOpenMessage,
+    OpsPushMessage,
+    OrderedCatchupDoneMessage,
+    OrderedCatchupPushMessage,
+    OrderedCatchupReqMessage,
+    OpsReqMessage,
+    PingMessage,
+} from './protocol-messages.js';
+import {
+    createConnectionInfo,
+    createPeerSyncSessionState,
+    type ConnectionInfo,
+    type DeferredLegacyInboundTask,
+    type ExportQueueTask,
+    type ImportQueueResult,
+    type ImportQueueTask,
+    type MalformedPeerState,
+    type MediatorMainOptions,
+    type NodeInfo,
+    type PeerSessionMode,
+    type PeerSyncSession,
+} from './mediator-state.js';
+import {
+    buildSyncStatsSnapshot,
+    createMediatorSyncStats,
+} from './sync-stats.js';
 import { exit } from 'process';
 import path from 'path';
 import { pathToFileURL } from 'url';
 
 const log = childLogger({ service: 'hyperswarm-mediator' });
 
-interface HyperMessageBase {
-    type: string;
-    time: string;
-    node: string;
-    relays: string[];
-}
-
-interface PingMessage extends HyperMessageBase {
-    type: 'ping';
-    peers: string[];
-    capabilities?: PeerCapabilities;
-    transportFramingVersion?: number;
-}
-
-interface BatchMessage extends HyperMessageBase {
-    type: 'batch' | 'queue';
-    data: Operation[];
-}
-
-interface SyncMessage extends HyperMessageBase {
-    type: 'sync';
-}
-
-type NativeNegentropyFrame = string | Uint8Array;
-
-interface NegentropyRoundOutcome {
-    nextMsg: NativeNegentropyFrame | null;
-    haveIds: string[];
-    needIds: string[];
-}
-
-interface NegOpenMessage extends HyperMessageBase {
-    type: 'neg_open';
-    sessionId: string;
-    windowId: string;
-    window: {
-        name: string;
-        fromTs: number;
-        toTs: number;
-        maxRecords: number;
-        order: number;
-        after?: {
-            ts: number;
-            id: string;
-        };
-    };
-    round: number;
-    frame: NegentropyFrame;
-}
-
-interface NegMsgMessage extends HyperMessageBase {
-    type: 'neg_msg';
-    sessionId: string;
-    windowId: string;
-    round: number;
-    frame: NegentropyFrame;
-    windowProgress?: {
-        cappedByRecords: boolean;
-        lastCursor?: {
-            ts: number;
-            id: string;
-        };
-    };
-}
-
-interface NegCloseMessage extends HyperMessageBase {
-    type: 'neg_close';
-    sessionId: string;
-    windowId: string;
-    round: number;
-    reason?: string;
-    windowProgress?: {
-        cappedByRecords: boolean;
-        lastCursor?: {
-            ts: number;
-            id: string;
-        };
-    };
-}
-
-interface OpsReqMessage extends HyperMessageBase {
-    type: 'ops_req';
-    sessionId: string;
-    windowId: string;
-    round: number;
-    ids: string[];
-}
-
-interface OpsPushMessage extends HyperMessageBase {
-    type: 'ops_push';
-    sessionId: string;
-    windowId: string;
-    round: number;
-    data: Operation[];
-}
-
-interface OrderedCatchupReqMessage extends HyperMessageBase {
-    type: 'ordered_catchup_req';
-    sessionId: string;
-    cursor?: SyncStoreOrderedCursor;
-}
-
-interface OrderedCatchupPushMessage extends HyperMessageBase {
-    type: 'ordered_catchup_push';
-    sessionId: string;
-    cursor?: SyncStoreOrderedCursor;
-    hasMore: boolean;
-    data: Operation[];
-}
-
-interface OrderedCatchupDoneMessage extends HyperMessageBase {
-    type: 'ordered_catchup_done';
-    sessionId: string;
-}
-
-type HyperMessage =
-    | BatchMessage
-    | SyncMessage
-    | PingMessage
-    | NegOpenMessage
-    | NegMsgMessage
-    | NegCloseMessage
-    | OpsReqMessage
-    | OpsPushMessage
-    | OrderedCatchupReqMessage
-    | OrderedCatchupPushMessage
-    | OrderedCatchupDoneMessage;
-
-interface ImportQueueTask {
-    name: string;
-    msg: BatchMessage;
-}
-
-interface ExportQueueTask {
-    name: string;
-    msg: SyncMessage;
-    conn: HyperswarmConnection;
-}
-
-interface DeferredLegacyInboundTask extends ExportQueueTask {}
-
-interface NodeInfo {
-    name: string;
-    ipfs: any;
-}
-
-interface ConnectionInfo {
-    connection: HyperswarmConnection;
-    key: string;
-    peerName: string;
-    nodeName: string;
-    did: string;
-    connectedAt: number;
-    lastSeen: number;
-    capabilities: NegotiatedPeerCapabilities;
-    syncMode: SyncMode | 'unknown';
-    syncStarted: boolean;
-    lastNegentropyAttemptAt: number;
-    negentropySynced: boolean;
-    legacyOutboundDeferred: boolean;
-    legacyInboundDeferred: DeferredLegacyInboundTask | null;
-    legacyFallbackNoted: boolean;
-    orderedCatchupAttempted: boolean;
-    orderedCatchupClientSessionId: string | null;
-    orderedCatchupServerSessionId: string | null;
-    orderedCatchupServerLastActivity: number;
-    orderedCatchupServerPendingSince: number;
-    orderedCatchupServerPendingUntil: number;
-    orderedCatchupServerPendingReason: string | null;
-    orderedCatchupServerPendingGap: number;
-    initialPingSent: boolean;
-    transportMode: 'unknown' | 'legacy' | 'framed';
-    inboundTransportMode: 'unknown' | 'legacy' | 'framed';
-    peerTransportFramingVersion: number | null;
-    inboundBuffer: Buffer;
-    inboundReceiveChain: Promise<void>;
-}
-
-interface MalformedPeerState {
-    strikes: number;
-    firstSeenAt: number;
-    lastSeenAt: number;
-    cooldownUntil: number;
-    lastReason: string;
-    rejectedConnections: number;
-    lastRejectLogAt: number;
-}
-
-type PeerSessionMode = SyncMode | 'ordered_catchup';
-
-interface PeerSyncSession {
-    sessionId: string;
-    peerKey: string;
-    mode: PeerSessionMode;
-    initiator: boolean;
-    windows: ReconciliationWindow[];
-    windowIndex: number;
-    windowId: string | null;
-    currentWindowStats: NegentropyWindowStats | null;
-    currentWindowSnapshot: NegentropyWindowSnapshot | null;
-    currentWindowEngine: NegentropyWindowEngine | null;
-    startedAt: number;
-    lastActivity: number;
-    pendingHaveIds: Set<string>;
-    pendingNeedIds: Set<string>;
-    rounds: number;
-    maxRounds: number;
-    reconciliationComplete: boolean;
-    localClosed: boolean;
-    receivedPushIds: Set<string>;
-    receivedKnownPushIds: Set<string>;
-    receivedPushMaxCursor: SyncStoreCursor | null;
-    remoteWindowCappedByRecords: boolean;
-    remoteWindowLastCursor: SyncStoreCursor | null;
-    orderedCatchupCursor: SyncStoreOrderedCursor | null;
-}
-
-interface MediatorSyncStats {
-    modeSelectionsTotal: number;
-    modeSelectionsLegacy: number;
-    modeSelectionsNegentropy: number;
-    modeSelectionsLegacyMissingCapabilities: number;
-    modeSelectionsLegacyNegentropyDisabled: number;
-    modeSelectionsLegacyVersionMismatch: number;
-    modeSelectionsLegacyTransportFramingUnsupported: number;
-    modeSelectionsNoModeLegacyDisabled: number;
-    modeSelectionsNoModeMissingCapabilities: number;
-    modeSelectionsNoModeNegentropyDisabled: number;
-    modeSelectionsNoModeVersionMismatch: number;
-    modeSelectionsNoModeTransportFramingUnsupported: number;
-    queueOpsRelayed: number;
-    queueOpsImported: number;
-    queueDelayMs: AggregateMetric;
-    legacyOutboundDeferred: number;
-    legacyInboundDeferred: number;
-    legacyDeferredReleased: number;
-    legacyFallbackUsed: number;
-    negentropySessionsStarted: number;
-    negentropySessionsClosed: number;
-    negentropySessionsCompleted: number;
-    negentropySessionsFailed: number;
-    negentropyRounds: number;
-    negentropyHaveIds: number;
-    negentropyNeedIds: number;
-    negentropyOpsReqSent: number;
-    negentropyOpsReqReceived: number;
-    negentropyOpsPushSent: number;
-    negentropyOpsPushReceived: number;
-    orderedCatchupSessionsStarted: number;
-    orderedCatchupSessionsCompleted: number;
-    orderedCatchupSessionsFailed: number;
-    orderedCatchupPagesSent: number;
-    orderedCatchupPagesReceived: number;
-    orderedCatchupOpsSent: number;
-    orderedCatchupOpsReceived: number;
-    opsApplied: number;
-    opsRejected: number;
-    bytesSent: number;
-    bytesReceived: number;
-    malformedPeerCooldowns: number;
-    malformedPeerConnectionsRejected: number;
-    syncDurationMs: AggregateMetric;
-}
-
-export interface MediatorMainOptions {
-    syncStore?: OperationSyncStore;
-    startLoops?: boolean;
-}
+export type { MediatorMainOptions } from './mediator-state.js';
 
 const gatekeeper = new GatekeeperClient();
 const keymaster = new KeymasterClient();
 const ipfs = new KuboClient();
 const cipher = new CipherNode();
+
+async function generateOperationCid(operation: Operation): Promise<string> {
+    const canonical = cipher.canonicalizeJSON(operation);
+    return generateCID(JSON.parse(canonical));
+}
 
 function createConfiguredSyncStore(): OperationSyncStore {
     if (config.db === 'postgres') {
@@ -389,6 +167,8 @@ function createConfiguredSyncStore(): OperationSyncStore {
 }
 
 let syncStore: OperationSyncStore = createConfiguredSyncStore();
+const pendingSyncRecords = new Map<string, SyncOperationWriteRecord>();
+const terminalOperationCids = new Set<string>();
 let negentropyAdapter: NegentropyAdapter | null = null;
 let adapterChangeSeq = 0;
 let adapterBuiltSeq = -1;
@@ -397,6 +177,12 @@ let adapterBuiltWindowId: string | null = null;
 let adapterBuiltSnapshot: NegentropyWindowSnapshot | null = null;
 let rebuildPromise: Promise<void> | null = null;
 let backgroundPrebuildQueued = false;
+
+function replaceSyncStore(store: OperationSyncStore): void {
+    pendingSyncRecords.clear();
+    terminalOperationCids.clear();
+    syncStore = store;
+}
 
 EventEmitter.defaultMaxListeners = 100;
 
@@ -409,8 +195,11 @@ const MAX_FRAMED_MESSAGE_BYTES = DEFAULT_MAX_FRAMED_MESSAGE_BYTES;
 const NEG_SESSION_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
 const NEG_MAX_IDS_PER_OPS_REQ = 1_000;
 const NEG_MAX_IDS_PER_LOOKUP = 1_000;
-const NEG_MAX_OPS_PER_PUSH = 256;
+const NEG_MAX_OPS_PER_PUSH = 300;
+const MAX_PENDING_SYNC_RECORDS = NEG_MAX_IDS_PER_LOOKUP;
+const TERMINAL_REJECTED_SYNC_ORDER = Number.MAX_SAFE_INTEGER;
 const NEG_MAX_BYTES_PER_PUSH = 512 * 1024;
+const ORDERED_CATCHUP_PREFETCH_BATCHES = 2;
 const NEG_REPAIR_INTERVAL_MS = config.negentropyIntervalSeconds * 1000;
 const NEG_ADAPTER_MAX_AGE_MS = 60 * 1000;
 const LEGACY_CAPABILITY_GRACE_MS = 5 * 1000;
@@ -427,53 +216,9 @@ const addedPeers: Record<string, number> = {};
 const badPeers: Record<string, number> = {};
 const malformedPeers: Record<string, MalformedPeerState> = {};
 const peerSessions = new Map<string, PeerSyncSession>();
-const orderedCatchupPostImportPeers = new Set<string>();
-const syncStats: MediatorSyncStats = {
-    modeSelectionsTotal: 0,
-    modeSelectionsLegacy: 0,
-    modeSelectionsNegentropy: 0,
-    modeSelectionsLegacyMissingCapabilities: 0,
-    modeSelectionsLegacyNegentropyDisabled: 0,
-    modeSelectionsLegacyVersionMismatch: 0,
-    modeSelectionsLegacyTransportFramingUnsupported: 0,
-    modeSelectionsNoModeLegacyDisabled: 0,
-    modeSelectionsNoModeMissingCapabilities: 0,
-    modeSelectionsNoModeNegentropyDisabled: 0,
-    modeSelectionsNoModeVersionMismatch: 0,
-    modeSelectionsNoModeTransportFramingUnsupported: 0,
-    queueOpsRelayed: 0,
-    queueOpsImported: 0,
-    queueDelayMs: createAggregateMetric(),
-    legacyOutboundDeferred: 0,
-    legacyInboundDeferred: 0,
-    legacyDeferredReleased: 0,
-    legacyFallbackUsed: 0,
-    negentropySessionsStarted: 0,
-    negentropySessionsClosed: 0,
-    negentropySessionsCompleted: 0,
-    negentropySessionsFailed: 0,
-    negentropyRounds: 0,
-    negentropyHaveIds: 0,
-    negentropyNeedIds: 0,
-    negentropyOpsReqSent: 0,
-    negentropyOpsReqReceived: 0,
-    negentropyOpsPushSent: 0,
-    negentropyOpsPushReceived: 0,
-    orderedCatchupSessionsStarted: 0,
-    orderedCatchupSessionsCompleted: 0,
-    orderedCatchupSessionsFailed: 0,
-    orderedCatchupPagesSent: 0,
-    orderedCatchupPagesReceived: 0,
-    orderedCatchupOpsSent: 0,
-    orderedCatchupOpsReceived: 0,
-    opsApplied: 0,
-    opsRejected: 0,
-    bytesSent: 0,
-    bytesReceived: 0,
-    malformedPeerCooldowns: 0,
-    malformedPeerConnectionsRejected: 0,
-    syncDurationMs: createAggregateMetric(),
-};
+const orderedCatchupTransitionPeers = new Set<string>();
+let outboundSyncStartInProgress = false;
+const syncStats = createMediatorSyncStats();
 
 let swarm: Hyperswarm | null = null;
 let nodeKey = '';
@@ -662,46 +407,11 @@ function addConnection(conn: HyperswarmConnection): void {
 
     log.info(`received connection from: ${peerName}`);
 
-    connectionInfo[peerKey] = {
+    connectionInfo[peerKey] = createConnectionInfo({
         connection: conn,
-        key: peerKey,
-        peerName: peerName,
-        nodeName: 'anon',
-        did: '',
-        connectedAt: Date.now(),
-        lastSeen: new Date().getTime(),
-        capabilities: {
-            advertised: false,
-            negentropy: false,
-            version: null,
-            orderedCatchup: false,
-            orderedCatchupVersion: null,
-            orderedCatchupReady: false,
-            operationCount: null,
-            orderedOperationCount: null,
-        },
-        syncMode: 'unknown',
-        syncStarted: false,
-        lastNegentropyAttemptAt: 0,
-        negentropySynced: false,
-        legacyOutboundDeferred: false,
-        legacyInboundDeferred: null,
-        legacyFallbackNoted: false,
-        orderedCatchupAttempted: false,
-        orderedCatchupClientSessionId: null,
-        orderedCatchupServerSessionId: null,
-        orderedCatchupServerLastActivity: 0,
-        orderedCatchupServerPendingSince: 0,
-        orderedCatchupServerPendingUntil: 0,
-        orderedCatchupServerPendingReason: null,
-        orderedCatchupServerPendingGap: 0,
-        initialPingSent: false,
-        transportMode: 'unknown',
-        inboundTransportMode: 'unknown',
-        peerTransportFramingVersion: null,
-        inboundBuffer: Buffer.alloc(0),
-        inboundReceiveChain: Promise.resolve(),
-    };
+        peerKey,
+        peerName,
+    });
 
     const peerNames = Object.values(connectionInfo).map(info => info.peerName);
     log.debug(`--- ${peerNames.length} nodes connected, detected nodes: ${peerNames.join(', ')}`);
@@ -823,31 +533,6 @@ function setPeerInboundTransportMode(
     }, 'updated hyperswarm inbound transport mode');
 }
 
-function classifyPendingBuffer(buffer: Buffer): {
-    firstByte: number | null;
-    startsWithJsonObject: boolean;
-    printablePrefix: string;
-} {
-    let offset = 0;
-    while (offset < buffer.length) {
-        const byte = buffer[offset];
-        if (byte !== 0x20 && byte !== 0x09 && byte !== 0x0a && byte !== 0x0d) {
-            break;
-        }
-        offset += 1;
-    }
-
-    const firstByte = offset < buffer.length ? buffer[offset] : null;
-    const prefix = buffer.subarray(offset, Math.min(buffer.length, offset + 32));
-    const printablePrefix = prefix.toString('utf8').replace(/[^\x20-\x7e]/g, '.');
-
-    return {
-        firstByte,
-        startsWithJsonObject: firstByte === 0x7b,
-        printablePrefix,
-    };
-}
-
 async function buildPeerCapabilities(): Promise<PeerCapabilities> {
     if (!config.negentropyEnabled) {
         return {
@@ -951,32 +636,14 @@ function createSessionId(peerKey: string): string {
 
 function createPeerSession(peerKey: string, mode: PeerSessionMode, initiator: boolean, sessionId?: string): PeerSyncSession {
     const now = Date.now();
-    const session: PeerSyncSession = {
+    const session = createPeerSyncSessionState({
         sessionId: sessionId ?? createSessionId(peerKey),
         peerKey,
         mode,
         initiator,
-        windows: [],
-        windowIndex: 0,
-        windowId: null,
-        currentWindowStats: null,
-        currentWindowSnapshot: null,
-        currentWindowEngine: null,
-        startedAt: now,
-        lastActivity: now,
-        pendingHaveIds: new Set<string>(),
-        pendingNeedIds: new Set<string>(),
-        rounds: 0,
         maxRounds: config.negentropyMaxRoundsPerSession,
-        reconciliationComplete: false,
-        localClosed: false,
-        receivedPushIds: new Set<string>(),
-        receivedKnownPushIds: new Set<string>(),
-        receivedPushMaxCursor: null,
-        remoteWindowCappedByRecords: false,
-        remoteWindowLastCursor: null,
-        orderedCatchupCursor: null,
-    };
+        now,
+    });
     peerSessions.set(peerKey, session);
     connectionInfo[peerKey].syncMode = mode === 'ordered_catchup' ? 'negentropy' : mode;
     connectionInfo[peerKey].syncStarted = true;
@@ -1003,11 +670,19 @@ function closePeerSession(peerKey: string, reason: string): void {
         return;
     }
 
+    const retryOnNextPeriodic = session.mode === 'negentropy' && reason === 'ordered_catchup_active';
+    const orderedCatchupHandoffPending = session.mode === 'ordered_catchup'
+        && (reason === 'ordered_catchup_complete' || reason === 'ordered_catchup_done');
+    if (session.mode === 'negentropy') {
+        orderedCatchupTransitionPeers.delete(peerKey);
+    }
     peerSessions.delete(peerKey);
-    addAggregateSample(syncStats.syncDurationMs, Date.now() - session.startedAt);
+    if (!orderedCatchupHandoffPending) {
+        addAggregateSample(syncStats.syncDurationMs, Date.now() - session.startedAt);
+    }
     const conn = connectionInfo[peerKey];
     if (conn && session.mode === 'negentropy') {
-        conn.lastNegentropyAttemptAt = Date.now();
+        conn.lastNegentropyAttemptAt = retryOnNextPeriodic ? 0 : Date.now();
         syncStats.negentropySessionsClosed += 1;
         if (reason === 'complete') {
             conn.negentropySynced = true;
@@ -1018,16 +693,16 @@ function closePeerSession(peerKey: string, reason: string): void {
         }
     } else if (conn && session.mode === 'ordered_catchup') {
         clearOrderedCatchupClientState(peerKey, session.sessionId, reason);
-        if (reason === 'ordered_catchup_complete' || reason === 'ordered_catchup_done') {
-            syncStats.orderedCatchupSessionsCompleted += 1;
-        } else {
+        if (!orderedCatchupHandoffPending) {
             syncStats.orderedCatchupSessionsFailed += 1;
         }
     }
 
     if (session.mode !== 'ordered_catchup') {
         maybeStartBackgroundPrebuild('session_closed');
-        void maybeSchedulePreferredSyncs(`session_closed:${reason}`);
+        if (!retryOnNextPeriodic) {
+            void maybeSchedulePreferredSyncs(`session_closed:${reason}`);
+        }
     }
 
     log.debug({
@@ -1036,6 +711,7 @@ function closePeerSession(peerKey: string, reason: string): void {
         rounds: session.rounds,
         pendingHave: session.pendingHaveIds.size,
         pendingNeed: session.pendingNeedIds.size,
+        unresolvedNeed: session.unresolvedNeedIds.size,
         reason,
     }, 'peer sync session closed');
 }
@@ -1063,7 +739,9 @@ function resetRuntimeSyncStateAfterGatekeeperReset(sync: BootstrapResult): void 
     const connectedPeers = Object.keys(connectionInfo).length;
 
     peerSessions.clear();
-    orderedCatchupPostImportPeers.clear();
+    orderedCatchupTransitionPeers.clear();
+    pendingSyncRecords.clear();
+    terminalOperationCids.clear();
     invalidateNegentropyAdapterCache();
 
     for (const conn of Object.values(connectionInfo)) {
@@ -1367,6 +1045,20 @@ function getActiveNegentropySessions(): number {
     return count;
 }
 
+function hasActiveOutboundOrderedCatchup(): boolean {
+    if (orderedCatchupTransitionPeers.size > 0) {
+        return true;
+    }
+
+    for (const session of peerSessions.values()) {
+        if (session.mode === 'ordered_catchup' && session.initiator) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 function countPendingNegentropyPeers(excludePeerKey?: string): number {
     let count = 0;
     for (const peerKey in connectionInfo) {
@@ -1562,35 +1254,53 @@ async function startNegentropySessionForPeer(
     peerKey: string,
     source: 'connect' | 'periodic' | 'ordered_catchup_complete',
     modeReason: ConnectSyncModeReason | 'ordered_catchup_complete' | null = null,
-): Promise<void> {
+    initiatorOverride?: boolean,
+): Promise<boolean> {
     const conn = connectionInfo[peerKey];
     if (!conn) {
-        return;
+        return false;
     }
 
     clearExpiredOrderedCatchupServerExpectation(peerKey);
     if (hasOrderedCatchupOutboundGuardForPeer(conn)) {
         logNegentropySuppressedByOrderedCatchup(peerKey, source);
-        return;
+        return false;
     }
 
-    const initiator = nodeKey.localeCompare(peerKey) < 0;
+    if (conn.negentropySynced || peerSessions.has(peerKey) || getActiveNegentropySessions() > 0) {
+        return false;
+    }
+
+    const initiator = initiatorOverride ?? nodeKey.localeCompare(peerKey) < 0;
     const session = createPeerSession(peerKey, 'negentropy', initiator);
-    session.windows = [await buildInitialHistoryWindowForSession()];
-    session.windowIndex = 0;
-    log.info(
-        {
-            peer: shortName(peerKey),
-            mode: 'negentropy',
-            modeReason,
-            initiator,
-            sessionId: session.sessionId,
-            source,
-            plannedWindows: session.windows.length,
-        },
-        'peer sync mode selected'
-    );
-    await startNextNegentropyWindow(peerKey, session);
+    try {
+        const initialWindow = await buildInitialHistoryWindowForSession();
+        if (peerSessions.get(peerKey) !== session) {
+            return false;
+        }
+        session.windows = [initialWindow];
+        session.windowIndex = 0;
+        log.info(
+            {
+                peer: shortName(peerKey),
+                mode: 'negentropy',
+                modeReason,
+                initiator,
+                sessionId: session.sessionId,
+                source,
+                plannedWindows: session.windows.length,
+            },
+            'peer sync mode selected'
+        );
+        await startNextNegentropyWindow(peerKey, session);
+        return peerSessions.get(peerKey) === session;
+    }
+    catch (error) {
+        if (peerSessions.get(peerKey) === session) {
+            closePeerSession(peerKey, 'start_negentropy_failed');
+        }
+        throw error;
+    }
 }
 
 async function startOrderedCatchupSessionForPeer(
@@ -1600,6 +1310,15 @@ async function startOrderedCatchupSessionForPeer(
 ): Promise<void> {
     const conn = connectionInfo[peerKey];
     if (!conn) {
+        return;
+    }
+
+    if (conn.negentropySynced
+        || peerSessions.has(peerKey)
+        || getActiveNegentropySessions() > 0
+        || hasActiveOutboundOrderedCatchup()
+        || importQueue.length() > 0
+        || importQueue.running() > 0) {
         return;
     }
 
@@ -1661,6 +1380,15 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
         return;
     }
 
+    if (mode === 'negentropy') {
+        conn.syncMode = 'negentropy';
+    }
+
+    if (mode === 'negentropy' && hasActiveOutboundOrderedCatchup()) {
+        logNegentropySuppressedByOrderedCatchup(peerKey, source);
+        return;
+    }
+
     if (source === 'connect') {
         syncStats.modeSelectionsTotal += 1;
         if (mode === 'legacy') {
@@ -1692,88 +1420,107 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
         return;
     }
 
-    const initiator = nodeKey.localeCompare(peerKey) < 0;
-    const hasActiveSession = peerSessions.has(peerKey);
-    const activeNegentropySessions = getActiveNegentropySessions();
-    clearExpiredOrderedCatchupServerExpectation(peerKey);
-    let orderedCatchupActive = hasOrderedCatchupOutboundGuardForPeer(conn);
-
-    conn.syncMode = 'negentropy';
-    conn.syncStarted = true;
-
-    if (conn.negentropySynced) {
+    if (outboundSyncStartInProgress || importQueue.length() > 0 || importQueue.running() > 0) {
         return;
     }
 
-    const localOperationCount = await syncStore.count();
-    const orderedCatchupDecision = getOrderedCatchupDecision({
-        enabled: config.orderedCatchupEnabled && !conn.orderedCatchupAttempted,
-        localOperationCount,
-        peerCapabilities: conn.capabilities,
-        requiredVersion: ORDERED_CATCHUP_VERSION,
-        threshold: config.orderedCatchupThreshold,
-    });
-    if (orderedCatchupDecision.useOrderedCatchup && !hasActiveSession && activeNegentropySessions === 0) {
-        await startOrderedCatchupSessionForPeer(
-            peerKey,
-            orderedCatchupDecision.reason,
-            orderedCatchupDecision.gap,
-        );
-        return;
-    }
+    outboundSyncStartInProgress = true;
+    try {
+        const initiator = nodeKey.localeCompare(peerKey) < 0;
+        const hasActiveSession = peerSessions.has(peerKey);
+        const activeNegentropySessions = getActiveNegentropySessions();
+        clearExpiredOrderedCatchupServerExpectation(peerKey);
+        let orderedCatchupActive = hasOrderedCatchupOutboundGuardForPeer(conn);
 
-    if (source === 'connect'
-        && initiator
-        && !orderedCatchupActive
-        && !hasActiveSession
-        && activeNegentropySessions === 0) {
-        const localOrderedOperationCount = await syncStore.countOrdered();
-        const expectedOrderedCatchupRequest = getExpectedOrderedCatchupRequestDecision({
-            enabled: config.orderedCatchupEnabled,
+        conn.syncStarted = true;
+
+        if (conn.negentropySynced) {
+            return;
+        }
+
+        const localOperationCount = await syncStore.count();
+        if (connectionInfo[peerKey] !== conn) {
+            return;
+        }
+        const orderedCatchupDecision = getOrderedCatchupDecision({
+            enabled: config.orderedCatchupEnabled && !conn.orderedCatchupAttempted,
             localOperationCount,
-            localOrderedOperationCount,
             peerCapabilities: conn.capabilities,
             requiredVersion: ORDERED_CATCHUP_VERSION,
-            threshold: config.orderedCatchupThreshold,
+            windowSize: config.negentropyMaxRecordsPerWindow,
         });
-
-        if (expectedOrderedCatchupRequest.expectRequest) {
-            setOrderedCatchupServerExpectation(
+        if (orderedCatchupDecision.useOrderedCatchup && !hasActiveSession && activeNegentropySessions === 0) {
+            await startOrderedCatchupSessionForPeer(
                 peerKey,
-                expectedOrderedCatchupRequest.reason,
-                expectedOrderedCatchupRequest.gap,
+                orderedCatchupDecision.reason,
+                orderedCatchupDecision.gap,
             );
-            orderedCatchupActive = hasOrderedCatchupOutboundGuardForPeer(conn);
+            return;
         }
-    }
 
-    const shouldStart = source === 'connect'
-        ? shouldStartConnectTimeNegentropy(mode, hasActiveSession, initiator, orderedCatchupActive)
-        : shouldSchedulePeriodicRepair({
-            syncMode: mode,
-            hasActiveSession,
-            orderedCatchupActive,
-            importQueueLength: importQueue.length(),
-            activeNegentropySessions,
-            lastAttemptAtMs: conn.lastNegentropyAttemptAt,
-            nowMs: Date.now(),
-            repairIntervalMs: NEG_REPAIR_INTERVAL_MS,
-            isInitiator: initiator,
-            syncCompleted: conn.negentropySynced,
-        });
+        if (source === 'connect'
+            && initiator
+            && !orderedCatchupActive
+            && !hasActiveSession
+            && activeNegentropySessions === 0) {
+            const localOrderedOperationCount = await syncStore.countOrdered();
+            if (connectionInfo[peerKey] !== conn) {
+                return;
+            }
+            const expectedOrderedCatchupRequest = getExpectedOrderedCatchupRequestDecision({
+                enabled: config.orderedCatchupEnabled,
+                localOperationCount,
+                localOrderedOperationCount,
+                peerCapabilities: conn.capabilities,
+                requiredVersion: ORDERED_CATCHUP_VERSION,
+                windowSize: config.negentropyMaxRecordsPerWindow,
+            });
 
-    if (!shouldStart) {
-        if (orderedCatchupActive) {
-            logNegentropySuppressedByOrderedCatchup(peerKey, source);
+            if (expectedOrderedCatchupRequest.expectRequest) {
+                setOrderedCatchupServerExpectation(
+                    peerKey,
+                    expectedOrderedCatchupRequest.reason,
+                    expectedOrderedCatchupRequest.gap,
+                );
+                orderedCatchupActive = hasOrderedCatchupOutboundGuardForPeer(conn);
+            }
         }
-        return;
-    }
 
-    if (activeNegentropySessions > 0) {
-        return;
-    }
+        const shouldStart = source === 'connect'
+            ? shouldStartConnectTimeNegentropy(mode, hasActiveSession, initiator, orderedCatchupActive)
+            : shouldSchedulePeriodicRepair({
+                syncMode: mode,
+                hasActiveSession,
+                orderedCatchupActive,
+                importQueueLength: importQueue.length(),
+                importQueueRunning: importQueue.running(),
+                activeNegentropySessions,
+                lastAttemptAtMs: conn.lastNegentropyAttemptAt,
+                nowMs: Date.now(),
+                repairIntervalMs: NEG_REPAIR_INTERVAL_MS,
+                isInitiator: initiator,
+                syncCompleted: conn.negentropySynced,
+            });
 
-    await startNegentropySessionForPeer(peerKey, source, modeReason);
+        if (!shouldStart) {
+            if (orderedCatchupActive) {
+                logNegentropySuppressedByOrderedCatchup(peerKey, source);
+            }
+            return;
+        }
+
+        if (activeNegentropySessions > 0) {
+            return;
+        }
+
+        if (connectionInfo[peerKey] !== conn) {
+            return;
+        }
+        await startNegentropySessionForPeer(peerKey, source, modeReason);
+    }
+    finally {
+        outboundSyncStartInProgress = false;
+    }
 }
 
 async function runPeriodicNegentropyRepair(): Promise<void> {
@@ -1784,85 +1531,6 @@ async function runPeriodicNegentropyRepair(): Promise<void> {
             log.error({ error, peer: shortName(peerKey) }, 'periodic negentropy repair error');
         }
     }
-}
-
-function buildSyncStatsSnapshot(): object {
-    return {
-        modeSelections: {
-            total: syncStats.modeSelectionsTotal,
-            legacy: syncStats.modeSelectionsLegacy,
-            negentropy: syncStats.modeSelectionsNegentropy,
-            fallbackCount: syncStats.modeSelectionsLegacy,
-            fallbackRate: safeRate(syncStats.modeSelectionsLegacy, syncStats.modeSelectionsTotal),
-            legacyReasons: {
-                missingCapabilities: syncStats.modeSelectionsLegacyMissingCapabilities,
-                negentropyDisabled: syncStats.modeSelectionsLegacyNegentropyDisabled,
-                versionMismatch: syncStats.modeSelectionsLegacyVersionMismatch,
-                transportFramingUnsupported: syncStats.modeSelectionsLegacyTransportFramingUnsupported,
-            },
-            noMode: {
-                legacyDisabled: syncStats.modeSelectionsNoModeLegacyDisabled,
-                reasons: {
-                    missingCapabilities: syncStats.modeSelectionsNoModeMissingCapabilities,
-                    negentropyDisabled: syncStats.modeSelectionsNoModeNegentropyDisabled,
-                    versionMismatch: syncStats.modeSelectionsNoModeVersionMismatch,
-                    transportFramingUnsupported: syncStats.modeSelectionsNoModeTransportFramingUnsupported,
-                },
-            },
-        },
-        queue: {
-            relayed: syncStats.queueOpsRelayed,
-            imported: syncStats.queueOpsImported,
-            delayMs: {
-                avg: averageAggregate(syncStats.queueDelayMs),
-                max: syncStats.queueDelayMs.max,
-                samples: syncStats.queueDelayMs.count,
-            },
-            legacy: {
-                outboundDeferred: syncStats.legacyOutboundDeferred,
-                inboundDeferred: syncStats.legacyInboundDeferred,
-                deferredReleased: syncStats.legacyDeferredReleased,
-                fallbackUsed: syncStats.legacyFallbackUsed,
-            },
-        },
-        negentropy: {
-            sessionsStarted: syncStats.negentropySessionsStarted,
-            sessionsClosed: syncStats.negentropySessionsClosed,
-            sessionsCompleted: syncStats.negentropySessionsCompleted,
-            sessionsFailed: syncStats.negentropySessionsFailed,
-            rounds: syncStats.negentropyRounds,
-            haveIds: syncStats.negentropyHaveIds,
-            needIds: syncStats.negentropyNeedIds,
-            opsRequested: syncStats.negentropyOpsReqSent,
-            opsRequestedReceived: syncStats.negentropyOpsReqReceived,
-            opsPushed: syncStats.negentropyOpsPushSent,
-            opsPushedReceived: syncStats.negentropyOpsPushReceived,
-        },
-        orderedCatchup: {
-            sessionsStarted: syncStats.orderedCatchupSessionsStarted,
-            sessionsCompleted: syncStats.orderedCatchupSessionsCompleted,
-            sessionsFailed: syncStats.orderedCatchupSessionsFailed,
-            pagesSent: syncStats.orderedCatchupPagesSent,
-            pagesReceived: syncStats.orderedCatchupPagesReceived,
-            opsSent: syncStats.orderedCatchupOpsSent,
-            opsReceived: syncStats.orderedCatchupOpsReceived,
-        },
-        gatekeeper: {
-            opsApplied: syncStats.opsApplied,
-            opsRejected: syncStats.opsRejected,
-        },
-        transport: {
-            bytesSent: syncStats.bytesSent,
-            bytesReceived: syncStats.bytesReceived,
-            malformedPeerCooldowns: syncStats.malformedPeerCooldowns,
-            malformedPeerConnectionsRejected: syncStats.malformedPeerConnectionsRejected,
-        },
-        syncDurationMs: {
-            avg: averageAggregate(syncStats.syncDurationMs),
-            max: syncStats.syncDurationMs.max,
-            sessions: syncStats.syncDurationMs.count,
-        },
-    };
 }
 
 function isNegentropyAdapterDirty(): boolean {
@@ -1883,57 +1551,8 @@ function invalidateNegentropyAdapterCache(): void {
     backgroundPrebuildQueued = false;
 }
 
-function cloneCursor(cursor?: SyncStoreCursor | null): SyncStoreCursor | null {
-    if (!cursor) {
-        return null;
-    }
-
-    return {
-        ts: cursor.ts,
-        id: cursor.id,
-    };
-}
-
-function cloneWindowStats(stats: NegentropyWindowStats | null): NegentropyWindowStats | null {
-    return stats
-        ? {
-            ...stats,
-            lastCursor: cloneCursor(stats.lastCursor),
-        }
-        : null;
-}
-
-function cloneWindow(window: ReconciliationWindow): ReconciliationWindow {
-    return {
-        ...window,
-        after: cloneCursor(window.after) ?? undefined,
-    };
-}
-
-function cloneWindowSnapshot(snapshot: NegentropyWindowSnapshot | null): NegentropyWindowSnapshot | null {
-    if (!snapshot) {
-        return null;
-    }
-
-    return {
-        window: cloneWindow(snapshot.window),
-        stats: cloneWindowStats(snapshot.stats)!,
-        storage: snapshot.storage,
-    };
-}
-
 function currentSyncTimestampSeconds(): number {
     return Math.floor(Date.now() / 1000);
-}
-
-function makeWindowId(window: ReconciliationWindow): string {
-    const after = window.after ? `${window.after.ts}:${window.after.id}` : 'none';
-    return `${window.order}:${window.name}:${window.fromTs}:${window.toTs}:${window.maxRecords}:${after}`;
-}
-
-function windowLabel(window: ReconciliationWindow): string {
-    const suffix = window.after ? ` after=${window.after.ts}:${window.after.id}` : '';
-    return `${window.name}[${window.fromTs},${window.toTs}]${suffix}`;
 }
 
 function getSessionWindow(session: PeerSyncSession): ReconciliationWindow | null {
@@ -1941,52 +1560,6 @@ function getSessionWindow(session: PeerSyncSession): ReconciliationWindow | null
         return null;
     }
     return session.windows[session.windowIndex];
-}
-
-function parseRemoteWindow(raw: NegOpenMessage['window']): ReconciliationWindow | null {
-    if (!raw || typeof raw !== 'object') {
-        return null;
-    }
-
-    const fromTs = Number(raw.fromTs);
-    const toTs = Number(raw.toTs);
-    const order = Number(raw.order);
-    const remoteMaxRecords = Number(raw.maxRecords);
-    const maxRecords = Number.isInteger(remoteMaxRecords) && remoteMaxRecords > 0
-        ? Math.min(remoteMaxRecords, config.negentropyMaxRecordsPerWindow)
-        : config.negentropyMaxRecordsPerWindow;
-
-    if (!Number.isFinite(fromTs) || !Number.isFinite(toTs) || fromTs > toTs) {
-        return null;
-    }
-
-    if (!Number.isInteger(order) || order < 0) {
-        return null;
-    }
-
-    let after: SyncStoreCursor | undefined;
-    if (raw.after !== undefined) {
-        const afterTs = Number(raw.after?.ts);
-        const afterId = String(raw.after?.id ?? '').toLowerCase();
-
-        if (!Number.isInteger(afterTs) || !NEG_SYNC_ID_RE.test(afterId)) {
-            return null;
-        }
-
-        after = {
-            ts: afterTs,
-            id: afterId,
-        };
-    }
-
-    return {
-        name: String(raw.name || `window_${order}`),
-        fromTs,
-        toTs,
-        order,
-        maxRecords,
-        after,
-    };
 }
 
 function initializeSessionWindowState(
@@ -2001,6 +1574,7 @@ function initializeSessionWindowState(
     session.reconciliationComplete = false;
     session.receivedPushIds = new Set<string>();
     session.receivedKnownPushIds = new Set<string>();
+    session.provenStoredPushIds.clear();
     session.receivedPushMaxCursor = null;
     session.remoteWindowCappedByRecords = false;
     session.remoteWindowLastCursor = null;
@@ -2042,9 +1616,8 @@ async function buildInitialHistoryWindowForSession(): Promise<ReconciliationWind
         throw new Error('negentropy adapter unavailable');
     }
 
-    const earliestTs = await negentropyAdapter.getEarliestTimestamp();
     return buildInitialHistoryWindow(
-        earliestTs ?? MDIP_EPOCH_SECONDS,
+        MDIP_EPOCH_SECONDS,
         currentSyncTimestampSeconds(),
         config.negentropyMaxRecordsPerWindow,
     );
@@ -2056,6 +1629,10 @@ function maybeStartBackgroundPrebuild(reason: string): void {
     }
 
     if (!isNegentropyAdapterDirty()) {
+        return;
+    }
+
+    if (hasActiveOutboundOrderedCatchup()) {
         return;
     }
 
@@ -2167,10 +1744,16 @@ async function startNextNegentropyWindow(peerKey: string, session: PeerSyncSessi
 
     const windowId = makeWindowId(window);
     const snapshot = await ensureWindowAdapterFresh(window, 'session_open_initiator');
+    if (peerSessions.get(peerKey) !== session) {
+        return;
+    }
     initializeSessionWindowState(session, window, windowId, cloneWindowStats(snapshot.stats)!);
     session.currentWindowSnapshot = snapshot;
     session.currentWindowEngine = negentropyAdapter.createEngineForSnapshot(snapshot);
     const firstFrame = await session.currentWindowEngine.initiate();
+    if (peerSessions.get(peerKey) !== session) {
+        return;
+    }
     const msg: NegOpenMessage = {
         ...createBaseMessage('neg_open'),
         sessionId: session.sessionId,
@@ -2448,7 +2031,11 @@ async function sendOpsPushForIds(peerKey: string, session: PeerSyncSession, ids:
     const rows: SyncOperationRecord[] = [];
 
     for (const idBatch of idLookupBatches) {
-        rows.push(...await syncStore.getByIds(idBatch));
+        const batchRows = await syncStore.getByIds(idBatch);
+        if (peerSessions.get(peerKey) !== session) {
+            return;
+        }
+        rows.push(...batchRows);
     }
 
     const operations = orderSyncRecordsForPush(rows).map(row => row.operation);
@@ -2488,41 +2075,6 @@ async function sendOpsPushForIds(peerKey: string, session: PeerSyncSession, ids:
     }
 }
 
-function parseOrderedCatchupCursor(cursor: unknown): SyncStoreOrderedCursor | undefined | null {
-    if (cursor == null) {
-        return undefined;
-    }
-
-    if (typeof cursor !== 'object') {
-        return null;
-    }
-
-    const raw = cursor as Partial<SyncStoreOrderedCursor>;
-    if (!Number.isSafeInteger(raw.syncOrder) || raw.syncOrder! < 0) {
-        return null;
-    }
-
-    if (typeof raw.id !== 'string' || !NEG_SYNC_ID_RE.test(raw.id)) {
-        return null;
-    }
-
-    return {
-        syncOrder: raw.syncOrder!,
-        id: raw.id.toLowerCase(),
-    };
-}
-
-function getOrderedCursorFromRow(row: SyncOperationRecord): SyncStoreOrderedCursor | null {
-    if (!Number.isSafeInteger(row.syncOrder)) {
-        return null;
-    }
-
-    return {
-        syncOrder: row.syncOrder!,
-        id: row.id,
-    };
-}
-
 function sendOrderedCatchupDone(peerKey: string, sessionId: string): boolean {
     const msg: OrderedCatchupDoneMessage = {
         ...createBaseMessage('ordered_catchup_done'),
@@ -2541,7 +2093,22 @@ function sendOrderedCatchupReq(peerKey: string, session: PeerSyncSession): boole
         cursor: session.orderedCatchupCursor ?? undefined,
     };
 
-    return sendToPeer(peerKey, msg);
+    const sent = sendToPeer(peerKey, msg);
+    if (sent) {
+        session.orderedCatchupRequestOutstanding = true;
+    }
+    return sent;
+}
+
+function refillOrderedCatchupPrefetch(peerKey: string, session: PeerSyncSession): boolean {
+    if (peerSessions.get(peerKey) !== session
+        || session.orderedCatchupTerminalReason
+        || session.orderedCatchupRequestOutstanding
+        || session.orderedCatchupPendingImports > ORDERED_CATCHUP_PREFETCH_BATCHES) {
+        return true;
+    }
+
+    return sendOrderedCatchupReq(peerKey, session);
 }
 
 async function sendOrderedCatchupPage(peerKey: string, msg: OrderedCatchupReqMessage): Promise<void> {
@@ -2576,27 +2143,36 @@ async function sendOrderedCatchupPage(peerKey: string, msg: OrderedCatchupReqMes
         return;
     }
 
-    setOrderedCatchupServerState(peerKey, msg.sessionId);
-
-    const status = await getLocalOrderedCatchupStatus();
-    if (!status.ready) {
-        log.info(
-            {
-                peer: shortName(peerKey),
-                sessionId: msg.sessionId,
-                operationCount: status.operationCount,
-                orderedOperationCount: status.orderedOperationCount,
-            },
-            'ordered catch-up requested but local store is not ready'
-        );
-        sendOrderedCatchupDone(peerKey, msg.sessionId);
-        return;
+    const continuingSession = conn.orderedCatchupServerSessionId === msg.sessionId;
+    if (!continuingSession) {
+        const status = await getLocalOrderedCatchupStatus();
+        if (connectionInfo[peerKey] !== conn) {
+            return;
+        }
+        if (!status.ready) {
+            log.info(
+                {
+                    peer: shortName(peerKey),
+                    sessionId: msg.sessionId,
+                    operationCount: status.operationCount,
+                    orderedOperationCount: status.orderedOperationCount,
+                },
+                'ordered catch-up requested but local store is not ready'
+            );
+            sendOrderedCatchupDone(peerKey, msg.sessionId);
+            return;
+        }
     }
+
+    setOrderedCatchupServerState(peerKey, msg.sessionId);
 
     const rows = await syncStore.iterateOrdered({
         after: cursor,
         limit: NEG_MAX_OPS_PER_PUSH + 1,
     });
+    if (connectionInfo[peerKey] !== conn) {
+        return;
+    }
     const candidateRows = rows.slice(0, NEG_MAX_OPS_PER_PUSH);
     const [opBatch = []] = chunkOperationsForPush(candidateRows.map(row => row.operation), {
         maxOpsPerPush: NEG_MAX_OPS_PER_PUSH,
@@ -2641,7 +2217,72 @@ function completeOrderedCatchup(peerKey: string, session: PeerSyncSession, reaso
     conn.orderedCatchupAttempted = true;
     session.reconciliationComplete = true;
     closePeerSession(peerKey, reason);
-    queueOrderedCatchupPostImport(peerKey, reason);
+    queueOrderedCatchupPostImport(peerKey, reason, session.startedAt);
+}
+
+function maybeCompleteOrderedCatchup(peerKey: string, session: PeerSyncSession): void {
+    if (peerSessions.get(peerKey) !== session
+        || session.orderedCatchupPendingImports > 0
+        || !session.orderedCatchupTerminalReason) {
+        return;
+    }
+
+    completeOrderedCatchup(peerKey, session, session.orderedCatchupTerminalReason);
+}
+
+function settleOrderedCatchupImport(
+    peerKey: string,
+    session: PeerSyncSession,
+    retryable: boolean,
+): void {
+    session.orderedCatchupPendingImports = Math.max(0, session.orderedCatchupPendingImports - 1);
+    if (retryable) {
+        session.orderedCatchupImportsAborted = true;
+    }
+    if (peerSessions.get(peerKey) !== session) {
+        return;
+    }
+
+    if (retryable) {
+        closePeerSession(peerKey, 'ordered_catchup_import_retryable');
+        return;
+    }
+
+    touchPeerSession(peerKey);
+    if (!refillOrderedCatchupPrefetch(peerKey, session)) {
+        closePeerSession(peerKey, 'send_ordered_catchup_req_failed');
+        return;
+    }
+    maybeCompleteOrderedCatchup(peerKey, session);
+}
+
+function queueOrderedCatchupImport(peerKey: string, session: PeerSyncSession, batch: Operation[]): void {
+    session.orderedCatchupPendingImports += 1;
+    importQueue.push<ImportQueueResult>({
+        name: peerKey,
+        msg: {
+            ...createBaseMessage('batch'),
+            data: batch,
+        },
+        orderedCatchupSession: session,
+    }, (error, imported) => {
+        try {
+            if (error || !imported) {
+                if (error) {
+                    log.error({ error, peer: shortName(peerKey), sessionId: session.sessionId }, 'ordered catch-up import failed');
+                }
+                settleOrderedCatchupImport(peerKey, session, true);
+                return;
+            }
+            settleOrderedCatchupImport(peerKey, session, imported.retryable);
+        }
+        catch (completionError) {
+            log.error(
+                { error: completionError, peer: shortName(peerKey), sessionId: session.sessionId },
+                'ordered catch-up import completion failed'
+            );
+        }
+    });
 }
 
 async function waitForImportQueueIdle(reason: string): Promise<void> {
@@ -2658,28 +2299,49 @@ async function waitForImportQueueIdle(reason: string): Promise<void> {
     }
 }
 
-function queueOrderedCatchupPostImport(peerKey: string, reason: string): void {
-    if (orderedCatchupPostImportPeers.has(peerKey)) {
+function queueOrderedCatchupPostImport(peerKey: string, reason: string, startedAt: number): void {
+    if (orderedCatchupTransitionPeers.has(peerKey)) {
         log.debug({ peer: shortName(peerKey), reason }, 'ordered catch-up post-import continuation already queued');
         return;
     }
 
-    orderedCatchupPostImportPeers.add(peerKey);
+    orderedCatchupTransitionPeers.add(peerKey);
     (async () => {
-        await waitForImportQueueIdle('ordered_catchup_complete');
-        await syncGatekeeperIndexToStore('ordered_catchup_complete');
-        markNegentropyAdapterDirty();
-        await maybeStartPostOrderedCatchupNegentropy(peerKey, reason);
-    })()
-        .catch(error => {
+        let handoffStarted = false;
+        let postImportCompleted = false;
+        try {
+            await waitForImportQueueIdle('ordered_catchup_complete');
+            await syncGatekeeperIndexToStore('ordered_catchup_complete');
+            postImportCompleted = true;
+            const durationMs = Date.now() - startedAt;
+            syncStats.orderedCatchupSessionsCompleted += 1;
+            addAggregateSample(syncStats.syncDurationMs, durationMs);
+            log.debug({ peer: shortName(peerKey), reason, durationMs }, 'ordered catch-up handoff ready');
+            markNegentropyAdapterDirty();
+            handoffStarted = await maybeStartPostOrderedCatchupNegentropy(peerKey, reason);
+        }
+        catch (error) {
+            if (!postImportCompleted) {
+                syncStats.orderedCatchupSessionsFailed += 1;
+                addAggregateSample(syncStats.syncDurationMs, Date.now() - startedAt);
+            }
             log.error({ error, peer: shortName(peerKey), reason }, 'ordered catch-up post-import continuation failed');
-        })
-        .finally(() => {
-            orderedCatchupPostImportPeers.delete(peerKey);
-        });
+        }
+        finally {
+            if (!handoffStarted) {
+                orderedCatchupTransitionPeers.delete(peerKey);
+            }
+        }
+
+        if (postImportCompleted && !handoffStarted && getActiveNegentropySessions() === 0) {
+            await maybeSchedulePreferredSyncs(`ordered_catchup_post_import:${reason}`);
+        }
+    })().catch(error => {
+        log.error({ error, peer: shortName(peerKey), reason }, 'ordered catch-up post-import scheduling failed');
+    });
 }
 
-async function maybeStartPostOrderedCatchupNegentropy(peerKey: string, reason: string): Promise<void> {
+async function maybeStartPostOrderedCatchupNegentropy(peerKey: string, reason: string): Promise<boolean> {
     const conn = connectionInfo[peerKey];
     const shouldStart = shouldStartPostOrderedCatchupNegentropy({
         syncMode: conn?.syncMode ?? 'unknown',
@@ -2693,7 +2355,12 @@ async function maybeStartPostOrderedCatchupNegentropy(peerKey: string, reason: s
     });
 
     if (shouldStart) {
-        await maybeStartPeerSync(peerKey, 'periodic');
+        return startNegentropySessionForPeer(
+            peerKey,
+            'ordered_catchup_complete',
+            'ordered_catchup_complete',
+            true,
+        );
     } else {
         log.debug(
             {
@@ -2712,52 +2379,72 @@ async function maybeStartPostOrderedCatchupNegentropy(peerKey: string, reason: s
         );
     }
 
-    if (getActiveNegentropySessions() === 0) {
-        await maybeSchedulePreferredSyncs(`ordered_catchup_post_import:${reason}`);
-    }
+    return false;
 }
 
 async function handleOrderedCatchupPush(peerKey: string, msg: OrderedCatchupPushMessage): Promise<void> {
+    const conn = connectionInfo[peerKey];
     const session = peerSessions.get(peerKey);
-    if (!session || session.mode !== 'ordered_catchup' || session.sessionId !== msg.sessionId) {
+    if (!conn || !session || session.mode !== 'ordered_catchup' || session.sessionId !== msg.sessionId) {
         log.warn({ peer: shortName(peerKey), sessionId: msg.sessionId }, 'ignoring ordered catch-up push for unknown session');
+        return;
+    }
+    if (session.orderedCatchupTerminalReason) {
+        log.debug({
+            peer: shortName(peerKey),
+            sessionId: msg.sessionId,
+            terminalReason: session.orderedCatchupTerminalReason,
+        }, 'ignoring ordered catch-up push after terminal message');
+        return;
+    }
+    if (!session.orderedCatchupRequestOutstanding
+        && session.orderedCatchupPendingImports > ORDERED_CATCHUP_PREFETCH_BATCHES) {
+        log.warn({
+            peer: shortName(peerKey),
+            sessionId: msg.sessionId,
+            pendingImports: session.orderedCatchupPendingImports,
+        }, 'closing ordered catch-up session after unsolicited prefetched push');
+        closePeerSession(peerKey, 'ordered_catchup_prefetch_overflow');
         return;
     }
 
     const cursor = parseOrderedCatchupCursor(msg.cursor);
-    if (cursor === null) {
+    if (cursor === null || cursor === undefined) {
         log.warn({ peer: shortName(peerKey), sessionId: msg.sessionId }, 'ignoring ordered catch-up push with invalid cursor');
         closePeerSession(peerKey, 'invalid_ordered_catchup_cursor');
         return;
     }
 
+    if (session.orderedCatchupCursor && !isOrderedCursorAfter(cursor, session.orderedCatchupCursor)) {
+        log.warn({
+            peer: shortName(peerKey),
+            sessionId: msg.sessionId,
+            previousCursor: session.orderedCatchupCursor,
+            cursor,
+        }, 'ignoring ordered catch-up push with non-advancing cursor');
+        closePeerSession(peerKey, 'non_advancing_ordered_catchup_cursor');
+        return;
+    }
+
+    session.orderedCatchupRequestOutstanding = false;
     const batch = normalizeInboundOpsPushBatch(msg.data);
     syncStats.orderedCatchupPagesReceived += 1;
     syncStats.orderedCatchupOpsReceived += batch.length;
-    if (batch.length > 0) {
-        importQueue.push({
-            name: peerKey,
-            msg: {
-                ...createBaseMessage('batch'),
-                data: batch,
-            },
-        });
-    }
-
-    if (cursor) {
-        session.orderedCatchupCursor = cursor;
-    }
-
     touchPeerSession(peerKey);
+    session.orderedCatchupCursor = cursor;
+    if (batch.length > 0) {
+        queueOrderedCatchupImport(peerKey, session, batch);
+    }
 
     if (msg.hasMore === true) {
-        if (!sendOrderedCatchupReq(peerKey, session)) {
+        if (!refillOrderedCatchupPrefetch(peerKey, session)) {
             closePeerSession(peerKey, 'send_ordered_catchup_req_failed');
         }
         return;
     }
 
-    completeOrderedCatchup(peerKey, session, 'ordered_catchup_complete');
+    session.orderedCatchupTerminalReason = 'ordered_catchup_complete';
+    maybeCompleteOrderedCatchup(peerKey, session);
 }
 
 async function handleOrderedCatchupDone(peerKey: string, msg: OrderedCatchupDoneMessage): Promise<void> {
@@ -2767,7 +2454,10 @@ async function handleOrderedCatchupDone(peerKey: string, msg: OrderedCatchupDone
         return;
     }
 
-    completeOrderedCatchup(peerKey, session, 'ordered_catchup_done');
+    session.orderedCatchupRequestOutstanding = false;
+    session.orderedCatchupTerminalReason = 'ordered_catchup_done';
+    touchPeerSession(peerKey);
+    maybeCompleteOrderedCatchup(peerKey, session);
 }
 
 function sendNegMsg(peerKey: string, session: PeerSyncSession, frame: string | Uint8Array): boolean {
@@ -2824,6 +2514,9 @@ async function reconcileNegentropyFrame(
     const result = session.currentWindowEngine
         ? await session.currentWindowEngine.reconcile(frame)
         : await negentropyAdapter.reconcile(frame);
+    if (peerSessions.get(peerKey) !== session) {
+        return null;
+    }
     session.rounds += 1;
     if (session.currentWindowStats) {
         session.currentWindowStats.rounds += 1;
@@ -2860,41 +2553,180 @@ function trackReceivedWindowOperations(session: PeerSyncSession, operations: Ope
     }
 }
 
-async function trackRequestedKnownOpsPush(session: PeerSyncSession, operations: Operation[]): Promise<void> {
-    if (!session.initiator || session.pendingNeedIds.size === 0 || operations.length === 0) {
-        return;
+function filterUnprovenPushOperations(session: PeerSyncSession, operations: Operation[]): Operation[] {
+    return operations.filter(operation => {
+        const mapped = mapOperationToSyncKey(operation);
+        return !mapped.ok || !session.provenStoredPushIds.has(mapped.value.idHex);
+    });
+}
+
+function trackProvenStoredOpsPush(session: PeerSyncSession, operations: Operation[]): boolean {
+    if (!session.initiator || session.pendingNeedIds.size === 0) {
+        return false;
     }
 
-    const candidateIds: string[] = [];
-
+    let progressed = false;
     for (const operation of operations) {
         const mapped = mapOperationToSyncKey(operation);
-        if (!mapped.ok || !session.pendingNeedIds.has(mapped.value.idHex)) {
+        if (!mapped.ok
+            || !session.provenStoredPushIds.has(mapped.value.idHex)
+            || !session.pendingNeedIds.delete(mapped.value.idHex)) {
+            continue;
+        }
+        session.unresolvedNeedIds.delete(mapped.value.idHex);
+        session.unresolvedOperations.delete(mapped.value.idHex);
+        session.receivedKnownPushIds.add(mapped.value.idHex);
+        progressed = true;
+    }
+    return progressed;
+}
+
+function carryReceivedUnresolvedNeeds(session: PeerSyncSession): boolean {
+    for (const id of session.pendingNeedIds) {
+        if (!session.receivedPushIds.has(id)) {
+            return false;
+        }
+    }
+
+    for (const id of session.pendingNeedIds) {
+        session.unresolvedNeedIds.add(id);
+    }
+    session.pendingNeedIds.clear();
+    return true;
+}
+
+async function refreshStoredUnresolvedNeeds(peerKey: string, session: PeerSyncSession): Promise<boolean> {
+    if (peerSessions.get(peerKey) !== session || session.unresolvedNeedIds.size === 0) {
+        return true;
+    }
+
+    try {
+        for (const ids of chunkIds(Array.from(session.unresolvedNeedIds), NEG_MAX_IDS_PER_LOOKUP)) {
+            const rows = await syncStore.getByIds(ids);
+            if (peerSessions.get(peerKey) !== session) {
+                return false;
+            }
+            for (const row of rows) {
+                session.unresolvedNeedIds.delete(row.id);
+                session.unresolvedOperations.delete(row.id);
+            }
+        }
+        return true;
+    }
+    catch (error) {
+        log.warn(
+            { error, peer: shortName(peerKey), unresolved: session.unresolvedNeedIds.size },
+            'failed to confirm unresolved negentropy operations'
+        );
+        return false;
+    }
+}
+
+async function collectTerminalUnresolvedOperations(session: PeerSyncSession): Promise<Operation[]> {
+    const operationsByPrevid = new Map<string, Array<{ id: string; operation: Operation }>>();
+    const selected = new Map<string, Operation>();
+    const queuedCids = new Set<string>();
+    const cidQueue: string[] = [];
+
+    const queueCid = (cid: string): void => {
+        if (!queuedCids.has(cid)) {
+            queuedCids.add(cid);
+            cidQueue.push(cid);
+        }
+    };
+
+    for (const cid of terminalOperationCids) {
+        queueCid(cid);
+    }
+
+    for (const [id, operation] of session.unresolvedOperations) {
+        if (!session.unresolvedNeedIds.has(id)
+            || !hasContentVerifiedOperationId(operation, cipher)) {
             continue;
         }
 
-        if (session.receivedKnownPushIds.has(mapped.value.idHex)) {
+        if (operation.type !== 'create' && operation.previd === undefined) {
+            selected.set(id, operation);
+            try {
+                queueCid(await generateOperationCid(operation));
+            }
+            catch (error) {
+                log.warn({ error, id }, 'failed to derive terminal legacy operation CID');
+            }
             continue;
         }
 
-        candidateIds.push(mapped.value.idHex);
+        if (typeof operation.previd !== 'string') {
+            continue;
+        }
+
+        const children = operationsByPrevid.get(operation.previd) ?? [];
+        children.push({ id, operation });
+        operationsByPrevid.set(operation.previd, children);
     }
 
-    if (candidateIds.length === 0) {
+    let queueIndex = 0;
+    while (queueIndex < cidQueue.length) {
+        const cid = cidQueue[queueIndex++];
+        for (const child of operationsByPrevid.get(cid) ?? []) {
+            if (selected.has(child.id)) {
+                continue;
+            }
+
+            selected.set(child.id, child.operation);
+            try {
+                queueCid(await generateOperationCid(child.operation));
+            }
+            catch (error) {
+                log.warn({ error, id: child.id }, 'failed to derive terminal fork descendant CID');
+            }
+        }
+    }
+
+    return Array.from(selected.values());
+}
+
+// Store pre-0.5 operations without previd and descendants of terminal modern forks
+// until restart so completed reconciliation does not retry permanently losing history.
+async function persistTerminalUnresolvedOperations(peerKey: string, session: PeerSyncSession): Promise<void> {
+    if (peerSessions.get(peerKey) !== session || session.unresolvedNeedIds.size === 0) {
         return;
     }
 
-    const rows = await syncStore.getByIds(candidateIds);
-    if (rows.length === 0) {
+    const operations = await collectTerminalUnresolvedOperations(session);
+    if (peerSessions.get(peerKey) !== session || operations.length === 0) {
         return;
     }
 
-    for (const row of rows) {
-        session.receivedKnownPushIds.add(row.id);
+    try {
+        const persistedIds = await persistProcessedOperations(
+            [],
+            operations,
+            'negentropy_terminal_unresolved',
+        );
+        if (peerSessions.get(peerKey) !== session) {
+            return;
+        }
+        for (const id of persistedIds) {
+            session.provenStoredPushIds.add(id);
+            session.pendingNeedIds.delete(id);
+            session.unresolvedNeedIds.delete(id);
+            session.unresolvedOperations.delete(id);
+        }
+    }
+    catch (error) {
+        log.warn(
+            { error, peer: shortName(peerKey), operations: operations.length },
+            'failed to persist terminal unresolved operations'
+        );
     }
 }
 
 async function maybeFinalizeInitiatorSession(peerKey: string, session: PeerSyncSession): Promise<void> {
+    if (peerSessions.get(peerKey) !== session) {
+        return;
+    }
+
     if (!session.initiator) {
         return;
     }
@@ -2903,12 +2735,41 @@ async function maybeFinalizeInitiatorSession(peerKey: string, session: PeerSyncS
         return;
     }
 
-    if (session.pendingNeedIds.size > 0) {
+    if (!carryReceivedUnresolvedNeeds(session)) {
         return;
     }
 
     const continued = await maybeContinueCappedWindowPaging(peerKey, session);
-    if (continued) {
+    if (continued || peerSessions.get(peerKey) !== session) {
+        return;
+    }
+
+    const unresolvedRefreshed = await refreshStoredUnresolvedNeeds(peerKey, session);
+    if (peerSessions.get(peerKey) !== session) {
+        return;
+    }
+
+    if (unresolvedRefreshed) {
+        await persistTerminalUnresolvedOperations(peerKey, session);
+        if (peerSessions.get(peerKey) !== session) {
+            return;
+        }
+    }
+
+    if (session.unresolvedNeedIds.size > 0) {
+        log.warn(
+            {
+                peer: shortName(peerKey),
+                sessionId: session.sessionId,
+                unresolvedIds: summarizeSyncIds(session.unresolvedNeedIds),
+            },
+            'negentropy session completed with unresolved operations'
+        );
+        if (!sendNegClose(peerKey, session, 'unresolved_operations')) {
+            closePeerSession(peerKey, 'send_neg_close_failed');
+            return;
+        }
+        closePeerSession(peerKey, 'unresolved_operations');
         return;
     }
 
@@ -2938,10 +2799,16 @@ async function handleNegentropyRoundAsInitiator(
 
     if (newHaveIds.length > 0) {
         await sendOpsPushForIds(peerKey, session, newHaveIds);
+        if (peerSessions.get(peerKey) !== session) {
+            return;
+        }
     }
 
     if (newNeedIds.length > 0) {
         await sendOpsReq(peerKey, session, newNeedIds);
+        if (peerSessions.get(peerKey) !== session) {
+            return;
+        }
     }
 
     log.debug(
@@ -3136,7 +3003,7 @@ async function relayMsg(msg: HyperMessage): Promise<void> {
     }
 }
 
-async function importBatch(batch: Operation[]): Promise<Operation[]> {
+async function importBatch(batch: Operation[]) {
     // The batch we receive from other hyperswarm nodes includes just operations.
     // We have to wrap the operations in new events before submitting to our gatekeeper for importing
     try {
@@ -3163,26 +3030,129 @@ async function importBatch(batch: Operation[]): Promise<Operation[]> {
         log.debug(`* ${JSON.stringify(response)}`);
         syncStats.opsRejected += response.rejected ?? 0;
 
-        return filterIndexRejectedOperations(batch, response.rejectedIndices);
+        return partitionImportBatchOperations(batch, response.rejectedIndices);
     }
     catch (error) {
         log.error({ error }, 'importBatch error');
-        return [];
+        throw error;
     }
 }
 
-async function persistAcceptedOperations(operations: Operation[], source: string): Promise<void> {
-    if (!Array.isArray(operations) || operations.length === 0) {
-        return;
+async function recordTerminalOperationCids(operations: Operation[], source: string): Promise<void> {
+    for (const operation of operations) {
+        try {
+            terminalOperationCids.add(await generateOperationCid(operation));
+        }
+        catch (error) {
+            log.warn({ error, source }, 'failed to record terminal operation CID');
+        }
+    }
+}
+
+async function persistProcessedOperations(
+    acceptedOperations: Operation[],
+    rejectedOperations: Operation[],
+    source: string,
+    retryIds: Iterable<string> = [],
+): Promise<string[]> {
+    const accepted = mapAcceptedOperationsToSyncRecords(acceptedOperations);
+    const verifiedRejectedOperations = rejectedOperations.filter(
+        operation => hasContentVerifiedOperationId(operation, cipher)
+    );
+    const rejectedHashMismatches = rejectedOperations.length - verifiedRejectedOperations.length;
+    const rejected = mapAcceptedOperationsToSyncRecords(verifiedRejectedOperations.map(operation => ({
+        operation,
+        syncOrder: TERMINAL_REJECTED_SYNC_ORDER,
+    })));
+    if (rejectedHashMismatches > 0) {
+        log.warn(
+            { source, rejectedHashMismatches },
+            'skipping terminal sync records with unverified operation IDs'
+        );
+    }
+    const records = [...rejected.records, ...accepted.records];
+    const invalid = accepted.invalid + rejected.invalid;
+    const operationCount = acceptedOperations.length + rejectedOperations.length;
+    const recordsToPersist = new Map<string, SyncOperationWriteRecord>();
+    for (const record of records) {
+        pendingSyncRecords.delete(record.id);
+        pendingSyncRecords.set(record.id, record);
+        recordsToPersist.set(record.id, record);
     }
 
-    const { records, invalid } = mapAcceptedOperationsToSyncRecords(operations);
-    if (records.length === 0) {
-        log.debug({ source, attempted: operations.length, invalid }, 'sync-store persist skipped');
-        return;
+    let retryCandidates = 0;
+    for (const id of new Set(retryIds)) {
+        const pending = pendingSyncRecords.get(id);
+        if (!pending || recordsToPersist.has(id)) {
+            continue;
+        }
+        retryCandidates += 1;
+        recordsToPersist.set(id, pending);
     }
 
-    const result = await syncStore.upsertMany(records);
+    const attemptedRecords = Array.from(recordsToPersist.values());
+    if (attemptedRecords.length === 0) {
+        log.debug({
+            source,
+            accepted: acceptedOperations.length,
+            rejected: rejectedOperations.length,
+            rejectedHashMismatches,
+            attempted: operationCount,
+            invalid,
+        }, 'sync-store persist skipped');
+        return [];
+    }
+
+    let result;
+    try {
+        result = await syncStore.upsertMany(attemptedRecords);
+    }
+    catch (error) {
+        const pendingBeforeTrim = pendingSyncRecords.size;
+        while (pendingSyncRecords.size > MAX_PENDING_SYNC_RECORDS) {
+            const oldestId = pendingSyncRecords.keys().next().value;
+            if (oldestId === undefined) {
+                break;
+            }
+            pendingSyncRecords.delete(oldestId);
+        }
+        log.error(
+            {
+                error,
+                source,
+                accepted: acceptedOperations.length,
+                rejected: rejectedOperations.length,
+                rejectedHashMismatches,
+                attempted: operationCount,
+                mapped: records.length,
+                retryCandidates,
+                recordsAttempted: attemptedRecords.length,
+                pending: pendingSyncRecords.size,
+                pendingEvicted: pendingBeforeTrim - pendingSyncRecords.size,
+            },
+            'sync-store persist processed ops failed'
+        );
+        throw error;
+    }
+
+    for (const record of attemptedRecords) {
+        if (pendingSyncRecords.get(record.id) === record) {
+            pendingSyncRecords.delete(record.id);
+        }
+    }
+    const terminalRecordIds = new Set(
+        attemptedRecords
+            .filter(record => record.syncOrder === TERMINAL_REJECTED_SYNC_ORDER)
+            .map(record => record.id)
+    );
+    await recordTerminalOperationCids(
+        verifiedRejectedOperations.filter(operation => {
+            const mapped = mapOperationToSyncKey(operation);
+            return mapped.ok && terminalRecordIds.has(mapped.value.idHex);
+        }),
+        source,
+    );
+
     if (result.inserted > 0 || result.updated > 0) {
         markNegentropyAdapterDirty();
         maybeStartBackgroundPrebuild(`persist_${source}`);
@@ -3190,111 +3160,155 @@ async function persistAcceptedOperations(operations: Operation[], source: string
     log.debug(
         {
             source,
-            attempted: operations.length,
+            accepted: acceptedOperations.length,
+            rejected: rejectedOperations.length,
+            rejectedHashMismatches,
+            attempted: operationCount,
             mapped: records.length,
+            retryCandidates,
+            recordsAttempted: attemptedRecords.length,
+            pendingRemaining: pendingSyncRecords.size,
             invalid,
             inserted: result.inserted,
             updated: result.updated,
         },
-        'sync-store persist accepted ops'
+        'sync-store persist processed ops'
     );
+    return attemptedRecords.map(record => record.id);
 }
 
-async function mergeBatch(batch: Operation[]): Promise<void> {
+async function mergeBatch(batch: Operation[]): Promise<string[]> {
 
     if (!batch) {
-        return;
+        return [];
     }
 
     let chunk = [];
-    const acceptedCandidates: Operation[] = [];
+    const processCandidates: Operation[] = [];
+    const structurallyRejected: Operation[] = [];
 
     for (const operation of batch) {
         chunk.push(operation);
 
         if (chunk.length >= BATCH_SIZE) {
-            const candidates = await importBatch(chunk);
-            acceptedCandidates.push(...candidates);
+            const imported = await importBatch(chunk);
+            processCandidates.push(...imported.processCandidates);
+            structurallyRejected.push(...imported.rejectedOperations);
             chunk = [];
         }
     }
 
     if (chunk.length > 0) {
-        const candidates = await importBatch(chunk);
-        acceptedCandidates.push(...candidates);
+        const imported = await importBatch(chunk);
+        processCandidates.push(...imported.processCandidates);
+        structurallyRejected.push(...imported.rejectedOperations);
     }
 
     const processStart = Date.now();
     const response = await gatekeeper.processEvents();
     const processDurationMs = Date.now() - processStart;
     log.debug({ durationMs: processDurationMs }, 'processEvents');
+    if (response.busy) {
+        throw new Error('gatekeeper processEvents busy');
+    }
     const processSummary = { ...response };
     delete processSummary.acceptedHashes;
     delete processSummary.acceptedEvents;
+    delete processSummary.rejectedOperations;
     log.debug(`mergeBatch: ${JSON.stringify(processSummary)}`);
     syncStats.opsApplied += (response.added ?? 0) + (response.merged ?? 0);
     syncStats.opsRejected += response.rejected ?? 0;
 
     const acceptedToPersist = resolveAcceptedOperationsToPersist(
-        acceptedCandidates,
+        processCandidates,
         response.acceptedHashes,
         response.acceptedEvents,
     );
-    await persistAcceptedOperations(acceptedToPersist, 'mergeBatch');
+    const processRejected = dedupeOperationsByHash(response.rejectedOperations ?? []);
+    const rejectedToPersist = dedupeOperationsByHash([
+        ...structurallyRejected,
+        ...processRejected,
+    ]);
+    const retryIds = new Set<string>();
+    for (const operation of batch) {
+        const mapped = mapOperationToSyncKey(operation);
+        if (mapped.ok) {
+            retryIds.add(mapped.value.idHex);
+        }
+    }
+    return persistProcessedOperations(
+        acceptedToPersist,
+        rejectedToPersist,
+        'mergeBatch',
+        retryIds,
+    );
 }
 
-let importQueue = asyncLib.queue<ImportQueueTask, asyncLib.ErrorCallback>(
-    async function (task, callback) {
+let importQueue = asyncLib.queue<ImportQueueTask, ImportQueueResult>(
+    async function (task): Promise<ImportQueueResult> {
         const { name, msg } = task;
+        const result: ImportQueueResult = {
+            knownIds: [],
+            persistedIds: [],
+            retryable: false,
+        };
+        if (task.orderedCatchupSession?.orderedCatchupImportsAborted) {
+            return result;
+        }
         try {
             const ready = await gatekeeper.isReady();
 
-            if (ready) {
-                const batch = msg.data || [];
-
-                if (batch.length === 0) {
-                    return;
-                }
-
-                if (msg.type === 'queue') {
-                    syncStats.queueOpsImported += batch.length;
-                    const samples = collectQueueDelaySamples(batch);
-                    for (const sample of samples) {
-                        addAggregateSample(syncStats.queueDelayMs, sample);
-                    }
-                }
-
-                const filtered = await filterKnownOperations(batch, syncStore, BATCH_SIZE);
-                if (filtered.known > 0) {
-                    log.debug(
-                        {
-                            peer: shortName(name),
-                            node: msg.node || 'anon',
-                            received: batch.length,
-                            forwarded: filtered.operations.length,
-                            knownDropped: filtered.known,
-                            mapped: filtered.mapped,
-                            invalid: filtered.invalid,
-                        },
-                        'filtered inbound operations against sync-store'
-                    );
-                }
-
-                if (filtered.operations.length === 0) {
-                    return;
-                }
-
-                const nodeName = msg.node || 'anon';
-                log.debug(
-                    `* merging batch (${filtered.operations.length}/${batch.length} events) from: ${shortName(name)} (${nodeName}) *`
-                );
-                await mergeBatch(filtered.operations);
+            if (!ready) {
+                result.retryable = true;
+                return result;
             }
+
+            const batch = msg.data || [];
+
+            if (batch.length === 0) {
+                return result;
+            }
+
+            if (msg.type === 'queue') {
+                syncStats.queueOpsImported += batch.length;
+                const samples = collectQueueDelaySamples(batch);
+                for (const sample of samples) {
+                    addAggregateSample(syncStats.queueDelayMs, sample);
+                }
+            }
+
+            const filtered = await filterKnownOperations(batch, syncStore, NEG_MAX_OPS_PER_PUSH);
+            result.knownIds = filtered.knownIds;
+            if (filtered.known > 0) {
+                log.debug(
+                    {
+                        peer: shortName(name),
+                        node: msg.node || 'anon',
+                        received: batch.length,
+                        forwarded: filtered.operations.length,
+                        knownDropped: filtered.known,
+                        mapped: filtered.mapped,
+                        invalid: filtered.invalid,
+                    },
+                    'filtered inbound operations against sync-store'
+                );
+            }
+
+            if (filtered.operations.length === 0) {
+                return result;
+            }
+
+            const nodeName = msg.node || 'anon';
+            log.debug(
+                `* merging batch (${filtered.operations.length}/${batch.length} events) from: ${shortName(name)} (${nodeName}) *`
+            );
+            result.persistedIds = await mergeBatch(filtered.operations);
         }
         catch (error) {
+            result.retryable = true;
             log.error({ error }, 'mergeBatch error');
         }
-        callback();
+        return result;
     }, 1); // concurrency is 1
 
 let exportQueue = asyncLib.queue<ExportQueueTask, asyncLib.ErrorCallback>(
@@ -3496,6 +3510,310 @@ async function addPeer(did: string): Promise<void> {
     }
 }
 
+async function handlePingMessage(
+    peerKey: string,
+    msg: PingMessage,
+    nodeName: string,
+): Promise<void> {
+    clearMalformedPeer(peerKey, 'valid_ping');
+    connectionInfo[peerKey].nodeName = nodeName;
+    connectionInfo[peerKey].capabilities = normalizePeerCapabilities(msg.capabilities);
+    const peerTransportFramingVersion = Number.isInteger(msg.transportFramingVersion)
+        ? Number(msg.transportFramingVersion)
+        : null;
+    connectionInfo[peerKey].peerTransportFramingVersion = peerTransportFramingVersion;
+    const negotiatedTransportMode = peerTransportFramingVersion === TRANSPORT_FRAMING_VERSION ? 'framed' : 'legacy';
+    setPeerTransportMode(peerKey, negotiatedTransportMode, 'ping_capability_exchange');
+    if (negotiatedTransportMode === 'framed') {
+        const inboundMode = connectionInfo[peerKey].inboundTransportMode;
+        if (inboundMode !== 'framed') {
+            setPeerInboundTransportMode(peerKey, 'framed', 'ping_capability_exchange');
+        }
+    } else {
+        setPeerInboundTransportMode(peerKey, 'legacy', 'ping_capability_exchange');
+    }
+    log.info(
+        {
+            ...buildPeerSyncCompatibilityContext(peerKey, connectionInfo[peerKey]),
+            rawCapabilities: msg.capabilities ?? null,
+        },
+        'peer capabilities received'
+    );
+
+    if (Array.isArray(msg.peers)) {
+        for (const did of msg.peers) {
+            addPeer(did);
+        }
+    }
+
+    await maybeStartPeerSync(peerKey);
+    await maybeSchedulePreferredSyncs('ping');
+}
+
+async function handleNegOpenMessage(
+    peerKey: string,
+    conn: ConnectionInfo,
+    msg: NegOpenMessage,
+): Promise<void> {
+    let session = peerSessions.get(peerKey);
+    const remoteSessionId = typeof msg.sessionId === 'string' ? msg.sessionId : '';
+    const activeOrderedCatchupSessionId = getActiveOrderedCatchupSessionId(conn, session);
+    const conflictDecision = decideInboundNegOpenConflict({
+        activeSessionMode: session?.mode ?? null,
+        activeSessionId: session?.sessionId ?? null,
+        activeOrderedCatchupSessionId,
+        remoteSessionId,
+    });
+    const globalOrderedCatchupActive = hasActiveOutboundOrderedCatchup();
+    const peerOrderedCatchupActive = hasOrderedCatchupOutboundGuardForPeer(conn);
+
+    if (conflictDecision.action === 'ignore' || globalOrderedCatchupActive || peerOrderedCatchupActive) {
+        const remoteWindowId = typeof msg.windowId === 'string' ? msg.windowId : '';
+        const rejectionSent = remoteSessionId.length > 0
+            && remoteWindowId.length > 0
+            && supportsPeerNegentropyTransport(conn)
+            && sendToPeer(peerKey, {
+                ...createBaseMessage('neg_close'),
+                sessionId: remoteSessionId,
+                windowId: remoteWindowId,
+                round: Number.isInteger(msg.round) ? msg.round : 0,
+                reason: 'ordered_catchup_active',
+            });
+        log.warn(
+            {
+                peer: shortName(peerKey),
+                remoteSessionId,
+                activeSessionMode: session?.mode ?? null,
+                activeSessionId: session?.sessionId ?? null,
+                activeOrderedCatchupSessionId,
+                globalOrderedCatchupActive,
+                peerOrderedCatchupActive,
+                postImportActive: orderedCatchupTransitionPeers.size > 0,
+                rejectionSent,
+            },
+            'rejecting neg_open while ordered catch-up active'
+        );
+        return;
+    }
+
+    if (!negentropyAdapter) {
+        log.warn('neg_open ignored because adapter is unavailable');
+        return;
+    }
+    if (!supportsPeerNegentropyTransport(conn)) {
+        log.warn(
+            {
+                peer: shortName(peerKey),
+                sessionId: msg.sessionId,
+                peerVersion: conn.capabilities.version,
+                requiredVersion: NEGENTROPY_VERSION,
+                peerTransportFramingVersion: conn.peerTransportFramingVersion,
+                requiredTransportFramingVersion: TRANSPORT_FRAMING_VERSION,
+            },
+            'ignoring neg_open from incompatible negentropy transport'
+        );
+        return;
+    }
+
+    const window = parseRemoteWindow(msg.window, config.negentropyMaxRecordsPerWindow);
+    if (!window) {
+        log.warn({ peer: shortName(peerKey), sessionId: msg.sessionId }, 'ignoring neg_open with invalid window');
+        return;
+    }
+    if (typeof msg.windowId !== 'string' || msg.windowId.length === 0) {
+        log.warn({ peer: shortName(peerKey), sessionId: msg.sessionId }, 'ignoring neg_open with invalid windowId');
+        return;
+    }
+
+    if (conflictDecision.action === 'replace' && session) {
+        closePeerSession(peerKey, 'replaced_by_remote_open');
+        session = undefined;
+    }
+
+    if (!session || session.mode !== 'negentropy' || session.sessionId !== msg.sessionId) {
+        session = createPeerSession(peerKey, 'negentropy', false, msg.sessionId);
+    }
+
+    session.initiator = false;
+    session.maxRounds = config.negentropyMaxRoundsPerSession;
+    const existingIndex = session.windows.findIndex(existingWindow => makeWindowId(existingWindow) === msg.windowId);
+    if (existingIndex >= 0) {
+        session.windows[existingIndex] = window;
+        session.windowIndex = existingIndex;
+    } else {
+        session.windows.push(window);
+        session.windowIndex = session.windows.length - 1;
+    }
+    const snapshot = await ensureWindowAdapterFresh(window, 'session_open_responder');
+    if (peerSessions.get(peerKey) !== session) {
+        return;
+    }
+    initializeSessionWindowState(session, window, msg.windowId, cloneWindowStats(snapshot.stats)!);
+    session.currentWindowSnapshot = snapshot;
+    session.currentWindowEngine = negentropyAdapter.createEngineForSnapshot(snapshot);
+    touchPeerSession(peerKey);
+    await handleNegentropyRoundAsResponder(peerKey, session, decodeNegentropyFrame(msg.frame));
+}
+
+async function handleNegMsgMessage(peerKey: string, msg: NegMsgMessage): Promise<void> {
+    const session = peerSessions.get(peerKey);
+    if (!session || session.mode !== 'negentropy' || session.sessionId !== msg.sessionId) {
+        log.warn({ peer: shortName(peerKey), sessionId: msg.sessionId }, 'ignoring neg_msg for unknown session');
+        return;
+    }
+    if (!isCurrentSessionWindow(peerKey, session, msg.windowId, 'neg_msg')) {
+        return;
+    }
+
+    trackRemoteWindowProgress(session, msg.windowProgress);
+    touchPeerSession(peerKey);
+    if (session.initiator) {
+        await handleNegentropyRoundAsInitiator(peerKey, session, decodeNegentropyFrame(msg.frame));
+    } else {
+        await handleNegentropyRoundAsResponder(peerKey, session, decodeNegentropyFrame(msg.frame));
+    }
+}
+
+async function handleOpsReqMessage(peerKey: string, msg: OpsReqMessage): Promise<void> {
+    const session = peerSessions.get(peerKey);
+    if (!session || session.mode !== 'negentropy' || session.sessionId !== msg.sessionId) {
+        log.warn({ peer: shortName(peerKey), sessionId: msg.sessionId }, 'ignoring ops_req for unknown session');
+        return;
+    }
+    if (!isCurrentSessionWindow(peerKey, session, msg.windowId, 'ops_req')) {
+        return;
+    }
+
+    const requestedIds = Array.isArray(msg.ids)
+        ? Array.from(new Set(msg.ids.map(id => String(id).toLowerCase()).filter(id => NEG_SYNC_ID_RE.test(id))))
+        : [];
+    syncStats.negentropyOpsReqReceived += requestedIds.length;
+    await sendOpsPushForIds(peerKey, session, requestedIds);
+    if (peerSessions.get(peerKey) === session) {
+        touchPeerSession(peerKey);
+    }
+}
+
+async function handleOpsPushMessage(peerKey: string, msg: OpsPushMessage): Promise<void> {
+    const session = peerSessions.get(peerKey);
+    if (!session || session.mode !== 'negentropy' || session.sessionId !== msg.sessionId) {
+        log.warn({ peer: shortName(peerKey), sessionId: msg.sessionId }, 'ignoring ops_push for unknown session');
+        return;
+    }
+    if (!isCurrentSessionWindow(peerKey, session, msg.windowId, 'ops_push')) {
+        return;
+    }
+
+    const batch = normalizeInboundOpsPushBatch(msg.data);
+    if (batch.length > 0) {
+        syncStats.negentropyOpsPushReceived += batch.length;
+        trackReceivedWindowOperations(session, batch);
+        const cachedProgress = trackProvenStoredOpsPush(session, batch);
+        const unprovenBatch = filterUnprovenPushOperations(session, batch);
+        if (unprovenBatch.length === 0) {
+            if (cachedProgress && peerSessions.get(peerKey) === session) {
+                touchPeerSession(peerKey);
+            }
+            await maybeFinalizeInitiatorSession(peerKey, session);
+            return;
+        }
+
+        const imported = await importQueue.pushAsync<ImportQueueResult>({
+            name: peerKey,
+            msg: {
+                ...createBaseMessage('batch'),
+                data: unprovenBatch,
+            },
+        });
+
+        if (peerSessions.get(peerKey) !== session) {
+            return;
+        }
+        for (const operation of unprovenBatch) {
+            const mapped = mapOperationToSyncKey(operation);
+            if (mapped.ok && !session.provenStoredPushIds.has(mapped.value.idHex)) {
+                session.unresolvedNeedIds.add(mapped.value.idHex);
+            }
+        }
+        for (const id of imported.knownIds) {
+            session.provenStoredPushIds.add(id);
+            session.unresolvedNeedIds.delete(id);
+            session.unresolvedOperations.delete(id);
+            if (session.initiator && session.pendingNeedIds.delete(id)) {
+                session.receivedKnownPushIds.add(id);
+            }
+        }
+        for (const id of imported.persistedIds) {
+            session.provenStoredPushIds.add(id);
+            session.pendingNeedIds.delete(id);
+            session.unresolvedNeedIds.delete(id);
+            session.unresolvedOperations.delete(id);
+        }
+        if (imported.retryable) {
+            for (const operation of unprovenBatch) {
+                const mapped = mapOperationToSyncKey(operation);
+                if (mapped.ok && !session.provenStoredPushIds.has(mapped.value.idHex)) {
+                    session.receivedPushIds.delete(mapped.value.idHex);
+                    session.unresolvedOperations.delete(mapped.value.idHex);
+                }
+            }
+        }
+        else {
+            for (const operation of unprovenBatch) {
+                const mapped = mapOperationToSyncKey(operation);
+                if (mapped.ok
+                    && session.unresolvedNeedIds.has(mapped.value.idHex)) {
+                    session.unresolvedOperations.set(mapped.value.idHex, operation);
+                }
+            }
+        }
+        await maybeFinalizeInitiatorSession(peerKey, session);
+    }
+
+    if (peerSessions.get(peerKey) === session) {
+        touchPeerSession(peerKey);
+    }
+}
+
+async function handleNegCloseMessage(peerKey: string, msg: NegCloseMessage): Promise<void> {
+    const session = peerSessions.get(peerKey);
+    if (session && session.sessionId === msg.sessionId && (!session.windowId || msg.windowId === session.windowId)) {
+        trackRemoteWindowProgress(session, msg.windowProgress);
+        if (session.initiator && msg.reason === 'max_rounds_reached') {
+            finalizeCurrentWindowStats(session, { completed: false, cappedByRounds: true });
+            const split = await maybeSplitWindowOnRoundCap(peerKey, session, 'remote_max_rounds_reached');
+            if (split) {
+                return;
+            }
+        }
+        if (msg.reason === 'complete') {
+            const unresolvedRefreshed = await refreshStoredUnresolvedNeeds(peerKey, session);
+            if (peerSessions.get(peerKey) !== session) {
+                return;
+            }
+            if (unresolvedRefreshed) {
+                await persistTerminalUnresolvedOperations(peerKey, session);
+                if (peerSessions.get(peerKey) !== session) {
+                    return;
+                }
+            }
+            if (session.unresolvedNeedIds.size > 0) {
+                log.warn(
+                    {
+                        peer: shortName(peerKey),
+                        sessionId: session.sessionId,
+                        unresolvedIds: summarizeSyncIds(session.unresolvedNeedIds),
+                    },
+                    'rejecting remote negentropy completion with unresolved operations'
+                );
+                terminatePeerConnection(peerKey, 'unresolved_operations');
+                return;
+            }
+        }
+        closePeerSession(peerKey, msg.reason || 'remote_closed');
+    }
+}
+
 async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void> {
     const conn = connectionInfo[peerKey];
     if (!conn) {
@@ -3572,39 +3890,7 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
     }
 
     if (msg.type === 'ping') {
-        clearMalformedPeer(peerKey, 'valid_ping');
-        connectionInfo[peerKey].nodeName = nodeName;
-        connectionInfo[peerKey].capabilities = normalizePeerCapabilities(msg.capabilities);
-        const peerTransportFramingVersion = Number.isInteger(msg.transportFramingVersion)
-            ? Number(msg.transportFramingVersion)
-            : null;
-        connectionInfo[peerKey].peerTransportFramingVersion = peerTransportFramingVersion;
-        const negotiatedTransportMode = peerTransportFramingVersion === TRANSPORT_FRAMING_VERSION ? 'framed' : 'legacy';
-        setPeerTransportMode(peerKey, negotiatedTransportMode, 'ping_capability_exchange');
-        if (negotiatedTransportMode === 'framed') {
-            const inboundMode = connectionInfo[peerKey].inboundTransportMode;
-            if (inboundMode !== 'framed') {
-                setPeerInboundTransportMode(peerKey, 'framed', 'ping_capability_exchange');
-            }
-        } else {
-            setPeerInboundTransportMode(peerKey, 'legacy', 'ping_capability_exchange');
-        }
-        log.info(
-            {
-                ...buildPeerSyncCompatibilityContext(peerKey, connectionInfo[peerKey]),
-                rawCapabilities: msg.capabilities ?? null,
-            },
-            'peer capabilities received'
-        );
-
-        if (Array.isArray(msg.peers)) {
-            for (const did of msg.peers) {
-                addPeer(did);
-            }
-        }
-
-        await maybeStartPeerSync(peerKey);
-        await maybeSchedulePreferredSyncs('ping');
+        await handlePingMessage(peerKey, msg, nodeName);
         return;
     }
 
@@ -3624,177 +3910,27 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
     }
 
     if (msg.type === 'neg_open') {
-        let session = peerSessions.get(peerKey);
-        const remoteSessionId = typeof msg.sessionId === 'string' ? msg.sessionId : '';
-        const activeOrderedCatchupSessionId = getActiveOrderedCatchupSessionId(conn, session);
-        const conflictDecision = decideInboundNegOpenConflict({
-            activeSessionMode: session?.mode ?? null,
-            activeSessionId: session?.sessionId ?? null,
-            activeOrderedCatchupSessionId,
-            remoteSessionId,
-        });
-
-        if (conflictDecision.action === 'ignore') {
-            log.warn(
-                {
-                    peer: shortName(peerKey),
-                    remoteSessionId,
-                    activeSessionMode: session?.mode ?? null,
-                    activeSessionId: session?.sessionId ?? null,
-                    activeOrderedCatchupSessionId,
-                },
-                'ignoring neg_open while ordered catch-up active'
-            );
-            return;
-        }
-
-        if (!negentropyAdapter) {
-            log.warn('neg_open ignored because adapter is unavailable');
-            return;
-        }
-        if (!supportsPeerNegentropyTransport(conn)) {
-            log.warn(
-                {
-                    peer: shortName(peerKey),
-                    sessionId: msg.sessionId,
-                    peerVersion: conn.capabilities.version,
-                    requiredVersion: NEGENTROPY_VERSION,
-                    peerTransportFramingVersion: conn.peerTransportFramingVersion,
-                    requiredTransportFramingVersion: TRANSPORT_FRAMING_VERSION,
-                },
-                'ignoring neg_open from incompatible negentropy transport'
-            );
-            return;
-        }
-
-        const window = parseRemoteWindow(msg.window);
-        if (!window) {
-            log.warn({ peer: shortName(peerKey), sessionId: msg.sessionId }, 'ignoring neg_open with invalid window');
-            return;
-        }
-        if (typeof msg.windowId !== 'string' || msg.windowId.length === 0) {
-            log.warn({ peer: shortName(peerKey), sessionId: msg.sessionId }, 'ignoring neg_open with invalid windowId');
-            return;
-        }
-
-        if (conflictDecision.action === 'replace' && session) {
-            closePeerSession(peerKey, 'replaced_by_remote_open');
-            session = undefined;
-        }
-
-        if (!session || session.mode !== 'negentropy' || session.sessionId !== msg.sessionId) {
-            session = createPeerSession(peerKey, 'negentropy', false, msg.sessionId);
-        }
-
-        session.initiator = false;
-        session.maxRounds = config.negentropyMaxRoundsPerSession;
-        const existingIndex = session.windows.findIndex(existingWindow => makeWindowId(existingWindow) === msg.windowId);
-        if (existingIndex >= 0) {
-            session.windows[existingIndex] = window;
-            session.windowIndex = existingIndex;
-        } else {
-            session.windows.push(window);
-            session.windowIndex = session.windows.length - 1;
-        }
-        const snapshot = await ensureWindowAdapterFresh(window, 'session_open_responder');
-        initializeSessionWindowState(session, window, msg.windowId, cloneWindowStats(snapshot.stats)!);
-        session.currentWindowSnapshot = snapshot;
-        session.currentWindowEngine = negentropyAdapter.createEngineForSnapshot(snapshot);
-        touchPeerSession(peerKey);
-        await handleNegentropyRoundAsResponder(peerKey, session, decodeNegentropyFrame(msg.frame));
+        await handleNegOpenMessage(peerKey, conn, msg);
         return;
     }
 
     if (msg.type === 'neg_msg') {
-        const session = peerSessions.get(peerKey);
-        if (!session || session.mode !== 'negentropy' || session.sessionId !== msg.sessionId) {
-            log.warn({ peer: shortName(peerKey), sessionId: msg.sessionId }, 'ignoring neg_msg for unknown session');
-            return;
-        }
-        if (!isCurrentSessionWindow(peerKey, session, msg.windowId, 'neg_msg')) {
-            return;
-        }
-
-        trackRemoteWindowProgress(session, msg.windowProgress);
-        touchPeerSession(peerKey);
-        if (session.initiator) {
-            await handleNegentropyRoundAsInitiator(peerKey, session, decodeNegentropyFrame(msg.frame));
-        } else {
-            await handleNegentropyRoundAsResponder(peerKey, session, decodeNegentropyFrame(msg.frame));
-        }
+        await handleNegMsgMessage(peerKey, msg);
         return;
     }
 
     if (msg.type === 'ops_req') {
-        const session = peerSessions.get(peerKey);
-        if (!session || session.mode !== 'negentropy' || session.sessionId !== msg.sessionId) {
-            log.warn({ peer: shortName(peerKey), sessionId: msg.sessionId }, 'ignoring ops_req for unknown session');
-            return;
-        }
-        if (!isCurrentSessionWindow(peerKey, session, msg.windowId, 'ops_req')) {
-            return;
-        }
-
-        const requestedIds = Array.isArray(msg.ids)
-            ? Array.from(new Set(msg.ids.map(id => String(id).toLowerCase()).filter(id => NEG_SYNC_ID_RE.test(id))))
-            : [];
-        syncStats.negentropyOpsReqReceived += requestedIds.length;
-        await sendOpsPushForIds(peerKey, session, requestedIds);
-        touchPeerSession(peerKey);
+        await handleOpsReqMessage(peerKey, msg);
         return;
     }
 
     if (msg.type === 'ops_push') {
-        const session = peerSessions.get(peerKey);
-        if (!session || session.mode !== 'negentropy' || session.sessionId !== msg.sessionId) {
-            log.warn({ peer: shortName(peerKey), sessionId: msg.sessionId }, 'ignoring ops_push for unknown session');
-            return;
-        }
-        if (!isCurrentSessionWindow(peerKey, session, msg.windowId, 'ops_push')) {
-            return;
-        }
-
-        const batch = normalizeInboundOpsPushBatch(msg.data);
-        if (batch.length > 0) {
-            syncStats.negentropyOpsPushReceived += batch.length;
-            trackReceivedWindowOperations(session, batch);
-            await trackRequestedKnownOpsPush(session, batch);
-            const pushedIdList = extractOperationHashes(batch);
-            const pushedIds = new Set(pushedIdList);
-            for (const id of pushedIds) {
-                session.pendingNeedIds.delete(id);
-            }
-
-            if (newBatch(batch)) {
-                importQueue.push({
-                    name: peerKey,
-                    msg: {
-                        ...createBaseMessage('batch'),
-                        data: batch,
-                    },
-                });
-            }
-
-            await maybeFinalizeInitiatorSession(peerKey, session);
-        }
-
-        touchPeerSession(peerKey);
+        await handleOpsPushMessage(peerKey, msg);
         return;
     }
 
     if (msg.type === 'neg_close') {
-        const session = peerSessions.get(peerKey);
-        if (session && session.sessionId === msg.sessionId && (!session.windowId || msg.windowId === session.windowId)) {
-            trackRemoteWindowProgress(session, msg.windowProgress);
-            if (session.initiator && msg.reason === 'max_rounds_reached') {
-                finalizeCurrentWindowStats(session, { completed: false, cappedByRounds: true });
-                const split = await maybeSplitWindowOnRoundCap(peerKey, session, 'remote_max_rounds_reached');
-                if (split) {
-                    return;
-                }
-            }
-            closePeerSession(peerKey, msg.reason || 'remote_closed');
-        }
+        await handleNegCloseMessage(peerKey, msg);
         return;
     }
 
@@ -3805,7 +3941,7 @@ async function flushQueue(): Promise<void> {
     const batch = await gatekeeper.getQueue(REGISTRY);
 
     if (batch.length > 0) {
-        await persistAcceptedOperations(batch, 'flushQueue');
+        await persistProcessedOperations(batch, [], 'flushQueue');
         syncStats.queueOpsRelayed += batch.length;
         const samples = collectQueueDelaySamples(batch);
         for (const sample of samples) {
@@ -3834,12 +3970,37 @@ async function syncGatekeeperIndexToStore(source: string): Promise<void> {
     if (sync.resetReason) {
         resetRuntimeSyncStateAfterGatekeeperReset(sync);
     }
-
-    if (!sync.resetReason && (sync.inserted > 0 || sync.updated > 0)) {
-        markNegentropyAdapterDirty();
+    else if (pendingSyncRecords.size > 0) {
+        try {
+            const pruned = await prunePersistedSyncRecords(
+                pendingSyncRecords,
+                syncStore,
+                NEG_MAX_IDS_PER_LOOKUP,
+            );
+            log.debug({ source, ...pruned, remaining: pendingSyncRecords.size }, 'pruned persisted sync-store retries');
+        }
+        catch (error) {
+            log.warn(
+                { error, source, remaining: pendingSyncRecords.size },
+                'failed to prune persisted sync-store retries'
+            );
+        }
     }
 
-    if (sync.resetReason || sync.inserted > 0 || sync.updated > 0) {
+    if (!sync.resetReason && (sync.inserted > 0 || sync.updated > 0 || sync.deleted > 0)) {
+        markNegentropyAdapterDirty();
+        for (const [peerKey, session] of peerSessions.entries()) {
+            if (
+                (sync.inserted > 0 || sync.updated > 0)
+                && session.mode === 'negentropy'
+                && session.unresolvedNeedIds.size > 0
+            ) {
+                await refreshStoredUnresolvedNeeds(peerKey, session);
+            }
+        }
+    }
+
+    if (sync.resetReason || sync.inserted > 0 || sync.updated > 0 || sync.deleted > 0) {
         maybeStartBackgroundPrebuild(`gatekeeper_index_${source}`);
     }
 
@@ -3921,7 +4082,7 @@ async function connectionLoop(): Promise<void> {
         await runPeriodicNegentropyRepair();
         await maybeSchedulePreferredSyncs('connection_loop');
 
-        log.debug({ syncStats: buildSyncStatsSnapshot() }, 'hyperswarm sync stats');
+        log.debug({ syncStats: buildSyncStatsSnapshot(syncStats) }, 'hyperswarm sync stats');
 
         if (config.ipfsEnabled) {
             const peeringPeers = await ipfs.getPeeringPeers();
@@ -3959,6 +4120,15 @@ const topic = Buffer.from(b4a.from(networkID, 'hex'));
 async function main(): Promise<void> {
     log.info({ db: config.db }, 'sync-store backend selected');
     await syncStore.start();
+    // Retry pre-0.5 out-of-order operations and modern losing-fork descendants after restart.
+    const deletedRejectedOperations = await syncStore.deleteBySyncOrder(
+        TERMINAL_REJECTED_SYNC_ORDER,
+    );
+    terminalOperationCids.clear();
+    log.info(
+        { deletedRejectedOperations },
+        'removed terminal rejected operations from sync store',
+    );
 
     await gatekeeper.connect({
         url: config.gatekeeperURL,
@@ -4074,7 +4244,7 @@ async function initNegentropyAdapter(): Promise<void> {
 
 export async function runMediator(options: MediatorMainOptions = {}): Promise<void> {
     if (options.syncStore) {
-        syncStore = options.syncStore;
+        replaceSyncStore(options.syncStore);
     }
 
     if (options.startLoops === false) {
@@ -4091,9 +4261,10 @@ export const __test = {
             delete connectionInfo[peerKey];
         }
         peerSessions.clear();
-        orderedCatchupPostImportPeers.clear();
+        orderedCatchupTransitionPeers.clear();
+        outboundSyncStartInProgress = false;
         nodeKey = '';
-        syncStore = createConfiguredSyncStore();
+        replaceSyncStore(createConfiguredSyncStore());
         negentropyAdapter = null;
         adapterChangeSeq = 0;
         adapterBuiltSeq = -1;
@@ -4109,7 +4280,7 @@ export const __test = {
     },
 
     setSyncStore(store: OperationSyncStore): void {
-        syncStore = store;
+        replaceSyncStore(store);
     },
 
     setNegentropyAdapter(adapter: unknown): void {
@@ -4128,37 +4299,18 @@ export const __test = {
         delete connectionInfoOverrides.connection;
 
         connectionInfo[peerKey] = {
-            connection,
-            key: peerKey,
-            peerName: shortName(peerKey),
-            nodeName: 'test-peer',
-            did: '',
-            connectedAt: Date.now(),
-            lastSeen: Date.now(),
-            capabilities: normalizePeerCapabilities(),
-            syncMode: 'unknown',
-            syncStarted: false,
-            lastNegentropyAttemptAt: 0,
-            negentropySynced: false,
-            legacyOutboundDeferred: false,
-            legacyInboundDeferred: null,
-            legacyFallbackNoted: false,
-            orderedCatchupAttempted: false,
-            orderedCatchupClientSessionId: null,
-            orderedCatchupServerSessionId: null,
-            orderedCatchupServerLastActivity: 0,
-            orderedCatchupServerPendingSince: 0,
-            orderedCatchupServerPendingUntil: 0,
-            orderedCatchupServerPendingReason: null,
-            orderedCatchupServerPendingGap: 0,
-            initialPingSent: false,
-            transportMode: 'unknown',
-            inboundTransportMode: 'unknown',
-            peerTransportFramingVersion: null,
-            inboundBuffer: Buffer.alloc(0),
-            inboundReceiveChain: Promise.resolve(),
+            ...createConnectionInfo({
+                connection,
+                peerKey,
+                peerName: shortName(peerKey),
+                nodeName: 'test-peer',
+            }),
             ...connectionInfoOverrides,
         } as ConnectionInfo;
+    },
+
+    disconnectPeer(peerKey: string): void {
+        closeConnection(peerKey);
     },
 
     async sendOrderedCatchupPage(peerKey: string, msg: OrderedCatchupReqMessage): Promise<void> {
@@ -4218,6 +4370,10 @@ export const __test = {
             inboundTransportMode: conn.inboundTransportMode,
             peerTransportFramingVersion: conn.peerTransportFramingVersion,
         };
+    },
+
+    getSyncStatsSnapshot(): object {
+        return buildSyncStatsSnapshot(syncStats);
     },
 };
 

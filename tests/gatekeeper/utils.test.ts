@@ -545,18 +545,17 @@ describe('Test operation validation errors', () => {
 });
 
 describe('gatekeeper.db', () => {
-    it('getEvents should return empty list on invalid did', async () => {
-        // @ts-expect-error Testing invalid DID
-        const events = await gatekeeper.db.getEvents(null);
-
-        expect(events).toStrictEqual([]);
+    it('getEvents should reject an invalid did', async () => {
+        await expect(
+            // @ts-expect-error Testing invalid DID
+            gatekeeper.db.getEvents(null)
+        ).rejects.toThrow('Invalid DID');
     });
 
-    it('getEvents should return empty list on malformed DID with no suffix', async () => {
-        // @ts-expect-error Testing invalid DID
-        const events = await gatekeeper.db.getEvents("did:test:");
-
-        expect(events).toStrictEqual([]);
+    it('getEvents should reject a malformed DID with no suffix', async () => {
+        await expect(
+            gatekeeper.db.getEvents("did:test:")
+        ).rejects.toThrow('Invalid DID');
     });
 
     it('addEvent should throw exception on invalid did', async () => {
