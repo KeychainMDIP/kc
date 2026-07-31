@@ -1,0 +1,36 @@
+name: Build Messaging webapp
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-messaging-webapp:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Use Node 22.15.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.0'
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Compile TypeScript
+        run: npm run build
+
+      - name: Install messaging dependencies
+        working-directory: ./apps/messaging
+        run: npm ci
+
+      - name: Typecheck messaging webapp
+        working-directory: ./apps/messaging
+        run: npm run check
+
+      - name: Build messaging webapp
+        working-directory: ./apps/messaging
+        run: npm run build

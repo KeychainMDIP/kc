@@ -36,6 +36,7 @@ const legacyClientFiles = [
 const modernFrontendFiles = [
     'apps/react-wallet/src/**/*.{ts,tsx}',
     'apps/chrome-extension/src/**/*.{ts,tsx}',
+    'apps/messaging/src/**/*.{ts,tsx}',
     'services/explorer/src/**/*.{ts,tsx}',
 ];
 const repoCodeFiles = [
@@ -148,9 +149,12 @@ export default [
             globals: testGlobals,
         },
         rules: {
+            'sonarjs/assertions-in-tests': 'off',
             'sonarjs/no-clear-text-protocols': 'off',
+            'sonarjs/no-duplicate-test-title': 'off',
             'sonarjs/no-hardcoded-passwords': 'off',
             'sonarjs/no-hardcoded-secrets': 'off',
+            'sonarjs/prefer-specific-assertions': 'off',
             'sonarjs/pseudo-random': 'off',
         },
     },
