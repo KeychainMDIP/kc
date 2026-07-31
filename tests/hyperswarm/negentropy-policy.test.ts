@@ -135,7 +135,10 @@ describe('negentropy sync policy', () => {
 
         expect(shouldStartPostOrderedCatchupNegentropy(base)).toBe(true);
         expect(shouldStartPostOrderedCatchupNegentropy({ ...base, peerConnected: false })).toBe(false);
-        expect(shouldStartPostOrderedCatchupNegentropy({ ...base, peerSupportsNegentropyTransport: false })).toBe(false);
+        expect(shouldStartPostOrderedCatchupNegentropy({
+            ...base,
+            peerSupportsNegentropyTransport: false,
+        })).toBe(false);
         expect(shouldStartPostOrderedCatchupNegentropy({ ...base, hasActiveSession: true })).toBe(false);
         expect(shouldStartPostOrderedCatchupNegentropy({ ...base, importQueueLength: 1 })).toBe(false);
         expect(shouldStartPostOrderedCatchupNegentropy({ ...base, importQueueRunning: 1 })).toBe(false);

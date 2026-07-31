@@ -1,11 +1,9 @@
 import {
     decodeLegacyJsonMessages,
     decodeFramedMessages,
-    decodeUnknownTransportMessages,
     DEFAULT_MAX_FRAMED_MESSAGE_BYTES,
     encodeFramedMessage,
     FramedMessageParser,
-    supportsLegacyRawTransportMessage,
 } from '../../services/mediators/hyperswarm/src/transport-framing.ts';
 
 describe('hyperswarm transport framing', () => {
@@ -53,208 +51,22 @@ describe('hyperswarm transport framing', () => {
         expect(() => decodeFramedMessages(Buffer.alloc(0), 0)).toThrow('maxMessageBytes must be a positive integer');
     });
 
-    it('identifies which message types remain legacy-transport compatible', () => {
-        expect(supportsLegacyRawTransportMessage('ping')).toBe(true);
-        expect(supportsLegacyRawTransportMessage('sync')).toBe(false);
-        expect(supportsLegacyRawTransportMessage('batch')).toBe(false);
-        expect(supportsLegacyRawTransportMessage('queue')).toBe(true);
-        expect(supportsLegacyRawTransportMessage('neg_open')).toBe(false);
-        expect(supportsLegacyRawTransportMessage('ops_push')).toBe(false);
-    });
-
-    it('decodes multiple legacy JSON messages from one chunk', () => {
-        const first = JSON.stringify({ type: 'ping', node: 'node-a' });
-        const second = JSON.stringify({ type: 'queue', node: 'node-b', relays: [], data: [] });
-        const decoded = decodeLegacyJsonMessages(Buffer.concat([
-            Buffer.from(first, 'utf8'),
-            Buffer.from(second, 'utf8'),
-        ]));
-
-        expect(decoded.error).toBeUndefined();
-        expect(decoded.remaining.length).toBe(0);
-        expect(decoded.messages.map(message => message.toString('utf8'))).toStrictEqual([first, second]);
-    });
-
-    it('ignores legacy whitespace and parses escaped string content', () => {
-        const payload = JSON.stringify({
+    it('decodes one raw compatibility ping and leaves following framed bytes untouched', () => {
+        const ping = JSON.stringify({
             type: 'ping',
-            node: 'node-a',
-            note: 'quote " slash \\\\ brace }',
-        });
-
-        const decoded = decodeLegacyJsonMessages(Buffer.from(` \n\t${payload}`, 'utf8'));
-        expect(decoded.error).toBeUndefined();
-        expect(decoded.remaining.length).toBe(0);
-        expect(decoded.messages).toHaveLength(1);
-        expect(decoded.messages[0].toString('utf8')).toBe(payload);
-
-        const whitespaceOnly = decodeLegacyJsonMessages(Buffer.from(' \n\t', 'utf8'));
-        expect(whitespaceOnly.error).toBeUndefined();
-        expect(whitespaceOnly.messages).toStrictEqual([]);
-        expect(whitespaceOnly.remaining.length).toBe(0);
-    });
-
-    it('buffers a legacy JSON message split across multiple chunks', () => {
-        const json = JSON.stringify({
-            type: 'ping',
-            node: 'node-a',
-            capabilities: {
-                negentropy: true,
-                negentropyVersion: 1,
-            },
+            node: 'old-node',
             transportFramingVersion: 1,
         });
-        const encoded = Buffer.from(json, 'utf8');
-
-        const first = decodeLegacyJsonMessages(encoded.subarray(0, 8), DEFAULT_MAX_FRAMED_MESSAGE_BYTES, 1);
-        expect(first.error).toBeUndefined();
-        expect(first.messages).toStrictEqual([]);
-
-        const second = decodeLegacyJsonMessages(
-            Buffer.concat([first.remaining, encoded.subarray(8)]),
+        const framed = encodeFramedMessage(JSON.stringify({ type: 'neg_close' }));
+        const decoded = decodeLegacyJsonMessages(
+            Buffer.concat([Buffer.from(ping), framed]),
             DEFAULT_MAX_FRAMED_MESSAGE_BYTES,
             1,
         );
-        expect(second.error).toBeUndefined();
-        expect(second.messages).toHaveLength(1);
-        expect(second.messages[0].toString('utf8')).toBe(json);
-        expect(second.remaining.length).toBe(0);
-    });
 
-    it('rejects invalid legacy decoder arguments', () => {
-        expect(() => decodeLegacyJsonMessages('bad' as any)).toThrow('buffer must be a Buffer');
-        expect(() => decodeLegacyJsonMessages(Buffer.alloc(0), 0)).toThrow('maxMessageBytes must be a positive integer');
-        expect(() => decodeLegacyJsonMessages(Buffer.alloc(0), DEFAULT_MAX_FRAMED_MESSAGE_BYTES, 0))
-            .toThrow('maxMessages must be a positive integer');
-    });
-
-    it('rejects oversized incomplete and complete legacy JSON messages', () => {
-        const incomplete = Buffer.from('{"type":"ping","node":"unterminated', 'utf8');
-        const incompleteDecoded = decodeLegacyJsonMessages(incomplete, 8);
-        expect(incompleteDecoded.messages).toStrictEqual([]);
-        expect(incompleteDecoded.error).toBe(`legacy JSON message length ${incomplete.length} exceeds max 8`);
-
-        const complete = Buffer.from(JSON.stringify({ type: 'ping', node: 'node-with-long-name' }), 'utf8');
-        const completeDecoded = decodeLegacyJsonMessages(complete, 10);
-        expect(completeDecoded.messages).toStrictEqual([]);
-        expect(completeDecoded.error).toBe(`legacy JSON message length ${complete.length} exceeds max 10`);
-    });
-
-    it('supports upgrading from a raw ping to framed transport within the same chunk', () => {
-        const ping = JSON.stringify({
-            type: 'ping',
-            node: 'node-a',
-            transportFramingVersion: 1,
-        });
-        const negClose = JSON.stringify({
-            type: 'neg_close',
-            sessionId: 'session-1',
-            windowId: 'window-1',
-            round: 4,
-            reason: 'complete',
-        });
-        const combined = Buffer.concat([
-            Buffer.from(ping, 'utf8'),
-            encodeFramedMessage(negClose),
-        ]);
-
-        const legacy = decodeLegacyJsonMessages(combined, DEFAULT_MAX_FRAMED_MESSAGE_BYTES, 1);
-        expect(legacy.error).toBeUndefined();
-        expect(legacy.messages.map(message => message.toString('utf8'))).toStrictEqual([ping]);
-
-        const framed = decodeFramedMessages(legacy.remaining);
-        expect(framed.error).toBeUndefined();
-        expect(framed.messages.map(message => message.toString('utf8'))).toStrictEqual([negClose]);
-        expect(framed.remaining.length).toBe(0);
-    });
-
-    it('preserves a partial framed message after a raw negotiation ping', () => {
-        const ping = JSON.stringify({
-            type: 'ping',
-            node: 'node-a',
-            transportFramingVersion: 1,
-        });
-        const negOpen = JSON.stringify({
-            type: 'neg_open',
-            sessionId: 'session-1',
-            windowId: 'window-1',
-            window: { type: 'history' },
-        });
-        const framed = encodeFramedMessage(negOpen);
-        const combined = Buffer.concat([
-            Buffer.from(ping, 'utf8'),
-            framed.subarray(0, 3),
-        ]);
-
-        const first = decodeUnknownTransportMessages(combined, DEFAULT_MAX_FRAMED_MESSAGE_BYTES, 1);
-        expect(first.error).toBeUndefined();
-        expect(first.transportMode).toBe('legacy');
-        expect(first.messages.map(message => message.toString('utf8'))).toStrictEqual([ping]);
-
-        const partial = decodeFramedMessages(first.remaining, DEFAULT_MAX_FRAMED_MESSAGE_BYTES);
-        expect(partial.error).toBeUndefined();
-        expect(partial.messages).toStrictEqual([]);
-        expect(partial.remaining).toStrictEqual(framed.subarray(0, 3));
-
-        const completed = decodeFramedMessages(Buffer.concat([partial.remaining, framed.subarray(3)]));
-        expect(completed.error).toBeUndefined();
-        expect(completed.messages.map(message => message.toString('utf8'))).toStrictEqual([negOpen]);
-        expect(completed.remaining.length).toBe(0);
-    });
-
-    it('decodes a framed ping before transport mode is known', () => {
-        const ping = JSON.stringify({
-            type: 'ping',
-            node: 'node-a',
-            transportFramingVersion: 1,
-        });
-        const framed = encodeFramedMessage(ping);
-
-        const decoded = decodeUnknownTransportMessages(framed, DEFAULT_MAX_FRAMED_MESSAGE_BYTES, 1);
         expect(decoded.error).toBeUndefined();
-        expect(decoded.legacyError).toBe('invalid legacy JSON message prefix byte 0');
-        expect(decoded.transportMode).toBe('framed');
         expect(decoded.messages.map(message => message.toString('utf8'))).toStrictEqual([ping]);
-        expect(decoded.remaining.length).toBe(0);
-    });
-
-    it('rejects invalid unknown transport data when neither legacy nor framed parsing works', () => {
-        const invalid = Buffer.from('[1,2,3]', 'utf8');
-        const decoded = decodeUnknownTransportMessages(invalid, DEFAULT_MAX_FRAMED_MESSAGE_BYTES, 1);
-
-        expect(decoded.transportMode).toBeNull();
-        expect(decoded.messages).toStrictEqual([]);
-        expect(decoded.remaining.length).toBe(0);
-        expect(decoded.legacyError).toBe(`invalid legacy JSON message prefix byte ${'['.charCodeAt(0)}`);
-        expect(decoded.framedError).toBe(
-            `framed message length ${invalid.readUInt32BE(0)} exceeds max ${DEFAULT_MAX_FRAMED_MESSAGE_BYTES}`
-        );
-        expect(decoded.error).toBe(`invalid unknown transport message: legacy=${decoded.legacyError}; framed=${decoded.framedError}`);
-    });
-
-    it('preserves an incomplete framed-first message before transport mode is known', () => {
-        const ping = JSON.stringify({
-            type: 'ping',
-            node: 'node-a',
-            transportFramingVersion: 1,
-        });
-        const framed = encodeFramedMessage(ping);
-
-        const first = decodeUnknownTransportMessages(framed.subarray(0, 3), DEFAULT_MAX_FRAMED_MESSAGE_BYTES, 1);
-        expect(first.error).toBeUndefined();
-        expect(first.legacyError).toBe('invalid legacy JSON message prefix byte 0');
-        expect(first.transportMode).toBeNull();
-        expect(first.messages).toStrictEqual([]);
-
-        const second = decodeUnknownTransportMessages(
-            Buffer.concat([first.remaining, framed.subarray(3)]),
-            DEFAULT_MAX_FRAMED_MESSAGE_BYTES,
-            1,
-        );
-        expect(second.error).toBeUndefined();
-        expect(second.transportMode).toBe('framed');
-        expect(second.messages.map(message => message.toString('utf8'))).toStrictEqual([ping]);
-        expect(second.remaining.length).toBe(0);
+        expect(decoded.remaining).toStrictEqual(framed);
     });
 
     it('buffers a message split across multiple chunks', () => {
@@ -330,14 +142,6 @@ describe('hyperswarm transport framing', () => {
         expect(decoded.error).toBe(
             `framed message length ${oversizedLength} exceeds max ${DEFAULT_MAX_FRAMED_MESSAGE_BYTES}`
         );
-    });
-
-    it('rejects an invalid legacy JSON prefix', () => {
-        const invalid = Buffer.from('[1,2,3]', 'utf8');
-        const decoded = decodeLegacyJsonMessages(invalid);
-
-        expect(decoded.messages).toStrictEqual([]);
-        expect(decoded.error).toBe(`invalid legacy JSON message prefix byte ${'['.charCodeAt(0)}`);
     });
 
     it('preserves back-to-back ops_push and neg_close as distinct messages', () => {

@@ -96,13 +96,10 @@ import {
     parseOrderedCatchupCursor,
 } from './ordered-catchup.js';
 import {
-    classifyPendingBuffer,
     DEFAULT_MAX_FRAMED_MESSAGE_BYTES,
     decodeFramedMessages,
     decodeLegacyJsonMessages,
-    decodeUnknownTransportMessages,
     encodeFramedMessage,
-    supportsLegacyRawTransportMessage,
 } from './transport-framing.js';
 import type {
     HyperMessage,
@@ -367,6 +364,21 @@ function addConnection(conn: HyperswarmConnection): void {
         return;
     }
 
+    const connectionState = createConnectionInfo({
+        connection: conn,
+        peerKey,
+        peerName,
+        requireInitialPing: true,
+    });
+    connectionInfo[peerKey] = connectionState;
+
+    connectionState.initialPingPromise = sendPingToPeer(peerKey, connectionState).catch(error => {
+        log.error({ error, peer: peerName }, 'failed to build initial hyperswarm ping');
+        if (connectionInfo[peerKey] === connectionState) {
+            terminatePeerConnection(peerKey, 'initial_ping_failed');
+        }
+    });
+
     conn.once('close', () => closeConnection(peerKey));
     conn.once('error', error => {
         log.warn({ error, peer: peerName }, 'hyperswarm peer connection error');
@@ -376,16 +388,8 @@ function addConnection(conn: HyperswarmConnection): void {
 
     log.info(`received connection from: ${peerName}`);
 
-    connectionInfo[peerKey] = createConnectionInfo({
-        connection: conn,
-        peerKey,
-        peerName,
-    });
-
     const peerNames = Object.values(connectionInfo).map(info => info.peerName);
     log.debug(`--- ${peerNames.length} nodes connected, detected nodes: ${peerNames.join(', ')}`);
-
-    void sendPingToPeer(peerKey, 'initial');
 }
 
 function closeConnection(peerKey: string): void {
@@ -420,6 +424,37 @@ function terminatePeerConnection(peerKey: string, reason: string): void {
     }
 }
 
+function quarantineLegacyTransportPeer(
+    peerKey: string,
+    reason: string,
+    details: Record<string, unknown> = {},
+): void {
+    const conn = connectionInfo[peerKey];
+    if (!conn || conn.legacyTransportQuarantined) {
+        return;
+    }
+
+    conn.legacyTransportQuarantined = true;
+    conn.syncMode = 'unknown';
+    conn.syncStarted = false;
+    conn.negentropySynced = false;
+    conn.inboundBuffer = Buffer.alloc(0);
+    orderedCatchupTransitionPeers.delete(peerKey);
+    clearOrderedCatchupServerExpectation(peerKey, reason);
+    if (conn.orderedCatchupServerSessionId) {
+        clearOrderedCatchupServerState(peerKey, conn.orderedCatchupServerSessionId, reason);
+    }
+    closePeerSession(peerKey, reason);
+    syncStats.legacyTransportConnectionsQuarantined += 1;
+    log.warn(
+        {
+            peer: shortName(peerKey),
+            ...details,
+        },
+        'quarantined peer using an unsupported transport framing version'
+    );
+}
+
 function shortName(peerKey: string): string {
     return peerKey.slice(0, 4) + '-' + peerKey.slice(-4);
 }
@@ -448,58 +483,11 @@ function createBaseMessage<T extends HyperMessage['type']>(type: T): Omit<HyperM
     };
 }
 
-function writeLegacyJson(conn: HyperswarmConnection, json: string): number {
-    const bytes = Buffer.byteLength(json, 'utf8');
-    syncStats.bytesSent += bytes;
-    conn.write(json);
-    return bytes;
-}
-
 function writeFramedJson(conn: HyperswarmConnection, json: string): number {
     const framed = encodeFramedMessage(json, MAX_FRAMED_MESSAGE_BYTES);
     syncStats.bytesSent += framed.length;
     conn.write(framed);
     return framed.length;
-}
-
-function setPeerTransportMode(
-    peerKey: string,
-    transportMode: ConnectionInfo['transportMode'],
-    reason: string,
-): void {
-    const conn = connectionInfo[peerKey];
-    if (!conn || conn.transportMode === transportMode) {
-        return;
-    }
-
-    const previousMode = conn.transportMode;
-    conn.transportMode = transportMode;
-    log.debug({
-        peer: shortName(peerKey),
-        previousMode,
-        transportMode,
-        reason,
-    }, 'updated hyperswarm transport mode');
-}
-
-function setPeerInboundTransportMode(
-    peerKey: string,
-    inboundTransportMode: ConnectionInfo['inboundTransportMode'],
-    reason: string,
-): void {
-    const conn = connectionInfo[peerKey];
-    if (!conn || conn.inboundTransportMode === inboundTransportMode) {
-        return;
-    }
-
-    const previousMode = conn.inboundTransportMode;
-    conn.inboundTransportMode = inboundTransportMode;
-    log.debug({
-        peer: shortName(peerKey),
-        previousMode,
-        inboundTransportMode,
-        reason,
-    }, 'updated hyperswarm inbound transport mode');
 }
 
 async function buildPeerCapabilities(): Promise<PeerCapabilities> {
@@ -557,45 +545,42 @@ async function buildPingMessage(): Promise<PingMessage> {
     };
 }
 
-interface SendToPeerOptions {
-    initialPing?: boolean;
-}
-
-function sendToPeer(peerKey: string, msg: HyperMessage, options: SendToPeerOptions = {}): boolean {
+function sendToPeer(peerKey: string, msg: HyperMessage): boolean {
     const conn = connectionInfo[peerKey];
-    if (!conn) {
+    if (!conn
+        || conn.legacyTransportQuarantined
+        || (msg.type !== 'ping' && !conn.initialPingSent)) {
         return false;
     }
 
     try {
         const json = JSON.stringify(msg);
-        if (conn.transportMode === 'framed') {
-            writeFramedJson(conn.connection, json);
-        } else if (conn.transportMode === 'legacy' && supportsLegacyRawTransportMessage(msg.type)) {
-            writeLegacyJson(conn.connection, json);
-        } else if (conn.transportMode === 'unknown'
-            && msg.type === 'ping'
-            && options.initialPing === true
-            && !conn.initialPingSent) {
-            writeLegacyJson(conn.connection, json);
-            conn.initialPingSent = true;
-        } else {
-            log.debug({ peer: shortName(peerKey), type: msg.type }, 'deferring hyperswarm message until transport negotiation completes');
-            return false;
-        }
+        writeFramedJson(conn.connection, json);
         return true;
     }
     catch (error) {
-        log.error({ error, peer: shortName(peerKey), type: msg.type, transportMode: conn.transportMode }, 'failed to send hyperswarm message');
+        log.error({ error, peer: shortName(peerKey), type: msg.type }, 'failed to send hyperswarm message');
         return false;
     }
 }
 
-async function sendPingToPeer(peerKey: string, source: 'initial' | 'periodic' = 'periodic'): Promise<void> {
+async function sendPingToPeer(peerKey: string, expectedConnection?: ConnectionInfo): Promise<void> {
     const ping = await buildPingMessage();
-    if (sendToPeer(peerKey, ping, { initialPing: source === 'initial' })) {
+    const conn = connectionInfo[peerKey];
+    if (!conn || (expectedConnection && conn !== expectedConnection)) {
+        return;
+    }
+    if (sendToPeer(peerKey, ping)) {
+        conn.initialPingSent = true;
         log.debug(`* sent ping to: ${shortName(peerKey)}`);
     }
+}
+
+async function waitForInitialPing(peerKey: string, conn: ConnectionInfo): Promise<boolean> {
+    await conn.initialPingPromise;
+    return connectionInfo[peerKey] === conn
+        && conn.initialPingSent
+        && !conn.legacyTransportQuarantined;
 }
 
 function createSessionId(peerKey: string): string {
@@ -1026,7 +1011,7 @@ async function startNegentropySessionForPeer(
     initiatorOverride?: boolean,
 ): Promise<boolean> {
     const conn = connectionInfo[peerKey];
-    if (!conn) {
+    if (!conn || !await waitForInitialPing(peerKey, conn)) {
         return false;
     }
 
@@ -1078,7 +1063,7 @@ async function startOrderedCatchupSessionForPeer(
     gap: number,
 ): Promise<void> {
     const conn = connectionInfo[peerKey];
-    if (!conn) {
+    if (!conn || !await waitForInitialPing(peerKey, conn)) {
         return;
     }
 
@@ -1112,7 +1097,7 @@ async function startOrderedCatchupSessionForPeer(
 
 async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic' = 'connect'): Promise<void> {
     const conn = connectionInfo[peerKey];
-    if (!conn) {
+    if (!conn || !await waitForInitialPing(peerKey, conn)) {
         return;
     }
 
@@ -2986,6 +2971,14 @@ function queueInboundPeerData(peerKey: string, chunk: Buffer | string): void {
         return;
     }
 
+    if (conn.legacyTransportQuarantined) {
+        syncStats.bytesReceived += typeof chunk === 'string'
+            ? Buffer.byteLength(chunk, 'utf8')
+            : chunk.length;
+        conn.lastSeen = Date.now();
+        return;
+    }
+
     const incoming = typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : Buffer.from(chunk);
     conn.inboundReceiveChain = conn.inboundReceiveChain
         .then(() => processInboundPeerData(peerKey, incoming))
@@ -3002,64 +2995,76 @@ async function processInboundPeerData(peerKey: string, chunk: Buffer): Promise<v
     }
 
     syncStats.bytesReceived += chunk.length;
+    if (conn.legacyTransportQuarantined) {
+        conn.lastSeen = Date.now();
+        return;
+    }
+
     conn.inboundBuffer = conn.inboundBuffer.length === 0
         ? chunk
         : Buffer.concat([conn.inboundBuffer, chunk]);
 
     while (conn.inboundBuffer.length > 0) {
-        if (conn.inboundTransportMode === 'framed') {
-            const parsed = decodeFramedMessages(conn.inboundBuffer, MAX_FRAMED_MESSAGE_BYTES);
-            if (parsed.error) {
-                log.warn(
-                    {
-                        peer: shortName(peerKey),
-                        pendingBytes: conn.inboundBuffer.length,
-                        error: parsed.error,
-                        ...classifyPendingBuffer(conn.inboundBuffer),
-                    },
-                    'received malformed framed hyperswarm message'
-                );
-                noteMalformedPeer(peerKey, 'malformed_framed_message');
-                terminatePeerConnection(peerKey, 'malformed_framed_message');
-                return;
-            }
+        const parsed = decodeFramedMessages(conn.inboundBuffer, MAX_FRAMED_MESSAGE_BYTES);
+        if (parsed.error) {
+            const legacy = decodeLegacyJsonMessages(conn.inboundBuffer, MAX_FRAMED_MESSAGE_BYTES, 1);
+            if (!legacy.error) {
+                if (legacy.messages.length === 0) {
+                    conn.inboundBuffer = legacy.remaining;
+                    return;
+                }
 
-            if (parsed.messages.length === 0) {
-                conn.inboundBuffer = parsed.remaining;
-                return;
-            }
+                const message = legacy.messages[0];
+                try {
+                    const legacyMessage = JSON.parse(message.toString('utf8')) as { type?: unknown };
+                    if (typeof legacyMessage.type !== 'string') {
+                        throw new Error('unframed message type must be a string');
+                    }
 
-            conn.inboundBuffer = parsed.remaining;
-            for (const message of parsed.messages) {
+                    if (conn.initialInboundMessageReceived) {
+                        quarantineLegacyTransportPeer(
+                            peerKey,
+                            'legacy_unframed_transport',
+                            { messageType: legacyMessage.type },
+                        );
+                        return;
+                    }
+
+                    if (legacyMessage.type !== 'ping') {
+                        throw new Error('initial unframed message must be a ping');
+                    }
+                }
+                catch (error) {
+                    log.warn(
+                        { error, peer: shortName(peerKey) },
+                        'received invalid unframed initial hyperswarm ping'
+                    );
+                    noteMalformedPeer(peerKey, 'invalid_unframed_initial_ping');
+                    terminatePeerConnection(peerKey, 'invalid_unframed_initial_ping');
+                    return;
+                }
+
+                conn.initialInboundMessageReceived = true;
+                conn.inboundBuffer = legacy.remaining;
                 await receiveMsg(peerKey, message.toString('utf8'));
                 if (!connectionInfo[peerKey]) {
                     return;
                 }
+                continue;
             }
-            continue;
         }
 
-        // Parse one pre-negotiation raw message at a time. If that message advertises
-        // framing, receiveMsg() switches inbound mode before the remaining bytes are decoded.
-        const maxLegacyMessages = 1;
-        const parsed = conn.inboundTransportMode === 'unknown'
-            ? decodeUnknownTransportMessages(conn.inboundBuffer, MAX_FRAMED_MESSAGE_BYTES, maxLegacyMessages)
-            : decodeLegacyJsonMessages(conn.inboundBuffer, MAX_FRAMED_MESSAGE_BYTES, maxLegacyMessages);
         if (parsed.error) {
             log.warn(
                 {
                     peer: shortName(peerKey),
-                    transportMode: conn.transportMode,
-                    inboundTransportMode: conn.inboundTransportMode,
                     pendingBytes: conn.inboundBuffer.length,
                     error: parsed.error,
-                    legacyError: 'legacyError' in parsed ? parsed.legacyError : undefined,
-                    framedError: 'framedError' in parsed ? parsed.framedError : undefined,
                 },
-                'received malformed legacy hyperswarm message'
+                'received malformed framed hyperswarm message'
             );
-            noteMalformedPeer(peerKey, 'malformed_legacy_message');
-            terminatePeerConnection(peerKey, 'malformed_legacy_message');
+            noteMalformedPeer(peerKey, 'malformed_framed_message');
+            terminatePeerConnection(peerKey, 'malformed_framed_message');
             return;
         }
 
@@ -3068,11 +3073,8 @@ async function processInboundPeerData(peerKey: string, chunk: Buffer): Promise<v
             return;
         }
 
+        conn.initialInboundMessageReceived = true;
         conn.inboundBuffer = parsed.remaining;
-        if ('transportMode' in parsed && parsed.transportMode === 'framed') {
-            setPeerTransportMode(peerKey, 'framed', 'received_framed_message_before_ping');
-            setPeerInboundTransportMode(peerKey, 'framed', 'received_framed_message_before_ping');
-        }
         for (const message of parsed.messages) {
             await receiveMsg(peerKey, message.toString('utf8'));
             if (!connectionInfo[peerKey]) {
@@ -3142,26 +3144,35 @@ async function handlePingMessage(
     msg: PingMessage,
     nodeName: string,
 ): Promise<void> {
-    clearMalformedPeer(peerKey, 'valid_ping');
-    connectionInfo[peerKey].nodeName = nodeName;
-    connectionInfo[peerKey].capabilities = normalizePeerCapabilities(msg.capabilities);
+    const conn = connectionInfo[peerKey];
+    if (!conn) {
+        return;
+    }
+
     const peerTransportFramingVersion = Number.isInteger(msg.transportFramingVersion)
         ? Number(msg.transportFramingVersion)
         : null;
-    connectionInfo[peerKey].peerTransportFramingVersion = peerTransportFramingVersion;
-    const negotiatedTransportMode = peerTransportFramingVersion === TRANSPORT_FRAMING_VERSION ? 'framed' : 'legacy';
-    setPeerTransportMode(peerKey, negotiatedTransportMode, 'ping_capability_exchange');
-    if (negotiatedTransportMode === 'framed') {
-        const inboundMode = connectionInfo[peerKey].inboundTransportMode;
-        if (inboundMode !== 'framed') {
-            setPeerInboundTransportMode(peerKey, 'framed', 'ping_capability_exchange');
-        }
-    } else {
-        setPeerInboundTransportMode(peerKey, 'legacy', 'ping_capability_exchange');
+    conn.peerTransportFramingVersion = peerTransportFramingVersion;
+    if (peerTransportFramingVersion !== TRANSPORT_FRAMING_VERSION) {
+        quarantineLegacyTransportPeer(
+            peerKey,
+            peerTransportFramingVersion === null
+                ? 'missing_transport_framing_version'
+                : 'unsupported_transport_framing_version',
+            {
+                peerTransportFramingVersion,
+                requiredTransportFramingVersion: TRANSPORT_FRAMING_VERSION,
+            },
+        );
+        return;
     }
+
+    clearMalformedPeer(peerKey, 'valid_ping');
+    conn.nodeName = nodeName;
+    conn.capabilities = normalizePeerCapabilities(msg.capabilities);
     log.info(
         {
-            ...buildPeerSyncCompatibilityContext(peerKey, connectionInfo[peerKey]),
+            ...buildPeerSyncCompatibilityContext(peerKey, conn),
             rawCapabilities: msg.capabilities ?? null,
         },
         'peer capabilities received'
@@ -3440,7 +3451,7 @@ async function handleNegCloseMessage(peerKey: string, msg: NegCloseMessage): Pro
 
 async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void> {
     const conn = connectionInfo[peerKey];
-    if (!conn) {
+    if (!conn || conn.legacyTransportQuarantined) {
         return;
     }
 
@@ -3452,7 +3463,7 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
     }
     catch {
         const jsonPreview = payload.length > 80 ? `${payload.slice(0, 40)}...${payload.slice(-40)}` : payload;
-        log.warn({ peer: conn.peerName, transportMode: conn.transportMode, jsonPreview }, 'received invalid hyperswarm JSON message');
+        log.warn({ peer: conn.peerName, jsonPreview }, 'received invalid hyperswarm JSON message');
         noteMalformedPeer(peerKey, 'invalid_hyperswarm_json_message');
         terminatePeerConnection(peerKey, 'invalid_hyperswarm_json_message');
         return;
@@ -3464,9 +3475,19 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
     log.debug(`received ${msg.type} from: ${shortName(peerKey)} (${nodeName})`);
     connectionInfo[peerKey].lastSeen = new Date().getTime();
 
-    if (msg.type !== 'ping' && conn.transportMode === 'unknown') {
-        setPeerTransportMode(peerKey, 'legacy', 'received_raw_message_before_ping');
-        setPeerInboundTransportMode(peerKey, 'legacy', 'received_raw_message_before_ping');
+    if (msg.type !== 'ping' && conn.peerTransportFramingVersion !== TRANSPORT_FRAMING_VERSION) {
+        quarantineLegacyTransportPeer(
+            peerKey,
+            'missing_transport_framing_version',
+            {
+                messageType,
+                requiredTransportFramingVersion: TRANSPORT_FRAMING_VERSION,
+            },
+        );
+        return;
+    }
+    if (msg.type !== 'ping' && !await waitForInitialPing(peerKey, conn)) {
+        return;
     }
 
     if (msg.type === 'queue') {
@@ -3902,6 +3923,7 @@ export const __test = {
                 peerName: shortName(peerKey),
                 nodeName: 'test-peer',
             }),
+            peerTransportFramingVersion: TRANSPORT_FRAMING_VERSION,
             ...connectionInfoOverrides,
         } as ConnectionInfo;
     },
@@ -3935,8 +3957,8 @@ export const __test = {
         await processInboundPeerData(peerKey, typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : Buffer.from(chunk));
     },
 
-    async sendPingToPeer(peerKey: string, source: 'initial' | 'periodic' = 'periodic'): Promise<void> {
-        await sendPingToPeer(peerKey, source);
+    async sendPingToPeer(peerKey: string): Promise<void> {
+        await sendPingToPeer(peerKey);
     },
 
     getConnectionState(peerKey: string): Record<string, unknown> | null {
@@ -3963,9 +3985,8 @@ export const __test = {
             orderedCatchupServerPendingReason: conn.orderedCatchupServerPendingReason,
             orderedCatchupServerPendingGap: conn.orderedCatchupServerPendingGap,
             initialPingSent: conn.initialPingSent,
-            transportMode: conn.transportMode,
-            inboundTransportMode: conn.inboundTransportMode,
             peerTransportFramingVersion: conn.peerTransportFramingVersion,
+            legacyTransportQuarantined: conn.legacyTransportQuarantined,
         };
     },
 

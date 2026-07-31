@@ -1,6 +1,6 @@
 import { Duplex } from 'node:stream';
 
-import { decodeUnknownTransportMessages } from '../../services/mediators/hyperswarm/src/transport-framing.ts';
+import { decodeFramedMessages } from '../../services/mediators/hyperswarm/src/transport-framing.ts';
 
 export type TransportDirection = 'a-to-b' | 'b-to-a';
 export type DeliveryAction = 'intact' | 'fragmented' | 'coalesced' | 'duplicated' | 'dropped';
@@ -9,7 +9,6 @@ interface DecodedTrace {
     framed: boolean;
     messageType: string | null;
     messageTypes: string[];
-    transportMode: 'legacy' | 'framed' | null;
     decodeError?: string;
     remainingBytes: number;
 }
@@ -43,7 +42,7 @@ export interface PumpUntilOptions {
 }
 
 function decodeTrace(raw: Buffer): DecodedTrace {
-    const decoded = decodeUnknownTransportMessages(raw);
+    const decoded = decodeFramedMessages(raw);
     const messageTypes = decoded.messages.flatMap(message => {
         try {
             const parsed = JSON.parse(message.toString('utf8')) as { type?: unknown };
@@ -55,10 +54,9 @@ function decodeTrace(raw: Buffer): DecodedTrace {
     });
 
     return {
-        framed: decoded.transportMode === 'framed',
+        framed: messageTypes.length > 0 && !decoded.error && decoded.remaining.length === 0,
         messageType: messageTypes.length === 1 ? messageTypes[0] : null,
         messageTypes,
-        transportMode: decoded.transportMode,
         decodeError: decoded.error,
         remainingBytes: decoded.remaining.length,
     };

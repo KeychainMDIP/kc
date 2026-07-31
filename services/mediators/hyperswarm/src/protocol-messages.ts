@@ -17,7 +17,7 @@ export interface PingMessage extends HyperMessageBase {
     type: 'ping';
     peers: string[];
     capabilities?: PeerCapabilities;
-    transportFramingVersion?: number;
+    transportFramingVersion: number;
 }
 
 export interface QueueMessage extends HyperMessageBase {

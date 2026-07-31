@@ -38,7 +38,6 @@ export interface MediatorDriverOptions {
     maxRecordsPerWindow?: number;
     maxRoundsPerSession?: number;
     frameSizeLimit?: number;
-    connectionMode?: 'framed' | 'unknown';
 }
 
 export type MediatorTranscriptEntry = RecordedTransportWrite;
@@ -497,7 +496,6 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
     const publicKeyB = Buffer.from(options.publicKeyB ?? Buffer.alloc(32, 0x22));
     const maxRecordsPerWindow = options.maxRecordsPerWindow ?? 25_000;
     const maxRoundsPerSession = options.maxRoundsPerSession ?? 64;
-    const connectionMode = options.connectionMode ?? 'framed';
 
     if (publicKeyA.compare(publicKeyB) === 0) {
         throw new Error('node public keys must differ');
@@ -637,22 +635,16 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
                 if (started) {
                     throw new Error('mediator driver synchronization already started');
                 }
-                if (source === 'periodic' && connectionMode !== 'framed') {
-                    throw new Error('periodic synchronization requires a negotiated framed connection');
-                }
                 started = true;
                 quiescent = false;
-                const createConnectionOverrides = () => connectionMode === 'framed'
+                const createConnectionOverrides = () => source === 'periodic'
                     ? {
                         capabilities: normalizePeerCapabilities({
                             negentropy: true,
                             negentropyVersion: 1,
                             orderedCatchup: false,
                         }),
-                        transportMode: 'framed',
-                        inboundTransportMode: 'framed',
-                        peerTransportFramingVersion: 1,
-                        ...(source === 'periodic' ? { syncMode: 'negentropy' } : {}),
+                        syncMode: 'negentropy',
                     }
                     : {};
                 nodeA!.run(() => nodeA!.mediator.__test.addConnection(peerKeyB, {
@@ -663,13 +655,12 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
                     connection: transport.connectionB,
                     ...createConnectionOverrides(),
                 }));
-                if (connectionMode === 'unknown') {
-                    await nodeA!.run(() => nodeA!.mediator.__test.sendPingToPeer(peerKeyB, 'initial'));
-                    await nodeB!.run(() => nodeB!.mediator.__test.sendPingToPeer(peerKeyA, 'initial'));
-                }
-                else {
+                if (source === 'periodic') {
                     await nodeA!.run(() => nodeA!.mediator.__test.maybeStartPeerSync(peerKeyB, source));
                     await nodeB!.run(() => nodeB!.mediator.__test.maybeStartPeerSync(peerKeyA, source));
+                } else {
+                    await nodeA!.run(() => nodeA!.mediator.__test.sendPingToPeer(peerKeyB));
+                    await nodeB!.run(() => nodeB!.mediator.__test.sendPingToPeer(peerKeyA));
                 }
             },
             async driveUntilQuiescent(
@@ -883,7 +874,6 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
                 const recentMessages = transport.transcript.slice(-20).map(entry => ({
                     sequence: entry.sequence,
                     direction: entry.direction,
-                    transportMode: entry.transportMode,
                     types: entry.messageTypes,
                     bytes: entry.raw.length,
                 }));

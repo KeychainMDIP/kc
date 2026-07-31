@@ -47,9 +47,10 @@ export interface ConnectionInfo {
     orderedCatchupServerPendingReason: string | null;
     orderedCatchupServerPendingGap: number;
     initialPingSent: boolean;
-    transportMode: 'unknown' | 'legacy' | 'framed';
-    inboundTransportMode: 'unknown' | 'legacy' | 'framed';
+    initialPingPromise: Promise<void>;
+    initialInboundMessageReceived: boolean;
     peerTransportFramingVersion: number | null;
+    legacyTransportQuarantined: boolean;
     inboundBuffer: Buffer;
     inboundReceiveChain: Promise<void>;
 }
@@ -120,6 +121,7 @@ export interface ConnectionInfoOptions {
     peerName: string;
     nodeName?: string;
     now?: number;
+    requireInitialPing?: boolean;
 }
 
 export function createConnectionInfo(options: ConnectionInfoOptions): ConnectionInfo {
@@ -154,10 +156,11 @@ export function createConnectionInfo(options: ConnectionInfoOptions): Connection
         orderedCatchupServerPendingUntil: 0,
         orderedCatchupServerPendingReason: null,
         orderedCatchupServerPendingGap: 0,
-        initialPingSent: false,
-        transportMode: 'unknown',
-        inboundTransportMode: 'unknown',
+        initialPingSent: options.requireInitialPing !== true,
+        initialPingPromise: Promise.resolve(),
+        initialInboundMessageReceived: false,
         peerTransportFramingVersion: null,
+        legacyTransportQuarantined: false,
         inboundBuffer: Buffer.alloc(0),
         inboundReceiveChain: Promise.resolve(),
     };

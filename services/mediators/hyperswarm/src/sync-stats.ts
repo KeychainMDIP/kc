@@ -39,6 +39,7 @@ export interface MediatorSyncStats {
     bytesReceived: number;
     malformedPeerCooldowns: number;
     malformedPeerConnectionsRejected: number;
+    legacyTransportConnectionsQuarantined: number;
     syncDurationMs: AggregateMetric;
 }
 
@@ -78,6 +79,7 @@ export function createMediatorSyncStats(): MediatorSyncStats {
         bytesReceived: 0,
         malformedPeerCooldowns: 0,
         malformedPeerConnectionsRejected: 0,
+        legacyTransportConnectionsQuarantined: 0,
         syncDurationMs: createAggregateMetric(),
     };
 }
@@ -137,6 +139,7 @@ export function buildSyncStatsSnapshot(syncStats: MediatorSyncStats): object {
             bytesReceived: syncStats.bytesReceived,
             malformedPeerCooldowns: syncStats.malformedPeerCooldowns,
             malformedPeerConnectionsRejected: syncStats.malformedPeerConnectionsRejected,
+            legacyTransportConnectionsQuarantined: syncStats.legacyTransportConnectionsQuarantined,
         },
         syncDurationMs: {
             avg: averageAggregate(syncStats.syncDurationMs),

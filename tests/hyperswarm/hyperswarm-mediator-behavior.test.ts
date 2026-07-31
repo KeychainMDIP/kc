@@ -6,7 +6,7 @@ import { jest } from '@jest/globals';
 import { compareSyncCursor } from '../../services/mediators/hyperswarm/src/negentropy/cursor.ts';
 import { mapOperationToSyncKey } from '../../services/mediators/hyperswarm/src/sync-mapping.ts';
 import {
-    decodeUnknownTransportMessages,
+    decodeFramedMessages,
     encodeFramedMessage,
 } from '../../services/mediators/hyperswarm/src/transport-framing.ts';
 import TestHelper from '../gatekeeper/helper.ts';
@@ -318,7 +318,7 @@ function snapshotCappedCursor(
 
 function decodeWire(link: RecordingDuplexPair): WireMessage[] {
     return link.transcript.flatMap(entry => {
-        const decoded = decodeUnknownTransportMessages(entry.raw);
+        const decoded = decodeFramedMessages(entry.raw);
         if (decoded.error || decoded.remaining.length > 0) {
             throw new Error(`failed to decode wire write ${entry.sequence}: ${decoded.error ?? 'remaining bytes'}`);
         }
@@ -1322,7 +1322,7 @@ describe('hyperswarm mediator behavior', () => {
         expect(driver.transport.connectionB.destroyed).toBe(true);
     });
 
-    it('negotiates raw initial pings before switching to framed protocol traffic', async () => {
+    it('uses framed transport from the initial pings through reconciliation', async () => {
         const fixtures = await createOperationFixtures();
         const operationsA = [fixtures.controllerCreate, fixtures.controllerUpdate];
         const operationsB = [fixtures.independentCreate];
@@ -1330,7 +1330,6 @@ describe('hyperswarm mediator behavior', () => {
         driver = await createMediatorDriver({
             operationsA,
             operationsB,
-            connectionMode: 'unknown',
         });
 
         await driver.startSync();
@@ -1339,28 +1338,11 @@ describe('hyperswarm mediator behavior', () => {
         const pings = driver.transcript.filter(entry => entry.messageType === 'ping');
         expect(pings).toHaveLength(2);
         expect(pings.map(entry => entry.direction)).toStrictEqual(['a-to-b', 'b-to-a']);
-        expect(pings.every(entry => entry.transportMode === 'legacy')).toBe(true);
+        expect(pings.every(entry => entry.framed)).toBe(true);
 
         const protocolEntries = driver.transcript.filter(entry => entry.messageType !== 'ping');
         expect(protocolEntries.length).toBeGreaterThan(0);
-        expect(protocolEntries.every(entry => entry.transportMode === 'framed')).toBe(true);
-
-        const peerKeyA = driver.nodeA.publicKey.toString('hex');
-        const peerKeyB = driver.nodeB.publicKey.toString('hex');
-        const stateA = driver.nodeA.run(
-            () => driver!.nodeA.mediator.__test.getConnectionState(peerKeyB),
-        );
-        const stateB = driver.nodeB.run(
-            () => driver!.nodeB.mediator.__test.getConnectionState(peerKeyA),
-        );
-        expect(stateA).toMatchObject({
-            transportMode: 'framed',
-            inboundTransportMode: 'framed',
-        });
-        expect(stateB).toMatchObject({
-            transportMode: 'framed',
-            inboundTransportMode: 'framed',
-        });
+        expect(protocolEntries.every(entry => entry.framed)).toBe(true);
     });
 
     it('waits for deferred client work and reports observable state on bounded failure', async () => {
