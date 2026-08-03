@@ -17,7 +17,6 @@ export interface PeerCapabilities {
 }
 
 export interface OrderedCatchupCapabilityOptions {
-    enabled: boolean;
     version: number;
     operationCount: number;
     orderedOperationCount: number;
@@ -152,12 +151,10 @@ export function buildOrderedCatchupCapabilities(
 > {
     const operationCount = normalizeNonNegativeInteger(options.operationCount) ?? 0;
     const orderedOperationCount = normalizeNonNegativeInteger(options.orderedOperationCount) ?? 0;
-    const enabled = options.enabled === true;
-
     return {
-        orderedCatchup: enabled,
-        orderedCatchupVersion: enabled ? options.version : undefined,
-        orderedCatchupReady: enabled && operationCount > 0 && operationCount === orderedOperationCount,
+        orderedCatchup: true,
+        orderedCatchupVersion: options.version,
+        orderedCatchupReady: operationCount > 0 && operationCount === orderedOperationCount,
         operationCount,
         orderedOperationCount,
     };
@@ -188,7 +185,6 @@ export function chooseSyncMode(
 export function chooseConnectSyncMode(
     capabilities: NegotiatedPeerCapabilities,
     requiredVersion: number,
-    negentropyEnabled = true,
     transportFramingSupported = true,
 ): ConnectSyncModeDecision {
     const unavailable = (reason: ConnectSyncModeReason): ConnectSyncModeDecision => ({
@@ -196,15 +192,11 @@ export function chooseConnectSyncMode(
         reason,
     });
 
-    if (negentropyEnabled && supportsPeerNegentropy(capabilities, requiredVersion)) {
+    if (supportsPeerNegentropy(capabilities, requiredVersion)) {
         if (!transportFramingSupported) {
             return unavailable('transport_framing_unsupported');
         }
         return { mode: 'negentropy', reason: 'negentropy_supported' };
-    }
-
-    if (!negentropyEnabled) {
-        return unavailable('negentropy_disabled');
     }
 
     if (!capabilities.advertised) {

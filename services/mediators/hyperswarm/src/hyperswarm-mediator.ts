@@ -491,25 +491,12 @@ function writeFramedJson(conn: HyperswarmConnection, json: string): number {
 }
 
 async function buildPeerCapabilities(): Promise<PeerCapabilities> {
-    if (!config.negentropyEnabled) {
-        return {
-            negentropy: false,
-            ...buildOrderedCatchupCapabilities({
-                enabled: false,
-                version: ORDERED_CATCHUP_VERSION,
-                operationCount: 0,
-                orderedOperationCount: 0,
-            }),
-        };
-    }
-
     const orderedStatus = await getLocalOrderedCatchupStatus();
 
     return {
         negentropy: true,
         negentropyVersion: NEGENTROPY_VERSION,
         ...buildOrderedCatchupCapabilities({
-            enabled: config.orderedCatchupEnabled,
             version: ORDERED_CATCHUP_VERSION,
             operationCount: orderedStatus.operationCount,
             orderedOperationCount: orderedStatus.orderedOperationCount,
@@ -760,7 +747,6 @@ function choosePeerSyncMode(peerKey: string): { mode: SyncMode | null; reason: C
     return chooseConnectSyncMode(
         conn.capabilities,
         NEGENTROPY_VERSION,
-        config.negentropyEnabled,
         conn.peerTransportFramingVersion === TRANSPORT_FRAMING_VERSION,
     );
 }
@@ -948,8 +934,6 @@ function buildPeerSyncCompatibilityContext(peerKey: string, conn: ConnectionInfo
         peerTransportFramingVersion: conn.peerTransportFramingVersion,
         requiredNegentropyVersion: NEGENTROPY_VERSION,
         requiredTransportFramingVersion: TRANSPORT_FRAMING_VERSION,
-        negentropyEnabled: config.negentropyEnabled,
-        orderedCatchupEnabled: config.orderedCatchupEnabled,
     };
 }
 
@@ -1166,20 +1150,21 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
         if (connectionInfo[peerKey] !== conn) {
             return;
         }
-        const orderedCatchupDecision = getOrderedCatchupDecision({
-            enabled: config.orderedCatchupEnabled && !conn.orderedCatchupAttempted,
-            localOperationCount,
-            peerCapabilities: conn.capabilities,
-            requiredVersion: ORDERED_CATCHUP_VERSION,
-            windowSize: config.negentropyMaxRecordsPerWindow,
-        });
-        if (orderedCatchupDecision.useOrderedCatchup && !hasActiveSession && activeNegentropySessions === 0) {
-            await startOrderedCatchupSessionForPeer(
-                peerKey,
-                orderedCatchupDecision.reason,
-                orderedCatchupDecision.gap,
-            );
-            return;
+        if (!conn.orderedCatchupAttempted) {
+            const orderedCatchupDecision = getOrderedCatchupDecision({
+                localOperationCount,
+                peerCapabilities: conn.capabilities,
+                requiredVersion: ORDERED_CATCHUP_VERSION,
+                windowSize: config.negentropyMaxRecordsPerWindow,
+            });
+            if (orderedCatchupDecision.useOrderedCatchup && !hasActiveSession && activeNegentropySessions === 0) {
+                await startOrderedCatchupSessionForPeer(
+                    peerKey,
+                    orderedCatchupDecision.reason,
+                    orderedCatchupDecision.gap,
+                );
+                return;
+            }
         }
 
         if (source === 'connect'
@@ -1192,7 +1177,6 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
                 return;
             }
             const expectedOrderedCatchupRequest = getExpectedOrderedCatchupRequestDecision({
-                enabled: config.orderedCatchupEnabled,
                 localOperationCount,
                 localOrderedOperationCount,
                 peerCapabilities: conn.capabilities,
@@ -1853,11 +1837,6 @@ async function sendOrderedCatchupPage(peerKey: string, msg: OrderedCatchupReqMes
             },
             'ignoring ordered catch-up request from unsupported peer'
         );
-        return;
-    }
-
-    if (!config.orderedCatchupEnabled) {
-        sendOrderedCatchupDone(peerKey, msg.sessionId);
         return;
     }
 
@@ -3822,19 +3801,6 @@ async function main(): Promise<void> {
 }
 
 async function initNegentropyAdapter(): Promise<void> {
-    if (!config.negentropyEnabled) {
-        negentropyAdapter = null;
-        adapterChangeSeq = 0;
-        adapterBuiltSeq = -1;
-        adapterBuiltAt = 0;
-        adapterBuiltWindowId = null;
-        adapterBuiltSnapshot = null;
-        rebuildPromise = null;
-        backgroundPrebuildQueued = false;
-        log.info('negentropy disabled via KC_HYPR_NEGENTROPY_ENABLE; full reconciliation is disabled');
-        return;
-    }
-
     negentropyAdapter = await NegentropyAdapter.create({
         syncStore,
         frameSizeLimit: config.negentropyFrameSizeLimit,

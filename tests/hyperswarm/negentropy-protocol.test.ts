@@ -108,7 +108,6 @@ describe('negentropy protocol helpers', () => {
 
     it('builds ordered catch-up readiness only when all operations are ordered', () => {
         expect(buildOrderedCatchupCapabilities({
-            enabled: true,
             version: 1,
             operationCount: 3,
             orderedOperationCount: 3,
@@ -121,7 +120,6 @@ describe('negentropy protocol helpers', () => {
         });
 
         expect(buildOrderedCatchupCapabilities({
-            enabled: true,
             version: 1,
             operationCount: 3,
             orderedOperationCount: 2,
@@ -132,27 +130,11 @@ describe('negentropy protocol helpers', () => {
         });
 
         expect(buildOrderedCatchupCapabilities({
-            enabled: true,
             version: 1,
             operationCount: 0,
             orderedOperationCount: 0,
         })).toMatchObject({
             orderedCatchupReady: false,
-        });
-    });
-
-    it('builds disabled ordered catch-up capabilities without a protocol version', () => {
-        expect(buildOrderedCatchupCapabilities({
-            enabled: false,
-            version: 1,
-            operationCount: 3,
-            orderedOperationCount: 3,
-        })).toStrictEqual({
-            orderedCatchup: false,
-            orderedCatchupVersion: undefined,
-            orderedCatchupReady: false,
-            operationCount: 3,
-            orderedOperationCount: 3,
         });
     });
 
@@ -190,10 +172,6 @@ describe('negentropy protocol helpers', () => {
             reason: 'negentropy_supported',
         });
         expect(chooseConnectSyncMode(supported, currentNegentropyVersion, false)).toStrictEqual({
-            mode: null,
-            reason: 'negentropy_disabled',
-        });
-        expect(chooseConnectSyncMode(supported, currentNegentropyVersion, true, false)).toStrictEqual({
             mode: null,
             reason: 'transport_framing_unsupported',
         });

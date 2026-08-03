@@ -24,24 +24,12 @@ describe('hyperswarm config', () => {
         jest.resetModules();
     });
 
-    it('allows Negentropy to be disabled explicitly', async () => {
-        process.env.KC_HYPR_NEGENTROPY_ENABLE = 'false';
-
-        const config = await importConfigIsolated();
-
-        expect(config.negentropyEnabled).toBe(false);
-    });
-
     it('uses defaults when optional env vars are empty', async () => {
         process.env.KC_HYPR_EXPORT_INTERVAL = '';
-        process.env.KC_HYPR_NEGENTROPY_ENABLE = '';
-        process.env.KC_HYPR_ORDERED_CATCHUP_ENABLE = '';
 
         const config = await importConfigIsolated();
 
         expect(config.exportInterval).toBe(2);
-        expect(config.negentropyEnabled).toBe(true);
-        expect(config.orderedCatchupEnabled).toBe(true);
     });
 
     it('uses built-in defaults when basic service env vars are blank', async () => {
@@ -143,23 +131,11 @@ describe('hyperswarm config', () => {
         expect(config.negentropyFrameSizeLimit).toBe(4096);
     });
 
-    it('throws on invalid boolean env values', async () => {
-        process.env.KC_HYPR_NEGENTROPY_ENABLE = 'maybe';
-
-        await expect(
-            jest.isolateModulesAsync(async () => {
-                await import(CONFIG_PATH);
-            })
-        ).rejects.toThrow('Invalid KC_HYPR_NEGENTROPY_ENABLE; expected true or false');
-    });
-
-    it('uses explicit ordered catch-up env values', async () => {
-        process.env.KC_HYPR_ORDERED_CATCHUP_ENABLE = 'false';
+    it('uses an explicit Negentropy window size', async () => {
         process.env.KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW = '500';
 
         const config = await importConfigIsolated();
 
-        expect(config.orderedCatchupEnabled).toBe(false);
         expect(config.negentropyMaxRecordsPerWindow).toBe(500);
     });
 

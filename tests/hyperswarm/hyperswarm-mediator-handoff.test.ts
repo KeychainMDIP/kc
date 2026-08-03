@@ -759,7 +759,6 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         driver = await createMediatorDriver({
             operationsA,
             operationsB,
-            orderedCatchupEnabled: true,
             syncOrderByIdA,
             syncOrderByIdB: syncOrders(operationsB),
             maxRecordsPerWindow: 4,
@@ -782,7 +781,6 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         driver = await createMediatorDriver({
             operationsA,
             operationsB,
-            orderedCatchupEnabled: true,
             syncOrderByIdA: syncOrders(operationsA),
             syncOrderByIdB: syncOrders(operationsB),
             maxRecordsPerWindow: 4,
@@ -866,7 +864,6 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         driver = await createMediatorDriver({
             operationsA,
             operationsB,
-            orderedCatchupEnabled: true,
             syncOrderByIdA: syncOrders(operationsA),
             syncOrderByIdB: syncOrders(operationsB),
             maxRecordsPerWindow: 4,

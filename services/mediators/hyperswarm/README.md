@@ -46,7 +46,6 @@ The mediator emits periodic structured sync metrics in `connectionLoop` includin
 | `KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW` | 25000                        | Maximum operations loaded into a single window adapter; also the non-empty-node gap threshold for ordered catch-up |
 | `KC_HYPR_NEGENTROPY_MAX_ROUNDS_PER_SESSION` | 64                           | Maximum negentropy rounds per window session |
 | `KC_HYPR_NEGENTROPY_INTERVAL` | 300                          | Seconds between retry attempts for peers not yet fully synced |
-| `KC_HYPR_ORDERED_CATCHUP_ENABLE` | true                         | Pull ordered operation pages before negentropy when this node is clean or far behind |
 | `KC_LOG_LEVEL`            | info                         | Log level: `debug`, `info`, `warn`, `error` |
 
 Negentropy session concurrency is currently fixed at one active session per node.
