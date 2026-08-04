@@ -439,6 +439,7 @@ describe('sync-persistence helpers', () => {
             ? [{
                 id: h('a'),
                 ts: Math.floor(Date.parse(known.signature!.signed) / 1000),
+                signedTs: Math.floor(Date.parse(known.signature!.signed) / 1000),
                 operation: known,
                 insertedAt: 1,
             }]

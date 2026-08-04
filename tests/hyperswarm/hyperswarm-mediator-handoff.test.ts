@@ -1,7 +1,7 @@
 import CipherNode from '@mdip/cipher/node';
 import Gatekeeper from '@mdip/gatekeeper';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory.ts';
-import type { GatekeeperEvent, Operation } from '@mdip/gatekeeper/types';
+import type { GatekeeperEvent, Operation, ProcessEventsResult } from '@mdip/gatekeeper/types';
 import { jest } from '@jest/globals';
 
 import { HYPR_INDEX_SYNC_STATE_KEYS } from '../../services/mediators/hyperswarm/src/bootstrap.ts';
@@ -529,7 +529,8 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         expect(upsertMany).toHaveBeenCalledTimes(3);
         expect(driver.nodeB.gatekeeperClient.importBatch).toHaveBeenCalledTimes(3);
         const processResults = await Promise.all(
-            driver.nodeB.gatekeeperClient.processEvents.mock.results.map(result => result.value),
+            driver.nodeB.gatekeeperClient.processEvents.mock.results
+                .map(result => result.value as Promise<ProcessEventsResult>),
         );
         expect(processResults[0]?.added).toBe(1);
         expect(processResults.slice(1).every(result => (result.added ?? 0) === 0)).toBe(true);
@@ -713,7 +714,8 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         expect(await driver.storeB.count()).toBe(1);
         expect(driver.nodeB.gatekeeperClient.importBatch).toHaveBeenCalledTimes(1);
         const processResults = await Promise.all(
-            driver.nodeB.gatekeeperClient.processEvents.mock.results.map(result => result.value),
+            driver.nodeB.gatekeeperClient.processEvents.mock.results
+                .map(result => result.value as Promise<ProcessEventsResult>),
         );
         expect(processResults.some(result => (result.merged ?? 0) > 0)).toBe(true);
     });

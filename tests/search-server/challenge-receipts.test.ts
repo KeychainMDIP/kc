@@ -5,7 +5,7 @@ import { jest } from '@jest/globals';
 import { setLogger } from '../../packages/common/src/logger.ts';
 import DIDsDbMemory from '../../services/search-server/src/db/json-memory.ts';
 import Sqlite from '../../services/search-server/src/db/sqlite.ts';
-import DidIndexer from '../../services/search-server/src/DidIndexer.ts';
+import DidIndexer, { type GatekeeperIndexClient } from '../../services/search-server/src/DidIndexer.ts';
 import { extractChallengeReceipts } from '../../services/search-server/src/challenge-receipts.ts';
 import type {
     ChallengeReceiptRecord,
@@ -532,13 +532,14 @@ describe('postgres challenge receipt adapter with mocked pool', () => {
             return { rowCount: 0, rows: [] };
         });
         const mockClient = {
-            query: jest.fn().mockResolvedValue(undefined),
+            query: jest.fn<(...args: unknown[]) => Promise<unknown>>()
+                .mockResolvedValue(undefined),
             release: jest.fn(),
         };
         const mockPool = {
             query: poolQuery,
-            connect: jest.fn().mockResolvedValue(mockClient),
-            end: jest.fn().mockResolvedValue(undefined),
+            connect: jest.fn<() => Promise<typeof mockClient>>().mockResolvedValue(mockClient),
+            end: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
         };
         const Postgres = await loadPostgresModule();
 
@@ -684,8 +685,9 @@ describe('DidIndexer challenge receipt indexing', () => {
             },
         };
         const gatekeeper = {
-            isReady: jest.fn().mockResolvedValue(true),
-            exportIndex: jest.fn().mockResolvedValue(createSnapshotResponse(receiptDid, data)),
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>()
+                .mockResolvedValue(createSnapshotResponse(receiptDid, data)),
             getDIDs: jest.fn(),
             resolveDID: jest.fn(),
         };

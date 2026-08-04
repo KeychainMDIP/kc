@@ -1903,7 +1903,7 @@ describe('Gatekeeper SQLite index change schema migration', () => {
         await db.start();
 
         try {
-            const columns = await (db as any).db.all<{ name: string }[]>('PRAGMA table_info(index_changes)');
+            const columns = await (db as any).db.all('PRAGMA table_info(index_changes)') as { name: string }[];
             expect(columns.map(column => column.name)).toContain('event');
 
             await expect(db.exportIndexChanges({ includeOperations: true })).resolves.toMatchObject({
@@ -2571,7 +2571,9 @@ describe('Gatekeeper DB startup and guard behavior', () => {
                     }
                 ) => {
                     if (collectionName === 'counters' && id === 'indexSeq') {
-                        indexSeq = update.$set?.value ?? indexSeq;
+                        if (typeof update.$set?.value === 'number') {
+                            indexSeq = update.$set.value;
+                        }
                         return { modifiedCount: 1, upsertedCount: 0 };
                     }
 

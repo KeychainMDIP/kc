@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals';
 import { setLogger } from '../../packages/common/src/logger.ts';
-import DidIndexer from '../../services/search-server/src/DidIndexer.ts';
+import DidIndexer, { type GatekeeperIndexClient } from '../../services/search-server/src/DidIndexer.ts';
 import DIDsDbMemory from '../../services/search-server/src/db/json-memory.ts';
 import type { BlockInfo, IndexExportResponse } from '@mdip/gatekeeper/types';
 import type { GatekeeperEvent } from '../../services/search-server/src/types.ts';
@@ -80,8 +80,8 @@ describe('DidIndexer gatekeeper read boundary', () => {
     it('uses exportIndex only and never calls getDIDs or resolveDID during snapshot or changes sync', async () => {
         const db = new DIDsDbMemory();
         const gatekeeper = {
-            isReady: jest.fn().mockResolvedValue(true),
-            exportIndex: jest.fn()
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>()
                 .mockResolvedValueOnce(createSnapshotResponse())
                 .mockResolvedValueOnce(createChangesResponse()),
             getDIDs: jest.fn(async () => {
@@ -116,8 +116,8 @@ describe('DidIndexer gatekeeper read boundary', () => {
     it('does not start a refresh when gatekeeper is not ready or another refresh is active', async () => {
         const db = new DIDsDbMemory();
         const gatekeeper = {
-            isReady: jest.fn().mockResolvedValue(false),
-            exportIndex: jest.fn(),
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(false),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>(),
         };
         const indexer = new DidIndexer(gatekeeper as any, db, { intervalMs: 60_000 });
 
@@ -135,8 +135,8 @@ describe('DidIndexer gatekeeper read boundary', () => {
     it('rejects invalid snapshot continuation state and malformed snapshot responses', async () => {
         const db = new DIDsDbMemory();
         const gatekeeper = {
-            isReady: jest.fn().mockResolvedValue(true),
-            exportIndex: jest.fn(),
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>(),
         };
         const indexer = new DidIndexer(gatekeeper as any, db, { intervalMs: 60_000 });
 
@@ -156,6 +156,7 @@ describe('DidIndexer gatekeeper read boundary', () => {
 
         gatekeeper.exportIndex.mockResolvedValueOnce({
             ...createSnapshotResponse(),
+            // @ts-expect-error Testing an invalid response.
             checkpointCursor: undefined,
         });
         await expect((indexer as any).syncSnapshot())
@@ -165,8 +166,8 @@ describe('DidIndexer gatekeeper read boundary', () => {
     it('rejects snapshot pages that change checkpoint or do not advance cursor', async () => {
         const db = new DIDsDbMemory();
         const gatekeeper = {
-            isReady: jest.fn().mockResolvedValue(true),
-            exportIndex: jest.fn(),
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>(),
         };
         const indexer = new DidIndexer(gatekeeper as any, db, { intervalMs: 60_000 });
 
@@ -193,8 +194,8 @@ describe('DidIndexer gatekeeper read boundary', () => {
     it('rejects malformed changes responses and non-advancing changes pages', async () => {
         const db = new DIDsDbMemory();
         const gatekeeper = {
-            isReady: jest.fn().mockResolvedValue(true),
-            exportIndex: jest.fn(),
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>(),
         };
         const indexer = new DidIndexer(gatekeeper as any, db, { intervalMs: 60_000 });
 
@@ -218,8 +219,8 @@ describe('DidIndexer gatekeeper read boundary', () => {
         await db.saveSyncState('index.snapshot.complete', 'true');
         await db.saveSyncState('index.changes.cursor', '7');
         const gatekeeper = {
-            isReady: jest.fn().mockResolvedValue(true),
-            exportIndex: jest.fn()
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>()
                 .mockResolvedValueOnce({
                     ...createChangesResponse(),
                     cursor: '8',
@@ -262,8 +263,8 @@ describe('DidIndexer gatekeeper read boundary', () => {
             '2026-04-01T12:00:00.000Z'
         );
         const gatekeeper = {
-            isReady: jest.fn().mockResolvedValue(true),
-            exportIndex: jest.fn()
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>()
                 .mockResolvedValueOnce(createChangesResponse())
                 .mockResolvedValueOnce({
                     ...createChangesResponse(),
@@ -320,8 +321,9 @@ describe('DidIndexer gatekeeper read boundary', () => {
                 return DIDsDbMemory.prototype.saveSyncState.call(db, key, value);
             });
         const gatekeeper = {
-            isReady: jest.fn().mockResolvedValue(true),
-            exportIndex: jest.fn().mockRejectedValue(new Error('sync failed')),
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>()
+                .mockRejectedValue(new Error('sync failed')),
         };
         const indexer = new DidIndexer(gatekeeper as any, db, { intervalMs: 60_000 });
 
@@ -343,8 +345,8 @@ describe('DidIndexer gatekeeper read boundary', () => {
         });
 
         const indexer = new DidIndexer({
-            isReady: jest.fn().mockResolvedValue(true),
-            exportIndex: jest.fn(),
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>(),
         }, db, { intervalMs: 60_000 });
         const lookup = (indexer as any).createPageBlockLookup([
             { registry: 'local', block: pageBlockA },

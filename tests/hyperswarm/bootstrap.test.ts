@@ -8,6 +8,7 @@ import type {
 import InMemoryOperationSyncStore from '../../services/mediators/hyperswarm/src/db/memory.ts';
 import {
     bootstrapSyncStoreFromGatekeeper,
+    type BootstrapGatekeeper,
     GATEKEEPER_INDEX_EPOCH_CHANGED_RESET_REASON,
     HYPR_INDEX_SYNC_STATE_KEYS,
 } from '../../services/mediators/hyperswarm/src/bootstrap.ts';
@@ -157,7 +158,7 @@ describe('bootstrapSyncStoreFromGatekeeper', () => {
         const opA = makeOperation('a', '2026-02-10T10:00:00.000Z');
         const opB = makeOperation('b', '2026-02-10T11:00:00.000Z');
         const gatekeeper = {
-            exportIndex: jest.fn()
+            exportIndex: jest.fn<BootstrapGatekeeper['exportIndex']>()
                 .mockResolvedValueOnce(snapshotResponse({
                     did: 'did:test:a',
                     events: [makeEvent(opA)],
@@ -287,7 +288,7 @@ describe('bootstrapSyncStoreFromGatekeeper', () => {
 
         const opA = makeOperation('a', '2026-02-10T10:00:00.000Z');
         const gatekeeper = {
-            exportIndex: jest.fn()
+            exportIndex: jest.fn<BootstrapGatekeeper['exportIndex']>()
                 .mockResolvedValueOnce(changesResponse({
                     cursor: '12',
                     checkpointCursor: '12',
@@ -342,7 +343,7 @@ describe('bootstrapSyncStoreFromGatekeeper', () => {
 
         const opA = makeOperation('a', '2026-02-10T10:00:00.000Z');
         const gatekeeper = {
-            exportIndex: jest.fn()
+            exportIndex: jest.fn<BootstrapGatekeeper['exportIndex']>()
                 .mockResolvedValueOnce(changesResponse({
                     cursor: '118597',
                     checkpointCursor: '0',
@@ -461,7 +462,7 @@ describe('bootstrapSyncStoreFromGatekeeper', () => {
         await storeWithCursorOnly.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotCursor, 'did:test:a');
 
         await expect(bootstrapSyncStoreFromGatekeeper(storeWithCursorOnly, {
-            exportIndex: jest.fn(),
+            exportIndex: jest.fn<BootstrapGatekeeper['exportIndex']>(),
         })).rejects.toThrow('Snapshot cursor found without checkpointCursor');
 
         const storeWithCheckpointOnly = new InMemoryOperationSyncStore();
@@ -469,7 +470,7 @@ describe('bootstrapSyncStoreFromGatekeeper', () => {
         await storeWithCheckpointOnly.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotCheckpointCursor, '12');
 
         await expect(bootstrapSyncStoreFromGatekeeper(storeWithCheckpointOnly, {
-            exportIndex: jest.fn(),
+            exportIndex: jest.fn<BootstrapGatekeeper['exportIndex']>(),
         })).rejects.toThrow('Snapshot checkpointCursor found without cursor');
     });
 
@@ -520,7 +521,7 @@ describe('bootstrapSyncStoreFromGatekeeper', () => {
         const opA = makeOperation('a', '2026-02-10T10:00:00.000Z');
         const opB = makeOperation('b', '2026-02-10T11:00:00.000Z');
         const paginatedGatekeeper = {
-            exportIndex: jest.fn()
+            exportIndex: jest.fn<BootstrapGatekeeper['exportIndex']>()
                 .mockResolvedValueOnce(changesResponse({
                     cursor: '13',
                     operations: [makeEvent(opA, 'did:test:a')],

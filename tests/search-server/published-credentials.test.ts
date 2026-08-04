@@ -5,9 +5,10 @@ import { jest } from '@jest/globals';
 import { setLogger } from '../../packages/common/src/logger.ts';
 import DIDsDbMemory from '../../services/search-server/src/db/json-memory.ts';
 import Sqlite from '../../services/search-server/src/db/sqlite.ts';
-import DidIndexer from '../../services/search-server/src/DidIndexer.ts';
+import DidIndexer, { type GatekeeperIndexClient } from '../../services/search-server/src/DidIndexer.ts';
 import { extractPublishedCredentials } from '../../services/search-server/src/published-credentials.ts';
 import type {
+    ApplyIndexPageResult,
     DIDsDb,
     GatekeeperEvent,
     PublishedCredentialRecord,
@@ -1009,8 +1010,8 @@ describe('postgres adapter with mocked pool', () => {
         };
         const mockPool = {
             query: poolQuery,
-            connect: jest.fn().mockResolvedValue(mockClient),
-            end: jest.fn().mockResolvedValue(undefined),
+            connect: jest.fn<() => Promise<typeof mockClient>>().mockResolvedValue(mockClient),
+            end: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
         };
         const Postgres = await loadPostgresModule();
         const db = new Postgres('postgresql://example');
@@ -1095,7 +1096,7 @@ describe('postgres adapter with mocked pool', () => {
     it('throws when disconnected and rolls back failed replacements', async () => {
         const clientError = new Error('insert failed');
         const mockClient = {
-            query: jest.fn()
+            query: jest.fn<(...args: unknown[]) => Promise<unknown>>()
                 .mockResolvedValueOnce(undefined)
                 .mockResolvedValueOnce(undefined)
                 .mockRejectedValueOnce(clientError)
@@ -1103,9 +1104,10 @@ describe('postgres adapter with mocked pool', () => {
             release: jest.fn(),
         };
         const mockPool = {
-            query: jest.fn().mockResolvedValue({ rowCount: 0, rows: [] }),
-            connect: jest.fn().mockResolvedValue(mockClient),
-            end: jest.fn().mockResolvedValue(undefined),
+            query: jest.fn<(...args: unknown[]) => Promise<unknown>>()
+                .mockResolvedValue({ rowCount: 0, rows: [] }),
+            connect: jest.fn<() => Promise<typeof mockClient>>().mockResolvedValue(mockClient),
+            end: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
         };
         const Postgres = await loadPostgresModule();
         const disconnectedDb = new Postgres('postgresql://example');
@@ -1147,8 +1149,9 @@ describe('postgres adapter with mocked pool', () => {
     it('covers static create plus real connect and disconnect branches with spied pool methods', async () => {
         const Postgres = await loadPostgresModule();
         const mockPool = {
-            query: jest.fn().mockResolvedValue({ rowCount: 0, rows: [] }),
-            end: jest.fn().mockResolvedValue(undefined),
+            query: jest.fn<(...args: unknown[]) => Promise<unknown>>()
+                .mockResolvedValue({ rowCount: 0, rows: [] }),
+            end: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
         };
 
         class TestPostgres extends Postgres {
@@ -1174,13 +1177,15 @@ describe('postgres adapter with mocked pool', () => {
 
     it('commits successful replacements and covers path helper fallbacks', async () => {
         const mockClient = {
-            query: jest.fn().mockResolvedValue(undefined),
+            query: jest.fn<(...args: unknown[]) => Promise<unknown>>()
+                .mockResolvedValue(undefined),
             release: jest.fn(),
         };
         const mockPool = {
-            query: jest.fn().mockResolvedValue({ rowCount: 0, rows: [] }),
-            connect: jest.fn().mockResolvedValue(mockClient),
-            end: jest.fn().mockResolvedValue(undefined),
+            query: jest.fn<(...args: unknown[]) => Promise<unknown>>()
+                .mockResolvedValue({ rowCount: 0, rows: [] }),
+            connect: jest.fn<() => Promise<typeof mockClient>>().mockResolvedValue(mockClient),
+            end: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
         };
         const Postgres = await loadPostgresModule();
         const db = new Postgres('postgresql://example');
@@ -1239,7 +1244,7 @@ describe('postgres adapter with mocked pool', () => {
         });
         const mockPool = {
             query: poolQuery,
-            end: jest.fn().mockResolvedValue(undefined),
+            end: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
         };
         const Postgres = await loadPostgresModule();
         const db = new Postgres('postgresql://example');
@@ -1285,8 +1290,9 @@ describe('DidIndexer published credential indexing', () => {
             },
         };
         const gatekeeper = {
-            isReady: jest.fn().mockResolvedValue(true),
-            exportIndex: jest.fn().mockResolvedValue(createSnapshotResponse(holderDid, data)),
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>()
+                .mockResolvedValue(createSnapshotResponse(holderDid, data)),
             getDIDs: jest.fn(),
             resolveDID: jest.fn(),
         };
@@ -1354,8 +1360,8 @@ describe('DidIndexer published credential indexing', () => {
         });
 
         const gatekeeper = {
-            isReady: jest.fn().mockResolvedValue(true),
-            exportIndex: jest.fn().mockResolvedValue({
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>().mockResolvedValue({
                 mode: 'changes' as const,
                 indexEpoch: 'epoch-test',
                 cursor: '1',
@@ -1380,7 +1386,7 @@ describe('DidIndexer published credential indexing', () => {
             limit: 500,
         });
         expect(applySpy.mock.results[0].type).toBe('return');
-        const result = await applySpy.mock.results[0].value;
+        const result = await applySpy.mock.results[0].value as ApplyIndexPageResult;
         expect(result.changedDids).toStrictEqual([]);
         expect(await db.loadSyncState('index.changes.cursor')).toBe('1');
         expect(await db.getPublishedCredentialCountsBySchema()).toStrictEqual([
@@ -1399,8 +1405,8 @@ describe('DidIndexer published credential indexing', () => {
         await db.saveSyncState('index.snapshot.cursor', savedCursor);
         await db.saveSyncState('index.snapshot.checkpointCursor', checkpointCursor);
         const gatekeeper = {
-            isReady: jest.fn().mockResolvedValue(true),
-            exportIndex: jest.fn()
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>()
                 .mockResolvedValueOnce({
                     mode: 'snapshot' as const,
                     indexEpoch: 'epoch-test',
@@ -1452,8 +1458,8 @@ describe('DidIndexer published credential indexing', () => {
         const db = new DIDsDbMemory();
         const did = 'did:test:z3v8Auah2NPDigFc3qKx183QKL6vY8fJYQk6NeLz7KF2RFtC9c8';
         const gatekeeper = {
-            isReady: jest.fn().mockResolvedValue(true),
-            exportIndex: jest.fn().mockResolvedValue({
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>().mockResolvedValue({
                 mode: 'snapshot' as const,
                 indexEpoch: 'epoch-test',
                 cursor: did,
@@ -1491,8 +1497,8 @@ describe('DidIndexer published credential indexing', () => {
             time: 1775037600,
         };
         const gatekeeper = {
-            isReady: jest.fn().mockResolvedValue(true),
-            exportIndex: jest.fn().mockResolvedValue({
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>().mockResolvedValue({
                 mode: 'snapshot' as const,
                 indexEpoch: 'epoch-test',
                 cursor: did,
@@ -1527,8 +1533,8 @@ describe('DidIndexer published credential indexing', () => {
     it('skips refresh work when gatekeeper is not ready', async () => {
         const db = new DIDsDbMemory();
         const gatekeeper = {
-            isReady: jest.fn().mockResolvedValue(false),
-            exportIndex: jest.fn(),
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(false),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>(),
         };
         const indexer = new DidIndexer(gatekeeper as any, db, { intervalMs: 60_000 });
 
@@ -1545,8 +1551,9 @@ describe('DidIndexer published credential indexing', () => {
         });
         const db = new DIDsDbMemory();
         const gatekeeper = {
-            isReady: jest.fn().mockResolvedValue(true),
-            exportIndex: jest.fn().mockReturnValue(exportIndexPromise),
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>()
+                .mockReturnValue(exportIndexPromise),
         };
         const indexer = new DidIndexer(gatekeeper as any, db, { intervalMs: 60_000 });
 
@@ -1570,8 +1577,8 @@ describe('DidIndexer published credential indexing', () => {
         const db = new DIDsDbMemory();
         const error = new Error('boom');
         const gatekeeper = {
-            isReady: jest.fn().mockResolvedValue(true),
-            exportIndex: jest.fn()
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>()
                 .mockRejectedValueOnce(error)
                 .mockResolvedValueOnce(createEmptySnapshotResponse()),
         };
@@ -1591,8 +1598,9 @@ describe('DidIndexer published credential indexing', () => {
 
         const db = new DIDsDbMemory();
         const gatekeeper = {
-            isReady: jest.fn().mockResolvedValue(true),
-            exportIndex: jest.fn().mockResolvedValue(createEmptySnapshotResponse()),
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>()
+                .mockResolvedValue(createEmptySnapshotResponse()),
         };
         const setIntervalSpy = jest.spyOn(global, 'setInterval');
         const clearIntervalSpy = jest.spyOn(global, 'clearInterval').mockImplementation(() => undefined as any);
@@ -1606,7 +1614,8 @@ describe('DidIndexer published credential indexing', () => {
         try {
             const indexer = new DidIndexer(gatekeeper as any, db as any, { intervalMs: 60_000 });
             await indexer.startIndexing();
-            (indexer as any).refreshIndex = jest.fn().mockRejectedValue(new Error('timer boom'));
+            (indexer as any).refreshIndex = jest.fn<() => Promise<void>>()
+                .mockRejectedValue(new Error('timer boom'));
 
             await intervalCallback!();
 

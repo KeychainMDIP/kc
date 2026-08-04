@@ -2,6 +2,7 @@ import { EventEmitter } from 'events';
 import { Server } from 'http';
 import { BlockList } from 'net';
 import { jest } from '@jest/globals';
+import type { GatekeeperDb, IndexExportResponse } from '@mdip/gatekeeper/types';
 
 /* eslint-disable sonarjs/no-hardcoded-ip */
 
@@ -252,7 +253,7 @@ describe('gatekeeper server helpers', () => {
     });
 
     it('exports index only when the database is ready', async () => {
-        const response = {
+        const response: IndexExportResponse = {
             mode: 'changes',
             indexEpoch: 'epoch-test',
             cursor: '1',
@@ -263,8 +264,9 @@ describe('gatekeeper server helpers', () => {
         };
         const db = {
             isReady: jest.fn<() => Promise<boolean>>().mockResolvedValue(false),
-            exportIndexSnapshot: jest.fn(),
-            exportIndexChanges: jest.fn().mockResolvedValue(response),
+            exportIndexSnapshot: jest.fn<GatekeeperDb['exportIndexSnapshot']>(),
+            exportIndexChanges: jest.fn<GatekeeperDb['exportIndexChanges']>()
+                .mockResolvedValue(response),
         };
 
         await expect(helpers.exportIndexWithReadiness(db, { mode: 'changes' }))
@@ -285,8 +287,8 @@ describe('gatekeeper server helpers', () => {
         const applicationError = new Error('bad cursor');
         const db = {
             isReady: jest.fn<() => Promise<boolean>>().mockResolvedValue(true),
-            exportIndexSnapshot: jest.fn(),
-            exportIndexChanges: jest.fn()
+            exportIndexSnapshot: jest.fn<GatekeeperDb['exportIndexSnapshot']>(),
+            exportIndexChanges: jest.fn<GatekeeperDb['exportIndexChanges']>()
                 .mockRejectedValueOnce(mongoError)
                 .mockRejectedValueOnce(applicationError),
         };

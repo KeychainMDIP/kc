@@ -240,9 +240,9 @@ describe('NegentropyAdapter', () => {
         const validTs = toEpochSeconds('2026-02-13T00:00:00.000Z');
         const validOp = makeOp('a', '2026-02-13T00:00:00.000Z');
         const rows: SyncOperationRecord[] = [
-            { id: 'invalid-id', ts: validTs, operation: validOp, insertedAt: 1 },
-            { id: validId, ts: Number.NaN, operation: validOp, insertedAt: 2 },
-            { id: validId, ts: validTs, operation: validOp, insertedAt: 3 },
+            { id: 'invalid-id', ts: validTs, signedTs: validTs, operation: validOp, insertedAt: 1 },
+            { id: validId, ts: Number.NaN, signedTs: validTs, operation: validOp, insertedAt: 2 },
+            { id: validId, ts: validTs, signedTs: validTs, operation: validOp, insertedAt: 3 },
         ];
 
         const stubStore: OperationSyncStore = {
@@ -394,11 +394,11 @@ describe('NegentropyAdapter', () => {
 
     it('does not let skipped rows consume capped window capacity', async () => {
         const rows = [
-            { id: 'not-a-sync-id', ts: 1000, operation: makeOp('a', '2026-02-09T10:00:00.000Z'), insertedAt: 0 },
-            { id: h('b'), ts: 2000, operation: makeOp('b', '2026-02-09T11:00:00.000Z'), insertedAt: 0 },
-            { id: h('c'), ts: Number.NaN, operation: makeOp('c', '2026-02-09T12:00:00.000Z'), insertedAt: 0 },
-            { id: h('d'), ts: 4000, operation: makeOp('d', '2026-02-09T13:00:00.000Z'), insertedAt: 0 },
-            { id: h('e'), ts: 5000, operation: makeOp('e', '2026-02-09T14:00:00.000Z'), insertedAt: 0 },
+            { id: 'not-a-sync-id', ts: 1000, signedTs: 1000, operation: makeOp('a', '2026-02-09T10:00:00.000Z'), insertedAt: 0 },
+            { id: h('b'), ts: 2000, signedTs: 2000, operation: makeOp('b', '2026-02-09T11:00:00.000Z'), insertedAt: 0 },
+            { id: h('c'), ts: Number.NaN, signedTs: 3000, operation: makeOp('c', '2026-02-09T12:00:00.000Z'), insertedAt: 0 },
+            { id: h('d'), ts: 4000, signedTs: 4000, operation: makeOp('d', '2026-02-09T13:00:00.000Z'), insertedAt: 0 },
+            { id: h('e'), ts: 5000, signedTs: 5000, operation: makeOp('e', '2026-02-09T14:00:00.000Z'), insertedAt: 0 },
         ];
 
         const stubStore: OperationSyncStore = {
