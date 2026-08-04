@@ -74,10 +74,10 @@ describe('search-server DID projections', () => {
 
         expect(projection.did).toBe(did);
         expect(projection.events).toStrictEqual(events);
-        expect(projection.doc?.didDocument).toMatchObject({ id: did });
-        expect(projection.doc?.didDocumentData).toStrictEqual({ name: 'projection' });
-        expect(projection.doc?.didDocumentMetadata).toMatchObject({
-            confirmed: true,
+        expect(projection.doc).toMatchObject({
+            didDocument: { id: did },
+            didDocumentData: { name: 'projection' },
+            didDocumentMetadata: { confirmed: true },
         });
         expect(projection.publishedCredentials).toStrictEqual([]);
         expect(projection.challengeReceipts).toStrictEqual([]);

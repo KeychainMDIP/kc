@@ -548,20 +548,20 @@ describe('gatekeeper.db', () => {
     it('getEvents should reject an invalid did', async () => {
         await expect(
             // @ts-expect-error Testing invalid DID
-            gatekeeper.db.getEvents(null)
+            db.getEvents(null)
         ).rejects.toThrow('Invalid DID');
     });
 
     it('getEvents should reject a malformed DID with no suffix', async () => {
         await expect(
-            gatekeeper.db.getEvents("did:test:")
+            db.getEvents("did:test:")
         ).rejects.toThrow('Invalid DID');
     });
 
     it('addEvent should throw exception on invalid did', async () => {
         try {
             // @ts-expect-error Testing invalid DID
-            await gatekeeper.db.addEvent(null);
+            await db.addEvent(null);
             throw new ExpectedExceptionError();
         } catch (error: any) {
             expect(error.message).toBe('Invalid DID');

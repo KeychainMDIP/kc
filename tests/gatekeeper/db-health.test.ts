@@ -44,7 +44,8 @@ describe('database readiness checks', () => {
 
     it('reports Mongo readiness from an admin ping', async () => {
         const db = new DbMongo('health-mongo');
-        const command = jest.fn().mockResolvedValue({ ok: 1 });
+        const command = jest.fn<(...args: unknown[]) => Promise<{ ok: number }>>()
+            .mockResolvedValue({ ok: 1 });
 
         await expect(db.isReady()).resolves.toBe(false);
 
@@ -65,7 +66,7 @@ describe('database readiness checks', () => {
 
     it('reports Redis readiness only for a ready client with a successful ping', async () => {
         const db = new DbRedis('health-redis');
-        const ping = jest.fn().mockResolvedValue('PONG');
+        const ping = jest.fn<() => Promise<string>>().mockResolvedValue('PONG');
 
         await expect(db.isReady()).resolves.toBe(false);
 
@@ -85,7 +86,8 @@ describe('database readiness checks', () => {
 
     it('reports Postgres readiness from a lightweight query', async () => {
         const db = new DbPostgres('health-postgres');
-        const query = jest.fn().mockResolvedValue({ rows: [{ '?column?': 1 }] });
+        const query = jest.fn<(sql: string) => Promise<{ rows: Record<string, number>[] }>>()
+            .mockResolvedValue({ rows: [{ '?column?': 1 }] });
 
         await expect(db.isReady()).resolves.toBe(false);
 

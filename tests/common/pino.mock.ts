@@ -12,6 +12,6 @@ const createMockLogger = (options?: unknown): any => {
     return logger;
 };
 
-const pinoMock = jest.fn((options?: unknown) => createMockLogger(options));
+const pinoMock = jest.fn((options?: unknown, _stream?: unknown) => createMockLogger(options));
 
 export default pinoMock;

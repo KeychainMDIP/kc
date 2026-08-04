@@ -289,7 +289,7 @@ async function gatekeeperIds(gatekeeper: Gatekeeper): Promise<string[]> {
 function operationCursor(operation: Operation): Cursor {
     const mapped = mapOperationToSyncKey(operation);
     if (!mapped.ok) {
-        throw new Error(`fixture operation cannot be mapped: ${mapped.error}`);
+        throw new Error(`fixture operation cannot be mapped: ${mapped.reason}`);
     }
     return { ts: mapped.value.ts, id: mapped.value.idHex };
 }

@@ -810,7 +810,6 @@ describe('processEvents', () => {
         await gatekeeper.processEvents();
 
         const originalGenerateCid = gatekeeper.generateCID.bind(gatekeeper);
-        // @ts-expect-error test shim
         gatekeeper.generateCID = async () => {
             throw new Error('unexpected generateCID');
         };
