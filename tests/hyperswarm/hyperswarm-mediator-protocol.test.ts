@@ -1630,6 +1630,83 @@ describe('hyperswarm mediator protocol characterization', () => {
         }));
     });
 
+    it('completes when terminal work finds an unresolved operation already stored normally', async () => {
+        const operation = await makeLegacyUpdateWithoutPrevid();
+        const operationId = operation.signature!.hash;
+        const protocolNode = await createNode();
+        const { peerKey, pair } = attachPeer(protocolNode, {});
+        const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
+        jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
+            const engine = createEngine(snapshot);
+            jest.spyOn(engine, 'reconcile').mockResolvedValueOnce({
+                nextMsg: null,
+                haveIds: [],
+                needIds: [operationId],
+            });
+            return engine;
+        });
+        protocolNode.node.gatekeeperClient.importBatch.mockResolvedValueOnce({
+            queued: 1,
+            processed: 0,
+            rejected: 0,
+            total: 1,
+            rejectedIndices: [],
+        });
+        protocolNode.node.gatekeeperClient.processEvents.mockResolvedValueOnce({
+            added: 0,
+            merged: 0,
+            rejected: 0,
+            pending: 1,
+            acceptedHashes: [],
+            acceptedEvents: [],
+        });
+        const getByIds = protocolNode.store.getByIds.bind(protocolNode.store);
+        let operationLookups = 0;
+        jest.spyOn(protocolNode.store, 'getByIds').mockImplementation(async ids => {
+            if (ids.includes(operationId) && ++operationLookups === 2) {
+                await protocolNode.store.upsertMany([{
+                    id: operationId,
+                    signedTs: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+                    operation,
+                }]);
+                return [];
+            }
+            return getByIds(ids);
+        });
+
+        await protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey),
+        );
+        const open = decodeWrites(pair).find(message => message.type === 'neg_open');
+        if (!open) {
+            throw new Error('expected local neg_open');
+        }
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'neg_msg',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            frame: encodeNegentropyFrame('normally-stored-terminal-candidate'),
+        }));
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'ops_push',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            data: [operation],
+        }));
+
+        expect(operationLookups).toBe(3);
+        expect((await getByIds([operationId]))[0].syncOrder).toBeUndefined();
+        expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
+            type: 'neg_close',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            reason: 'complete',
+        }));
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+        )).toBeNull();
+    });
+
     it('leaves a modern update with an unknown predecessor unresolved', async () => {
         const operation = await makeModernUpdateWithMissingPredecessor();
         const operationId = operation.signature!.hash;

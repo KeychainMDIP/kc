@@ -252,6 +252,49 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         expect(await running.store.has(rejectedOperation.signature!.hash)).toBe(false);
     });
 
+    it('rebuilds the import pipeline when normal startup follows seam-only use', async () => {
+        const [rejectedOperation] = await makeOperations(1);
+        const node = await createMediatorNode({
+            name: `lifecycle-node-${++nodeNumber}`,
+            publicKey: Buffer.alloc(32, 0x11),
+            env: {
+                KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW: '16',
+                KC_HYPR_NEGENTROPY_MAX_ROUNDS_PER_SESSION: '8',
+                KC_HYPR_NEGENTROPY_INTERVAL: '1',
+                KC_HYPR_EXPORT_INTERVAL: '2',
+            },
+        });
+        nodes.push(node);
+        const store = new InMemoryOperationSyncStore();
+        node.run(() => {
+            getMediatorNodeContext().syncStore = store;
+        });
+        await node.run(() => node.mediator.runMediator({
+            syncStore: store,
+            startLoops: false,
+        }));
+        await store.upsertMany([{
+            id: rejectedOperation.signature!.hash,
+            syncOrder: Number.MAX_SAFE_INTEGER,
+            signedTs: 1,
+            operation: rejectedOperation,
+        }]);
+        const deleteBySyncOrder = jest.spyOn(store, 'deleteBySyncOrder');
+
+        const systemTime = Date.now();
+        jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+        jest.setSystemTime(systemTime);
+        fakeTimersActive = true;
+        await node.run(() => node.mediator.runMediator());
+
+        expect(deleteBySyncOrder).toHaveBeenCalledWith(Number.MAX_SAFE_INTEGER);
+        expect(await store.has(rejectedOperation.signature!.hash)).toBe(false);
+        expect(node.gatekeeperClient.exportIndex).toHaveBeenCalled();
+        expect(deleteBySyncOrder.mock.invocationCallOrder[0]).toBeLessThan(
+            node.gatekeeperClient.exportIndex.mock.invocationCallOrder[0],
+        );
+    });
+
     it('rebuilds Negentropy after Gatekeeper removes indexed operations', async () => {
         const [operation] = await makeOperations(1);
         let did = '';
@@ -1130,6 +1173,284 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         expect(resetSessionId).toEqual(expect.any(String));
         expect(resetSessionId).not.toBe(firstSessionId);
         expect(negOpenCount()).toBeGreaterThan(initialNegOpenCount);
+    });
+
+    it('waits for an active index refresh before stopping the sync store', async () => {
+        const running = await createRunningNode();
+        const exportIndex = running.node.gatekeeperClient.exportIndex;
+        const exportIndexImplementation = exportIndex.getMockImplementation();
+        if (!exportIndexImplementation) {
+            throw new Error('Gatekeeper exportIndex implementation is unavailable');
+        }
+        let markRefreshStarted!: () => void;
+        const refreshStarted = new Promise<void>(resolve => {
+            markRefreshStarted = resolve;
+        });
+        let releaseRefresh!: () => void;
+        const refreshBlocked = new Promise<void>(resolve => {
+            releaseRefresh = resolve;
+        });
+        exportIndex.mockImplementationOnce(async request => {
+            markRefreshStarted();
+            await refreshBlocked;
+            return exportIndexImplementation(request);
+        });
+        const shutdown = running.node.run(() => getMediatorNodeContext().shutdownHook);
+        if (!shutdown) {
+            throw new Error('expected graceful shutdown callback');
+        }
+
+        try {
+            const timerAdvance = running.node.run(() => jest.advanceTimersByTimeAsync(2_000));
+            await refreshStarted;
+            const shuttingDown = running.node.run(() => shutdown());
+            await nextTurn();
+
+            expect(running.stopSpy).not.toHaveBeenCalled();
+
+            releaseRefresh();
+            await timerAdvance;
+            await shuttingDown;
+            expect(running.stopSpy).toHaveBeenCalledTimes(1);
+            running.node.run(() => {
+                getMediatorNodeContext().shutdownHook = null;
+            });
+        }
+        finally {
+            releaseRefresh();
+        }
+    });
+
+    it('waits for an active background prebuild before stopping the sync store', async () => {
+        const [operation] = await makeOperations(1);
+        const running = await createRunningNode();
+        const adapter = await NegentropyAdapter.create({
+            syncStore: running.store,
+            maxRecordsPerWindow: 16,
+            maxRoundsPerSession: 8,
+            deferInitialBuild: true,
+        });
+        running.node.run(() => running.node.mediator.__test.setNegentropyAdapter(adapter));
+        const buildSnapshot = adapter.buildSnapshotForWindow.bind(adapter);
+        let markBuildStarted!: () => void;
+        const buildStarted = new Promise<void>(resolve => {
+            markBuildStarted = resolve;
+        });
+        let releaseBuild = () => undefined;
+        const buildBlocked = new Promise<void>(resolve => {
+            releaseBuild = resolve;
+        });
+        jest.spyOn(adapter, 'buildSnapshotForWindow').mockImplementationOnce(async window => {
+            markBuildStarted();
+            await buildBlocked;
+            return buildSnapshot(window);
+        });
+        const shutdown = running.node.run(() => getMediatorNodeContext().shutdownHook);
+        if (!shutdown) {
+            throw new Error('expected graceful shutdown callback');
+        }
+        let shuttingDown: Promise<void> | null = null;
+        let timerAdvance: Promise<void> | null = null;
+
+        try {
+            await running.node.gatekeeper.createDID(operation);
+            timerAdvance = running.node.run(() => jest.advanceTimersByTimeAsync(2_000));
+            await buildStarted;
+            shuttingDown = running.node.run(() => shutdown());
+            await nextTurn();
+
+            expect(running.stopSpy).not.toHaveBeenCalled();
+
+            releaseBuild();
+            await timerAdvance;
+            await shuttingDown;
+            expect(running.stopSpy).toHaveBeenCalledTimes(1);
+            running.node.run(() => {
+                getMediatorNodeContext().shutdownHook = null;
+            });
+        }
+        finally {
+            releaseBuild();
+            await timerAdvance?.catch(() => undefined);
+            await shuttingDown?.catch(() => undefined);
+        }
+    });
+
+    it('does not start a background prebuild from an import drained during shutdown', async () => {
+        const [operation] = await makeOperations(1);
+        const running = await createRunningNode();
+        const adapter = await NegentropyAdapter.create({
+            syncStore: running.store,
+            maxRecordsPerWindow: 16,
+            maxRoundsPerSession: 8,
+            deferInitialBuild: true,
+        });
+        running.node.run(() => running.node.mediator.__test.setNegentropyAdapter(adapter));
+        const buildSnapshot = jest.spyOn(adapter, 'buildSnapshotForWindow');
+        const upsertMany = running.store.upsertMany.bind(running.store);
+        let markWriteStarted!: () => void;
+        const writeStarted = new Promise<void>(resolve => {
+            markWriteStarted = resolve;
+        });
+        let releaseWrite = () => undefined;
+        const writeBlocked = new Promise<void>(resolve => {
+            releaseWrite = resolve;
+        });
+        jest.spyOn(running.store, 'upsertMany').mockImplementationOnce(async records => {
+            markWriteStarted();
+            await writeBlocked;
+            return upsertMany(records);
+        });
+        running.node.gatekeeperClient.getQueue
+            .mockResolvedValueOnce([operation])
+            .mockResolvedValue([]);
+        const shutdown = running.node.run(() => getMediatorNodeContext().shutdownHook);
+        if (!shutdown) {
+            throw new Error('expected graceful shutdown callback');
+        }
+        let shuttingDown: Promise<void> | null = null;
+        let timerAdvance: Promise<void> | null = null;
+
+        try {
+            timerAdvance = running.node.run(() => jest.advanceTimersByTimeAsync(2_000));
+            await writeStarted;
+            shuttingDown = running.node.run(() => shutdown());
+            await nextTurn();
+
+            expect(running.stopSpy).not.toHaveBeenCalled();
+
+            releaseWrite();
+            await timerAdvance;
+            await shuttingDown;
+            expect(buildSnapshot).not.toHaveBeenCalled();
+            expect(running.stopSpy).toHaveBeenCalledTimes(1);
+            running.node.run(() => {
+                getMediatorNodeContext().shutdownHook = null;
+            });
+        }
+        finally {
+            releaseWrite();
+            await timerAdvance?.catch(() => undefined);
+            await shuttingDown?.catch(() => undefined);
+        }
+    });
+
+    it('does not admit a foreground rebuild after shutdown starts', async () => {
+        const running = await createRunningNode();
+        const adapter = await NegentropyAdapter.create({
+            syncStore: running.store,
+            maxRecordsPerWindow: 16,
+            maxRoundsPerSession: 8,
+            deferInitialBuild: true,
+        });
+        running.node.run(() => running.node.mediator.__test.setNegentropyAdapter(adapter));
+        const buildSnapshot = jest.spyOn(adapter, 'buildSnapshotForWindow');
+        const peer = await attachConnection(running, 0x22);
+        const count = running.store.count.bind(running.store);
+        let markCountStarted!: () => void;
+        const countStarted = new Promise<void>(resolve => {
+            markCountStarted = resolve;
+        });
+        let releaseCount = () => undefined;
+        const countBlocked = new Promise<void>(resolve => {
+            releaseCount = resolve;
+        });
+        jest.spyOn(running.store, 'count').mockImplementationOnce(async () => {
+            markCountStarted();
+            await countBlocked;
+            return count();
+        });
+        const shutdown = running.node.run(() => getMediatorNodeContext().shutdownHook);
+        if (!shutdown) {
+            throw new Error('expected graceful shutdown callback');
+        }
+
+        try {
+            await sendPeerMessage(peer, peerPing());
+            await countStarted;
+            await running.node.run(() => shutdown());
+            running.node.run(() => {
+                getMediatorNodeContext().shutdownHook = null;
+            });
+
+            releaseCount();
+            await settle();
+
+            expect(buildSnapshot).not.toHaveBeenCalled();
+            expect(peer.pair.transcript.some(entry => entry.messageType === 'neg_open')).toBe(false);
+            expect(running.stopSpy).toHaveBeenCalledTimes(1);
+        }
+        finally {
+            releaseCount();
+        }
+    });
+
+    it('does not resume a foreground rebuild while shutdown drains an existing rebuild', async () => {
+        const [operation] = await makeOperations(1);
+        const running = await createRunningNode();
+        const adapter = await NegentropyAdapter.create({
+            syncStore: running.store,
+            maxRecordsPerWindow: 16,
+            maxRoundsPerSession: 8,
+            deferInitialBuild: true,
+        });
+        running.node.run(() => running.node.mediator.__test.setNegentropyAdapter(adapter));
+        const buildSnapshotForWindow = adapter.buildSnapshotForWindow.bind(adapter);
+        let markBuildStarted!: () => void;
+        const buildStarted = new Promise<void>(resolve => {
+            markBuildStarted = resolve;
+        });
+        let releaseBuild = () => undefined;
+        const buildBlocked = new Promise<void>(resolve => {
+            releaseBuild = resolve;
+        });
+        const buildSnapshot = jest.spyOn(adapter, 'buildSnapshotForWindow').mockImplementationOnce(async window => {
+            markBuildStarted();
+            await buildBlocked;
+            return buildSnapshotForWindow(window);
+        });
+        const shutdown = running.node.run(() => getMediatorNodeContext().shutdownHook);
+        if (!shutdown) {
+            throw new Error('expected graceful shutdown callback');
+        }
+        let shuttingDown: Promise<void> | null = null;
+        let timerAdvance: Promise<void> | null = null;
+
+        try {
+            await running.node.gatekeeper.createDID(operation);
+            timerAdvance = running.node.run(() => jest.advanceTimersByTimeAsync(2_000));
+            await buildStarted;
+
+            const peer = await attachConnection(running, 0x22);
+            await sendPeerMessage(peer, peerPing());
+            await eventually(() => {
+                const state = running.node.run(
+                    () => running.node.mediator.__test.getConnectionState(peer.peerKey),
+                );
+                return state?.activeSession !== null;
+            });
+
+            shuttingDown = running.node.run(() => shutdown());
+            await nextTurn();
+            expect(running.stopSpy).not.toHaveBeenCalled();
+
+            releaseBuild();
+            await timerAdvance;
+            await shuttingDown;
+            await settle();
+
+            expect(buildSnapshot).toHaveBeenCalledTimes(1);
+            expect(peer.pair.transcript.some(entry => entry.messageType === 'neg_open')).toBe(false);
+            expect(running.stopSpy).toHaveBeenCalledTimes(1);
+            running.node.run(() => {
+                getMediatorNodeContext().shutdownHook = null;
+            });
+        }
+        finally {
+            releaseBuild();
+            await timerAdvance?.catch(() => undefined);
+            await shuttingDown?.catch(() => undefined);
+        }
     });
 
     it('destroys the active swarm and stops the injected store during graceful shutdown', async () => {

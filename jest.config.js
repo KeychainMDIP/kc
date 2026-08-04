@@ -39,6 +39,7 @@ const config = {
         '^\\.\\/sync-mapping\\.js$': '<rootDir>/services/mediators/hyperswarm/src/sync-mapping.ts',
         '^\\.\\/operation-order\\.js$': '<rootDir>/services/mediators/hyperswarm/src/operation-order.ts',
         '^\\.\\/sync-persistence\\.js$': '<rootDir>/services/mediators/hyperswarm/src/sync-persistence.ts',
+        '^\\.\\/import-pipeline\\.js$': '<rootDir>/services/mediators/hyperswarm/src/import-pipeline.ts',
         '^\\.\\/sync-store-mirroring\\.js$': '<rootDir>/services/mediators/hyperswarm/src/sync-store-mirroring.ts',
         '^\\.\\/ordered-catchup\\.js$': '<rootDir>/services/mediators/hyperswarm/src/ordered-catchup.ts',
         '^\\.\\/transport-framing\\.js$': '<rootDir>/services/mediators/hyperswarm/src/transport-framing.ts',

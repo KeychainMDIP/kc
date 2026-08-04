@@ -2,13 +2,11 @@ import Hyperswarm, { HyperswarmConnection } from 'hyperswarm';
 import goodbye from 'graceful-goodbye';
 import b4a from 'b4a';
 import { createHash, randomBytes } from 'crypto';
-import asyncLib from 'async';
 import { EventEmitter } from 'events';
 
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import KeymasterClient from '@mdip/keymaster/client';
 import KuboClient from '@mdip/ipfs/kubo';
-import { generateCID } from '@mdip/ipfs/utils';
 import { Operation } from '@mdip/gatekeeper/types';
 import CipherNode from '@mdip/cipher/node';
 import { childLogger } from '@mdip/common/logger';
@@ -16,7 +14,6 @@ import config from './config.js';
 import type {
     OperationSyncStore,
     SyncOperationRecord,
-    SyncOperationWriteRecord,
     SyncStoreCursor,
 } from './db/types.js';
 import SqliteOperationSyncStore from './db/sqlite.js';
@@ -75,19 +72,15 @@ import {
     MDIP_EPOCH_SECONDS,
     windowLabel,
 } from './negentropy/windows.js';
-import { bootstrapSyncStoreFromGatekeeper, type BootstrapResult } from './bootstrap.js';
-import {
-    dedupeOperationsByHash,
-    filterKnownOperations,
-    hasContentVerifiedOperationId,
-    mapAcceptedOperationsToSyncRecords,
-    partitionImportBatchOperations,
-    prunePersistedSyncRecords,
-} from './sync-persistence.js';
-import { resolveAcceptedOperationsToPersist } from './sync-store-mirroring.js';
+import type { BootstrapResult } from './bootstrap.js';
 import {
     mapOperationToSyncKey,
 } from './sync-mapping.js';
+import {
+    createImportPipeline,
+    TERMINAL_REJECTED_SYNC_ORDER,
+    type ImportPipeline,
+} from './import-pipeline.js';
 import {
     getExpectedOrderedCatchupRequestDecision,
     getOrderedCatchupDecision,
@@ -121,8 +114,6 @@ import {
     createConnectionInfo,
     createPeerSyncSessionState,
     type ConnectionInfo,
-    type ImportQueueResult,
-    type ImportQueueTask,
     type MalformedPeerState,
     type MediatorMainOptions,
     type NodeInfo,
@@ -146,11 +137,6 @@ const keymaster = new KeymasterClient();
 const ipfs = new KuboClient();
 const cipher = new CipherNode();
 
-async function generateOperationCid(operation: Operation): Promise<string> {
-    const canonical = cipher.canonicalizeJSON(operation);
-    return generateCID(JSON.parse(canonical));
-}
-
 function createConfiguredSyncStore(): OperationSyncStore {
     if (config.db === 'postgres') {
         return new PostgresOperationSyncStore(config.postgresURL);
@@ -160,8 +146,6 @@ function createConfiguredSyncStore(): OperationSyncStore {
 }
 
 let syncStore: OperationSyncStore = createConfiguredSyncStore();
-const pendingSyncRecords = new Map<string, SyncOperationWriteRecord>();
-const terminalOperationCids = new Set<string>();
 let negentropyAdapter: NegentropyAdapter | null = null;
 let adapterChangeSeq = 0;
 let adapterBuiltSeq = -1;
@@ -170,17 +154,12 @@ let adapterBuiltWindowId: string | null = null;
 let adapterBuiltSnapshot: NegentropyWindowSnapshot | null = null;
 let rebuildPromise: Promise<void> | null = null;
 let backgroundPrebuildQueued = false;
-
-function replaceSyncStore(store: OperationSyncStore): void {
-    pendingSyncRecords.clear();
-    terminalOperationCids.clear();
-    syncStore = store;
-}
+let backgroundPrebuildPromise: Promise<void> | null = null;
+let shutdownStarted = false;
 
 EventEmitter.defaultMaxListeners = 100;
 
 const REGISTRY = 'hyperswarm';
-const BATCH_SIZE = 100;
 const NEGENTROPY_VERSION = 1;
 const ORDERED_CATCHUP_VERSION = 1;
 const TRANSPORT_FRAMING_VERSION = 1;
@@ -189,8 +168,6 @@ const NEG_SESSION_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
 const NEG_MAX_IDS_PER_OPS_REQ = 1_000;
 const NEG_MAX_IDS_PER_LOOKUP = 1_000;
 const NEG_MAX_OPS_PER_PUSH = 300;
-const MAX_PENDING_SYNC_RECORDS = NEG_MAX_IDS_PER_LOOKUP;
-const TERMINAL_REJECTED_SYNC_ORDER = Number.MAX_SAFE_INTEGER;
 const NEG_MAX_BYTES_PER_PUSH = 512 * 1024;
 const ORDERED_CATCHUP_PREFETCH_BATCHES = 2;
 const NEG_REPAIR_INTERVAL_MS = config.negentropyIntervalSeconds * 1000;
@@ -211,11 +188,38 @@ const orderedCatchupTransitionPeers = new Set<string>();
 let outboundSyncStartInProgress = false;
 const syncStats = createMediatorSyncStats();
 
+function buildImportPipeline(store: OperationSyncStore): ImportPipeline {
+    return createImportPipeline({
+        gatekeeper,
+        syncStore: store,
+        cipher,
+        syncStats,
+        onStoreChanged(source) {
+            markNegentropyAdapterDirty();
+            maybeStartBackgroundPrebuild(source);
+        },
+    });
+}
+
+let importPipeline = buildImportPipeline(syncStore);
+
+function replaceSyncStore(store: OperationSyncStore): void {
+    if (importPipeline.queued > 0 || importPipeline.running > 0) {
+        throw new Error('cannot replace sync store while imports are active');
+    }
+    importPipeline.shutdown();
+    syncStore = store;
+    importPipeline = buildImportPipeline(store);
+}
+
 let swarm: Hyperswarm | null = null;
 let nodeKey = '';
 let nodeInfo: NodeInfo;
 
 goodbye(async () => {
+    shutdownStarted = true;
+    backgroundPrebuildQueued = false;
+
     if (swarm) {
         try {
             await Promise.resolve(swarm.destroy());
@@ -227,6 +231,12 @@ goodbye(async () => {
     }
 
     try {
+        await importPipeline.shutdown();
+        while (backgroundPrebuildPromise || rebuildPromise) {
+            const activeRebuilds = [backgroundPrebuildPromise, rebuildPromise]
+                .filter((promise): promise is Promise<void> => promise !== null);
+            await Promise.allSettled(activeRebuilds);
+        }
         await syncStore.stop();
     } catch (error) {
         log.error({ error }, 'syncStore stop error');
@@ -678,8 +688,6 @@ function resetRuntimeSyncStateAfterGatekeeperReset(sync: BootstrapResult): void 
 
     peerSessions.clear();
     orderedCatchupTransitionPeers.clear();
-    pendingSyncRecords.clear();
-    terminalOperationCids.clear();
     invalidateNegentropyAdapterCache();
 
     for (const conn of Object.values(connectionInfo)) {
@@ -1055,8 +1063,8 @@ async function startOrderedCatchupSessionForPeer(
         || peerSessions.has(peerKey)
         || getActiveNegentropySessions() > 0
         || hasActiveOutboundOrderedCatchup()
-        || importQueue.length() > 0
-        || importQueue.running() > 0) {
+        || importPipeline.queued > 0
+        || importPipeline.running > 0) {
         return;
     }
 
@@ -1128,7 +1136,7 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
         syncStats.modeSelectionsNegentropy += 1;
     }
 
-    if (outboundSyncStartInProgress || importQueue.length() > 0 || importQueue.running() > 0) {
+    if (outboundSyncStartInProgress || importPipeline.queued > 0 || importPipeline.running > 0) {
         return;
     }
 
@@ -1200,8 +1208,8 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
                 syncMode: mode,
                 hasActiveSession,
                 orderedCatchupActive,
-                importQueueLength: importQueue.length(),
-                importQueueRunning: importQueue.running(),
+                importQueueLength: importPipeline.queued,
+                importQueueRunning: importPipeline.running,
                 activeNegentropySessions,
                 lastAttemptAtMs: conn.lastNegentropyAttemptAt,
                 nowMs: Date.now(),
@@ -1332,7 +1340,7 @@ async function buildInitialHistoryWindowForSession(): Promise<ReconciliationWind
 }
 
 function maybeStartBackgroundPrebuild(reason: string): void {
-    if (!negentropyAdapter) {
+    if (shutdownStarted || !negentropyAdapter) {
         return;
     }
 
@@ -1348,20 +1356,30 @@ function maybeStartBackgroundPrebuild(reason: string): void {
         return;
     }
 
-    if (rebuildPromise) {
+    if (backgroundPrebuildPromise || rebuildPromise) {
         backgroundPrebuildQueued = true;
         return;
     }
 
     backgroundPrebuildQueued = false;
-    (async () => {
+    const currentBackgroundPrebuild: Promise<void> = (async () => {
         const window = await buildInitialHistoryWindowForSession();
+        if (shutdownStarted) {
+            return;
+        }
         await ensureWindowAdapterFresh(window, `background_${reason}`);
     })()
         .catch(error => {
             log.error({ error, reason }, 'background negentropy prebuild failed');
         })
         .finally(() => {
+            if (backgroundPrebuildPromise === currentBackgroundPrebuild) {
+                backgroundPrebuildPromise = null;
+            }
+            if (shutdownStarted) {
+                backgroundPrebuildQueued = false;
+                return;
+            }
             if (!backgroundPrebuildQueued) {
                 return;
             }
@@ -1371,9 +1389,13 @@ function maybeStartBackgroundPrebuild(reason: string): void {
                 maybeStartBackgroundPrebuild('queued_followup');
             }
         });
+    backgroundPrebuildPromise = currentBackgroundPrebuild;
 }
 
 async function ensureWindowAdapterFresh(window: ReconciliationWindow, reason: string): Promise<NegentropyWindowSnapshot> {
+    if (shutdownStarted) {
+        throw new Error('mediator is shutting down');
+    }
     if (!negentropyAdapter) {
         throw new Error('negentropy adapter unavailable');
     }
@@ -1392,6 +1414,9 @@ async function ensureWindowAdapterFresh(window: ReconciliationWindow, reason: st
 
     if (rebuildPromise) {
         await rebuildPromise;
+        if (shutdownStarted) {
+            throw new Error('mediator is shutting down');
+        }
         const recentAfterWait = adapterBuiltAt > 0 && (Date.now() - adapterBuiltAt) <= NEG_ADAPTER_MAX_AGE_MS;
         const sameWindowAfterWait = adapterBuiltWindowId === targetWindowId;
         if (!isNegentropyAdapterDirty() && recentAfterWait && sameWindowAfterWait) {
@@ -1961,42 +1986,28 @@ function settleOrderedCatchupImport(
 
 function queueOrderedCatchupImport(peerKey: string, session: PeerSyncSession, batch: Operation[]): void {
     session.orderedCatchupPendingImports += 1;
-    importQueue.push<ImportQueueResult>({
-        name: peerKey,
-        data: batch,
-        orderedCatchupSession: session,
-    }, (error, imported) => {
-        try {
-            if (error || !imported) {
-                if (error) {
-                    log.error({ error, peer: shortName(peerKey), sessionId: session.sessionId }, 'ordered catch-up import failed');
-                }
-                settleOrderedCatchupImport(peerKey, session, true);
-                return;
+    importPipeline.enqueue(
+        {
+            kind: 'remote',
+            name: peerKey,
+            data: batch,
+            cancelled: () => session.orderedCatchupImportsAborted,
+        },
+        imported => {
+            try {
+                settleOrderedCatchupImport(peerKey, session, imported.retryable);
             }
-            settleOrderedCatchupImport(peerKey, session, imported.retryable);
-        }
-        catch (completionError) {
-            log.error(
-                { error: completionError, peer: shortName(peerKey), sessionId: session.sessionId },
-                'ordered catch-up import completion failed'
-            );
-        }
+            catch (completionError) {
+                log.error(
+                    { error: completionError, peer: shortName(peerKey), sessionId: session.sessionId },
+                    'ordered catch-up import completion failed'
+                );
+            }
+        },
+    ).catch(error => {
+        log.error({ error, peer: shortName(peerKey), sessionId: session.sessionId }, 'ordered catch-up import failed');
+        settleOrderedCatchupImport(peerKey, session, true);
     });
-}
-
-async function waitForImportQueueIdle(reason: string): Promise<void> {
-    while (importQueue.length() > 0 || importQueue.running() > 0) {
-        log.debug(
-            {
-                reason,
-                queued: importQueue.length(),
-                running: importQueue.running(),
-            },
-            'waiting for import queue to drain'
-        );
-        await new Promise(resolve => setTimeout(resolve, 250));
-    }
 }
 
 function queueOrderedCatchupPostImport(peerKey: string, reason: string, startedAt: number): void {
@@ -2010,7 +2021,7 @@ function queueOrderedCatchupPostImport(peerKey: string, reason: string, startedA
         let handoffStarted = false;
         let postImportCompleted = false;
         try {
-            await waitForImportQueueIdle('ordered_catchup_complete');
+            await importPipeline.waitForIdle();
             await syncGatekeeperIndexToStore('ordered_catchup_complete');
             postImportCompleted = true;
             const durationMs = Date.now() - startedAt;
@@ -2048,8 +2059,8 @@ async function maybeStartPostOrderedCatchupNegentropy(peerKey: string, reason: s
         peerConnected: !!conn,
         peerSupportsNegentropyTransport: conn ? supportsPeerNegentropyTransport(conn) : false,
         hasActiveSession: peerSessions.has(peerKey),
-        importQueueLength: importQueue.length(),
-        importQueueRunning: importQueue.running(),
+        importQueueLength: importPipeline.queued,
+        importQueueRunning: importPipeline.running,
         activeNegentropySessions: getActiveNegentropySessions(),
         syncCompleted: conn?.negentropySynced ?? false,
     });
@@ -2070,8 +2081,8 @@ async function maybeStartPostOrderedCatchupNegentropy(peerKey: string, reason: s
                 peerConnected: !!conn,
                 peerSupportsNegentropyTransport: conn ? supportsPeerNegentropyTransport(conn) : false,
                 hasActiveSession: peerSessions.has(peerKey),
-                importQueueLength: importQueue.length(),
-                importQueueRunning: importQueue.running(),
+                importQueueLength: importPipeline.queued,
+                importQueueRunning: importPipeline.running,
                 activeNegentropySessions: getActiveNegentropySessions(),
                 syncCompleted: conn?.negentropySynced ?? false,
             },
@@ -2322,70 +2333,6 @@ async function refreshStoredUnresolvedNeeds(peerKey: string, session: PeerSyncSe
     }
 }
 
-async function collectTerminalUnresolvedOperations(session: PeerSyncSession): Promise<Operation[]> {
-    const operationsByPrevid = new Map<string, Array<{ id: string; operation: Operation }>>();
-    const selected = new Map<string, Operation>();
-    const queuedCids = new Set<string>();
-    const cidQueue: string[] = [];
-
-    const queueCid = (cid: string): void => {
-        if (!queuedCids.has(cid)) {
-            queuedCids.add(cid);
-            cidQueue.push(cid);
-        }
-    };
-
-    for (const cid of terminalOperationCids) {
-        queueCid(cid);
-    }
-
-    for (const [id, operation] of session.unresolvedOperations) {
-        if (!session.unresolvedNeedIds.has(id)
-            || !hasContentVerifiedOperationId(operation, cipher)) {
-            continue;
-        }
-
-        if (operation.type !== 'create' && operation.previd === undefined) {
-            selected.set(id, operation);
-            try {
-                queueCid(await generateOperationCid(operation));
-            }
-            catch (error) {
-                log.warn({ error, id }, 'failed to derive terminal legacy operation CID');
-            }
-            continue;
-        }
-
-        if (typeof operation.previd !== 'string') {
-            continue;
-        }
-
-        const children = operationsByPrevid.get(operation.previd) ?? [];
-        children.push({ id, operation });
-        operationsByPrevid.set(operation.previd, children);
-    }
-
-    let queueIndex = 0;
-    while (queueIndex < cidQueue.length) {
-        const cid = cidQueue[queueIndex++];
-        for (const child of operationsByPrevid.get(cid) ?? []) {
-            if (selected.has(child.id)) {
-                continue;
-            }
-
-            selected.set(child.id, child.operation);
-            try {
-                queueCid(await generateOperationCid(child.operation));
-            }
-            catch (error) {
-                log.warn({ error, id: child.id }, 'failed to derive terminal fork descendant CID');
-            }
-        }
-    }
-
-    return Array.from(selected.values());
-}
-
 // Store pre-0.5 operations without previd and descendants of terminal modern forks
 // until restart so completed reconciliation does not retry permanently losing history.
 async function persistTerminalUnresolvedOperations(peerKey: string, session: PeerSyncSession): Promise<void> {
@@ -2393,32 +2340,34 @@ async function persistTerminalUnresolvedOperations(peerKey: string, session: Pee
         return;
     }
 
-    const operations = await collectTerminalUnresolvedOperations(session);
-    if (peerSessions.get(peerKey) !== session || operations.length === 0) {
+    const operations = Array.from(session.unresolvedOperations.entries())
+        .filter(([id]) => session.unresolvedNeedIds.has(id))
+        .map(([, operation]) => operation);
+    if (operations.length === 0) {
         return;
     }
 
-    try {
-        const persistedIds = await persistProcessedOperations(
-            [],
-            operations,
-            'negentropy_terminal_unresolved',
-        );
-        if (peerSessions.get(peerKey) !== session) {
-            return;
-        }
-        for (const id of persistedIds) {
-            session.provenStoredPushIds.add(id);
-            session.pendingNeedIds.delete(id);
-            session.unresolvedNeedIds.delete(id);
-            session.unresolvedOperations.delete(id);
-        }
+    const imported = await importPipeline.enqueue({
+        kind: 'terminal',
+        name: peerKey,
+        data: operations,
+        cancelled: () => peerSessions.get(peerKey) !== session,
+    });
+    if (peerSessions.get(peerKey) !== session) {
+        return;
     }
-    catch (error) {
+    if (imported.retryable) {
         log.warn(
-            { error, peer: shortName(peerKey), operations: operations.length },
+            { peer: shortName(peerKey), operations: operations.length },
             'failed to persist terminal unresolved operations'
         );
+        return;
+    }
+    for (const id of [...imported.knownIds, ...imported.persistedIds]) {
+        session.provenStoredPushIds.add(id);
+        session.pendingNeedIds.delete(id);
+        session.unresolvedNeedIds.delete(id);
+        session.unresolvedOperations.delete(id);
     }
 }
 
@@ -2624,312 +2573,6 @@ async function relayMsg(msg: HyperMessage): Promise<void> {
         }
     }
 }
-
-async function importBatch(batch: Operation[]) {
-    // The batch we receive from other hyperswarm nodes includes just operations.
-    // We have to wrap the operations in new events before submitting to our gatekeeper for importing
-    try {
-        const hash = cipher.hashJSON(batch);
-        const events = [];
-        const now = new Date();
-        const isoTime = now.toISOString();
-        const ordTime = now.getTime();
-
-        for (let i = 0; i < batch.length; i++) {
-            events.push({
-                registry: REGISTRY,
-                time: isoTime,
-                ordinal: [ordTime, i],
-                operation: batch[i],
-            })
-        }
-
-        log.debug(`importBatch: ${shortName(hash)} merging ${events.length} events...`);
-        const importStart = Date.now();
-        const response = await gatekeeper.importBatch(events);
-        const importDurationMs = Date.now() - importStart;
-        log.debug({ durationMs: importDurationMs }, 'importBatch');
-        log.debug(`* ${JSON.stringify(response)}`);
-        syncStats.opsRejected += response.rejected ?? 0;
-
-        return partitionImportBatchOperations(batch, response.rejectedIndices);
-    }
-    catch (error) {
-        log.error({ error }, 'importBatch error');
-        throw error;
-    }
-}
-
-async function recordTerminalOperationCids(operations: Operation[], source: string): Promise<void> {
-    for (const operation of operations) {
-        try {
-            terminalOperationCids.add(await generateOperationCid(operation));
-        }
-        catch (error) {
-            log.warn({ error, source }, 'failed to record terminal operation CID');
-        }
-    }
-}
-
-async function persistProcessedOperations(
-    acceptedOperations: Operation[],
-    rejectedOperations: Operation[],
-    source: string,
-    retryIds: Iterable<string> = [],
-): Promise<string[]> {
-    const accepted = mapAcceptedOperationsToSyncRecords(acceptedOperations);
-    const verifiedRejectedOperations = rejectedOperations.filter(
-        operation => hasContentVerifiedOperationId(operation, cipher)
-    );
-    const rejectedHashMismatches = rejectedOperations.length - verifiedRejectedOperations.length;
-    const rejected = mapAcceptedOperationsToSyncRecords(verifiedRejectedOperations.map(operation => ({
-        operation,
-        syncOrder: TERMINAL_REJECTED_SYNC_ORDER,
-    })));
-    if (rejectedHashMismatches > 0) {
-        log.warn(
-            { source, rejectedHashMismatches },
-            'skipping terminal sync records with unverified operation IDs'
-        );
-    }
-    const records = [...rejected.records, ...accepted.records];
-    const invalid = accepted.invalid + rejected.invalid;
-    const operationCount = acceptedOperations.length + rejectedOperations.length;
-    const recordsToPersist = new Map<string, SyncOperationWriteRecord>();
-    for (const record of records) {
-        pendingSyncRecords.delete(record.id);
-        pendingSyncRecords.set(record.id, record);
-        recordsToPersist.set(record.id, record);
-    }
-
-    let retryCandidates = 0;
-    for (const id of new Set(retryIds)) {
-        const pending = pendingSyncRecords.get(id);
-        if (!pending || recordsToPersist.has(id)) {
-            continue;
-        }
-        retryCandidates += 1;
-        recordsToPersist.set(id, pending);
-    }
-
-    const attemptedRecords = Array.from(recordsToPersist.values());
-    if (attemptedRecords.length === 0) {
-        log.debug({
-            source,
-            accepted: acceptedOperations.length,
-            rejected: rejectedOperations.length,
-            rejectedHashMismatches,
-            attempted: operationCount,
-            invalid,
-        }, 'sync-store persist skipped');
-        return [];
-    }
-
-    let result;
-    try {
-        result = await syncStore.upsertMany(attemptedRecords);
-    }
-    catch (error) {
-        const pendingBeforeTrim = pendingSyncRecords.size;
-        while (pendingSyncRecords.size > MAX_PENDING_SYNC_RECORDS) {
-            const oldestId = pendingSyncRecords.keys().next().value;
-            if (oldestId === undefined) {
-                break;
-            }
-            pendingSyncRecords.delete(oldestId);
-        }
-        log.error(
-            {
-                error,
-                source,
-                accepted: acceptedOperations.length,
-                rejected: rejectedOperations.length,
-                rejectedHashMismatches,
-                attempted: operationCount,
-                mapped: records.length,
-                retryCandidates,
-                recordsAttempted: attemptedRecords.length,
-                pending: pendingSyncRecords.size,
-                pendingEvicted: pendingBeforeTrim - pendingSyncRecords.size,
-            },
-            'sync-store persist processed ops failed'
-        );
-        throw error;
-    }
-
-    for (const record of attemptedRecords) {
-        if (pendingSyncRecords.get(record.id) === record) {
-            pendingSyncRecords.delete(record.id);
-        }
-    }
-    const terminalRecordIds = new Set(
-        attemptedRecords
-            .filter(record => record.syncOrder === TERMINAL_REJECTED_SYNC_ORDER)
-            .map(record => record.id)
-    );
-    await recordTerminalOperationCids(
-        verifiedRejectedOperations.filter(operation => {
-            const mapped = mapOperationToSyncKey(operation);
-            return mapped.ok && terminalRecordIds.has(mapped.value.idHex);
-        }),
-        source,
-    );
-
-    if (result.inserted > 0 || result.updated > 0) {
-        markNegentropyAdapterDirty();
-        maybeStartBackgroundPrebuild(`persist_${source}`);
-    }
-    log.debug(
-        {
-            source,
-            accepted: acceptedOperations.length,
-            rejected: rejectedOperations.length,
-            rejectedHashMismatches,
-            attempted: operationCount,
-            mapped: records.length,
-            retryCandidates,
-            recordsAttempted: attemptedRecords.length,
-            pendingRemaining: pendingSyncRecords.size,
-            invalid,
-            inserted: result.inserted,
-            updated: result.updated,
-        },
-        'sync-store persist processed ops'
-    );
-    return attemptedRecords.map(record => record.id);
-}
-
-async function mergeBatch(batch: Operation[]): Promise<string[]> {
-
-    if (!batch) {
-        return [];
-    }
-
-    let chunk = [];
-    const processCandidates: Operation[] = [];
-    const structurallyRejected: Operation[] = [];
-
-    for (const operation of batch) {
-        chunk.push(operation);
-
-        if (chunk.length >= BATCH_SIZE) {
-            const imported = await importBatch(chunk);
-            processCandidates.push(...imported.processCandidates);
-            structurallyRejected.push(...imported.rejectedOperations);
-            chunk = [];
-        }
-    }
-
-    if (chunk.length > 0) {
-        const imported = await importBatch(chunk);
-        processCandidates.push(...imported.processCandidates);
-        structurallyRejected.push(...imported.rejectedOperations);
-    }
-
-    const processStart = Date.now();
-    const response = await gatekeeper.processEvents();
-    const processDurationMs = Date.now() - processStart;
-    log.debug({ durationMs: processDurationMs }, 'processEvents');
-    if (response.busy) {
-        throw new Error('gatekeeper processEvents busy');
-    }
-    const processSummary = { ...response };
-    delete processSummary.acceptedHashes;
-    delete processSummary.acceptedEvents;
-    delete processSummary.rejectedOperations;
-    log.debug(`mergeBatch: ${JSON.stringify(processSummary)}`);
-    syncStats.opsApplied += (response.added ?? 0) + (response.merged ?? 0);
-    syncStats.opsRejected += response.rejected ?? 0;
-
-    const acceptedToPersist = resolveAcceptedOperationsToPersist(
-        processCandidates,
-        response.acceptedHashes,
-        response.acceptedEvents,
-    );
-    const processRejected = dedupeOperationsByHash(response.rejectedOperations ?? []);
-    const rejectedToPersist = dedupeOperationsByHash([
-        ...structurallyRejected,
-        ...processRejected,
-    ]);
-    const retryIds = new Set<string>();
-    for (const operation of batch) {
-        const mapped = mapOperationToSyncKey(operation);
-        if (mapped.ok) {
-            retryIds.add(mapped.value.idHex);
-        }
-    }
-    return persistProcessedOperations(
-        acceptedToPersist,
-        rejectedToPersist,
-        'mergeBatch',
-        retryIds,
-    );
-}
-
-let importQueue = asyncLib.queue<ImportQueueTask, ImportQueueResult>(
-    async function (task): Promise<ImportQueueResult> {
-        const { name, data: batch } = task;
-        const result: ImportQueueResult = {
-            knownIds: [],
-            persistedIds: [],
-            retryable: false,
-        };
-        if (task.orderedCatchupSession?.orderedCatchupImportsAborted) {
-            return result;
-        }
-        try {
-            const ready = await gatekeeper.isReady();
-
-            if (!ready) {
-                result.retryable = true;
-                return result;
-            }
-
-            if (batch.length === 0) {
-                return result;
-            }
-
-            if (task.queueGossip) {
-                syncStats.queueOpsImported += batch.length;
-                const samples = collectQueueDelaySamples(batch);
-                for (const sample of samples) {
-                    addAggregateSample(syncStats.queueDelayMs, sample);
-                }
-            }
-
-            const filtered = await filterKnownOperations(batch, syncStore, NEG_MAX_OPS_PER_PUSH);
-            result.knownIds = filtered.knownIds;
-            if (filtered.known > 0) {
-                log.debug(
-                    {
-                        peer: shortName(name),
-                        node: task.node || 'anon',
-                        received: batch.length,
-                        forwarded: filtered.operations.length,
-                        knownDropped: filtered.known,
-                        mapped: filtered.mapped,
-                        invalid: filtered.invalid,
-                    },
-                    'filtered inbound operations against sync-store'
-                );
-            }
-
-            if (filtered.operations.length === 0) {
-                return result;
-            }
-
-            const nodeName = task.node || 'anon';
-            log.debug(
-                `* merging batch (${filtered.operations.length}/${batch.length} events) from: ${shortName(name)} (${nodeName}) *`
-            );
-            result.persistedIds = await mergeBatch(filtered.operations);
-        }
-        catch (error) {
-            result.retryable = true;
-            log.error({ error }, 'mergeBatch error');
-        }
-        return result;
-    }, 1); // concurrency is 1
 
 const batchesSeen: Record<string, boolean> = {};
 
@@ -3335,7 +2978,8 @@ async function handleOpsPushMessage(peerKey: string, msg: OpsPushMessage): Promi
             return;
         }
 
-        const imported = await importQueue.pushAsync<ImportQueueResult>({
+        const imported = await importPipeline.enqueue({
+            kind: 'remote',
             name: peerKey,
             data: unprovenBatch,
         });
@@ -3471,7 +3115,8 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
 
     if (msg.type === 'queue') {
         if (Array.isArray(msg.data) && newBatch(msg.data)) {
-            importQueue.push({
+            importPipeline.enqueue({
+                kind: 'remote',
                 name: peerKey,
                 node: msg.node,
                 data: msg.data,
@@ -3538,7 +3183,15 @@ async function flushQueue(): Promise<void> {
     const batch = await gatekeeper.getQueue(REGISTRY);
 
     if (batch.length > 0) {
-        await persistProcessedOperations(batch, [], 'flushQueue');
+        const imported = await importPipeline.enqueue({
+            kind: 'local_queue',
+            phase: 'persist',
+            name: nodeKey,
+            data: batch,
+        });
+        if (imported.retryable) {
+            throw new Error('failed to import local Gatekeeper queue');
+        }
         syncStats.queueOpsRelayed += batch.length;
         const samples = collectQueueDelaySamples(batch);
         for (const sample of samples) {
@@ -3558,30 +3211,22 @@ async function flushQueue(): Promise<void> {
             .filter((hash): hash is string => !!hash);
         await gatekeeper.clearQueue(REGISTRY, hashes);
         await relayMsg(msg);
-        await mergeBatch(batch);
+        const merged = await importPipeline.enqueue({
+            kind: 'local_queue',
+            phase: 'merge',
+            name: nodeKey,
+            data: batch,
+        });
+        if (merged.retryable) {
+            throw new Error('failed to merge local Gatekeeper queue');
+        }
     }
 }
 
 async function syncGatekeeperIndexToStore(source: string): Promise<void> {
-    const sync = await bootstrapSyncStoreFromGatekeeper(syncStore, gatekeeper);
+    const sync = await importPipeline.refreshIndex(source);
     if (sync.resetReason) {
         resetRuntimeSyncStateAfterGatekeeperReset(sync);
-    }
-    else if (pendingSyncRecords.size > 0) {
-        try {
-            const pruned = await prunePersistedSyncRecords(
-                pendingSyncRecords,
-                syncStore,
-                NEG_MAX_IDS_PER_LOOKUP,
-            );
-            log.debug({ source, ...pruned, remaining: pendingSyncRecords.size }, 'pruned persisted sync-store retries');
-        }
-        catch (error) {
-            log.warn(
-                { error, source, remaining: pendingSyncRecords.size },
-                'failed to prune persisted sync-store retries'
-            );
-        }
     }
 
     if (!sync.resetReason && (sync.inserted > 0 || sync.updated > 0 || sync.deleted > 0)) {
@@ -3611,7 +3256,7 @@ async function syncGatekeeperIndexToStore(source: string): Promise<void> {
 async function waitForInitialGatekeeperIndexSync(): Promise<void> {
     while (true) {
         try {
-            const bootstrap = await bootstrapSyncStoreFromGatekeeper(syncStore, gatekeeper);
+            const bootstrap = await importPipeline.refreshIndex('startup');
             log.info({ bootstrap }, 'sync-store bootstrap complete');
             return;
         }
@@ -3630,7 +3275,7 @@ async function exportLoop(): Promise<void> {
         log.error({ error }, 'Error in exportLoop');
     }
 
-    const importQueueLength = importQueue.length();
+    const importQueueLength = importPipeline.queued;
 
     if (importQueueLength > 0) {
         const delay = 60;
@@ -3718,10 +3363,9 @@ async function main(): Promise<void> {
     log.info({ db: config.db }, 'sync-store backend selected');
     await syncStore.start();
     // Retry pre-0.5 out-of-order operations and modern losing-fork descendants after restart.
-    const deletedRejectedOperations = await syncStore.deleteBySyncOrder(
-        TERMINAL_REJECTED_SYNC_ORDER,
-    );
-    terminalOperationCids.clear();
+    await importPipeline.shutdown();
+    const deletedRejectedOperations = await syncStore.deleteBySyncOrder(TERMINAL_REJECTED_SYNC_ORDER);
+    importPipeline = buildImportPipeline(syncStore);
     log.info(
         { deletedRejectedOperations },
         'removed terminal rejected operations from sync store',
