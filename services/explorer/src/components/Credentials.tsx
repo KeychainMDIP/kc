@@ -13,6 +13,7 @@ import {
     TableContainer,
     TableHead,
     TableRow,
+    TextField,
     Typography,
 } from "@mui/material";
 import { Link as RouterLink, useSearchParams } from "react-router-dom";
@@ -22,8 +23,8 @@ import {
 } from "../config.js";
 import {
     fetchDIDDocument,
+    fetchNetworkMetricSnapshot,
     fetchPublishedCredentials,
-    fetchPublishedSchemaMetrics,
     type PublishedCredentialRow,
     type PublishedSchemaMetric,
 } from "../api/searchClient.js";
@@ -230,7 +231,10 @@ function Credentials() {
     const [detailDoc, setDetailDoc] = useState<CredentialDetailDocument | null>(null);
     const [isDetailLoading, setIsDetailLoading] = useState<boolean>(false);
     const [detailError, setDetailError] = useState<string | null>(null);
+    const [schemaMetricsMessage, setSchemaMetricsMessage] = useState("Loading credential metrics...");
 
+    const currentDate = new Date().toISOString().slice(0, 10);
+    const selectedDate = searchParams.get("date") || currentDate;
     const schemaDid = searchParams.get("schemaDid") ?? "";
     const selectedDetailDid = searchParams.get("detailDid") ?? "";
     const schemaPrefix = searchParams.get("schemaPrefix") ?? "";
@@ -302,6 +306,16 @@ function Credentials() {
         });
     }
 
+    function handleDateChange(value: string) {
+        updateParams({
+            date: value || null,
+            schemaDid: null,
+            detailDid: null,
+            page: "0",
+        });
+        setSchemaPage(0);
+    }
+
     function handleBackToSchemas() {
         updateParams({
             schemaDid: null,
@@ -345,15 +359,20 @@ function Credentials() {
         let ignore = false;
 
         async function fetchSchemaCounts() {
+            setSchemaCounts([]);
+            setSchemaMetricsMessage("Loading credential metrics...");
+
             try {
-                const schemas = await fetchPublishedSchemaMetrics();
+                const snapshot = await fetchNetworkMetricSnapshot(selectedDate);
 
                 if (!ignore) {
-                    setSchemaCounts(schemas);
+                    setSchemaCounts(snapshot?.schemas ?? []);
+                    setSchemaMetricsMessage(snapshot ? "" : "No network snapshot exists for this date.");
                 }
             }
             catch (error: any) {
                 if (!ignore) {
+                    setSchemaMetricsMessage("Unable to load credential metrics.");
                     setError(error);
                 }
             }
@@ -364,7 +383,7 @@ function Credentials() {
         return () => {
             ignore = true;
         };
-    }, [setError]);
+    }, [selectedDate, setError]);
 
     useEffect(() => {
         let ignore = false;
@@ -594,12 +613,20 @@ function Credentials() {
                 </>
             ) : !schemaDid ? (
                 <>
-                    <Box sx={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", mb: 2, gap: 2, flexWrap: "wrap" }}>
-                        <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", flex: "1 1 620px" }}>
-                            <SummaryCard label="Total Published" value={totalPublished} />
-                            <SummaryCard label="Schemas In Use" value={filteredSchemaCounts.length} />
-                        </Box>
-                        <Box sx={{ display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap", ml: "auto" }}>
+                    <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", mb: 2 }}>
+                        <SummaryCard label="Total Credentials" value={totalPublished} />
+                        <SummaryCard label="Schemas In Use" value={filteredSchemaCounts.length} />
+                    </Box>
+
+                    <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2, gap: 2, flexWrap: "wrap" }}>
+                        <TextField
+                            type="date"
+                            size="small"
+                            value={selectedDate}
+                            onChange={event => handleDateChange(event.target.value)}
+                            slotProps={{ htmlInput: { max: currentDate } }}
+                        />
+                        <Box sx={{ display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap" }}>
                             {hasMultipleSchemaPrefixes && (
                                 <FormControl size="small" sx={{ minWidth: 140 }}>
                                     <Select
@@ -654,15 +681,17 @@ function Credentials() {
                         </Box>
                     </Box>
 
-                    {filteredSchemaCounts.length === 0 ? (
-                        <Typography>No published credentials found.</Typography>
+                    {schemaMetricsMessage ? (
+                        <Typography>{schemaMetricsMessage}</Typography>
+                    ) : filteredSchemaCounts.length === 0 ? (
+                        <Typography>No credential schemas were in use on this date.</Typography>
                     ) : (
                         <TableContainer sx={{ border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
                             <Table size="small">
                                 <TableHead>
                                     <TableRow>
                                         <TableCell>Schema</TableCell>
-                                        <TableCell width={140}>Published</TableCell>
+                                        <TableCell width={140}>Credentials</TableCell>
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>
@@ -709,7 +738,7 @@ function Credentials() {
                     </Box>
 
                     <Box sx={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 2, mb: 2, flexWrap: "wrap" }}>
-                        <SummaryCard label="Published Credentials" value={selectedSchemaCount} minWidth={320} />
+                        <SummaryCard label="Credentials Through Date" value={selectedSchemaCount} minWidth={320} />
                         <Box sx={{ display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap", ml: "auto" }}>
                             <FormControl size="small" sx={{ minWidth: 100 }}>
                                 <Select
@@ -746,6 +775,12 @@ function Credentials() {
                             </Box>
                         </Box>
                     </Box>
+
+                    {selectedDate !== currentDate && (
+                        <Typography color="text.secondary" sx={{ mb: 2 }}>
+                            The count is cumulative through {selectedDate} (UTC). The records below show the current published state.
+                        </Typography>
+                    )}
 
                     {credentials.length === 0 ? (
                         <Typography>No published credentials found for this schema.</Typography>
