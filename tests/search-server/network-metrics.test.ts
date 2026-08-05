@@ -3,8 +3,12 @@ import os from 'os';
 import path from 'path';
 import { jest } from '@jest/globals';
 import DIDsDbMemory from '../../services/search-server/src/db/json-memory.ts';
+import Postgres from '../../services/search-server/src/db/postgres.ts';
 import Sqlite from '../../services/search-server/src/db/sqlite.ts';
-import DidIndexer, { type GatekeeperIndexClient } from '../../services/search-server/src/DidIndexer.ts';
+import DidIndexer, {
+    INDEX_SYNC_STATE_KEYS,
+    type GatekeeperIndexClient,
+} from '../../services/search-server/src/DidIndexer.ts';
 import {
     buildNetworkMetricSnapshots,
     parseSnapshotDate,
@@ -256,6 +260,34 @@ describe('network metric snapshot builder', () => {
         expect(after.snapshots.at(-1)).toMatchObject({ agentDidCount: 2, credentialCount: 1 });
     });
 
+    it('reports unusable and future credential asset anchors', () => {
+        const holderDid = 'did:test:holder';
+        const invalidCredentialDid = 'did:test:invalid-credential';
+        const futureCredentialDid = 'did:test:future-credential';
+        const invalidAgent = createAgentHistory('did:test:invalid-agent', 'unused');
+        (invalidAgent.events[0].operation as any).created = 0;
+        const histories = [
+            invalidAgent,
+            createAgentHistory(holderDid, '2026-08-01T00:00:00.000Z', [
+                manifestUpdate(holderDid, invalidCredentialDid, {
+                    validFrom: '2026-08-02T00:00:00.000Z',
+                }),
+                manifestUpdate(holderDid, futureCredentialDid, {
+                    validFrom: '2026-08-02T00:00:00.000Z',
+                }),
+            ]),
+            createCredentialHistory(invalidCredentialDid, 'not-a-date'),
+            createCredentialHistory(futureCredentialDid, '2026-08-10T00:00:00.000Z'),
+        ];
+
+        const result = buildNetworkMetricSnapshots(histories, new Date('2026-08-03T12:00:00.000Z'));
+
+        expect(result.snapshots.at(-1)?.credentialCount).toBe(1);
+        expect(result.invalidCreatedTimes).toBe(2);
+        expect(result.futureCreatedOperations).toBe(1);
+        expect(result.credentialsDatedByValidFrom).toBe(1);
+    });
+
     it('puts pre-MDIP creates in the baseline and emits a zero snapshot for an empty index', () => {
         const now = new Date('2024-01-03T12:00:00.000Z');
         const baseline = buildNetworkMetricSnapshots([
@@ -322,13 +354,17 @@ describe.each(adapterFactories)('$name network metric persistence', ({ create })
     });
 
     it('preserves event order and atomically replaces snapshot rows', async () => {
-        const did = 'did:test:history';
+        const did = 'did:test:z-history';
+        const earlierDid = 'did:test:a-history';
         const events = [
             createEvent(did, { type: 'create', created: '2026-08-01T00:00:00.000Z' }),
             createEvent(did, { type: 'delete', did }),
         ];
+        const earlierEvents = [
+            createEvent(earlierDid, { type: 'create', created: '2026-08-01T00:00:00.000Z' }),
+        ];
         await harness.db.applyIndexPage({
-            dids: [{ did, events }],
+            dids: [{ did, events }, { did: earlierDid, events: earlierEvents }],
             blocks: [],
         });
         const first: NetworkMetricSnapshot = {
@@ -340,7 +376,10 @@ describe.each(adapterFactories)('$name network metric persistence', ({ create })
         };
         const second = { ...first, date: '2026-08-02' };
 
-        expect(await harness.db.listDIDEventHistories()).toStrictEqual([{ did, events }]);
+        expect(await harness.db.listDIDEventHistories()).toStrictEqual([
+            { did: earlierDid, events: earlierEvents },
+            { did, events },
+        ]);
         await harness.db.replaceNetworkMetricSnapshots([first, second]);
         expect(await harness.db.getNetworkMetricSnapshot(first.date)).toStrictEqual(first);
         await harness.db.replaceNetworkMetricSnapshots([second]);
@@ -350,7 +389,202 @@ describe.each(adapterFactories)('$name network metric persistence', ({ create })
     });
 });
 
+describe('network metric database branches', () => {
+    const snapshot: NetworkMetricSnapshot = {
+        date: '2026-08-01',
+        agentDidCount: 2,
+        credentialCount: 1,
+        schemas: [{ schemaDid: 'did:test:schema', count: 1 }],
+        rebuiltAt: '2026-08-03T00:00:00.000Z',
+    };
+
+    it('rejects network metric operations when SQLite is disconnected', async () => {
+        const db = new Sqlite('unused.db', '/tmp');
+
+        await expect(db.listDIDEventHistories()).rejects.toThrow('DB not connected');
+        await expect(db.replaceNetworkMetricSnapshots([snapshot])).rejects.toThrow('DB not connected');
+        await expect(db.getNetworkMetricSnapshot(snapshot.date)).rejects.toThrow('DB not connected');
+    });
+
+    it('rolls back a failed SQLite snapshot replacement', async () => {
+        const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'network-metrics-rollback-'));
+        const db = await Sqlite.create('metrics.db', tempDir) as Sqlite;
+        const sqliteDb = (db as any).db;
+        const failure = new Error('snapshot insert failed');
+        const run = jest.spyOn(sqliteDb, 'run').mockRejectedValueOnce(failure);
+        const exec = jest.spyOn(sqliteDb, 'exec');
+
+        try {
+            await expect(db.replaceNetworkMetricSnapshots([snapshot])).rejects.toThrow(failure);
+            expect(exec).toHaveBeenCalledWith('ROLLBACK');
+        }
+        finally {
+            run.mockRestore();
+            exec.mockRestore();
+            await db.disconnect();
+            fs.rmSync(tempDir, { recursive: true, force: true });
+        }
+    });
+
+    it('stores and reads network metrics through the PostgreSQL adapter', async () => {
+        const did = 'did:test:history';
+        const firstEvent = createEvent(did, {
+            type: 'create',
+            created: '2026-08-01T00:00:00.000Z',
+        });
+        const secondEvent = createEvent(did, { type: 'delete', did });
+        const poolQuery = jest.fn(async (sql: string, params: unknown[] = []) => {
+            const text = String(sql);
+
+            if (text.includes('SELECT did, event FROM did_events')) {
+                return {
+                    rowCount: 2,
+                    rows: [
+                        { did, event: JSON.stringify(firstEvent) },
+                        { did, event: secondEvent },
+                    ],
+                };
+            }
+            if (text.includes('FROM network_metric_snapshots')) {
+                if (params[0] === 'missing') {
+                    return { rowCount: 0, rows: [] };
+                }
+
+                return {
+                    rowCount: 1,
+                    rows: [{
+                        date: params[0],
+                        agentDidCount: snapshot.agentDidCount,
+                        credentialCount: snapshot.credentialCount,
+                        schemaCounts: params[0] === snapshot.date
+                            ? JSON.stringify(snapshot.schemas)
+                            : snapshot.schemas,
+                        rebuiltAt: snapshot.rebuiltAt,
+                    }],
+                };
+            }
+
+            throw new Error(`Unexpected PostgreSQL query: ${text}`);
+        });
+        const client = {
+            query: jest.fn<(...args: unknown[]) => Promise<unknown>>()
+                .mockResolvedValue({ rowCount: 0, rows: [] }),
+            release: jest.fn(),
+        };
+        const pool = {
+            query: poolQuery,
+            connect: jest.fn<() => Promise<typeof client>>().mockResolvedValue(client),
+        };
+        const db = new Postgres('postgresql://example');
+        (db as any).pool = pool;
+
+        expect(await db.listDIDEventHistories()).toStrictEqual([{
+            did,
+            events: [firstEvent, secondEvent],
+        }]);
+        await db.replaceNetworkMetricSnapshots([snapshot]);
+        expect(client.query).toHaveBeenCalledWith(
+            expect.stringContaining('INSERT INTO network_metric_snapshots'),
+            [
+                snapshot.date,
+                snapshot.agentDidCount,
+                snapshot.credentialCount,
+                JSON.stringify(snapshot.schemas),
+                snapshot.rebuiltAt,
+            ]
+        );
+        expect(client.query).toHaveBeenCalledWith('COMMIT');
+        expect(client.release).toHaveBeenCalledTimes(1);
+        expect(await db.getNetworkMetricSnapshot(snapshot.date)).toStrictEqual(snapshot);
+        expect(await db.getNetworkMetricSnapshot('2026-08-02')).toStrictEqual({
+            ...snapshot,
+            date: '2026-08-02',
+        });
+        expect(await db.getNetworkMetricSnapshot('missing')).toBeNull();
+    });
+
+    it('rolls back and releases a failed PostgreSQL snapshot replacement', async () => {
+        const failure = new Error('snapshot delete failed');
+        const client = {
+            query: jest.fn(async (sql: string) => {
+                if (sql === 'DELETE FROM network_metric_snapshots') {
+                    throw failure;
+                }
+
+                return { rowCount: 0, rows: [] };
+            }),
+            release: jest.fn(),
+        };
+        const pool = {
+            connect: jest.fn<() => Promise<typeof client>>().mockResolvedValue(client),
+        };
+        const db = new Postgres('postgresql://example');
+        (db as any).pool = pool;
+
+        await expect(db.replaceNetworkMetricSnapshots([snapshot])).rejects.toThrow(failure);
+        expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+        expect(client.release).toHaveBeenCalledTimes(1);
+    });
+});
+
 describe('DidIndexer network metrics scheduling', () => {
+    it('waits for the initial snapshot before rebuilding metrics', async () => {
+        const db = new DIDsDbMemory();
+        const listHistories = jest.spyOn(db, 'listDIDEventHistories');
+        const gatekeeper = {
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>(),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>(),
+        };
+        const indexer = new DidIndexer(gatekeeper, db, {
+            intervalMs: 60_000,
+            metricsRefreshIntervalMs: 60_000,
+        });
+
+        await (indexer as any).refreshNetworkMetricsIfDue();
+
+        expect(listHistories).not.toHaveBeenCalled();
+    });
+
+    it('logs when the metrics error state cannot be saved', async () => {
+        const db = new DIDsDbMemory();
+        await db.saveSyncState(INDEX_SYNC_STATE_KEYS.snapshotComplete, 'true');
+        const metricsFailure = new Error('metrics failed');
+        const stateFailure = new Error('state failed');
+        jest.spyOn(db, 'replaceNetworkMetricSnapshots').mockRejectedValue(metricsFailure);
+        jest.spyOn(db, 'saveSyncState').mockImplementation((key, value) => {
+            if (key === INDEX_SYNC_STATE_KEYS.metricsLastError) {
+                return Promise.reject(stateFailure);
+            }
+
+            return DIDsDbMemory.prototype.saveSyncState.call(db, key, value);
+        });
+        const gatekeeper = {
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>(),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>(),
+        };
+        const indexer = new DidIndexer(gatekeeper, db, {
+            intervalMs: 60_000,
+            metricsRefreshIntervalMs: 60_000,
+        });
+        const log = {
+            info: jest.fn(),
+            warn: jest.fn(),
+            error: jest.fn(),
+        };
+        (indexer as any).log = log;
+
+        await (indexer as any).refreshNetworkMetricsIfDue();
+
+        expect(log.warn).toHaveBeenCalledWith(
+            { error: stateFailure },
+            'Could not save metrics error state'
+        );
+        expect(log.error).toHaveBeenCalledWith(
+            { error: metricsFailure },
+            'Network metrics rebuild error'
+        );
+    });
+
     it('rebuilds after the initial snapshot and does not rebuild again before the interval', async () => {
         const db = new DIDsDbMemory();
         const did = 'did:test:z3v8AuaTV5VKcT9MJoSHkSTRLpXDoqcgqiKkwGBNSV4nVzb6kLk';
