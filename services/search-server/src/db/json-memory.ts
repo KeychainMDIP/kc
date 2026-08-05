@@ -10,8 +10,10 @@ import {
     ChallengeReceiptUsageRecord,
     ChallengeReceiptUsageResult,
     DIDsDb,
+    DIDEventHistory,
     DIDEventListOptions,
     DIDEventListResult,
+    NetworkMetricSnapshot,
     PublishedCredentialListOptions,
     PublishedCredentialListResult,
     PublishedCredentialRecord,
@@ -29,6 +31,7 @@ export default class DIDsDbMemory implements DIDsDb {
     private blocks = new Map<string, Map<string, BlockInfo>>();
     private publishedCredentials = new Map<string, PublishedCredentialRecord[]>();
     private challengeReceipts = new Map<string, ChallengeReceiptRecord[]>();
+    private networkMetricSnapshots = new Map<string, NetworkMetricSnapshot>();
     private static readonly ARRAY_WILDCARD_END = /\[\*]$/;
     private static readonly ARRAY_WILDCARD_MID = /\[\*]\./;
 
@@ -302,6 +305,23 @@ export default class DIDsDbMemory implements DIDsDb {
         };
     }
 
+    async listDIDEventHistories(): Promise<DIDEventHistory[]> {
+        return Array.from(this.events.entries())
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([did, events]) => ({ did, events: copyJSON(events) }));
+    }
+
+    async replaceNetworkMetricSnapshots(snapshots: NetworkMetricSnapshot[]): Promise<void> {
+        this.networkMetricSnapshots = new Map(
+            snapshots.map(snapshot => [snapshot.date, copyJSON(snapshot)])
+        );
+    }
+
+    async getNetworkMetricSnapshot(date: string): Promise<NetworkMetricSnapshot | null> {
+        const snapshot = this.networkMetricSnapshots.get(date);
+        return snapshot ? copyJSON(snapshot) : null;
+    }
+
     async searchDocs(q: string): Promise<string[]> {
         const out: string[] = [];
         for (const [did, doc] of this.docs.entries()) {
@@ -377,6 +397,7 @@ export default class DIDsDbMemory implements DIDsDb {
         this.blocks.clear();
         this.publishedCredentials.clear();
         this.challengeReceipts.clear();
+        this.networkMetricSnapshots.clear();
     }
 
     private flattenPublishedCredentials(): PublishedCredentialRecord[] {

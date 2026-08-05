@@ -10,8 +10,10 @@ import {
     ChallengeReceiptUsageOptions,
     ChallengeReceiptUsageResult,
     DIDsDb,
+    DIDEventHistory,
     DIDEventListOptions,
     DIDEventListResult,
+    NetworkMetricSnapshot,
     PublishedCredentialListOptions,
     PublishedCredentialListResult,
     PublishedCredentialRecord,
@@ -147,6 +149,14 @@ export default class Postgres implements DIDsDb {
             CREATE TABLE IF NOT EXISTS sync_state (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS network_metric_snapshots (
+                snapshot_date TEXT PRIMARY KEY,
+                agent_did_count INTEGER NOT NULL CHECK (agent_did_count >= 0),
+                credential_count INTEGER NOT NULL CHECK (credential_count >= 0),
+                schema_counts JSONB NOT NULL DEFAULT '[]'::jsonb,
+                rebuilt_at TEXT NOT NULL
             );
         `);
 
@@ -614,6 +624,93 @@ export default class Postgres implements DIDsDb {
         };
     }
 
+    async listDIDEventHistories(): Promise<DIDEventHistory[]> {
+        const pool = this.getPool();
+        const result = await pool.query<{ did: string; event: GatekeeperEvent | string }>(
+            'SELECT did, event FROM did_events ORDER BY did ASC, event_index ASC'
+        );
+        const histories = new Map<string, GatekeeperEvent[]>();
+
+        for (const row of result.rows) {
+            const events = histories.get(row.did) ?? [];
+            events.push(typeof row.event === 'string'
+                ? JSON.parse(row.event) as GatekeeperEvent
+                : row.event);
+            histories.set(row.did, events);
+        }
+
+        return Array.from(histories, ([did, events]) => ({ did, events }));
+    }
+
+    async replaceNetworkMetricSnapshots(snapshots: NetworkMetricSnapshot[]): Promise<void> {
+        const client = await this.getPool().connect();
+        try {
+            await client.query('BEGIN');
+            await client.query('DELETE FROM network_metric_snapshots');
+            for (const snapshot of snapshots) {
+                await client.query(
+                    `INSERT INTO network_metric_snapshots (
+                        snapshot_date,
+                        agent_did_count,
+                        credential_count,
+                        schema_counts,
+                        rebuilt_at
+                    ) VALUES ($1, $2, $3, $4, $5)`,
+                    [
+                        snapshot.date,
+                        snapshot.agentDidCount,
+                        snapshot.credentialCount,
+                        JSON.stringify(snapshot.schemas),
+                        snapshot.rebuiltAt,
+                    ]
+                );
+            }
+            await client.query('COMMIT');
+        }
+        catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        }
+        finally {
+            client.release();
+        }
+    }
+
+    async getNetworkMetricSnapshot(date: string): Promise<NetworkMetricSnapshot | null> {
+        const result = await this.getPool().query<{
+            date: string;
+            agentDidCount: number;
+            credentialCount: number;
+            schemaCounts: PublishedCredentialSchemaCount[] | string;
+            rebuiltAt: string;
+        }>(
+            `SELECT
+                snapshot_date AS date,
+                agent_did_count AS "agentDidCount",
+                credential_count AS "credentialCount",
+                schema_counts AS "schemaCounts",
+                rebuilt_at AS "rebuiltAt"
+             FROM network_metric_snapshots
+             WHERE snapshot_date = $1`,
+            [date]
+        );
+
+        const row = result.rows[0];
+        if (!row) {
+            return null;
+        }
+
+        return {
+            date: row.date,
+            agentDidCount: row.agentDidCount,
+            credentialCount: row.credentialCount,
+            schemas: typeof row.schemaCounts === 'string'
+                ? JSON.parse(row.schemaCounts) as PublishedCredentialSchemaCount[]
+                : row.schemaCounts,
+            rebuiltAt: row.rebuiltAt,
+        };
+    }
+
     async searchDocs(q: string): Promise<string[]> {
         const pool = this.getPool();
         const result = await pool.query<DidRow>(
@@ -747,6 +844,7 @@ export default class Postgres implements DIDsDb {
         await pool.query('DELETE FROM blocks');
         await pool.query('DELETE FROM published_credentials');
         await pool.query('DELETE FROM challenge_receipts');
+        await pool.query('DELETE FROM network_metric_snapshots');
         await pool.query('DELETE FROM sync_state');
     }
 

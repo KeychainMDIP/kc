@@ -15,6 +15,7 @@ import {
     buildDIDProjectionUpdate,
     ProjectionBlockLookup,
 } from "./projections.js";
+import { buildNetworkMetricSnapshots } from './network-metrics.js';
 
 export interface GatekeeperIndexClient {
     isReady(): Promise<boolean>;
@@ -24,6 +25,7 @@ export interface GatekeeperIndexClient {
 export interface DidIndexerOptions {
     intervalMs: number;
     pageLimit?: number;
+    metricsRefreshIntervalMs?: number;
 }
 
 export const INDEX_SYNC_STATE_KEYS = {
@@ -38,6 +40,8 @@ export const INDEX_SYNC_STATE_KEYS = {
     lastPagesProcessed: 'index.lastPagesProcessed',
     lastDidsChanged: 'index.lastDidsChanged',
     lastBlocksStored: 'index.lastBlocksStored',
+    metricsLastRebuiltAt: 'metrics.lastRebuiltAt',
+    metricsLastError: 'metrics.lastError',
 } as const;
 
 interface SyncRunStats {
@@ -54,6 +58,7 @@ export default class DidIndexer {
     private db: DIDsDb;
     private readonly intervalMs: number;
     private readonly pageLimit: number;
+    private readonly metricsRefreshIntervalMs: number | null;
     private timer: NodeJS.Timeout | null;
     private refreshInProgress: boolean;
     private log = childLogger({ service: 'search-server', module: 'DidIndexer' });
@@ -67,6 +72,7 @@ export default class DidIndexer {
         this.db = db;
         this.intervalMs = options.intervalMs;
         this.pageLimit = options.pageLimit ?? 500;
+        this.metricsRefreshIntervalMs = options.metricsRefreshIntervalMs ?? null;
         this.timer = null;
         this.refreshInProgress = false;
     }
@@ -106,6 +112,7 @@ export default class DidIndexer {
 
             await this.saveRunStats(stats);
             await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.lastSyncError, null);
+            await this.refreshNetworkMetricsIfDue();
 
             this.log.info(
                 `Indexed ${stats.changedDids} changed DIDs from ${stats.pages} ${stats.mode} page(s). ` +
@@ -304,5 +311,50 @@ export default class DidIndexer {
         await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.lastPagesProcessed, stats.pages.toString());
         await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.lastDidsChanged, stats.changedDids.toString());
         await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.lastBlocksStored, stats.storedBlocks.toString());
+    }
+
+    private async refreshNetworkMetricsIfDue(): Promise<void> {
+        if (this.metricsRefreshIntervalMs === null) {
+            return;
+        }
+
+        try {
+            if (!await this.isSnapshotComplete()) {
+                return;
+            }
+
+            const now = new Date();
+            const lastRebuiltAt = await this.db.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsLastRebuiltAt);
+            const lastRebuiltMs = lastRebuiltAt ? new Date(lastRebuiltAt).getTime() : Number.NaN;
+            if (Number.isFinite(lastRebuiltMs) &&
+                now.getTime() - lastRebuiltMs < this.metricsRefreshIntervalMs) {
+                return;
+            }
+
+            const histories = await this.db.listDIDEventHistories();
+            const result = buildNetworkMetricSnapshots(histories, now);
+            await this.db.replaceNetworkMetricSnapshots(result.snapshots);
+            await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.metricsLastRebuiltAt, now.toISOString());
+            await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.metricsLastError, null);
+            this.log.info({
+                snapshots: result.snapshots.length,
+                invalidCreatedTimes: result.invalidCreatedTimes,
+                futureCreatedOperations: result.futureCreatedOperations,
+                credentialsDatedByOperationCreated: result.credentialsDatedByOperationCreated,
+                credentialsDatedByValidFrom: result.credentialsDatedByValidFrom,
+                credentialsWithoutUsableDate: result.credentialsWithoutUsableDate,
+                credentialsWithConflictingSchemas: result.credentialsWithConflictingSchemas,
+                futureCredentialValidFrom: result.futureCredentialValidFrom,
+            }, 'Rebuilt network metrics');
+        }
+        catch (error) {
+            try {
+                await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.metricsLastError, String(error));
+            }
+            catch (saveError) {
+                this.log.warn({ error: saveError }, 'Could not save metrics error state');
+            }
+            this.log.error({ error }, 'Network metrics rebuild error');
+        }
     }
 }

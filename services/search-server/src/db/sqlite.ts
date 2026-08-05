@@ -11,8 +11,10 @@ import {
     ChallengeReceiptUsageOptions,
     ChallengeReceiptUsageResult,
     DIDsDb,
+    DIDEventHistory,
     DIDEventListOptions,
     DIDEventListResult,
+    NetworkMetricSnapshot,
     PublishedCredentialListOptions,
     PublishedCredentialListResult,
     PublishedCredentialRecord,
@@ -124,6 +126,14 @@ export default class Sqlite implements DIDsDb {
             CREATE TABLE IF NOT EXISTS sync_state (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS network_metric_snapshots (
+                snapshot_date TEXT PRIMARY KEY,
+                agent_did_count INTEGER NOT NULL CHECK (agent_did_count >= 0),
+                credential_count INTEGER NOT NULL CHECK (credential_count >= 0),
+                schema_counts TEXT NOT NULL DEFAULT '[]',
+                rebuilt_at TEXT NOT NULL
             );
         `);
 
@@ -602,6 +612,91 @@ export default class Sqlite implements DIDsDb {
         };
     }
 
+    async listDIDEventHistories(): Promise<DIDEventHistory[]> {
+        if (!this.db) {
+            throw new Error('DB not connected');
+        }
+
+        const rows = await this.db.all<{ did: string; event: string }[]>(
+            'SELECT did, event FROM did_events ORDER BY did ASC, event_index ASC'
+        );
+        const histories = new Map<string, GatekeeperEvent[]>();
+
+        for (const row of rows) {
+            const events = histories.get(row.did) ?? [];
+            events.push(JSON.parse(row.event) as GatekeeperEvent);
+            histories.set(row.did, events);
+        }
+
+        return Array.from(histories, ([did, events]) => ({ did, events }));
+    }
+
+    async replaceNetworkMetricSnapshots(snapshots: NetworkMetricSnapshot[]): Promise<void> {
+        if (!this.db) {
+            throw new Error('DB not connected');
+        }
+
+        await this.db.exec('BEGIN');
+        try {
+            await this.db.run('DELETE FROM network_metric_snapshots');
+            for (const snapshot of snapshots) {
+                await this.db.run(
+                    `INSERT INTO network_metric_snapshots (
+                        snapshot_date,
+                        agent_did_count,
+                        credential_count,
+                        schema_counts,
+                        rebuilt_at
+                    ) VALUES (?, ?, ?, ?, ?)`,
+                    [
+                        snapshot.date,
+                        snapshot.agentDidCount,
+                        snapshot.credentialCount,
+                        JSON.stringify(snapshot.schemas),
+                        snapshot.rebuiltAt,
+                    ]
+                );
+            }
+            await this.db.exec('COMMIT');
+        }
+        catch (error) {
+            await this.db.exec('ROLLBACK');
+            throw error;
+        }
+    }
+
+    async getNetworkMetricSnapshot(date: string): Promise<NetworkMetricSnapshot | null> {
+        if (!this.db) {
+            throw new Error('DB not connected');
+        }
+
+        const row = await this.db.get<{
+            date: string;
+            agentDidCount: number | string;
+            credentialCount: number | string;
+            schemaCounts: string;
+            rebuiltAt: string;
+        }>(
+            `SELECT
+                snapshot_date AS date,
+                agent_did_count AS agentDidCount,
+                credential_count AS credentialCount,
+                schema_counts AS schemaCounts,
+                rebuilt_at AS rebuiltAt
+             FROM network_metric_snapshots
+             WHERE snapshot_date = ?`,
+            [date]
+        );
+
+        return row ? {
+            date: row.date,
+            agentDidCount: Number(row.agentDidCount),
+            credentialCount: Number(row.credentialCount),
+            schemas: JSON.parse(row.schemaCounts) as PublishedCredentialSchemaCount[],
+            rebuiltAt: row.rebuiltAt,
+        } : null;
+    }
+
     async searchDocs(q: string): Promise<string[]> {
         if (!this.db) {
             throw new Error('DB not connected');
@@ -707,6 +802,7 @@ export default class Sqlite implements DIDsDb {
             DELETE FROM blocks;
             DELETE FROM published_credentials;
             DELETE FROM challenge_receipts;
+            DELETE FROM network_metric_snapshots;
             DELETE FROM sync_state;
         `);
     }

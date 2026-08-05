@@ -3,6 +3,7 @@ import { PublishedCredentialRecord } from "./types.js";
 interface MaybeVc {
     type?: unknown;
     issuer?: unknown;
+    validFrom?: unknown;
     credential?: unknown;
     signature?: {
         signed?: unknown;
@@ -10,6 +11,11 @@ interface MaybeVc {
     credentialSubject?: {
         id?: unknown;
     };
+}
+
+export interface PublishedCredentialEvidence {
+    credential: PublishedCredentialRecord;
+    validFrom?: string;
 }
 
 interface MaybeMdipDocument {
@@ -45,10 +51,10 @@ function getPublishedAt(vc: MaybeVc, doc: MaybeMdipDocument): string {
     return getFallbackUpdatedAt(doc);
 }
 
-export function extractPublishedCredentials(
+export function extractPublishedCredentialEvidence(
     defaultHolderDid: string,
     doc: object
-): PublishedCredentialRecord[] {
+): PublishedCredentialEvidence[] {
     const mdipDoc = doc as MaybeMdipDocument;
     const holderDid = isDid(mdipDoc.didDocument?.id)
         ? mdipDoc.didDocument.id
@@ -59,7 +65,7 @@ export function extractPublishedCredentials(
         return [];
     }
 
-    const rows: PublishedCredentialRecord[] = [];
+    const rows: PublishedCredentialEvidence[] = [];
 
     for (const [credentialDid, value] of Object.entries(manifest as Record<string, unknown>)) {
         if (!isDid(credentialDid) || !value || typeof value !== 'object' || Array.isArray(value)) {
@@ -81,15 +87,26 @@ export function extractPublishedCredentials(
         }
 
         rows.push({
-            holderDid,
-            credentialDid,
-            schemaDid,
-            issuerDid,
-            subjectDid,
-            revealed: vc.credential !== null && vc.credential !== undefined,
-            updatedAt: getPublishedAt(vc, mdipDoc),
+            credential: {
+                holderDid,
+                credentialDid,
+                schemaDid,
+                issuerDid,
+                subjectDid,
+                revealed: vc.credential !== null && vc.credential !== undefined,
+                updatedAt: getPublishedAt(vc, mdipDoc),
+            },
+            ...(typeof vc.validFrom === 'string' ? { validFrom: vc.validFrom } : {}),
         });
     }
 
     return rows;
+}
+
+export function extractPublishedCredentials(
+    defaultHolderDid: string,
+    doc: object
+): PublishedCredentialRecord[] {
+    return extractPublishedCredentialEvidence(defaultHolderDid, doc)
+        .map(evidence => evidence.credential);
 }

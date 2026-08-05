@@ -21,6 +21,7 @@ import {
     rateLimitWindowUnits,
     shouldSkipRateLimitPath,
 } from "./index-helpers.js";
+import { parseSnapshotDate } from './network-metrics.js';
 
 const log = childLogger({ service: 'search-server' });
 
@@ -99,6 +100,7 @@ async function main() {
 
     const indexer = new DidIndexer(gatekeeper, didDb, {
         intervalMs: config.refreshIntervalMs,
+        metricsRefreshIntervalMs: config.metricsRefreshIntervalMs,
     });
 
     // Let's not await here, we will continue and start
@@ -242,6 +244,26 @@ async function main() {
         } catch (error) {
             log.error({ error }, '/metrics/schemas/published error');
             res.status(500).json({ error: String(error) });
+        }
+    });
+
+    v1router.get('/metrics/network/snapshots/:date', async (req, res) => {
+        try {
+            const date = parseSnapshotDate(req.params.date);
+            if (!date) {
+                return res.status(400).json({ error: 'date must be a valid, non-future UTC date in YYYY-MM-DD format' });
+            }
+
+            const snapshot = await didDb.getNetworkMetricSnapshot(date);
+            if (!snapshot) {
+                return res.status(404).json({ error: 'Snapshot not found' });
+            }
+
+            return res.json(snapshot);
+        }
+        catch (error) {
+            log.error({ error }, '/metrics/network/snapshots/:date error');
+            return res.status(500).json({ error: String(error) });
         }
     });
 

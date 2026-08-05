@@ -112,6 +112,19 @@ export interface DIDEventListResult {
     events: DIDEventRecord[];
 }
 
+export interface DIDEventHistory {
+    did: string;
+    events: GatekeeperEvent[];
+}
+
+export interface NetworkMetricSnapshot {
+    date: string;
+    agentDidCount: number;
+    credentialCount: number;
+    schemas: PublishedCredentialSchemaCount[];
+    rebuiltAt: string;
+}
+
 export interface DIDProjectionUpdate {
     did: string;
     events: GatekeeperEvent[];
@@ -150,6 +163,9 @@ export interface DIDsDb {
     listChallengeReceipts(options?: ChallengeReceiptListOptions): Promise<ChallengeReceiptListResult>;
     getChallengeReceiptUsage(options?: ChallengeReceiptUsageOptions): Promise<ChallengeReceiptUsageResult>;
     listEvents(options?: DIDEventListOptions): Promise<DIDEventListResult>;
+    listDIDEventHistories(): Promise<DIDEventHistory[]>;
+    replaceNetworkMetricSnapshots(snapshots: NetworkMetricSnapshot[]): Promise<void>;
+    getNetworkMetricSnapshot(date: string): Promise<NetworkMetricSnapshot | null>;
     searchDocs(q: string): Promise<string[]>;
     queryDocs(where: Record<string, unknown>): Promise<string[]>;
     wipeDb(): Promise<void>;
