@@ -15,6 +15,9 @@ const Header = () => {
     if (location.pathname.startsWith("/events")) {
         currentTab = "events";
     }
+    else if (location.pathname.startsWith("/network")) {
+        currentTab = "network";
+    }
     else if (location.pathname.startsWith("/credentials")) {
         currentTab = "credentials";
     }
@@ -61,6 +64,7 @@ const Header = () => {
             >
                 <Tab label="Search" value="search" />
                 <Tab label="Events" value="events" />
+                <Tab label="Network" value="network" />
                 <Tab label="Credentials" value="credentials" />
                 <Tab label="Receipts" value="receipts" />
             </Tabs>
