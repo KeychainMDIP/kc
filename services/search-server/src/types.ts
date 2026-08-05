@@ -155,6 +155,7 @@ export interface DIDsDb {
     saveSyncState(key: string, value: string | null): Promise<void>;
 
     getDIDEvents(did: string): Promise<GatekeeperEvent[]>;
+    findDIDBySuffix(suffix: string): Promise<string | null>;
     getBlock(registry: string, block?: BlockId): Promise<BlockInfo | null>;
     applyIndexPage(page: ApplyIndexPageOptions): Promise<ApplyIndexPageResult>;
     getDID(did: string): Promise<object | null>;

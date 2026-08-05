@@ -11,6 +11,7 @@ import DidIndexer from "./DidIndexer.js";
 import {DIDsDb} from "./types.js";
 import { childLogger } from "@mdip/common/logger";
 import config from "./config.js";
+import { findDIDReadTarget } from './did-aliases.js';
 import {
     createWhitelistBlockList,
     getSearchStatus,
@@ -126,7 +127,8 @@ async function main() {
 
     v1router.get("/did/:did/events", async (req, res) => {
         try {
-            res.json(await didDb.getDIDEvents(req.params.did));
+            const target = await findDIDReadTarget(didDb, req.params.did);
+            res.json(target.events);
         } catch (error) {
             log.error({ error }, 'Get DID events error');
             res.status(500).json({ error: String(error) });
@@ -145,11 +147,11 @@ async function main() {
             }
             const versionTime = req.query.versionTime?.toString();
             const hasVersionQuery = versionSequence !== undefined || versionTime !== undefined;
-            const events = await didDb.getDIDEvents(did);
+            const { storedDid, events } = await findDIDReadTarget(didDb, did);
 
             if (events.length === 0) {
                 if (!hasVersionQuery) {
-                    const cachedDoc = await didDb.getDID(did);
+                    const cachedDoc = await didDb.getDID(storedDid);
                     if (cachedDoc) {
                         return res.json(cachedDoc);
                     }

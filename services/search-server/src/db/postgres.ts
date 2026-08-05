@@ -216,6 +216,16 @@ export default class Postgres implements DIDsDb {
         );
     }
 
+    async findDIDBySuffix(suffix: string): Promise<string | null> {
+        const result = await this.getPool().query<DidRow>(
+            `SELECT DISTINCT did FROM did_events
+             WHERE right(did, length($1) + 1) = ':' || $1
+             ORDER BY did ASC LIMIT 1`,
+            [suffix]
+        );
+        return result.rows[0]?.did ?? null;
+    }
+
     async getBlock(registry: string, blockId?: BlockId): Promise<BlockInfo | null> {
         const pool = this.getPool();
         let result;

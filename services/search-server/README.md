@@ -60,12 +60,14 @@ KC_LOG_LEVEL=info
 
 ### `GET /api/v1/did/:did`
 - **Description**: Returns the DID Document
+- **Notes**: If the exact DID prefix is not indexed, Search Server resolves an equivalent DID with the same final CID suffix.
 - **Returns**:
     - `200 OK` + JSON DID Document if present.
     - `404 Not Found` if no cached doc is found for the given `:did`.
 
 ### `GET /api/v1/did/:did/events`
 - **Description**: Returns all indexed events for the DID in operation order.
+- **Notes**: DID prefix aliases are matched by their final CID suffix.
 - **Returns**:
     - `200 OK` + an array of Gatekeeper events.
     - `200 OK` + `[]` if the DID has no indexed events.

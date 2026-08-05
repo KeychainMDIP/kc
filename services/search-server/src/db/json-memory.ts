@@ -55,6 +55,11 @@ export default class DIDsDbMemory implements DIDsDb {
         return copyJSON(this.events.get(did) ?? []);
     }
 
+    async findDIDBySuffix(suffix: string): Promise<string | null> {
+        return Array.from(this.events.keys())
+            .find(did => did.endsWith(`:${suffix}`)) ?? null;
+    }
+
     async getBlock(registry: string, blockId?: BlockId): Promise<BlockInfo | null> {
         const registryBlocks = this.blocks.get(registry);
 

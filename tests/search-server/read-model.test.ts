@@ -1,4 +1,5 @@
 import { resolveDIDFromEvents } from '@mdip/gatekeeper';
+import { findDIDReadTarget } from '../../services/search-server/src/did-aliases.ts';
 import DIDsDbMemory from '../../services/search-server/src/db/json-memory.ts';
 import type { GatekeeperEvent } from '../../services/search-server/src/types.ts';
 import { seedDID } from './db-seed.ts';
@@ -55,6 +56,35 @@ function updateEvent(time: string, data: Record<string, unknown>): GatekeeperEve
 }
 
 describe('search-server DID read model', () => {
+    it('resolves DID prefix aliases by their CID suffix', async () => {
+        const db = new DIDsDbMemory();
+        const event = createEvent('2026-04-01T10:00:00.000Z', { schema: true });
+        const alias = did.replace('did:test:', 'did:mdip:');
+        await seedDID(db, did, { events: [event] });
+
+        expect(await findDIDReadTarget(db, did)).toStrictEqual({
+            storedDid: did,
+            events: [event],
+        });
+        const target = await findDIDReadTarget(db, alias);
+        expect(target).toStrictEqual({ storedDid: did, events: [event] });
+        const doc = await resolveDIDFromEvents({
+            did: alias,
+            events: target.events,
+            getBlock: (registry, block) => db.getBlock(registry, block),
+        });
+
+        expect(doc.didDocument?.id).toBe(alias);
+        expect(await findDIDReadTarget(
+            db,
+            'did:mdip:z3v8AuaZxKbN4T6CQTAnjH4T3mR5EmUq4yFW3pMjPyiUefFd63M'
+        )).toMatchObject({ events: [] });
+        expect(await findDIDReadTarget(db, 'did:mdip:not-a-cid')).toStrictEqual({
+            storedDid: 'did:mdip:not-a-cid',
+            events: [],
+        });
+    });
+
     it('reconstructs DID document versions from stored raw events', async () => {
         const db = new DIDsDbMemory();
         await seedDID(db, did, { events: [

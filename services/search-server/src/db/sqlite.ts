@@ -194,6 +194,21 @@ export default class Sqlite implements DIDsDb {
         return rows.map(row => JSON.parse(row.event) as GatekeeperEvent);
     }
 
+    async findDIDBySuffix(suffix: string): Promise<string | null> {
+        if (!this.db) {
+            throw new Error('DB not connected');
+        }
+
+        // ponytail: fallback-only scan; add a stored suffix index if alias lookups become hot.
+        const row = await this.db.get<{ did: string }>(
+            `SELECT DISTINCT did FROM did_events
+             WHERE substr(did, -(length(?) + 1)) = ':' || ?
+             ORDER BY did ASC LIMIT 1`,
+            [suffix, suffix]
+        );
+        return row?.did ?? null;
+    }
+
     async getBlock(registry: string, blockId?: BlockId): Promise<BlockInfo | null> {
         if (!this.db) {
             throw new Error('DB not connected');
