@@ -310,10 +310,10 @@ export default class DIDsDbMemory implements DIDsDb {
         };
     }
 
-    async listDIDEventHistories(): Promise<DIDEventHistory[]> {
-        return Array.from(this.events.entries())
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([did, events]) => ({ did, events: copyJSON(events) }));
+    async *iterateDIDEventHistories(): AsyncIterable<DIDEventHistory> {
+        for (const [did, events] of Array.from(this.events.entries()).sort(([a], [b]) => a.localeCompare(b))) {
+            yield { did, events: copyJSON(events) };
+        }
     }
 
     async replaceNetworkMetricSnapshots(snapshots: NetworkMetricSnapshot[]): Promise<void> {

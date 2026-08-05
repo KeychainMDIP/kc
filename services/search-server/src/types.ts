@@ -164,7 +164,7 @@ export interface DIDsDb {
     listChallengeReceipts(options?: ChallengeReceiptListOptions): Promise<ChallengeReceiptListResult>;
     getChallengeReceiptUsage(options?: ChallengeReceiptUsageOptions): Promise<ChallengeReceiptUsageResult>;
     listEvents(options?: DIDEventListOptions): Promise<DIDEventListResult>;
-    listDIDEventHistories(): Promise<DIDEventHistory[]>;
+    iterateDIDEventHistories(pageSize?: number): AsyncIterable<DIDEventHistory>;
     replaceNetworkMetricSnapshots(snapshots: NetworkMetricSnapshot[]): Promise<void>;
     getNetworkMetricSnapshot(date: string): Promise<NetworkMetricSnapshot | null>;
     searchDocs(q: string): Promise<string[]>;

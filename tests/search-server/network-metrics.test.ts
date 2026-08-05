@@ -80,6 +80,19 @@ function createCredentialHistory(did: string, created: string): DIDEventHistory 
     };
 }
 
+async function collectDIDEventHistories(
+    db: DIDsDb,
+    pageSize?: number
+): Promise<DIDEventHistory[]> {
+    const histories: DIDEventHistory[] = [];
+
+    for await (const history of db.iterateDIDEventHistories(pageSize)) {
+        histories.push(history);
+    }
+
+    return histories;
+}
+
 function manifestUpdate(
     holderDid: string,
     credentialDid: string,
@@ -110,7 +123,7 @@ function manifestUpdate(
 }
 
 describe('network metric snapshot builder', () => {
-    it('prefers asset operation.created and retains schema history after unpublishing', () => {
+    it('prefers asset operation.created and retains schema history after unpublishing', async () => {
         const holderDid = 'did:test:holder';
         const credentialDid = 'did:test:credential';
         const histories = [
@@ -129,7 +142,7 @@ describe('network metric snapshot builder', () => {
             createCredentialHistory(credentialDid, '2026-08-03T10:00:00.000Z'),
         ];
 
-        const result = buildNetworkMetricSnapshots(histories, new Date('2026-08-05T12:00:00.000Z'));
+        const result = await buildNetworkMetricSnapshots(histories, new Date('2026-08-05T12:00:00.000Z'));
 
         expect(result.snapshots).toStrictEqual([
             { date: '2026-08-02', agentDidCount: 1, credentialCount: 0, schemas: [], rebuiltAt: '2026-08-05T12:00:00.000Z' },
@@ -141,7 +154,7 @@ describe('network metric snapshot builder', () => {
         expect(result.credentialsDatedByValidFrom).toBe(0);
     });
 
-    it('falls back to validFrom and ranks cumulative schema counts', () => {
+    it('falls back to validFrom and ranks cumulative schema counts', async () => {
         const holderDid = 'did:test:holder';
         const histories = [createAgentHistory(holderDid, '2026-08-01T00:00:00.000Z', [
             manifestUpdate(holderDid, 'did:test:credential-a', {
@@ -158,7 +171,7 @@ describe('network metric snapshot builder', () => {
             }),
         ])];
 
-        const result = buildNetworkMetricSnapshots(histories, new Date('2026-08-03T12:00:00.000Z'));
+        const result = await buildNetworkMetricSnapshots(histories, new Date('2026-08-03T12:00:00.000Z'));
 
         expect(result.snapshots.at(-1)).toMatchObject({
             credentialCount: 3,
@@ -172,7 +185,7 @@ describe('network metric snapshot builder', () => {
         expect(result.credentialsWithoutUsableDate).toBe(0);
     });
 
-    it('moves fallback history when a late asset anchor arrives', () => {
+    it('moves fallback history when a late asset anchor arrives', async () => {
         const holderDid = 'did:test:holder';
         const credentialDid = 'did:test:credential';
         const histories = [createAgentHistory(holderDid, '2026-08-01T00:00:00.000Z', [
@@ -181,8 +194,8 @@ describe('network metric snapshot builder', () => {
             }),
         ])];
         const now = new Date('2026-08-05T12:00:00.000Z');
-        const before = buildNetworkMetricSnapshots(histories, now);
-        const after = buildNetworkMetricSnapshots([
+        const before = await buildNetworkMetricSnapshots(histories, now);
+        const after = await buildNetworkMetricSnapshots([
             ...histories,
             createCredentialHistory(credentialDid, '2026-08-02T00:00:00.000Z'),
         ], now);
@@ -193,7 +206,7 @@ describe('network metric snapshot builder', () => {
         expect(after.credentialsDatedByOperationCreated).toBe(1);
     });
 
-    it('reports credentials without a usable date or with conflicting schemas', () => {
+    it('reports credentials without a usable date or with conflicting schemas', async () => {
         const holderDid = 'did:test:holder';
         const conflictingDid = 'did:test:conflicting';
         const histories = [createAgentHistory(holderDid, '2026-08-01T00:00:00.000Z', [
@@ -208,7 +221,7 @@ describe('network metric snapshot builder', () => {
             manifestUpdate(holderDid, 'did:test:future', { validFrom: '2026-08-10T00:00:00.000Z' }),
         ])];
 
-        const result = buildNetworkMetricSnapshots(histories, new Date('2026-08-03T12:00:00.000Z'));
+        const result = await buildNetworkMetricSnapshots(histories, new Date('2026-08-03T12:00:00.000Z'));
 
         expect(result.snapshots.at(-1)).toMatchObject({ credentialCount: 0, schemas: [] });
         expect(result.credentialsWithoutUsableDate).toBe(4);
@@ -216,7 +229,7 @@ describe('network metric snapshot builder', () => {
         expect(result.futureCredentialValidFrom).toBe(1);
     });
 
-    it('is independent of receipt time and signature time', () => {
+    it('is independent of receipt time and signature time', async () => {
         const first = createAgentHistory(
             'did:test:agent',
             '2026-08-02T09:00:00.000Z',
@@ -232,11 +245,13 @@ describe('network metric snapshot builder', () => {
         second.events[0].operation.signature!.signed = '2040-01-01T00:00:00.000Z';
         const now = new Date('2026-08-03T12:00:00.000Z');
 
-        expect(buildNetworkMetricSnapshots([first], now).snapshots)
-            .toStrictEqual(buildNetworkMetricSnapshots([second], now).snapshots);
+        const firstResult = await buildNetworkMetricSnapshots([first], now);
+        const secondResult = await buildNetworkMetricSnapshots([second], now);
+
+        expect(firstResult.snapshots).toStrictEqual(secondResult.snapshots);
     });
 
-    it('deduplicates credentials, corrects late history, and reports unusable anchors', () => {
+    it('deduplicates credentials, corrects late history, and reports unusable anchors', async () => {
         const holderDid = 'did:test:holder';
         const credentialDid = 'did:test:credential';
         const update = manifestUpdate(holderDid, credentialDid);
@@ -247,8 +262,8 @@ describe('network metric snapshot builder', () => {
             createAgentHistory('did:test:future', '2026-08-10T00:00:00.000Z'),
         ];
         const now = new Date('2026-08-03T12:00:00.000Z');
-        const before = buildNetworkMetricSnapshots(histories, now);
-        const after = buildNetworkMetricSnapshots([
+        const before = await buildNetworkMetricSnapshots(histories, now);
+        const after = await buildNetworkMetricSnapshots([
             ...histories,
             createAgentHistory('did:test:late', '2026-08-01T00:00:00.000Z'),
         ], now);
@@ -260,7 +275,7 @@ describe('network metric snapshot builder', () => {
         expect(after.snapshots.at(-1)).toMatchObject({ agentDidCount: 2, credentialCount: 1 });
     });
 
-    it('reports unusable and future credential asset anchors', () => {
+    it('reports unusable and future credential asset anchors', async () => {
         const holderDid = 'did:test:holder';
         const invalidCredentialDid = 'did:test:invalid-credential';
         const futureCredentialDid = 'did:test:future-credential';
@@ -280,7 +295,7 @@ describe('network metric snapshot builder', () => {
             createCredentialHistory(futureCredentialDid, '2026-08-10T00:00:00.000Z'),
         ];
 
-        const result = buildNetworkMetricSnapshots(histories, new Date('2026-08-03T12:00:00.000Z'));
+        const result = await buildNetworkMetricSnapshots(histories, new Date('2026-08-03T12:00:00.000Z'));
 
         expect(result.snapshots.at(-1)?.credentialCount).toBe(1);
         expect(result.invalidCreatedTimes).toBe(2);
@@ -288,12 +303,12 @@ describe('network metric snapshot builder', () => {
         expect(result.credentialsDatedByValidFrom).toBe(1);
     });
 
-    it('puts pre-MDIP creates in the baseline and emits a zero snapshot for an empty index', () => {
+    it('puts pre-MDIP creates in the baseline and emits a zero snapshot for an empty index', async () => {
         const now = new Date('2024-01-03T12:00:00.000Z');
-        const baseline = buildNetworkMetricSnapshots([
+        const baseline = await buildNetworkMetricSnapshots([
             createAgentHistory('did:test:legacy', '1970-01-01T00:00:00.000Z'),
         ], now);
-        const empty = buildNetworkMetricSnapshots([], now);
+        const empty = await buildNetworkMetricSnapshots([], now);
 
         expect(baseline.snapshots[0]).toMatchObject({ date: '2024-01-01', agentDidCount: 1 });
         expect(baseline.snapshots).toHaveLength(3);
@@ -376,7 +391,7 @@ describe.each(adapterFactories)('$name network metric persistence', ({ create })
         };
         const second = { ...first, date: '2026-08-02' };
 
-        expect(await harness.db.listDIDEventHistories()).toStrictEqual([
+        expect(await collectDIDEventHistories(harness.db, 2)).toStrictEqual([
             { did: earlierDid, events: earlierEvents },
             { did, events },
         ]);
@@ -385,6 +400,7 @@ describe.each(adapterFactories)('$name network metric persistence', ({ create })
         await harness.db.replaceNetworkMetricSnapshots([second]);
         expect(await harness.db.getNetworkMetricSnapshot(first.date)).toBeNull();
         await harness.db.wipeDb();
+        expect(await collectDIDEventHistories(harness.db)).toStrictEqual([]);
         expect(await harness.db.getNetworkMetricSnapshot(second.date)).toBeNull();
     });
 });
@@ -401,7 +417,7 @@ describe('network metric database branches', () => {
     it('rejects network metric operations when SQLite is disconnected', async () => {
         const db = new Sqlite('unused.db', '/tmp');
 
-        await expect(db.listDIDEventHistories()).rejects.toThrow('DB not connected');
+        await expect(collectDIDEventHistories(db)).rejects.toThrow('DB not connected');
         await expect(db.replaceNetworkMetricSnapshots([snapshot])).rejects.toThrow('DB not connected');
         await expect(db.getNetworkMetricSnapshot(snapshot.date)).rejects.toThrow('DB not connected');
     });
@@ -428,21 +444,35 @@ describe('network metric database branches', () => {
 
     it('stores and reads network metrics through the PostgreSQL adapter', async () => {
         const did = 'did:test:history';
+        const secondDid = 'did:test:z-history';
         const firstEvent = createEvent(did, {
             type: 'create',
             created: '2026-08-01T00:00:00.000Z',
         });
         const secondEvent = createEvent(did, { type: 'delete', did });
+        const thirdEvent = createEvent(secondDid, {
+            type: 'create',
+            created: '2026-08-02T00:00:00.000Z',
+        });
         const poolQuery = jest.fn(async (sql: string, params: unknown[] = []) => {
             const text = String(sql);
 
-            if (text.includes('SELECT did, event FROM did_events')) {
+            if (text.includes('FROM did_events')) {
+                const eventRows = [
+                    { did, eventIndex: 0, event: JSON.stringify(firstEvent) },
+                    { did, eventIndex: 1, event: secondEvent },
+                    { did: secondDid, eventIndex: 0, event: thirdEvent },
+                ];
+                const cursorDid = params.length === 3 ? String(params[0]) : '';
+                const cursorIndex = params.length === 3 ? Number(params[1]) : -1;
+                const limit = Number(params[params.length - 1]);
+                const rows = eventRows
+                    .filter(row => row.did > cursorDid || (row.did === cursorDid && row.eventIndex > cursorIndex))
+                    .slice(0, limit);
+
                 return {
-                    rowCount: 2,
-                    rows: [
-                        { did, event: JSON.stringify(firstEvent) },
-                        { did, event: secondEvent },
-                    ],
+                    rowCount: rows.length,
+                    rows,
                 };
             }
             if (text.includes('FROM network_metric_snapshots')) {
@@ -478,10 +508,15 @@ describe('network metric database branches', () => {
         const db = new Postgres('postgresql://example');
         (db as any).pool = pool;
 
-        expect(await db.listDIDEventHistories()).toStrictEqual([{
-            did,
-            events: [firstEvent, secondEvent],
-        }]);
+        expect(await collectDIDEventHistories(db, 1)).toStrictEqual([
+            { did, events: [firstEvent, secondEvent] },
+            { did: secondDid, events: [thirdEvent] },
+        ]);
+        expect(poolQuery).toHaveBeenCalledWith(
+            expect.stringContaining('WHERE (did, event_index) > ($1, $2)'),
+            [did, 0, 1]
+        );
+        expect(await collectDIDEventHistories(db, 500)).toHaveLength(2);
         await db.replaceNetworkMetricSnapshots([snapshot]);
         expect(client.query).toHaveBeenCalledWith(
             expect.stringContaining('INSERT INTO network_metric_snapshots'),
@@ -530,7 +565,7 @@ describe('network metric database branches', () => {
 describe('DidIndexer network metrics scheduling', () => {
     it('waits for the initial snapshot before rebuilding metrics', async () => {
         const db = new DIDsDbMemory();
-        const listHistories = jest.spyOn(db, 'listDIDEventHistories');
+        const iterateHistories = jest.spyOn(db, 'iterateDIDEventHistories');
         const gatekeeper = {
             isReady: jest.fn<GatekeeperIndexClient['isReady']>(),
             exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>(),
@@ -542,7 +577,7 @@ describe('DidIndexer network metrics scheduling', () => {
 
         await (indexer as any).refreshNetworkMetricsIfDue();
 
-        expect(listHistories).not.toHaveBeenCalled();
+        expect(iterateHistories).not.toHaveBeenCalled();
     });
 
     it('logs when the metrics error state cannot be saved', async () => {

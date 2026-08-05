@@ -108,15 +108,15 @@ export function parseSnapshotDate(value: unknown, now: Date = new Date()): strin
     return value;
 }
 
-export function buildNetworkMetricSnapshots(
-    histories: DIDEventHistory[],
+export async function buildNetworkMetricSnapshots(
+    histories: Iterable<DIDEventHistory> | AsyncIterable<DIDEventHistory>,
     now: Date = new Date()
-): NetworkMetricsBuildResult {
+): Promise<NetworkMetricsBuildResult> {
     const today = utcDay(now);
-    const historiesByDid = new Map(histories.map(history => [history.did, history]));
     const agentDeltas = new Map<string, number>();
     const credentialDeltas = new Map<string, number>();
     const schemaDeltas = new Map<string, Map<string, number>>();
+    const assetCreationDays = new Map<string, ReturnType<typeof creationDay>>();
     const credentials = new Map<string, CredentialEvidence>();
     let invalidCreatedTimes = 0;
     let futureCreatedOperations = 0;
@@ -126,8 +126,13 @@ export function buildNetworkMetricSnapshots(
     let credentialsWithConflictingSchemas = 0;
     let futureCredentialValidFrom = 0;
 
-    for (const history of historiesByDid.values()) {
+    for await (const history of histories) {
         const anchor = history.events[0]?.operation;
+
+        if (anchor?.type === 'create' && anchor.mdip?.type === 'asset') {
+            assetCreationDays.set(history.did, creationDay(anchor, today));
+        }
+
         if (anchor?.type !== 'create' || anchor.mdip?.type !== 'agent') {
             continue;
         }
@@ -171,11 +176,10 @@ export function buildNetworkMetricSnapshots(
         }
 
         const schemaDid = evidence.schemas.values().next().value as string;
-        const anchor = historiesByDid.get(credentialDid)?.events[0]?.operation;
+        const created = assetCreationDays.get(credentialDid);
         let day: string | undefined;
 
-        if (anchor?.type === 'create' && anchor.mdip?.type === 'asset') {
-            const created = creationDay(anchor, today);
+        if (created) {
             if (created.day) {
                 day = created.day;
                 credentialsDatedByOperationCreated += 1;
@@ -184,7 +188,7 @@ export function buildNetworkMetricSnapshots(
                 futureCreatedOperations += 1;
                 continue;
             }
-            else {
+            else if (created.invalid) {
                 invalidCreatedTimes += 1;
             }
         }

@@ -331,8 +331,8 @@ export default class DidIndexer {
                 return;
             }
 
-            const histories = await this.db.listDIDEventHistories();
-            const result = buildNetworkMetricSnapshots(histories, now);
+            const histories = this.db.iterateDIDEventHistories(this.pageLimit);
+            const result = await buildNetworkMetricSnapshots(histories, now);
             await this.db.replaceNetworkMetricSnapshots(result.snapshots);
             await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.metricsLastRebuiltAt, now.toISOString());
             await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.metricsLastError, null);

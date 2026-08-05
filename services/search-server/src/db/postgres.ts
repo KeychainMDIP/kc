@@ -38,6 +38,11 @@ interface EventRow {
     event: GatekeeperEvent | string;
 }
 
+interface HistoryEventRow extends EventRow {
+    did: string;
+    eventIndex: number;
+}
+
 interface BlockRow {
     block: BlockInfo | string;
 }
@@ -634,22 +639,60 @@ export default class Postgres implements DIDsDb {
         };
     }
 
-    async listDIDEventHistories(): Promise<DIDEventHistory[]> {
+    async *iterateDIDEventHistories(pageSize = 500): AsyncIterable<DIDEventHistory> {
         const pool = this.getPool();
-        const result = await pool.query<{ did: string; event: GatekeeperEvent | string }>(
-            'SELECT did, event FROM did_events ORDER BY did ASC, event_index ASC'
-        );
-        const histories = new Map<string, GatekeeperEvent[]>();
+        const limit = Math.max(1, pageSize);
+        let cursorDid: string | null = null;
+        let cursorIndex = -1;
+        let currentDid: string | null = null;
+        let currentEvents: GatekeeperEvent[] = [];
 
-        for (const row of result.rows) {
-            const events = histories.get(row.did) ?? [];
-            events.push(typeof row.event === 'string'
-                ? JSON.parse(row.event) as GatekeeperEvent
-                : row.event);
-            histories.set(row.did, events);
+        while (true) {
+            const result: { rows: HistoryEventRow[] } = cursorDid === null
+                ? await pool.query<HistoryEventRow>(
+                    `SELECT did, event_index AS "eventIndex", event
+                     FROM did_events
+                     ORDER BY did ASC, event_index ASC
+                     LIMIT $1`,
+                    [limit]
+                )
+                : await pool.query<HistoryEventRow>(
+                    `SELECT did, event_index AS "eventIndex", event
+                     FROM did_events
+                     WHERE (did, event_index) > ($1, $2)
+                     ORDER BY did ASC, event_index ASC
+                     LIMIT $3`,
+                    [cursorDid, cursorIndex, limit]
+                );
+
+            if (result.rows.length === 0) {
+                break;
+            }
+
+            for (const row of result.rows) {
+                if (currentDid !== null && row.did !== currentDid) {
+                    yield { did: currentDid, events: currentEvents };
+                    currentEvents = [];
+                }
+
+                currentDid = row.did;
+                currentEvents.push(typeof row.event === 'string'
+                    ? JSON.parse(row.event) as GatekeeperEvent
+                    : row.event);
+            }
+
+            const last: HistoryEventRow = result.rows[result.rows.length - 1];
+            cursorDid = last.did;
+            cursorIndex = last.eventIndex;
+
+            if (result.rows.length < limit) {
+                break;
+            }
         }
 
-        return Array.from(histories, ([did, events]) => ({ did, events }));
+        if (currentDid !== null) {
+            yield { did: currentDid, events: currentEvents };
+        }
     }
 
     async replaceNetworkMetricSnapshots(snapshots: NetworkMetricSnapshot[]): Promise<void> {

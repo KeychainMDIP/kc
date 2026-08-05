@@ -23,6 +23,12 @@ import {
 } from "../types.js";
 import { getEventDisplayTime, stableStringify } from './db-utils.js';
 
+interface HistoryEventRow {
+    did: string;
+    eventIndex: number;
+    event: string;
+}
+
 export default class Sqlite implements DIDsDb {
     private readonly dbFile: string;
     private db: Database | null = null;
@@ -627,23 +633,62 @@ export default class Sqlite implements DIDsDb {
         };
     }
 
-    async listDIDEventHistories(): Promise<DIDEventHistory[]> {
-        if (!this.db) {
+    async *iterateDIDEventHistories(pageSize = 500): AsyncIterable<DIDEventHistory> {
+        const db = this.db;
+        if (!db) {
             throw new Error('DB not connected');
         }
 
-        const rows = await this.db.all<{ did: string; event: string }[]>(
-            'SELECT did, event FROM did_events ORDER BY did ASC, event_index ASC'
-        );
-        const histories = new Map<string, GatekeeperEvent[]>();
+        const limit = Math.max(1, pageSize);
+        let cursorDid: string | null = null;
+        let cursorIndex = -1;
+        let currentDid: string | null = null;
+        let currentEvents: GatekeeperEvent[] = [];
 
-        for (const row of rows) {
-            const events = histories.get(row.did) ?? [];
-            events.push(JSON.parse(row.event) as GatekeeperEvent);
-            histories.set(row.did, events);
+        while (true) {
+            const rows: HistoryEventRow[] = cursorDid === null
+                ? await db.all<HistoryEventRow[]>(
+                    `SELECT did, event_index AS eventIndex, event
+                     FROM did_events
+                     ORDER BY did ASC, event_index ASC
+                     LIMIT ?`,
+                    [limit]
+                )
+                : await db.all<HistoryEventRow[]>(
+                    `SELECT did, event_index AS eventIndex, event
+                     FROM did_events
+                     WHERE did > ? OR (did = ? AND event_index > ?)
+                     ORDER BY did ASC, event_index ASC
+                     LIMIT ?`,
+                    [cursorDid, cursorDid, cursorIndex, limit]
+                );
+
+            if (rows.length === 0) {
+                break;
+            }
+
+            for (const row of rows) {
+                if (currentDid !== null && row.did !== currentDid) {
+                    yield { did: currentDid, events: currentEvents };
+                    currentEvents = [];
+                }
+
+                currentDid = row.did;
+                currentEvents.push(JSON.parse(row.event) as GatekeeperEvent);
+            }
+
+            const last: HistoryEventRow = rows[rows.length - 1];
+            cursorDid = last.did;
+            cursorIndex = last.eventIndex;
+
+            if (rows.length < limit) {
+                break;
+            }
         }
 
-        return Array.from(histories, ([did, events]) => ({ did, events }));
+        if (currentDid !== null) {
+            yield { did: currentDid, events: currentEvents };
+        }
     }
 
     async replaceNetworkMetricSnapshots(snapshots: NetworkMetricSnapshot[]): Promise<void> {
