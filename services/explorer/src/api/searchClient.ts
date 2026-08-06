@@ -57,6 +57,14 @@ export interface PublishedSchemaMetric {
     count: number;
 }
 
+export interface NetworkMetricSnapshot {
+    date: string;
+    agentDidCount: number;
+    credentialCount: number;
+    schemas: PublishedSchemaMetric[];
+    rebuiltAt: string;
+}
+
 export interface PublishedCredentialRow {
     holderDid: string;
     credentialDid: string;
@@ -239,6 +247,32 @@ export async function fetchPublishedSchemaMetrics(): Promise<PublishedSchemaMetr
     }));
 }
 
+export async function fetchNetworkMetricSnapshot(date: string): Promise<NetworkMetricSnapshot | null> {
+    try {
+        const response = await axios.get(
+            `${apiBaseUrl}/metrics/network/snapshots/${encodeURIComponent(date)}`
+        );
+
+        return {
+            date: response.data.date,
+            agentDidCount: toNumber(response.data.agentDidCount),
+            credentialCount: toNumber(response.data.credentialCount),
+            schemas: (response.data.schemas ?? []).map((row: any) => ({
+                schemaDid: row.schemaDid,
+                count: toNumber(row.count),
+            })),
+            rebuiltAt: response.data.rebuiltAt,
+        };
+    }
+    catch (error: any) {
+        if (error?.response?.status === 404) {
+            return null;
+        }
+
+        throw error;
+    }
+}
+
 export async function fetchPublishedCredentials(
     options: FetchPublishedCredentialsOptions = {}
 ): Promise<PublishedCredentialsResult> {
@@ -284,6 +318,7 @@ export const searchClient = {
     fetchSearchServerEvents,
     searchDIDDocuments,
     fetchPublishedSchemaMetrics,
+    fetchNetworkMetricSnapshot,
     fetchPublishedCredentials,
     fetchChallengeReceipts,
     fetchChallengeReceiptUsage,

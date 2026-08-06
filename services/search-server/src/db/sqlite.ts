@@ -11,8 +11,10 @@ import {
     ChallengeReceiptUsageOptions,
     ChallengeReceiptUsageResult,
     DIDsDb,
+    DIDEventHistory,
     DIDEventListOptions,
     DIDEventListResult,
+    NetworkMetricSnapshot,
     PublishedCredentialListOptions,
     PublishedCredentialListResult,
     PublishedCredentialRecord,
@@ -20,6 +22,12 @@ import {
     GatekeeperEvent,
 } from "../types.js";
 import { getEventDisplayTime, stableStringify } from './db-utils.js';
+
+interface HistoryEventRow {
+    did: string;
+    eventIndex: number;
+    event: string;
+}
 
 export default class Sqlite implements DIDsDb {
     private readonly dbFile: string;
@@ -125,6 +133,14 @@ export default class Sqlite implements DIDsDb {
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS network_metric_snapshots (
+                snapshot_date TEXT PRIMARY KEY,
+                agent_did_count INTEGER NOT NULL CHECK (agent_did_count >= 0),
+                credential_count INTEGER NOT NULL CHECK (credential_count >= 0),
+                schema_counts TEXT NOT NULL DEFAULT '[]',
+                rebuilt_at TEXT NOT NULL
+            );
         `);
 
         await this.db.exec(`
@@ -182,6 +198,21 @@ export default class Sqlite implements DIDsDb {
         );
 
         return rows.map(row => JSON.parse(row.event) as GatekeeperEvent);
+    }
+
+    async findDIDBySuffix(suffix: string): Promise<string | null> {
+        if (!this.db) {
+            throw new Error('DB not connected');
+        }
+
+        // ponytail: fallback-only scan; add a stored suffix index if alias lookups become hot.
+        const row = await this.db.get<{ did: string }>(
+            `SELECT DISTINCT did FROM did_events
+             WHERE substr(did, -(length(?) + 1)) = ':' || ?
+             ORDER BY did ASC LIMIT 1`,
+            [suffix, suffix]
+        );
+        return row?.did ?? null;
     }
 
     async getBlock(registry: string, blockId?: BlockId): Promise<BlockInfo | null> {
@@ -602,6 +633,130 @@ export default class Sqlite implements DIDsDb {
         };
     }
 
+    async *iterateDIDEventHistories(pageSize = 500): AsyncIterable<DIDEventHistory> {
+        const db = this.db;
+        if (!db) {
+            throw new Error('DB not connected');
+        }
+
+        const limit = Math.max(1, pageSize);
+        let cursorDid: string | null = null;
+        let cursorIndex = -1;
+        let currentDid: string | null = null;
+        let currentEvents: GatekeeperEvent[] = [];
+
+        while (true) {
+            const rows: HistoryEventRow[] = cursorDid === null
+                ? await db.all<HistoryEventRow[]>(
+                    `SELECT did, event_index AS eventIndex, event
+                     FROM did_events
+                     ORDER BY did ASC, event_index ASC
+                     LIMIT ?`,
+                    [limit]
+                )
+                : await db.all<HistoryEventRow[]>(
+                    `SELECT did, event_index AS eventIndex, event
+                     FROM did_events
+                     WHERE did > ? OR (did = ? AND event_index > ?)
+                     ORDER BY did ASC, event_index ASC
+                     LIMIT ?`,
+                    [cursorDid, cursorDid, cursorIndex, limit]
+                );
+
+            if (rows.length === 0) {
+                break;
+            }
+
+            for (const row of rows) {
+                if (currentDid !== null && row.did !== currentDid) {
+                    yield { did: currentDid, events: currentEvents };
+                    currentEvents = [];
+                }
+
+                currentDid = row.did;
+                currentEvents.push(JSON.parse(row.event) as GatekeeperEvent);
+            }
+
+            const last: HistoryEventRow = rows[rows.length - 1];
+            cursorDid = last.did;
+            cursorIndex = last.eventIndex;
+
+            if (rows.length < limit) {
+                break;
+            }
+        }
+
+        if (currentDid !== null) {
+            yield { did: currentDid, events: currentEvents };
+        }
+    }
+
+    async replaceNetworkMetricSnapshots(snapshots: NetworkMetricSnapshot[]): Promise<void> {
+        if (!this.db) {
+            throw new Error('DB not connected');
+        }
+
+        await this.db.exec('BEGIN');
+        try {
+            await this.db.run('DELETE FROM network_metric_snapshots');
+            for (const snapshot of snapshots) {
+                await this.db.run(
+                    `INSERT INTO network_metric_snapshots (
+                        snapshot_date,
+                        agent_did_count,
+                        credential_count,
+                        schema_counts,
+                        rebuilt_at
+                    ) VALUES (?, ?, ?, ?, ?)`,
+                    [
+                        snapshot.date,
+                        snapshot.agentDidCount,
+                        snapshot.credentialCount,
+                        JSON.stringify(snapshot.schemas),
+                        snapshot.rebuiltAt,
+                    ]
+                );
+            }
+            await this.db.exec('COMMIT');
+        }
+        catch (error) {
+            await this.db.exec('ROLLBACK');
+            throw error;
+        }
+    }
+
+    async getNetworkMetricSnapshot(date: string): Promise<NetworkMetricSnapshot | null> {
+        if (!this.db) {
+            throw new Error('DB not connected');
+        }
+
+        const row = await this.db.get<{
+            date: string;
+            agentDidCount: number | string;
+            credentialCount: number | string;
+            schemaCounts: string;
+            rebuiltAt: string;
+        }>(
+            `SELECT
+                snapshot_date AS date,
+                agent_did_count AS agentDidCount,
+                credential_count AS credentialCount,
+                schema_counts AS schemaCounts,
+                rebuilt_at AS rebuiltAt
+             FROM network_metric_snapshots
+             WHERE snapshot_date = ?`,
+            [date]
+        );
+
+        return row ? {
+            date: row.date,
+            agentDidCount: Number(row.agentDidCount),
+            credentialCount: Number(row.credentialCount),
+            schemas: JSON.parse(row.schemaCounts) as PublishedCredentialSchemaCount[],
+            rebuiltAt: row.rebuiltAt,
+        } : null;
+    }
+
     async searchDocs(q: string): Promise<string[]> {
         if (!this.db) {
             throw new Error('DB not connected');
@@ -707,6 +862,7 @@ export default class Sqlite implements DIDsDb {
             DELETE FROM blocks;
             DELETE FROM published_credentials;
             DELETE FROM challenge_receipts;
+            DELETE FROM network_metric_snapshots;
             DELETE FROM sync_state;
         `);
     }

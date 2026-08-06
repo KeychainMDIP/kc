@@ -11,6 +11,7 @@ import DidIndexer from "./DidIndexer.js";
 import {DIDsDb} from "./types.js";
 import { childLogger } from "@mdip/common/logger";
 import config from "./config.js";
+import { findDIDReadTarget } from './did-aliases.js';
 import {
     createWhitelistBlockList,
     getSearchStatus,
@@ -21,6 +22,7 @@ import {
     rateLimitWindowUnits,
     shouldSkipRateLimitPath,
 } from "./index-helpers.js";
+import { parseSnapshotDate } from './network-metrics.js';
 
 const log = childLogger({ service: 'search-server' });
 
@@ -99,6 +101,7 @@ async function main() {
 
     const indexer = new DidIndexer(gatekeeper, didDb, {
         intervalMs: config.refreshIntervalMs,
+        metricsRefreshIntervalMs: config.metricsRefreshIntervalMs,
     });
 
     // Let's not await here, we will continue and start
@@ -124,7 +127,8 @@ async function main() {
 
     v1router.get("/did/:did/events", async (req, res) => {
         try {
-            res.json(await didDb.getDIDEvents(req.params.did));
+            const target = await findDIDReadTarget(didDb, req.params.did);
+            res.json(target.events);
         } catch (error) {
             log.error({ error }, 'Get DID events error');
             res.status(500).json({ error: String(error) });
@@ -143,11 +147,11 @@ async function main() {
             }
             const versionTime = req.query.versionTime?.toString();
             const hasVersionQuery = versionSequence !== undefined || versionTime !== undefined;
-            const events = await didDb.getDIDEvents(did);
+            const { storedDid, events } = await findDIDReadTarget(didDb, did);
 
             if (events.length === 0) {
                 if (!hasVersionQuery) {
-                    const cachedDoc = await didDb.getDID(did);
+                    const cachedDoc = await didDb.getDID(storedDid);
                     if (cachedDoc) {
                         return res.json(cachedDoc);
                     }
@@ -242,6 +246,26 @@ async function main() {
         } catch (error) {
             log.error({ error }, '/metrics/schemas/published error');
             res.status(500).json({ error: String(error) });
+        }
+    });
+
+    v1router.get('/metrics/network/snapshots/:date', async (req, res) => {
+        try {
+            const date = parseSnapshotDate(req.params.date);
+            if (!date) {
+                return res.status(400).json({ error: 'date must be a valid, non-future UTC date in YYYY-MM-DD format' });
+            }
+
+            const snapshot = await didDb.getNetworkMetricSnapshot(date);
+            if (!snapshot) {
+                return res.status(404).json({ error: 'Snapshot not found' });
+            }
+
+            return res.json(snapshot);
+        }
+        catch (error) {
+            log.error({ error }, '/metrics/network/snapshots/:date error');
+            return res.status(500).json({ error: String(error) });
         }
     });
 

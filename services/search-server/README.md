@@ -31,6 +31,9 @@ KC_SEARCH_SERVER_GATEKEEPER_URL=http://localhost:4224
 # How often (in ms) to poll Gatekeeper for new or updated DIDs.
 KC_SEARCH_SERVER_REFRESH_INTERVAL_MS=5000
 
+# How often (in ms) to rebuild all daily network metric snapshots.
+KC_SEARCH_SERVER_METRICS_REFRESH_INTERVAL_MS=3600000
+
 # Database adapter: sqlite | postgres | memory
 KC_SEARCH_SERVER_DB=sqlite
 
@@ -57,12 +60,14 @@ KC_LOG_LEVEL=info
 
 ### `GET /api/v1/did/:did`
 - **Description**: Returns the DID Document
+- **Notes**: If the exact DID prefix is not indexed, Search Server resolves an equivalent DID with the same final CID suffix.
 - **Returns**:
     - `200 OK` + JSON DID Document if present.
     - `404 Not Found` if no cached doc is found for the given `:did`.
 
 ### `GET /api/v1/did/:did/events`
 - **Description**: Returns all indexed events for the DID in operation order.
+- **Notes**: DID prefix aliases are matched by their final CID suffix.
 - **Returns**:
     - `200 OK` + an array of Gatekeeper events.
     - `200 OK` + `[]` if the DID has no indexed events.
@@ -74,7 +79,7 @@ KC_LOG_LEVEL=info
     - 200 OK + [] (empty array) if nothing matches, otherwise an array of DID strings.
 
 ### `GET /api/v1/metrics/schemas/published`
-- **Description**: Returns counts of published credentials grouped by schema DID.
+- **Description**: Returns current published credential counts grouped by schema DID.
 - **Returns**:
     - `200 OK` + `{ "schemas": [{ "schemaDid": "...", "count": 42 }] }`
 
@@ -91,6 +96,40 @@ KC_LOG_LEVEL=info
     - `updatedAt` is derived from the credential manifest entry's `signature.signed` when available, with a fallback to the subject DID document timestamp.
 - **Returns**:
     - `200 OK` + `{ "total": 123, "credentials": [{ "credentialDid": "...", "schemaDid": "...", "issuerDid": "...", "subjectDid": "...", "holderDid": "...", "updatedAt": "..." }] }`
+
+### `GET /api/v1/metrics/network/snapshots/:date`
+- **Description**: Returns cumulative network totals for one UTC day.
+- **Path Param**:
+    - `date` (required, `YYYY-MM-DD`, must not be in the future)
+- **Returns**:
+    - `200 OK` + `{ "date": "2026-08-05", "agentDidCount": 123, "credentialCount": 456, "schemas": [{ "schemaDid": "did:test:...", "count": 42 }], "rebuiltAt": "..." }`
+    - `400 Bad Request` for an invalid or future date.
+    - `404 Not Found` when no snapshot exists for the date.
+
+### Network metric snapshots
+
+AgentDID snapshot dates come only from anchor `create` operation `created`
+timestamps. Credentials are identified from valid historical AgentDID manifest
+entries and dated by their asset anchor `operation.created` when available,
+falling back to the manifest credential's `validFrom`. Hyperswarm receipt times
+and operation signature timestamps are not used. AgentDIDs remain counted after
+deletion, and credentials remain counted after revocation or unpublishing.
+Private credentials that have never been published cannot be counted by
+search-server.
+
+Each snapshot includes cumulative credential counts grouped by schema DID,
+ordered from most to least used. This historical breakdown differs from
+`/metrics/schemas/published`, which describes only the credentials currently
+present in AgentDID manifests.
+
+Metric dates before the MDIP epoch are included in the `2024-01-01` legacy
+baseline. Future-dated entries and entries without a usable timestamp are
+omitted. The complete daily history is
+rebuilt after the initial index snapshot and then at
+`KC_SEARCH_SERVER_METRICS_REFRESH_INTERVAL_MS`, so late operations correct their
+metric day and every later snapshot. If a previously missing credential asset
+operation arrives, its `operation.created` replaces the `validFrom` fallback on
+the next rebuild.
 
 ### Published credential metrics
 

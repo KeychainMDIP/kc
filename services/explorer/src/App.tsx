@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import JsonViewer from "./components/JsonViewer.js";
 import Events from "./components/Events.js";
+import Network from "./components/Network.js";
 import Credentials from "./components/Credentials.js";
 import ChallengeReceipts from "./components/ChallengeReceipts.js";
 import {
@@ -148,6 +149,14 @@ function App() {
                                     setDateTo={setDateTo}
                                     onDidClick={handleViewDid}
                                 />
+                            ) : (
+                                waiting
+                            )}
+                        />
+                        <Route
+                            path="/network"
+                            element={isReady ? (
+                                <Network />
                             ) : (
                                 waiting
                             )}

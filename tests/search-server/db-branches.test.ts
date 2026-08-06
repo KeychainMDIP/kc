@@ -123,6 +123,8 @@ describe('search DB branch behavior', () => {
 
         await seedDID(db, eventDid, { events: [didEventA] });
         expect(await db.getDIDEvents(eventDid)).toStrictEqual([didEventA]);
+        expect(await db.findDIDBySuffix('event-storage')).toBe(eventDid);
+        expect(await db.findDIDBySuffix('missing')).toBeNull();
         const unchanged = await db.applyIndexPage({
             dids: [{ did: eventDid, events: [didEventA] }],
             blocks: [],
@@ -365,6 +367,7 @@ describe('search DB branch behavior', () => {
             await defaultDb.disconnect();
             const disconnected = new Sqlite();
             await expect(disconnected.getDIDEvents(eventDid)).rejects.toThrow('DB not connected');
+            await expect(disconnected.findDIDBySuffix('event-storage')).rejects.toThrow('DB not connected');
             await expect(disconnected.getBlock('TFTC')).rejects.toThrow('DB not connected');
             await expect(disconnected.listEvents()).rejects.toThrow('DB not connected');
         }
@@ -524,6 +527,14 @@ describe('search DB branch behavior', () => {
             if (text.includes('INSERT INTO sync_state')) {
                 syncState.set(String(params[0]), String(params[1]));
                 return { rowCount: 1, rows: [] };
+            }
+
+            if (text.includes('SELECT DISTINCT did FROM did_events')) {
+                const ending = `:${String(params[0])}`;
+                const did = Array.from(events.keys()).find(candidate => candidate.endsWith(ending));
+                return did
+                    ? { rowCount: 1, rows: [{ did }] }
+                    : { rowCount: 0, rows: [] };
             }
 
             if (text.includes('SELECT event FROM did_events')) {
@@ -709,6 +720,8 @@ describe('search DB branch behavior', () => {
             changedDids: [eventDid],
             storedBlocks: 1,
         });
+        expect(await db.findDIDBySuffix('event-storage')).toBe(eventDid);
+        expect(await db.findDIDBySuffix('missing')).toBeNull();
         expect(await db.getDIDEvents(eventDid)).toStrictEqual([didEventA, didEventB]);
         expect(await db.getDIDEvents('did:test:object-event')).toStrictEqual([didEventA]);
         expect(await db.getBlock('TFTC')).toStrictEqual(blockA);

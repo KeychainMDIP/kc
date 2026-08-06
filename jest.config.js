@@ -52,6 +52,7 @@ const config = {
         '^\\.\\/index-export\\.js$': '<rootDir>/packages/gatekeeper/src/db/index-export.ts',
         '^\\.\\/index-helpers\\.js$': '<rootDir>/services/search-server/src/index-helpers.ts',
         '^\\.\\/projections\\.js$': '<rootDir>/services/search-server/src/projections.ts',
+        '^\\.\\/network-metrics\\.js$': '<rootDir>/services/search-server/src/network-metrics.ts',
         '^\\.\\/published-credentials\\.js$': '<rootDir>/services/search-server/src/published-credentials.ts',
         '^\\.\\/challenge-receipts\\.js$': '<rootDir>/services/search-server/src/challenge-receipts.ts',
         '^\\.\\/cipher-base\\.js$': '<rootDir>/packages/cipher/src/cipher-base.ts',

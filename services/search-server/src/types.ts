@@ -112,6 +112,19 @@ export interface DIDEventListResult {
     events: DIDEventRecord[];
 }
 
+export interface DIDEventHistory {
+    did: string;
+    events: GatekeeperEvent[];
+}
+
+export interface NetworkMetricSnapshot {
+    date: string;
+    agentDidCount: number;
+    credentialCount: number;
+    schemas: PublishedCredentialSchemaCount[];
+    rebuiltAt: string;
+}
+
 export interface DIDProjectionUpdate {
     did: string;
     events: GatekeeperEvent[];
@@ -142,6 +155,7 @@ export interface DIDsDb {
     saveSyncState(key: string, value: string | null): Promise<void>;
 
     getDIDEvents(did: string): Promise<GatekeeperEvent[]>;
+    findDIDBySuffix(suffix: string): Promise<string | null>;
     getBlock(registry: string, block?: BlockId): Promise<BlockInfo | null>;
     applyIndexPage(page: ApplyIndexPageOptions): Promise<ApplyIndexPageResult>;
     getDID(did: string): Promise<object | null>;
@@ -150,6 +164,9 @@ export interface DIDsDb {
     listChallengeReceipts(options?: ChallengeReceiptListOptions): Promise<ChallengeReceiptListResult>;
     getChallengeReceiptUsage(options?: ChallengeReceiptUsageOptions): Promise<ChallengeReceiptUsageResult>;
     listEvents(options?: DIDEventListOptions): Promise<DIDEventListResult>;
+    iterateDIDEventHistories(pageSize?: number): AsyncIterable<DIDEventHistory>;
+    replaceNetworkMetricSnapshots(snapshots: NetworkMetricSnapshot[]): Promise<void>;
+    getNetworkMetricSnapshot(date: string): Promise<NetworkMetricSnapshot | null>;
     searchDocs(q: string): Promise<string[]>;
     queryDocs(where: Record<string, unknown>): Promise<string[]>;
     wipeDb(): Promise<void>;

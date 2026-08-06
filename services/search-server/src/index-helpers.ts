@@ -174,5 +174,9 @@ export async function getSearchStatus(didDb: DIDsDb, dbName: string) {
         ready: true,
         db: dbName,
         sync,
+        metrics: {
+            lastRebuiltAt: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsLastRebuiltAt),
+            lastError: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsLastError),
+        },
     };
 }
