@@ -52,7 +52,7 @@ async function makeTerminalChain(): Promise<{ root: Operation; child: Operation 
     const rootUnsigned = {
         type: 'update' as const,
         did: 'did:test:legacy',
-        doc: { root: true },
+        doc: { didDocumentData: { root: true } },
     };
     const root: Operation = {
         ...rootUnsigned,
@@ -67,7 +67,7 @@ async function makeTerminalChain(): Promise<{ root: Operation; child: Operation 
         type: 'update' as const,
         did: rootUnsigned.did,
         previd: rootCid,
-        doc: { child: true },
+        doc: { didDocumentData: { child: true } },
     };
     return {
         root,
@@ -132,7 +132,7 @@ describe('import pipeline', () => {
         const unsigned = {
             type: 'update' as const,
             did: 'did:test:legacy',
-            doc: { legacy: true },
+            doc: { didDocumentData: { legacy: true } },
         };
         const legacyOperation: Operation = {
             ...unsigned,

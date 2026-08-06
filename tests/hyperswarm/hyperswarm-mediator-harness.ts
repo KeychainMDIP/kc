@@ -64,6 +64,7 @@ export interface TrackedHyperswarm extends EventEmitter {
 }
 
 export interface MediatorNodeListeners {
+    exit: Array<(...args: ProcessEventMap['exit']) => void>;
     uncaughtException: Array<(...args: ProcessEventMap['uncaughtException']) => void>;
     unhandledRejection: Array<(...args: ProcessEventMap['unhandledRejection']) => void>;
     stdinData: Array<(data: Buffer) => void>;
@@ -244,6 +245,7 @@ function createMediatorNodeContext(name: string, publicKey: Buffer): MediatorNod
         swarms: [],
         shutdownHook: null,
         listeners: {
+            exit: [],
             uncaughtException: [],
             unhandledRejection: [],
             stdinData: [],
@@ -274,6 +276,7 @@ export function runWithMediatorNodeContext<Result>(
 }
 
 interface ListenerSnapshot {
+    exit: Set<unknown>;
     uncaughtException: Set<unknown>;
     unhandledRejection: Set<unknown>;
     stdinData: Set<unknown>;
@@ -281,6 +284,7 @@ interface ListenerSnapshot {
 
 function snapshotListeners(): ListenerSnapshot {
     return {
+        exit: new Set(process.listeners('exit')),
         uncaughtException: new Set(process.listeners('uncaughtException')),
         unhandledRejection: new Set(process.listeners('unhandledRejection')),
         stdinData: new Set(process.stdin.listeners('data')),
@@ -288,9 +292,14 @@ function snapshotListeners(): ListenerSnapshot {
 }
 
 function recordAddedListeners(context: MediatorNodeContext, before: ListenerSnapshot): void {
+    context.listeners.exit.length = 0;
     context.listeners.uncaughtException.length = 0;
     context.listeners.unhandledRejection.length = 0;
     context.listeners.stdinData.length = 0;
+    context.listeners.exit.push(
+        ...process.listeners('exit')
+            .filter(listener => !before.exit.has(listener)),
+    );
     context.listeners.uncaughtException.push(
         ...process.listeners('uncaughtException')
             .filter(listener => !before.uncaughtException.has(listener)),
@@ -306,6 +315,9 @@ function recordAddedListeners(context: MediatorNodeContext, before: ListenerSnap
 }
 
 function removeNodeListeners(context: MediatorNodeContext): void {
+    for (const listener of context.listeners.exit) {
+        process.removeListener('exit', listener);
+    }
     for (const listener of context.listeners.uncaughtException) {
         process.removeListener('uncaughtException', listener);
     }

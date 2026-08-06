@@ -3,7 +3,6 @@ import type { Operation } from '@mdip/gatekeeper/types';
 import type {
     OperationSyncStore,
     SyncStoreCursor,
-    SyncStoreOrderedCursor,
 } from './db/types.js';
 import type {
     NegentropyWindowEngine,
@@ -39,13 +38,6 @@ export interface ConnectionInfo {
     lastNegentropyAttemptAt: number;
     negentropySynced: boolean;
     orderedCatchupAttempted: boolean;
-    orderedCatchupClientSessionId: string | null;
-    orderedCatchupServerSessionId: string | null;
-    orderedCatchupServerLastActivity: number;
-    orderedCatchupServerPendingSince: number;
-    orderedCatchupServerPendingUntil: number;
-    orderedCatchupServerPendingReason: string | null;
-    orderedCatchupServerPendingGap: number;
     initialPingSent: boolean;
     initialPingPromise: Promise<void>;
     initialInboundMessageReceived: boolean;
@@ -65,12 +57,9 @@ export interface MalformedPeerState {
     lastRejectLogAt: number;
 }
 
-export type PeerSessionMode = SyncMode | 'ordered_catchup';
-
 export interface PeerSyncSession {
     sessionId: string;
     peerKey: string;
-    mode: PeerSessionMode;
     initiator: boolean;
     windows: ReconciliationWindow[];
     windowIndex: number;
@@ -94,11 +83,6 @@ export interface PeerSyncSession {
     receivedPushMaxCursor: SyncStoreCursor | null;
     remoteWindowCappedByRecords: boolean;
     remoteWindowLastCursor: SyncStoreCursor | null;
-    orderedCatchupCursor: SyncStoreOrderedCursor | null;
-    orderedCatchupPendingImports: number;
-    orderedCatchupRequestOutstanding: boolean;
-    orderedCatchupTerminalReason: 'ordered_catchup_complete' | 'ordered_catchup_done' | null;
-    orderedCatchupImportsAborted: boolean;
 }
 
 export interface ConnectionInfoOptions {
@@ -135,13 +119,6 @@ export function createConnectionInfo(options: ConnectionInfoOptions): Connection
         lastNegentropyAttemptAt: 0,
         negentropySynced: false,
         orderedCatchupAttempted: false,
-        orderedCatchupClientSessionId: null,
-        orderedCatchupServerSessionId: null,
-        orderedCatchupServerLastActivity: 0,
-        orderedCatchupServerPendingSince: 0,
-        orderedCatchupServerPendingUntil: 0,
-        orderedCatchupServerPendingReason: null,
-        orderedCatchupServerPendingGap: 0,
         initialPingSent: options.requireInitialPing !== true,
         initialPingPromise: Promise.resolve(),
         initialInboundMessageReceived: false,
@@ -155,7 +132,6 @@ export function createConnectionInfo(options: ConnectionInfoOptions): Connection
 export interface PeerSyncSessionOptions {
     sessionId: string;
     peerKey: string;
-    mode: PeerSessionMode;
     initiator: boolean;
     maxRounds: number;
     now?: number;
@@ -167,7 +143,6 @@ export function createPeerSyncSessionState(options: PeerSyncSessionOptions): Pee
     return {
         sessionId: options.sessionId,
         peerKey: options.peerKey,
-        mode: options.mode,
         initiator: options.initiator,
         windows: [],
         windowIndex: 0,
@@ -191,10 +166,5 @@ export function createPeerSyncSessionState(options: PeerSyncSessionOptions): Pee
         receivedPushMaxCursor: null,
         remoteWindowCappedByRecords: false,
         remoteWindowLastCursor: null,
-        orderedCatchupCursor: null,
-        orderedCatchupPendingImports: 0,
-        orderedCatchupRequestOutstanding: false,
-        orderedCatchupTerminalReason: null,
-        orderedCatchupImportsAborted: false,
     };
 }

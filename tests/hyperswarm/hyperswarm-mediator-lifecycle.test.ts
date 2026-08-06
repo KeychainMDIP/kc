@@ -1221,6 +1221,103 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         }
     });
 
+    it.each(['status lookup', 'page lookup'] as const)(
+        'waits for an active ordered catch-up %s before stopping the sync store',
+        async boundary => {
+            const [operation] = await makeOperations(1);
+            const running = await createRunningNode({ keyByte: 0x33 });
+            await running.store.upsertMany([{
+                id: operation.signature!.hash,
+                syncOrder: 1,
+                signedTs: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+                operation,
+            }]);
+            const peer = await attachConnection(running, 0x22);
+            await sendPeerMessage(peer, peerPing({
+                capabilities: {
+                    negentropy: true,
+                    negentropyVersion: NEGENTROPY_VERSION,
+                    orderedCatchup: true,
+                    orderedCatchupVersion: 1,
+                    orderedCatchupReady: true,
+                    operationCount: 1,
+                    orderedOperationCount: 1,
+                },
+            }));
+
+            let markStarted!: () => void;
+            const started = new Promise<void>(resolve => {
+                markStarted = resolve;
+            });
+            let release!: () => void;
+            const blocked = new Promise<void>(resolve => {
+                release = resolve;
+            });
+            if (boundary === 'status lookup') {
+                const count = running.store.count.bind(running.store);
+                jest.spyOn(running.store, 'count').mockImplementationOnce(async () => {
+                    markStarted();
+                    await blocked;
+                    return count();
+                });
+            }
+            else {
+                const iterateOrdered = running.store.iterateOrdered.bind(running.store);
+                jest.spyOn(running.store, 'iterateOrdered').mockImplementationOnce(async options => {
+                    markStarted();
+                    await blocked;
+                    return iterateOrdered(options);
+                });
+            }
+
+            peer.pair.connectionB.write(encodeFramedMessage(JSON.stringify({
+                type: 'ordered_catchup_req',
+                sessionId: `shutdown-${boundary}`,
+            })));
+            const inboundDelivery = peer.pair.deliverNext();
+            const shutdown = running.node.run(() => getMediatorNodeContext().shutdownHook);
+            if (!shutdown) {
+                throw new Error('expected graceful shutdown callback');
+            }
+            let shuttingDown: Promise<void> | null = null;
+
+            try {
+                await started;
+                shuttingDown = Promise.resolve(running.node.run(() => shutdown()));
+                await nextTurn();
+
+                expect(running.stopSpy).not.toHaveBeenCalled();
+                expect(peer.pair.transcript.some(entry => (
+                    entry.direction === 'a-to-b'
+                    && (entry.messageType === 'ordered_catchup_push'
+                        || entry.messageType === 'ordered_catchup_done')
+                ))).toBe(false);
+
+                release();
+                await inboundDelivery;
+                await shuttingDown;
+
+                expect(running.stopSpy).toHaveBeenCalledTimes(1);
+                expect(peer.pair.transcript.some(entry => (
+                    entry.direction === 'a-to-b'
+                    && (entry.messageType === 'ordered_catchup_push'
+                        || entry.messageType === 'ordered_catchup_done')
+                ))).toBe(false);
+                expect(running.node.run(
+                    () => running.node.mediator.__test.getConnectionState(peer.peerKey)?.activeSession,
+                )).toBeNull();
+                running.node.run(() => {
+                    getMediatorNodeContext().shutdownHook = null;
+                });
+            }
+            finally {
+                release();
+                await inboundDelivery.catch(() => undefined);
+                await shuttingDown?.catch(() => undefined);
+            }
+        },
+    );
+
     it('waits for an active background prebuild before stopping the sync store', async () => {
         const [operation] = await makeOperations(1);
         const running = await createRunningNode();
@@ -1236,7 +1333,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         const buildStarted = new Promise<void>(resolve => {
             markBuildStarted = resolve;
         });
-        let releaseBuild = () => undefined;
+        let releaseBuild!: () => void;
         const buildBlocked = new Promise<void>(resolve => {
             releaseBuild = resolve;
         });
@@ -1256,7 +1353,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
             await running.node.gatekeeper.createDID(operation);
             timerAdvance = running.node.run(() => jest.advanceTimersByTimeAsync(2_000));
             await buildStarted;
-            shuttingDown = running.node.run(() => shutdown());
+            shuttingDown = Promise.resolve(running.node.run(() => shutdown()));
             await nextTurn();
 
             expect(running.stopSpy).not.toHaveBeenCalled();
@@ -1292,7 +1389,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         const writeStarted = new Promise<void>(resolve => {
             markWriteStarted = resolve;
         });
-        let releaseWrite = () => undefined;
+        let releaseWrite!: () => void;
         const writeBlocked = new Promise<void>(resolve => {
             releaseWrite = resolve;
         });
@@ -1314,7 +1411,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         try {
             timerAdvance = running.node.run(() => jest.advanceTimersByTimeAsync(2_000));
             await writeStarted;
-            shuttingDown = running.node.run(() => shutdown());
+            shuttingDown = Promise.resolve(running.node.run(() => shutdown()));
             await nextTurn();
 
             expect(running.stopSpy).not.toHaveBeenCalled();
@@ -1351,7 +1448,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         const countStarted = new Promise<void>(resolve => {
             markCountStarted = resolve;
         });
-        let releaseCount = () => undefined;
+        let releaseCount!: () => void;
         const countBlocked = new Promise<void>(resolve => {
             releaseCount = resolve;
         });
@@ -1400,7 +1497,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         const buildStarted = new Promise<void>(resolve => {
             markBuildStarted = resolve;
         });
-        let releaseBuild = () => undefined;
+        let releaseBuild!: () => void;
         const buildBlocked = new Promise<void>(resolve => {
             releaseBuild = resolve;
         });
@@ -1430,7 +1527,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
                 return state?.activeSession !== null;
             });
 
-            shuttingDown = running.node.run(() => shutdown());
+            shuttingDown = Promise.resolve(running.node.run(() => shutdown()));
             await nextTurn();
             expect(running.stopSpy).not.toHaveBeenCalled();
 
