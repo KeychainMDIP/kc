@@ -1,6 +1,7 @@
 import { Pool, PoolClient } from 'pg';
 import { randomUUID } from 'crypto';
 import { InvalidDIDError } from '@mdip/common/errors';
+import { childLogger } from '@mdip/common/logger';
 import {
     GatekeeperDb,
     GatekeeperEvent,
@@ -19,6 +20,8 @@ import {
     parseIndexExportCursor
 } from './index-export.js';
 import { withHealthCheckTimeout } from './health.js';
+
+const log = childLogger({ service: 'gatekeeper-db', module: 'postgres' });
 
 interface EventRow {
     event: GatekeeperEvent | string | null;
@@ -320,7 +323,15 @@ export default class DbPostgres implements GatekeeperDb {
             );
             return true;
         }
-        catch {
+        catch (error) {
+            log.warn({
+                error,
+                pool: {
+                    total: this.pool.totalCount,
+                    idle: this.pool.idleCount,
+                    waiting: this.pool.waitingCount,
+                },
+            }, 'Postgres readiness check failed');
             return false;
         }
     }
