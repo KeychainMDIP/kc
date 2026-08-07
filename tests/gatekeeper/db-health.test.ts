@@ -86,14 +86,20 @@ describe('database readiness checks', () => {
 
     it('reports Postgres readiness from a lightweight query', async () => {
         const db = new DbPostgres('health-postgres');
-        const query = jest.fn<(sql: string) => Promise<{ rows: Record<string, number>[] }>>()
+        const query = jest.fn<(config: { text: string; query_timeout: number }) => Promise<{ rows: Record<string, number>[] }>>()
             .mockResolvedValue({ rows: [{ '?column?': 1 }] });
 
         await expect(db.isReady()).resolves.toBe(false);
 
-        (db as any).pool = { query };
+        (db as any).pool = {
+            query,
+            options: { max: 10 },
+        };
         await expect(db.isReady()).resolves.toBe(true);
-        expect(query).toHaveBeenCalledWith('SELECT 1');
+        expect(query).toHaveBeenCalledWith({
+            text: 'SELECT 1',
+            query_timeout: 1_000,
+        });
 
         query.mockRejectedValue(new Error('postgres down'));
         await expect(db.isReady()).resolves.toBe(false);
@@ -114,6 +120,24 @@ describe('database readiness checks', () => {
             }
             else {
                 process.env.KC_POSTGRES_POOL_MAX = previous;
+            }
+        }
+    });
+
+    it('rejects an invalid Postgres connection timeout', async () => {
+        const previous = process.env.KC_POSTGRES_CONNECTION_TIMEOUT_MS;
+        process.env.KC_POSTGRES_CONNECTION_TIMEOUT_MS = '0';
+
+        try {
+            await expect(new DbPostgres('invalid-connection-timeout').start())
+                .rejects.toThrow('KC_POSTGRES_CONNECTION_TIMEOUT_MS must be a positive integer');
+        }
+        finally {
+            if (previous === undefined) {
+                delete process.env.KC_POSTGRES_CONNECTION_TIMEOUT_MS;
+            }
+            else {
+                process.env.KC_POSTGRES_CONNECTION_TIMEOUT_MS = previous;
             }
         }
     });
