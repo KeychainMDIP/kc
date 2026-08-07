@@ -297,7 +297,14 @@ export default class DbPostgres implements GatekeeperDb {
             return;
         }
 
-        this.pool = new Pool({ connectionString: this.url });
+        const max = Number(process.env.KC_POSTGRES_POOL_MAX ?? '10');
+        if (!Number.isSafeInteger(max) || max < 1) {
+            throw new Error('KC_POSTGRES_POOL_MAX must be a positive integer');
+        }
+        this.pool = new Pool({
+            connectionString: this.url,
+            max,
+        });
         await this.withTx(async client => {
             await this.ensureSchema(client);
             await this.ensureIndexEpoch(client);

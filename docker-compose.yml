@@ -83,6 +83,7 @@ services:
       - KC_REDIS_URL=redis://redis:6379
       - PGPASSWORD=${KC_POSTGRES_PASSWORD:-mdip}
       - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
+      - KC_POSTGRES_POOL_MAX=${KC_POSTGRES_POOL_MAX:-10}
       - KC_IPFS_ENABLE=${KC_IPFS_ENABLE}
       - KC_IPFS_URL=http://ipfs:5001/api/v0
       - KC_IPFS_CLUSTER_URL=${KC_IPFS_CLUSTER_URL}

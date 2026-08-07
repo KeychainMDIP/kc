@@ -100,6 +100,24 @@ describe('database readiness checks', () => {
         await expect(db.getEvents('did:test:missing')).rejects.toThrow('postgres down');
     });
 
+    it('rejects an invalid Postgres pool limit', async () => {
+        const previous = process.env.KC_POSTGRES_POOL_MAX;
+        process.env.KC_POSTGRES_POOL_MAX = '-1';
+
+        try {
+            await expect(new DbPostgres('invalid-pool-limit').start())
+                .rejects.toThrow('KC_POSTGRES_POOL_MAX must be a positive integer');
+        }
+        finally {
+            if (previous === undefined) {
+                delete process.env.KC_POSTGRES_POOL_MAX;
+            }
+            else {
+                process.env.KC_POSTGRES_POOL_MAX = previous;
+            }
+        }
+    });
+
     it('bounds health checks with a timeout', async () => {
         await expect(withHealthCheckTimeout(
             new Promise(() => undefined),
