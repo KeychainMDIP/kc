@@ -43,6 +43,7 @@ const config = {
         '^\\.\\/sync-store-mirroring\\.js$': '<rootDir>/services/mediators/hyperswarm/src/sync-store-mirroring.ts',
         '^\\.\\/ordered-catchup\\.js$': '<rootDir>/services/mediators/hyperswarm/src/ordered-catchup.ts',
         '^\\.\\/ordered-catchup-coordinator\\.js$': '<rootDir>/services/mediators/hyperswarm/src/ordered-catchup-coordinator.ts',
+        '^\\.\\/negentropy-coordinator\\.js$': '<rootDir>/services/mediators/hyperswarm/src/negentropy-coordinator.ts',
         '^\\.\\/transport-framing\\.js$': '<rootDir>/services/mediators/hyperswarm/src/transport-framing.ts',
         '^\\.\\/mediator-state\\.js$': '<rootDir>/services/mediators/hyperswarm/src/mediator-state.ts',
         '^\\.\\/sync-stats\\.js$': '<rootDir>/services/mediators/hyperswarm/src/sync-stats.ts',

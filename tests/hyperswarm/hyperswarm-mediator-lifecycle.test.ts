@@ -1175,8 +1175,22 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         expect(negOpenCount()).toBeGreaterThan(initialNegOpenCount);
     });
 
-    it('waits for an active index refresh before stopping the sync store', async () => {
-        const running = await createRunningNode();
+    it('does not restart synchronization when an index reset finishes during shutdown', async () => {
+        const [operation] = await makeOperations(1);
+        let resetSpy!: jest.SpiedFunction<InMemoryOperationSyncStore['reset']>;
+        const running = await createRunningNode({
+            beforeStart: async (node, store) => {
+                resetSpy = jest.spyOn(store, 'reset');
+                await node.gatekeeper.createDID(operation);
+            },
+        });
+        const peer = await attachConnection(running, 0x22);
+        await sendPeerMessage(peer, peerPing());
+        const initialNegOpenCount = peer.pair.transcript.filter(
+            entry => entry.direction === 'a-to-b' && entry.messageType === 'neg_open',
+        ).length;
+        const countOrdered = jest.spyOn(running.store, 'countOrdered');
+        await running.node.gatekeeper.resetDb();
         const exportIndex = running.node.gatekeeperClient.exportIndex;
         const exportIndexImplementation = exportIndex.getMockImplementation();
         if (!exportIndexImplementation) {
@@ -1211,6 +1225,14 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
             releaseRefresh();
             await timerAdvance;
             await shuttingDown;
+            expect(resetSpy).toHaveBeenCalledTimes(1);
+            expect(countOrdered).not.toHaveBeenCalled();
+            expect(peer.pair.transcript.filter(
+                entry => entry.direction === 'a-to-b' && entry.messageType === 'neg_open',
+            )).toHaveLength(initialNegOpenCount);
+            expect(running.node.run(
+                () => running.node.mediator.__test.getConnectionState(peer.peerKey)?.activeSession,
+            )).toBeNull();
             expect(running.stopSpy).toHaveBeenCalledTimes(1);
             running.node.run(() => {
                 getMediatorNodeContext().shutdownHook = null;
@@ -1218,6 +1240,115 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         }
         finally {
             releaseRefresh();
+        }
+    });
+
+    it('waits for active negentropy index-result processing before stopping the sync store', async () => {
+        const [operation] = await makeOperations(1);
+        const running = await createRunningNode({ keyByte: 0x33 });
+        const adapter = await NegentropyAdapter.create({
+            syncStore: running.store,
+            maxRecordsPerWindow: 16,
+            maxRoundsPerSession: 8,
+            deferInitialBuild: true,
+        });
+        running.node.run(() => running.node.mediator.__test.setNegentropyAdapter(adapter));
+        const createEngine = adapter.createEngineForSnapshot.bind(adapter);
+        jest.spyOn(adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
+            const engine = createEngine(snapshot);
+            jest.spyOn(engine, 'reconcile').mockResolvedValueOnce({
+                nextMsg: null,
+                haveIds: [],
+                needIds: [],
+            });
+            return engine;
+        });
+
+        const peer = await attachConnection(running, 0x22);
+        await sendPeerMessage(peer, peerPing());
+        const sessionId = 'shutdown-index-result-session';
+        const windowId = 'shutdown-index-result-window';
+        peer.pair.connectionB.write(encodeFramedMessage(JSON.stringify({
+            type: 'neg_open',
+            sessionId,
+            windowId,
+            round: 0,
+            window: {
+                name: 'shutdown-index-result',
+                fromTs: 0,
+                toTs: Math.floor(Date.now() / 1_000),
+                maxRecords: 16,
+                order: 0,
+            },
+            frame: encodeNegentropyFrame('shutdown-index-result-open'),
+        })));
+        await peer.pair.pumpUntilIdle();
+
+        running.node.gatekeeperClient.importBatch.mockImplementationOnce(async events => ({
+            queued: events.length,
+            processed: 0,
+            rejected: 0,
+            total: events.length,
+            rejectedIndices: [],
+        }));
+        running.node.gatekeeperClient.processEvents.mockResolvedValueOnce({
+            added: 0,
+            merged: 0,
+            rejected: 1,
+            pending: 0,
+            acceptedHashes: [],
+            acceptedEvents: [],
+        });
+        peer.pair.connectionB.write(encodeFramedMessage(JSON.stringify({
+            type: 'ops_push',
+            sessionId,
+            windowId,
+            data: [operation],
+        })));
+        await peer.pair.pumpUntilIdle();
+
+        const getByIds = running.store.getByIds.bind(running.store);
+        let markLookupStarted!: () => void;
+        const lookupStarted = new Promise<void>(resolve => {
+            markLookupStarted = resolve;
+        });
+        let releaseLookup!: () => void;
+        const lookupBlocked = new Promise<void>(resolve => {
+            releaseLookup = resolve;
+        });
+        jest.spyOn(running.store, 'getByIds').mockImplementationOnce(async ids => {
+            markLookupStarted();
+            await lookupBlocked;
+            return getByIds(ids);
+        });
+        const shutdown = running.node.run(() => getMediatorNodeContext().shutdownHook);
+        if (!shutdown) {
+            throw new Error('expected graceful shutdown callback');
+        }
+        let timerAdvance: Promise<void> | null = null;
+        let shuttingDown: Promise<void> | null = null;
+
+        try {
+            await running.node.gatekeeper.createDID(operation);
+            timerAdvance = running.node.run(() => jest.advanceTimersByTimeAsync(2_000));
+            await lookupStarted;
+            shuttingDown = Promise.resolve(running.node.run(() => shutdown()));
+            await nextTurn();
+
+            expect(running.stopSpy).not.toHaveBeenCalled();
+
+            releaseLookup();
+            await timerAdvance;
+            await shuttingDown;
+            expect(running.stopSpy).toHaveBeenCalledTimes(1);
+            running.node.run(() => {
+                getMediatorNodeContext().shutdownHook = null;
+            });
+        }
+        finally {
+            releaseLookup();
+            await timerAdvance?.catch(() => undefined);
+            await shuttingDown?.catch(() => undefined);
         }
     });
 
@@ -1432,7 +1563,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         }
     });
 
-    it('does not admit a foreground rebuild after shutdown starts', async () => {
+    it('seals synchronization coordinators before waiting for swarm destruction', async () => {
         const running = await createRunningNode();
         const adapter = await NegentropyAdapter.create({
             syncStore: running.store,
@@ -1461,24 +1592,64 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         if (!shutdown) {
             throw new Error('expected graceful shutdown callback');
         }
+        const swarm: TrackedHyperswarm = running.node.swarms[0];
+        const destroy = swarm.destroy.getMockImplementation();
+        if (!destroy) {
+            throw new Error('expected fake swarm destroy implementation');
+        }
+        let markDestroyStarted!: () => void;
+        const destroyStarted = new Promise<void>(resolve => {
+            markDestroyStarted = resolve;
+        });
+        let releaseDestroy!: () => void;
+        const destroyBlocked = new Promise<void>(resolve => {
+            releaseDestroy = resolve;
+        });
+        swarm.destroy.mockImplementationOnce(async () => {
+            markDestroyStarted();
+            await destroyBlocked;
+            destroy();
+        });
+        let shuttingDown: Promise<void> | null = null;
 
         try {
-            await sendPeerMessage(peer, peerPing());
+            await sendPeerMessage(peer, peerPing({
+                capabilities: {
+                    negentropy: true,
+                    negentropyVersion: NEGENTROPY_VERSION,
+                    orderedCatchup: true,
+                    orderedCatchupVersion: 1,
+                    orderedCatchupReady: true,
+                    operationCount: 100,
+                    orderedOperationCount: 100,
+                },
+            }));
             await countStarted;
-            await running.node.run(() => shutdown());
-            running.node.run(() => {
-                getMediatorNodeContext().shutdownHook = null;
-            });
+            shuttingDown = Promise.resolve(running.node.run(() => shutdown()));
+            await destroyStarted;
 
             releaseCount();
             await settle();
 
             expect(buildSnapshot).not.toHaveBeenCalled();
             expect(peer.pair.transcript.some(entry => entry.messageType === 'neg_open')).toBe(false);
+            expect(peer.pair.transcript.some(entry => entry.messageType === 'ordered_catchup_req')).toBe(false);
+            expect(running.node.run(
+                () => running.node.mediator.__test.getConnectionState(peer.peerKey)?.activeSession,
+            )).toBeNull();
+            expect(running.stopSpy).not.toHaveBeenCalled();
+
+            releaseDestroy();
+            await shuttingDown;
             expect(running.stopSpy).toHaveBeenCalledTimes(1);
+            running.node.run(() => {
+                getMediatorNodeContext().shutdownHook = null;
+            });
         }
         finally {
             releaseCount();
+            releaseDestroy();
+            await shuttingDown?.catch(() => undefined);
         }
     });
 
