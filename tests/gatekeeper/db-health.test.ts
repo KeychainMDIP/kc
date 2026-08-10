@@ -142,6 +142,79 @@ describe('database readiness checks', () => {
         }
     });
 
+    it('configures Postgres connection lifecycle settings', async () => {
+        const configured = {
+            KC_POSTGRES_POOL_MAX: '7',
+            KC_POSTGRES_CONNECTION_TIMEOUT_MS: '2000',
+            KC_POSTGRES_KEEP_ALIVE: 'false',
+            KC_POSTGRES_KEEP_ALIVE_INITIAL_DELAY_MS: '12000',
+            KC_POSTGRES_IDLE_TIMEOUT_MS: '0',
+            KC_POSTGRES_MAX_LIFETIME_SECONDS: '0',
+        };
+        const previous: Record<string, string | undefined> = {};
+        for (const name of Object.keys(configured)) {
+            previous[name] = process.env[name];
+        }
+        Object.assign(process.env, configured);
+        const db = new DbPostgres('configured-pool');
+        jest.spyOn(db as any, 'withTx').mockResolvedValue(undefined);
+
+        try {
+            await db.start();
+            expect((db as any).pool.options).toMatchObject({
+                max: 7,
+                connectionTimeoutMillis: 2_000,
+                keepAlive: false,
+                keepAliveInitialDelayMillis: 12_000,
+                idleTimeoutMillis: 0,
+                maxLifetimeSeconds: 0,
+            });
+        }
+        finally {
+            await db.stop();
+            for (const [name, value] of Object.entries(previous)) {
+                if (value === undefined) {
+                    delete process.env[name];
+                }
+                else {
+                    process.env[name] = value;
+                }
+            }
+        }
+    });
+
+    it('rejects invalid Postgres connection lifecycle settings', async () => {
+        const previousKeepAlive = process.env.KC_POSTGRES_KEEP_ALIVE;
+        process.env.KC_POSTGRES_KEEP_ALIVE = 'yes';
+        try {
+            await expect(new DbPostgres('invalid-keep-alive').start())
+                .rejects.toThrow('KC_POSTGRES_KEEP_ALIVE must be true or false');
+        }
+        finally {
+            if (previousKeepAlive === undefined) {
+                delete process.env.KC_POSTGRES_KEEP_ALIVE;
+            }
+            else {
+                process.env.KC_POSTGRES_KEEP_ALIVE = previousKeepAlive;
+            }
+        }
+
+        const previousIdleTimeout = process.env.KC_POSTGRES_IDLE_TIMEOUT_MS;
+        process.env.KC_POSTGRES_IDLE_TIMEOUT_MS = '';
+        try {
+            await expect(new DbPostgres('invalid-idle-timeout').start())
+                .rejects.toThrow('KC_POSTGRES_IDLE_TIMEOUT_MS must be a non-negative integer');
+        }
+        finally {
+            if (previousIdleTimeout === undefined) {
+                delete process.env.KC_POSTGRES_IDLE_TIMEOUT_MS;
+            }
+            else {
+                process.env.KC_POSTGRES_IDLE_TIMEOUT_MS = previousIdleTimeout;
+            }
+        }
+    });
+
     it('bounds health checks with a timeout', async () => {
         await expect(withHealthCheckTimeout(
             new Promise(() => undefined),

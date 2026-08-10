@@ -22,8 +22,34 @@ import {
 import { withHealthCheckTimeout } from './health.js';
 
 const log = childLogger({ service: 'gatekeeper-db', module: 'postgres' });
+const DEFAULT_POSTGRES_POOL_MAX = 10;
 const DEFAULT_POSTGRES_CONNECTION_TIMEOUT_MS = 3_000;
+const DEFAULT_POSTGRES_KEEP_ALIVE = true;
+const DEFAULT_POSTGRES_KEEP_ALIVE_INITIAL_DELAY_MS = 10_000;
+const DEFAULT_POSTGRES_IDLE_TIMEOUT_MS = 30_000;
+const DEFAULT_POSTGRES_MAX_LIFETIME_SECONDS = 300;
 const POSTGRES_HEALTH_QUERY_TIMEOUT_MS = 1_000;
+
+function readIntegerEnv(name: string, fallback: number, allowZero = false): number {
+    const configured = process.env[name];
+    const value = Number(configured ?? fallback);
+    if (configured?.trim() === '' || !Number.isSafeInteger(value) || value < (allowZero ? 0 : 1)) {
+        throw new Error(`${name} must be ${allowZero ? 'a non-negative' : 'a positive'} integer`);
+    }
+    return value;
+}
+
+function readBooleanEnv(name: string, fallback: boolean): boolean {
+    const configured = process.env[name];
+    if (configured === undefined) {
+        return fallback;
+    }
+    const value = configured.trim().toLowerCase();
+    if (value === 'true' || value === 'false') {
+        return value === 'true';
+    }
+    throw new Error(`${name} must be true or false`);
+}
 
 interface EventRow {
     event: GatekeeperEvent | string | null;
@@ -299,20 +325,34 @@ export default class DbPostgres implements GatekeeperDb {
             return;
         }
 
-        const max = Number(process.env.KC_POSTGRES_POOL_MAX ?? '10');
-        if (!Number.isSafeInteger(max) || max < 1) {
-            throw new Error('KC_POSTGRES_POOL_MAX must be a positive integer');
-        }
-        const connectionTimeoutMillis = Number(
-            process.env.KC_POSTGRES_CONNECTION_TIMEOUT_MS ?? DEFAULT_POSTGRES_CONNECTION_TIMEOUT_MS
+        const max = readIntegerEnv('KC_POSTGRES_POOL_MAX', DEFAULT_POSTGRES_POOL_MAX);
+        const connectionTimeoutMillis = readIntegerEnv(
+            'KC_POSTGRES_CONNECTION_TIMEOUT_MS',
+            DEFAULT_POSTGRES_CONNECTION_TIMEOUT_MS
         );
-        if (!Number.isSafeInteger(connectionTimeoutMillis) || connectionTimeoutMillis < 1) {
-            throw new Error('KC_POSTGRES_CONNECTION_TIMEOUT_MS must be a positive integer');
-        }
+        const keepAlive = readBooleanEnv('KC_POSTGRES_KEEP_ALIVE', DEFAULT_POSTGRES_KEEP_ALIVE);
+        const keepAliveInitialDelayMillis = readIntegerEnv(
+            'KC_POSTGRES_KEEP_ALIVE_INITIAL_DELAY_MS',
+            DEFAULT_POSTGRES_KEEP_ALIVE_INITIAL_DELAY_MS
+        );
+        const idleTimeoutMillis = readIntegerEnv(
+            'KC_POSTGRES_IDLE_TIMEOUT_MS',
+            DEFAULT_POSTGRES_IDLE_TIMEOUT_MS,
+            true
+        );
+        const maxLifetimeSeconds = readIntegerEnv(
+            'KC_POSTGRES_MAX_LIFETIME_SECONDS',
+            DEFAULT_POSTGRES_MAX_LIFETIME_SECONDS,
+            true
+        );
         this.pool = new Pool({
             connectionString: this.url,
             max,
             connectionTimeoutMillis,
+            keepAlive,
+            keepAliveInitialDelayMillis,
+            idleTimeoutMillis,
+            maxLifetimeSeconds,
         });
         await this.withTx(async client => {
             await this.ensureSchema(client);
@@ -354,6 +394,10 @@ export default class DbPostgres implements GatekeeperDb {
                 pool: {
                     max: this.pool.options.max,
                     connectionTimeoutMillis: this.pool.options.connectionTimeoutMillis,
+                    keepAlive: this.pool.options.keepAlive,
+                    keepAliveInitialDelayMillis: this.pool.options.keepAliveInitialDelayMillis,
+                    idleTimeoutMillis: this.pool.options.idleTimeoutMillis,
+                    maxLifetimeSeconds: this.pool.options.maxLifetimeSeconds,
                     total: this.pool.totalCount,
                     idle: this.pool.idleCount,
                     waiting: this.pool.waitingCount,
