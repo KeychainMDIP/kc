@@ -552,6 +552,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         expect(running.node.run(
             () => running.node.mediator.__test.getConnectionState(peer.peerKey),
         )).toBeNull();
+        expect(peer.pair.connectionA.destroyed).toBe(true);
     });
 
     it('recreates the swarm from the connection loop when no peers remain', async () => {

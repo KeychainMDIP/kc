@@ -1034,7 +1034,7 @@ async function checkConnections(): Promise<void> {
 
         if (timeSinceLastSeen > expireLimit) {
             log.info(`Removing stale connection info for: ${conn.peerName} (${conn.nodeName}), last seen ${timeSinceLastSeen / 1000}s ago`);
-            closeConnection(peerKey);
+            terminatePeerConnection(peerKey, 'stale_connection', conn);
         }
     }
 }
