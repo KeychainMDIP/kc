@@ -367,6 +367,11 @@ function addConnection(conn: HyperswarmConnection): void {
         return;
     }
 
+    const previousConnection = connectionInfo[peerKey];
+    if (previousConnection) {
+        terminatePeerConnection(peerKey, 'connection_replaced', previousConnection);
+    }
+
     const connectionState = createConnectionInfo({
         connection: conn,
         peerKey,
@@ -382,12 +387,15 @@ function addConnection(conn: HyperswarmConnection): void {
         }
     });
 
-    conn.once('close', () => closeConnection(peerKey));
+    conn.once('close', () => closeConnection(peerKey, connectionState));
     conn.once('error', error => {
+        if (connectionInfo[peerKey] !== connectionState) {
+            return;
+        }
         log.warn({ error, peer: peerName }, 'hyperswarm peer connection error');
-        terminatePeerConnection(peerKey, 'connection_error');
+        terminatePeerConnection(peerKey, 'connection_error', connectionState);
     });
-    conn.on('data', data => queueInboundPeerData(peerKey, data));
+    conn.on('data', data => queueInboundPeerData(peerKey, data, connectionState));
 
     log.info(`received connection from: ${peerName}`);
 
@@ -395,9 +403,9 @@ function addConnection(conn: HyperswarmConnection): void {
     log.debug(`--- ${peerNames.length} nodes connected, detected nodes: ${peerNames.join(', ')}`);
 }
 
-function closeConnection(peerKey: string): void {
+function closeConnection(peerKey: string, expectedConnection?: ConnectionInfo): void {
     const conn = connectionInfo[peerKey];
-    if (!conn) {
+    if (!conn || (expectedConnection && conn !== expectedConnection)) {
         return;
     }
     log.info(`* connection closed with: ${conn.peerName} (${conn.nodeName}) *`);
@@ -407,9 +415,13 @@ function closeConnection(peerKey: string): void {
     negentropyCoordinator.removePeer(peerKey, 'connection_closed');
 }
 
-function terminatePeerConnection(peerKey: string, reason: string): void {
+function terminatePeerConnection(
+    peerKey: string,
+    reason: string,
+    expectedConnection?: ConnectionInfo,
+): void {
     const conn = connectionInfo[peerKey];
-    if (!conn) {
+    if (!conn || (expectedConnection && conn !== expectedConnection)) {
         return;
     }
 
@@ -585,9 +597,13 @@ function newBatch(batch: Operation[]): boolean {
     return false;
 }
 
-function queueInboundPeerData(peerKey: string, chunk: Buffer | string): void {
+function queueInboundPeerData(
+    peerKey: string,
+    chunk: Buffer | string,
+    expectedConnection?: ConnectionInfo,
+): void {
     const conn = connectionInfo[peerKey];
-    if (!conn) {
+    if (!conn || (expectedConnection && conn !== expectedConnection)) {
         return;
     }
 
@@ -601,16 +617,20 @@ function queueInboundPeerData(peerKey: string, chunk: Buffer | string): void {
 
     const incoming = typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : Buffer.from(chunk);
     conn.inboundReceiveChain = conn.inboundReceiveChain
-        .then(() => processInboundPeerData(peerKey, incoming))
+        .then(() => processInboundPeerData(peerKey, incoming, conn))
         .catch(error => {
             log.error({ error, peer: shortName(peerKey) }, 'inbound hyperswarm message processing failed');
-            terminatePeerConnection(peerKey, 'inbound_processing_failed');
+            terminatePeerConnection(peerKey, 'inbound_processing_failed', conn);
         });
 }
 
-async function processInboundPeerData(peerKey: string, chunk: Buffer): Promise<void> {
+async function processInboundPeerData(
+    peerKey: string,
+    chunk: Buffer,
+    expectedConnection?: ConnectionInfo,
+): Promise<void> {
     const conn = connectionInfo[peerKey];
-    if (!conn) {
+    if (!conn || (expectedConnection && conn !== expectedConnection)) {
         return;
     }
 
@@ -666,8 +686,8 @@ async function processInboundPeerData(peerKey: string, chunk: Buffer): Promise<v
 
                 conn.initialInboundMessageReceived = true;
                 conn.inboundBuffer = legacy.remaining;
-                await receiveMsg(peerKey, message.toString('utf8'));
-                if (!connectionInfo[peerKey]) {
+                await receiveMsg(peerKey, message.toString('utf8'), conn);
+                if (connectionInfo[peerKey] !== conn) {
                     return;
                 }
                 continue;
@@ -696,8 +716,8 @@ async function processInboundPeerData(peerKey: string, chunk: Buffer): Promise<v
         conn.initialInboundMessageReceived = true;
         conn.inboundBuffer = parsed.remaining;
         for (const message of parsed.messages) {
-            await receiveMsg(peerKey, message.toString('utf8'));
-            if (!connectionInfo[peerKey]) {
+            await receiveMsg(peerKey, message.toString('utf8'), conn);
+            if (connectionInfo[peerKey] !== conn) {
                 return;
             }
         }
@@ -807,9 +827,15 @@ async function handlePingMessage(
     await peerSyncCoordinator.onPeerCapabilities(peerKey);
 }
 
-async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void> {
+async function receiveMsg(
+    peerKey: string,
+    json: Buffer | string,
+    expectedConnection?: ConnectionInfo,
+): Promise<void> {
     const conn = connectionInfo[peerKey];
-    if (!conn || conn.legacyTransportQuarantined) {
+    if (!conn
+        || (expectedConnection && conn !== expectedConnection)
+        || conn.legacyTransportQuarantined) {
         return;
     }
 
@@ -831,7 +857,7 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
     const messageType = msg.type;
 
     log.debug(`received ${msg.type} from: ${shortName(peerKey)} (${nodeName})`);
-    connectionInfo[peerKey].lastSeen = new Date().getTime();
+    conn.lastSeen = new Date().getTime();
 
     if (msg.type !== 'ping' && conn.peerTransportFramingVersion !== TRANSPORT_FRAMING_VERSION) {
         quarantineLegacyTransportPeer(
