@@ -82,6 +82,7 @@ KC_LOG_LEVEL=info
 - **Description**: Returns current published credential counts grouped by schema DID.
 - **Returns**:
     - `200 OK` + `{ "schemas": [{ "schemaDid": "...", "count": 42 }] }`
+    - `400 Bad Request` when the removed `date` query parameter is supplied.
 
 ### `GET /api/v1/metrics/credentials/published`
 - **Description**: Returns published credential rows with optional filtering and pagination.
@@ -97,12 +98,21 @@ KC_LOG_LEVEL=info
 - **Returns**:
     - `200 OK` + `{ "total": 123, "credentials": [{ "credentialDid": "...", "schemaDid": "...", "issuerDid": "...", "subjectDid": "...", "holderDid": "...", "updatedAt": "..." }] }`
 
-### `GET /api/v1/metrics/network/snapshots/:date`
-- **Description**: Returns cumulative network totals for one UTC day.
+### `GET /api/v1/metrics/snapshots/schemas/:date`
+- **Description**: Returns cumulative credential counts grouped by schema DID for one UTC day.
 - **Path Param**:
     - `date` (required, `YYYY-MM-DD`, must not be in the future)
 - **Returns**:
-    - `200 OK` + `{ "date": "2026-08-05", "agentDidCount": 123, "credentialCount": 456, "schemas": [{ "schemaDid": "did:test:...", "count": 42 }], "rebuiltAt": "..." }`
+    - `200 OK` + `{ "schemas": [{ "schemaDid": "...", "count": 42 }] }`
+    - `400 Bad Request` for an invalid or future date.
+    - `404 Not Found` when no snapshot exists for the date.
+
+### `GET /api/v1/metrics/snapshots/credentials/:date`
+- **Description**: Returns cumulative AgentDID and credential totals for one UTC day.
+- **Path Param**:
+    - `date` (required, `YYYY-MM-DD`, must not be in the future)
+- **Returns**:
+    - `200 OK` + `{ "agentDidCount": 123, "agentDidCountsByPrefix": { "did:mdip": 23, "did:test": 100 }, "credentialCount": 456, "credentialDidCountsByPrefix": { "did:mdip": 56, "did:test": 400 } }`
     - `400 Bad Request` for an invalid or future date.
     - `404 Not Found` when no snapshot exists for the date.
 
@@ -117,10 +127,19 @@ deletion, and credentials remain counted after revocation or unpublishing.
 Private credentials that have never been published cannot be counted by
 search-server.
 
-Each snapshot includes cumulative credential counts grouped by schema DID,
-ordered from most to least used. This historical breakdown differs from
-`/metrics/schemas/published`, which describes only the credentials currently
-present in AgentDID manifests.
+Agent DID prefixes come from the indexed DID, while credential DID prefixes
+come from the credential key as published in the AgentDID manifest. Prefixes
+are grouped dynamically as `did:<method>` rather than restricted to a fixed
+allow-list. Prefix aliases sharing the same DID suffix count once under the
+first published prefix encountered. Each total equals the sum of its
+per-prefix counts.
+
+Each snapshot stores cumulative credential counts grouped by schema DID,
+ordered from most to least used. Request this historical breakdown from
+`/metrics/snapshots/schemas/:date`. `/metrics/schemas/published` describes only
+the credentials currently present in AgentDID manifests.
+Schema prefix aliases sharing the same DID suffix are combined under the
+first full schema DID encountered.
 
 Metric dates before the MDIP epoch are included in the `2024-01-01` legacy
 baseline. Future-dated entries and entries without a usable timestamp are

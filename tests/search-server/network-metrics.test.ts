@@ -145,10 +145,10 @@ describe('network metric snapshot builder', () => {
         const result = await buildNetworkMetricSnapshots(histories, new Date('2026-08-05T12:00:00.000Z'));
 
         expect(result.snapshots).toStrictEqual([
-            { date: '2026-08-02', agentDidCount: 1, credentialCount: 0, schemas: [], rebuiltAt: '2026-08-05T12:00:00.000Z' },
-            { date: '2026-08-03', agentDidCount: 1, credentialCount: 1, schemas: [{ schemaDid: 'did:test:schema', count: 1 }], rebuiltAt: '2026-08-05T12:00:00.000Z' },
-            { date: '2026-08-04', agentDidCount: 1, credentialCount: 1, schemas: [{ schemaDid: 'did:test:schema', count: 1 }], rebuiltAt: '2026-08-05T12:00:00.000Z' },
-            { date: '2026-08-05', agentDidCount: 1, credentialCount: 1, schemas: [{ schemaDid: 'did:test:schema', count: 1 }], rebuiltAt: '2026-08-05T12:00:00.000Z' },
+            { date: '2026-08-02', agentDidCount: 1, agentDidCountsByPrefix: { 'did:test': 1 }, credentialCount: 0, credentialDidCountsByPrefix: {}, schemas: [], rebuiltAt: '2026-08-05T12:00:00.000Z' },
+            { date: '2026-08-03', agentDidCount: 1, agentDidCountsByPrefix: { 'did:test': 1 }, credentialCount: 1, credentialDidCountsByPrefix: { 'did:test': 1 }, schemas: [{ schemaDid: 'did:test:schema', count: 1 }], rebuiltAt: '2026-08-05T12:00:00.000Z' },
+            { date: '2026-08-04', agentDidCount: 1, agentDidCountsByPrefix: { 'did:test': 1 }, credentialCount: 1, credentialDidCountsByPrefix: { 'did:test': 1 }, schemas: [{ schemaDid: 'did:test:schema', count: 1 }], rebuiltAt: '2026-08-05T12:00:00.000Z' },
+            { date: '2026-08-05', agentDidCount: 1, agentDidCountsByPrefix: { 'did:test': 1 }, credentialCount: 1, credentialDidCountsByPrefix: { 'did:test': 1 }, schemas: [{ schemaDid: 'did:test:schema', count: 1 }], rebuiltAt: '2026-08-05T12:00:00.000Z' },
         ]);
         expect(result.credentialsDatedByOperationCreated).toBe(1);
         expect(result.credentialsDatedByValidFrom).toBe(0);
@@ -183,6 +183,82 @@ describe('network metric snapshot builder', () => {
         expect(result.credentialsDatedByOperationCreated).toBe(0);
         expect(result.credentialsDatedByValidFrom).toBe(3);
         expect(result.credentialsWithoutUsableDate).toBe(0);
+    });
+
+    it('groups cumulative agent and credential totals by DID prefix', async () => {
+        const testHolder = 'did:test:holder';
+        const mdipHolder = 'did:mdip:holder';
+        const histories = [
+            createAgentHistory(testHolder, '2026-08-01T00:00:00.000Z', [
+                manifestUpdate(testHolder, 'did:test:test-credential'),
+            ]),
+            createAgentHistory(mdipHolder, '2026-08-02T00:00:00.000Z', [
+                manifestUpdate(mdipHolder, 'did:mdip:mdip-credential'),
+            ]),
+            createCredentialHistory('did:test:test-credential', '2026-08-02T00:00:00.000Z'),
+            createCredentialHistory('did:mdip:mdip-credential', '2026-08-03T00:00:00.000Z'),
+        ];
+
+        const result = await buildNetworkMetricSnapshots(histories, new Date('2026-08-03T12:00:00.000Z'));
+
+        expect(result.snapshots[0]).toMatchObject({
+            agentDidCount: 1,
+            agentDidCountsByPrefix: { 'did:test': 1 },
+            credentialCount: 0,
+            credentialDidCountsByPrefix: {},
+        });
+        expect(result.snapshots.at(-1)).toMatchObject({
+            agentDidCount: 2,
+            agentDidCountsByPrefix: { 'did:mdip': 1, 'did:test': 1 },
+            credentialCount: 2,
+            credentialDidCountsByPrefix: { 'did:mdip': 1, 'did:test': 1 },
+        });
+    });
+
+    it('deduplicates credential prefix aliases and matches their asset anchor by suffix', async () => {
+        const holderDid = 'did:test:holder';
+        const histories = [
+            createAgentHistory(holderDid, '2026-08-01T00:00:00.000Z', [
+                manifestUpdate(holderDid, 'did:mdip:credential', {
+                    validFrom: '2026-08-01T00:00:00.000Z',
+                }),
+                manifestUpdate(holderDid, 'did:test:credential', {
+                    validFrom: '2026-08-01T00:00:00.000Z',
+                }),
+            ]),
+            createCredentialHistory('did:test:credential', '2026-08-03T00:00:00.000Z'),
+        ];
+
+        const result = await buildNetworkMetricSnapshots(histories, new Date('2026-08-03T12:00:00.000Z'));
+
+        expect(result.snapshots.find(snapshot => snapshot.date === '2026-08-02')).toMatchObject({
+            credentialCount: 0,
+            credentialDidCountsByPrefix: {},
+        });
+        expect(result.snapshots.at(-1)).toMatchObject({
+            credentialCount: 1,
+            credentialDidCountsByPrefix: { 'did:mdip': 1 },
+            schemas: [{ schemaDid: 'did:test:schema', count: 1 }],
+        });
+        expect(result.credentialsDatedByOperationCreated).toBe(1);
+        expect(result.credentialsDatedByValidFrom).toBe(0);
+    });
+
+    it('combines schema prefix aliases without reporting a conflict', async () => {
+        const holderDid = 'did:test:holder';
+        const histories = [createAgentHistory(holderDid, '2026-08-01T00:00:00.000Z', [
+            manifestUpdate(holderDid, 'did:test:credential-a', { schemaDid: 'did:mdip:schema' }),
+            manifestUpdate(holderDid, 'did:test:credential-a', { schemaDid: 'did:test:schema' }),
+            manifestUpdate(holderDid, 'did:test:credential-b', { schemaDid: 'did:test:schema' }),
+        ])];
+
+        const result = await buildNetworkMetricSnapshots(histories, new Date('2026-08-01T12:00:00.000Z'));
+
+        expect(result.snapshots.at(-1)).toMatchObject({
+            credentialCount: 2,
+            schemas: [{ schemaDid: 'did:mdip:schema', count: 2 }],
+        });
+        expect(result.credentialsWithConflictingSchemas).toBe(0);
     });
 
     it('moves fallback history when a late asset anchor arrives', async () => {
@@ -313,7 +389,7 @@ describe('network metric snapshot builder', () => {
         expect(baseline.snapshots[0]).toMatchObject({ date: '2024-01-01', agentDidCount: 1 });
         expect(baseline.snapshots).toHaveLength(3);
         expect(empty.snapshots).toStrictEqual([
-            { date: '2024-01-03', agentDidCount: 0, credentialCount: 0, schemas: [], rebuiltAt: now.toISOString() },
+            { date: '2024-01-03', agentDidCount: 0, agentDidCountsByPrefix: {}, credentialCount: 0, credentialDidCountsByPrefix: {}, schemas: [], rebuiltAt: now.toISOString() },
         ]);
     });
 
@@ -385,7 +461,9 @@ describe.each(adapterFactories)('$name network metric persistence', ({ create })
         const first: NetworkMetricSnapshot = {
             date: '2026-08-01',
             agentDidCount: 1,
+            agentDidCountsByPrefix: { 'did:test': 1 },
             credentialCount: 0,
+            credentialDidCountsByPrefix: {},
             schemas: [{ schemaDid: 'did:test:schema', count: 1 }],
             rebuiltAt: '2026-08-03T00:00:00.000Z',
         };
@@ -409,7 +487,9 @@ describe('network metric database branches', () => {
     const snapshot: NetworkMetricSnapshot = {
         date: '2026-08-01',
         agentDidCount: 2,
+        agentDidCountsByPrefix: { 'did:mdip': 1, 'did:test': 1 },
         credentialCount: 1,
+        credentialDidCountsByPrefix: { 'did:test': 1 },
         schemas: [{ schemaDid: 'did:test:schema', count: 1 }],
         rebuiltAt: '2026-08-03T00:00:00.000Z',
     };
@@ -485,7 +565,13 @@ describe('network metric database branches', () => {
                     rows: [{
                         date: params[0],
                         agentDidCount: snapshot.agentDidCount,
+                        agentDidCountsByPrefix: params[0] === snapshot.date
+                            ? JSON.stringify(snapshot.agentDidCountsByPrefix)
+                            : snapshot.agentDidCountsByPrefix,
                         credentialCount: snapshot.credentialCount,
+                        credentialDidCountsByPrefix: params[0] === snapshot.date
+                            ? JSON.stringify(snapshot.credentialDidCountsByPrefix)
+                            : snapshot.credentialDidCountsByPrefix,
                         schemaCounts: params[0] === snapshot.date
                             ? JSON.stringify(snapshot.schemas)
                             : snapshot.schemas,
@@ -523,7 +609,9 @@ describe('network metric database branches', () => {
             [
                 snapshot.date,
                 snapshot.agentDidCount,
+                JSON.stringify(snapshot.agentDidCountsByPrefix),
                 snapshot.credentialCount,
+                JSON.stringify(snapshot.credentialDidCountsByPrefix),
                 JSON.stringify(snapshot.schemas),
                 snapshot.rebuiltAt,
             ]

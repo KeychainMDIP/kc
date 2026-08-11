@@ -159,7 +159,9 @@ export default class Postgres implements DIDsDb {
             CREATE TABLE IF NOT EXISTS network_metric_snapshots (
                 snapshot_date TEXT PRIMARY KEY,
                 agent_did_count INTEGER NOT NULL CHECK (agent_did_count >= 0),
+                agent_did_counts_by_prefix JSONB NOT NULL DEFAULT '{}'::jsonb,
                 credential_count INTEGER NOT NULL CHECK (credential_count >= 0),
+                credential_did_counts_by_prefix JSONB NOT NULL DEFAULT '{}'::jsonb,
                 schema_counts JSONB NOT NULL DEFAULT '[]'::jsonb,
                 rebuilt_at TEXT NOT NULL
             );
@@ -705,14 +707,18 @@ export default class Postgres implements DIDsDb {
                     `INSERT INTO network_metric_snapshots (
                         snapshot_date,
                         agent_did_count,
+                        agent_did_counts_by_prefix,
                         credential_count,
+                        credential_did_counts_by_prefix,
                         schema_counts,
                         rebuilt_at
-                    ) VALUES ($1, $2, $3, $4, $5)`,
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
                     [
                         snapshot.date,
                         snapshot.agentDidCount,
+                        JSON.stringify(snapshot.agentDidCountsByPrefix),
                         snapshot.credentialCount,
+                        JSON.stringify(snapshot.credentialDidCountsByPrefix),
                         JSON.stringify(snapshot.schemas),
                         snapshot.rebuiltAt,
                     ]
@@ -733,14 +739,18 @@ export default class Postgres implements DIDsDb {
         const result = await this.getPool().query<{
             date: string;
             agentDidCount: number;
+            agentDidCountsByPrefix: Record<string, number> | string;
             credentialCount: number;
+            credentialDidCountsByPrefix: Record<string, number> | string;
             schemaCounts: PublishedCredentialSchemaCount[] | string;
             rebuiltAt: string;
         }>(
             `SELECT
                 snapshot_date AS date,
                 agent_did_count AS "agentDidCount",
+                agent_did_counts_by_prefix AS "agentDidCountsByPrefix",
                 credential_count AS "credentialCount",
+                credential_did_counts_by_prefix AS "credentialDidCountsByPrefix",
                 schema_counts AS "schemaCounts",
                 rebuilt_at AS "rebuiltAt"
              FROM network_metric_snapshots
@@ -756,7 +766,13 @@ export default class Postgres implements DIDsDb {
         return {
             date: row.date,
             agentDidCount: row.agentDidCount,
+            agentDidCountsByPrefix: typeof row.agentDidCountsByPrefix === 'string'
+                ? JSON.parse(row.agentDidCountsByPrefix) as Record<string, number>
+                : row.agentDidCountsByPrefix,
             credentialCount: row.credentialCount,
+            credentialDidCountsByPrefix: typeof row.credentialDidCountsByPrefix === 'string'
+                ? JSON.parse(row.credentialDidCountsByPrefix) as Record<string, number>
+                : row.credentialDidCountsByPrefix,
             schemas: typeof row.schemaCounts === 'string'
                 ? JSON.parse(row.schemaCounts) as PublishedCredentialSchemaCount[]
                 : row.schemaCounts,
