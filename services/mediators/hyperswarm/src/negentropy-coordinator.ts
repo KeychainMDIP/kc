@@ -122,17 +122,16 @@ interface NegentropyCoordinatorOptions {
         type: T,
     ): Omit<HyperMessageBase, 'type'> & { type: T };
     sendToPeer(peerKey: string, message: HyperMessage): boolean;
-    waitForInitialPing(peerKey: string, connection: ConnectionInfo): Promise<boolean>;
-    getOrderedCatchupState(peerKey: string): {
-        activeSessionId: string | null;
-        globalActive: boolean;
-        peerActive: boolean;
-        transitionActive: boolean;
-    };
-    hasActiveOutboundOrderedCatchup(): boolean;
-    finishOrderedCatchupTransition(peerKey: string): void;
+    canStartBackgroundPrebuild(): boolean;
     terminatePeerConnection(peerKey: string, reason: string): void;
     onSessionClosed(peerKey: string, reason: string): void | Promise<void>;
+}
+
+interface NegOpenSchedulingState {
+    activeSessionId: string | null;
+    globalActive: boolean;
+    peerActive: boolean;
+    transitionActive: boolean;
 }
 
 function shortName(peerKey: string): string {
@@ -253,7 +252,6 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
 
         const retryOnNextPeriodic = reason === 'ordered_catchup_active';
         peerSessions.delete(peerKey);
-        options.finishOrderedCatchupTransition(peerKey);
         addAggregateSample(options.syncStats.syncDurationMs, Date.now() - session.startedAt);
         const conn = options.getConnection(peerKey);
         if (conn) {
@@ -269,9 +267,14 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             }
         }
 
-        maybeStartBackgroundPrebuild('session_closed');
-        const callback = Promise.resolve()
-            .then(() => options.onSessionClosed(peerKey, reason))
+        let callback: Promise<void>;
+        try {
+            callback = Promise.resolve(options.onSessionClosed(peerKey, reason));
+        }
+        catch (error) {
+            callback = Promise.reject(error);
+        }
+        callback = callback
             .catch(error => {
                 log.error(
                     { error, peer: shortName(peerKey), reason },
@@ -279,6 +282,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                 );
             });
         void trackWork(callback);
+        maybeStartBackgroundPrebuild('session_closed');
 
         log.debug({
             peer: shortName(peerKey),
@@ -386,7 +390,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             return;
         }
 
-        if (options.hasActiveOutboundOrderedCatchup() || peerSessions.size > 0) {
+        if (!options.canStartBackgroundPrebuild() || peerSessions.size > 0) {
             return;
         }
 
@@ -1228,19 +1232,19 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         peerKey: string,
         conn: ConnectionInfo,
         msg: NegOpenMessage,
+        schedulingState?: NegOpenSchedulingState,
     ): Promise<void> {
         let session = peerSessions.get(peerKey);
-        const orderedState = options.getOrderedCatchupState(peerKey);
         const remoteSessionId = typeof msg.sessionId === 'string' ? msg.sessionId : '';
-        const activeOrderedCatchupSessionId = orderedState.activeSessionId;
+        const activeOrderedCatchupSessionId = schedulingState?.activeSessionId ?? null;
         const conflictDecision = decideInboundNegOpenConflict({
             activeSessionMode: session ? 'negentropy' : null,
             activeSessionId: session?.sessionId ?? null,
             activeOrderedCatchupSessionId,
             remoteSessionId,
         });
-        const globalOrderedCatchupActive = orderedState.globalActive;
-        const peerOrderedCatchupActive = orderedState.peerActive;
+        const globalOrderedCatchupActive = schedulingState?.globalActive ?? false;
+        const peerOrderedCatchupActive = schedulingState?.peerActive ?? false;
 
         if (conflictDecision.action === 'ignore' || globalOrderedCatchupActive || peerOrderedCatchupActive) {
             const remoteWindowId = typeof msg.windowId === 'string' ? msg.windowId : '';
@@ -1263,7 +1267,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                     activeOrderedCatchupSessionId,
                     globalOrderedCatchupActive,
                     peerOrderedCatchupActive,
-                    postImportActive: orderedState.transitionActive,
+                    postImportActive: schedulingState?.transitionActive ?? false,
                     rejectionSent,
                 },
                 'rejecting neg_open while ordered catch-up active'
@@ -1499,12 +1503,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             return false;
         }
         const conn = options.getConnection(peerKey);
-        if (!conn || !await options.waitForInitialPing(peerKey, conn)) {
-            return false;
-        }
-
-        const orderedState = options.getOrderedCatchupState(peerKey);
-        if (orderedState.peerActive) {
+        if (!conn) {
             return false;
         }
         if (conn.negentropySynced || peerSessions.has(peerKey) || peerSessions.size > 0) {
@@ -1542,14 +1541,18 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         }
     }
 
-    async function dispatchMessage(peerKey: string, message: NegentropyMessage): Promise<void> {
+    async function dispatchMessage(
+        peerKey: string,
+        message: NegentropyMessage,
+        schedulingState?: NegOpenSchedulingState,
+    ): Promise<void> {
         if (shutdownStarted) {
             return;
         }
         if (message.type === 'neg_open') {
             const conn = options.getConnection(peerKey);
             if (conn) {
-                await handleNegOpenMessage(peerKey, conn, message);
+                await handleNegOpenMessage(peerKey, conn, message, schedulingState);
             }
             return;
         }
@@ -1656,8 +1659,12 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         ): Promise<boolean> {
             return trackWork(startSession(peerKey, settings));
         },
-        handleMessage(peerKey: string, message: NegentropyMessage): Promise<void> {
-            return trackWork(dispatchMessage(peerKey, message));
+        handleMessage(
+            peerKey: string,
+            message: NegentropyMessage,
+            schedulingState?: NegOpenSchedulingState,
+        ): Promise<void> {
+            return trackWork(dispatchMessage(peerKey, message, schedulingState));
         },
         hasActiveSession(peerKey: string): boolean {
             return peerSessions.has(peerKey);

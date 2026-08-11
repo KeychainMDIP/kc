@@ -82,15 +82,7 @@ describe('Negentropy coordinator', () => {
                 relays: [],
             }),
             sendToPeer: () => true,
-            waitForInitialPing: async () => true,
-            getOrderedCatchupState: () => ({
-                activeSessionId: null,
-                globalActive: false,
-                peerActive: false,
-                transitionActive: false,
-            }),
-            hasActiveOutboundOrderedCatchup: () => false,
-            finishOrderedCatchupTransition: () => undefined,
+            canStartBackgroundPrebuild: () => true,
             terminatePeerConnection: () => undefined,
             onSessionClosed,
         });
