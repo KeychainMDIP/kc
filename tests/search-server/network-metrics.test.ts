@@ -187,7 +187,7 @@ describe('network metric snapshot builder', () => {
 
     it('groups cumulative agent and credential totals by DID prefix', async () => {
         const testHolder = 'did:test:holder';
-        const mdipHolder = 'did:mdip:holder';
+        const mdipHolder = 'did:mdip:mdip-holder';
         const histories = [
             createAgentHistory(testHolder, '2026-08-01T00:00:00.000Z', [
                 manifestUpdate(testHolder, 'did:test:test-credential'),
@@ -213,6 +213,47 @@ describe('network metric snapshot builder', () => {
             credentialCount: 2,
             credentialDidCountsByPrefix: { 'did:mdip': 1, 'did:test': 1 },
         });
+    });
+
+    it('deduplicates agent aliases and selects one observed prefix per CID', async () => {
+        const observedDid = 'did:test:observed';
+        const observed = createAgentHistory(observedDid, '2026-08-01T00:00:00.000Z', [
+            createEvent('did:mdip:observed', {
+                type: 'update',
+                did: 'did:mdip:observed',
+            }),
+        ]);
+        const explicit = createAgentHistory('did:test:explicit', '2026-08-01T00:00:00.000Z', [
+            createEvent('did:test:explicit', {
+                type: 'update',
+                did: 'did:test:explicit',
+            }),
+        ]);
+        explicit.events[0].operation.mdip!.prefix = 'did:mdip';
+        const conflicting = createAgentHistory('did:test:conflicting', '2026-08-01T00:00:00.000Z', [
+            createEvent('did:test:conflicting', {
+                type: 'update',
+                did: 'did:test:conflicting',
+            }),
+            createEvent('did:mdip:conflicting', {
+                type: 'update',
+                did: 'did:mdip:conflicting',
+            }),
+        ]);
+
+        const result = await buildNetworkMetricSnapshots([
+            observed,
+            { did: 'did:mdip:observed', events: observed.events },
+            createAgentHistory('did:test:unchanged', '2026-08-01T00:00:00.000Z'),
+            explicit,
+            conflicting,
+        ], new Date('2026-08-01T12:00:00.000Z'));
+
+        expect(result.snapshots.at(-1)).toMatchObject({
+            agentDidCount: 4,
+            agentDidCountsByPrefix: { 'did:mdip': 2, 'did:test': 2 },
+        });
+        expect(result.agentsWithConflictingPrefixes).toBe(1);
     });
 
     it('deduplicates credential prefix aliases and matches their asset anchor by suffix', async () => {

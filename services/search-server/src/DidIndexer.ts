@@ -338,6 +338,7 @@ export default class DidIndexer {
             await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.metricsLastError, null);
             this.log.info({
                 snapshots: result.snapshots.length,
+                agentsWithConflictingPrefixes: result.agentsWithConflictingPrefixes,
                 invalidCreatedTimes: result.invalidCreatedTimes,
                 futureCreatedOperations: result.futureCreatedOperations,
                 credentialsDatedByOperationCreated: result.credentialsDatedByOperationCreated,
