@@ -10,6 +10,7 @@ export const NETWORK_METRICS_EPOCH = '2024-01-01';
 
 export interface NetworkMetricsBuildResult {
     snapshots: NetworkMetricSnapshot[];
+    agentsWithConflictingPrefixes: number;
     invalidCreatedTimes: number;
     futureCreatedOperations: number;
     credentialsDatedByOperationCreated: number;
@@ -23,6 +24,13 @@ interface CredentialEvidence {
     credentialDid: string;
     schemas: Set<string>;
     validFrom: Set<string>;
+}
+
+interface AgentEvidence {
+    created: ReturnType<typeof creationDay>;
+    createPrefix?: string;
+    fallbackPrefix: string;
+    referencedPrefixes: Set<string>;
 }
 
 function utcDay(date: Date): string {
@@ -86,10 +94,10 @@ function didSuffix(did: string): string {
 function incrementPrefix(
     deltas: Map<string, Map<string, number>>,
     day: string,
-    did: string
+    prefix: string
 ): void {
     const dayDeltas = deltas.get(day) ?? new Map<string, number>();
-    increment(dayDeltas, didPrefix(did));
+    increment(dayDeltas, prefix);
     deltas.set(day, dayDeltas);
 }
 
@@ -150,8 +158,10 @@ export async function buildNetworkMetricSnapshots(
     const credentialPrefixDeltas = new Map<string, Map<string, number>>();
     const schemaDeltas = new Map<string, Map<string, number>>();
     const schemaDids = new Map<string, string>();
+    const agents = new Map<string, AgentEvidence>();
     const assetCreationDays = new Map<string, ReturnType<typeof creationDay>>();
     const credentials = new Map<string, CredentialEvidence>();
+    let agentsWithConflictingPrefixes = 0;
     let invalidCreatedTimes = 0;
     let futureCreatedOperations = 0;
     let credentialsDatedByOperationCreated = 0;
@@ -171,18 +181,20 @@ export async function buildNetworkMetricSnapshots(
             continue;
         }
 
-        const created = creationDay(anchor, today);
-        if (created.day) {
-            incrementPrefix(agentPrefixDeltas, created.day, history.did);
-        }
-        else if (created.future) {
-            futureCreatedOperations += 1;
-        }
-        else {
-            invalidCreatedTimes += 1;
-        }
+        const agentKey = didSuffix(history.did);
+        const foundAgent = agents.get(agentKey) ?? {
+            created: creationDay(anchor, today),
+            createPrefix: anchor.mdip.prefix,
+            fallbackPrefix: didPrefix(history.events[0]?.did ?? history.did),
+            referencedPrefixes: new Set<string>(),
+        };
+        foundAgent.createPrefix ??= anchor.mdip.prefix;
 
         for (const event of history.events) {
+            if ((event.operation.type === 'update' || event.operation.type === 'delete') &&
+                typeof event.operation.did === 'string') {
+                foundAgent.referencedPrefixes.add(didPrefix(event.operation.did));
+            }
             const doc = event.operation.type === 'update' ? event.operation.doc : undefined;
             if (!doc) {
                 continue;
@@ -207,6 +219,28 @@ export async function buildNetworkMetricSnapshots(
                 credentials.set(credentialKey, found);
             }
         }
+        agents.set(agentKey, foundAgent);
+    }
+
+    for (const evidence of agents.values()) {
+        const { created } = evidence;
+        if (created.future) {
+            futureCreatedOperations += 1;
+            continue;
+        }
+        if (!created.day) {
+            invalidCreatedTimes += 1;
+            continue;
+        }
+
+        let prefix = evidence.createPrefix ?? evidence.fallbackPrefix;
+        if (evidence.referencedPrefixes.size === 1 && !evidence.createPrefix) {
+            prefix = evidence.referencedPrefixes.values().next().value as string;
+        }
+        else if (evidence.referencedPrefixes.size > 1) {
+            agentsWithConflictingPrefixes += 1;
+        }
+        incrementPrefix(agentPrefixDeltas, created.day, prefix);
     }
 
     for (const [credentialKey, evidence] of credentials) {
@@ -254,7 +288,7 @@ export async function buildNetworkMetricSnapshots(
             }
         }
 
-        incrementPrefix(credentialPrefixDeltas, day, evidence.credentialDid);
+        incrementPrefix(credentialPrefixDeltas, day, didPrefix(evidence.credentialDid));
         incrementSchema(schemaDeltas, day, schemaKey);
     }
 
@@ -289,6 +323,7 @@ export async function buildNetworkMetricSnapshots(
 
     return {
         snapshots,
+        agentsWithConflictingPrefixes,
         invalidCreatedTimes,
         futureCreatedOperations,
         credentialsDatedByOperationCreated,

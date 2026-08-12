@@ -192,12 +192,12 @@ export async function buildIndexChangesResponse(
         }
     }
 
-    const dids: IndexExportDIDRecord[] = [];
+    const dids = new Map<string, IndexExportDIDRecord>();
     const eventsByDid = new Map<string, GatekeeperEvent[]>();
 
     for (const [did, change] of didChanges.entries()) {
         if (change.removed) {
-            dids.push({
+            dids.set(did, {
                 did,
                 events: [],
                 removed: true,
@@ -207,7 +207,9 @@ export async function buildIndexChangesResponse(
 
         const events = eventsByDid.get(did) ?? await getEvents(did);
         eventsByDid.set(did, events);
-        dids.push({ did, events });
+        const canonicalDid = getDidFromEvents(did, events);
+        dids.delete(canonicalDid);
+        dids.set(canonicalDid, { did: canonicalDid, events });
     }
 
     const blocks = Array.from(blockChanges.values())
@@ -224,7 +226,7 @@ export async function buildIndexChangesResponse(
         cursor,
         checkpointCursor,
         hasMore,
-        dids,
+        dids: Array.from(dids.values()),
         blocks,
     };
 
