@@ -137,7 +137,9 @@ export default class Sqlite implements DIDsDb {
             CREATE TABLE IF NOT EXISTS network_metric_snapshots (
                 snapshot_date TEXT PRIMARY KEY,
                 agent_did_count INTEGER NOT NULL CHECK (agent_did_count >= 0),
+                agent_did_counts_by_prefix TEXT NOT NULL DEFAULT '{}',
                 credential_count INTEGER NOT NULL CHECK (credential_count >= 0),
+                credential_did_counts_by_prefix TEXT NOT NULL DEFAULT '{}',
                 schema_counts TEXT NOT NULL DEFAULT '[]',
                 rebuilt_at TEXT NOT NULL
             );
@@ -704,14 +706,18 @@ export default class Sqlite implements DIDsDb {
                     `INSERT INTO network_metric_snapshots (
                         snapshot_date,
                         agent_did_count,
+                        agent_did_counts_by_prefix,
                         credential_count,
+                        credential_did_counts_by_prefix,
                         schema_counts,
                         rebuilt_at
-                    ) VALUES (?, ?, ?, ?, ?)`,
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
                     [
                         snapshot.date,
                         snapshot.agentDidCount,
+                        JSON.stringify(snapshot.agentDidCountsByPrefix),
                         snapshot.credentialCount,
+                        JSON.stringify(snapshot.credentialDidCountsByPrefix),
                         JSON.stringify(snapshot.schemas),
                         snapshot.rebuiltAt,
                     ]
@@ -733,14 +739,18 @@ export default class Sqlite implements DIDsDb {
         const row = await this.db.get<{
             date: string;
             agentDidCount: number | string;
+            agentDidCountsByPrefix: string;
             credentialCount: number | string;
+            credentialDidCountsByPrefix: string;
             schemaCounts: string;
             rebuiltAt: string;
         }>(
             `SELECT
                 snapshot_date AS date,
                 agent_did_count AS agentDidCount,
+                agent_did_counts_by_prefix AS agentDidCountsByPrefix,
                 credential_count AS credentialCount,
+                credential_did_counts_by_prefix AS credentialDidCountsByPrefix,
                 schema_counts AS schemaCounts,
                 rebuilt_at AS rebuiltAt
              FROM network_metric_snapshots
@@ -751,7 +761,9 @@ export default class Sqlite implements DIDsDb {
         return row ? {
             date: row.date,
             agentDidCount: Number(row.agentDidCount),
+            agentDidCountsByPrefix: JSON.parse(row.agentDidCountsByPrefix) as Record<string, number>,
             credentialCount: Number(row.credentialCount),
+            credentialDidCountsByPrefix: JSON.parse(row.credentialDidCountsByPrefix) as Record<string, number>,
             schemas: JSON.parse(row.schemaCounts) as PublishedCredentialSchemaCount[],
             rebuiltAt: row.rebuiltAt,
         } : null;

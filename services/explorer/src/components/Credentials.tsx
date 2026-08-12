@@ -23,8 +23,8 @@ import {
 } from "../config.js";
 import {
     fetchDIDDocument,
-    fetchNetworkMetricSnapshot,
     fetchPublishedCredentials,
+    fetchPublishedSchemaMetrics,
     type PublishedCredentialRow,
     type PublishedSchemaMetric,
 } from "../api/searchClient.js";
@@ -363,11 +363,11 @@ function Credentials() {
             setSchemaMetricsMessage("Loading credential metrics...");
 
             try {
-                const snapshot = await fetchNetworkMetricSnapshot(selectedDate);
+                const schemas = await fetchPublishedSchemaMetrics(selectedDate);
 
                 if (!ignore) {
-                    setSchemaCounts(snapshot?.schemas ?? []);
-                    setSchemaMetricsMessage(snapshot ? "" : "No network snapshot exists for this date.");
+                    setSchemaCounts(schemas ?? []);
+                    setSchemaMetricsMessage(schemas ? "" : "No network snapshot exists for this date.");
                 }
             }
             catch (error: any) {

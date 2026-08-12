@@ -58,11 +58,10 @@ export interface PublishedSchemaMetric {
 }
 
 export interface NetworkMetricSnapshot {
-    date: string;
     agentDidCount: number;
+    agentDidCountsByPrefix: Record<string, number>;
     credentialCount: number;
-    schemas: PublishedSchemaMetric[];
-    rebuiltAt: string;
+    credentialDidCountsByPrefix: Record<string, number>;
 }
 
 export interface PublishedCredentialRow {
@@ -144,6 +143,16 @@ export interface ChallengeReceiptUsageResult {
 function toNumber(value: unknown, fallback = 0): number {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function mapPrefixCounts(value: unknown): Record<string, number> {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return {};
+    }
+
+    return Object.fromEntries(
+        Object.entries(value).map(([prefix, count]) => [prefix, toNumber(count)])
+    );
 }
 
 function mapPublishedCredentialRow(row: any): PublishedCredentialRow {
@@ -238,30 +247,38 @@ export async function searchDIDDocuments(query: string): Promise<string[]> {
     return response.data as string[];
 }
 
-export async function fetchPublishedSchemaMetrics(): Promise<PublishedSchemaMetric[]> {
-    const response = await axios.get(`${apiBaseUrl}/metrics/schemas/published`);
+export async function fetchPublishedSchemaMetrics(date?: string): Promise<PublishedSchemaMetric[] | null> {
+    try {
+        const path = date
+            ? `/metrics/snapshots/schemas/${encodeURIComponent(date)}`
+            : "/metrics/schemas/published";
+        const response = await axios.get(`${apiBaseUrl}${path}`);
 
-    return (response.data.schemas ?? []).map((row: any) => ({
-        schemaDid: row.schemaDid,
-        count: toNumber(row.count),
-    }));
+        return (response.data.schemas ?? []).map((row: any) => ({
+            schemaDid: row.schemaDid,
+            count: toNumber(row.count),
+        }));
+    }
+    catch (error: any) {
+        if (error?.response?.status === 404) {
+            return null;
+        }
+
+        throw error;
+    }
 }
 
 export async function fetchNetworkMetricSnapshot(date: string): Promise<NetworkMetricSnapshot | null> {
     try {
         const response = await axios.get(
-            `${apiBaseUrl}/metrics/network/snapshots/${encodeURIComponent(date)}`
+            `${apiBaseUrl}/metrics/snapshots/credentials/${encodeURIComponent(date)}`
         );
 
         return {
-            date: response.data.date,
             agentDidCount: toNumber(response.data.agentDidCount),
+            agentDidCountsByPrefix: mapPrefixCounts(response.data.agentDidCountsByPrefix),
             credentialCount: toNumber(response.data.credentialCount),
-            schemas: (response.data.schemas ?? []).map((row: any) => ({
-                schemaDid: row.schemaDid,
-                count: toNumber(row.count),
-            })),
-            rebuiltAt: response.data.rebuiltAt,
+            credentialDidCountsByPrefix: mapPrefixCounts(response.data.credentialDidCountsByPrefix),
         };
     }
     catch (error: any) {

@@ -20,6 +20,7 @@ export interface NetworkMetricsBuildResult {
 }
 
 interface CredentialEvidence {
+    credentialDid: string;
     schemas: Set<string>;
     validFrom: Set<string>;
 }
@@ -74,6 +75,32 @@ function increment(counts: Map<string, number>, key: string): void {
     counts.set(key, (counts.get(key) ?? 0) + 1);
 }
 
+function didPrefix(did: string): string {
+    return did.split(':', 2).join(':');
+}
+
+function didSuffix(did: string): string {
+    return did.split(':').pop()!;
+}
+
+function incrementPrefix(
+    deltas: Map<string, Map<string, number>>,
+    day: string,
+    did: string
+): void {
+    const dayDeltas = deltas.get(day) ?? new Map<string, number>();
+    increment(dayDeltas, didPrefix(did));
+    deltas.set(day, dayDeltas);
+}
+
+function sortedPrefixCounts(counts: Map<string, number>): Record<string, number> {
+    return Object.fromEntries(Array.from(counts).sort(([a], [b]) => a.localeCompare(b)));
+}
+
+function totalPrefixCounts(counts: Map<string, number>): number {
+    return Array.from(counts.values()).reduce((total, count) => total + count, 0);
+}
+
 function incrementSchema(
     deltas: Map<string, Map<string, number>>,
     day: string,
@@ -90,8 +117,14 @@ function nextDay(day: string): string {
     return utcDay(date);
 }
 
-function sortedSchemaCounts(counts: Map<string, number>): PublishedCredentialSchemaCount[] {
-    return Array.from(counts, ([schemaDid, count]) => ({ schemaDid, count }))
+function sortedSchemaCounts(
+    counts: Map<string, number>,
+    schemaDids: Map<string, string>
+): PublishedCredentialSchemaCount[] {
+    return Array.from(counts, ([schemaKey, count]) => ({
+        schemaDid: schemaDids.get(schemaKey) as string,
+        count,
+    }))
         .sort((a, b) => b.count - a.count || a.schemaDid.localeCompare(b.schemaDid));
 }
 
@@ -113,9 +146,10 @@ export async function buildNetworkMetricSnapshots(
     now: Date = new Date()
 ): Promise<NetworkMetricsBuildResult> {
     const today = utcDay(now);
-    const agentDeltas = new Map<string, number>();
-    const credentialDeltas = new Map<string, number>();
+    const agentPrefixDeltas = new Map<string, Map<string, number>>();
+    const credentialPrefixDeltas = new Map<string, Map<string, number>>();
     const schemaDeltas = new Map<string, Map<string, number>>();
+    const schemaDids = new Map<string, string>();
     const assetCreationDays = new Map<string, ReturnType<typeof creationDay>>();
     const credentials = new Map<string, CredentialEvidence>();
     let invalidCreatedTimes = 0;
@@ -130,7 +164,7 @@ export async function buildNetworkMetricSnapshots(
         const anchor = history.events[0]?.operation;
 
         if (anchor?.type === 'create' && anchor.mdip?.type === 'asset') {
-            assetCreationDays.set(history.did, creationDay(anchor, today));
+            assetCreationDays.set(didSuffix(history.did), creationDay(anchor, today));
         }
 
         if (anchor?.type !== 'create' || anchor.mdip?.type !== 'agent') {
@@ -139,7 +173,7 @@ export async function buildNetworkMetricSnapshots(
 
         const created = creationDay(anchor, today);
         if (created.day) {
-            increment(agentDeltas, created.day);
+            incrementPrefix(agentPrefixDeltas, created.day, history.did);
         }
         else if (created.future) {
             futureCreatedOperations += 1;
@@ -156,27 +190,33 @@ export async function buildNetworkMetricSnapshots(
 
             for (const evidence of extractPublishedCredentialEvidence(history.did, doc)) {
                 const { credential, validFrom } = evidence;
-                const found = credentials.get(credential.credentialDid) ?? {
+                const credentialKey = didSuffix(credential.credentialDid);
+                const found = credentials.get(credentialKey) ?? {
+                    credentialDid: credential.credentialDid,
                     schemas: new Set<string>(),
                     validFrom: new Set<string>(),
                 };
-                found.schemas.add(credential.schemaDid);
+                const schemaKey = didSuffix(credential.schemaDid);
+                found.schemas.add(schemaKey);
+                if (!schemaDids.has(schemaKey)) {
+                    schemaDids.set(schemaKey, credential.schemaDid);
+                }
                 if (validFrom) {
                     found.validFrom.add(validFrom);
                 }
-                credentials.set(credential.credentialDid, found);
+                credentials.set(credentialKey, found);
             }
         }
     }
 
-    for (const [credentialDid, evidence] of credentials) {
+    for (const [credentialKey, evidence] of credentials) {
         if (evidence.schemas.size !== 1) {
             credentialsWithConflictingSchemas += 1;
             continue;
         }
 
-        const schemaDid = evidence.schemas.values().next().value as string;
-        const created = assetCreationDays.get(credentialDid);
+        const schemaKey = evidence.schemas.values().next().value as string;
+        const created = assetCreationDays.get(credentialKey);
         let day: string | undefined;
 
         if (created) {
@@ -214,29 +254,35 @@ export async function buildNetworkMetricSnapshots(
             }
         }
 
-        increment(credentialDeltas, day);
-        incrementSchema(schemaDeltas, day, schemaDid);
+        incrementPrefix(credentialPrefixDeltas, day, evidence.credentialDid);
+        incrementSchema(schemaDeltas, day, schemaKey);
     }
 
-    const deltaDays = [...agentDeltas.keys(), ...credentialDeltas.keys()];
+    const deltaDays = [...agentPrefixDeltas.keys(), ...credentialPrefixDeltas.keys()];
     const firstDay = deltaDays.sort()[0] ?? today;
     const rebuiltAt = now.toISOString();
     const snapshots: NetworkMetricSnapshot[] = [];
+    const agentDidCountsByPrefix = new Map<string, number>();
+    const credentialDidCountsByPrefix = new Map<string, number>();
     const schemaCounts = new Map<string, number>();
-    let agentDidCount = 0;
-    let credentialCount = 0;
 
     for (let day = firstDay; day <= today; day = nextDay(day)) {
-        agentDidCount += agentDeltas.get(day) ?? 0;
-        credentialCount += credentialDeltas.get(day) ?? 0;
+        for (const [prefix, count] of agentPrefixDeltas.get(day) ?? []) {
+            agentDidCountsByPrefix.set(prefix, (agentDidCountsByPrefix.get(prefix) ?? 0) + count);
+        }
+        for (const [prefix, count] of credentialPrefixDeltas.get(day) ?? []) {
+            credentialDidCountsByPrefix.set(prefix, (credentialDidCountsByPrefix.get(prefix) ?? 0) + count);
+        }
         for (const [schemaDid, count] of schemaDeltas.get(day) ?? []) {
             schemaCounts.set(schemaDid, (schemaCounts.get(schemaDid) ?? 0) + count);
         }
         snapshots.push({
             date: day,
-            agentDidCount,
-            credentialCount,
-            schemas: sortedSchemaCounts(schemaCounts),
+            agentDidCount: totalPrefixCounts(agentDidCountsByPrefix),
+            agentDidCountsByPrefix: sortedPrefixCounts(agentDidCountsByPrefix),
+            credentialCount: totalPrefixCounts(credentialDidCountsByPrefix),
+            credentialDidCountsByPrefix: sortedPrefixCounts(credentialDidCountsByPrefix),
+            schemas: sortedSchemaCounts(schemaCounts, schemaDids),
             rebuiltAt,
         });
     }
