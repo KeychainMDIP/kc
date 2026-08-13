@@ -46,7 +46,8 @@ const keymaster = new Keymaster({
     gatekeeper,
     wallet,
     cipher,
-    passphrase
+    passphrase,
+    didPrefix: 'did:test'
 });
 
 const newId = await keymaster.createId('Bob');
@@ -80,7 +81,8 @@ const keymaster = new Keymaster({
     gatekeeper,
     wallet,
     cipher,
-    passphrase
+    passphrase,
+    didPrefix: 'did:test'
 });
 
 const newId = await keymaster.createId('Bob');

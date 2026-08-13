@@ -6350,7 +6350,8 @@ const server = app.listen(port, async () => {
     const wallet = await initWallet();
     const cipher = new CipherNode();
     const defaultRegistry = config.defaultRegistry;
-    keymaster = new Keymaster({ gatekeeper, wallet, cipher, search, defaultRegistry, passphrase: config.keymasterPassphrase });
+    const didPrefix = config.didPrefix;
+    keymaster = new Keymaster({ gatekeeper, wallet, cipher, search, defaultRegistry, didPrefix, passphrase: config.keymasterPassphrase });
     log.info(`Keymaster server running on port ${port}`);
     log.info(`Keymaster server persisting to ${config.db}`);
 
