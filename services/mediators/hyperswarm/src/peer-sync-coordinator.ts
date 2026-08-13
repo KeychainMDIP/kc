@@ -13,6 +13,7 @@ import {
 import {
     buildOrderedCatchupCapabilities,
     chooseConnectSyncMode,
+    normalizePeerCapabilities,
     supportsPeerNegentropy,
     type ConnectSyncModeReason,
     type PeerCapabilities,
@@ -28,6 +29,7 @@ import type {
 } from './ordered-catchup-coordinator.js';
 import type {
     HyperMessage,
+    PingMessage,
 } from './protocol-messages.js';
 import type { MediatorSyncStats } from './sync-stats.js';
 
@@ -52,6 +54,7 @@ interface PeerSyncCoordinatorOptions {
     getNegentropyCoordinator(): NegentropyCoordinator;
     getOrderedCatchupCoordinator(): OrderedCatchupCoordinator;
     waitForInitialPing(peerKey: string, connection: ConnectionInfo): Promise<boolean>;
+    onPeersAdvertised(dids: string[]): void;
 }
 
 function shortName(peerKey: string): string {
@@ -452,6 +455,53 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
         await options.getNegentropyCoordinator().handleMessage(peerKey, message);
     }
 
+    async function handlePing(
+        peerKey: string,
+        message: PingMessage,
+        expectedConnection: ConnectionInfo,
+    ): Promise<void> {
+        const conn = options.getConnection(peerKey);
+        if (conn !== expectedConnection) {
+            return;
+        }
+
+        conn.capabilities = normalizePeerCapabilities(message.capabilities);
+        log.info(
+            {
+                ...buildCompatibilityContext(peerKey, conn),
+                rawCapabilities: message.capabilities ?? null,
+            },
+            'peer capabilities received',
+        );
+        if (Array.isArray(message.peers)) {
+            options.onPeersAdvertised(message.peers);
+        }
+
+        if (options.getConnection(peerKey) === conn) {
+            await maybeStartPeerSync(peerKey, 'connect');
+            await schedulePreferredSyncs();
+        }
+    }
+
+    function handleDisconnected(peerKey: string, reason: string): void {
+        options.getOrderedCatchupCoordinator().removePeer(peerKey, reason);
+        options.getNegentropyCoordinator().removePeer(peerKey, reason);
+    }
+
+    function handleQuarantined(
+        peerKey: string,
+        reason: string,
+        expectedConnection: ConnectionInfo,
+    ): void {
+        if (options.getConnection(peerKey) !== expectedConnection) {
+            return;
+        }
+        expectedConnection.syncMode = 'unknown';
+        expectedConnection.syncStarted = false;
+        expectedConnection.negentropySynced = false;
+        handleDisconnected(peerKey, reason);
+    }
+
     function resetConnection(conn: ConnectionInfo): void {
         conn.syncMode = 'unknown';
         conn.syncStarted = false;
@@ -500,6 +550,21 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
         await schedulePreferredSyncs();
     }
 
+    async function handleIndexRefreshed(source: string, sync: BootstrapResult): Promise<void> {
+        if (sync.resetReason) {
+            resetAfterGatekeeperReset(sync);
+        }
+        await options.getNegentropyCoordinator().handleIndexRefreshed(source, sync);
+        if (!accepting) {
+            return;
+        }
+
+        log.debug({ source, sync }, 'gatekeeper index sync complete');
+        if (sync.resetReason) {
+            await restartAfterGatekeeperReset();
+        }
+    }
+
     function tracked<T>(work: () => Promise<T>, fallback: T): Promise<T> {
         if (!accepting) {
             return Promise.resolve(fallback);
@@ -532,12 +597,6 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
         maybeStartPeerSync(peerKey: string, source: SyncSource = 'connect'): Promise<void> {
             return tracked(() => maybeStartPeerSync(peerKey, source), undefined);
         },
-        onPeerCapabilities(peerKey: string): Promise<void> {
-            return tracked(async () => {
-                await maybeStartPeerSync(peerKey, 'connect');
-                await schedulePreferredSyncs();
-            }, undefined);
-        },
         schedulePreferredSyncs(): Promise<void> {
             return tracked(schedulePreferredSyncs, undefined);
         },
@@ -546,6 +605,14 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
         },
         handleMessage(peerKey: string, message: HyperMessage): Promise<void> {
             return tracked(() => handleMessage(peerKey, message), undefined);
+        },
+        handlePing(peerKey: string, message: PingMessage, connection: ConnectionInfo): Promise<void> {
+            return tracked(() => handlePing(peerKey, message, connection), undefined);
+        },
+        handleDisconnected,
+        handleQuarantined,
+        handleIndexRefreshed(source: string, sync: BootstrapResult): Promise<void> {
+            return tracked(() => handleIndexRefreshed(source, sync), undefined);
         },
         handleOrderedCatchupComplete(outcome: OrderedCatchupOutcome): Promise<boolean> {
             return tracked(() => handleOrderedCatchupComplete(outcome), false);
@@ -558,10 +625,6 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
         },
         canStartBackgroundPrebuild(): boolean {
             return accepting && !options.getOrderedCatchupCoordinator().hasActiveOutbound();
-        },
-        resetAfterGatekeeperReset,
-        restartAfterGatekeeperReset(): Promise<void> {
-            return tracked(restartAfterGatekeeperReset, undefined);
         },
         reset(): void {
             outboundStartInProgress = false;

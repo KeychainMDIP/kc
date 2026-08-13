@@ -45,6 +45,8 @@ const config = {
         '^\\.\\/ordered-catchup-coordinator\\.js$': '<rootDir>/services/mediators/hyperswarm/src/ordered-catchup-coordinator.ts',
         '^\\.\\/negentropy-coordinator\\.js$': '<rootDir>/services/mediators/hyperswarm/src/negentropy-coordinator.ts',
         '^\\.\\/peer-sync-coordinator\\.js$': '<rootDir>/services/mediators/hyperswarm/src/peer-sync-coordinator.ts',
+        '^\\.\\/peer-directory\\.js$': '<rootDir>/services/mediators/hyperswarm/src/peer-directory.ts',
+        '^\\.\\/queue-coordinator\\.js$': '<rootDir>/services/mediators/hyperswarm/src/queue-coordinator.ts',
         '^\\.\\/hyperswarm-transport\\.js$': '<rootDir>/services/mediators/hyperswarm/src/hyperswarm-transport.ts',
         '^\\.\\/protocol-messages\\.js$': '<rootDir>/services/mediators/hyperswarm/src/protocol-messages.ts',
         '^\\.\\/transport-framing\\.js$': '<rootDir>/services/mediators/hyperswarm/src/transport-framing.ts',

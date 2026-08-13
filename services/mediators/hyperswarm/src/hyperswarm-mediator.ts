@@ -7,7 +7,6 @@ import { EventEmitter } from 'events';
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import KeymasterClient from '@mdip/keymaster/client';
 import KuboClient from '@mdip/ipfs/kubo';
-import { Operation } from '@mdip/gatekeeper/types';
 import CipherNode from '@mdip/cipher/node';
 import { childLogger } from '@mdip/common/logger';
 import config from './config.js';
@@ -15,14 +14,6 @@ import type { OperationSyncStore } from './db/types.js';
 import SqliteOperationSyncStore from './db/sqlite.js';
 import PostgresOperationSyncStore from './db/postgres.js';
 import NegentropyAdapter from './negentropy/adapter.js';
-import {
-    normalizePeerCapabilities,
-} from './negentropy/protocol.js';
-import {
-    addAggregateSample,
-    collectQueueDelaySamples,
-} from './negentropy/observability.js';
-import type { BootstrapResult } from './bootstrap.js';
 import {
     createImportPipeline,
     TERMINAL_REJECTED_SYNC_ORDER,
@@ -32,13 +23,13 @@ import { createOrderedCatchupCoordinator } from './ordered-catchup-coordinator.j
 import { createNegentropyCoordinator } from './negentropy-coordinator.js';
 import { createPeerSyncCoordinator } from './peer-sync-coordinator.js';
 import { createHyperswarmTransport } from './hyperswarm-transport.js';
+import { createPeerDirectory } from './peer-directory.js';
+import { createQueueCoordinator } from './queue-coordinator.js';
 import type {
     HyperMessage,
     HyperMessageBase,
     OrderedCatchupReqMessage,
     PingMessage,
-    QueueMessage,
-    SyncMessage,
 } from './protocol-messages.js';
 import {
     createConnectionInfo,
@@ -72,7 +63,6 @@ function createConfiguredSyncStore(): OperationSyncStore {
 }
 
 let syncStore: OperationSyncStore = createConfiguredSyncStore();
-let shutdownStarted = false;
 
 EventEmitter.defaultMaxListeners = 100;
 
@@ -87,11 +77,15 @@ const NEG_MAX_OPS_PER_PUSH = 300;
 const NEG_MAX_BYTES_PER_PUSH = 512 * 1024;
 const NEG_REPAIR_INTERVAL_MS = config.negentropyIntervalSeconds * 1000;
 const NEG_ADAPTER_MAX_AGE_MS = 60 * 1000;
-const knownNodes: Record<string, NodeInfo> = {};
-const knownPeers: Record<string, string> = {};
-const addedPeers: Record<string, number> = {};
-const badPeers: Record<string, number> = {};
 const syncStats = createMediatorSyncStats();
+let nodeKey = '';
+let nodeInfo: NodeInfo;
+const peerDirectory = createPeerDirectory({
+    enabled: config.ipfsEnabled,
+    keymaster,
+    ipfs,
+    getLocalIpfsId: () => nodeInfo?.ipfs?.id ?? null,
+});
 let negentropyCoordinator: ReturnType<typeof createNegentropyCoordinator>;
 let peerSyncCoordinator: ReturnType<typeof createPeerSyncCoordinator>;
 let transport: ReturnType<typeof createHyperswarmTransport>;
@@ -126,7 +120,7 @@ function buildOrderedCatchupCoordinator(
         createSessionId,
         createBaseMessage,
         sendToPeer: (peerKey, message) => transport.sendToPeer(peerKey, message),
-        onIndexRefreshed: handleGatekeeperIndexSyncResult,
+        onIndexRefreshed: (source, sync) => peerSyncCoordinator.handleIndexRefreshed(source, sync),
         onComplete: outcome => peerSyncCoordinator.handleOrderedCatchupComplete(outcome),
         onHandoffDeferred: () => peerSyncCoordinator.schedulePreferredSyncs(),
         onFailure: () => peerSyncCoordinator.handleOrderedCatchupFailure(),
@@ -180,26 +174,29 @@ peerSyncCoordinator = createPeerSyncCoordinator({
     getNegentropyCoordinator: () => negentropyCoordinator,
     getOrderedCatchupCoordinator: () => orderedCatchupCoordinator,
     waitForInitialPing: (peerKey, connection) => transport.waitForInitialPing(peerKey, connection),
+    onPeersAdvertised: dids => peerDirectory.addPeers(dids),
+});
+
+const queueCoordinator = createQueueCoordinator({
+    registry: REGISTRY,
+    gatekeeper,
+    cipher,
+    syncStats,
+    getImportPipeline: () => importPipeline,
+    getNodeKey: () => nodeKey,
+    createQueueMessage: () => createBaseMessage('queue'),
+    relay: message => transport.relay(message),
 });
 
 transport = createHyperswarmTransport({
     framingVersion: TRANSPORT_FRAMING_VERSION,
     syncStats,
     buildInitialPing: buildPingMessage,
-    onPing: handlePingMessage,
-    onQueue: handleQueueMessage,
-    onSyncMessage: handleSyncMessage,
-    onDisconnected(peerKey, reason) {
-        orderedCatchupCoordinator.removePeer(peerKey, reason);
-        negentropyCoordinator.removePeer(peerKey, reason);
-    },
-    onQuarantined(peerKey, reason, connection) {
-        connection.syncMode = 'unknown';
-        connection.syncStarted = false;
-        connection.negentropySynced = false;
-        orderedCatchupCoordinator.removePeer(peerKey, reason);
-        negentropyCoordinator.removePeer(peerKey, reason);
-    },
+    onPing: (peerKey, message, connection) => peerSyncCoordinator.handlePing(peerKey, message, connection),
+    onQueue: (peerKey, message) => queueCoordinator.handleMessage(peerKey, message),
+    onSyncMessage: (peerKey, message) => peerSyncCoordinator.handleMessage(peerKey, message),
+    onDisconnected: (peerKey, reason) => peerSyncCoordinator.handleDisconnected(peerKey, reason),
+    onQuarantined: (peerKey, reason, connection) => peerSyncCoordinator.handleQuarantined(peerKey, reason, connection),
 });
 
 function replaceSyncStore(store: OperationSyncStore): void {
@@ -215,11 +212,8 @@ function replaceSyncStore(store: OperationSyncStore): void {
 }
 
 let swarm: Hyperswarm | null = null;
-let nodeKey = '';
-let nodeInfo: NodeInfo;
 
 goodbye(async () => {
-    shutdownStarted = true;
     const peerSyncShutdown = peerSyncCoordinator.shutdown();
     const negentropyShutdown = negentropyCoordinator.shutdown();
     const orderedCatchupShutdown = orderedCatchupCoordinator.shutdown();
@@ -280,20 +274,9 @@ async function buildPingMessage(): Promise<PingMessage> {
 
     return {
         ...createBaseMessage('ping'),
-        peers: Object.keys(knownNodes),
+        peers: peerDirectory.getKnownDids(),
         capabilities,
         transportFramingVersion: TRANSPORT_FRAMING_VERSION,
-    };
-}
-
-function buildPeerSyncCompatibilityContext(peerKey: string, conn: ConnectionInfo): object {
-    return {
-        peer: shortName(peerKey),
-        node: conn.nodeName || 'anon',
-        capabilities: conn.capabilities,
-        peerTransportFramingVersion: conn.peerTransportFramingVersion,
-        requiredNegentropyVersion: NEGENTROPY_VERSION,
-        requiredTransportFramingVersion: TRANSPORT_FRAMING_VERSION,
     };
 }
 
@@ -308,207 +291,9 @@ function expireIdlePeerSessions(): void {
     orderedCatchupCoordinator.expire(now);
 }
 
-const batchesSeen: Record<string, boolean> = {};
-
-function newBatch(batch: Operation[]): boolean {
-    const hash = cipher.hashJSON(batch);
-
-    if (!batchesSeen[hash]) {
-        batchesSeen[hash] = true;
-        return true;
-    }
-
-    return false;
-}
-
-async function addPeer(did: string): Promise<void> {
-    if (!config.ipfsEnabled) {
-        return;
-    }
-
-    // Check peer suffix to avoid duplicate DID aliases
-    const suffix = did.split(':').pop() || '';
-
-    if (suffix in addedPeers) {
-        return;
-    }
-
-    log.info(`Adding peer ${did}...`);
-    addedPeers[suffix] = Date.now();
-
-    try {
-        const docs = await keymaster.resolveDID(did);
-        const data = docs.didDocumentData as { node: NodeInfo };
-
-        if (!data?.node || !data.node.ipfs) {
-            return;
-        }
-
-        const { id, addresses } = data.node.ipfs;
-
-        if (!id || !addresses) {
-            return;
-        }
-
-        if (id !== nodeInfo.ipfs.id) {
-            // A node should never add itself as a peer node
-            await ipfs.addPeeringPeer(id, addresses);
-        }
-
-        knownNodes[did] = {
-            name: data.node.name,
-            ipfs: {
-                id,
-                addresses,
-            },
-        };
-
-        knownPeers[id] = data.node.name;
-
-        log.info(`Added IPFS peer: ${did} ${JSON.stringify(knownNodes[did], null, 4)}`);
-    }
-    catch (error) {
-        if (!(did in badPeers)) {
-            // Store time of first error so we can later implement a retry mechanism
-            badPeers[did] = Date.now();
-            log.error({ error }, `Error adding IPFS peer: ${did}`);
-        }
-    }
-}
-
-async function handlePingMessage(
-    peerKey: string,
-    msg: PingMessage,
-    conn: ConnectionInfo,
-): Promise<void> {
-    if (transport.getConnection(peerKey) !== conn) {
-        return;
-    }
-
-    conn.capabilities = normalizePeerCapabilities(msg.capabilities);
-    log.info(
-        {
-            ...buildPeerSyncCompatibilityContext(peerKey, conn),
-            rawCapabilities: msg.capabilities ?? null,
-        },
-        'peer capabilities received'
-    );
-
-    if (Array.isArray(msg.peers)) {
-        for (const did of msg.peers) {
-            addPeer(did);
-        }
-    }
-
-    if (transport.getConnection(peerKey) === conn) {
-        await peerSyncCoordinator.onPeerCapabilities(peerKey);
-    }
-}
-
-async function handleQueueMessage(
-    peerKey: string,
-    msg: QueueMessage,
-    conn: ConnectionInfo,
-): Promise<void> {
-    if (transport.getConnection(peerKey) !== conn) {
-        return;
-    }
-
-    if (Array.isArray(msg.data) && newBatch(msg.data)) {
-        importPipeline.enqueue({
-            kind: 'remote',
-            name: peerKey,
-            node: msg.node,
-            data: msg.data,
-            queueGossip: true,
-        });
-        if (!Array.isArray(msg.relays)) {
-            msg.relays = [];
-        }
-        msg.relays.push(peerKey);
-        await transport.relay(msg);
-    }
-}
-
-async function handleSyncMessage(
-    peerKey: string,
-    msg: SyncMessage,
-    conn: ConnectionInfo,
-): Promise<void> {
-    if (transport.getConnection(peerKey) !== conn) {
-        return;
-    }
-
-    await peerSyncCoordinator.handleMessage(peerKey, msg);
-}
-
-async function flushQueue(): Promise<void> {
-    const batch = await gatekeeper.getQueue(REGISTRY);
-
-    if (batch.length > 0) {
-        const imported = await importPipeline.enqueue({
-            kind: 'local_queue',
-            phase: 'persist',
-            name: nodeKey,
-            data: batch,
-        });
-        if (imported.retryable) {
-            throw new Error('failed to import local Gatekeeper queue');
-        }
-        syncStats.queueOpsRelayed += batch.length;
-        const samples = collectQueueDelaySamples(batch);
-        for (const sample of samples) {
-            addAggregateSample(syncStats.queueDelayMs, sample);
-        }
-
-        const msg: QueueMessage = {
-            type: 'queue',
-            time: new Date().toISOString(),
-            node: nodeInfo.name,
-            relays: [],
-            data: batch,
-        };
-
-        const hashes = batch
-            .map((op: Operation) => op.signature?.hash)
-            .filter((hash): hash is string => !!hash);
-        await gatekeeper.clearQueue(REGISTRY, hashes);
-        await transport.relay(msg);
-        const merged = await importPipeline.enqueue({
-            kind: 'local_queue',
-            phase: 'merge',
-            name: nodeKey,
-            data: batch,
-        });
-        if (merged.retryable) {
-            throw new Error('failed to merge local Gatekeeper queue');
-        }
-    }
-}
-
-async function handleGatekeeperIndexSyncResult(source: string, sync: BootstrapResult): Promise<void> {
-    if (shutdownStarted) {
-        return;
-    }
-    if (sync.resetReason) {
-        peerSyncCoordinator.resetAfterGatekeeperReset(sync);
-    }
-    await negentropyCoordinator.handleIndexRefreshed(source, sync);
-
-    if (shutdownStarted) {
-        return;
-    }
-
-    log.debug({ source, sync }, 'gatekeeper index sync complete');
-
-    if (sync.resetReason) {
-        await peerSyncCoordinator.restartAfterGatekeeperReset();
-    }
-}
-
 async function syncGatekeeperIndexToStore(source: string): Promise<void> {
     const sync = await importPipeline.refreshIndex(source);
-    await handleGatekeeperIndexSyncResult(source, sync);
+    await peerSyncCoordinator.handleIndexRefreshed(source, sync);
 }
 
 async function waitForInitialGatekeeperIndexSync(): Promise<void> {
@@ -528,7 +313,7 @@ async function waitForInitialGatekeeperIndexSync(): Promise<void> {
 async function exportLoop(): Promise<void> {
     try {
         await syncGatekeeperIndexToStore('exportLoop');
-        await flushQueue();
+        await queueCoordinator.flush();
     } catch (error) {
         log.error({ error }, 'Error in exportLoop');
     }
@@ -574,7 +359,7 @@ async function connectionLoop(): Promise<void> {
             const peeringPeers = await ipfs.getPeeringPeers();
             console.log(`IPFS peers: ${peeringPeers.length}`);
             for (const peer of peeringPeers) {
-                log.debug(`* peer ${peer.ID} (${knownPeers[peer.ID]})`);
+                log.debug(`* peer ${peer.ID} (${peerDirectory.getPeerName(peer.ID)})`);
             }
         }
 
@@ -627,7 +412,7 @@ async function main(): Promise<void> {
 
     await waitForInitialGatekeeperIndexSync();
 
-    await initNegentropyAdapter();
+    await negentropyCoordinator.initializeAdapter();
 
     if (config.ipfsEnabled) {
         await keymaster.connect({
@@ -678,7 +463,7 @@ async function main(): Promise<void> {
             },
         };
 
-        knownNodes[nodeDID] = nodeInfo;
+        peerDirectory.registerNode(nodeDID, nodeInfo);
         await keymaster.updateAsset(nodeDID, { node: nodeInfo });
     } else {
         nodeInfo = {
@@ -689,10 +474,6 @@ async function main(): Promise<void> {
 
     await exportLoop();
     await connectionLoop();
-}
-
-async function initNegentropyAdapter(): Promise<void> {
-    await negentropyCoordinator.initializeAdapter();
 }
 
 export async function runMediator(options: MediatorMainOptions = {}): Promise<void> {
