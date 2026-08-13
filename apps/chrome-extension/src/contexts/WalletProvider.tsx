@@ -24,6 +24,7 @@ import WalletJsonMemory from "@mdip/keymaster/wallet/json-memory";
 
 const gatekeeper = new GatekeeperClient();
 const cipher = new CipherWeb();
+const DID_PREFIX = 'did:test';
 
 interface WalletContextValue {
     pendingMnemonic: string;
@@ -110,7 +111,7 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
     }
 
     const buildKeymaster = async (wallet: WalletBase, passphrase: string) => {
-        const instance = new Keymaster({gatekeeper, wallet, cipher, search, passphrase});
+        const instance = new Keymaster({gatekeeper, wallet, cipher, search, passphrase, didPrefix: DID_PREFIX});
 
         if (pendingMnemonic) {
             await instance.newWallet(pendingMnemonic, true);
@@ -155,7 +156,7 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
                 await walletMemory.saveWallet(pendingWallet as StoredWallet, true);
 
                 try {
-                    const km = new Keymaster({ gatekeeper, wallet: walletMemory, cipher, search, passphrase });
+                    const km = new Keymaster({ gatekeeper, wallet: walletMemory, cipher, search, passphrase, didPrefix: DID_PREFIX });
                     // check pass
                     await km.loadWallet();
                     await walletChrome.saveWallet(pendingWallet as StoredWallet, true);
@@ -241,7 +242,7 @@ export function WalletProvider({ children, isBrowser }: { children: ReactNode, i
     async function handleResetPassphraseSubmit(newPassphrase: string) {
         try {
             const walletWeb = new WalletChrome();
-            const km = new Keymaster({ gatekeeper, wallet: walletWeb, cipher, search, passphrase: newPassphrase });
+            const km = new Keymaster({ gatekeeper, wallet: walletWeb, cipher, search, passphrase: newPassphrase, didPrefix: DID_PREFIX });
             await km.newWallet(undefined, true);
             setShowResetSetup(false);
             await rebuildKeymaster(newPassphrase);

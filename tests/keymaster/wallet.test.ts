@@ -458,6 +458,21 @@ describe('resolveSeedBank', () => {
 
         expect(bank1).toStrictEqual(bank2);
     });
+
+    it('should ignore the configured DID prefix', async () => {
+        const legacyBank = await keymaster.resolveSeedBank();
+        const prefixedKeymaster = new Keymaster({
+            gatekeeper,
+            wallet,
+            cipher,
+            didPrefix: 'did:mdip',
+            passphrase: PASSPHRASE,
+        });
+        const prefixedBank = await prefixedKeymaster.resolveSeedBank();
+
+        expect(prefixedBank.didDocument!.id).toBe(legacyBank.didDocument!.id);
+        expect(prefixedBank.mdip).not.toHaveProperty('prefix');
+    });
 });
 
 describe('backupWallet', () => {
@@ -467,6 +482,24 @@ describe('backupWallet', () => {
         const doc = await keymaster.resolveDID(did);
 
         expect(did === doc.didDocument!.id).toBe(true);
+    });
+
+    it('should create backups with the configured DID prefix', async () => {
+        const didPrefix = 'did:mdip';
+        const prefixedKeymaster = new Keymaster({
+            gatekeeper,
+            wallet,
+            cipher,
+            didPrefix,
+            passphrase: PASSPHRASE,
+        });
+        await prefixedKeymaster.createId('Bob');
+
+        const did = await prefixedKeymaster.backupWallet();
+        const doc = await prefixedKeymaster.resolveDID(did);
+
+        expect(did.startsWith(`${didPrefix}:`)).toBe(true);
+        expect(doc.mdip!.prefix).toBe(didPrefix);
     });
 
     it('should store backup in seed bank', async () => {

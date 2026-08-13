@@ -69,6 +69,7 @@ const config = {
     keymasterPassphrase: process.env.KC_ENCRYPTED_PASSPHRASE || '',
     walletCache: process.env.KC_WALLET_CACHE ? process.env.KC_WALLET_CACHE === 'true' : false,
     defaultRegistry: process.env.KC_DEFAULT_REGISTRY,
+    didPrefix: process.env.KC_KEYMASTER_DID_PREFIX || undefined,
     keymasterTrustProxy: parseBoolean(process.env.KC_KEYMASTER_TRUST_PROXY, false),
     rateLimitEnabled: parseBoolean(process.env.KC_KEYMASTER_RATE_LIMIT_ENABLED, false),
     rateLimitWindowValue: parsePositiveInteger(process.env.KC_KEYMASTER_RATE_LIMIT_WINDOW_VALUE, 1),
