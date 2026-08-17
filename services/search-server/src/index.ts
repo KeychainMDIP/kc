@@ -7,7 +7,7 @@ import GatekeeperClient from "@mdip/gatekeeper/client";
 import DIDsSQLite from "./db/sqlite.js";
 import DIDsDbMemory from './db/json-memory.js';
 import DIDsPostgres from './db/postgres.js';
-import DidIndexer from "./DidIndexer.js";
+import DidIndexer, { INDEX_SYNC_STATE_KEYS } from "./DidIndexer.js";
 import {DIDsDb} from "./types.js";
 import { childLogger } from "@mdip/common/logger";
 import config from "./config.js";
@@ -22,7 +22,7 @@ import {
     rateLimitWindowUnits,
     shouldSkipRateLimitPath,
 } from "./index-helpers.js";
-import { parseSnapshotDate } from './network-metrics.js';
+import { isNetworkMetricsScopeCurrent, parseSnapshotDate } from './network-metrics.js';
 
 const log = childLogger({ service: 'search-server' });
 
@@ -102,6 +102,7 @@ async function main() {
     const indexer = new DidIndexer(gatekeeper, didDb, {
         intervalMs: config.refreshIntervalMs,
         metricsRefreshIntervalMs: config.metricsRefreshIntervalMs,
+        didPrefix: config.didPrefix,
     });
 
     // Let's not await here, we will continue and start
@@ -127,7 +128,7 @@ async function main() {
 
     v1router.get("/did/:did/events", async (req, res) => {
         try {
-            const target = await findDIDReadTarget(didDb, req.params.did);
+            const target = await findDIDReadTarget(didDb, req.params.did, config.didPrefix);
             res.json(target.events);
         } catch (error) {
             log.error({ error }, 'Get DID events error');
@@ -147,9 +148,16 @@ async function main() {
             }
             const versionTime = req.query.versionTime?.toString();
             const hasVersionQuery = versionSequence !== undefined || versionTime !== undefined;
-            const { storedDid, events } = await findDIDReadTarget(didDb, did);
+            const { storedDid, resolutionDid, events, scopeRejected } = await findDIDReadTarget(
+                didDb,
+                did,
+                config.didPrefix
+            );
 
             if (events.length === 0) {
+                if (scopeRejected) {
+                    return res.status(404).send("Not found");
+                }
                 if (!hasVersionQuery) {
                     const cachedDoc = await didDb.getDID(storedDid);
                     if (cachedDoc) {
@@ -169,7 +177,7 @@ async function main() {
             }
 
             const doc = await resolveDIDFromEvents({
-                did,
+                did: resolutionDid,
                 events,
                 options,
                 getBlock: (registry, block) => didDb.getBlock(registry, block),
@@ -195,6 +203,7 @@ async function main() {
             const offset = parseNonNegativeInteger(req.query.offset, 0);
 
             const result = await didDb.listEvents({
+                didPrefix: config.didPrefix,
                 registry,
                 updatedAfter,
                 updatedBefore,
@@ -216,7 +225,7 @@ async function main() {
                 return res.json([]);
             }
 
-            const dids = await didDb.searchDocs(q);
+            const dids = await didDb.searchDocs(q, config.didPrefix);
             return res.json(dids);
         } catch (error) {
             log.error({ error }, '/api/search error');
@@ -231,7 +240,7 @@ async function main() {
                 return res.status(400).json({ error: "`where` must be an object" });
             }
 
-            const dids = await didDb.queryDocs(where);
+            const dids = await didDb.queryDocs(where, config.didPrefix);
             return res.json(dids);
         } catch (err) {
             log.error({ error: err }, '/query error');
@@ -247,7 +256,7 @@ async function main() {
                 });
             }
 
-            const schemas = await didDb.getPublishedCredentialCountsBySchema();
+            const schemas = await didDb.getPublishedCredentialCountsBySchema(config.didPrefix);
             return res.json({ schemas });
         } catch (error) {
             log.error({ error }, '/metrics/schemas/published error');
@@ -260,6 +269,10 @@ async function main() {
             const date = parseSnapshotDate(req.params.date);
             if (!date) {
                 return res.status(400).json({ error: 'date must be a valid, non-future UTC date in YYYY-MM-DD format' });
+            }
+            const storedDidPrefix = await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsDidPrefix);
+            if (!isNetworkMetricsScopeCurrent(storedDidPrefix, config.didPrefix)) {
+                return res.status(503).json({ error: 'Network metrics are rebuilding for the configured DID prefix' });
             }
 
             const snapshot = await didDb.getNetworkMetricSnapshot(date);
@@ -281,6 +294,10 @@ async function main() {
             if (!date) {
                 return res.status(400).json({ error: 'date must be a valid, non-future UTC date in YYYY-MM-DD format' });
             }
+            const storedDidPrefix = await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsDidPrefix);
+            if (!isNetworkMetricsScopeCurrent(storedDidPrefix, config.didPrefix)) {
+                return res.status(503).json({ error: 'Network metrics are rebuilding for the configured DID prefix' });
+            }
 
             const snapshot = await didDb.getNetworkMetricSnapshot(date);
             if (!snapshot) {
@@ -292,6 +309,7 @@ async function main() {
                 agentDidCountsByPrefix: snapshot.agentDidCountsByPrefix,
                 credentialCount: snapshot.credentialCount,
                 credentialDidCountsByPrefix: snapshot.credentialDidCountsByPrefix,
+                schemas: snapshot.schemas,
             });
         }
         catch (error) {
@@ -307,9 +325,10 @@ async function main() {
             const issuerDid = req.query.issuerDid?.toString();
             const subjectDid = req.query.subjectDid?.toString();
             const revealed = parseOptionalBoolean(req.query.revealed);
-            const limit = parseNonNegativeInteger(req.query.limit, 50);
+            const limit = Math.min(parseNonNegativeInteger(req.query.limit, 50), 500);
             const offset = parseNonNegativeInteger(req.query.offset, 0);
             const result = await didDb.listPublishedCredentials({
+                didPrefix: config.didPrefix,
                 credentialDid,
                 schemaDid,
                 issuerDid,
@@ -338,6 +357,7 @@ async function main() {
             const limit = parseNonNegativeInteger(req.query.limit, 50);
             const offset = parseNonNegativeInteger(req.query.offset, 0);
             const result = await didDb.listChallengeReceipts({
+                didPrefix: config.didPrefix,
                 receiptDid,
                 attesterDid,
                 schemaDid,
@@ -370,6 +390,7 @@ async function main() {
             const limit = parseNonNegativeInteger(req.query.limit, 50);
             const offset = parseNonNegativeInteger(req.query.offset, 0);
             const result = await didDb.getChallengeReceiptUsage({
+                didPrefix: config.didPrefix,
                 attesterDid,
                 schemaDid,
                 requesterDid,

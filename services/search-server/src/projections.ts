@@ -6,7 +6,10 @@ import type {
 } from "@mdip/gatekeeper/types";
 import type { DIDProjectionUpdate, DIDsDb } from "./types.js";
 import { extractChallengeReceipts } from "./challenge-receipts.js";
-import { extractPublishedCredentials } from "./published-credentials.js";
+import {
+    extractPublishedCredentialHistory,
+    extractPublishedCredentials,
+} from "./published-credentials.js";
 
 export type ProjectionBlockLookup = (
     registry: string,
@@ -27,6 +30,7 @@ export async function buildDIDProjectionUpdate(
             did,
             events,
             removed: true,
+            didPrefixReferences: [],
             publishedCredentials: [],
             challengeReceipts: [],
         };
@@ -37,12 +41,21 @@ export async function buildDIDProjectionUpdate(
         events,
         getBlock: options.getBlock ?? ((registry, block) => db.getBlock(registry, block)),
     });
+    const anchor = events[0]?.operation;
+    const isAgentDID = anchor?.type === 'create' && anchor.mdip?.type === 'agent';
+    const publishedCredentials = isAgentDID
+        ? extractPublishedCredentials(did, doc)
+        : [];
 
     return {
         did,
         events,
         doc,
-        publishedCredentials: extractPublishedCredentials(did, doc),
+        didPrefixReferences: isAgentDID
+            ? extractPublishedCredentialHistory(did, events)
+                .flatMap(({ credential }) => [credential.credentialDid, credential.schemaDid])
+            : [],
+        publishedCredentials,
         challengeReceipts: extractChallengeReceipts(did, doc),
     };
 }

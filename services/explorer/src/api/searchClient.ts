@@ -62,6 +62,7 @@ export interface NetworkMetricSnapshot {
     agentDidCountsByPrefix: Record<string, number>;
     credentialCount: number;
     credentialDidCountsByPrefix: Record<string, number>;
+    schemas: PublishedSchemaMetric[];
 }
 
 export interface PublishedCredentialRow {
@@ -279,6 +280,10 @@ export async function fetchNetworkMetricSnapshot(date: string): Promise<NetworkM
             agentDidCountsByPrefix: mapPrefixCounts(response.data.agentDidCountsByPrefix),
             credentialCount: toNumber(response.data.credentialCount),
             credentialDidCountsByPrefix: mapPrefixCounts(response.data.credentialDidCountsByPrefix),
+            schemas: (response.data.schemas ?? []).map((row: any) => ({
+                schemaDid: row.schemaDid,
+                count: toNumber(row.count),
+            })),
         };
     }
     catch (error: any) {

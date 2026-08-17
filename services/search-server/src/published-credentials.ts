@@ -1,4 +1,9 @@
-import { PublishedCredentialRecord } from "./types.js";
+import type { GatekeeperEvent, PublishedCredentialRecord } from "./types.js";
+import {
+    AMBIGUOUS_DID_PREFIX,
+    getDIDPrefix,
+    getDIDSuffix,
+} from './did-aliases.js';
 
 interface MaybeVc {
     type?: unknown;
@@ -19,9 +24,6 @@ export interface PublishedCredentialEvidence {
 }
 
 interface MaybeMdipDocument {
-    didDocument?: {
-        id?: unknown;
-    };
     didDocumentData?: {
         manifest?: unknown;
     };
@@ -56,9 +58,7 @@ export function extractPublishedCredentialEvidence(
     doc: object
 ): PublishedCredentialEvidence[] {
     const mdipDoc = doc as MaybeMdipDocument;
-    const holderDid = isDid(mdipDoc.didDocument?.id)
-        ? mdipDoc.didDocument.id
-        : defaultHolderDid;
+    const holderDid = defaultHolderDid;
 
     const manifest = mdipDoc.didDocumentData?.manifest;
     if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
@@ -79,10 +79,11 @@ export function extractPublishedCredentialEvidence(
         const subjectDid = vc.credentialSubject?.id;
 
         if (type[0] !== 'VerifiableCredential' ||
+            !isDid(holderDid) ||
             !isDid(schemaDid) ||
             !isDid(issuerDid) ||
             !isDid(subjectDid) ||
-            subjectDid !== holderDid) {
+            getDIDSuffix(subjectDid) !== getDIDSuffix(holderDid)) {
             continue;
         }
 
@@ -92,7 +93,7 @@ export function extractPublishedCredentialEvidence(
                 credentialDid,
                 schemaDid,
                 issuerDid,
-                subjectDid,
+                subjectDid: holderDid,
                 revealed: vc.credential !== null && vc.credential !== undefined,
                 updatedAt: getPublishedAt(vc, mdipDoc),
             },
@@ -109,4 +110,56 @@ export function extractPublishedCredentials(
 ): PublishedCredentialRecord[] {
     return extractPublishedCredentialEvidence(defaultHolderDid, doc)
         .map(evidence => evidence.credential);
+}
+
+export function extractPublishedCredentialHistory(
+    defaultHolderDid: string,
+    events: GatekeeperEvent[]
+): PublishedCredentialEvidence[] {
+    return events.flatMap(event => event.operation.type === 'update' && event.operation.doc
+        ? extractPublishedCredentialEvidence(defaultHolderDid, event.operation.doc)
+        : []
+    );
+}
+
+export function deduplicateDIDPrefixReferences(
+    references: string[],
+    publishedCredentials: PublishedCredentialRecord[] = []
+): string[] {
+    return Array.from(new Set([
+        ...references,
+        ...publishedCredentials.flatMap(record => [record.credentialDid, record.schemaDid]),
+    ]));
+}
+
+export function deduplicatePublishedCredentials(
+    records: PublishedCredentialRecord[]
+): PublishedCredentialRecord[] {
+    const prefixes = new Map<string, Set<string>>();
+    const credentials = new Map<string, PublishedCredentialRecord>();
+
+    for (const record of records) {
+        for (const did of [record.credentialDid, record.schemaDid]) {
+            const suffix = getDIDSuffix(did);
+            const found = prefixes.get(suffix) ?? new Set<string>();
+            found.add(getDIDPrefix(did));
+            prefixes.set(suffix, found);
+        }
+        credentials.set(`${record.holderDid}\0${getDIDSuffix(record.credentialDid)}`, record);
+    }
+
+    const canonicalReference = (did: string) => {
+        const suffix = getDIDSuffix(did);
+        const found = prefixes.get(suffix);
+        const prefix = found?.size === 1
+            ? found.values().next().value as string
+            : AMBIGUOUS_DID_PREFIX;
+        return `${prefix}:${suffix}`;
+    };
+
+    return Array.from(credentials.values(), record => ({
+        ...record,
+        credentialDid: canonicalReference(record.credentialDid),
+        schemaDid: canonicalReference(record.schemaDid),
+    }));
 }

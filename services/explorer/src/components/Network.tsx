@@ -13,9 +13,7 @@ import {
 import { Link as RouterLink, useSearchParams } from "react-router-dom";
 import {
     fetchNetworkMetricSnapshot,
-    fetchPublishedSchemaMetrics,
     type NetworkMetricSnapshot,
-    type PublishedSchemaMetric,
 } from "../api/searchClient.js";
 import { useSnackbar } from "../contexts/SnackbarProvider.js";
 
@@ -27,32 +25,26 @@ function Network() {
     const currentDate = today();
     const selectedDate = searchParams.get("date") || currentDate;
     const [snapshot, setSnapshot] = useState<NetworkMetricSnapshot | null>(null);
-    const [schemas, setSchemas] = useState<PublishedSchemaMetric[]>([]);
     const [message, setMessage] = useState("Loading network snapshot...");
 
     useEffect(() => {
         let ignore = false;
 
         setSnapshot(null);
-        setSchemas([]);
         setMessage("Loading network snapshot...");
 
-        Promise.all([
-            fetchNetworkMetricSnapshot(selectedDate),
-            fetchPublishedSchemaMetrics(selectedDate),
-        ])
-            .then(([result, schemaMetrics]) => {
+        fetchNetworkMetricSnapshot(selectedDate)
+            .then(result => {
                 if (ignore) {
                     return;
                 }
 
-                if (!result || !schemaMetrics) {
+                if (!result) {
                     setMessage("No network snapshot exists for this date.");
                     return;
                 }
 
                 setSnapshot(result);
-                setSchemas(schemaMetrics);
             })
             .catch(error => {
                 if (!ignore) {
@@ -113,7 +105,7 @@ function Network() {
                                 value: snapshot.credentialCount,
                                 prefixes: snapshot.credentialDidCountsByPrefix,
                             },
-                            { label: "Schemas in use", value: schemas.length },
+                            { label: "Schemas in use", value: snapshot.schemas.length },
                         ].map(({ label, value, prefixes }) => (
                             <Box
                                 key={label}
@@ -146,7 +138,7 @@ function Network() {
                     </Box>
 
                     <Typography variant="h6" sx={{ mb: 1 }}>Schema usage</Typography>
-                    {schemas.length === 0 ? (
+                    {snapshot.schemas.length === 0 ? (
                         <Typography>No credential schemas were in use on this date.</Typography>
                     ) : (
                         <TableContainer sx={{ border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
@@ -159,7 +151,7 @@ function Network() {
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>
-                                    {schemas.map((schema, index) => (
+                                    {snapshot.schemas.map((schema, index) => (
                                         <TableRow key={schema.schemaDid}>
                                             <TableCell>{index + 1}</TableCell>
                                             <TableCell>

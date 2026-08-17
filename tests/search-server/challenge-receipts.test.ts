@@ -158,6 +158,17 @@ describe('extractChallengeReceipts', () => {
         ]);
     });
 
+    it('uses the canonical receipt DID when the document uses a prefix alias', () => {
+        const receiptDid = 'did:test:receipt-1';
+
+        expect(extractChallengeReceipts(
+            receiptDid,
+            createReceiptDoc('did:mdip:receipt-1')
+        )).toStrictEqual([
+            expect.objectContaining({ receiptDid }),
+        ]);
+    });
+
     it('ignores malformed receipt assets', () => {
         const receiptDid = 'did:test:receipt-1';
 
@@ -236,6 +247,7 @@ describe.each(adapterFactories)('$name challenge receipt storage', ({ create }) 
             }
 
             expect(await db.listChallengeReceipts({
+                didPrefix: 'did:test',
                 attesterDid: 'did:test:attester-1',
                 schemaDid: 'did:test:schema-1',
                 requesterDid: 'did:test:requester-1',
@@ -561,6 +573,7 @@ describe('postgres challenge receipt adapter with mocked pool', () => {
         });
 
         expect(await db.listChallengeReceipts({
+            didPrefix: 'did:test',
             receiptDid: record.receiptDid,
             attesterDid: record.attesterDid,
             schemaDid: record.schemaDid,
