@@ -170,12 +170,11 @@ stored alias's prefix.
       configured network scope.
 
 ### `GET /api/v1/metrics/snapshots/credentials/:date`
-- **Description**: Returns cumulative AgentDID and credential totals plus
-  credential schema usage for one UTC day.
+- **Description**: Returns cumulative AgentDID and credential totals for one UTC day.
 - **Path Param**:
     - `date` (required, `YYYY-MM-DD`, must not be in the future)
 - **Returns**:
-    - `200 OK` + `{ "agentDidCount": 123, "agentDidCountsByPrefix": { "did:mdip": 23, "did:test": 100 }, "credentialCount": 456, "credentialDidCountsByPrefix": { "did:mdip": 56, "did:test": 400 }, "schemas": [{ "schemaDid": "...", "count": 42 }] }`
+    - `200 OK` + `{ "agentDidCount": 123, "agentDidCountsByPrefix": { "did:mdip": 23, "did:test": 100 }, "credentialCount": 456, "credentialDidCountsByPrefix": { "did:mdip": 56, "did:test": 400 } }`
     - `400 Bad Request` for an invalid or future date.
     - `404 Not Found` when no snapshot exists for the date.
     - `503 Service Unavailable` while snapshots are rebuilding for the
