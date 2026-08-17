@@ -271,16 +271,17 @@ export async function fetchPublishedSchemaMetrics(date?: string): Promise<Publis
 
 export async function fetchNetworkMetricSnapshot(date: string): Promise<NetworkMetricSnapshot | null> {
     try {
-        const [response, schemas] = await Promise.all([
+        const [agents, credentials, schemas] = await Promise.all([
+            axios.get(`${apiBaseUrl}/metrics/snapshots/agents/${encodeURIComponent(date)}`),
             axios.get(`${apiBaseUrl}/metrics/snapshots/credentials/${encodeURIComponent(date)}`),
             fetchPublishedSchemaMetrics(date),
         ]);
 
         return {
-            agentDidCount: toNumber(response.data.agentDidCount),
-            agentDidCountsByPrefix: mapPrefixCounts(response.data.agentDidCountsByPrefix),
-            credentialCount: toNumber(response.data.credentialCount),
-            credentialDidCountsByPrefix: mapPrefixCounts(response.data.credentialDidCountsByPrefix),
+            agentDidCount: toNumber(agents.data.agentDidCount),
+            agentDidCountsByPrefix: mapPrefixCounts(agents.data.agentDidCountsByPrefix),
+            credentialCount: toNumber(credentials.data.credentialCount),
+            credentialDidCountsByPrefix: mapPrefixCounts(credentials.data.credentialDidCountsByPrefix),
             schemas: schemas ?? [],
         };
     }

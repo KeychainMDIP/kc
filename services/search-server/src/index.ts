@@ -315,7 +315,7 @@ async function main() {
         }
     });
 
-    v1router.get('/metrics/snapshots/credentials/:date', async (req, res) => {
+    v1router.get('/metrics/snapshots/agents/:date', async (req, res) => {
         try {
             const date = parseSnapshotDate(req.params.date);
             if (!date) {
@@ -334,6 +334,31 @@ async function main() {
             return res.json({
                 agentDidCount: snapshot.agentDidCount,
                 agentDidCountsByPrefix: snapshot.agentDidCountsByPrefix,
+            });
+        }
+        catch (error) {
+            log.error({ error }, '/metrics/snapshots/agents/:date error');
+            return res.status(500).json({ error: String(error) });
+        }
+    });
+
+    v1router.get('/metrics/snapshots/credentials/:date', async (req, res) => {
+        try {
+            const date = parseSnapshotDate(req.params.date);
+            if (!date) {
+                return res.status(400).json({ error: 'date must be a valid, non-future UTC date in YYYY-MM-DD format' });
+            }
+            const storedDidPrefix = await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsDidPrefix);
+            if (!isNetworkMetricsScopeCurrent(storedDidPrefix, config.didPrefix)) {
+                return res.status(503).json({ error: 'Network metrics are rebuilding for the configured DID prefix' });
+            }
+
+            const snapshot = await didDb.getNetworkMetricSnapshot(date);
+            if (!snapshot) {
+                return res.status(404).json({ error: 'Snapshot not found' });
+            }
+
+            return res.json({
                 credentialCount: snapshot.credentialCount,
                 credentialDidCountsByPrefix: snapshot.credentialDidCountsByPrefix,
             });
