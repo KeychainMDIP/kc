@@ -117,7 +117,7 @@ export default class DidIndexer {
 
             await this.saveRunStats(stats);
             await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.lastSyncError, null);
-            await this.refreshNetworkMetricsIfDue();
+            await this.refreshNetworkMetricsIfDue(stats);
 
             this.log.info(
                 `Indexed ${stats.changedDids} changed DIDs from ${stats.pages} ${stats.mode} page(s). ` +
@@ -321,7 +321,7 @@ export default class DidIndexer {
         await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.lastBlocksStored, stats.storedBlocks.toString());
     }
 
-    private async refreshNetworkMetricsIfDue(): Promise<void> {
+    private async refreshNetworkMetricsIfDue(syncRun?: SyncRunStats): Promise<void> {
         if (this.metricsRefreshIntervalMs === null) {
             return;
         }
@@ -333,6 +333,10 @@ export default class DidIndexer {
 
             const now = new Date();
             const lastRebuiltAt = await this.db.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsLastRebuiltAt);
+            if (!lastRebuiltAt && syncRun &&
+                (syncRun.mode === 'snapshot' || syncRun.changedDids > 0)) {
+                return;
+            }
             const metricsDidPrefix = await this.db.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsDidPrefix);
             const currentMetricsDidPrefix = this.didPrefix ?? '';
             const lastRebuiltMs = lastRebuiltAt ? new Date(lastRebuiltAt).getTime() : Number.NaN;
