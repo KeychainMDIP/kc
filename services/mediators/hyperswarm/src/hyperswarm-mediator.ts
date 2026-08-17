@@ -463,7 +463,7 @@ async function main(): Promise<void> {
             },
         };
 
-        peerDirectory.registerNode(nodeDID, nodeInfo);
+        peerDirectory.registerNode(nodeDID);
         await keymaster.updateAsset(nodeDID, { node: nodeInfo });
     } else {
         nodeInfo = {

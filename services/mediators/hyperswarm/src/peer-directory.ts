@@ -14,10 +14,9 @@ interface PeerDirectoryOptions {
 }
 
 export function createPeerDirectory(options: PeerDirectoryOptions) {
-    const knownNodes: Record<string, NodeInfo> = {};
+    const knownDids = new Set<string>();
     const knownPeers: Record<string, string> = {};
     const addedPeers = new Set<string>();
-    const badPeers = new Set<string>();
 
     async function addPeer(did: string): Promise<void> {
         if (!options.enabled) {
@@ -47,15 +46,12 @@ export function createPeerDirectory(options: PeerDirectoryOptions) {
                 await options.ipfs.addPeeringPeer(id, addresses);
             }
 
-            knownNodes[did] = data.node;
+            knownDids.add(did);
             knownPeers[id] = data.node.name;
             log.info(`Added IPFS peer: ${did} ${JSON.stringify(data.node, null, 4)}`);
         }
         catch (error) {
-            if (!badPeers.has(did)) {
-                badPeers.add(did);
-                log.error({ error }, `Error adding IPFS peer: ${did}`);
-            }
+            log.error({ error }, `Error adding IPFS peer: ${did}`);
         }
     }
 
@@ -68,13 +64,13 @@ export function createPeerDirectory(options: PeerDirectoryOptions) {
     return {
         addPeers,
         getKnownDids(): string[] {
-            return Object.keys(knownNodes);
+            return [...knownDids];
         },
         getPeerName(peerId: string): string | undefined {
             return knownPeers[peerId];
         },
-        registerNode(did: string, node: NodeInfo): void {
-            knownNodes[did] = node;
+        registerNode(did: string): void {
+            knownDids.add(did);
         },
     };
 }
