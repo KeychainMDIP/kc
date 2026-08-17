@@ -526,7 +526,6 @@ export const __test = {
         transport.setConnection(peerKey, {
             ...createConnectionInfo({
                 connection,
-                peerKey,
                 peerName: shortName(peerKey),
                 nodeName: 'test-peer',
             }),

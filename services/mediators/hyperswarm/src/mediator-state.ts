@@ -17,10 +17,8 @@ export interface NodeInfo {
 
 export interface ConnectionInfo {
     connection: HyperswarmConnection;
-    key: string;
     peerName: string;
     nodeName: string;
-    did: string;
     lastSeen: number;
     capabilities: NegotiatedPeerCapabilities;
     syncMode: SyncMode | 'unknown';
@@ -39,7 +37,6 @@ export interface ConnectionInfo {
 
 export interface ConnectionInfoOptions {
     connection: HyperswarmConnection;
-    peerKey: string;
     peerName: string;
     nodeName?: string;
     now?: number;
@@ -51,10 +48,8 @@ export function createConnectionInfo(options: ConnectionInfoOptions): Connection
 
     return {
         connection: options.connection,
-        key: options.peerKey,
         peerName: options.peerName,
         nodeName: options.nodeName ?? 'anon',
-        did: '',
         lastSeen: now,
         capabilities: {
             advertised: false,

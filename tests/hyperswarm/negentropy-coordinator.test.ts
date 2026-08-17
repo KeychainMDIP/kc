@@ -35,7 +35,6 @@ describe('Negentropy coordinator', () => {
                 destroy: () => undefined,
                 remotePublicKey: Buffer.from(peerKey, 'hex'),
             } as never,
-            peerKey,
             peerName: 'test-peer',
         });
         const importPipeline: ImportPipeline = {
