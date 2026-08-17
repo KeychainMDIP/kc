@@ -144,6 +144,20 @@ stored alias's prefix.
 - **Returns**:
     - `200 OK` + `{ "total": 123, "credentials": [{ "credentialDid": "...", "schemaDid": "...", "issuerDid": "...", "subjectDid": "...", "holderDid": "...", "updatedAt": "..." }] }`
 
+### `GET /api/v1/metrics/snapshots/dids/:date`
+- **Description**: Returns the cumulative total of all DIDs created through
+  one UTC day, regardless of DID type or document contents. DIDs are
+  deduplicated by CID suffix and filtered by `KC_SEARCH_SERVER_DID_PREFIX`.
+  Deleted DIDs remain part of the cumulative total.
+- **Path Param**:
+    - `date` (required, `YYYY-MM-DD`, must not be in the future)
+- **Returns**:
+    - `200 OK` + `{ "didCount": 123, "didCountsByPrefix": { "did:mdip": 23, "did:test": 100 } }`
+    - `400 Bad Request` for an invalid or future date.
+    - `404 Not Found` when no snapshot exists for the date.
+    - `503 Service Unavailable` while snapshots are rebuilding for the
+      configured network scope.
+
 ### `GET /api/v1/metrics/snapshots/schemas/:date`
 - **Description**: Returns cumulative credential counts grouped by schema DID for one UTC day.
 - **Path Param**:
@@ -192,11 +206,13 @@ stored alias's prefix.
 
 ### Network metric snapshots
 
-AgentDID snapshot dates come only from anchor `create` operation `created`
-timestamps. Credentials are identified from valid historical AgentDID manifest
-entries and dated by their asset anchor `operation.created` when available,
-falling back to the manifest credential's `validFrom`. Hyperswarm receipt times
-and operation signature timestamps are not used. AgentDIDs remain counted after
+All-DID and AgentDID snapshot dates come only from anchor `create` operation
+`created` timestamps. The all-DID total includes every indexed DID regardless
+of MDIP type or document contents and deduplicates prefix aliases by CID suffix.
+Credentials are identified from valid historical AgentDID manifest entries and
+dated by their asset anchor `operation.created` when available, falling back to
+the manifest credential's `validFrom`. Hyperswarm receipt times and operation
+signature timestamps are not used. DIDs and AgentDIDs remain counted after
 deletion, and credentials remain counted after revocation or unpublishing.
 Private credentials that have never been published cannot be counted by
 search-server.
@@ -235,10 +251,12 @@ rebuild begins. Snapshot endpoints return `503` until the replacement snapshots
 and new scope marker have both been saved. This also applies when changing
 between a blank scope and `did:test` or `did:mdip`.
 
-Each snapshot stores cumulative credential counts grouped by schema DID,
-ordered from most to least used. Request this historical breakdown from
-`/metrics/snapshots/schemas/:date`. `/metrics/schemas/published` describes only
-the credentials currently present in AgentDID manifests.
+Each snapshot stores cumulative all-DID, AgentDID, and credential totals plus
+credential counts grouped by schema DID, ordered from most to least used.
+Request the total DID count from `/metrics/snapshots/dids/:date` and the schema
+breakdown from `/metrics/snapshots/schemas/:date`.
+`/metrics/schemas/published` describes only the credentials currently present
+in AgentDID manifests.
 Schema prefix aliases sharing the same DID suffix are combined under the
 schema asset's explicit classification or durable historical manifest evidence.
 

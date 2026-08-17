@@ -227,6 +227,8 @@ export default class Postgres implements DIDsDb {
 
             CREATE TABLE IF NOT EXISTS network_metric_snapshots (
                 snapshot_date TEXT PRIMARY KEY,
+                did_count INTEGER NOT NULL CHECK (did_count >= 0),
+                did_counts_by_prefix JSONB NOT NULL DEFAULT '{}'::jsonb,
                 agent_did_count INTEGER NOT NULL CHECK (agent_did_count >= 0),
                 agent_did_counts_by_prefix JSONB NOT NULL DEFAULT '{}'::jsonb,
                 credential_count INTEGER NOT NULL CHECK (credential_count >= 0),
@@ -832,15 +834,19 @@ export default class Postgres implements DIDsDb {
                 await client.query(
                     `INSERT INTO network_metric_snapshots (
                         snapshot_date,
+                        did_count,
+                        did_counts_by_prefix,
                         agent_did_count,
                         agent_did_counts_by_prefix,
                         credential_count,
                         credential_did_counts_by_prefix,
                         schema_counts,
                         rebuilt_at
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
                     [
                         snapshot.date,
+                        snapshot.didCount,
+                        JSON.stringify(snapshot.didCountsByPrefix),
                         snapshot.agentDidCount,
                         JSON.stringify(snapshot.agentDidCountsByPrefix),
                         snapshot.credentialCount,
@@ -864,6 +870,8 @@ export default class Postgres implements DIDsDb {
     async getNetworkMetricSnapshot(date: string): Promise<NetworkMetricSnapshot | null> {
         const result = await this.getPool().query<{
             date: string;
+            didCount: number;
+            didCountsByPrefix: Record<string, number> | string;
             agentDidCount: number;
             agentDidCountsByPrefix: Record<string, number> | string;
             credentialCount: number;
@@ -873,6 +881,8 @@ export default class Postgres implements DIDsDb {
         }>(
             `SELECT
                 snapshot_date AS date,
+                did_count AS "didCount",
+                did_counts_by_prefix AS "didCountsByPrefix",
                 agent_did_count AS "agentDidCount",
                 agent_did_counts_by_prefix AS "agentDidCountsByPrefix",
                 credential_count AS "credentialCount",
@@ -891,6 +901,10 @@ export default class Postgres implements DIDsDb {
 
         return {
             date: row.date,
+            didCount: row.didCount,
+            didCountsByPrefix: typeof row.didCountsByPrefix === 'string'
+                ? JSON.parse(row.didCountsByPrefix) as Record<string, number>
+                : row.didCountsByPrefix,
             agentDidCount: row.agentDidCount,
             agentDidCountsByPrefix: typeof row.agentDidCountsByPrefix === 'string'
                 ? JSON.parse(row.agentDidCountsByPrefix) as Record<string, number>

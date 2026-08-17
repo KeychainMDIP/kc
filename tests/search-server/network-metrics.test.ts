@@ -155,10 +155,10 @@ describe('network metric snapshot builder', () => {
         const result = await buildNetworkMetricSnapshots(histories, new Date('2026-08-05T12:00:00.000Z'));
 
         expect(result.snapshots).toStrictEqual([
-            { date: '2026-08-02', agentDidCount: 1, agentDidCountsByPrefix: { 'did:test': 1 }, credentialCount: 0, credentialDidCountsByPrefix: {}, schemas: [], rebuiltAt: '2026-08-05T12:00:00.000Z' },
-            { date: '2026-08-03', agentDidCount: 1, agentDidCountsByPrefix: { 'did:test': 1 }, credentialCount: 1, credentialDidCountsByPrefix: { 'did:test': 1 }, schemas: [{ schemaDid: 'did:test:schema', count: 1 }], rebuiltAt: '2026-08-05T12:00:00.000Z' },
-            { date: '2026-08-04', agentDidCount: 1, agentDidCountsByPrefix: { 'did:test': 1 }, credentialCount: 1, credentialDidCountsByPrefix: { 'did:test': 1 }, schemas: [{ schemaDid: 'did:test:schema', count: 1 }], rebuiltAt: '2026-08-05T12:00:00.000Z' },
-            { date: '2026-08-05', agentDidCount: 1, agentDidCountsByPrefix: { 'did:test': 1 }, credentialCount: 1, credentialDidCountsByPrefix: { 'did:test': 1 }, schemas: [{ schemaDid: 'did:test:schema', count: 1 }], rebuiltAt: '2026-08-05T12:00:00.000Z' },
+            { date: '2026-08-02', didCount: 1, didCountsByPrefix: { 'did:test': 1 }, agentDidCount: 1, agentDidCountsByPrefix: { 'did:test': 1 }, credentialCount: 0, credentialDidCountsByPrefix: {}, schemas: [], rebuiltAt: '2026-08-05T12:00:00.000Z' },
+            { date: '2026-08-03', didCount: 2, didCountsByPrefix: { 'did:test': 2 }, agentDidCount: 1, agentDidCountsByPrefix: { 'did:test': 1 }, credentialCount: 1, credentialDidCountsByPrefix: { 'did:test': 1 }, schemas: [{ schemaDid: 'did:test:schema', count: 1 }], rebuiltAt: '2026-08-05T12:00:00.000Z' },
+            { date: '2026-08-04', didCount: 2, didCountsByPrefix: { 'did:test': 2 }, agentDidCount: 1, agentDidCountsByPrefix: { 'did:test': 1 }, credentialCount: 1, credentialDidCountsByPrefix: { 'did:test': 1 }, schemas: [{ schemaDid: 'did:test:schema', count: 1 }], rebuiltAt: '2026-08-05T12:00:00.000Z' },
+            { date: '2026-08-05', didCount: 2, didCountsByPrefix: { 'did:test': 2 }, agentDidCount: 1, agentDidCountsByPrefix: { 'did:test': 1 }, credentialCount: 1, credentialDidCountsByPrefix: { 'did:test': 1 }, schemas: [{ schemaDid: 'did:test:schema', count: 1 }], rebuiltAt: '2026-08-05T12:00:00.000Z' },
         ]);
         expect(result.credentialsDatedByOperationCreated).toBe(1);
         expect(result.credentialsDatedByValidFrom).toBe(0);
@@ -212,16 +212,53 @@ describe('network metric snapshot builder', () => {
         const result = await buildNetworkMetricSnapshots(histories, new Date('2026-08-03T12:00:00.000Z'));
 
         expect(result.snapshots[0]).toMatchObject({
+            didCount: 1,
+            didCountsByPrefix: { 'did:test': 1 },
             agentDidCount: 1,
             agentDidCountsByPrefix: { 'did:test': 1 },
             credentialCount: 0,
             credentialDidCountsByPrefix: {},
         });
         expect(result.snapshots.at(-1)).toMatchObject({
+            didCount: 4,
+            didCountsByPrefix: { 'did:mdip': 2, 'did:test': 2 },
             agentDidCount: 2,
             agentDidCountsByPrefix: { 'did:mdip': 1, 'did:test': 1 },
             credentialCount: 2,
             credentialDidCountsByPrefix: { 'did:mdip': 1, 'did:test': 1 },
+        });
+    });
+
+    it('counts every created DID once and retains deleted DIDs', async () => {
+        const assetDid = 'did:test:asset';
+        const asset: DIDEventHistory = {
+            did: assetDid,
+            events: [
+                createEvent(assetDid, {
+                    type: 'create',
+                    created: '2026-08-02T00:00:00.000Z',
+                    mdip: { version: 1, type: 'asset', registry: 'hyperswarm' },
+                    controller: 'did:test:holder',
+                    data: { title: 'ordinary asset' },
+                }),
+                createEvent(assetDid, { type: 'delete', did: assetDid }),
+            ],
+        };
+        const result = await buildNetworkMetricSnapshots([
+            createAgentHistory('did:test:agent', '2026-08-01T00:00:00.000Z'),
+            asset,
+            { did: 'did:mdip:asset', events: asset.events },
+            createCredentialHistory('did:test:encrypted', '2026-08-03T00:00:00.000Z'),
+        ], new Date('2026-08-03T12:00:00.000Z'));
+
+        expect(result.snapshots.map(({ date, didCount }) => ({ date, didCount }))).toStrictEqual([
+            { date: '2026-08-01', didCount: 1 },
+            { date: '2026-08-02', didCount: 2 },
+            { date: '2026-08-03', didCount: 3 },
+        ]);
+        expect(result.snapshots.at(-1)).toMatchObject({
+            didCountsByPrefix: { 'did:test': 3 },
+            agentDidCount: 1,
         });
     });
 
@@ -242,10 +279,13 @@ describe('network metric snapshot builder', () => {
         ];
         const now = new Date('2026-08-01T12:00:00.000Z');
 
+        const unfiltered = await buildNetworkMetricSnapshots(histories, now);
         const test = await buildNetworkMetricSnapshots(histories, now, 'did:test');
         const mdip = await buildNetworkMetricSnapshots(histories, now, 'did:mdip');
 
         expect(test.snapshots.at(-1)).toMatchObject({
+            didCount: 3,
+            didCountsByPrefix: { 'did:test': 3 },
             agentDidCount: 1,
             agentDidCountsByPrefix: { 'did:test': 1 },
             credentialCount: 1,
@@ -253,12 +293,17 @@ describe('network metric snapshot builder', () => {
             schemas: [{ schemaDid: 'did:test:test-schema', count: 1 }],
         });
         expect(mdip.snapshots.at(-1)).toMatchObject({
+            didCount: 3,
+            didCountsByPrefix: { 'did:mdip': 3 },
             agentDidCount: 1,
             agentDidCountsByPrefix: { 'did:mdip': 1 },
             credentialCount: 1,
             credentialDidCountsByPrefix: { 'did:mdip': 1 },
             schemas: [{ schemaDid: 'did:mdip:mdip-schema', count: 1 }],
         });
+        expect(unfiltered.snapshots.at(-1)?.didCount).toBe(6);
+        expect((test.snapshots.at(-1)?.didCount ?? 0) + (mdip.snapshots.at(-1)?.didCount ?? 0))
+            .toBe(unfiltered.snapshots.at(-1)?.didCount);
     });
 
     it('uses manifest prefixes only when asset operations do not identify the network', async () => {
@@ -288,9 +333,28 @@ describe('network metric snapshot builder', () => {
         ], new Date('2026-08-01T12:00:00.000Z'), 'did:mdip');
 
         expect(result.snapshots.at(-1)).toMatchObject({
+            didCount: 2,
+            didCountsByPrefix: { 'did:mdip': 2 },
             credentialCount: 1,
             credentialDidCountsByPrefix: { 'did:mdip': 1 },
             schemas: [{ schemaDid: 'did:mdip:legacy-schema', count: 1 }],
+        });
+    });
+
+    it('does not let manifest references reclassify AgentDIDs', async () => {
+        const publisherDid = 'did:test:publisher';
+        const result = await buildNetworkMetricSnapshots([
+            createAgentHistory(publisherDid, '2026-08-01T00:00:00.000Z', [
+                manifestUpdate(publisherDid, 'did:mdip:referenced-agent'),
+            ]),
+            createAgentHistory('did:test:referenced-agent', '2026-08-01T00:00:00.000Z'),
+        ], new Date('2026-08-01T12:00:00.000Z'));
+
+        expect(result.snapshots.at(-1)).toMatchObject({
+            didCount: 2,
+            didCountsByPrefix: { 'did:test': 2 },
+            agentDidCount: 2,
+            agentDidCountsByPrefix: { 'did:test': 2 },
         });
     });
 
@@ -369,6 +433,7 @@ describe('network metric snapshot builder', () => {
         ], new Date('2026-08-01T12:00:00.000Z'));
 
         expect(result.snapshots.at(-1)).toMatchObject({
+            didCount: 4,
             agentDidCount: 4,
             agentDidCountsByPrefix: { 'did:mdip': 2, 'did:test': 2 },
         });
@@ -549,7 +614,7 @@ describe('network metric snapshot builder', () => {
         expect(baseline.snapshots[0]).toMatchObject({ date: '2024-01-01', agentDidCount: 1 });
         expect(baseline.snapshots).toHaveLength(3);
         expect(empty.snapshots).toStrictEqual([
-            { date: '2024-01-03', agentDidCount: 0, agentDidCountsByPrefix: {}, credentialCount: 0, credentialDidCountsByPrefix: {}, schemas: [], rebuiltAt: now.toISOString() },
+            { date: '2024-01-03', didCount: 0, didCountsByPrefix: {}, agentDidCount: 0, agentDidCountsByPrefix: {}, credentialCount: 0, credentialDidCountsByPrefix: {}, schemas: [], rebuiltAt: now.toISOString() },
         ]);
     });
 
@@ -620,6 +685,8 @@ describe.each(adapterFactories)('$name network metric persistence', ({ create })
         });
         const first: NetworkMetricSnapshot = {
             date: '2026-08-01',
+            didCount: 2,
+            didCountsByPrefix: { 'did:test': 2 },
             agentDidCount: 1,
             agentDidCountsByPrefix: { 'did:test': 1 },
             credentialCount: 0,
@@ -646,6 +713,8 @@ describe.each(adapterFactories)('$name network metric persistence', ({ create })
 describe('network metric database branches', () => {
     const snapshot: NetworkMetricSnapshot = {
         date: '2026-08-01',
+        didCount: 3,
+        didCountsByPrefix: { 'did:mdip': 1, 'did:test': 2 },
         agentDidCount: 2,
         agentDidCountsByPrefix: { 'did:mdip': 1, 'did:test': 1 },
         credentialCount: 1,
@@ -724,6 +793,10 @@ describe('network metric database branches', () => {
                     rowCount: 1,
                     rows: [{
                         date: params[0],
+                        didCount: snapshot.didCount,
+                        didCountsByPrefix: params[0] === snapshot.date
+                            ? JSON.stringify(snapshot.didCountsByPrefix)
+                            : snapshot.didCountsByPrefix,
                         agentDidCount: snapshot.agentDidCount,
                         agentDidCountsByPrefix: params[0] === snapshot.date
                             ? JSON.stringify(snapshot.agentDidCountsByPrefix)
@@ -768,6 +841,8 @@ describe('network metric database branches', () => {
             expect.stringContaining('INSERT INTO network_metric_snapshots'),
             [
                 snapshot.date,
+                snapshot.didCount,
+                JSON.stringify(snapshot.didCountsByPrefix),
                 snapshot.agentDidCount,
                 JSON.stringify(snapshot.agentDidCountsByPrefix),
                 snapshot.credentialCount,

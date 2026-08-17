@@ -123,6 +123,8 @@ export interface DIDEventHistory {
 
 export interface NetworkMetricSnapshot {
     date: string;
+    didCount: number;
+    didCountsByPrefix: Record<string, number>;
     agentDidCount: number;
     agentDidCountsByPrefix: Record<string, number>;
     credentialCount: number;

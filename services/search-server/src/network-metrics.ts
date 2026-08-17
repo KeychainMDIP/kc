@@ -35,17 +35,12 @@ interface CredentialEvidence {
     validFrom: Set<string>;
 }
 
-interface AgentEvidence {
-    created: ReturnType<typeof creationDay>;
-    prefix: string;
-    conflicting: boolean;
-}
-
-interface AssetEvidence {
+interface DIDEvidence {
     created: ReturnType<typeof creationDay>;
     prefix: string;
     conflicting: boolean;
     authoritative: boolean;
+    isAgent: boolean;
 }
 
 function utcDay(date: Date): string {
@@ -116,11 +111,11 @@ function totalPrefixCounts(counts: Map<string, number>): number {
     return Array.from(counts.values()).reduce((total, count) => total + count, 0);
 }
 
-function metricPrefix(asset: AssetEvidence | undefined, publishedPrefixes: Set<string> | undefined): string {
-    if (asset?.authoritative) {
-        return asset.prefix;
+function metricPrefix(did: DIDEvidence | undefined, publishedPrefixes: Set<string> | undefined): string {
+    if (did?.authoritative) {
+        return did.prefix;
     }
-    if (asset?.conflicting || publishedPrefixes?.size !== 1) {
+    if (did?.conflicting || publishedPrefixes?.size !== 1) {
         return AMBIGUOUS_DID_PREFIX;
     }
     return publishedPrefixes.values().next().value as string;
@@ -172,12 +167,12 @@ export async function buildNetworkMetricSnapshots(
     didPrefix?: string
 ): Promise<NetworkMetricsBuildResult> {
     const today = utcDay(now);
+    const didPrefixDeltas = new Map<string, Map<string, number>>();
     const agentPrefixDeltas = new Map<string, Map<string, number>>();
     const credentialPrefixDeltas = new Map<string, Map<string, number>>();
     const schemaDeltas = new Map<string, Map<string, number>>();
     const schemaDids = new Map<string, string>();
-    const agents = new Map<string, AgentEvidence>();
-    const assets = new Map<string, AssetEvidence>();
+    const dids = new Map<string, DIDEvidence>();
     const credentials = new Map<string, CredentialEvidence>();
     const publishedPrefixes = new Map<string, Set<string>>();
     let agentsWithConflictingPrefixes = 0;
@@ -193,25 +188,19 @@ export async function buildNetworkMetricSnapshots(
         const anchor = history.events[0]?.operation;
         const classification = classifyDIDPrefix(history.events);
 
-        if (anchor?.type === 'create' && anchor.mdip?.type === 'asset') {
-            assets.set(getDIDSuffix(history.did), {
+        if (anchor?.type === 'create') {
+            dids.set(getDIDSuffix(history.did), {
                 created: creationDay(anchor, today),
                 prefix: classification.prefix,
                 conflicting: classification.conflicting,
                 authoritative: classification.authoritative,
+                isAgent: anchor.mdip?.type === 'agent',
             });
         }
 
         if (anchor?.type !== 'create' || anchor.mdip?.type !== 'agent') {
             continue;
         }
-
-        const agentKey = getDIDSuffix(history.did);
-        const foundAgent = agents.get(agentKey) ?? {
-            created: creationDay(anchor, today),
-            prefix: classification.prefix,
-            conflicting: classification.conflicting,
-        };
 
         for (const evidence of extractPublishedCredentialHistory(history.did, history.events)) {
             const { credential, validFrom } = evidence;
@@ -233,15 +222,18 @@ export async function buildNetworkMetricSnapshots(
             }
             credentials.set(credentialKey, found);
         }
-        agents.set(agentKey, foundAgent);
     }
 
-    for (const evidence of agents.values()) {
+    for (const [didKey, evidence] of dids) {
         const { created } = evidence;
-        if (evidence.conflicting) {
+        if (evidence.isAgent && evidence.conflicting) {
             agentsWithConflictingPrefixes += 1;
         }
-        if (didPrefix && evidence.prefix !== didPrefix) {
+        const prefix = metricPrefix(
+            evidence,
+            evidence.isAgent ? undefined : publishedPrefixes.get(didKey)
+        );
+        if (didPrefix && prefix !== didPrefix) {
             continue;
         }
         if (created.future) {
@@ -253,7 +245,10 @@ export async function buildNetworkMetricSnapshots(
             continue;
         }
 
-        incrementPrefix(agentPrefixDeltas, created.day, evidence.prefix);
+        incrementPrefix(didPrefixDeltas, created.day, prefix);
+        if (evidence.isAgent) {
+            incrementPrefix(agentPrefixDeltas, created.day, prefix);
+        }
     }
 
     for (const [credentialKey, evidence] of credentials) {
@@ -263,7 +258,7 @@ export async function buildNetworkMetricSnapshots(
         }
 
         const schemaKey = evidence.schemas.values().next().value as string;
-        const asset = assets.get(credentialKey);
+        const asset = dids.get(credentialKey);
         const credentialPrefix = metricPrefix(asset, publishedPrefixes.get(credentialKey));
         if (didPrefix && credentialPrefix !== didPrefix) {
             continue;
@@ -277,11 +272,7 @@ export async function buildNetworkMetricSnapshots(
                 credentialsDatedByOperationCreated += 1;
             }
             else if (created.future) {
-                futureCreatedOperations += 1;
                 continue;
-            }
-            else if (created.invalid) {
-                invalidCreatedTimes += 1;
             }
         }
 
@@ -308,22 +299,26 @@ export async function buildNetworkMetricSnapshots(
 
         incrementPrefix(credentialPrefixDeltas, day, credentialPrefix);
 
-        const schemaPrefix = metricPrefix(assets.get(schemaKey), publishedPrefixes.get(schemaKey));
+        const schemaPrefix = metricPrefix(dids.get(schemaKey), publishedPrefixes.get(schemaKey));
         if (!didPrefix || schemaPrefix === didPrefix) {
             schemaDids.set(schemaKey, `${schemaPrefix}:${schemaKey}`);
             incrementSchema(schemaDeltas, day, schemaKey);
         }
     }
 
-    const deltaDays = [...agentPrefixDeltas.keys(), ...credentialPrefixDeltas.keys()];
+    const deltaDays = [...didPrefixDeltas.keys(), ...agentPrefixDeltas.keys(), ...credentialPrefixDeltas.keys()];
     const firstDay = deltaDays.sort()[0] ?? today;
     const rebuiltAt = now.toISOString();
     const snapshots: NetworkMetricSnapshot[] = [];
+    const didCountsByPrefix = new Map<string, number>();
     const agentDidCountsByPrefix = new Map<string, number>();
     const credentialDidCountsByPrefix = new Map<string, number>();
     const schemaCounts = new Map<string, number>();
 
     for (let day = firstDay; day <= today; day = nextDay(day)) {
+        for (const [prefix, count] of didPrefixDeltas.get(day) ?? []) {
+            didCountsByPrefix.set(prefix, (didCountsByPrefix.get(prefix) ?? 0) + count);
+        }
         for (const [prefix, count] of agentPrefixDeltas.get(day) ?? []) {
             agentDidCountsByPrefix.set(prefix, (agentDidCountsByPrefix.get(prefix) ?? 0) + count);
         }
@@ -335,6 +330,8 @@ export async function buildNetworkMetricSnapshots(
         }
         snapshots.push({
             date: day,
+            didCount: totalPrefixCounts(didCountsByPrefix),
+            didCountsByPrefix: sortedPrefixCounts(didCountsByPrefix),
             agentDidCount: totalPrefixCounts(agentDidCountsByPrefix),
             agentDidCountsByPrefix: sortedPrefixCounts(agentDidCountsByPrefix),
             credentialCount: totalPrefixCounts(credentialDidCountsByPrefix),
