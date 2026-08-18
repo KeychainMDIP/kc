@@ -383,20 +383,20 @@ describe.each(adapterFactories)('$name challenge receipt storage', ({ create }) 
         const { db, cleanup } = await create();
         const rows: ChallengeReceiptRecord[] = [
             {
-                receiptDid: 'did:test:receipt-mdip',
-                attesterDid: 'did:mdip:attester',
-                schemaDid: 'did:mdip:schema',
-                requesterDid: 'did:mdip:requester',
-                responseCommitment: 'commitment-mdip',
-                updatedAt: '2026-04-01T10:00:00.000Z',
-            },
-            {
                 receiptDid: 'did:test:receipt-test',
                 attesterDid: 'did:test:attester',
                 schemaDid: 'did:test:schema',
                 requesterDid: 'did:test:requester',
                 responseCommitment: 'commitment-test',
                 updatedAt: '2026-04-02T10:00:00.000Z',
+            },
+            {
+                receiptDid: 'did:test:receipt-mdip',
+                attesterDid: 'did:mdip:attester',
+                schemaDid: 'did:mdip:schema',
+                requesterDid: 'did:mdip:requester',
+                responseCommitment: 'commitment-mdip',
+                updatedAt: '2026-04-01T10:00:00.000Z',
             },
         ];
 

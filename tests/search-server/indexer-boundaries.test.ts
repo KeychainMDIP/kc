@@ -158,6 +158,40 @@ describe('DidIndexer gatekeeper read boundary', () => {
         expect(await db.loadSyncState('index.changes.cursor')).toBe('7');
     });
 
+    it('removes records through their stored alias or exported DID', async () => {
+        const db = new DIDsDbMemory();
+        const storedDid = 'did:test:removed-existing';
+        const exportedAlias = 'did:mdip:removed-existing';
+        const missingDid = 'did:test:removed-missing';
+        await db.applyIndexPage({
+            dids: [{
+                did: storedDid,
+                events: [createEvent(storedDid, {}, '2026-04-01T10:00:00.000Z')],
+            }],
+            blocks: [],
+        });
+        const applyIndexPage = jest.spyOn(db, 'applyIndexPage');
+        const indexer = new DidIndexer({
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>(),
+        }, db, { intervalMs: 60_000 });
+
+        await (indexer as any).applyExportPage({
+            ...createChangesResponse(),
+            dids: [
+                { did: exportedAlias, events: [], removed: true },
+                { did: missingDid, events: [], removed: true },
+            ],
+        }, {});
+
+        expect(applyIndexPage).toHaveBeenLastCalledWith(expect.objectContaining({
+            dids: [
+                expect.objectContaining({ did: storedDid, removed: true }),
+                expect.objectContaining({ did: missingDid, removed: true }),
+            ],
+        }));
+    });
+
     it('does not start a refresh when gatekeeper is not ready or another refresh is active', async () => {
         const db = new DIDsDbMemory();
         const gatekeeper = {

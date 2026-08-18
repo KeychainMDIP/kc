@@ -1426,6 +1426,9 @@ describe('postgres adapter with mocked pool', () => {
         expect(await db.getPublishedCredentialCountsBySchema()).toStrictEqual([
             { schemaDid: 'did:test:schema-1', count: 2 },
         ]);
+        expect(await db.getPublishedCredentialCountsBySchema('did:test')).toStrictEqual([
+            { schemaDid: 'did:test:schema-1', count: 2 },
+        ]);
         expect(await db.listPublishedCredentials({
             didPrefix: 'did:test',
             credentialDid: 'did:test:credential-1',
@@ -1448,6 +1451,7 @@ describe('postgres adapter with mocked pool', () => {
             }],
         });
         expect(await db.searchDocs('search')).toStrictEqual(['did:test:search-1']);
+        expect(await db.searchDocs('search', 'did:test')).toStrictEqual(['did:test:search-1']);
 
         expect(await db.queryDocs({})).toStrictEqual([]);
         await expect(db.queryDocs({ '$.didDocument.id': {} } as any)).rejects.toThrow('Only {$in:[…]} supported');
@@ -1457,6 +1461,9 @@ describe('postgres adapter with mocked pool', () => {
         expect(await db.queryDocs({ '$.didDocumentData.manifest.*': { $in: ['cred'] } })).toStrictEqual(['did:test:key-wildcard']);
         expect(await db.queryDocs({ '$.didDocumentData.manifest.*.issuer': { $in: ['issuer'] } })).toStrictEqual(['did:test:value-wildcard']);
         expect(await db.queryDocs({ '$.didDocument.id': { $in: ['did:test:plain-path'] } })).toStrictEqual(['did:test:plain-path']);
+        expect(await db.queryDocs({
+            '$.didDocument.id': { $in: ['did:test:plain-path'] },
+        }, 'did:mdip')).toStrictEqual([]);
 
         await db.wipeDb();
         await db.disconnect();
