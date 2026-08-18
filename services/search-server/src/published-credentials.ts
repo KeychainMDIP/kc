@@ -1,9 +1,5 @@
 import type { GatekeeperEvent, PublishedCredentialRecord } from "./types.js";
-import {
-    AMBIGUOUS_DID_PREFIX,
-    getDIDPrefix,
-    getDIDSuffix,
-} from './did-aliases.js';
+import { getDIDSuffix } from './did-aliases.js';
 
 interface MaybeVc {
     type?: unknown;
@@ -130,36 +126,4 @@ export function deduplicateDIDPrefixReferences(
         ...references,
         ...publishedCredentials.flatMap(record => [record.credentialDid, record.schemaDid]),
     ]));
-}
-
-export function deduplicatePublishedCredentials(
-    records: PublishedCredentialRecord[]
-): PublishedCredentialRecord[] {
-    const prefixes = new Map<string, Set<string>>();
-    const credentials = new Map<string, PublishedCredentialRecord>();
-
-    for (const record of records) {
-        for (const did of [record.credentialDid, record.schemaDid]) {
-            const suffix = getDIDSuffix(did);
-            const found = prefixes.get(suffix) ?? new Set<string>();
-            found.add(getDIDPrefix(did));
-            prefixes.set(suffix, found);
-        }
-        credentials.set(`${record.holderDid}\0${getDIDSuffix(record.credentialDid)}`, record);
-    }
-
-    const canonicalReference = (did: string) => {
-        const suffix = getDIDSuffix(did);
-        const found = prefixes.get(suffix);
-        const prefix = found?.size === 1
-            ? found.values().next().value as string
-            : AMBIGUOUS_DID_PREFIX;
-        return `${prefix}:${suffix}`;
-    };
-
-    return Array.from(credentials.values(), record => ({
-        ...record,
-        credentialDid: canonicalReference(record.credentialDid),
-        schemaDid: canonicalReference(record.schemaDid),
-    }));
 }

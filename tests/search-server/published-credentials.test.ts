@@ -6,10 +6,7 @@ import { setLogger } from '../../packages/common/src/logger.ts';
 import DIDsDbMemory from '../../services/search-server/src/db/json-memory.ts';
 import Sqlite from '../../services/search-server/src/db/sqlite.ts';
 import DidIndexer, { type GatekeeperIndexClient } from '../../services/search-server/src/DidIndexer.ts';
-import {
-    deduplicatePublishedCredentials,
-    extractPublishedCredentials,
-} from '../../services/search-server/src/published-credentials.ts';
+import { extractPublishedCredentials } from '../../services/search-server/src/published-credentials.ts';
 import type {
     ApplyIndexPageResult,
     DIDsDb,
@@ -234,32 +231,6 @@ function createLogger() {
 }
 
 describe('extractPublishedCredentials', () => {
-    it('deduplicates CID aliases and defaults conflicting published prefixes to test', () => {
-        const holderDid = 'did:test:holder';
-        const record = {
-            holderDid,
-            credentialDid: 'did:mdip:credential',
-            schemaDid: 'did:mdip:schema',
-            issuerDid: holderDid,
-            subjectDid: holderDid,
-            revealed: false,
-            updatedAt: '2026-03-31T10:41:22.000Z',
-        };
-
-        expect(deduplicatePublishedCredentials([
-            record,
-            {
-                ...record,
-                credentialDid: 'did:test:credential',
-                schemaDid: 'did:test:schema',
-            },
-        ])).toStrictEqual([{
-            ...record,
-            credentialDid: 'did:test:credential',
-            schemaDid: 'did:test:schema',
-        }]);
-    });
-
     it('extracts normalized rows from a valid manifest using signature.signed as the published timestamp', () => {
         const holderDid = 'did:test:subject-1';
         const schemaDid = 'did:test:schema-1';
@@ -1593,7 +1564,7 @@ describe('postgres adapter with mocked pool', () => {
         await db.disconnect();
         await db.disconnect();
 
-        expect(mockPool.query).toHaveBeenCalledTimes(2);
+        expect(mockPool.query).toHaveBeenCalledTimes(1);
         expect(mockPool.end).toHaveBeenCalledTimes(1);
 
         const disconnectedDb = new TestPostgres('postgresql://example');

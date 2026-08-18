@@ -356,7 +356,7 @@ function Credentials() {
                 const schemas = await fetchPublishedSchemaMetrics();
 
                 if (!ignore) {
-                    setSchemaCounts(schemas ?? []);
+                    setSchemaCounts(schemas);
                 }
             }
             catch (error: any) {

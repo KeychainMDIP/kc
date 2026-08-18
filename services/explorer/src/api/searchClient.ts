@@ -248,22 +248,13 @@ export async function searchDIDDocuments(query: string): Promise<string[]> {
     return response.data as string[];
 }
 
-export async function fetchPublishedSchemaMetrics(): Promise<PublishedSchemaMetric[] | null> {
-    try {
-        const response = await axios.get(`${apiBaseUrl}/metrics/schemas/published`);
+export async function fetchPublishedSchemaMetrics(): Promise<PublishedSchemaMetric[]> {
+    const response = await axios.get(`${apiBaseUrl}/metrics/schemas/published`);
 
-        return (response.data.schemas ?? []).map((row: any) => ({
-            schemaDid: row.schemaDid,
-            count: toNumber(row.count),
-        }));
-    }
-    catch (error: any) {
-        if (error?.response?.status === 404) {
-            return null;
-        }
-
-        throw error;
-    }
+    return (response.data.schemas ?? []).map((row: any) => ({
+        schemaDid: row.schemaDid,
+        count: toNumber(row.count),
+    }));
 }
 
 export async function fetchNetworkMetricSnapshot(date: string): Promise<NetworkMetricSnapshot | null> {

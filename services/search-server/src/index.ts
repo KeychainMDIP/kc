@@ -8,7 +8,7 @@ import DIDsSQLite from "./db/sqlite.js";
 import DIDsDbMemory from './db/json-memory.js';
 import DIDsPostgres from './db/postgres.js';
 import DidIndexer, { INDEX_SYNC_STATE_KEYS } from "./DidIndexer.js";
-import {DIDsDb} from "./types.js";
+import type { DIDsDb, NetworkMetricSnapshot } from "./types.js";
 import { childLogger } from "@mdip/common/logger";
 import config from "./config.js";
 import { findDIDReadTarget } from './did-aliases.js';
@@ -264,7 +264,9 @@ async function main() {
         }
     });
 
-    v1router.get('/metrics/snapshots/:date', async (req, res) => {
+    const snapshotHandler = (
+        select: (snapshot: NetworkMetricSnapshot) => unknown
+    ) => async (req: express.Request, res: express.Response) => {
         try {
             const date = parseSnapshotDate(req.params.date);
             if (!date) {
@@ -280,118 +282,36 @@ async function main() {
                 return res.status(404).json({ error: 'Snapshot not found' });
             }
 
-            return res.json(snapshot);
+            return res.json(select(snapshot));
         }
         catch (error) {
-            log.error({ error }, '/metrics/snapshots/:date error');
+            log.error({ error }, 'Network metrics snapshot error');
             return res.status(500).json({ error: String(error) });
         }
-    });
+    };
 
-    v1router.get('/metrics/snapshots/dids/:date', async (req, res) => {
-        try {
-            const date = parseSnapshotDate(req.params.date);
-            if (!date) {
-                return res.status(400).json({ error: 'date must be a valid, non-future UTC date in YYYY-MM-DD format' });
-            }
-            const storedDidPrefix = await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsDidPrefix);
-            if (!isNetworkMetricsScopeCurrent(storedDidPrefix, config.didPrefix)) {
-                return res.status(503).json({ error: 'Network metrics are rebuilding for the configured DID prefix' });
-            }
-
-            const snapshot = await didDb.getNetworkMetricSnapshot(date);
-            if (!snapshot) {
-                return res.status(404).json({ error: 'Snapshot not found' });
-            }
-
-            return res.json({
-                didCount: snapshot.didCount,
-                didCountsByPrefix: snapshot.didCountsByPrefix,
-            });
-        }
-        catch (error) {
-            log.error({ error }, '/metrics/snapshots/dids/:date error');
-            return res.status(500).json({ error: String(error) });
-        }
-    });
-
-    v1router.get('/metrics/snapshots/schemas/:date', async (req, res) => {
-        try {
-            const date = parseSnapshotDate(req.params.date);
-            if (!date) {
-                return res.status(400).json({ error: 'date must be a valid, non-future UTC date in YYYY-MM-DD format' });
-            }
-            const storedDidPrefix = await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsDidPrefix);
-            if (!isNetworkMetricsScopeCurrent(storedDidPrefix, config.didPrefix)) {
-                return res.status(503).json({ error: 'Network metrics are rebuilding for the configured DID prefix' });
-            }
-
-            const snapshot = await didDb.getNetworkMetricSnapshot(date);
-            if (!snapshot) {
-                return res.status(404).json({ error: 'Snapshot not found' });
-            }
-
-            return res.json({ schemas: snapshot.schemas });
-        }
-        catch (error) {
-            log.error({ error }, '/metrics/snapshots/schemas/:date error');
-            return res.status(500).json({ error: String(error) });
-        }
-    });
-
-    v1router.get('/metrics/snapshots/agents/:date', async (req, res) => {
-        try {
-            const date = parseSnapshotDate(req.params.date);
-            if (!date) {
-                return res.status(400).json({ error: 'date must be a valid, non-future UTC date in YYYY-MM-DD format' });
-            }
-            const storedDidPrefix = await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsDidPrefix);
-            if (!isNetworkMetricsScopeCurrent(storedDidPrefix, config.didPrefix)) {
-                return res.status(503).json({ error: 'Network metrics are rebuilding for the configured DID prefix' });
-            }
-
-            const snapshot = await didDb.getNetworkMetricSnapshot(date);
-            if (!snapshot) {
-                return res.status(404).json({ error: 'Snapshot not found' });
-            }
-
-            return res.json({
-                agentDidCount: snapshot.agentDidCount,
-                agentDidCountsByPrefix: snapshot.agentDidCountsByPrefix,
-            });
-        }
-        catch (error) {
-            log.error({ error }, '/metrics/snapshots/agents/:date error');
-            return res.status(500).json({ error: String(error) });
-        }
-    });
-
-    v1router.get('/metrics/snapshots/credentials/:date', async (req, res) => {
-        try {
-            const date = parseSnapshotDate(req.params.date);
-            if (!date) {
-                return res.status(400).json({ error: 'date must be a valid, non-future UTC date in YYYY-MM-DD format' });
-            }
-            const storedDidPrefix = await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsDidPrefix);
-            if (!isNetworkMetricsScopeCurrent(storedDidPrefix, config.didPrefix)) {
-                return res.status(503).json({ error: 'Network metrics are rebuilding for the configured DID prefix' });
-            }
-
-            const snapshot = await didDb.getNetworkMetricSnapshot(date);
-            if (!snapshot) {
-                return res.status(404).json({ error: 'Snapshot not found' });
-            }
-
-            return res.json({
-                credentialCount: snapshot.credentialCount,
-                credentialDidCountsByPrefix: snapshot.credentialDidCountsByPrefix,
-            });
-        }
-        catch (error) {
-            log.error({ error }, '/metrics/snapshots/credentials/:date error');
-            return res.status(500).json({ error: String(error) });
-        }
-    });
+    v1router.get('/metrics/snapshots/:date', snapshotHandler(snapshot => snapshot));
+    v1router.get('/metrics/snapshots/dids/:date', snapshotHandler(
+        snapshot => ({
+            didCount: snapshot.didCount,
+            didCountsByPrefix: snapshot.didCountsByPrefix,
+        })
+    ));
+    v1router.get('/metrics/snapshots/schemas/:date', snapshotHandler(
+        snapshot => ({ schemas: snapshot.schemas })
+    ));
+    v1router.get('/metrics/snapshots/agents/:date', snapshotHandler(
+        snapshot => ({
+            agentDidCount: snapshot.agentDidCount,
+            agentDidCountsByPrefix: snapshot.agentDidCountsByPrefix,
+        })
+    ));
+    v1router.get('/metrics/snapshots/credentials/:date', snapshotHandler(
+        snapshot => ({
+            credentialCount: snapshot.credentialCount,
+            credentialDidCountsByPrefix: snapshot.credentialDidCountsByPrefix,
+        })
+    ));
 
     v1router.get("/metrics/credentials/published", async (req, res) => {
         try {

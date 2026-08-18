@@ -21,10 +21,7 @@ import {
     GatekeeperEvent,
 } from "../types.js";
 import { copyJSON, getEventDisplayTime, stableStringify } from "./db-utils.js";
-import {
-    deduplicateDIDPrefixReferences,
-    deduplicatePublishedCredentials,
-} from '../published-credentials.js';
+import { deduplicateDIDPrefixReferences } from '../published-credentials.js';
 import {
     AMBIGUOUS_DID_PREFIX,
     classifyDIDPrefix,
@@ -192,7 +189,7 @@ export default class DIDsDbMemory implements DIDsDb {
 
             this.publishedCredentials.set(
                 record.did,
-                copyJSON(deduplicatePublishedCredentials(record.publishedCredentials ?? []))
+                copyJSON(record.publishedCredentials ?? [])
             );
             this.didPrefixReferences.set(record.did, deduplicateDIDPrefixReferences(
                 record.didPrefixReferences ?? [],
@@ -532,10 +529,6 @@ export default class DIDsDbMemory implements DIDsDb {
         return `${this.effectiveDIDPrefix(suffix, prefixes)}:${suffix}`;
     }
 
-    private canonicalDIDReference(did: string, prefixes: Map<string, Set<string>>): string {
-        return this.effectiveDID(did, prefixes);
-    }
-
     private canonicalPublishedCredentials(): PublishedCredentialRecord[] {
         const credentials = new Map<string, PublishedCredentialRecord>();
         const prefixes = this.publishedReferencePrefixes();
@@ -543,8 +536,8 @@ export default class DIDsDbMemory implements DIDsDb {
         for (const record of this.flattenPublishedCredentials()) {
             credentials.set(`${record.holderDid}\0${getDIDSuffix(record.credentialDid)}`, {
                 ...record,
-                credentialDid: this.canonicalDIDReference(record.credentialDid, prefixes),
-                schemaDid: this.canonicalDIDReference(record.schemaDid, prefixes),
+                credentialDid: this.effectiveDID(record.credentialDid, prefixes),
+                schemaDid: this.effectiveDID(record.schemaDid, prefixes),
             });
         }
 

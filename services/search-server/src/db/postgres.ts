@@ -21,10 +21,7 @@ import {
     GatekeeperEvent,
 } from '../types.js';
 import { getEventDisplayTime, stableStringify } from './db-utils.js';
-import {
-    deduplicateDIDPrefixReferences,
-    deduplicatePublishedCredentials,
-} from '../published-credentials.js';
+import { deduplicateDIDPrefixReferences } from '../published-credentials.js';
 import {
     AMBIGUOUS_DID_PREFIX,
     classifyDIDPrefix,
@@ -138,12 +135,8 @@ export default class Postgres implements DIDsDb {
 
             CREATE TABLE IF NOT EXISTS published_credentials (
                 holder_did TEXT NOT NULL,
-                credential_did TEXT NOT NULL,
                 credential_suffix TEXT NOT NULL,
-                credential_prefix TEXT NOT NULL,
-                schema_did TEXT NOT NULL,
                 schema_suffix TEXT NOT NULL,
-                schema_prefix TEXT NOT NULL,
                 issuer_did TEXT NOT NULL,
                 subject_did TEXT NOT NULL,
                 revealed BOOLEAN,
@@ -151,17 +144,8 @@ export default class Postgres implements DIDsDb {
                 PRIMARY KEY (holder_did, credential_suffix)
             );
 
-            CREATE INDEX IF NOT EXISTS idx_published_credentials_schema
-                ON published_credentials (schema_did);
-
             CREATE INDEX IF NOT EXISTS idx_published_credentials_suffixes
                 ON published_credentials (credential_suffix, schema_suffix);
-
-            CREATE INDEX IF NOT EXISTS idx_published_credentials_schema_issuer
-                ON published_credentials (schema_did, issuer_did);
-
-            CREATE INDEX IF NOT EXISTS idx_published_credentials_schema_subject
-                ON published_credentials (schema_did, subject_did);
 
             CREATE TABLE IF NOT EXISTS did_prefix_references (
                 source_did TEXT NOT NULL,
@@ -241,11 +225,6 @@ export default class Postgres implements DIDsDb {
                 schema_counts JSONB NOT NULL DEFAULT '[]'::jsonb,
                 rebuilt_at TEXT NOT NULL
             );
-        `);
-
-        await this.pool.query(`
-            CREATE INDEX IF NOT EXISTS idx_published_credentials_schema_revealed
-                ON published_credentials (schema_did, revealed)
         `);
     }
 
@@ -1111,40 +1090,27 @@ export default class Postgres implements DIDsDb {
             [holderDid]
         );
 
-        for (const record of deduplicatePublishedCredentials(records)) {
+        for (const record of records) {
             await client.query(
                 `INSERT INTO published_credentials (
                     holder_did,
-                    credential_did,
                     credential_suffix,
-                    credential_prefix,
-                    schema_did,
                     schema_suffix,
-                    schema_prefix,
                     issuer_did,
                     subject_did,
                     revealed,
                     updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7)
                 ON CONFLICT (holder_did, credential_suffix) DO UPDATE SET
-                    credential_did = EXCLUDED.credential_did,
-                    credential_suffix = EXCLUDED.credential_suffix,
-                    credential_prefix = EXCLUDED.credential_prefix,
-                    schema_did = EXCLUDED.schema_did,
                     schema_suffix = EXCLUDED.schema_suffix,
-                    schema_prefix = EXCLUDED.schema_prefix,
                     issuer_did = EXCLUDED.issuer_did,
                     subject_did = EXCLUDED.subject_did,
                     revealed = EXCLUDED.revealed,
                     updated_at = EXCLUDED.updated_at`,
                 [
                     record.holderDid,
-                    record.credentialDid,
                     getDIDSuffix(record.credentialDid),
-                    getDIDPrefix(record.credentialDid),
-                    record.schemaDid,
                     getDIDSuffix(record.schemaDid),
-                    getDIDPrefix(record.schemaDid),
                     record.issuerDid,
                     record.subjectDid,
                     record.revealed,

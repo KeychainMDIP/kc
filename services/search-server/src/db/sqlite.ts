@@ -22,10 +22,7 @@ import {
     GatekeeperEvent,
 } from "../types.js";
 import { getEventDisplayTime, stableStringify } from './db-utils.js';
-import {
-    deduplicateDIDPrefixReferences,
-    deduplicatePublishedCredentials,
-} from '../published-credentials.js';
+import { deduplicateDIDPrefixReferences } from '../published-credentials.js';
 import {
     AMBIGUOUS_DID_PREFIX,
     classifyDIDPrefix,
@@ -112,12 +109,8 @@ export default class Sqlite implements DIDsDb {
 
             CREATE TABLE IF NOT EXISTS published_credentials (
                 holder_did TEXT NOT NULL,
-                credential_did TEXT NOT NULL,
                 credential_suffix TEXT NOT NULL,
-                credential_prefix TEXT NOT NULL,
-                schema_did TEXT NOT NULL,
                 schema_suffix TEXT NOT NULL,
-                schema_prefix TEXT NOT NULL,
                 issuer_did TEXT NOT NULL,
                 subject_did TEXT NOT NULL,
                 revealed INTEGER,
@@ -125,17 +118,8 @@ export default class Sqlite implements DIDsDb {
                 PRIMARY KEY (holder_did, credential_suffix)
             );
 
-            CREATE INDEX IF NOT EXISTS idx_published_credentials_schema
-                ON published_credentials (schema_did);
-
             CREATE INDEX IF NOT EXISTS idx_published_credentials_suffixes
                 ON published_credentials (credential_suffix, schema_suffix);
-
-            CREATE INDEX IF NOT EXISTS idx_published_credentials_schema_issuer
-                ON published_credentials (schema_did, issuer_did);
-
-            CREATE INDEX IF NOT EXISTS idx_published_credentials_schema_subject
-                ON published_credentials (schema_did, subject_did);
 
             CREATE TABLE IF NOT EXISTS did_prefix_references (
                 source_did TEXT NOT NULL,
@@ -215,11 +199,6 @@ export default class Sqlite implements DIDsDb {
                 schema_counts TEXT NOT NULL DEFAULT '[]',
                 rebuilt_at TEXT NOT NULL
             );
-        `);
-
-        await this.db.exec(`
-            CREATE INDEX IF NOT EXISTS idx_published_credentials_schema_revealed
-                ON published_credentials (schema_did, revealed)
         `);
     }
 
@@ -1100,40 +1079,27 @@ export default class Sqlite implements DIDsDb {
             [holderDid]
         );
 
-        for (const record of deduplicatePublishedCredentials(records)) {
+        for (const record of records) {
             await this.db!.run(`
                 INSERT INTO published_credentials (
                     holder_did,
-                    credential_did,
                     credential_suffix,
-                    credential_prefix,
-                    schema_did,
                     schema_suffix,
-                    schema_prefix,
                     issuer_did,
                     subject_did,
                     revealed,
                     updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(holder_did, credential_suffix) DO UPDATE SET
-                    credential_did = excluded.credential_did,
-                    credential_suffix = excluded.credential_suffix,
-                    credential_prefix = excluded.credential_prefix,
-                    schema_did = excluded.schema_did,
                     schema_suffix = excluded.schema_suffix,
-                    schema_prefix = excluded.schema_prefix,
                     issuer_did = excluded.issuer_did,
                     subject_did = excluded.subject_did,
                     revealed = excluded.revealed,
                     updated_at = excluded.updated_at
             `, [
                 record.holderDid,
-                record.credentialDid,
                 getDIDSuffix(record.credentialDid),
-                getDIDPrefix(record.credentialDid),
-                record.schemaDid,
                 getDIDSuffix(record.schemaDid),
-                getDIDPrefix(record.schemaDid),
                 record.issuerDid,
                 record.subjectDid,
                 record.revealed ? 1 : 0,

@@ -10,6 +10,7 @@ import {
     extractPublishedCredentialHistory,
     extractPublishedCredentials,
 } from "./published-credentials.js";
+import { isAgentDID } from './did-aliases.js';
 
 export type ProjectionBlockLookup = (
     registry: string,
@@ -41,9 +42,8 @@ export async function buildDIDProjectionUpdate(
         events,
         getBlock: options.getBlock ?? ((registry, block) => db.getBlock(registry, block)),
     });
-    const anchor = events[0]?.operation;
-    const isAgentDID = anchor?.type === 'create' && anchor.mdip?.type === 'agent';
-    const publishedCredentials = isAgentDID
+    const agent = isAgentDID(events);
+    const publishedCredentials = agent
         ? extractPublishedCredentials(did, doc)
         : [];
 
@@ -51,7 +51,7 @@ export async function buildDIDProjectionUpdate(
         did,
         events,
         doc,
-        didPrefixReferences: isAgentDID
+        didPrefixReferences: agent
             ? extractPublishedCredentialHistory(did, events)
                 .flatMap(({ credential }) => [credential.credentialDid, credential.schemaDid])
             : [],
