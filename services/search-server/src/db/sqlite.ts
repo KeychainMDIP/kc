@@ -31,6 +31,7 @@ import {
     classifyDIDPrefix,
     getDIDPrefix,
     getDIDSuffix,
+    isAgentDID,
 } from '../did-aliases.js';
 
 interface HistoryEventRow {
@@ -85,7 +86,8 @@ export default class Sqlite implements DIDsDb {
                 suffix TEXT PRIMARY KEY,
                 did TEXT NOT NULL UNIQUE,
                 prefix TEXT NOT NULL,
-                prefix_authoritative INTEGER NOT NULL
+                prefix_authoritative INTEGER NOT NULL,
+                is_agent INTEGER NOT NULL
             );
 
             CREATE INDEX IF NOT EXISTS idx_did_classifications_prefix
@@ -157,7 +159,7 @@ export default class Sqlite implements DIDsDb {
             CREATE VIEW IF NOT EXISTS did_classifications_effective AS
                 SELECT dc.suffix,
                        dc.did,
-                       CASE WHEN dc.prefix_authoritative THEN dc.prefix
+                       CASE WHEN dc.prefix_authoritative OR dc.is_agent THEN dc.prefix
                            ELSE COALESCE(rp.prefix, '${AMBIGUOUS_DID_PREFIX}')
                        END AS prefix
                 FROM did_classifications dc
@@ -165,8 +167,8 @@ export default class Sqlite implements DIDsDb {
 
             CREATE VIEW IF NOT EXISTS published_credentials_classified AS
                 SELECT pc.*,
-                       CASE WHEN cc.prefix_authoritative THEN cc.prefix ELSE cr.prefix END AS credential_effective_prefix,
-                       CASE WHEN sc.prefix_authoritative THEN sc.prefix ELSE sr.prefix END AS schema_effective_prefix
+                       CASE WHEN cc.prefix_authoritative OR cc.is_agent THEN cc.prefix ELSE cr.prefix END AS credential_effective_prefix,
+                       CASE WHEN sc.prefix_authoritative OR sc.is_agent THEN sc.prefix ELSE sr.prefix END AS schema_effective_prefix
                 FROM published_credentials pc
                 LEFT JOIN did_classifications cc ON cc.suffix = pc.credential_suffix
                 LEFT JOIN did_classifications sc ON sc.suffix = pc.schema_suffix
@@ -176,20 +178,23 @@ export default class Sqlite implements DIDsDb {
             CREATE TABLE IF NOT EXISTS challenge_receipts (
                 receipt_did TEXT PRIMARY KEY,
                 attester_did TEXT NOT NULL,
+                attester_suffix TEXT NOT NULL,
                 schema_did TEXT NOT NULL,
+                schema_suffix TEXT NOT NULL,
                 requester_did TEXT NOT NULL,
+                requester_suffix TEXT NOT NULL,
                 response_commitment TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
 
             CREATE INDEX IF NOT EXISTS idx_challenge_receipts_attester
-                ON challenge_receipts (attester_did);
+                ON challenge_receipts (attester_suffix);
 
             CREATE INDEX IF NOT EXISTS idx_challenge_receipts_schema
-                ON challenge_receipts (schema_did);
+                ON challenge_receipts (schema_suffix);
 
             CREATE INDEX IF NOT EXISTS idx_challenge_receipts_requester
-                ON challenge_receipts (requester_did);
+                ON challenge_receipts (requester_suffix);
 
             CREATE INDEX IF NOT EXISTS idx_challenge_receipts_commitment
                 ON challenge_receipts (response_commitment);
@@ -397,12 +402,13 @@ export default class Sqlite implements DIDsDb {
 
                 const classification = classifyDIDPrefix(record.events);
                 await this.db.run(`
-                    INSERT INTO did_classifications (suffix, did, prefix, prefix_authoritative) VALUES (?, ?, ?, ?)
+                    INSERT INTO did_classifications (suffix, did, prefix, prefix_authoritative, is_agent) VALUES (?, ?, ?, ?, ?)
                     ON CONFLICT(suffix) DO UPDATE SET
                         did=excluded.did,
                         prefix=excluded.prefix,
-                        prefix_authoritative=excluded.prefix_authoritative
-                `, [suffix, record.did, classification.prefix, classification.authoritative ? 1 : 0]);
+                        prefix_authoritative=excluded.prefix_authoritative,
+                        is_agent=excluded.is_agent
+                `, [suffix, record.did, classification.prefix, classification.authoritative ? 1 : 0, isAgentDID(record.events) ? 1 : 0]);
 
                 for (const [index, event] of record.events.entries()) {
                     await this.db.run(
@@ -517,13 +523,16 @@ export default class Sqlite implements DIDsDb {
         }
 
         if (issuerDid) {
-            clauses.push('pc.issuer_did = ?');
-            params.push(issuerDid);
+            clauses.push("substr(pc.issuer_did, -(length(?) + 1)) = ':' || ?");
+            const suffix = getDIDSuffix(issuerDid);
+            params.push(suffix, suffix);
         }
 
         if (subjectDid) {
-            clauses.push('pc.subject_did = ?');
-            params.push(subjectDid);
+            clauses.push(`pc.subject_did = (
+                SELECT did FROM did_classifications WHERE suffix = ?
+            )`);
+            params.push(getDIDSuffix(subjectDid));
         }
 
         if (typeof revealed === 'boolean') {
@@ -591,7 +600,10 @@ export default class Sqlite implements DIDsDb {
         } = options;
         const { where, params } = this.buildChallengeReceiptWhere(options);
         const totalRow = await this.db.get<{ total: number | string }>(
-            `SELECT COUNT(*) AS total FROM challenge_receipts ${where}`,
+            `SELECT COUNT(*) AS total
+             FROM challenge_receipts cr
+             JOIN did_classifications_effective dc ON dc.did = cr.receipt_did
+             ${where}`,
             params
         );
         const rows = await this.db.all<{
@@ -603,15 +615,16 @@ export default class Sqlite implements DIDsDb {
             updatedAt: string;
         }[]>(
             `SELECT
-                receipt_did AS receiptDid,
-                attester_did AS attesterDid,
-                schema_did AS schemaDid,
-                requester_did AS requesterDid,
-                response_commitment AS responseCommitment,
-                updated_at AS updatedAt
-             FROM challenge_receipts
+                dc.prefix || ':' || dc.suffix AS receiptDid,
+                cr.attester_did AS attesterDid,
+                cr.schema_did AS schemaDid,
+                cr.requester_did AS requesterDid,
+                cr.response_commitment AS responseCommitment,
+                cr.updated_at AS updatedAt
+             FROM challenge_receipts cr
+             JOIN did_classifications_effective dc ON dc.did = cr.receipt_did
              ${where}
-             ORDER BY updated_at DESC, receipt_did ASC
+             ORDER BY cr.updated_at DESC, receiptDid ASC
              LIMIT ? OFFSET ?`,
             [...params, Math.max(0, limit), Math.max(0, offset)]
         );
@@ -645,9 +658,10 @@ export default class Sqlite implements DIDsDb {
             `SELECT COUNT(*) AS total
              FROM (
                 SELECT 1
-                FROM challenge_receipts
+                FROM challenge_receipts cr
+                JOIN did_classifications_effective dc ON dc.did = cr.receipt_did
                 ${where}
-                GROUP BY attester_did, schema_did, requester_did
+                GROUP BY cr.attester_suffix, cr.schema_suffix, cr.requester_suffix
              )`,
             params
         );
@@ -660,16 +674,17 @@ export default class Sqlite implements DIDsDb {
             lastUpdatedAt: string;
         }[]>(
             `SELECT
-                attester_did AS attesterDid,
-                schema_did AS schemaDid,
-                requester_did AS requesterDid,
-                COUNT(DISTINCT response_commitment) AS count,
-                MIN(updated_at) AS firstUpdatedAt,
-                MAX(updated_at) AS lastUpdatedAt
-             FROM challenge_receipts
+                MIN(cr.attester_did) AS attesterDid,
+                MIN(cr.schema_did) AS schemaDid,
+                MIN(cr.requester_did) AS requesterDid,
+                COUNT(DISTINCT cr.response_commitment) AS count,
+                MIN(cr.updated_at) AS firstUpdatedAt,
+                MAX(cr.updated_at) AS lastUpdatedAt
+             FROM challenge_receipts cr
+             JOIN did_classifications_effective dc ON dc.did = cr.receipt_did
              ${where}
-             GROUP BY attester_did, schema_did, requester_did
-             ORDER BY count DESC, schema_did ASC, requester_did ASC
+             GROUP BY cr.attester_suffix, cr.schema_suffix, cr.requester_suffix
+             ORDER BY count DESC, schemaDid ASC, requesterDid ASC
              LIMIT ? OFFSET ?`,
             [...params, Math.max(0, limit), Math.max(0, offset)]
         );
@@ -1031,42 +1046,42 @@ export default class Sqlite implements DIDsDb {
         const responseCommitment = 'responseCommitment' in options ? options.responseCommitment : undefined;
 
         if (options.didPrefix) {
-            clauses.push('receipt_did LIKE ?');
-            params.push(`${options.didPrefix}:%`);
+            clauses.push('dc.prefix = ?');
+            params.push(options.didPrefix);
         }
 
         if (receiptDid) {
-            clauses.push('receipt_did = ?');
-            params.push(receiptDid);
+            clauses.push('dc.suffix = ?');
+            params.push(getDIDSuffix(receiptDid));
         }
 
         if (options.attesterDid) {
-            clauses.push('attester_did = ?');
-            params.push(options.attesterDid);
+            clauses.push('cr.attester_suffix = ?');
+            params.push(getDIDSuffix(options.attesterDid));
         }
 
         if (options.schemaDid) {
-            clauses.push('schema_did = ?');
-            params.push(options.schemaDid);
+            clauses.push('cr.schema_suffix = ?');
+            params.push(getDIDSuffix(options.schemaDid));
         }
 
         if (options.requesterDid) {
-            clauses.push('requester_did = ?');
-            params.push(options.requesterDid);
+            clauses.push('cr.requester_suffix = ?');
+            params.push(getDIDSuffix(options.requesterDid));
         }
 
         if (responseCommitment) {
-            clauses.push('response_commitment = ?');
+            clauses.push('cr.response_commitment = ?');
             params.push(responseCommitment);
         }
 
         if (options.updatedAfter) {
-            clauses.push('updated_at >= ?');
+            clauses.push('cr.updated_at >= ?');
             params.push(options.updatedAfter);
         }
 
         if (options.updatedBefore) {
-            clauses.push('updated_at <= ?');
+            clauses.push('cr.updated_at <= ?');
             params.push(options.updatedBefore);
         }
 
@@ -1156,22 +1171,31 @@ export default class Sqlite implements DIDsDb {
                 INSERT INTO challenge_receipts (
                     receipt_did,
                     attester_did,
+                    attester_suffix,
                     schema_did,
+                    schema_suffix,
                     requester_did,
+                    requester_suffix,
                     response_commitment,
                     updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(receipt_did) DO UPDATE SET
                     attester_did = excluded.attester_did,
+                    attester_suffix = excluded.attester_suffix,
                     schema_did = excluded.schema_did,
+                    schema_suffix = excluded.schema_suffix,
                     requester_did = excluded.requester_did,
+                    requester_suffix = excluded.requester_suffix,
                     response_commitment = excluded.response_commitment,
                     updated_at = excluded.updated_at
             `, [
                 record.receiptDid,
                 record.attesterDid,
+                getDIDSuffix(record.attesterDid),
                 record.schemaDid,
+                getDIDSuffix(record.schemaDid),
                 record.requesterDid,
+                getDIDSuffix(record.requesterDid),
                 record.responseCommitment,
                 record.updatedAt,
             ]);

@@ -15,6 +15,7 @@ import {
     fetchNetworkMetricSnapshot,
     type NetworkMetricSnapshot,
 } from "../api/searchClient.js";
+import { readinessPollIntervalMs } from "../config.js";
 import { useSnackbar } from "../contexts/SnackbarProvider.js";
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -29,32 +30,48 @@ function Network() {
 
     useEffect(() => {
         let ignore = false;
+        let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
         setSnapshot(null);
         setMessage("Loading network snapshot...");
 
-        fetchNetworkMetricSnapshot(selectedDate)
-            .then(result => {
-                if (ignore) {
-                    return;
-                }
+        function loadSnapshot() {
+            fetchNetworkMetricSnapshot(selectedDate)
+                .then(result => {
+                    if (ignore) {
+                        return;
+                    }
 
-                if (!result) {
-                    setMessage("No network snapshot exists for this date.");
-                    return;
-                }
+                    if (!result) {
+                        setMessage("No network snapshot exists for this date.");
+                        return;
+                    }
 
-                setSnapshot(result);
-            })
-            .catch(error => {
-                if (!ignore) {
+                    setSnapshot(result);
+                })
+                .catch(error => {
+                    if (ignore) {
+                        return;
+                    }
+
+                    if (error?.response?.status === 503) {
+                        setMessage("Network metrics are rebuilding...");
+                        retryTimer = setTimeout(loadSnapshot, readinessPollIntervalMs);
+                        return;
+                    }
+
                     setMessage("Unable to load the network snapshot.");
                     setError(error);
-                }
-            });
+                });
+        }
+
+        loadSnapshot();
 
         return () => {
             ignore = true;
+            if (retryTimer) {
+                clearTimeout(retryTimer);
+            }
         };
     }, [selectedDate, setError]);
 

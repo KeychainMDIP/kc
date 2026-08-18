@@ -30,6 +30,7 @@ import {
     classifyDIDPrefix,
     getDIDPrefix,
     getDIDSuffix,
+    isAgentDID,
 } from '../did-aliases.js';
 
 interface SyncStateRow {
@@ -111,7 +112,8 @@ export default class Postgres implements DIDsDb {
                 suffix TEXT PRIMARY KEY,
                 did TEXT NOT NULL UNIQUE,
                 prefix TEXT NOT NULL,
-                prefix_authoritative BOOLEAN NOT NULL
+                prefix_authoritative BOOLEAN NOT NULL,
+                is_agent BOOLEAN NOT NULL
             );
 
             CREATE INDEX IF NOT EXISTS idx_did_classifications_prefix
@@ -183,7 +185,7 @@ export default class Postgres implements DIDsDb {
             CREATE OR REPLACE VIEW did_classifications_effective AS
                 SELECT dc.suffix,
                        dc.did,
-                       CASE WHEN dc.prefix_authoritative THEN dc.prefix
+                       CASE WHEN dc.prefix_authoritative OR dc.is_agent THEN dc.prefix
                            ELSE COALESCE(rp.prefix, '${AMBIGUOUS_DID_PREFIX}')
                        END AS prefix
                 FROM did_classifications dc
@@ -191,8 +193,8 @@ export default class Postgres implements DIDsDb {
 
             CREATE OR REPLACE VIEW published_credentials_classified AS
                 SELECT pc.*,
-                       CASE WHEN cc.prefix_authoritative THEN cc.prefix ELSE cr.prefix END AS credential_effective_prefix,
-                       CASE WHEN sc.prefix_authoritative THEN sc.prefix ELSE sr.prefix END AS schema_effective_prefix
+                       CASE WHEN cc.prefix_authoritative OR cc.is_agent THEN cc.prefix ELSE cr.prefix END AS credential_effective_prefix,
+                       CASE WHEN sc.prefix_authoritative OR sc.is_agent THEN sc.prefix ELSE sr.prefix END AS schema_effective_prefix
                 FROM published_credentials pc
                 LEFT JOIN did_classifications cc ON cc.suffix = pc.credential_suffix
                 LEFT JOIN did_classifications sc ON sc.suffix = pc.schema_suffix
@@ -202,20 +204,23 @@ export default class Postgres implements DIDsDb {
             CREATE TABLE IF NOT EXISTS challenge_receipts (
                 receipt_did TEXT PRIMARY KEY,
                 attester_did TEXT NOT NULL,
+                attester_suffix TEXT NOT NULL,
                 schema_did TEXT NOT NULL,
+                schema_suffix TEXT NOT NULL,
                 requester_did TEXT NOT NULL,
+                requester_suffix TEXT NOT NULL,
                 response_commitment TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
 
             CREATE INDEX IF NOT EXISTS idx_challenge_receipts_attester
-                ON challenge_receipts (attester_did);
+                ON challenge_receipts (attester_suffix);
 
             CREATE INDEX IF NOT EXISTS idx_challenge_receipts_schema
-                ON challenge_receipts (schema_did);
+                ON challenge_receipts (schema_suffix);
 
             CREATE INDEX IF NOT EXISTS idx_challenge_receipts_requester
-                ON challenge_receipts (requester_did);
+                ON challenge_receipts (requester_suffix);
 
             CREATE INDEX IF NOT EXISTS idx_challenge_receipts_commitment
                 ON challenge_receipts (response_commitment);
@@ -420,12 +425,13 @@ export default class Postgres implements DIDsDb {
 
                 const classification = classifyDIDPrefix(record.events);
                 await client.query(
-                    `INSERT INTO did_classifications (suffix, did, prefix, prefix_authoritative) VALUES ($1, $2, $3, $4)
+                    `INSERT INTO did_classifications (suffix, did, prefix, prefix_authoritative, is_agent) VALUES ($1, $2, $3, $4, $5)
                      ON CONFLICT (suffix) DO UPDATE SET
                         did = EXCLUDED.did,
                         prefix = EXCLUDED.prefix,
-                        prefix_authoritative = EXCLUDED.prefix_authoritative`,
-                    [suffix, record.did, classification.prefix, classification.authoritative]
+                        prefix_authoritative = EXCLUDED.prefix_authoritative,
+                        is_agent = EXCLUDED.is_agent`,
+                    [suffix, record.did, classification.prefix, classification.authoritative, isAgentDID(record.events)]
                 );
 
                 for (const [index, event] of record.events.entries()) {
@@ -556,13 +562,16 @@ export default class Postgres implements DIDsDb {
         }
 
         if (issuerDid) {
-            clauses.push(`pc.issuer_did = $${index++}`);
-            params.push(issuerDid);
+            clauses.push(`right(pc.issuer_did, length($${index}) + 1) = ':' || $${index}`);
+            params.push(getDIDSuffix(issuerDid));
+            index++;
         }
 
         if (subjectDid) {
-            clauses.push(`pc.subject_did = $${index++}`);
-            params.push(subjectDid);
+            clauses.push(`pc.subject_did = (
+                SELECT did FROM did_classifications WHERE suffix = $${index++}
+            )`);
+            params.push(getDIDSuffix(subjectDid));
         }
 
         if (typeof revealed === 'boolean') {
@@ -614,7 +623,8 @@ export default class Postgres implements DIDsDb {
         const { where, params } = this.buildChallengeReceiptWhere(options);
         const totalResult = await pool.query<CountRow>(
             `SELECT COUNT(*)::int AS total
-             FROM challenge_receipts
+             FROM challenge_receipts cr
+             JOIN did_classifications_effective dc ON dc.did = cr.receipt_did
              ${where}`,
             params
         );
@@ -623,15 +633,16 @@ export default class Postgres implements DIDsDb {
         const offsetParam = `$${pageParams.length}`;
         const result = await pool.query<ChallengeReceiptRecord>(
             `SELECT
-                receipt_did AS "receiptDid",
-                attester_did AS "attesterDid",
-                schema_did AS "schemaDid",
-                requester_did AS "requesterDid",
-                response_commitment AS "responseCommitment",
-                updated_at AS "updatedAt"
-             FROM challenge_receipts
+                dc.prefix || ':' || dc.suffix AS "receiptDid",
+                cr.attester_did AS "attesterDid",
+                cr.schema_did AS "schemaDid",
+                cr.requester_did AS "requesterDid",
+                cr.response_commitment AS "responseCommitment",
+                cr.updated_at AS "updatedAt"
+             FROM challenge_receipts cr
+             JOIN did_classifications_effective dc ON dc.did = cr.receipt_did
              ${where}
-             ORDER BY updated_at DESC, receipt_did ASC
+             ORDER BY cr.updated_at DESC, "receiptDid" ASC
              LIMIT ${limitParam} OFFSET ${offsetParam}`,
             pageParams
         );
@@ -655,9 +666,10 @@ export default class Postgres implements DIDsDb {
             `SELECT COUNT(*)::int AS total
              FROM (
                 SELECT 1
-                FROM challenge_receipts
+                FROM challenge_receipts cr
+                JOIN did_classifications_effective dc ON dc.did = cr.receipt_did
                 ${where}
-                GROUP BY attester_did, schema_did, requester_did
+                GROUP BY cr.attester_suffix, cr.schema_suffix, cr.requester_suffix
              ) AS grouped`,
             params
         );
@@ -673,16 +685,17 @@ export default class Postgres implements DIDsDb {
             lastUpdatedAt: string;
         }>(
             `SELECT
-                attester_did AS "attesterDid",
-                schema_did AS "schemaDid",
-                requester_did AS "requesterDid",
-                COUNT(DISTINCT response_commitment)::int AS count,
-                MIN(updated_at) AS "firstUpdatedAt",
-                MAX(updated_at) AS "lastUpdatedAt"
-             FROM challenge_receipts
+                MIN(cr.attester_did) AS "attesterDid",
+                MIN(cr.schema_did) AS "schemaDid",
+                MIN(cr.requester_did) AS "requesterDid",
+                COUNT(DISTINCT cr.response_commitment)::int AS count,
+                MIN(cr.updated_at) AS "firstUpdatedAt",
+                MAX(cr.updated_at) AS "lastUpdatedAt"
+             FROM challenge_receipts cr
+             JOIN did_classifications_effective dc ON dc.did = cr.receipt_did
              ${where}
-             GROUP BY attester_did, schema_did, requester_did
-             ORDER BY count DESC, schema_did ASC, requester_did ASC
+             GROUP BY cr.attester_suffix, cr.schema_suffix, cr.requester_suffix
+             ORDER BY count DESC, "schemaDid" ASC, "requesterDid" ASC
              LIMIT ${limitParam} OFFSET ${offsetParam}`,
             pageParams
         );
@@ -1172,22 +1185,31 @@ export default class Postgres implements DIDsDb {
                 `INSERT INTO challenge_receipts (
                     receipt_did,
                     attester_did,
+                    attester_suffix,
                     schema_did,
+                    schema_suffix,
                     requester_did,
+                    requester_suffix,
                     response_commitment,
                     updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6)
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 ON CONFLICT (receipt_did) DO UPDATE SET
                     attester_did = EXCLUDED.attester_did,
+                    attester_suffix = EXCLUDED.attester_suffix,
                     schema_did = EXCLUDED.schema_did,
+                    schema_suffix = EXCLUDED.schema_suffix,
                     requester_did = EXCLUDED.requester_did,
+                    requester_suffix = EXCLUDED.requester_suffix,
                     response_commitment = EXCLUDED.response_commitment,
                     updated_at = EXCLUDED.updated_at`,
                 [
                     record.receiptDid,
                     record.attesterDid,
+                    getDIDSuffix(record.attesterDid),
                     record.schemaDid,
+                    getDIDSuffix(record.schemaDid),
                     record.requesterDid,
+                    getDIDSuffix(record.requesterDid),
                     record.responseCommitment,
                     record.updatedAt,
                 ]
@@ -1205,42 +1227,45 @@ export default class Postgres implements DIDsDb {
         const responseCommitment = 'responseCommitment' in options ? options.responseCommitment : undefined;
 
         if (options.didPrefix) {
-            clauses.push(`receipt_did LIKE $${index++}`);
-            params.push(`${options.didPrefix}:%`);
+            clauses.push(`dc.prefix = $${index++}`);
+            params.push(options.didPrefix);
         }
 
         if (receiptDid) {
-            clauses.push(`receipt_did = $${index++}`);
-            params.push(receiptDid);
+            clauses.push(`dc.suffix = $${index++}`);
+            params.push(getDIDSuffix(receiptDid));
         }
 
         if (options.attesterDid) {
-            clauses.push(`attester_did = $${index++}`);
-            params.push(options.attesterDid);
+            clauses.push(`cr.attester_suffix = $${index}`);
+            params.push(getDIDSuffix(options.attesterDid));
+            index++;
         }
 
         if (options.schemaDid) {
-            clauses.push(`schema_did = $${index++}`);
-            params.push(options.schemaDid);
+            clauses.push(`cr.schema_suffix = $${index}`);
+            params.push(getDIDSuffix(options.schemaDid));
+            index++;
         }
 
         if (options.requesterDid) {
-            clauses.push(`requester_did = $${index++}`);
-            params.push(options.requesterDid);
+            clauses.push(`cr.requester_suffix = $${index}`);
+            params.push(getDIDSuffix(options.requesterDid));
+            index++;
         }
 
         if (responseCommitment) {
-            clauses.push(`response_commitment = $${index++}`);
+            clauses.push(`cr.response_commitment = $${index++}`);
             params.push(responseCommitment);
         }
 
         if (options.updatedAfter) {
-            clauses.push(`updated_at >= $${index++}`);
+            clauses.push(`cr.updated_at >= $${index++}`);
             params.push(options.updatedAfter);
         }
 
         if (options.updatedBefore) {
-            clauses.push(`updated_at <= $${index++}`);
+            clauses.push(`cr.updated_at <= $${index++}`);
             params.push(options.updatedBefore);
         }
 

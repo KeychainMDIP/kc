@@ -56,6 +56,8 @@ interface SyncRunStats {
     removedDids: number;
 }
 
+const INITIAL_METRICS_QUIET_RUNS = 2;
+
 export default class DidIndexer {
     private gatekeeper: GatekeeperIndexClient;
     private db: DIDsDb;
@@ -65,6 +67,7 @@ export default class DidIndexer {
     private readonly didPrefix?: string;
     private timer: NodeJS.Timeout | null;
     private refreshInProgress: boolean;
+    private initialMetricsQuietRuns: number;
     private log = childLogger({ service: 'search-server', module: 'DidIndexer' });
 
     constructor(
@@ -80,6 +83,7 @@ export default class DidIndexer {
         this.didPrefix = options.didPrefix;
         this.timer = null;
         this.refreshInProgress = false;
+        this.initialMetricsQuietRuns = 0;
     }
 
     async startIndexing(): Promise<void> {
@@ -333,9 +337,14 @@ export default class DidIndexer {
 
             const now = new Date();
             const lastRebuiltAt = await this.db.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsLastRebuiltAt);
-            if (!lastRebuiltAt && syncRun &&
-                (syncRun.mode === 'snapshot' || syncRun.changedDids > 0)) {
-                return;
+            if (!lastRebuiltAt && syncRun) {
+                const isQuietChangesRun = syncRun.mode === 'changes' && syncRun.changedDids === 0;
+                this.initialMetricsQuietRuns = isQuietChangesRun
+                    ? this.initialMetricsQuietRuns + 1
+                    : 0;
+                if (this.initialMetricsQuietRuns < INITIAL_METRICS_QUIET_RUNS) {
+                    return;
+                }
             }
             const metricsDidPrefix = await this.db.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsDidPrefix);
             const currentMetricsDidPrefix = this.didPrefix ?? '';
@@ -361,6 +370,7 @@ export default class DidIndexer {
             await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.metricsLastRebuiltAt, now.toISOString());
             await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.metricsDidPrefix, currentMetricsDidPrefix);
             await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.metricsLastError, null);
+            this.initialMetricsQuietRuns = 0;
             this.log.info({
                 snapshots: result.snapshots.length,
                 agentsWithConflictingPrefixes: result.agentsWithConflictingPrefixes,

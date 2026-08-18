@@ -430,7 +430,7 @@ describe('search DB branch behavior', () => {
 
             if (text.includes('COUNT(*)::int AS total') ||
                 text.includes('receipt_did AS "receiptDid"') ||
-                text.includes('attester_did AS "attesterDid"')) {
+                text.includes('MIN(cr.attester_did) AS "attesterDid"')) {
                 return { rowCount: 0, rows: [] };
             }
 
@@ -675,10 +675,10 @@ describe('search DB branch behavior', () => {
                 challengeReceipts.set(receiptDid, [{
                     receiptDid,
                     attesterDid: String(params[1]),
-                    schemaDid: String(params[2]),
-                    requesterDid: String(params[3]),
-                    responseCommitment: String(params[4]),
-                    updatedAt: String(params[5]),
+                    schemaDid: String(params[3]),
+                    requesterDid: String(params[5]),
+                    responseCommitment: String(params[7]),
+                    updatedAt: String(params[8]),
                 }]);
                 return { rowCount: 1, rows: [] };
             }

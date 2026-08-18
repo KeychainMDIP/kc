@@ -96,6 +96,12 @@ describe('search-server DID read model', () => {
             resolutionDid: did,
             events: [event],
         });
+        const suffix = did.split(':').pop()!;
+        expect(await findDIDReadTarget(db, suffix, 'did:test')).toStrictEqual({
+            storedDid: suffix,
+            resolutionDid: suffix,
+            events: [],
+        });
         const target = await findDIDReadTarget(db, alias);
         expect(target).toStrictEqual({ storedDid: did, resolutionDid: alias, events: [event] });
         expect(await findDIDReadTarget(db, alias, 'did:test')).toStrictEqual({

@@ -30,6 +30,7 @@ import {
     classifyDIDPrefix,
     getDIDPrefix,
     getDIDSuffix,
+    isAgentDID,
 } from '../did-aliases.js';
 
 type JSONObject = Record<string, unknown>;
@@ -38,6 +39,7 @@ export default class DIDsDbMemory implements DIDsDb {
     private docs = new Map<string, JSONObject>();
     private didsBySuffix = new Map<string, string>();
     private authoritativeDIDPrefixes = new Map<string, string>();
+    private agentDIDSuffixes = new Set<string>();
     private syncState = new Map<string, string>();
     private events = new Map<string, GatekeeperEvent[]>();
     private blocks = new Map<string, Map<string, BlockInfo>>();
@@ -141,6 +143,7 @@ export default class DIDsDbMemory implements DIDsDb {
                 this.challengeReceipts.delete(previousDid);
                 this.didsBySuffix.delete(suffix);
                 this.authoritativeDIDPrefixes.delete(suffix);
+                this.agentDIDSuffixes.delete(suffix);
             }
 
             const oldEvents = this.events.get(record.did) ?? [];
@@ -161,6 +164,7 @@ export default class DIDsDbMemory implements DIDsDb {
                 if (this.didsBySuffix.get(suffix) === record.did) {
                     this.didsBySuffix.delete(suffix);
                     this.authoritativeDIDPrefixes.delete(suffix);
+                    this.agentDIDSuffixes.delete(suffix);
                 }
                 result.removedDids += 1;
                 continue;
@@ -173,6 +177,12 @@ export default class DIDsDbMemory implements DIDsDb {
             }
             else {
                 this.authoritativeDIDPrefixes.delete(suffix);
+            }
+            if (isAgentDID(record.events)) {
+                this.agentDIDSuffixes.add(suffix);
+            }
+            else {
+                this.agentDIDSuffixes.delete(suffix);
             }
             this.events.set(record.did, copyJSON(record.events));
 
@@ -238,8 +248,8 @@ export default class DIDsDbMemory implements DIDsDb {
             .filter(record => !didPrefix || getDIDPrefix(record.credentialDid) === didPrefix)
             .filter(record => !credentialDid || getDIDSuffix(record.credentialDid) === getDIDSuffix(credentialDid))
             .filter(record => !schemaDid || getDIDSuffix(record.schemaDid) === getDIDSuffix(schemaDid))
-            .filter(record => !issuerDid || record.issuerDid === issuerDid)
-            .filter(record => !subjectDid || record.subjectDid === subjectDid)
+            .filter(record => !issuerDid || getDIDSuffix(record.issuerDid) === getDIDSuffix(issuerDid))
+            .filter(record => !subjectDid || getDIDSuffix(record.subjectDid) === getDIDSuffix(subjectDid))
             .filter(record => typeof revealed !== 'boolean' || record.revealed === revealed)
             .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.credentialDid.localeCompare(b.credentialDid));
 
@@ -287,7 +297,9 @@ export default class DIDsDbMemory implements DIDsDb {
         }>();
 
         for (const record of this.filterChallengeReceipts(options)) {
-            const key = `${record.attesterDid}\u0000${record.schemaDid}\u0000${record.requesterDid}`;
+            const key = [record.attesterDid, record.schemaDid, record.requesterDid]
+                .map(getDIDSuffix)
+                .join('\u0000');
             const existing = groups.get(key);
 
             if (!existing) {
@@ -306,6 +318,15 @@ export default class DIDsDbMemory implements DIDsDb {
             }
 
             existing.commitments.add(record.responseCommitment);
+            if (record.attesterDid < existing.record.attesterDid) {
+                existing.record.attesterDid = record.attesterDid;
+            }
+            if (record.schemaDid < existing.record.schemaDid) {
+                existing.record.schemaDid = record.schemaDid;
+            }
+            if (record.requesterDid < existing.record.requesterDid) {
+                existing.record.requesterDid = record.requesterDid;
+            }
             existing.record.count = existing.commitments.size;
             if (record.updatedAt < existing.record.firstUpdatedAt) {
                 existing.record.firstUpdatedAt = record.updatedAt;
@@ -461,6 +482,7 @@ export default class DIDsDbMemory implements DIDsDb {
         this.docs.clear();
         this.didsBySuffix.clear();
         this.authoritativeDIDPrefixes.clear();
+        this.agentDIDSuffixes.clear();
         this.syncState.clear();
         this.events.clear();
         this.blocks.clear();
@@ -500,7 +522,9 @@ export default class DIDsDbMemory implements DIDsDb {
 
     private effectiveDIDPrefix(suffix: string, prefixes: Map<string, Set<string>>): string {
         return this.authoritativeDIDPrefixes.get(suffix)
-            ?? this.publishedReferencePrefix(suffix, prefixes);
+            ?? (this.agentDIDSuffixes.has(suffix)
+                ? AMBIGUOUS_DID_PREFIX
+                : this.publishedReferencePrefix(suffix, prefixes));
     }
 
     private effectiveDID(did: string, prefixes: Map<string, Set<string>>): string {
@@ -546,12 +570,18 @@ export default class DIDsDbMemory implements DIDsDb {
         const receiptDid = 'receiptDid' in options ? options.receiptDid : undefined;
         const responseCommitment = 'responseCommitment' in options ? options.responseCommitment : undefined;
 
+        const prefixes = this.publishedReferencePrefixes();
+
         return this.flattenChallengeReceipts()
+            .map(record => ({
+                ...record,
+                receiptDid: this.effectiveDID(record.receiptDid, prefixes),
+            }))
             .filter(record => !options.didPrefix || getDIDPrefix(record.receiptDid) === options.didPrefix)
-            .filter(record => !receiptDid || record.receiptDid === receiptDid)
-            .filter(record => !attesterDid || record.attesterDid === attesterDid)
-            .filter(record => !schemaDid || record.schemaDid === schemaDid)
-            .filter(record => !requesterDid || record.requesterDid === requesterDid)
+            .filter(record => !receiptDid || getDIDSuffix(record.receiptDid) === getDIDSuffix(receiptDid))
+            .filter(record => !attesterDid || getDIDSuffix(record.attesterDid) === getDIDSuffix(attesterDid))
+            .filter(record => !schemaDid || getDIDSuffix(record.schemaDid) === getDIDSuffix(schemaDid))
+            .filter(record => !requesterDid || getDIDSuffix(record.requesterDid) === getDIDSuffix(requesterDid))
             .filter(record => !responseCommitment || record.responseCommitment === responseCommitment)
             .filter(record => !updatedAfter || record.updatedAt >= updatedAfter)
             .filter(record => !updatedBefore || record.updatedAt <= updatedBefore);

@@ -112,7 +112,7 @@ function totalPrefixCounts(counts: Map<string, number>): number {
 }
 
 function metricPrefix(did: DIDEvidence | undefined, publishedPrefixes: Set<string> | undefined): string {
-    if (did?.authoritative) {
+    if (did?.authoritative || did?.isAgent) {
         return did.prefix;
     }
     if (did?.conflicting || publishedPrefixes?.size !== 1) {

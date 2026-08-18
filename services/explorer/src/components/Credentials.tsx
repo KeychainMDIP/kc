@@ -28,6 +28,10 @@ import {
     type PublishedSchemaMetric,
 } from "../api/searchClient.js";
 import { useSnackbar } from "../contexts/SnackbarProvider.js";
+import {
+    findCredentialManifestEntry,
+    hasSameDIDSuffix,
+} from "../shared/credential-manifest.js";
 import type { MdipDocument } from "@mdip/gatekeeper/types";
 
 type CredentialDetailDocument = MdipDocument | Record<string, unknown>;
@@ -147,7 +151,10 @@ function getManifestEntryFromDoc(
         return null;
     }
 
-    const entry = (manifest as Record<string, unknown>)[credentialDid];
+    const entry = findCredentialManifestEntry(
+        manifest as Record<string, unknown>,
+        credentialDid
+    );
 
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
         return null;
@@ -258,7 +265,7 @@ function Credentials() {
     );
 
     const selectedSchemaCount = useMemo(
-        () => schemaCounts.find(row => row.schemaDid === schemaDid)?.count ?? 0,
+        () => schemaCounts.find(row => hasSameDIDSuffix(row.schemaDid, schemaDid))?.count ?? 0,
         [schemaCounts, schemaDid]
     );
 

@@ -141,6 +141,7 @@ stored alias's prefix.
     - `offset` (optional, default `0`)
 - **Notes**:
     - `updatedAt` is derived from the credential manifest entry's `signature.signed` when available, with a fallback to the subject DID document timestamp.
+    - DID-valued filters match prefix aliases by CID suffix.
 - **Returns**:
     - `200 OK` + `{ "total": 123, "credentials": [{ "credentialDid": "...", "schemaDid": "...", "issuerDid": "...", "subjectDid": "...", "holderDid": "...", "updatedAt": "..." }] }`
 
@@ -153,6 +154,20 @@ stored alias's prefix.
     - `date` (required, `YYYY-MM-DD`, must not be in the future)
 - **Returns**:
     - `200 OK` + `{ "didCount": 123, "didCountsByPrefix": { "did:mdip": 23, "did:test": 100 } }`
+    - `400 Bad Request` for an invalid or future date.
+    - `404 Not Found` when no snapshot exists for the date.
+    - `503 Service Unavailable` while snapshots are rebuilding for the
+      configured network scope.
+
+### `GET /api/v1/metrics/snapshots/:date`
+- **Description**: Returns the complete cumulative network snapshot for one
+  UTC day in one database read. This keeps all totals and schema usage from the
+  same rebuild generation.
+- **Path Param**:
+    - `date` (required, `YYYY-MM-DD`, must not be in the future)
+- **Returns**:
+    - `200 OK` + the stored snapshot, including all-DID, AgentDID, credential,
+      and per-schema counts plus `date` and `rebuiltAt`.
     - `400 Bad Request` for an invalid or future date.
     - `404 Not Found` when no snapshot exists for the date.
     - `503 Service Unavailable` while snapshots are rebuilding for the
@@ -199,6 +214,8 @@ stored alias's prefix.
       `responseCommitment`, `updatedAfter`, `updatedBefore` (optional)
     - `limit` (optional, default `50`)
     - `offset` (optional, default `0`)
+- **Notes**:
+    - DID-valued filters match prefix aliases by CID suffix.
 - **Returns**:
     - `200 OK` + `{ "total": 123, "receipts": [...] }`
 
@@ -210,6 +227,9 @@ stored alias's prefix.
     - `schemaDid`, `requesterDid`, `updatedAfter`, `updatedBefore` (optional)
     - `limit` (optional, default `50`)
     - `offset` (optional, default `0`)
+- **Notes**:
+    - DID-valued filters match prefix aliases by CID suffix.
+    - Usage rows with prefix aliases for the same identities are grouped once.
 - **Returns**:
     - `200 OK` + `{ "total": 123, "usage": [...] }`
     - `400 Bad Request` when `attesterDid` is missing.
@@ -263,8 +283,10 @@ between a blank scope and `did:test` or `did:mdip`.
 
 Each snapshot stores cumulative all-DID, AgentDID, and credential totals plus
 credential counts grouped by schema DID, ordered from most to least used.
-Request the total DID count from `/metrics/snapshots/dids/:date` and the schema
-breakdown from `/metrics/snapshots/schemas/:date`.
+Request a complete snapshot from `/metrics/snapshots/:date`, or use the
+specialized `/metrics/snapshots/dids/:date`, `/agents/:date`,
+`/credentials/:date`, and `/schemas/:date` endpoints when only one metric is
+needed.
 `/metrics/schemas/published` describes only the credentials currently present
 in AgentDID manifests.
 Schema prefix aliases sharing the same DID suffix are combined under the
@@ -273,8 +295,8 @@ schema asset's explicit classification or durable historical manifest evidence.
 Metric dates before the MDIP epoch are included in the `2024-01-01` legacy
 baseline. Future-dated entries and entries without a usable timestamp are
 omitted. Manifest `validFrom` fallback values must use canonical UTC form
-`YYYY-MM-DDTHH:mm:ss.sssZ`. The complete daily history is rebuilt after the
-initial index snapshot and then at
+`YYYY-MM-DDTHH:mm:ss.sssZ`. The complete daily history is first rebuilt after
+two consecutive change polls report no DID changes, and then at
 `KC_SEARCH_SERVER_METRICS_REFRESH_INTERVAL_MS`, so late operations correct their
 metric day and every later snapshot. If a previously missing credential asset
 operation arrives, its `operation.created` replaces the `validFrom` fallback on
