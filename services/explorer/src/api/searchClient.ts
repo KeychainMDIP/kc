@@ -62,6 +62,7 @@ export interface NetworkMetricSnapshot {
     agentDidCountsByPrefix: Record<string, number>;
     credentialCount: number;
     credentialDidCountsByPrefix: Record<string, number>;
+    schemas: PublishedSchemaMetric[];
 }
 
 export interface PublishedCredentialRow {
@@ -247,38 +248,28 @@ export async function searchDIDDocuments(query: string): Promise<string[]> {
     return response.data as string[];
 }
 
-export async function fetchPublishedSchemaMetrics(date?: string): Promise<PublishedSchemaMetric[] | null> {
-    try {
-        const path = date
-            ? `/metrics/snapshots/schemas/${encodeURIComponent(date)}`
-            : "/metrics/schemas/published";
-        const response = await axios.get(`${apiBaseUrl}${path}`);
+export async function fetchPublishedSchemaMetrics(): Promise<PublishedSchemaMetric[]> {
+    const response = await axios.get(`${apiBaseUrl}/metrics/schemas/published`);
 
-        return (response.data.schemas ?? []).map((row: any) => ({
-            schemaDid: row.schemaDid,
-            count: toNumber(row.count),
-        }));
-    }
-    catch (error: any) {
-        if (error?.response?.status === 404) {
-            return null;
-        }
-
-        throw error;
-    }
+    return (response.data.schemas ?? []).map((row: any) => ({
+        schemaDid: row.schemaDid,
+        count: toNumber(row.count),
+    }));
 }
 
 export async function fetchNetworkMetricSnapshot(date: string): Promise<NetworkMetricSnapshot | null> {
     try {
-        const response = await axios.get(
-            `${apiBaseUrl}/metrics/snapshots/credentials/${encodeURIComponent(date)}`
-        );
+        const response = await axios.get(`${apiBaseUrl}/metrics/snapshots/${encodeURIComponent(date)}`);
 
         return {
             agentDidCount: toNumber(response.data.agentDidCount),
             agentDidCountsByPrefix: mapPrefixCounts(response.data.agentDidCountsByPrefix),
             credentialCount: toNumber(response.data.credentialCount),
             credentialDidCountsByPrefix: mapPrefixCounts(response.data.credentialDidCountsByPrefix),
+            schemas: (response.data.schemas ?? []).map((row: any) => ({
+                schemaDid: row.schemaDid,
+                count: toNumber(row.count),
+            })),
         };
     }
     catch (error: any) {

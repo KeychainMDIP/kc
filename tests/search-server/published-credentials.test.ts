@@ -14,7 +14,7 @@ import type {
     PublishedCredentialRecord,
     PublishedCredentialSchemaCount,
 } from '../../services/search-server/src/types.ts';
-import { seedDID } from './db-seed.ts';
+import { createSeedEvent, seedDID } from './db-seed.ts';
 
 function createPublishedCredential(
     schemaDid: string,
@@ -92,6 +92,9 @@ function createAssetEvent(
 }
 
 function createSnapshotResponse(did: string, data: unknown) {
+    const create = createAssetEvent(did, {});
+    create.operation.mdip!.type = 'agent';
+
     return {
         mode: 'snapshot' as const,
         indexEpoch: 'epoch-test',
@@ -101,7 +104,21 @@ function createSnapshotResponse(did: string, data: unknown) {
         blocks: [],
         dids: [{
             did,
-            events: [createAssetEvent(did, data)],
+            events: [
+                create,
+                {
+                    ...create,
+                    operation: {
+                        type: 'update' as const,
+                        did,
+                        doc: {
+                            didDocument: { id: did },
+                            didDocumentData: data,
+                            mdip: { version: 1, type: 'agent' as const, registry: 'local' },
+                        },
+                    },
+                },
+            ],
         }],
     };
 }
@@ -268,6 +285,36 @@ describe('extractPublishedCredentials', () => {
                 updatedAt: '2026-03-31T11:00:00.000Z',
             },
         ]);
+    });
+
+    it('normalizes a subject prefix alias to the canonical holder DID', () => {
+        const holderDid = 'did:test:subject-1';
+        const holderAlias = 'did:mdip:subject-1';
+        const credentialDid = 'did:mdip:credential-1';
+        const schemaDid = 'did:mdip:schema-1';
+        const issuerDid = 'did:mdip:issuer-1';
+        const doc = createSubjectDoc(holderAlias, {
+            [credentialDid]: createPublishedCredential(schemaDid, issuerDid, holderAlias),
+        });
+
+        expect(extractPublishedCredentials(holderDid, doc)).toStrictEqual([
+            expect.objectContaining({
+                holderDid,
+                subjectDid: holderDid,
+            }),
+        ]);
+    });
+
+    it('rejects a manifest without a valid canonical holder DID', () => {
+        const holderDid = 'did:test:subject-1';
+
+        expect(extractPublishedCredentials('not-a-did', createSubjectDoc(holderDid, {
+            'did:test:credential-1': createPublishedCredential(
+                'did:test:schema-1',
+                'did:test:issuer-1',
+                holderDid
+            ),
+        }))).toStrictEqual([]);
     });
 
     it('ignores malformed or mismatched manifest entries', () => {
@@ -759,6 +806,338 @@ describe.each(adapterFactories)('$name query and utility behavior', ({ create })
             await cleanup();
         }
     });
+
+    it('filters indexed results by canonical DID prefix', async () => {
+        const { db, cleanup } = await create();
+        const testHolder = 'did:test:test-holder';
+        const mdipHolder = 'did:mdip:mdip-holder';
+        const testCredential = 'did:test:test-credential';
+        const mdipCredential = 'did:mdip:mdip-credential';
+        const testSchema = 'did:test:test-schema';
+        const mdipSchema = 'did:mdip:mdip-schema';
+        const testPublishedCredential = {
+            holderDid: testHolder,
+            credentialDid: testCredential,
+            schemaDid: testSchema,
+            issuerDid: testHolder,
+            subjectDid: testHolder,
+            revealed: true,
+            updatedAt: '2026-04-01T12:00:00.000Z',
+        };
+        const mdipPublishedCredential = {
+            holderDid: mdipHolder,
+            credentialDid: mdipCredential,
+            schemaDid: mdipSchema,
+            issuerDid: mdipHolder,
+            subjectDid: mdipHolder,
+            revealed: true,
+            updatedAt: '2026-04-01T12:00:00.000Z',
+        };
+        const explicitCreate = (did: string) => {
+            const event = createSeedEvent(did);
+            event.operation.mdip!.prefix = did.split(':', 2).join(':');
+            return event;
+        };
+
+        try {
+            for (const did of [testCredential, mdipCredential, testSchema, mdipSchema]) {
+                await seedDID(db, did, { events: [explicitCreate(did)] });
+            }
+            await seedDID(db, testHolder, {
+                events: [explicitCreate(testHolder)],
+                doc: { didDocumentData: { searchable: 'shared-network-value' } },
+                publishedCredentials: [
+                    testPublishedCredential,
+                    {
+                        ...testPublishedCredential,
+                        credentialDid: 'did:mdip:test-credential',
+                        schemaDid: 'did:mdip:test-schema',
+                    },
+                ],
+            });
+            await seedDID(db, mdipHolder, {
+                events: [explicitCreate(mdipHolder)],
+                doc: { didDocumentData: { searchable: 'shared-network-value' } },
+                publishedCredentials: [
+                    mdipPublishedCredential,
+                    {
+                        ...mdipPublishedCredential,
+                        credentialDid: 'did:test:mdip-credential',
+                        schemaDid: 'did:test:mdip-schema',
+                    },
+                ],
+            });
+
+            expect(await db.searchDocs('shared-network-value', 'did:mdip')).toStrictEqual([mdipHolder]);
+            expect(await db.queryDocs({
+                'didDocumentData.searchable': { $in: ['shared-network-value'] },
+            }, 'did:test')).toStrictEqual([testHolder]);
+            expect((await db.listEvents({ didPrefix: 'did:mdip' })).events.every(
+                event => event.did.startsWith('did:mdip:')
+            )).toBe(true);
+            expect(await db.findDIDBySuffix('mdip-holder', 'did:test')).toBeNull();
+            expect(await db.findDIDBySuffix('mdip-holder', 'did:mdip')).toBe(mdipHolder);
+            expect(await db.listPublishedCredentials({ didPrefix: 'did:test', limit: 1, offset: 1 }))
+                .toStrictEqual({ total: 1, credentials: [] });
+            expect(await db.getPublishedCredentialCountsBySchema('did:test')).toStrictEqual([
+                { schemaDid: testSchema, count: 1 },
+            ]);
+            expect(await db.getPublishedCredentialCountsBySchema('did:mdip')).toStrictEqual([
+                { schemaDid: mdipSchema, count: 1 },
+            ]);
+
+            await seedDID(db, 'did:test:reclassified');
+            await seedDID(db, 'did:mdip:reclassified');
+            expect(await db.getDIDEvents('did:test:reclassified')).toStrictEqual([]);
+            expect(await db.findDIDBySuffix('reclassified')).toBe('did:mdip:reclassified');
+        }
+        finally {
+            await cleanup();
+        }
+    });
+
+    it('matches subjectDid and issuerDid aliases by CID suffix', async () => {
+        const { db, cleanup } = await create();
+        const holderDid = 'did:mdip:alias-holder';
+        const holderAlias = 'did:test:alias-holder';
+        const credential = {
+            holderDid,
+            credentialDid: 'did:mdip:alias-credential',
+            schemaDid: 'did:mdip:alias-schema',
+            issuerDid: holderDid,
+            subjectDid: holderDid,
+            revealed: false,
+            updatedAt: '2026-04-01T12:00:00.000Z',
+        };
+        const event = createSeedEvent(holderDid);
+        event.operation.mdip!.type = 'agent';
+        event.operation.mdip!.prefix = 'did:mdip';
+
+        try {
+            await seedDID(db, holderDid, {
+                events: [event],
+                publishedCredentials: [credential],
+            });
+
+            expect(await db.listPublishedCredentials({ subjectDid: holderAlias })).toStrictEqual({
+                total: 1,
+                credentials: [credential],
+            });
+            expect(await db.listPublishedCredentials({ issuerDid: holderAlias })).toStrictEqual({
+                total: 1,
+                credentials: [credential],
+            });
+            expect(await db.listPublishedCredentials({ subjectDid: 'did:test:other-holder' }))
+                .toStrictEqual({ total: 0, credentials: [] });
+        }
+        finally {
+            await cleanup();
+        }
+    });
+
+    it('uses unique published references for prefix-less credential and schema assets', async () => {
+        const { db, cleanup } = await create();
+        const holderDid = 'did:test:legacy-holder';
+        const storedCredentialDid = 'did:test:legacy-credential';
+        const storedSchemaDid = 'did:test:legacy-schema';
+        const publishedCredentialDid = 'did:mdip:legacy-credential';
+        const publishedSchemaDid = 'did:mdip:legacy-schema';
+        const holderEvents = [createSeedEvent(holderDid)];
+
+        try {
+            await seedDID(db, storedCredentialDid);
+            await seedDID(db, storedSchemaDid, {
+                doc: { didDocumentData: { searchable: 'legacy-network-schema' } },
+            });
+            await seedDID(db, holderDid, {
+                events: holderEvents,
+                publishedCredentials: [{
+                    holderDid,
+                    credentialDid: publishedCredentialDid,
+                    schemaDid: publishedSchemaDid,
+                    issuerDid: holderDid,
+                    subjectDid: holderDid,
+                    revealed: false,
+                    updatedAt: '2026-04-01T12:00:00.000Z',
+                }],
+            });
+
+            expect(await db.getPublishedCredentialCountsBySchema('did:mdip')).toStrictEqual([
+                { schemaDid: publishedSchemaDid, count: 1 },
+            ]);
+            expect(await db.listPublishedCredentials({ didPrefix: 'did:mdip' })).toMatchObject({
+                total: 1,
+                credentials: [{
+                    credentialDid: publishedCredentialDid,
+                    schemaDid: publishedSchemaDid,
+                }],
+            });
+            expect(await db.findDIDBySuffix('legacy-schema', 'did:mdip')).toBe(storedSchemaDid);
+            expect(await db.findDIDBySuffix('legacy-schema', 'did:test')).toBeNull();
+            expect(await db.searchDocs('legacy-network-schema', 'did:mdip')).toStrictEqual([
+                publishedSchemaDid,
+            ]);
+            expect(await db.searchDocs('legacy-network-schema', 'did:test')).toStrictEqual([]);
+            expect(await db.queryDocs({
+                'didDocumentData.searchable': { $in: ['legacy-network-schema'] },
+            }, 'did:mdip')).toStrictEqual([publishedSchemaDid]);
+            expect((await db.listEvents({ didPrefix: 'did:mdip' })).events.some(
+                event => event.did === publishedSchemaDid
+            )).toBe(true);
+            expect((await db.listEvents({ didPrefix: 'did:test' })).events.some(
+                event => event.did.endsWith(':legacy-schema')
+            )).toBe(false);
+
+            await seedDID(db, holderDid, {
+                events: [...holderEvents, {
+                    ...holderEvents[0],
+                    time: '2026-04-01T13:00:00.000Z',
+                    operation: {
+                        type: 'update',
+                        did: holderDid,
+                        doc: {
+                            didDocument: { id: holderDid },
+                            didDocumentData: { manifest: {} },
+                        },
+                    },
+                }],
+                didPrefixReferences: [publishedCredentialDid, publishedSchemaDid],
+                publishedCredentials: [],
+            });
+
+            expect(await db.getPublishedCredentialCountsBySchema('did:mdip')).toStrictEqual([]);
+            expect(await db.findDIDBySuffix('legacy-schema', 'did:mdip')).toBe(storedSchemaDid);
+            expect(await db.findDIDBySuffix('legacy-schema', 'did:test')).toBeNull();
+            expect(await db.searchDocs('legacy-network-schema', 'did:mdip')).toStrictEqual([
+                publishedSchemaDid,
+            ]);
+        }
+        finally {
+            await cleanup();
+        }
+    });
+
+    it('does not let manifest references reclassify AgentDIDs', async () => {
+        const { db, cleanup } = await create();
+        const holderDid = 'did:test:agent-holder';
+        const credentialDid = 'did:test:credential-agent';
+        const schemaDid = 'did:test:schema-agent';
+        const mdipCredentialDid = credentialDid.replace('did:test:', 'did:mdip:');
+        const mdipSchemaDid = schemaDid.replace('did:test:', 'did:mdip:');
+        const agentEvent = (did: string) => {
+            const event = createSeedEvent(did);
+            event.operation.mdip!.type = 'agent';
+            return event;
+        };
+
+        try {
+            await seedDID(db, credentialDid, {
+                events: [agentEvent(credentialDid)],
+                doc: { didDocumentData: { searchable: 'credential-agent-collision' } },
+            });
+            await seedDID(db, schemaDid, {
+                events: [agentEvent(schemaDid)],
+                doc: { didDocumentData: { searchable: 'schema-agent-collision' } },
+            });
+            await seedDID(db, holderDid, {
+                events: [agentEvent(holderDid)],
+                didPrefixReferences: [mdipCredentialDid, mdipSchemaDid],
+                publishedCredentials: [{
+                    holderDid,
+                    credentialDid: mdipCredentialDid,
+                    schemaDid: mdipSchemaDid,
+                    issuerDid: holderDid,
+                    subjectDid: holderDid,
+                    revealed: false,
+                    updatedAt: '2026-04-01T12:00:00.000Z',
+                }],
+            });
+
+            expect(await db.findDIDBySuffix('credential-agent', 'did:test')).toBe(credentialDid);
+            expect(await db.findDIDBySuffix('credential-agent', 'did:mdip')).toBeNull();
+            expect(await db.searchDocs('credential-agent-collision', 'did:test')).toStrictEqual([credentialDid]);
+            expect(await db.searchDocs('credential-agent-collision', 'did:mdip')).toStrictEqual([]);
+            expect(await db.queryDocs({
+                'didDocumentData.searchable': { $in: ['schema-agent-collision'] },
+            }, 'did:test')).toStrictEqual([schemaDid]);
+            expect((await db.listEvents({ didPrefix: 'did:mdip' })).events.some(
+                event => event.did === mdipCredentialDid || event.did === mdipSchemaDid
+            )).toBe(false);
+            expect(await db.listPublishedCredentials({ didPrefix: 'did:test' })).toMatchObject({
+                total: 1,
+                credentials: [{ credentialDid, schemaDid }],
+            });
+            expect(await db.listPublishedCredentials({ didPrefix: 'did:mdip' })).toMatchObject({ total: 0 });
+            expect(await db.getPublishedCredentialCountsBySchema('did:test')).toStrictEqual([
+                { schemaDid, count: 1 },
+            ]);
+            expect(await db.getPublishedCredentialCountsBySchema('did:mdip')).toStrictEqual([]);
+        }
+        finally {
+            await cleanup();
+        }
+    });
+
+    it('keeps conflicting operation prefixes in the test network despite mdip manifest evidence', async () => {
+        const { db, cleanup } = await create();
+        const holderDid = 'did:test:conflicting-holder';
+        const credentialDid = 'did:test:conflicting-credential';
+        const schemaDid = 'did:test:conflicting-schema';
+        const mdipCredentialDid = credentialDid.replace('did:test:', 'did:mdip:');
+        const mdipSchemaDid = schemaDid.replace('did:test:', 'did:mdip:');
+        const conflictingEvents = (did: string): GatekeeperEvent[] => {
+            const create = createSeedEvent(did);
+
+            return [
+                create,
+                {
+                    ...create,
+                    operation: { type: 'update', did },
+                },
+                {
+                    ...create,
+                    operation: { type: 'update', did: did.replace('did:test:', 'did:mdip:') },
+                },
+            ];
+        };
+
+        try {
+            await seedDID(db, credentialDid, { events: conflictingEvents(credentialDid) });
+            await seedDID(db, schemaDid, {
+                events: conflictingEvents(schemaDid),
+                doc: { didDocumentData: { searchable: 'conflicting-prefix-schema' } },
+            });
+            await seedDID(db, holderDid, {
+                didPrefixReferences: [mdipCredentialDid, mdipSchemaDid],
+                publishedCredentials: [{
+                    holderDid,
+                    credentialDid: mdipCredentialDid,
+                    schemaDid: mdipSchemaDid,
+                    issuerDid: holderDid,
+                    subjectDid: holderDid,
+                    revealed: false,
+                    updatedAt: '2026-04-01T12:00:00.000Z',
+                }],
+            });
+
+            expect(await db.findDIDBySuffix('conflicting-credential', 'did:test')).toBe(credentialDid);
+            expect(await db.findDIDBySuffix('conflicting-credential', 'did:mdip')).toBeNull();
+            expect(await db.listPublishedCredentials({ didPrefix: 'did:test' })).toMatchObject({
+                total: 1,
+                credentials: [{ credentialDid, schemaDid }],
+            });
+            expect(await db.listPublishedCredentials({ didPrefix: 'did:mdip' })).toMatchObject({ total: 0 });
+            expect(await db.getPublishedCredentialCountsBySchema('did:test')).toStrictEqual([
+                { schemaDid, count: 1 },
+            ]);
+            expect(await db.getPublishedCredentialCountsBySchema('did:mdip')).toStrictEqual([]);
+            expect(await db.searchDocs('conflicting-prefix-schema', 'did:test')).toStrictEqual([schemaDid]);
+            expect(await db.searchDocs('conflicting-prefix-schema', 'did:mdip')).toStrictEqual([]);
+        }
+        finally {
+            await cleanup();
+        }
+    });
 });
 
 describe('memory adapter query edge cases', () => {
@@ -975,8 +1354,16 @@ describe('postgres adapter with mocked pool', () => {
                     }],
                 };
             }
-            if (text.includes("WHERE doc::text LIKE '%' || $1 || '%'")) {
+            if (text.includes("doc::text LIKE '%' || $1 || '%'")) {
                 return { rowCount: 1, rows: [{ did: 'did:test:search-1' }] };
+            }
+            if (text.includes('did AS "storedDid", prefix')) {
+                const dids = params?.[0] as string[];
+                const prefix = params?.[1] as string | undefined;
+                const rows = dids
+                    .filter(did => !prefix || did.startsWith(`${prefix}:`))
+                    .map(did => ({ storedDid: did, did }));
+                return { rowCount: rows.length, rows };
             }
             if (text.includes('JOIN LATERAL jsonb_array_elements') && text.includes('elem.value = expected.value::jsonb')) {
                 return { rowCount: 1, rows: [{ did: 'did:test:array-tail' }] };
@@ -1039,10 +1426,14 @@ describe('postgres adapter with mocked pool', () => {
         expect(await db.getPublishedCredentialCountsBySchema()).toStrictEqual([
             { schemaDid: 'did:test:schema-1', count: 2 },
         ]);
+        expect(await db.getPublishedCredentialCountsBySchema('did:test')).toStrictEqual([
+            { schemaDid: 'did:test:schema-1', count: 2 },
+        ]);
         expect(await db.listPublishedCredentials({
+            didPrefix: 'did:test',
             credentialDid: 'did:test:credential-1',
             schemaDid: 'did:test:schema-1',
-            issuerDid: 'did:test:issuer-1',
+            issuerDid: 'did:mdip:issuer-1',
             subjectDid: 'did:test:subject-1',
             revealed: true,
             limit: 5,
@@ -1060,6 +1451,7 @@ describe('postgres adapter with mocked pool', () => {
             }],
         });
         expect(await db.searchDocs('search')).toStrictEqual(['did:test:search-1']);
+        expect(await db.searchDocs('search', 'did:test')).toStrictEqual(['did:test:search-1']);
 
         expect(await db.queryDocs({})).toStrictEqual([]);
         await expect(db.queryDocs({ '$.didDocument.id': {} } as any)).rejects.toThrow('Only {$in:[…]} supported');
@@ -1069,6 +1461,9 @@ describe('postgres adapter with mocked pool', () => {
         expect(await db.queryDocs({ '$.didDocumentData.manifest.*': { $in: ['cred'] } })).toStrictEqual(['did:test:key-wildcard']);
         expect(await db.queryDocs({ '$.didDocumentData.manifest.*.issuer': { $in: ['issuer'] } })).toStrictEqual(['did:test:value-wildcard']);
         expect(await db.queryDocs({ '$.didDocument.id': { $in: ['did:test:plain-path'] } })).toStrictEqual(['did:test:plain-path']);
+        expect(await db.queryDocs({
+            '$.didDocument.id': { $in: ['did:test:plain-path'] },
+        }, 'did:mdip')).toStrictEqual([]);
 
         await db.wipeDb();
         await db.disconnect();
@@ -1082,6 +1477,12 @@ describe('postgres adapter with mocked pool', () => {
         const defaultPathCall = poolQuery.mock.calls.find(([sql]) =>
             String(sql).includes('did_docs.doc #> $1::text[] = expected.value::jsonb')
         );
+        const subjectFilterCall = poolQuery.mock.calls.find(([sql]) =>
+            String(sql).includes('SELECT did FROM did_classifications WHERE suffix = $5')
+        );
+        const issuerFilterCall = poolQuery.mock.calls.find(([sql]) =>
+            String(sql).includes("right(pc.issuer_did, length($4) + 1) = ':' || $4")
+        );
 
         expect(arrayTailCall?.[1]).toStrictEqual([
             ['didDocumentData', 'tags'],
@@ -1091,6 +1492,8 @@ describe('postgres adapter with mocked pool', () => {
             ['didDocument', 'id'],
             ['"did:test:plain-path"'],
         ]);
+        expect(subjectFilterCall?.[1]).toContain('subject-1');
+        expect(issuerFilterCall?.[1]).toContain('issuer-1');
     });
 
     it('throws when disconnected and rolls back failed replacements', async () => {
@@ -1098,7 +1501,7 @@ describe('postgres adapter with mocked pool', () => {
         const mockClient = {
             query: jest.fn<(...args: unknown[]) => Promise<unknown>>()
                 .mockResolvedValueOnce(undefined)
-                .mockResolvedValueOnce(undefined)
+                .mockResolvedValueOnce({ rowCount: 0, rows: [] })
                 .mockRejectedValueOnce(clientError)
                 .mockResolvedValueOnce(undefined),
             release: jest.fn(),
@@ -1138,7 +1541,7 @@ describe('postgres adapter with mocked pool', () => {
 
         expect(mockClient.query).toHaveBeenNthCalledWith(1, 'BEGIN');
         expect(mockClient.query).toHaveBeenNthCalledWith(
-            2,
+            3,
             'DELETE FROM did_events WHERE did = $1',
             ['did:test:subject-1']
         );
@@ -1168,7 +1571,7 @@ describe('postgres adapter with mocked pool', () => {
         await db.disconnect();
         await db.disconnect();
 
-        expect(mockPool.query).toHaveBeenCalledTimes(2);
+        expect(mockPool.query).toHaveBeenCalledTimes(1);
         expect(mockPool.end).toHaveBeenCalledTimes(1);
 
         const disconnectedDb = new TestPostgres('postgresql://example');
@@ -1211,6 +1614,10 @@ describe('postgres adapter with mocked pool', () => {
         });
 
         expect(mockClient.query).toHaveBeenNthCalledWith(1, 'BEGIN');
+        expect(mockClient.query).toHaveBeenCalledWith(
+            expect.stringContaining('ON CONFLICT (holder_did, credential_suffix)'),
+            expect.any(Array)
+        );
         expect(mockClient.query).toHaveBeenCalledWith('COMMIT');
         expect(mockClient.release).toHaveBeenCalledTimes(1);
 
@@ -1309,7 +1716,7 @@ describe('DidIndexer published credential indexing', () => {
         expect(gatekeeper.getDIDs).not.toHaveBeenCalled();
         expect(gatekeeper.resolveDID).not.toHaveBeenCalled();
         expect(await db.loadSyncState('index.snapshot.complete')).toBe('true');
-        expect(await db.getDIDEvents(holderDid)).toHaveLength(1);
+        expect(await db.getDIDEvents(holderDid)).toHaveLength(2);
         expect(await db.getPublishedCredentialCountsBySchema()).toStrictEqual([
             { schemaDid, count: 1 },
         ]);
@@ -1341,6 +1748,7 @@ describe('DidIndexer published credential indexing', () => {
             },
         };
         const event = createAssetEvent(holderDid, data);
+        event.operation.mdip!.type = 'agent';
 
         await db.saveSyncState('index.snapshot.complete', 'true');
         await seedDID(db, holderDid, {

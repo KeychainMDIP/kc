@@ -11,6 +11,7 @@ import DidIndexer, {
 } from '../../services/search-server/src/DidIndexer.ts';
 import {
     buildNetworkMetricSnapshots,
+    isNetworkMetricsScopeCurrent,
     parseSnapshotDate,
 } from '../../services/search-server/src/network-metrics.ts';
 import type {
@@ -73,6 +74,7 @@ function createCredentialHistory(did: string, created: string): DIDEventHistory 
                 version: 1,
                 type: 'asset',
                 registry: 'hyperswarm',
+                ...(did.startsWith('did:mdip:') ? { prefix: 'did:mdip' } : {}),
             },
             controller: 'did:test:issuer',
             data: { encrypted: {} },
@@ -123,6 +125,14 @@ function manifestUpdate(
 }
 
 describe('network metric snapshot builder', () => {
+    it('requires the stored scope to match configured and blank prefixes', async () => {
+        expect(isNetworkMetricsScopeCurrent(null)).toBe(false);
+        expect(isNetworkMetricsScopeCurrent('did:test', 'did:test')).toBe(true);
+        expect(isNetworkMetricsScopeCurrent('did:test')).toBe(false);
+        expect(isNetworkMetricsScopeCurrent('')).toBe(true);
+        expect(isNetworkMetricsScopeCurrent('', 'did:mdip')).toBe(false);
+    });
+
     it('prefers asset operation.created and retains schema history after unpublishing', async () => {
         const holderDid = 'did:test:holder';
         const credentialDid = 'did:test:credential';
@@ -145,10 +155,10 @@ describe('network metric snapshot builder', () => {
         const result = await buildNetworkMetricSnapshots(histories, new Date('2026-08-05T12:00:00.000Z'));
 
         expect(result.snapshots).toStrictEqual([
-            { date: '2026-08-02', agentDidCount: 1, agentDidCountsByPrefix: { 'did:test': 1 }, credentialCount: 0, credentialDidCountsByPrefix: {}, schemas: [], rebuiltAt: '2026-08-05T12:00:00.000Z' },
-            { date: '2026-08-03', agentDidCount: 1, agentDidCountsByPrefix: { 'did:test': 1 }, credentialCount: 1, credentialDidCountsByPrefix: { 'did:test': 1 }, schemas: [{ schemaDid: 'did:test:schema', count: 1 }], rebuiltAt: '2026-08-05T12:00:00.000Z' },
-            { date: '2026-08-04', agentDidCount: 1, agentDidCountsByPrefix: { 'did:test': 1 }, credentialCount: 1, credentialDidCountsByPrefix: { 'did:test': 1 }, schemas: [{ schemaDid: 'did:test:schema', count: 1 }], rebuiltAt: '2026-08-05T12:00:00.000Z' },
-            { date: '2026-08-05', agentDidCount: 1, agentDidCountsByPrefix: { 'did:test': 1 }, credentialCount: 1, credentialDidCountsByPrefix: { 'did:test': 1 }, schemas: [{ schemaDid: 'did:test:schema', count: 1 }], rebuiltAt: '2026-08-05T12:00:00.000Z' },
+            { date: '2026-08-02', didCount: 1, didCountsByPrefix: { 'did:test': 1 }, agentDidCount: 1, agentDidCountsByPrefix: { 'did:test': 1 }, credentialCount: 0, credentialDidCountsByPrefix: {}, schemas: [], rebuiltAt: '2026-08-05T12:00:00.000Z' },
+            { date: '2026-08-03', didCount: 2, didCountsByPrefix: { 'did:test': 2 }, agentDidCount: 1, agentDidCountsByPrefix: { 'did:test': 1 }, credentialCount: 1, credentialDidCountsByPrefix: { 'did:test': 1 }, schemas: [{ schemaDid: 'did:test:schema', count: 1 }], rebuiltAt: '2026-08-05T12:00:00.000Z' },
+            { date: '2026-08-04', didCount: 2, didCountsByPrefix: { 'did:test': 2 }, agentDidCount: 1, agentDidCountsByPrefix: { 'did:test': 1 }, credentialCount: 1, credentialDidCountsByPrefix: { 'did:test': 1 }, schemas: [{ schemaDid: 'did:test:schema', count: 1 }], rebuiltAt: '2026-08-05T12:00:00.000Z' },
+            { date: '2026-08-05', didCount: 2, didCountsByPrefix: { 'did:test': 2 }, agentDidCount: 1, agentDidCountsByPrefix: { 'did:test': 1 }, credentialCount: 1, credentialDidCountsByPrefix: { 'did:test': 1 }, schemas: [{ schemaDid: 'did:test:schema', count: 1 }], rebuiltAt: '2026-08-05T12:00:00.000Z' },
         ]);
         expect(result.credentialsDatedByOperationCreated).toBe(1);
         expect(result.credentialsDatedByValidFrom).toBe(0);
@@ -202,17 +212,233 @@ describe('network metric snapshot builder', () => {
         const result = await buildNetworkMetricSnapshots(histories, new Date('2026-08-03T12:00:00.000Z'));
 
         expect(result.snapshots[0]).toMatchObject({
+            didCount: 1,
+            didCountsByPrefix: { 'did:test': 1 },
             agentDidCount: 1,
             agentDidCountsByPrefix: { 'did:test': 1 },
             credentialCount: 0,
             credentialDidCountsByPrefix: {},
         });
         expect(result.snapshots.at(-1)).toMatchObject({
+            didCount: 4,
+            didCountsByPrefix: { 'did:mdip': 2, 'did:test': 2 },
             agentDidCount: 2,
             agentDidCountsByPrefix: { 'did:mdip': 1, 'did:test': 1 },
             credentialCount: 2,
             credentialDidCountsByPrefix: { 'did:mdip': 1, 'did:test': 1 },
         });
+    });
+
+    it('counts every created DID once and retains deleted DIDs', async () => {
+        const assetDid = 'did:test:asset';
+        const asset: DIDEventHistory = {
+            did: assetDid,
+            events: [
+                createEvent(assetDid, {
+                    type: 'create',
+                    created: '2026-08-02T00:00:00.000Z',
+                    mdip: { version: 1, type: 'asset', registry: 'hyperswarm' },
+                    controller: 'did:test:holder',
+                    data: { title: 'ordinary asset' },
+                }),
+                createEvent(assetDid, { type: 'delete', did: assetDid }),
+            ],
+        };
+        const result = await buildNetworkMetricSnapshots([
+            createAgentHistory('did:test:agent', '2026-08-01T00:00:00.000Z'),
+            asset,
+            { did: 'did:mdip:asset', events: asset.events },
+            createCredentialHistory('did:test:encrypted', '2026-08-03T00:00:00.000Z'),
+        ], new Date('2026-08-03T12:00:00.000Z'));
+
+        expect(result.snapshots.map(({ date, didCount }) => ({ date, didCount }))).toStrictEqual([
+            { date: '2026-08-01', didCount: 1 },
+            { date: '2026-08-02', didCount: 2 },
+            { date: '2026-08-03', didCount: 3 },
+        ]);
+        expect(result.snapshots.at(-1)).toMatchObject({
+            didCountsByPrefix: { 'did:test': 3 },
+            agentDidCount: 1,
+        });
+    });
+
+    it('ignores histories without a create anchor', async () => {
+        const did = 'did:test:orphan';
+        const result = await buildNetworkMetricSnapshots([{
+            did,
+            events: [createEvent(did, { type: 'update', did })],
+        }], new Date('2026-08-01T12:00:00.000Z'));
+
+        expect(result.snapshots.at(-1)).toMatchObject({
+            didCount: 0,
+            agentDidCount: 0,
+            credentialCount: 0,
+        });
+    });
+
+    it('builds snapshots only for the configured network', async () => {
+        const testHolder = 'did:test:test-holder';
+        const mdipHolder = 'did:mdip:mdip-holder';
+        const histories = [
+            createAgentHistory(testHolder, '2026-08-01T00:00:00.000Z', [
+                manifestUpdate(testHolder, 'did:test:test-credential', { schemaDid: 'did:test:test-schema' }),
+            ]),
+            createAgentHistory(mdipHolder, '2026-08-01T00:00:00.000Z', [
+                manifestUpdate(mdipHolder, 'did:mdip:mdip-credential', { schemaDid: 'did:mdip:mdip-schema' }),
+            ]),
+            createCredentialHistory('did:test:test-credential', '2026-08-01T00:00:00.000Z'),
+            createCredentialHistory('did:mdip:mdip-credential', '2026-08-01T00:00:00.000Z'),
+            createCredentialHistory('did:test:test-schema', '2026-08-01T00:00:00.000Z'),
+            createCredentialHistory('did:mdip:mdip-schema', '2026-08-01T00:00:00.000Z'),
+        ];
+        const now = new Date('2026-08-01T12:00:00.000Z');
+
+        const unfiltered = await buildNetworkMetricSnapshots(histories, now);
+        const test = await buildNetworkMetricSnapshots(histories, now, 'did:test');
+        const mdip = await buildNetworkMetricSnapshots(histories, now, 'did:mdip');
+
+        expect(test.snapshots.at(-1)).toMatchObject({
+            didCount: 3,
+            didCountsByPrefix: { 'did:test': 3 },
+            agentDidCount: 1,
+            agentDidCountsByPrefix: { 'did:test': 1 },
+            credentialCount: 1,
+            credentialDidCountsByPrefix: { 'did:test': 1 },
+            schemas: [{ schemaDid: 'did:test:test-schema', count: 1 }],
+        });
+        expect(mdip.snapshots.at(-1)).toMatchObject({
+            didCount: 3,
+            didCountsByPrefix: { 'did:mdip': 3 },
+            agentDidCount: 1,
+            agentDidCountsByPrefix: { 'did:mdip': 1 },
+            credentialCount: 1,
+            credentialDidCountsByPrefix: { 'did:mdip': 1 },
+            schemas: [{ schemaDid: 'did:mdip:mdip-schema', count: 1 }],
+        });
+        expect(unfiltered.snapshots.at(-1)?.didCount).toBe(6);
+        expect((test.snapshots.at(-1)?.didCount ?? 0) + (mdip.snapshots.at(-1)?.didCount ?? 0))
+            .toBe(unfiltered.snapshots.at(-1)?.didCount);
+    });
+
+    it('excludes schemas outside the configured credential network', async () => {
+        const holderDid = 'did:test:holder';
+        const result = await buildNetworkMetricSnapshots([
+            createAgentHistory(holderDid, '2026-08-01T00:00:00.000Z', [
+                manifestUpdate(holderDid, 'did:test:credential', {
+                    schemaDid: 'did:mdip:schema',
+                }),
+            ]),
+            createCredentialHistory('did:test:credential', '2026-08-01T00:00:00.000Z'),
+            createCredentialHistory('did:mdip:schema', '2026-08-01T00:00:00.000Z'),
+        ], new Date('2026-08-01T12:00:00.000Z'), 'did:test');
+
+        expect(result.snapshots.at(-1)).toMatchObject({
+            credentialCount: 1,
+            credentialDidCountsByPrefix: { 'did:test': 1 },
+            schemas: [],
+        });
+    });
+
+    it('uses manifest prefixes only when asset operations do not identify the network', async () => {
+        const holderDid = 'did:test:holder';
+        const legacyCredential = createCredentialHistory(
+            'did:test:legacy-credential',
+            '2026-08-01T00:00:00.000Z'
+        );
+        const explicitTestCredential = createCredentialHistory(
+            'did:test:explicit-test-credential',
+            '2026-08-01T00:00:00.000Z'
+        );
+        explicitTestCredential.events[0].operation.mdip!.prefix = 'did:test';
+
+        const result = await buildNetworkMetricSnapshots([
+            createAgentHistory(holderDid, '2026-08-01T00:00:00.000Z', [
+                manifestUpdate(holderDid, 'did:mdip:legacy-credential', {
+                    schemaDid: 'did:mdip:legacy-schema',
+                }),
+                manifestUpdate(holderDid, 'did:mdip:explicit-test-credential', {
+                    schemaDid: 'did:mdip:legacy-schema',
+                }),
+            ]),
+            legacyCredential,
+            explicitTestCredential,
+            createCredentialHistory('did:test:legacy-schema', '2026-08-01T00:00:00.000Z'),
+        ], new Date('2026-08-01T12:00:00.000Z'), 'did:mdip');
+
+        expect(result.snapshots.at(-1)).toMatchObject({
+            didCount: 2,
+            didCountsByPrefix: { 'did:mdip': 2 },
+            credentialCount: 1,
+            credentialDidCountsByPrefix: { 'did:mdip': 1 },
+            schemas: [{ schemaDid: 'did:mdip:legacy-schema', count: 1 }],
+        });
+    });
+
+    it('does not let manifest references reclassify AgentDIDs', async () => {
+        const publisherDid = 'did:test:publisher';
+        const histories = [
+            createAgentHistory(publisherDid, '2026-08-01T00:00:00.000Z', [
+                manifestUpdate(publisherDid, 'did:mdip:referenced-agent', {
+                    schemaDid: 'did:mdip:referenced-schema-agent',
+                }),
+            ]),
+            createAgentHistory('did:test:referenced-agent', '2026-08-01T00:00:00.000Z'),
+            createAgentHistory('did:test:referenced-schema-agent', '2026-08-01T00:00:00.000Z'),
+        ];
+        const now = new Date('2026-08-01T12:00:00.000Z');
+        const result = await buildNetworkMetricSnapshots(histories, now);
+
+        expect(result.snapshots.at(-1)).toMatchObject({
+            didCount: 3,
+            didCountsByPrefix: { 'did:test': 3 },
+            agentDidCount: 3,
+            agentDidCountsByPrefix: { 'did:test': 3 },
+            credentialCount: 1,
+            credentialDidCountsByPrefix: { 'did:test': 1 },
+            schemas: [{ schemaDid: 'did:test:referenced-schema-agent', count: 1 }],
+        });
+        expect((await buildNetworkMetricSnapshots(histories, now, 'did:mdip')).snapshots.at(-1))
+            .toMatchObject({ credentialCount: 0, schemas: [] });
+    });
+
+    it('does not let manifest evidence override conflicting asset operation prefixes', async () => {
+        const holderDid = 'did:test:holder';
+        const credential = createCredentialHistory(
+            'did:test:conflicting-credential',
+            '2026-08-01T00:00:00.000Z'
+        );
+        const schema = createCredentialHistory(
+            'did:test:conflicting-schema',
+            '2026-08-01T00:00:00.000Z'
+        );
+        const addConflictingUpdates = (history: DIDEventHistory) => {
+            const suffix = history.did.split(':').pop();
+            history.events.push(
+                createEvent(history.did, { type: 'update', did: history.did }),
+                createEvent(`did:mdip:${suffix}`, { type: 'update', did: `did:mdip:${suffix}` })
+            );
+        };
+        addConflictingUpdates(credential);
+        addConflictingUpdates(schema);
+        const histories = [
+            createAgentHistory(holderDid, '2026-08-01T00:00:00.000Z', [
+                manifestUpdate(holderDid, 'did:mdip:conflicting-credential', {
+                    schemaDid: 'did:mdip:conflicting-schema',
+                }),
+            ]),
+            credential,
+            schema,
+        ];
+        const now = new Date('2026-08-01T12:00:00.000Z');
+
+        expect((await buildNetworkMetricSnapshots(histories, now, 'did:test')).snapshots.at(-1))
+            .toMatchObject({
+                credentialCount: 1,
+                credentialDidCountsByPrefix: { 'did:test': 1 },
+                schemas: [{ schemaDid: 'did:test:conflicting-schema', count: 1 }],
+            });
+        expect((await buildNetworkMetricSnapshots(histories, now, 'did:mdip')).snapshots.at(-1))
+            .toMatchObject({ credentialCount: 0, schemas: [] });
     });
 
     it('deduplicates agent aliases and selects one observed prefix per CID', async () => {
@@ -250,13 +476,14 @@ describe('network metric snapshot builder', () => {
         ], new Date('2026-08-01T12:00:00.000Z'));
 
         expect(result.snapshots.at(-1)).toMatchObject({
+            didCount: 4,
             agentDidCount: 4,
             agentDidCountsByPrefix: { 'did:mdip': 2, 'did:test': 2 },
         });
-        expect(result.agentsWithConflictingPrefixes).toBe(1);
+        expect(result.agentsWithConflictingPrefixes).toBe(2);
     });
 
-    it('deduplicates credential prefix aliases and matches their asset anchor by suffix', async () => {
+    it('deduplicates credential aliases and classifies unsigned asset histories as test', async () => {
         const holderDid = 'did:test:holder';
         const histories = [
             createAgentHistory(holderDid, '2026-08-01T00:00:00.000Z', [
@@ -278,14 +505,14 @@ describe('network metric snapshot builder', () => {
         });
         expect(result.snapshots.at(-1)).toMatchObject({
             credentialCount: 1,
-            credentialDidCountsByPrefix: { 'did:mdip': 1 },
+            credentialDidCountsByPrefix: { 'did:test': 1 },
             schemas: [{ schemaDid: 'did:test:schema', count: 1 }],
         });
         expect(result.credentialsDatedByOperationCreated).toBe(1);
         expect(result.credentialsDatedByValidFrom).toBe(0);
     });
 
-    it('combines schema prefix aliases without reporting a conflict', async () => {
+    it('combines schema aliases and classifies missing schema histories as test', async () => {
         const holderDid = 'did:test:holder';
         const histories = [createAgentHistory(holderDid, '2026-08-01T00:00:00.000Z', [
             manifestUpdate(holderDid, 'did:test:credential-a', { schemaDid: 'did:mdip:schema' }),
@@ -297,7 +524,7 @@ describe('network metric snapshot builder', () => {
 
         expect(result.snapshots.at(-1)).toMatchObject({
             credentialCount: 2,
-            schemas: [{ schemaDid: 'did:mdip:schema', count: 2 }],
+            schemas: [{ schemaDid: 'did:test:schema', count: 2 }],
         });
         expect(result.credentialsWithConflictingSchemas).toBe(0);
     });
@@ -430,7 +657,7 @@ describe('network metric snapshot builder', () => {
         expect(baseline.snapshots[0]).toMatchObject({ date: '2024-01-01', agentDidCount: 1 });
         expect(baseline.snapshots).toHaveLength(3);
         expect(empty.snapshots).toStrictEqual([
-            { date: '2024-01-03', agentDidCount: 0, agentDidCountsByPrefix: {}, credentialCount: 0, credentialDidCountsByPrefix: {}, schemas: [], rebuiltAt: now.toISOString() },
+            { date: '2024-01-03', didCount: 0, didCountsByPrefix: {}, agentDidCount: 0, agentDidCountsByPrefix: {}, credentialCount: 0, credentialDidCountsByPrefix: {}, schemas: [], rebuiltAt: now.toISOString() },
         ]);
     });
 
@@ -441,6 +668,19 @@ describe('network metric snapshot builder', () => {
         expect(parseSnapshotDate('2026-02-31', now)).toBeNull();
         expect(parseSnapshotDate('2026-8-5', now)).toBeNull();
         expect(parseSnapshotDate('2026-08-06', now)).toBeNull();
+    });
+
+    it('uses the current time when snapshot dates are not supplied', async () => {
+        jest.useFakeTimers();
+        jest.setSystemTime(new Date('2026-08-05T12:00:00.000Z'));
+
+        try {
+            expect(parseSnapshotDate('2026-08-05')).toBe('2026-08-05');
+            expect((await buildNetworkMetricSnapshots([])).snapshots[0].date).toBe('2026-08-05');
+        }
+        finally {
+            jest.useRealTimers();
+        }
     });
 });
 
@@ -501,6 +741,8 @@ describe.each(adapterFactories)('$name network metric persistence', ({ create })
         });
         const first: NetworkMetricSnapshot = {
             date: '2026-08-01',
+            didCount: 2,
+            didCountsByPrefix: { 'did:test': 2 },
             agentDidCount: 1,
             agentDidCountsByPrefix: { 'did:test': 1 },
             credentialCount: 0,
@@ -527,6 +769,8 @@ describe.each(adapterFactories)('$name network metric persistence', ({ create })
 describe('network metric database branches', () => {
     const snapshot: NetworkMetricSnapshot = {
         date: '2026-08-01',
+        didCount: 3,
+        didCountsByPrefix: { 'did:mdip': 1, 'did:test': 2 },
         agentDidCount: 2,
         agentDidCountsByPrefix: { 'did:mdip': 1, 'did:test': 1 },
         credentialCount: 1,
@@ -605,6 +849,10 @@ describe('network metric database branches', () => {
                     rowCount: 1,
                     rows: [{
                         date: params[0],
+                        didCount: snapshot.didCount,
+                        didCountsByPrefix: params[0] === snapshot.date
+                            ? JSON.stringify(snapshot.didCountsByPrefix)
+                            : snapshot.didCountsByPrefix,
                         agentDidCount: snapshot.agentDidCount,
                         agentDidCountsByPrefix: params[0] === snapshot.date
                             ? JSON.stringify(snapshot.agentDidCountsByPrefix)
@@ -649,6 +897,8 @@ describe('network metric database branches', () => {
             expect.stringContaining('INSERT INTO network_metric_snapshots'),
             [
                 snapshot.date,
+                snapshot.didCount,
+                JSON.stringify(snapshot.didCountsByPrefix),
                 snapshot.agentDidCount,
                 JSON.stringify(snapshot.agentDidCountsByPrefix),
                 snapshot.credentialCount,
@@ -712,6 +962,7 @@ describe('DidIndexer network metrics scheduling', () => {
     it('logs when the metrics error state cannot be saved', async () => {
         const db = new DIDsDbMemory();
         await db.saveSyncState(INDEX_SYNC_STATE_KEYS.snapshotComplete, 'true');
+        await db.saveSyncState(INDEX_SYNC_STATE_KEYS.metricsDidPrefix, 'did:test');
         const metricsFailure = new Error('metrics failed');
         const stateFailure = new Error('state failed');
         jest.spyOn(db, 'replaceNetworkMetricSnapshots').mockRejectedValue(metricsFailure);
@@ -729,6 +980,7 @@ describe('DidIndexer network metrics scheduling', () => {
         const indexer = new DidIndexer(gatekeeper, db, {
             intervalMs: 60_000,
             metricsRefreshIntervalMs: 60_000,
+            didPrefix: 'did:mdip',
         });
         const log = {
             info: jest.fn(),
@@ -747,6 +999,11 @@ describe('DidIndexer network metrics scheduling', () => {
             { error: metricsFailure },
             'Network metrics rebuild error'
         );
+        expect(await db.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsDidPrefix)).toBeNull();
+        expect(isNetworkMetricsScopeCurrent(
+            await db.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsDidPrefix),
+            'did:test'
+        )).toBe(false);
     });
 
     it('rebuilds after the initial snapshot and does not rebuild again before the interval', async () => {
@@ -778,6 +1035,121 @@ describe('DidIndexer network metrics scheduling', () => {
                     hasMore: false,
                     dids: [],
                     blocks: [],
+                })
+                .mockResolvedValueOnce({
+                    mode: 'changes',
+                    indexEpoch: 'epoch-test',
+                    cursor: '1',
+                    checkpointCursor: '1',
+                    hasMore: false,
+                    dids: [],
+                    blocks: [],
+                })
+                .mockResolvedValueOnce({
+                    mode: 'changes',
+                    indexEpoch: 'epoch-test',
+                    cursor: '1',
+                    checkpointCursor: '1',
+                    hasMore: false,
+                    dids: [],
+                    blocks: [],
+                }),
+        };
+        const replace = jest.spyOn(db, 'replaceNetworkMetricSnapshots');
+        const indexer = new DidIndexer(gatekeeper, db, {
+            intervalMs: 60_000,
+            metricsRefreshIntervalMs: 60_000,
+        });
+        const log = {
+            info: jest.fn(),
+            warn: jest.fn(),
+            error: jest.fn(),
+        };
+        (indexer as any).log = log;
+
+        await (indexer as any).refreshIndex();
+        await (indexer as any).refreshIndex();
+
+        expect(replace).not.toHaveBeenCalled();
+
+        await (indexer as any).refreshIndex();
+
+        expect(replace).toHaveBeenCalledTimes(1);
+        expect(log.info).toHaveBeenCalledWith({
+            previousDidPrefix: null,
+            didPrefix: '',
+        }, 'Rebuilding network metrics');
+        expect(await db.getNetworkMetricSnapshot(created.slice(0, 10))).toMatchObject({
+            agentDidCount: 1,
+            credentialCount: 0,
+        });
+
+        await (indexer as any).refreshIndex();
+        expect(replace).toHaveBeenCalledTimes(1);
+    });
+
+    it('resets initial metrics settling when changes resume after a quiet poll', async () => {
+        const db = new DIDsDbMemory();
+        const did = 'did:test:z3v8AuaTV5VKcT9MJoSHkSTRLpXDoqcgqiKkwGBNSV4nVzb6kLk';
+        const secondDid = 'did:test:z3v8AuafC9YUH7jsdQWhiBvKQnrV3gUwKtXGxAQzo6MBz5b7B36';
+        const created = new Date().toISOString();
+        const event = createEvent(did, {
+            type: 'create',
+            created,
+            mdip: { version: 1, type: 'agent', registry: 'hyperswarm' },
+        });
+        const secondEvent = createEvent(secondDid, {
+            type: 'create',
+            created,
+            mdip: { version: 1, type: 'agent', registry: 'hyperswarm' },
+        });
+        const gatekeeper = {
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>()
+                .mockResolvedValueOnce({
+                    mode: 'snapshot',
+                    indexEpoch: 'epoch-test',
+                    cursor: did,
+                    checkpointCursor: '1',
+                    hasMore: false,
+                    dids: [{ did, events: [event] }],
+                    blocks: [],
+                })
+                .mockResolvedValueOnce({
+                    mode: 'changes',
+                    indexEpoch: 'epoch-test',
+                    cursor: '1',
+                    checkpointCursor: '1',
+                    hasMore: false,
+                    dids: [],
+                    blocks: [],
+                })
+                .mockResolvedValueOnce({
+                    mode: 'changes',
+                    indexEpoch: 'epoch-test',
+                    cursor: '2',
+                    checkpointCursor: '2',
+                    hasMore: false,
+                    dids: [{ did: secondDid, events: [secondEvent] }],
+                    blocks: [],
+                })
+                .mockResolvedValueOnce({
+                    mode: 'changes',
+                    indexEpoch: 'epoch-test',
+                    cursor: '2',
+                    checkpointCursor: '2',
+                    hasMore: false,
+                    dids: [],
+                    blocks: [],
+                })
+                .mockResolvedValueOnce({
+                    mode: 'changes',
+                    indexEpoch: 'epoch-test',
+                    cursor: '2',
+                    checkpointCursor: '2',
+                    hasMore: false,
+                    dids: [],
+                    blocks: [],
                 }),
         };
         const replace = jest.spyOn(db, 'replaceNetworkMetricSnapshots');
@@ -789,11 +1161,51 @@ describe('DidIndexer network metrics scheduling', () => {
         await (indexer as any).refreshIndex();
         await (indexer as any).refreshIndex();
 
+        expect(replace).not.toHaveBeenCalled();
+
+        await (indexer as any).refreshIndex();
+        expect(replace).not.toHaveBeenCalled();
+
+        await (indexer as any).refreshIndex();
+        expect(replace).not.toHaveBeenCalled();
+
+        await (indexer as any).refreshIndex();
+
         expect(replace).toHaveBeenCalledTimes(1);
         expect(await db.getNetworkMetricSnapshot(created.slice(0, 10))).toMatchObject({
-            agentDidCount: 1,
-            credentialCount: 0,
+            agentDidCount: 2,
         });
+    });
+
+    it('keeps the scope marker during an interval-triggered same-scope rebuild', async () => {
+        const db = new DIDsDbMemory();
+        await db.saveSyncState(INDEX_SYNC_STATE_KEYS.snapshotComplete, 'true');
+        await db.saveSyncState(INDEX_SYNC_STATE_KEYS.metricsDidPrefix, 'did:test');
+        await db.saveSyncState(INDEX_SYNC_STATE_KEYS.metricsLastRebuiltAt, '2000-01-01T00:00:00.000Z');
+        const saveSyncState = jest.spyOn(db, 'saveSyncState');
+        const indexer = new DidIndexer({
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>(),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>(),
+        }, db, {
+            intervalMs: 60_000,
+            metricsRefreshIntervalMs: 60_000,
+            didPrefix: 'did:test',
+        });
+
+        await (indexer as any).refreshNetworkMetricsIfDue({
+            mode: 'changes',
+            pages: 1,
+            changedDids: 1,
+            storedBlocks: 0,
+            removedBlocks: 0,
+            removedDids: 0,
+        });
+
+        expect(saveSyncState).not.toHaveBeenCalledWith(
+            INDEX_SYNC_STATE_KEYS.metricsDidPrefix,
+            null
+        );
+        expect(await db.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsDidPrefix)).toBe('did:test');
     });
 
     it('retries metric failures without marking the DID sync as failed', async () => {
@@ -824,6 +1236,24 @@ describe('DidIndexer network metrics scheduling', () => {
                     hasMore: false,
                     dids: [],
                     blocks: [],
+                })
+                .mockResolvedValueOnce({
+                    mode: 'changes',
+                    indexEpoch: 'epoch-test',
+                    cursor: '1',
+                    checkpointCursor: '1',
+                    hasMore: false,
+                    dids: [],
+                    blocks: [],
+                })
+                .mockResolvedValueOnce({
+                    mode: 'changes',
+                    indexEpoch: 'epoch-test',
+                    cursor: '1',
+                    checkpointCursor: '1',
+                    hasMore: false,
+                    dids: [],
+                    blocks: [],
                 }),
         };
         const replace = jest.spyOn(db, 'replaceNetworkMetricSnapshots')
@@ -837,6 +1267,12 @@ describe('DidIndexer network metrics scheduling', () => {
 
         await (indexer as any).refreshIndex();
         expect(await db.loadSyncState('index.lastSyncError')).toBeNull();
+        expect(replace).not.toHaveBeenCalled();
+
+        await (indexer as any).refreshIndex();
+        expect(replace).not.toHaveBeenCalled();
+
+        await (indexer as any).refreshIndex();
         expect(await db.loadSyncState('metrics.lastError')).toContain('metrics failed');
 
         await (indexer as any).refreshIndex();

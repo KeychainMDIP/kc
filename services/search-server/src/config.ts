@@ -57,6 +57,17 @@ function parseCsv(value: string | undefined): string[] {
         .filter(Boolean);
 }
 
+export function parseDidPrefix(value: string | undefined): 'did:test' | 'did:mdip' | undefined {
+    const normalized = value?.trim();
+    if (!normalized) {
+        return undefined;
+    }
+    if (normalized === 'did:test' || normalized === 'did:mdip') {
+        return normalized;
+    }
+    throw new Error('KC_SEARCH_SERVER_DID_PREFIX must be did:test, did:mdip, or empty');
+}
+
 const configuredSkipPaths = parseCsv(process.env.KC_SEARCH_SERVER_RATE_LIMIT_SKIP_PATHS);
 
 const config = {
@@ -67,6 +78,7 @@ const config = {
         process.env.KC_SEARCH_SERVER_METRICS_REFRESH_INTERVAL_MS,
         60 * 60 * 1000
     ),
+    didPrefix: parseDidPrefix(process.env.KC_SEARCH_SERVER_DID_PREFIX),
     db: process.env.KC_SEARCH_SERVER_DB || 'sqlite',
     postgresURL: process.env.KC_SEARCH_SERVER_POSTGRES_URL
         || process.env.KC_POSTGRES_URL
