@@ -6,6 +6,7 @@ import sqlite3 from 'sqlite3';
 import { Operation } from '@mdip/gatekeeper/types';
 import SqliteOperationSyncStore from '../../services/mediators/hyperswarm/src/db/sqlite.ts';
 import InMemoryOperationSyncStore from '../../services/mediators/hyperswarm/src/db/memory.ts';
+import PostgresOperationSyncStore from '../../services/mediators/hyperswarm/src/db/postgres.ts';
 import { OperationSyncStore } from '../../services/mediators/hyperswarm/src/db/types.ts';
 
 const h = (c: string) => c.repeat(64);
@@ -94,6 +95,31 @@ async function runStoreContractTests(store: OperationSyncStore): Promise<void> {
     expect(sortedAll.every(item => Number.isFinite(item.insertedAt))).toBe(true);
     expect(sortedAll.find(item => item.id === recA.id)?.syncOrder).toBe(5);
     expect(sortedAll.find(item => item.id === recC.id)?.syncOrder).toBe(10);
+
+    expect(await store.iterateSortedKeys()).toStrictEqual([
+        { id: recA.id, ts: 1000 },
+        { id: recB.id, ts: 2000 },
+        { id: recC.id, ts: 2000 },
+    ]);
+    expect(await store.iterateSortedKeys({ limit: 2 })).toStrictEqual([
+        { id: recA.id, ts: 1000 },
+        { id: recB.id, ts: 2000 },
+    ]);
+    expect(await store.iterateSortedKeys({ fromTs: 1500, toTs: 2000 })).toStrictEqual([
+        { id: recB.id, ts: 2000 },
+        { id: recC.id, ts: 2000 },
+    ]);
+    expect(await store.iterateSortedKeys({ after: { ts: 2000, id: recB.id } })).toStrictEqual([
+        { id: recC.id, ts: 2000 },
+    ]);
+    expect(await store.iterateSortedKeys({
+        after: { ts: 1500, id: h('0') },
+        fromTs: 1500,
+        toTs: 2000,
+    })).toStrictEqual([
+        { id: recB.id, ts: 2000 },
+        { id: recC.id, ts: 2000 },
+    ]);
 
     const firstTwo = await store.iterateSorted({ limit: 2 });
     expect(firstTwo.map(item => item.id)).toStrictEqual([recA.id, recB.id]);
@@ -252,6 +278,7 @@ describe('SqliteOperationSyncStore', () => {
         await expect(store.loadSyncState('cursor')).rejects.toThrow('Call start() first');
         await expect(store.saveSyncState('cursor', '1')).rejects.toThrow('Call start() first');
         await expect(store.getByIds([recA.id])).rejects.toThrow('Call start() first');
+        await expect(store.iterateSortedKeys()).rejects.toThrow('Call start() first');
         await expect(store.iterateSorted()).rejects.toThrow('Call start() first');
         await expect(store.iterateOrdered()).rejects.toThrow('Call start() first');
         await expect(store.has(recA.id)).rejects.toThrow('Call start() first');
@@ -391,5 +418,33 @@ describe('SqliteOperationSyncStore', () => {
         await expect(store.count()).resolves.toBe(0);
         await expect(store.countOrdered()).resolves.toBe(0);
         db.get = originalGet;
+    });
+});
+
+describe('PostgresOperationSyncStore', () => {
+    it('reads only key columns for sorted key iteration', async () => {
+        const store = new PostgresOperationSyncStore();
+        const calls: Array<{ sql: string; params: unknown[] }> = [];
+
+        (store as any).pool = {
+            query: async (sql: string, params: unknown[]) => {
+                calls.push({ sql, params });
+                return { rows: [{ id: recC.id, signed_ts: '2000' }] };
+            },
+        };
+
+        await expect(store.iterateSortedKeys({
+            after: { ts: 1000, id: recA.id },
+            fromTs: 1500,
+            toTs: 2000,
+            limit: 2,
+        })).resolves.toStrictEqual([{ id: recC.id, ts: 2000 }]);
+
+        const sql = calls[0].sql.replace(/\s+/g, ' ').trim();
+        expect(sql).toContain('SELECT id, signed_ts FROM hyperswarm_sync_operations');
+        expect(sql).not.toContain('operation_json');
+        expect(sql).not.toContain('sync_order');
+        expect(sql).not.toContain('inserted_at');
+        expect(calls[0].params).toStrictEqual([1000, recA.id, 1500, 2000, 2]);
     });
 });

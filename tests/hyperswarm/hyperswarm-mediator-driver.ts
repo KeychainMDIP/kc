@@ -388,6 +388,7 @@ function trackNodeWork(
     const readCount = store.count.bind(store);
     const readOrderedCount = store.countOrdered.bind(store);
     const upsertMany = store.upsertMany.bind(store);
+    const iterateSortedKeys = store.iterateSortedKeys.bind(store);
     const iterateSorted = store.iterateSorted.bind(store);
     const iterateOrdered = store.iterateOrdered.bind(store);
     const getByIds = store.getByIds.bind(store);
@@ -400,6 +401,7 @@ function trackNodeWork(
     const reset = store.reset.bind(store);
 
     jest.spyOn(store, 'upsertMany').mockImplementation(tracker.wrap(`${nodeId}.syncStore.upsertMany`, upsertMany));
+    jest.spyOn(store, 'iterateSortedKeys').mockImplementation(tracker.wrap(`${nodeId}.syncStore.iterateSortedKeys`, iterateSortedKeys));
     jest.spyOn(store, 'iterateSorted').mockImplementation(tracker.wrap(`${nodeId}.syncStore.iterateSorted`, iterateSorted));
     jest.spyOn(store, 'iterateOrdered').mockImplementation(tracker.wrap(`${nodeId}.syncStore.iterateOrdered`, iterateOrdered));
     jest.spyOn(store, 'getByIds').mockImplementation(tracker.wrap(`${nodeId}.syncStore.getByIds`, getByIds));

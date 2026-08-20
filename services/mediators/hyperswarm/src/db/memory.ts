@@ -3,6 +3,7 @@ import {
     OperationSyncStore,
     SyncOperationRecord,
     SyncOperationWriteRecord,
+    SyncStoreCursor,
     SyncStoreListOptions,
     SyncStoreOrderedListOptions,
     SyncStorePage,
@@ -150,6 +151,25 @@ export default class InMemoryOperationSyncStore implements OperationSyncStore {
         });
 
         return filtered.slice(0, limit);
+    }
+
+    async iterateSortedKeys(options: SyncStoreListOptions = {}): Promise<SyncStoreCursor[]> {
+        const limit = options.limit ?? 1000;
+        const rows = Array.from(this.records.values(), ({ id, ts }) => ({ id, ts }))
+            .sort((a, b) => a.ts === b.ts ? a.id.localeCompare(b.id) : a.ts - b.ts)
+            .filter(item => {
+                if (options.after
+                    && !(item.ts > options.after.ts
+                        || (item.ts === options.after.ts && item.id > options.after.id))) {
+                    return false;
+                }
+                if (typeof options.fromTs === 'number' && item.ts < options.fromTs) {
+                    return false;
+                }
+                return !(typeof options.toTs === 'number' && item.ts > options.toTs);
+            });
+
+        return rows.slice(0, limit);
     }
 
     async iterateOrdered(options: SyncStoreOrderedListOptions = {}): Promise<SyncOperationRecord[]> {

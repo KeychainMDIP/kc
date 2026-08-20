@@ -67,4 +67,4 @@ The mediator now includes a sync-store abstraction in `src/db/` with:
 
 SQLite uses a fixed data path under `data/hyperswarm` (relative to the mediator working directory), with an index on `(ts, id)` to use SQLite's native B-tree ordering for range queries.
 
-Postgres uses `hyperswarm_sync_operations` with a B-tree index on `(ts, id)` to preserve the same deterministic keyset ordering required by negentropy window rebuilds and cursor pagination.
+Postgres uses `hyperswarm_sync_operations` with a B-tree index on `(signed_ts, id)` to preserve deterministic keyset ordering. Negentropy rebuilds read only those key columns; full operations are fetched only when peers differ.
