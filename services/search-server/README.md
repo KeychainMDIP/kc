@@ -271,9 +271,10 @@ credential unpublishing, keeping historical schema links resolvable in the same
 network scope. Conflicting manifest prefixes fall back to `did:test`. Prefix
 aliases sharing a CID suffix are deduplicated.
 
-Set `KC_SEARCH_SERVER_DID_PREFIX` to `did:test` or `did:mdip` to return only
-that network from DID, search, event, credential, challenge-receipt, and metric
-endpoints. Explicit DIDs using another prefix are excluded from both scopes.
+Set `KC_SEARCH_SERVER_DID_PREFIX` to any `did:<method>` prefix, such as
+`did:test`, `did:mdip`, or `did:arbitrary`, to return only that network from
+DID, search, event, credential, challenge-receipt, and metric endpoints.
+Explicit DIDs using another prefix are excluded from the configured scope.
 Leave the setting empty to return every indexed network.
 
 Changing the configured scope invalidates the stored snapshot scope before a

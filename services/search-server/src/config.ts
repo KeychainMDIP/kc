@@ -57,15 +57,15 @@ function parseCsv(value: string | undefined): string[] {
         .filter(Boolean);
 }
 
-export function parseDidPrefix(value: string | undefined): 'did:test' | 'did:mdip' | undefined {
+export function parseDidPrefix(value: string | undefined): string | undefined {
     const normalized = value?.trim();
     if (!normalized) {
         return undefined;
     }
-    if (normalized === 'did:test' || normalized === 'did:mdip') {
+    if (/^did:[^:]+$/.test(normalized)) {
         return normalized;
     }
-    throw new Error('KC_SEARCH_SERVER_DID_PREFIX must be did:test, did:mdip, or empty');
+    throw new Error('KC_SEARCH_SERVER_DID_PREFIX must be a did:<method> prefix or empty');
 }
 
 const configuredSkipPaths = parseCsv(process.env.KC_SEARCH_SERVER_RATE_LIMIT_SKIP_PATHS);
