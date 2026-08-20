@@ -202,6 +202,73 @@ describe('removeDIDs', () => {
         const ok = await gatekeeper.removeDIDs(['did:test:mock']);
         expect(ok).toBe(true);
     });
+
+    it('should serialize removals through DID aliases', async () => {
+        const order: string[] = [];
+        let signalStarted: () => void = () => { };
+        let releaseFirst: () => void = () => { };
+        const started = new Promise<void>(resolve => (signalStarted = resolve));
+        const release = new Promise<void>(resolve => (releaseFirst = resolve));
+        const deleteEvents = jest.spyOn(db, 'deleteEvents')
+            .mockImplementationOnce(async () => {
+                order.push('first started');
+                signalStarted();
+                await release;
+                order.push('first finished');
+            })
+            .mockImplementationOnce(async () => {
+                order.push('second started');
+            });
+
+        try {
+            const first = gatekeeper.removeDIDs(['did:test:mock']);
+            await started;
+            const second = gatekeeper.removeDIDs(['did:custom:mock']);
+            await Promise.resolve();
+            expect(order).toStrictEqual(['first started']);
+
+            releaseFirst();
+            await Promise.all([first, second]);
+            expect(order).toStrictEqual(['first started', 'first finished', 'second started']);
+            const didLocks = (gatekeeper as unknown as { didLocks: Map<string, Promise<void>> }).didLocks;
+            expect(didLocks.has('mock')).toBe(false);
+        }
+        finally {
+            releaseFirst();
+            deleteEvents.mockRestore();
+        }
+    });
+
+    it('should not append an update after a concurrent removal', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const did = await gatekeeper.createDID(await helper.createAgentOp(keypair));
+        const updateOp = await helper.createUpdateOp(keypair, did, await gatekeeper.resolveDID(did));
+        const originalDeleteEvents = db.deleteEvents.bind(db);
+        let signalRemoval: () => void = () => { };
+        let releaseRemoval: () => void = () => { };
+        const removalStarted = new Promise<void>(resolve => (signalRemoval = resolve));
+        const removalRelease = new Promise<void>(resolve => (releaseRemoval = resolve));
+        const deleteEvents = jest.spyOn(db, 'deleteEvents').mockImplementationOnce(async (removedDID) => {
+            signalRemoval();
+            await removalRelease;
+            return originalDeleteEvents(removedDID);
+        });
+
+        const removal = gatekeeper.removeDIDs([did]);
+        try {
+            await removalStarted;
+            const update = expect(gatekeeper.updateDID(updateOp)).rejects.toThrow('doc.didDocument');
+            releaseRemoval();
+            await removal;
+            await update;
+            expect(await gatekeeper.exportDID(did)).toStrictEqual([]);
+        }
+        finally {
+            releaseRemoval();
+            await removal.catch(() => { });
+            deleteEvents.mockRestore();
+        }
+    });
 });
 
 describe('exportBatch', () => {
