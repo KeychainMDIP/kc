@@ -201,6 +201,7 @@ describe('removeDIDs', () => {
     it('should return true if unknown DIDs specified', async () => {
         const ok = await gatekeeper.removeDIDs(['did:test:mock']);
         expect(ok).toBe(true);
+        await expect(gatekeeper.removeDIDs([''])).rejects.toThrow('Invalid DID');
     });
 
     it('should serialize removals through DID aliases', async () => {

@@ -258,6 +258,103 @@ describe('verifyDb', () => {
         }
     });
 
+    it('should re-resolve scan failures before classifying DIDs', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const expired = new Date(Date.now() - 1_000).toISOString();
+        const controllerDID = await gatekeeper.createDID(await helper.createAgentOp(keypair));
+        const assetDID1 = await gatekeeper.createDID(await helper.createAssetOp(controllerDID, keypair, {
+            validUntil: expired,
+        }));
+        const assetDID2 = await gatekeeper.createDID(await helper.createAssetOp(controllerDID, keypair, {
+            validUntil: expired,
+        }));
+        const expiredAgentDID = await gatekeeper.createDID(await helper.createAgentOp(keypair, {
+            validUntil: expired,
+        }));
+        const failOnce = new Set([controllerDID, assetDID1, assetDID2, expiredAgentDID]);
+        const originalGetEvents = db.getEvents.bind(db);
+        const getEvents = jest.spyOn(db, 'getEvents').mockImplementation(async did => {
+            if (failOnce.delete(did)) {
+                throw 'scan read failed';
+            }
+            return originalGetEvents(did);
+        });
+
+        try {
+            expect(await gatekeeper.verifyDb({ chatty: false })).toStrictEqual({
+                total: 4,
+                verified: 1,
+                expired: 3,
+                invalid: 0,
+            });
+            expect(await gatekeeper.getDIDs()).toStrictEqual([controllerDID]);
+        }
+        finally {
+            getEvents.mockRestore();
+        }
+    });
+
+    it('should retry when an expired agent cannot be revalidated', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agentDID = await gatekeeper.createDID(await helper.createAgentOp(keypair, {
+            validUntil: new Date(Date.now() - 1_000).toISOString(),
+        }));
+        const assetDID = await gatekeeper.createDID(await helper.createAssetOp(agentDID, keypair));
+        const originalGetEvents = db.getEvents.bind(db);
+        let agentReads = 0;
+        const getEvents = jest.spyOn(db, 'getEvents').mockImplementation(async did => {
+            if (did === agentDID && ++agentReads === 2) {
+                throw new Error('transient revalidation failure');
+            }
+            return originalGetEvents(did);
+        });
+
+        try {
+            expect(await gatekeeper.verifyDb({ chatty: false })).toStrictEqual({
+                total: 2,
+                verified: 2,
+                expired: 0,
+                invalid: 0,
+            });
+            expect(await gatekeeper.getDIDs()).toStrictEqual([agentDID, assetDID]);
+        }
+        finally {
+            getEvents.mockRestore();
+        }
+
+        expect(await gatekeeper.verifyDb({ chatty: false })).toStrictEqual({
+            total: 2,
+            verified: 0,
+            expired: 2,
+            invalid: 0,
+        });
+        expect(await gatekeeper.getDIDs()).toStrictEqual([]);
+    });
+
+    it('should retain a pending controller with an invalid resolution', async () => {
+        const did = 'did:test:pending-invalid';
+        const pending = (gatekeeper as unknown as {
+            pendingExpiredControllers: Map<string, string>;
+        }).pendingExpiredControllers;
+        pending.set('pending-invalid', did);
+        const resolveDID = jest.spyOn(gatekeeper, 'resolveDID').mockResolvedValue({
+            didResolutionMetadata: { error: 'invalidDid' },
+        });
+
+        try {
+            expect(await gatekeeper.verifyDb({ chatty: false })).toStrictEqual({
+                total: 0,
+                verified: 0,
+                expired: 0,
+                invalid: 0,
+            });
+            expect(pending.get('pending-invalid')).toBe(did);
+        }
+        finally {
+            resolveDID.mockRestore();
+        }
+    });
+
     it('should not remove an agent renewed after the GC scan', async () => {
         const keypair = cipher.generateRandomJwk();
         const expiresAt = Date.now() + 60_000;
@@ -366,6 +463,43 @@ describe('verifyDb', () => {
             invalid: 0,
         });
         expect(await gatekeeper.getDIDs()).toStrictEqual([liveAgent, assetDID]);
+    });
+
+    it('should preserve an asset moved to a live controller after the scan', async () => {
+        const expiredKeys = cipher.generateRandomJwk();
+        const liveKeys = cipher.generateRandomJwk();
+        const expiredAgent = await gatekeeper.createDID(await helper.createAgentOp(expiredKeys, {
+            validUntil: new Date(Date.now() - 1_000).toISOString(),
+        }));
+        const liveAgent = await gatekeeper.createDID(await helper.createAgentOp(liveKeys));
+        const assetDID = await gatekeeper.createDID(await helper.createAssetOp(expiredAgent, expiredKeys));
+        const originalResolveDID = gatekeeper.resolveDID.bind(gatekeeper);
+        const staleAssetDoc = await originalResolveDID(assetDID);
+        const currentAssetDoc = await originalResolveDID(assetDID);
+        currentAssetDoc.didDocument!.controller = liveAgent;
+        expect(await gatekeeper.updateDID(
+            await helper.createUpdateOp(expiredKeys, assetDID, currentAssetDoc),
+        )).toBe(true);
+        let assetResolutions = 0;
+        const resolveDID = jest.spyOn(gatekeeper, 'resolveDID').mockImplementation(async (did, options) => {
+            if (did === assetDID && ++assetResolutions === 1) {
+                return staleAssetDoc;
+            }
+            return originalResolveDID(did, options);
+        });
+
+        try {
+            expect(await gatekeeper.verifyDb({ chatty: false })).toStrictEqual({
+                total: 3,
+                verified: 2,
+                expired: 1,
+                invalid: 0,
+            });
+            expect(await gatekeeper.getDIDs()).toStrictEqual([liveAgent, assetDID]);
+        }
+        finally {
+            resolveDID.mockRestore();
+        }
     });
 
     it('should retry failed dependency discovery before removing an expired agent', async () => {
@@ -709,6 +843,53 @@ describe('verifyDb', () => {
             invalid: 0,
         });
         expect(await gatekeeper.getDIDs()).toStrictEqual([agentDID]);
+    });
+
+    it('should reclassify stale expired assets before deletion', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agentDID = await gatekeeper.createDID(await helper.createAgentOp(keypair));
+        const expired = new Date(Date.now() - 1_000).toISOString();
+        const invalidAsset = await gatekeeper.createDID(await helper.createAssetOp(agentDID, keypair, {
+            validUntil: expired,
+        }));
+        const renewedAsset = await gatekeeper.createDID(await helper.createAssetOp(agentDID, keypair, {
+            validUntil: expired,
+        }));
+        const originalResolveDID = gatekeeper.resolveDID.bind(gatekeeper);
+        const staleDocs = new Map([
+            [invalidAsset, await originalResolveDID(invalidAsset)],
+            [renewedAsset, await originalResolveDID(renewedAsset)],
+        ]);
+
+        const invalidEvents = await db.getEvents(invalidAsset);
+        invalidEvents[0].time = 'not-a-date';
+        await db.setEvents(invalidAsset, invalidEvents);
+        const renewedDoc = await originalResolveDID(renewedAsset);
+        renewedDoc.mdip!.validUntil = new Date(Date.now() + 60_000).toISOString();
+        expect(await gatekeeper.updateDID(
+            await helper.createUpdateOp(keypair, renewedAsset, renewedDoc),
+        )).toBe(true);
+
+        const staleReads = new Set(staleDocs.keys());
+        const resolveDID = jest.spyOn(gatekeeper, 'resolveDID').mockImplementation(async (did, options) => {
+            if (did && staleReads.delete(did)) {
+                return staleDocs.get(did)!;
+            }
+            return originalResolveDID(did, options);
+        });
+
+        try {
+            expect(await gatekeeper.verifyDb({ chatty: false })).toStrictEqual({
+                total: 3,
+                verified: 2,
+                expired: 0,
+                invalid: 1,
+            });
+            expect(await gatekeeper.getDIDs()).toStrictEqual([agentDID, renewedAsset]);
+        }
+        finally {
+            resolveDID.mockRestore();
+        }
     });
 
     it('should not restore cache invalidated during resolution', async () => {
