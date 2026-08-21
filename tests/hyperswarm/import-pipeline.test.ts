@@ -29,6 +29,7 @@ function createPipeline(
     isReady: jest.Mock<() => Promise<boolean>>,
     syncStore = new InMemoryOperationSyncStore(),
     gatekeeperOverrides: Partial<ImportPipelineOptions['gatekeeper']> = {},
+    callbackOverrides: Partial<Pick<ImportPipelineOptions, 'beginStoreMutation' | 'onStoreChanged'>> = {},
 ) {
     const gatekeeper = {
         exportIndex: jest.fn(),
@@ -43,7 +44,9 @@ function createPipeline(
         syncStore,
         cipher: new CipherNode(),
         syncStats: createMediatorSyncStats(),
+        beginStoreMutation: jest.fn(() => jest.fn()),
         onStoreChanged: jest.fn(),
+        ...callbackOverrides,
     });
 }
 
@@ -184,6 +187,38 @@ describe('import pipeline', () => {
         await refreshResult;
         await shutdown;
         expect(shutdownSettled).toBe(true);
+    });
+
+    it('invalidates the cache before an import write that persists and then throws', async () => {
+        const store = new InMemoryOperationSyncStore();
+        const upsertMany = store.upsertMany.bind(store);
+        const finishStoreMutation = jest.fn();
+        const beginStoreMutation = jest.fn(() => finishStoreMutation);
+        const onStoreChanged = jest.fn();
+        jest.spyOn(store, 'upsertMany').mockImplementationOnce(async records => {
+            expect(beginStoreMutation).toHaveBeenCalledTimes(1);
+            expect(finishStoreMutation).not.toHaveBeenCalled();
+            await upsertMany(records);
+            throw new Error('commit acknowledgement lost');
+        });
+        const pipeline = createPipeline(
+            jest.fn(async () => true),
+            store,
+            {},
+            { beginStoreMutation, onStoreChanged },
+        );
+
+        await expect(pipeline.enqueue({
+            kind: 'local_queue',
+            phase: 'persist',
+            name: 'local',
+            data: [operation],
+        })).resolves.toMatchObject({ persistedIds: [], retryable: true });
+
+        await expect(store.has(operation.signature!.hash)).resolves.toBe(true);
+        expect(finishStoreMutation).toHaveBeenCalledTimes(1);
+        expect(onStoreChanged).not.toHaveBeenCalled();
+        await pipeline.shutdown();
     });
 
     it('does not remember a normally persisted operation as a terminal root', async () => {

@@ -12,6 +12,12 @@ import {
     encodeNegentropyFrame,
     normalizePeerCapabilities,
 } from '../../services/mediators/hyperswarm/src/negentropy/protocol.ts';
+import {
+    buildInitialHistoryWindow,
+    buildNextHistoryPage,
+    makeWindowId,
+    MDIP_EPOCH_SECONDS,
+} from '../../services/mediators/hyperswarm/src/negentropy/windows.ts';
 import { estimateOperationBytes } from '../../services/mediators/hyperswarm/src/negentropy/transfer.ts';
 import {
     decodeFramedMessages,
@@ -1198,7 +1204,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey),
             );
 
-            expect(buildCalls).toBe(2);
+            expect(buildCalls).toBe(3);
             expect(pair.transcript.some(entry => entry.messageType === 'neg_open')).toBe(true);
             expect(protocolNode.node.run(
                 () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
@@ -2120,6 +2126,121 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
         )).toBeNull();
+    });
+
+    it('reuses capped history windows but always rebuilds the dynamic tail', async () => {
+        const operations = await makeOperations(13);
+        const protocolNode = await createNode({ maxRecords: 2 });
+        await protocolNode.store.upsertMany(operations.map(operation => ({
+            id: operation.signature!.hash,
+            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            operation,
+        })));
+        const buildSnapshot = jest.spyOn(protocolNode.adapter, 'buildSnapshotForWindow');
+        mockTerminalResponder(protocolNode);
+
+        const completeSession = async ({ peerKey, pair }: AttachedPeer): Promise<number> => {
+            await protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey),
+            );
+
+            let completedWindows = 0;
+            while (protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+            )) {
+                const open = decodeWrites(pair)
+                    .filter(message => message.type === 'neg_open')[completedWindows];
+                if (!open) {
+                    throw new Error('expected next negentropy window');
+                }
+                completedWindows += 1;
+                await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+                    type: 'neg_msg',
+                    sessionId: open.sessionId,
+                    windowId: open.windowId,
+                    frame: encodeNegentropyFrame(`complete-window-${completedWindows}`),
+                }));
+            }
+            return completedWindows;
+        };
+
+        const firstPeer = attachPeer(protocolNode);
+        expect(await completeSession(firstPeer)).toBe(7);
+        expect(buildSnapshot).toHaveBeenCalledTimes(7);
+
+        protocolNode.node.run(() => protocolNode.node.mediator.__test.disconnectPeer(firstPeer.peerKey));
+        const secondPeer = attachPeer(protocolNode);
+        const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 60_000);
+        try {
+            expect(await completeSession(secondPeer)).toBe(7);
+        }
+        finally {
+            nowSpy.mockRestore();
+        }
+        expect(buildSnapshot).toHaveBeenCalledTimes(8);
+
+        protocolNode.node.run(() => protocolNode.node.mediator.__test.disconnectPeer(secondPeer.peerKey));
+        const thirdPeer = attachPeer(protocolNode);
+        const [newOperation] = await makeOperations(1);
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(thirdPeer.peerKey, {
+            type: 'queue',
+            time: new Date().toISOString(),
+            node: 'peer',
+            relays: [],
+            data: [newOperation],
+        }));
+        await eventually(() => protocolNode.store.has(newOperation.signature!.hash));
+
+        expect(await completeSession(thirdPeer)).toBe(7);
+        expect(buildSnapshot).toHaveBeenCalledTimes(15);
+    });
+
+    it('retains only canonical responder history windows', async () => {
+        const operations = await makeOperations(13);
+        const protocolNode = await createNode({ maxRecords: 2 });
+        await protocolNode.store.upsertMany(operations.map(operation => ({
+            id: operation.signature!.hash,
+            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            operation,
+        })));
+        const buildSnapshot = jest.spyOn(protocolNode.adapter, 'buildSnapshotForWindow');
+        mockTerminalResponder(protocolNode);
+        const { peerKey } = attachPeer(protocolNode);
+        const toTs = Math.floor(Date.now() / 1000);
+        const windows = [buildInitialHistoryWindow(MDIP_EPOCH_SECONDS, toTs, 2)];
+        for (let order = 1; order < 7; order += 1) {
+            const operation = operations[(order * 2) - 1];
+            windows.push(buildNextHistoryPage(windows[order - 1], {
+                ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+                id: operation.signature!.hash,
+            }, order));
+        }
+        const sendWindows = async (sessionId: string, selected = windows): Promise<void> => {
+            for (const window of selected) {
+                await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+                    type: 'neg_open',
+                    sessionId,
+                    windowId: makeWindowId(window),
+                    window,
+                    round: 0,
+                    frame: encodeNegentropyFrame(`${sessionId}-${window.order}`),
+                }));
+            }
+        };
+
+        await sendWindows('canonical-first');
+        expect(buildSnapshot).toHaveBeenCalledTimes(7);
+
+        await sendWindows('canonical-second');
+        expect(buildSnapshot).toHaveBeenCalledTimes(8);
+
+        const arbitraryWindow = { ...windows[0], order: 100 };
+        await sendWindows('arbitrary-first', [arbitraryWindow]);
+        await sendWindows('arbitrary-second', [arbitraryWindow]);
+        expect(buildSnapshot).toHaveBeenCalledTimes(10);
+
+        await sendWindows('canonical-third');
+        expect(buildSnapshot).toHaveBeenCalledTimes(11);
     });
 
     it('closes a session when sending neg_open throws', async () => {

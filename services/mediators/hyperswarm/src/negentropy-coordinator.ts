@@ -44,6 +44,7 @@ import {
     buildNextHistoryPage,
     buildRoundCapSplitWindow,
     cloneCursor,
+    cloneWindow,
     cloneWindowSnapshot,
     cloneWindowStats,
     makeWindowId,
@@ -111,7 +112,6 @@ interface NegentropyCoordinatorOptions {
     maxIdsPerLookup: number;
     maxOpsPerPush: number;
     maxBytesPerPush: number;
-    adapterMaxAgeMs: number;
     idleTimeoutMs: number;
     syncStore: OperationSyncStore;
     importPipeline: ImportPipeline;
@@ -134,6 +134,20 @@ interface NegOpenSchedulingState {
     transitionActive: boolean;
 }
 
+interface CachedWindowSnapshot {
+    cacheKey: string;
+    changeSeq: number;
+    snapshot: NegentropyWindowSnapshot;
+}
+
+interface WindowSnapshotBuild {
+    changeSeq: number;
+    windowId: string;
+    snapshot: NegentropyWindowSnapshot;
+}
+
+type WindowSnapshotRetention = 'none' | 'historical' | 'canonical_responder';
+
 function shortName(peerKey: string): string {
     return peerKey.slice(0, 4) + '-' + peerKey.slice(-4);
 }
@@ -151,6 +165,26 @@ function summarizeSyncIds(ids: Iterable<string>, maxSample = 10): {
         first: list[0] ?? null,
         last: list[list.length - 1] ?? null,
     };
+}
+
+function makeWindowCacheKey(window: ReconciliationWindow): string {
+    const after = window.after ? `${window.after.ts}:${window.after.id}` : 'none';
+    return `${window.fromTs}:${window.maxRecords}:${after}`;
+}
+
+function cloneSnapshotForWindow(
+    snapshot: NegentropyWindowSnapshot,
+    window: ReconciliationWindow,
+): NegentropyWindowSnapshot {
+    const cloned = cloneWindowSnapshot(snapshot)!;
+    cloned.window = cloneWindow(window);
+    cloned.stats = {
+        ...cloned.stats,
+        windowName: window.name,
+        fromTs: window.fromTs,
+        toTs: window.toTs,
+    };
+    return cloned;
 }
 
 function createSessionState(
@@ -195,10 +229,9 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
     let negentropyAdapter: NegentropyAdapter | null = null;
     let adapterChangeSeq = 0;
     let adapterBuiltSeq = -1;
-    let adapterBuiltAt = 0;
-    let adapterBuiltWindowId: string | null = null;
-    let adapterBuiltSnapshot: NegentropyWindowSnapshot | null = null;
-    let rebuildPromise: Promise<void> | null = null;
+    let storeMutationsInFlight = 0;
+    const adapterWindowSnapshots = new Map<number, CachedWindowSnapshot>();
+    let rebuildPromise: Promise<WindowSnapshotBuild> | null = null;
     let backgroundPrebuildQueued = false;
     let backgroundPrebuildPromise: Promise<void> | null = null;
     let shutdownStarted = false;
@@ -296,25 +329,123 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
     }
 
     function isNegentropyAdapterDirty(): boolean {
-        return adapterBuiltSeq < adapterChangeSeq;
+        return storeMutationsInFlight > 0 || adapterBuiltSeq < adapterChangeSeq;
     }
 
     function markNegentropyAdapterDirty(): void {
         adapterChangeSeq += 1;
+        adapterWindowSnapshots.clear();
     }
 
     function invalidateNegentropyAdapterCache(): void {
         markNegentropyAdapterDirty();
         adapterBuiltSeq = -1;
-        adapterBuiltAt = 0;
-        adapterBuiltWindowId = null;
-        adapterBuiltSnapshot = null;
         rebuildPromise = null;
         backgroundPrebuildQueued = false;
     }
 
+    function pruneWindowSnapshotsFrom(order: number): void {
+        for (const cachedOrder of adapterWindowSnapshots.keys()) {
+            if (cachedOrder >= order) {
+                adapterWindowSnapshots.delete(cachedOrder);
+            }
+        }
+    }
+
+    function getCachedWindowSnapshot(window: ReconciliationWindow): NegentropyWindowSnapshot | null {
+        if (isNegentropyAdapterDirty()) {
+            return null;
+        }
+
+        const cached = adapterWindowSnapshots.get(window.order);
+        if (!cached
+            || cached.changeSeq !== adapterChangeSeq
+            || cached.cacheKey !== makeWindowCacheKey(window)
+            || !cached.snapshot.stats.cappedByRecords
+            || cached.snapshot.window.toTs > window.toTs) {
+            return null;
+        }
+
+        return cloneSnapshotForWindow(cached.snapshot, window);
+    }
+
+    function retainHistoricalWindowSnapshot(
+        window: ReconciliationWindow,
+        snapshot: NegentropyWindowSnapshot,
+        changeSeq: number,
+    ): void {
+        if (storeMutationsInFlight > 0 || changeSeq !== adapterChangeSeq) {
+            return;
+        }
+
+        pruneWindowSnapshotsFrom(window.order);
+        if (!snapshot.stats.cappedByRecords) {
+            return;
+        }
+
+        adapterWindowSnapshots.set(window.order, {
+            cacheKey: makeWindowCacheKey(window),
+            changeSeq,
+            snapshot: cloneWindowSnapshot(snapshot)!,
+        });
+    }
+
+    function shouldRetainResponderWindow(window: ReconciliationWindow): boolean {
+        if (window.name !== 'history_paged'
+            || window.fromTs !== MDIP_EPOCH_SECONDS
+            || window.maxRecords !== options.maxRecordsPerWindow) {
+            return false;
+        }
+        if (window.order === 0) {
+            return !window.after;
+        }
+        if (!window.after) {
+            return false;
+        }
+
+        const previous = adapterWindowSnapshots.get(window.order - 1);
+        const previousWindow = previous?.snapshot.window;
+        const previousCursor = previous?.snapshot.stats.lastCursor;
+        return previous?.changeSeq === adapterChangeSeq
+            && previous.snapshot.stats.cappedByRecords
+            && previousWindow?.name === window.name
+            && previousWindow.fromTs === window.fromTs
+            && previousWindow.maxRecords === window.maxRecords
+            && previousWindow.order === window.order - 1
+            && previousWindow.toTs <= window.toTs
+            && !!previousCursor
+            && compareSyncCursor(previousCursor, window.after) === 0;
+    }
+
+    function retainWindowSnapshot(
+        window: ReconciliationWindow,
+        snapshot: NegentropyWindowSnapshot,
+        changeSeq: number,
+        retention: WindowSnapshotRetention,
+    ): void {
+        if (retention === 'none'
+            || (retention === 'canonical_responder' && !shouldRetainResponderWindow(window))) {
+            return;
+        }
+        retainHistoricalWindowSnapshot(window, snapshot, changeSeq);
+    }
+
     function currentSyncTimestampSeconds(): number {
         return Math.floor(Date.now() / 1000);
+    }
+
+    function beginStoreMutation(): () => void {
+        storeMutationsInFlight += 1;
+        markNegentropyAdapterDirty();
+        let finished = false;
+        return () => {
+            if (finished) {
+                return;
+            }
+            finished = true;
+            storeMutationsInFlight -= 1;
+            markNegentropyAdapterDirty();
+        };
     }
 
     function getSessionWindow(session: PeerSyncSession): ReconciliationWindow | null {
@@ -403,7 +534,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         const currentBackgroundPrebuild: Promise<void> = (async () => {
             const window = await buildInitialHistoryWindowForSession();
             if (!shutdownStarted) {
-                await ensureWindowAdapterFresh(window, `background_${reason}`);
+                await ensureWindowAdapterFresh(window, `background_${reason}`, 'historical');
             }
         })()
             .catch(error => {
@@ -432,6 +563,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
     async function ensureWindowAdapterFresh(
         window: ReconciliationWindow,
         reason: string,
+        retention: WindowSnapshotRetention = 'none',
     ): Promise<NegentropyWindowSnapshot> {
         if (shutdownStarted) {
             throw new Error('mediator is shutting down');
@@ -441,31 +573,29 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         }
 
         const targetWindowId = makeWindowId(window);
-        const now = Date.now();
-        const recentlyBuilt = adapterBuiltAt > 0
-            && (now - adapterBuiltAt) <= options.adapterMaxAgeMs;
-        const sameWindow = adapterBuiltWindowId === targetWindowId;
-
-        if (!isNegentropyAdapterDirty() && recentlyBuilt && sameWindow) {
-            const cached = cloneWindowSnapshot(adapterBuiltSnapshot);
-            if (cached) {
-                return cached;
-            }
+        const cached = getCachedWindowSnapshot(window);
+        if (cached) {
+            return cached;
         }
 
         if (rebuildPromise) {
-            await rebuildPromise;
+            const completedBuild = await rebuildPromise;
             if (shutdownStarted) {
                 throw new Error('mediator is shutting down');
             }
-            const recentAfterWait = adapterBuiltAt > 0
-                && (Date.now() - adapterBuiltAt) <= options.adapterMaxAgeMs;
-            const sameWindowAfterWait = adapterBuiltWindowId === targetWindowId;
-            if (!isNegentropyAdapterDirty() && recentAfterWait && sameWindowAfterWait) {
-                const cached = cloneWindowSnapshot(adapterBuiltSnapshot);
-                if (cached) {
-                    return cached;
-                }
+            const cachedAfterWait = getCachedWindowSnapshot(window);
+            if (cachedAfterWait) {
+                return cachedAfterWait;
+            }
+            if (completedBuild.changeSeq === adapterChangeSeq
+                && completedBuild.windowId === targetWindowId) {
+                retainWindowSnapshot(
+                    window,
+                    completedBuild.snapshot,
+                    completedBuild.changeSeq,
+                    retention,
+                );
+                return cloneSnapshotForWindow(completedBuild.snapshot, window);
             }
         }
 
@@ -474,9 +604,8 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         const currentRebuildPromise = (async () => {
             const snapshot = await negentropyAdapter!.buildSnapshotForWindow(window);
             adapterBuiltSeq = rebuildStartSeq;
-            adapterBuiltAt = Date.now();
-            adapterBuiltWindowId = targetWindowId;
-            adapterBuiltSnapshot = cloneWindowSnapshot(snapshot);
+            retainWindowSnapshot(window, snapshot, rebuildStartSeq, retention);
+            const adapterBuiltAt = Date.now();
             log.debug(
                 {
                     reason,
@@ -488,11 +617,17 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                 },
                 'negentropy adapter rebuilt from sync-store',
             );
+            return {
+                changeSeq: rebuildStartSeq,
+                windowId: targetWindowId,
+                snapshot,
+            };
         })();
 
         rebuildPromise = currentRebuildPromise;
+        let completedBuild: WindowSnapshotBuild;
         try {
-            await currentRebuildPromise;
+            completedBuild = await currentRebuildPromise;
         }
         finally {
             if (rebuildPromise === currentRebuildPromise) {
@@ -500,11 +635,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             }
         }
 
-        const refreshed = cloneWindowSnapshot(adapterBuiltSnapshot);
-        if (!refreshed) {
-            throw new Error(`negentropy window snapshot unavailable after rebuild (${targetWindowId})`);
-        }
-        return refreshed;
+        return cloneSnapshotForWindow(completedBuild.snapshot, window);
     }
 
     async function startNextNegentropyWindow(peerKey: string, session: PeerSyncSession): Promise<void> {
@@ -518,7 +649,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         }
 
         const windowId = makeWindowId(window);
-        const snapshot = await ensureWindowAdapterFresh(window, 'session_open_initiator');
+        const snapshot = await ensureWindowAdapterFresh(window, 'session_open_initiator', 'historical');
         if (peerSessions.get(peerKey) !== session) {
             return;
         }
@@ -1323,7 +1454,11 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             session.windows.push(window);
             session.windowIndex = session.windows.length - 1;
         }
-        const snapshot = await ensureWindowAdapterFresh(window, 'session_open_responder');
+        const snapshot = await ensureWindowAdapterFresh(
+            window,
+            'session_open_responder',
+            'canonical_responder',
+        );
         if (peerSessions.get(peerKey) !== session) {
             return;
         }
@@ -1581,9 +1716,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         });
         adapterChangeSeq = 0;
         adapterBuiltSeq = -1;
-        adapterBuiltAt = 0;
-        adapterBuiltWindowId = null;
-        adapterBuiltSnapshot = null;
+        adapterWindowSnapshots.clear();
         rebuildPromise = null;
         backgroundPrebuildQueued = false;
         log.info(
@@ -1648,6 +1781,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         replaceStore(store: OperationSyncStore, pipeline: ImportPipeline): void {
             options.syncStore = store;
             options.importPipeline = pipeline;
+            invalidateNegentropyAdapterCache();
         },
         setAdapter(adapter: NegentropyAdapter | null): void {
             negentropyAdapter = adapter;
@@ -1675,6 +1809,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         getActiveSessionId(peerKey: string): string | null {
             return peerSessions.get(peerKey)?.sessionId ?? null;
         },
+        beginStoreMutation,
         markStoreChanged(reason: string): void {
             markNegentropyAdapterDirty();
             maybeStartBackgroundPrebuild(reason);

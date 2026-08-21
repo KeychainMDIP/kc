@@ -76,7 +76,6 @@ const NEG_MAX_IDS_PER_LOOKUP = 1_000;
 const NEG_MAX_OPS_PER_PUSH = 300;
 const NEG_MAX_BYTES_PER_PUSH = 512 * 1024;
 const NEG_REPAIR_INTERVAL_MS = config.negentropyIntervalSeconds * 1000;
-const NEG_ADAPTER_MAX_AGE_MS = 60 * 1000;
 const syncStats = createMediatorSyncStats();
 let nodeKey = '';
 let nodeInfo: NodeInfo;
@@ -96,6 +95,9 @@ function buildImportPipeline(store: OperationSyncStore): ImportPipeline {
         syncStore: store,
         cipher,
         syncStats,
+        beginStoreMutation() {
+            return negentropyCoordinator.beginStoreMutation();
+        },
         onStoreChanged(source) {
             negentropyCoordinator.markStoreChanged(source);
         },
@@ -143,7 +145,6 @@ function buildNegentropyCoordinator(
         maxIdsPerLookup: NEG_MAX_IDS_PER_LOOKUP,
         maxOpsPerPush: NEG_MAX_OPS_PER_PUSH,
         maxBytesPerPush: NEG_MAX_BYTES_PER_PUSH,
-        adapterMaxAgeMs: NEG_ADAPTER_MAX_AGE_MS,
         idleTimeoutMs: NEG_SESSION_IDLE_TIMEOUT_MS,
         syncStore: store,
         importPipeline: pipeline,
