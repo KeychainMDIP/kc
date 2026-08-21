@@ -409,7 +409,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         )).not.toBeNull();
     });
 
-    it('recreates the swarm from the connection loop when no peers remain', async () => {
+    it('keeps the swarm active when no peers remain', async () => {
         const running = await createRunningNode({
             env: { KC_HYPR_EXPORT_INTERVAL: '3600' },
         });
@@ -417,10 +417,9 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
 
         await running.node.run(() => jest.advanceTimersByTimeAsync(60_000));
 
-        expect(firstSwarm.destroyed).toBe(true);
-        expect(running.node.swarms).toHaveLength(2);
-        expect(running.node.swarms[1].destroyed).toBe(false);
-        expect(running.node.swarms[1].join).toHaveBeenCalledTimes(1);
+        expect(firstSwarm.destroyed).toBe(false);
+        expect(running.node.swarms).toHaveLength(1);
+        expect(firstSwarm.join).toHaveBeenCalledTimes(1);
     });
 
     it('starts periodic repair from the recurring connection loop', async () => {

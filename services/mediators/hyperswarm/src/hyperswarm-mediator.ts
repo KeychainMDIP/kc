@@ -4050,8 +4050,7 @@ async function checkConnections(): Promise<void> {
     expireIdlePeerSessions();
 
     if (Object.keys(connectionInfo).length === 0) {
-        log.warn("No active connections, rejoining the topic...");
-        await createSwarm();
+        log.warn("No active connections");
         return;
     }
 
@@ -4199,6 +4198,7 @@ async function main(): Promise<void> {
         };
     }
 
+    await createSwarm();
     await exportLoop();
     await connectionLoop();
 }
