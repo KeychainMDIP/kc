@@ -8,7 +8,7 @@ import { HYPR_INDEX_SYNC_STATE_KEYS } from '../../services/mediators/hyperswarm/
 import { mapAcceptedOperationsToSyncRecords } from '../../services/mediators/hyperswarm/src/sync-persistence.ts';
 import { normalizePeerCapabilities } from '../../services/mediators/hyperswarm/src/negentropy/protocol.ts';
 import {
-    decodeUnknownTransportMessages,
+    decodeFramedMessages,
     encodeFramedMessage,
 } from '../../services/mediators/hyperswarm/src/transport-framing.ts';
 import TestHelper from '../gatekeeper/helper.ts';
@@ -52,7 +52,7 @@ function syncOrders(operations: Operation[]): ReadonlyMap<string, number> {
 
 function decodeWire(link: RecordingDuplexPair): WireMessage[] {
     return link.transcript.flatMap(entry => {
-        const decoded = decodeUnknownTransportMessages(entry.raw);
+        const decoded = decodeFramedMessages(entry.raw);
         if (decoded.error || decoded.remaining.length > 0) {
             throw new Error(`failed to decode wire write ${entry.sequence}`);
         }
@@ -291,9 +291,6 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
                     negentropyVersion: 1,
                     orderedCatchup: false,
                 }),
-                transportMode: 'framed',
-                inboundTransportMode: 'framed',
-                peerTransportFramingVersion: 1,
             }));
             await driver.nodeB.run(
                 () => driver!.nodeB.mediator.__test.maybeStartPeerSync(peerKeyA, 'connect'),
@@ -762,11 +759,9 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         driver = await createMediatorDriver({
             operationsA,
             operationsB,
-            orderedCatchupEnabled: true,
             syncOrderByIdA,
             syncOrderByIdB: syncOrders(operationsB),
             maxRecordsPerWindow: 4,
-            connectionMode: 'unknown',
             publicKeyA: Buffer.alloc(32, 0x22),
             publicKeyB: Buffer.alloc(32, 0x11),
         });
@@ -786,11 +781,9 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         driver = await createMediatorDriver({
             operationsA,
             operationsB,
-            orderedCatchupEnabled: true,
             syncOrderByIdA: syncOrders(operationsA),
             syncOrderByIdB: syncOrders(operationsB),
             maxRecordsPerWindow: 4,
-            connectionMode: 'unknown',
             publicKeyA: Buffer.alloc(32, 0x11),
             publicKeyB: Buffer.alloc(32, 0x22),
         });
@@ -871,11 +864,9 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         driver = await createMediatorDriver({
             operationsA,
             operationsB,
-            orderedCatchupEnabled: true,
             syncOrderByIdA: syncOrders(operationsA),
             syncOrderByIdB: syncOrders(operationsB),
             maxRecordsPerWindow: 4,
-            connectionMode: 'unknown',
             publicKeyA: Buffer.alloc(32, 0x22),
             publicKeyB: Buffer.alloc(32, 0x11),
         });

@@ -21,7 +21,6 @@ function makePeer(overrides: Partial<NegotiatedPeerCapabilities> = {}): Negotiat
 describe('ordered catch-up decision', () => {
     it('enables ordered catch-up for a clean local node', () => {
         expect(getOrderedCatchupDecision({
-            enabled: true,
             localOperationCount: 0,
             peerCapabilities: makePeer(),
             requiredVersion: 1,
@@ -48,7 +47,6 @@ describe('ordered catch-up decision', () => {
         reason,
     ) => {
         expect(getOrderedCatchupDecision({
-            enabled: true,
             localOperationCount,
             peerCapabilities: makePeer({
                 operationCount: peerOperationCount,
@@ -65,7 +63,6 @@ describe('ordered catch-up decision', () => {
 
     it('requires peer protocol support and readiness', () => {
         expect(getOrderedCatchupDecision({
-            enabled: true,
             localOperationCount: 0,
             peerCapabilities: makePeer({ orderedCatchup: false }),
             requiredVersion: 1,
@@ -76,7 +73,6 @@ describe('ordered catch-up decision', () => {
         });
 
         expect(getOrderedCatchupDecision({
-            enabled: true,
             localOperationCount: 0,
             peerCapabilities: makePeer({ orderedCatchupReady: false }),
             requiredVersion: 1,
@@ -89,7 +85,6 @@ describe('ordered catch-up decision', () => {
 
     it('requires complete ordered peer history counts', () => {
         expect(getOrderedCatchupDecision({
-            enabled: true,
             localOperationCount: 0,
             peerCapabilities: makePeer({ operationCount: null }),
             requiredVersion: 1,
@@ -100,7 +95,6 @@ describe('ordered catch-up decision', () => {
         });
 
         expect(getOrderedCatchupDecision({
-            enabled: true,
             localOperationCount: 0,
             peerCapabilities: makePeer({ orderedOperationCount: 99 }),
             requiredVersion: 1,
@@ -111,20 +105,8 @@ describe('ordered catch-up decision', () => {
         });
     });
 
-    it('does not use ordered catch-up when disabled or peer is not ahead', () => {
+    it('does not use ordered catch-up when the peer is not ahead', () => {
         expect(getOrderedCatchupDecision({
-            enabled: false,
-            localOperationCount: 0,
-            peerCapabilities: makePeer(),
-            requiredVersion: 1,
-            windowSize: 25,
-        })).toMatchObject({
-            useOrderedCatchup: false,
-            reason: 'disabled',
-        });
-
-        expect(getOrderedCatchupDecision({
-            enabled: true,
             localOperationCount: 100,
             peerCapabilities: makePeer(),
             requiredVersion: 1,
@@ -138,27 +120,8 @@ describe('ordered catch-up decision', () => {
 });
 
 describe('expected ordered catch-up request decision', () => {
-    it('does not expect a request when ordered catch-up is disabled', () => {
-        expect(getExpectedOrderedCatchupRequestDecision({
-            enabled: false,
-            localOperationCount: 100,
-            localOrderedOperationCount: 100,
-            peerCapabilities: makePeer({
-                operationCount: 0,
-                orderedOperationCount: 0,
-            }),
-            requiredVersion: 1,
-            windowSize: 25,
-        })).toMatchObject({
-            expectRequest: false,
-            reason: 'disabled',
-            gap: 0,
-        });
-    });
-
     it('expects an empty ordered-catchup peer to request from a ready local node', () => {
         expect(getExpectedOrderedCatchupRequestDecision({
-            enabled: true,
             localOperationCount: 100,
             localOrderedOperationCount: 100,
             peerCapabilities: makePeer({
@@ -190,7 +153,6 @@ describe('expected ordered catch-up request decision', () => {
         reason,
     ) => {
         expect(getExpectedOrderedCatchupRequestDecision({
-            enabled: true,
             localOperationCount,
             localOrderedOperationCount: localOperationCount,
             peerCapabilities: makePeer({
@@ -208,7 +170,6 @@ describe('expected ordered catch-up request decision', () => {
 
     it('does not expect a request when the local node is not fully ordered', () => {
         expect(getExpectedOrderedCatchupRequestDecision({
-            enabled: true,
             localOperationCount: 100,
             localOrderedOperationCount: 99,
             peerCapabilities: makePeer({
@@ -226,7 +187,6 @@ describe('expected ordered catch-up request decision', () => {
 
     it('requires peer support and operation count metadata before expecting a request', () => {
         expect(getExpectedOrderedCatchupRequestDecision({
-            enabled: true,
             localOperationCount: 100,
             localOrderedOperationCount: 100,
             peerCapabilities: makePeer({
@@ -243,7 +203,6 @@ describe('expected ordered catch-up request decision', () => {
         });
 
         expect(getExpectedOrderedCatchupRequestDecision({
-            enabled: true,
             localOperationCount: 100,
             localOrderedOperationCount: 100,
             peerCapabilities: makePeer({
@@ -261,7 +220,6 @@ describe('expected ordered catch-up request decision', () => {
 
     it('does not expect a request when the peer is not behind', () => {
         expect(getExpectedOrderedCatchupRequestDecision({
-            enabled: true,
             localOperationCount: 100,
             localOrderedOperationCount: 100,
             peerCapabilities: makePeer({

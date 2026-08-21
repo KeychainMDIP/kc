@@ -98,6 +98,32 @@ describe('NegentropyAdapter', () => {
         expect(stats.durationMs).toBeGreaterThanOrEqual(0);
     });
 
+    it('builds from sorted keys without loading full records', async () => {
+        const store = new InMemoryOperationSyncStore();
+        await seedStore(store, [
+            { id: h('a'), ts: 1000, op: makeOp('a', '2026-02-09T10:00:00.000Z') },
+        ]);
+        const iterateSortedKeys = store.iterateSortedKeys.bind(store);
+        let keyReads = 0;
+
+        store.iterateSortedKeys = async options => {
+            keyReads += 1;
+            return iterateSortedKeys(options);
+        };
+        store.iterateSorted = async () => {
+            throw new Error('full records must not be loaded');
+        };
+
+        const adapter = await NegentropyAdapter.create({
+            syncStore: store,
+            frameSizeLimit: 0,
+        });
+
+        await expect(adapter.getEarliestTimestamp()).resolves.toBe(1000);
+        expect(adapter.getStats().loaded).toBe(1);
+        expect(keyReads).toBeGreaterThanOrEqual(2);
+    });
+
     it('uses constructor defaults when optional settings are omitted', async () => {
         const store = new InMemoryOperationSyncStore();
         await seedStore(store, [
@@ -258,6 +284,12 @@ describe('NegentropyAdapter', () => {
             has: async () => false,
             count: async () => rows.length,
             countOrdered: async () => 0,
+            iterateSortedKeys: async (options: SyncStoreListOptions = {}) => {
+                if (options.after) {
+                    return [];
+                }
+                return rows.map(({ id, ts }) => ({ id, ts }));
+            },
             iterateSorted: async (options: SyncStoreListOptions = {}) => {
                 if (options.after) {
                     return [];
@@ -414,6 +446,12 @@ describe('NegentropyAdapter', () => {
             async has() { return false; },
             async count() { return rows.length; },
             async countOrdered() { return 0; },
+            async iterateSortedKeys(options: SyncStoreListOptions = {}) {
+                if (options.after) {
+                    return [];
+                }
+                return rows.map(({ id, ts }) => ({ id, ts }));
+            },
             async iterateSorted(options: SyncStoreListOptions = {}) {
                 if (options.after) {
                     return [];

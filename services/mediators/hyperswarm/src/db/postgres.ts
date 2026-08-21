@@ -6,6 +6,7 @@ import {
     OperationSyncStore,
     SyncOperationRecord,
     SyncOperationWriteRecord,
+    SyncStoreCursor,
     SyncStoreListOptions,
     SyncStoreOrderedListOptions,
     SyncStorePage,
@@ -259,6 +260,51 @@ export default class PostgresOperationSyncStore implements OperationSyncStore {
         );
 
         return result.rows.map(row => this.mapRow(row));
+    }
+
+    async iterateSortedKeys(options: SyncStoreListOptions = {}): Promise<SyncStoreCursor[]> {
+        const limit = options.limit ?? 1000;
+        const after = options.after;
+        const fromTs = options.fromTs;
+        const toTs = options.toTs;
+
+        const params: Array<number | string> = [];
+        const predicates: string[] = [];
+
+        if (after) {
+            const afterTsParam = params.push(after.ts);
+            const afterIdParam = params.push(after.id);
+            predicates.push(
+                `(signed_ts > $${afterTsParam} OR (signed_ts = $${afterTsParam} AND id > $${afterIdParam}))`
+            );
+        }
+
+        if (typeof fromTs === 'number') {
+            const fromTsParam = params.push(fromTs);
+            predicates.push(`signed_ts >= $${fromTsParam}`);
+        }
+
+        if (typeof toTs === 'number') {
+            const toTsParam = params.push(toTs);
+            predicates.push(`signed_ts <= $${toTsParam}`);
+        }
+
+        const where = predicates.length > 0
+            ? `WHERE ${predicates.join(' AND ')}`
+            : '';
+
+        const limitParam = params.push(limit);
+
+        const result = await this.getPool().query<Pick<SyncRow, 'id' | 'signed_ts'>>(
+            `SELECT id, signed_ts
+             FROM hyperswarm_sync_operations
+             ${where}
+             ORDER BY signed_ts ASC, id ASC
+             LIMIT $${limitParam}`,
+            params
+        );
+
+        return result.rows.map(row => ({ id: row.id, ts: this.toNumber(row.signed_ts) }));
     }
 
     async iterateOrdered(options: SyncStoreOrderedListOptions = {}): Promise<SyncOperationRecord[]> {

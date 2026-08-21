@@ -29,9 +29,9 @@ describe('recording duplex', () => {
         const receivedA: Buffer[] = [];
         const receivedB: Buffer[] = [];
         pair = createPair(receivedA, receivedB);
-        const writeA = Buffer.from(JSON.stringify({ type: 'ping', node: 'a' }));
+        const writeA = encodeFramedMessage(JSON.stringify({ type: 'ping', node: 'a' }));
         const expectedA = Buffer.from(writeA);
-        const writeB = Buffer.from(JSON.stringify({ type: 'ping', node: 'b' }));
+        const writeB = encodeFramedMessage(JSON.stringify({ type: 'ping', node: 'b' }));
 
         pair.connectionA.write(writeA);
         pair.connectionB.write(writeB);
@@ -47,7 +47,7 @@ describe('recording duplex', () => {
             [2, 'b-to-a'],
         ]);
         expect(pair.transcript[0].raw).toStrictEqual(expectedA);
-        expect(pair.transcript.every(entry => entry.transportMode === 'legacy')).toBe(true);
+        expect(pair.transcript.every(entry => entry.framed)).toBe(true);
 
         await pair.deliverNext();
         expect(pair.pendingAToB).toBe(0);
@@ -91,7 +91,6 @@ describe('recording duplex', () => {
         expect(pair.deliveries.at(-1)).toMatchObject({
             action: 'coalesced',
             messageTypes: ['ops_push', 'neg_close'],
-            transportMode: 'framed',
             writeSequences: [2, 3],
         });
     });

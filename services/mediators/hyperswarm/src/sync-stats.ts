@@ -1,19 +1,13 @@
 import {
     averageAggregate,
     createAggregateMetric,
-    safeRate,
     type AggregateMetric,
 } from './negentropy/observability.js';
 
 export interface MediatorSyncStats {
     modeSelectionsTotal: number;
-    modeSelectionsLegacy: number;
     modeSelectionsNegentropy: number;
-    modeSelectionsLegacyMissingCapabilities: number;
-    modeSelectionsLegacyNegentropyDisabled: number;
-    modeSelectionsLegacyVersionMismatch: number;
-    modeSelectionsLegacyTransportFramingUnsupported: number;
-    modeSelectionsNoModeLegacyDisabled: number;
+    modeSelectionsNoMode: number;
     modeSelectionsNoModeMissingCapabilities: number;
     modeSelectionsNoModeNegentropyDisabled: number;
     modeSelectionsNoModeVersionMismatch: number;
@@ -21,10 +15,6 @@ export interface MediatorSyncStats {
     queueOpsRelayed: number;
     queueOpsImported: number;
     queueDelayMs: AggregateMetric;
-    legacyOutboundDeferred: number;
-    legacyInboundDeferred: number;
-    legacyDeferredReleased: number;
-    legacyFallbackUsed: number;
     negentropySessionsStarted: number;
     negentropySessionsClosed: number;
     negentropySessionsCompleted: number;
@@ -49,19 +39,15 @@ export interface MediatorSyncStats {
     bytesReceived: number;
     malformedPeerCooldowns: number;
     malformedPeerConnectionsRejected: number;
+    legacyTransportConnectionsQuarantined: number;
     syncDurationMs: AggregateMetric;
 }
 
 export function createMediatorSyncStats(): MediatorSyncStats {
     return {
         modeSelectionsTotal: 0,
-        modeSelectionsLegacy: 0,
         modeSelectionsNegentropy: 0,
-        modeSelectionsLegacyMissingCapabilities: 0,
-        modeSelectionsLegacyNegentropyDisabled: 0,
-        modeSelectionsLegacyVersionMismatch: 0,
-        modeSelectionsLegacyTransportFramingUnsupported: 0,
-        modeSelectionsNoModeLegacyDisabled: 0,
+        modeSelectionsNoMode: 0,
         modeSelectionsNoModeMissingCapabilities: 0,
         modeSelectionsNoModeNegentropyDisabled: 0,
         modeSelectionsNoModeVersionMismatch: 0,
@@ -69,10 +55,6 @@ export function createMediatorSyncStats(): MediatorSyncStats {
         queueOpsRelayed: 0,
         queueOpsImported: 0,
         queueDelayMs: createAggregateMetric(),
-        legacyOutboundDeferred: 0,
-        legacyInboundDeferred: 0,
-        legacyDeferredReleased: 0,
-        legacyFallbackUsed: 0,
         negentropySessionsStarted: 0,
         negentropySessionsClosed: 0,
         negentropySessionsCompleted: 0,
@@ -97,6 +79,7 @@ export function createMediatorSyncStats(): MediatorSyncStats {
         bytesReceived: 0,
         malformedPeerCooldowns: 0,
         malformedPeerConnectionsRejected: 0,
+        legacyTransportConnectionsQuarantined: 0,
         syncDurationMs: createAggregateMetric(),
     };
 }
@@ -105,18 +88,9 @@ export function buildSyncStatsSnapshot(syncStats: MediatorSyncStats): object {
     return {
         modeSelections: {
             total: syncStats.modeSelectionsTotal,
-            legacy: syncStats.modeSelectionsLegacy,
             negentropy: syncStats.modeSelectionsNegentropy,
-            fallbackCount: syncStats.modeSelectionsLegacy,
-            fallbackRate: safeRate(syncStats.modeSelectionsLegacy, syncStats.modeSelectionsTotal),
-            legacyReasons: {
-                missingCapabilities: syncStats.modeSelectionsLegacyMissingCapabilities,
-                negentropyDisabled: syncStats.modeSelectionsLegacyNegentropyDisabled,
-                versionMismatch: syncStats.modeSelectionsLegacyVersionMismatch,
-                transportFramingUnsupported: syncStats.modeSelectionsLegacyTransportFramingUnsupported,
-            },
             noMode: {
-                legacyDisabled: syncStats.modeSelectionsNoModeLegacyDisabled,
+                total: syncStats.modeSelectionsNoMode,
                 reasons: {
                     missingCapabilities: syncStats.modeSelectionsNoModeMissingCapabilities,
                     negentropyDisabled: syncStats.modeSelectionsNoModeNegentropyDisabled,
@@ -132,12 +106,6 @@ export function buildSyncStatsSnapshot(syncStats: MediatorSyncStats): object {
                 avg: averageAggregate(syncStats.queueDelayMs),
                 max: syncStats.queueDelayMs.max,
                 samples: syncStats.queueDelayMs.count,
-            },
-            legacy: {
-                outboundDeferred: syncStats.legacyOutboundDeferred,
-                inboundDeferred: syncStats.legacyInboundDeferred,
-                deferredReleased: syncStats.legacyDeferredReleased,
-                fallbackUsed: syncStats.legacyFallbackUsed,
             },
         },
         negentropy: {
@@ -171,6 +139,7 @@ export function buildSyncStatsSnapshot(syncStats: MediatorSyncStats): object {
             bytesReceived: syncStats.bytesReceived,
             malformedPeerCooldowns: syncStats.malformedPeerCooldowns,
             malformedPeerConnectionsRejected: syncStats.malformedPeerConnectionsRejected,
+            legacyTransportConnectionsQuarantined: syncStats.legacyTransportConnectionsQuarantined,
         },
         syncDurationMs: {
             avg: averageAggregate(syncStats.syncDurationMs),

@@ -55,6 +55,7 @@ export interface BootstrapResult {
 
 export interface BootstrapOptions {
     pageLimit?: number;
+    beginStoreMutation?(): () => void;
 }
 
 export interface BootstrapGatekeeper {
@@ -144,17 +145,40 @@ function getDIDOperations(response: IndexExportResponse): Operation[] {
     return response.dids.flatMap(record => toOperations(record.events));
 }
 
+async function runStoreMutation<T>(
+    mayChangeStore: boolean,
+    beginStoreMutation: (() => () => void) | undefined,
+    mutation: () => Promise<T>,
+): Promise<T> {
+    if (!mayChangeStore) {
+        return mutation();
+    }
+
+    const finishStoreMutation = beginStoreMutation?.();
+    try {
+        return await mutation();
+    }
+    finally {
+        finishStoreMutation?.();
+    }
+}
+
 async function applySnapshotPage(
     syncStore: OperationSyncStore,
     response: IndexExportResponse,
-    syncStateUpdates: Record<string, string | null>
+    syncStateUpdates: Record<string, string | null>,
+    beginStoreMutation?: () => () => void,
 ): Promise<Omit<ImportTotals, 'pages'>> {
     const operations = getDIDOperations(response);
     const { records, invalid } = mapAcceptedOperationsToSyncRecords(operations);
-    const result = await syncStore.applySyncPage({
-        records,
-        syncStateUpdates,
-    });
+    const result = await runStoreMutation(
+        records.length > 0,
+        beginStoreMutation,
+        () => syncStore.applySyncPage({
+            records,
+            syncStateUpdates,
+        }),
+    );
 
     return {
         exported: operations.length,
@@ -169,7 +193,8 @@ async function applySnapshotPage(
 async function applyChangesPage(
     syncStore: OperationSyncStore,
     response: IndexExportResponse,
-    syncStateUpdates: Record<string, string | null>
+    syncStateUpdates: Record<string, string | null>,
+    beginStoreMutation?: () => () => void,
 ): Promise<Omit<ImportTotals, 'pages'>> {
     if (response.mode !== 'changes' || !Array.isArray(response.operations)) {
         throw new Error('Changes export response missing operations');
@@ -182,11 +207,15 @@ async function applyChangesPage(
         response.operations,
         response.removedOperations,
     );
-    const result = await syncStore.applySyncPage({
-        records,
-        deleteIds,
-        syncStateUpdates,
-    });
+    const result = await runStoreMutation(
+        records.length > 0 || deleteIds.length > 0,
+        beginStoreMutation,
+        () => syncStore.applySyncPage({
+            records,
+            deleteIds,
+            syncStateUpdates,
+        }),
+    );
 
     return {
         exported: response.operations.length + (response.removedOperations?.length ?? 0),
@@ -268,7 +297,8 @@ function buildSnapshotLogState(params: {
 async function syncSnapshot(
     syncStore: OperationSyncStore,
     gatekeeper: BootstrapGatekeeper,
-    pageLimit: number
+    pageLimit: number,
+    beginStoreMutation?: () => () => void,
 ): Promise<ImportTotals> {
     const totals: ImportTotals = {
         pages: 0,
@@ -345,7 +375,7 @@ async function syncSnapshot(
                 syncStateUpdates[HYPR_INDEX_SYNC_STATE_KEYS.changesCursor] = checkpointCursor;
             }
 
-            const page = await applySnapshotPage(syncStore, response, syncStateUpdates);
+            const page = await applySnapshotPage(syncStore, response, syncStateUpdates, beginStoreMutation);
             addTotals(totals, page);
 
             writeLog('debug', {
@@ -408,7 +438,8 @@ async function syncSnapshot(
 async function syncChanges(
     syncStore: OperationSyncStore,
     gatekeeper: BootstrapGatekeeper,
-    pageLimit: number
+    pageLimit: number,
+    beginStoreMutation?: () => () => void,
 ): Promise<ImportTotals> {
     const totals: ImportTotals = {
         pages: 0,
@@ -443,7 +474,7 @@ async function syncChanges(
         addTotals(totals, await applyChangesPage(syncStore, response, {
             [HYPR_INDEX_SYNC_STATE_KEYS.changesCursor]: nextCursor,
             [HYPR_INDEX_SYNC_STATE_KEYS.gatekeeperIndexEpoch]: responseIndexEpoch,
-        }));
+        }, beginStoreMutation));
 
         if (!response.hasMore) {
             return totals;
@@ -465,6 +496,7 @@ export async function bootstrapSyncStoreFromGatekeeper(
     const startedAt = Date.now();
     const countBefore = await syncStore.count();
     const pageLimit = options.pageLimit ?? DEFAULT_INDEX_EXPORT_PAGE_LIMIT;
+    const beginStoreMutation = options.beginStoreMutation;
     const snapshotCompleteBefore = await syncStore.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotComplete) === 'true';
     let mode: BootstrapResult['mode'] = snapshotCompleteBefore ? 'changes' : 'snapshot';
     let resetReason: string | undefined;
@@ -472,8 +504,8 @@ export async function bootstrapSyncStoreFromGatekeeper(
 
     try {
         imported = snapshotCompleteBefore
-            ? await syncChanges(syncStore, gatekeeper, pageLimit)
-            : await syncSnapshot(syncStore, gatekeeper, pageLimit);
+            ? await syncChanges(syncStore, gatekeeper, pageLimit, beginStoreMutation)
+            : await syncSnapshot(syncStore, gatekeeper, pageLimit, beginStoreMutation);
     }
     catch (error) {
         if (!(error instanceof StaleSyncStoreError) && !(error instanceof GatekeeperIndexEpochChangedError)) {
@@ -497,9 +529,9 @@ export async function bootstrapSyncStoreFromGatekeeper(
             countBefore,
         }, 'resetting stale hyperswarm sync store');
 
-        await syncStore.reset();
+        await runStoreMutation(true, beginStoreMutation, () => syncStore.reset());
         mode = 'snapshot';
-        imported = await syncSnapshot(syncStore, gatekeeper, pageLimit);
+        imported = await syncSnapshot(syncStore, gatekeeper, pageLimit, beginStoreMutation);
     }
 
     const countAfter = await syncStore.count();

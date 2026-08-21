@@ -124,6 +124,7 @@ describe('hyperswarm mediator test harness', () => {
 
     it('restores listeners without starting external clients, SQLite, or recurring loops', async () => {
         const before = {
+            exit: process.listenerCount('exit'),
             uncaughtException: process.listenerCount('uncaughtException'),
             unhandledRejection: process.listenerCount('unhandledRejection'),
             stdinData: process.stdin.listenerCount('data'),
@@ -138,6 +139,7 @@ describe('hyperswarm mediator test harness', () => {
             const nodeA = await createNode('node-a', 0x11);
             const nodeB = await createNode('node-b', 0x22);
 
+            expect(process.listenerCount('exit')).toBeGreaterThan(before.exit);
             expect(process.listenerCount('uncaughtException')).toBe(before.uncaughtException + 2);
             expect(process.listenerCount('unhandledRejection')).toBe(before.unhandledRejection + 2);
             expect(process.stdin.listenerCount('data')).toBe(before.stdinData + 2);
@@ -158,6 +160,7 @@ describe('hyperswarm mediator test harness', () => {
             await nodeB.dispose();
             await nodeA.dispose();
 
+            expect(process.listenerCount('exit')).toBe(before.exit);
             expect(process.listenerCount('uncaughtException')).toBe(before.uncaughtException);
             expect(process.listenerCount('unhandledRejection')).toBe(before.unhandledRejection);
             expect(process.stdin.listenerCount('data')).toBe(before.stdinData);

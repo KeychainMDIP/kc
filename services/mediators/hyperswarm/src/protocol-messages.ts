@@ -17,16 +17,12 @@ export interface PingMessage extends HyperMessageBase {
     type: 'ping';
     peers: string[];
     capabilities?: PeerCapabilities;
-    transportFramingVersion?: number;
+    transportFramingVersion: number;
 }
 
-export interface BatchMessage extends HyperMessageBase {
-    type: 'batch' | 'queue';
+export interface QueueMessage extends HyperMessageBase {
+    type: 'queue';
     data: Operation[];
-}
-
-export interface SyncMessage extends HyperMessageBase {
-    type: 'sync';
 }
 
 export type NativeNegentropyFrame = string | Uint8Array;
@@ -108,8 +104,7 @@ export interface OrderedCatchupDoneMessage extends HyperMessageBase {
 }
 
 export type HyperMessage =
-    | BatchMessage
-    | SyncMessage
+    | QueueMessage
     | PingMessage
     | NegOpenMessage
     | NegMsgMessage
@@ -119,3 +114,30 @@ export type HyperMessage =
     | OrderedCatchupReqMessage
     | OrderedCatchupPushMessage
     | OrderedCatchupDoneMessage;
+
+export type SyncMessage = Exclude<HyperMessage, QueueMessage | PingMessage>;
+
+const SYNC_MESSAGE_TYPES = new Set<SyncMessage['type']>([
+    'ordered_catchup_req',
+    'ordered_catchup_push',
+    'ordered_catchup_done',
+    'neg_open',
+    'neg_msg',
+    'ops_req',
+    'ops_push',
+    'neg_close',
+]);
+
+export function isHyperMessage(value: unknown): value is HyperMessage {
+    if (!value || typeof value !== 'object' || !('type' in value)) {
+        return false;
+    }
+
+    const type = (value as { type?: unknown }).type;
+    return type === 'ping' || type === 'queue'
+        || (typeof type === 'string' && SYNC_MESSAGE_TYPES.has(type as SyncMessage['type']));
+}
+
+export function isSyncMessage(message: HyperMessage): message is SyncMessage {
+    return SYNC_MESSAGE_TYPES.has(message.type as SyncMessage['type']);
+}

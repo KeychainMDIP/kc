@@ -30,6 +30,7 @@ describe('NegentropyAdapter module loading', () => {
                     has: async () => false,
                     count: async () => 0,
                     countOrdered: async () => 0,
+                    iterateSortedKeys: async () => [],
                     iterateSorted: async () => [],
                     iterateOrdered: async () => [],
                 },
