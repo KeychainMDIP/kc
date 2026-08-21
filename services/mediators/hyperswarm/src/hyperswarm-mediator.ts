@@ -221,6 +221,7 @@ let outboundSyncStartInProgress = false;
 const syncStats = createMediatorSyncStats();
 
 let swarm: Hyperswarm | null = null;
+let discovery: ReturnType<Hyperswarm['join']> | null = null;
 let nodeKey = '';
 let nodeInfo: NodeInfo;
 
@@ -232,6 +233,7 @@ goodbye(async () => {
             log.error({ error }, 'swarm destroy error');
         } finally {
             swarm = null;
+            discovery = null;
         }
     }
 
@@ -252,7 +254,7 @@ async function createSwarm(): Promise<void> {
 
     swarm.on('connection', conn => addConnection(conn));
 
-    const discovery = swarm.join(topic, { client: true, server: true });
+    discovery = swarm.join(topic, { client: true, server: true });
     await discovery.flushed();
 
     const shortTopic = shortName(b4a.toString(topic, 'hex'));
@@ -4050,7 +4052,13 @@ async function checkConnections(): Promise<void> {
     expireIdlePeerSessions();
 
     if (Object.keys(connectionInfo).length === 0) {
-        log.warn("No active connections");
+        if (!swarm) {
+            await createSwarm();
+            return;
+        }
+
+        log.warn("No active connections, refreshing the topic...");
+        await discovery?.refresh({ client: true, server: true });
         return;
     }
 
@@ -4198,7 +4206,6 @@ async function main(): Promise<void> {
         };
     }
 
-    await createSwarm();
     await exportLoop();
     await connectionLoop();
 }

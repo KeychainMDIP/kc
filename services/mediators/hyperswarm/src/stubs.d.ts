@@ -26,6 +26,7 @@ declare module 'hyperswarm' {
 
     interface Discovery {
         flushed(): Promise<void>;
+        refresh(opts?: { client?: boolean; server?: boolean }): Promise<boolean>;
     }
 
     export default class Hyperswarm {

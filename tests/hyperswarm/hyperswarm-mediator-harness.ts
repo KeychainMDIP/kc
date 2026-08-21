@@ -51,7 +51,10 @@ export type KuboClientDelegates = MockMethods<KuboClient,
 type HyperswarmJoin = (
     topic: Buffer,
     options: { client: boolean; server: boolean },
-) => { flushed: Mock<() => Promise<void>> };
+) => {
+    flushed: Mock<() => Promise<void>>;
+    refresh: Mock<() => Promise<boolean>>;
+};
 
 export interface TrackedHyperswarm extends EventEmitter {
     readonly keyPair: {
@@ -100,6 +103,7 @@ export class MockHyperswarm extends EventEmitter implements TrackedHyperswarm {
     private isDestroyed = false;
     readonly join = jest.fn<HyperswarmJoin>(() => ({
         flushed: jest.fn(async () => undefined),
+        refresh: jest.fn(async () => true),
     }));
     readonly destroy = jest.fn(() => {
         this.isDestroyed = true;

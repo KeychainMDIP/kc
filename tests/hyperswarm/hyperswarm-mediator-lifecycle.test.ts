@@ -420,6 +420,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         expect(firstSwarm.destroyed).toBe(false);
         expect(running.node.swarms).toHaveLength(1);
         expect(firstSwarm.join).toHaveBeenCalledTimes(1);
+        expect(firstSwarm.join.mock.results[0].value.refresh).toHaveBeenCalledTimes(1);
     });
 
     it('starts periodic repair from the recurring connection loop', async () => {
