@@ -3,8 +3,14 @@
   "info": {
     "title": "Gatekeeper API",
     "version": "2.1.0",
-    "description": "Documentation for Keymaster API"
+    "description": "Documentation for Gatekeeper API"
   },
+  "servers": [
+    {
+      "url": "http://localhost:4224/api/v1",
+      "description": "Local Gatekeeper"
+    }
+  ],
   "paths": {
     "/ready": {
       "get": {
@@ -13,9 +19,30 @@
           "200": {
             "description": "Gatekeeper service is ready.",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "type": "boolean"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The readiness check failed.",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Gatekeeper service is not ready.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean",
+                  "example": false
                 }
               }
             }
@@ -38,7 +65,14 @@
             }
           },
           "500": {
-            "description": "Internal Server Error."
+            "description": "Internal Server Error.",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         }
       }
@@ -148,7 +182,14 @@
             }
           },
           "500": {
-            "description": "Internal Server Error."
+            "description": "Internal Server Error.",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         }
       }
@@ -207,6 +248,10 @@
                             "type": "string",
                             "description": "Registry where the DID is created."
                           },
+                          "prefix": {
+                            "type": "string",
+                            "description": "Optional DID prefix override. If omitted, the server default is used."
+                          },
                           "validUntil": {
                             "type": "string",
                             "format": "date-time",
@@ -220,7 +265,8 @@
                         "description": "Cryptographic signature verifying the create operation.",
                         "required": [
                           "value",
-                          "signed"
+                          "signed",
+                          "hash"
                         ],
                         "properties": {
                           "value": {
@@ -238,7 +284,7 @@
                           },
                           "hash": {
                             "type": "string",
-                            "description": "Hash of the operation payload, if applicable."
+                            "description": "SHA-256 hash of the operation payload."
                           }
                         }
                       },
@@ -249,6 +295,13 @@
                       "controller": {
                         "type": "string",
                         "description": "Required if mdip.type = \"asset\". Must match the `signer` in `signature`."
+                      },
+                      "data": {
+                        "description": "Optional arbitrary JSON data for an asset DID."
+                      },
+                      "blockid": {
+                        "type": "string",
+                        "description": "Optional current block hash or identifier used when creating the DID."
                       }
                     }
                   },
@@ -257,6 +310,7 @@
                     "required": [
                       "type",
                       "did",
+                      "previd",
                       "signature"
                     ],
                     "properties": {
@@ -273,17 +327,22 @@
                       },
                       "doc": {
                         "type": "object",
-                        "description": "The updated DID document or subset of data."
+                        "description": "The complete DID document that replaces the current document."
                       },
                       "previd": {
                         "type": "string",
                         "description": "Reference to the previous version CID/hash."
                       },
+                      "blockid": {
+                        "type": "string",
+                        "description": "Optional current block hash or identifier."
+                      },
                       "signature": {
                         "type": "object",
                         "required": [
                           "value",
-                          "signed"
+                          "signed",
+                          "hash"
                         ],
                         "description": "Cryptographic signature verifying this update operation.",
                         "properties": {
@@ -302,7 +361,7 @@
                           },
                           "hash": {
                             "type": "string",
-                            "description": "Optional hash of the operation payload."
+                            "description": "SHA-256 hash of the operation payload."
                           }
                         }
                       }
@@ -313,6 +372,7 @@
                     "required": [
                       "type",
                       "did",
+                      "previd",
                       "signature"
                     ],
                     "properties": {
@@ -327,11 +387,20 @@
                         "type": "string",
                         "description": "The DID to deactivate."
                       },
+                      "previd": {
+                        "type": "string",
+                        "description": "Reference to the previous version CID/hash."
+                      },
+                      "blockid": {
+                        "type": "string",
+                        "description": "Optional current block hash or identifier."
+                      },
                       "signature": {
                         "type": "object",
                         "required": [
                           "value",
-                          "signed"
+                          "signed",
+                          "hash"
                         ],
                         "description": "Cryptographic signature verifying this delete operation.",
                         "properties": {
@@ -350,7 +419,7 @@
                           },
                           "hash": {
                             "type": "string",
-                            "description": "Optional hash of the operation payload."
+                            "description": "SHA-256 hash of the operation payload."
                           }
                         }
                       }
@@ -365,7 +434,7 @@
           "200": {
             "description": "- If `type = \"create\"`, returns the newly created DID as a string. - Otherwise (for update or delete), returns a boolean value indicating success.\n",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
                   "oneOf": [
                     {
@@ -386,7 +455,7 @@
           "500": {
             "description": "Internal Server Error.",
             "content": {
-              "application/json": {
+              "text/html": {
                 "schema": {
                   "type": "string"
                 }
@@ -551,7 +620,7 @@
             "schema": {
               "type": "boolean"
             },
-            "description": "If `true`, returns the DID Document if it is fully confirmed.\n"
+            "description": "If `true`, excludes later events until they are confirmed by the DID's native registry.\n"
           },
           {
             "in": "query",
@@ -565,17 +634,13 @@
         ],
         "responses": {
           "200": {
-            "description": "Successfully resolved DID Document.",
+            "description": "The resolution result. Invalid or unknown DIDs are reported in `didResolutionMetadata.error` with a 200 response.\n",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "description": "The fully-resolved DID Document along with metadata describing its state.",
                   "properties": {
-                    "@context": {
-                      "type": "string",
-                      "description": "DID resolution context."
-                    },
                     "didDocument": {
                       "type": "object",
                       "description": "The DID Document itself.",
@@ -649,7 +714,7 @@
                           "description": "Timestamp of when the DID was deleted (if it was deleted)."
                         },
                         "version": {
-                          "type": "integer",
+                          "type": "string",
                           "description": "Current version number of the DID Document."
                         },
                         "versionId": {
@@ -667,12 +732,34 @@
                         "deactivated": {
                           "type": "boolean",
                           "description": "Indicates if the DID is deactivated (via a delete operation)."
+                        },
+                        "timestamp": {
+                          "type": "object",
+                          "description": "Optional blockchain timestamp bounds for the current operation."
+                        }
+                      }
+                    },
+                    "didResolutionMetadata": {
+                      "type": "object",
+                      "description": "Metadata describing the resolution result.",
+                      "properties": {
+                        "retrieved": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Timestamp indicating when the DID was resolved."
+                        },
+                        "error": {
+                          "type": "string",
+                          "enum": [
+                            "invalidDid",
+                            "notFound"
+                          ],
+                          "description": "Resolution error for an invalid or unknown DID."
                         }
                       }
                     },
                     "didDocumentData": {
-                      "type": "object",
-                      "description": "Arbitrary data attached to the DID (for assets)."
+                      "description": "Arbitrary JSON data attached to the DID (for assets)."
                     },
                     "mdip": {
                       "type": "object",
@@ -691,8 +778,12 @@
                           "enum": [
                             "local",
                             "hyperswarm",
+                            "TESS",
                             "TBTC",
-                            "TFTC"
+                            "TFTC",
+                            "Signet",
+                            "Signet-Inscription",
+                            "BTC-Inscription"
                           ],
                           "description": "Registry in which this DID is maintained."
                         },
@@ -700,14 +791,14 @@
                           "type": "integer",
                           "description": "Supported MDIP version."
                         },
+                        "prefix": {
+                          "type": "string",
+                          "description": "DID prefix embedded in the operation."
+                        },
                         "validUntil": {
                           "type": "string",
                           "format": "date-time",
                           "description": "Optional expiration timestamp for ephemeral DIDs."
-                        },
-                        "registration": {
-                          "type": "string",
-                          "description": "Blockchain or other registry reference for an updated or deleted DID."
                         }
                       }
                     }
@@ -717,7 +808,7 @@
             }
           },
           "404": {
-            "description": "DID not found. The DID either does not exist or cannot be resolved.",
+            "description": "Resolution failed with an exception.",
             "content": {
               "application/json": {
                 "schema": {
@@ -730,9 +821,6 @@
                 }
               }
             }
-          },
-          "500": {
-            "description": "Internal Server Error."
           }
         }
       },
@@ -759,6 +847,7 @@
                 "required": [
                   "type",
                   "did",
+                  "previd",
                   "signature"
                 ],
                 "properties": {
@@ -775,7 +864,7 @@
                   },
                   "doc": {
                     "type": "object",
-                    "description": "The updated DID Document or subset of data for this DID."
+                    "description": "The complete DID Document that replaces the current document."
                   },
                   "previd": {
                     "type": "string",
@@ -804,7 +893,7 @@
           "500": {
             "description": "Internal Server Error.",
             "content": {
-              "application/json": {
+              "text/html": {
                 "schema": {
                   "type": "string"
                 }
@@ -836,6 +925,7 @@
                 "required": [
                   "type",
                   "did",
+                  "previd",
                   "signature"
                 ],
                 "properties": {
@@ -875,7 +965,14 @@
             }
           },
           "500": {
-            "description": "Internal Server Error."
+            "description": "Internal Server Error.",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         }
       }
@@ -968,7 +1065,7 @@
           "500": {
             "description": "Internal Server Error.",
             "content": {
-              "application/json": {
+              "text/html": {
                 "schema": {
                   "type": "string"
                 }
@@ -1146,13 +1243,52 @@
             }
           },
           "400": {
-            "description": "Invalid request body."
+            "description": "Invalid request body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           },
           "500": {
-            "description": "Internal Server Error."
+            "description": "Internal Server Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           },
           "503": {
-            "description": "Gatekeeper database is unavailable."
+            "description": "Gatekeeper database is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -1188,7 +1324,7 @@
           "500": {
             "description": "Internal Server Error.",
             "content": {
-              "application/json": {
+              "text/html": {
                 "schema": {
                   "type": "string"
                 }
@@ -1277,7 +1413,7 @@
           "500": {
             "description": "Internal Server Error.",
             "content": {
-              "application/json": {
+              "text/html": {
                 "schema": {
                   "type": "string"
                 }
@@ -1415,7 +1551,7 @@
           "500": {
             "description": "Internal Server Error.",
             "content": {
-              "application/json": {
+              "text/html": {
                 "schema": {
                   "type": "string"
                 }
@@ -1513,7 +1649,7 @@
           "500": {
             "description": "Internal Server Error.",
             "content": {
-              "application/json": {
+              "text/html": {
                 "schema": {
                   "type": "string"
                 }
@@ -1644,7 +1780,7 @@
           "500": {
             "description": "Internal Server Error.",
             "content": {
-              "application/json": {
+              "text/html": {
                 "schema": {
                   "type": "string"
                 }
@@ -1734,7 +1870,7 @@
           "500": {
             "description": "Internal Server Error.",
             "content": {
-              "application/json": {
+              "text/html": {
                 "schema": {
                   "type": "string"
                 }
@@ -1792,7 +1928,7 @@
                         },
                         "previd": {
                           "type": "string",
-                          "description": "Reference to the previous version (optional)."
+                          "description": "Reference to the previous version for update and delete operations."
                         },
                         "signature": {
                           "type": "object",
@@ -1813,15 +1949,11 @@
         },
         "responses": {
           "200": {
-            "description": "The updated queue after clearing the specified events.",
+            "description": "Whether the specified events were cleared successfully.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "description": "An array of remaining events in the queue. Could be empty if all events were cleared.",
-                  "items": {
-                    "type": "object"
-                  }
+                  "type": "boolean"
                 }
               }
             }
@@ -1829,7 +1961,7 @@
           "500": {
             "description": "Internal Server Error.",
             "content": {
-              "application/json": {
+              "text/html": {
                 "schema": {
                   "type": "string"
                 }
@@ -1859,7 +1991,7 @@
           "500": {
             "description": "Internal Server Error.",
             "content": {
-              "application/json": {
+              "text/html": {
                 "schema": {
                   "type": "string"
                 }
@@ -1886,7 +2018,7 @@
           "500": {
             "description": "Internal Server Error.",
             "content": {
-              "application/json": {
+              "text/html": {
                 "schema": {
                   "type": "string"
                 }
@@ -1931,7 +2063,7 @@
           "500": {
             "description": "Internal Server Error.",
             "content": {
-              "application/json": {
+              "text/html": {
                 "schema": {
                   "type": "string"
                 }
@@ -1987,6 +2119,13 @@
                             "type": "string"
                           }
                         },
+                        "acceptedEvents": {
+                          "type": "array",
+                          "description": "Events accepted during this processing run (added or merged).",
+                          "items": {
+                            "type": "object"
+                          }
+                        },
                         "rejectedOperations": {
                           "type": "array",
                           "description": "Operations rejected during this processing run.",
@@ -2004,7 +2143,7 @@
           "500": {
             "description": "Internal Server Error.",
             "content": {
-              "application/json": {
+              "text/html": {
                 "schema": {
                   "type": "string"
                 }
@@ -2032,7 +2171,7 @@
           "200": {
             "description": "A CID (Content Identifier) for the added JSON object in base58btc format\n",
             "content": {
-              "text/plain": {
+              "text/html": {
                 "schema": {
                   "type": "string",
                   "example": "z3v8AuahvBGDMXvCTWedYbxnH6C9ZrsEtEJAvip2XPzcZb8yo6A"
@@ -2043,7 +2182,17 @@
           "500": {
             "description": "Internal Server Error.",
             "content": {
-              "application/json": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "IPFS is disabled. The response body is `IPFS disabled`.",
+            "content": {
+              "text/html": {
                 "schema": {
                   "type": "string"
                 }
@@ -2078,21 +2227,20 @@
               }
             }
           },
-          "404": {
-            "description": "JSON object not found",
+          "500": {
+            "description": "Internal Server Error",
             "content": {
-              "application/json": {
+              "text/html": {
                 "schema": {
-                  "type": "string",
-                  "example": "Not Found"
+                  "type": "string"
                 }
               }
             }
           },
-          "500": {
-            "description": "Internal Server Error",
+          "503": {
+            "description": "IPFS is disabled. The response body is `IPFS disabled`.",
             "content": {
-              "application/json": {
+              "text/html": {
                 "schema": {
                   "type": "string"
                 }
@@ -2120,7 +2268,7 @@
           "200": {
             "description": "A CID (Content Identifier) for the added text in base58btc format\n",
             "content": {
-              "text/plain": {
+              "text/html": {
                 "schema": {
                   "type": "string",
                   "example": "zb2rhoVn27TzH1yQD1Bux7XKxaUBp3Rwzvd8Re9Shp4bEGokf"
@@ -2131,7 +2279,17 @@
           "500": {
             "description": "Internal Server Error.",
             "content": {
-              "application/json": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "IPFS is disabled. The response body is `IPFS disabled`.",
+            "content": {
+              "text/html": {
                 "schema": {
                   "type": "string"
                 }
@@ -2159,20 +2317,9 @@
           "200": {
             "description": "Successfully retrieved the text",
             "content": {
-              "text/plain": {
+              "text/html": {
                 "schema": {
                   "type": "string"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Text not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "string",
-                  "example": "Not Found"
                 }
               }
             }
@@ -2180,7 +2327,17 @@
           "500": {
             "description": "Internal Server Error",
             "content": {
-              "application/json": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "IPFS is disabled. The response body is `IPFS disabled`.",
+            "content": {
+              "text/html": {
                 "schema": {
                   "type": "string"
                 }
@@ -2209,7 +2366,7 @@
           "200": {
             "description": "A CID (Content Identifier) for the added data in base58btc format\n",
             "content": {
-              "text/plain": {
+              "text/html": {
                 "schema": {
                   "type": "string",
                   "example": "zdj7WnZAJEYaTTvvDRXCfDpN8raDkX63VrrZBTpV5fw4cVciw"
@@ -2220,7 +2377,17 @@
           "500": {
             "description": "Internal Server Error.",
             "content": {
-              "application/json": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "IPFS is disabled. The response body is `IPFS disabled`.",
+            "content": {
+              "text/html": {
                 "schema": {
                   "type": "string"
                 }
@@ -2256,21 +2423,20 @@
               }
             }
           },
-          "404": {
-            "description": "Data not found",
+          "500": {
+            "description": "Internal Server Error",
             "content": {
-              "application/json": {
+              "text/html": {
                 "schema": {
-                  "type": "string",
-                  "example": "Not Found"
+                  "type": "string"
                 }
               }
             }
           },
-          "500": {
-            "description": "Internal Server Error",
+          "503": {
+            "description": "IPFS is disabled. The response body is `IPFS disabled`.",
             "content": {
-              "application/json": {
+              "text/html": {
                 "schema": {
                   "type": "string"
                 }
@@ -2322,7 +2488,7 @@
           "500": {
             "description": "Internal Server Error.",
             "content": {
-              "application/json": {
+              "text/html": {
                 "schema": {
                   "type": "string"
                 }
@@ -2397,7 +2563,7 @@
           "500": {
             "description": "Internal Server Error.",
             "content": {
-              "application/json": {
+              "text/html": {
                 "schema": {
                   "type": "string"
                 }
@@ -2465,7 +2631,7 @@
           "500": {
             "description": "Internal Server Error.",
             "content": {
-              "application/json": {
+              "text/html": {
                 "schema": {
                   "type": "string"
                 }

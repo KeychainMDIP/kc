@@ -9,36 +9,33 @@ Gatekeeper functions are used to Create, Read, Update, and Delete DIDs (CRUD).
 ```bash
 npm install @mdip/gatekeeper
 ```
+
 ## Usage
 
 ### Library
 
-The library must be configured by calling the start function with one of the supported databases:
+Construct the library with one of the supported database adapters:
+
 - JSON - @mdip/gatekeeper/db/json
 - JSON with memory cache - @mdip/gatekeeper/db/json-cache
-- sqlite - @mdip/gatekeeper/db/sqlite
-- mongodb - @mdip/gatekeeper/db/mongo
-- redis - @mdip/gatekeeper/db/redis
-- postgres - @mdip/gatekeeper/db/postgres
+- SQLite - @mdip/gatekeeper/db/sqlite
+- MongoDB - @mdip/gatekeeper/db/mongo
+- Redis - @mdip/gatekeeper/db/redis
+- PostgreSQL - @mdip/gatekeeper/db/postgres
 
-The MongoDB adapter requires a replica set or sharded cluster because DID/block writes and index cursor writes are committed in MongoDB transactions. For local Docker Compose usage, the repository starts MongoDB as a single-node replica set named `rs0`; standalone MongoDB deployments must be updated before using the adapter.
+The MongoDB adapter requires a replica set or sharded cluster because DID/block writes and index cursor writes are committed in MongoDB transactions. For local Docker Compose usage, the repository starts MongoDB as a single-node replica set named `rs0`. Standalone MongoDB deployments must be updated before using the adapter.
 
 ```js
-// Import using subpaths
 import Gatekeeper from '@mdip/gatekeeper';
 import DbRedis from '@mdip/gatekeeper/db/redis';
-import { logger } from '@mdip/common/logger';
-
-// Non-subpath imports
-import Gatekeeper, { DbRedis } from '@mdip/gatekeeper';
 
 const db_redis = new DbRedis('mdip-test');
 await db_redis.start();
 
-const gatekeeper = new Gatekeeper({ db: db_redis });
+const gatekeeper = new Gatekeeper({ db: db_redis, ipfsEnabled: false });
 const did = 'did:test:z3v8AuaTV5VKcT9MJoSHkSTRLpXDoqcgqiKkwGBNSV4nVzb6kLk';
 const docs = await gatekeeper.resolveDID(did);
-logger.info(JSON.stringify(docs, null, 4));
+console.log(JSON.stringify(docs, null, 4));
 ```
 
 ### Client
@@ -46,12 +43,7 @@ logger.info(JSON.stringify(docs, null, 4));
 The GatekeeperClient is used to communicate with a Gatekeeper REST API service.
 
 ```js
-// Import using subpaths
 import GatekeeperClient from '@mdip/gatekeeper/client';
-import { logger } from '@mdip/common/logger';
-
-// Non-subpath imports
-import { GatekeeperClient } from '@mdip/gatekeeper';
 
 // Try connecting to the gatekeeper service every second,
 // and start reporting (chatty) if not connected after 5 attempts
@@ -66,5 +58,5 @@ await gatekeeper.connect({
 
 const did = 'did:test:z3v8AuaTV5VKcT9MJoSHkSTRLpXDoqcgqiKkwGBNSV4nVzb6kLk';
 const docs = await gatekeeper.resolveDID(did);
-logger.info(JSON.stringify(docs, null, 4));
+console.log(JSON.stringify(docs, null, 4));
 ```
