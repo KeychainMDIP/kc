@@ -1,14 +1,91 @@
+import type { GatekeeperEvent } from '@mdip/gatekeeper/types';
 import { isValidDID } from '@mdip/ipfs/utils';
 import type { DIDsDb } from './types.js';
 
-export async function findDIDReadTarget(didDb: DIDsDb, did: string) {
-    const events = await didDb.getDIDEvents(did);
-    if (events.length > 0 || !isValidDID(did)) {
-        return { storedDid: did, events };
+export const AMBIGUOUS_DID_PREFIX = 'did:test';
+
+export interface DIDPrefixClassification {
+    prefix: string;
+    conflicting: boolean;
+    authoritative: boolean;
+}
+
+export function getDIDPrefix(did: string): string {
+    return did.split(':', 2).join(':');
+}
+
+export function getDIDSuffix(did: string): string {
+    return did.split(':').pop()!;
+}
+
+export function isAgentDID(events: GatekeeperEvent[]): boolean {
+    const anchor = events[0]?.operation;
+    return anchor?.type === 'create' && anchor.mdip?.type === 'agent';
+}
+
+function isDIDPrefix(value: unknown): value is string {
+    return typeof value === 'string' && /^did:[^:]+$/.test(value);
+}
+
+export function classifyDIDPrefix(events: GatekeeperEvent[]): DIDPrefixClassification {
+    const createPrefix = events.find(event => event.operation.type === 'create')?.operation.mdip?.prefix;
+    const referencedPrefixes = new Set<string>();
+
+    for (const event of events) {
+        const { operation } = event;
+        if ((operation.type === 'update' || operation.type === 'delete') &&
+            typeof operation.did === 'string' && operation.did.startsWith('did:')) {
+            referencedPrefixes.add(getDIDPrefix(operation.did));
+        }
     }
 
-    const storedDid = await didDb.findDIDBySuffix(did.split(':').pop()!);
+    if (isDIDPrefix(createPrefix)) {
+        return {
+            prefix: createPrefix,
+            conflicting: Array.from(referencedPrefixes).some(prefix => prefix !== createPrefix),
+            authoritative: true,
+        };
+    }
+
+    if (referencedPrefixes.size === 1) {
+        return {
+            prefix: referencedPrefixes.values().next().value as string,
+            conflicting: false,
+            authoritative: true,
+        };
+    }
+
+    return {
+        prefix: AMBIGUOUS_DID_PREFIX,
+        conflicting: referencedPrefixes.size > 1,
+        authoritative: referencedPrefixes.size > 1,
+    };
+}
+
+export function canonicalDID(did: string, events: GatekeeperEvent[]): string {
+    return `${classifyDIDPrefix(events).prefix}:${getDIDSuffix(did)}`;
+}
+
+export async function findDIDReadTarget(didDb: DIDsDb, did: string, didPrefix?: string) {
+    if (!isValidDID(did)) {
+        return { storedDid: did, resolutionDid: did, events: await didDb.getDIDEvents(did) };
+    }
+
+    const requestedDid = didPrefix ? `${didPrefix}:${getDIDSuffix(did)}` : did;
+    if (didPrefix) {
+        const storedDid = await didDb.findDIDBySuffix(getDIDSuffix(did), didPrefix);
+        return storedDid
+            ? { storedDid, resolutionDid: requestedDid, events: await didDb.getDIDEvents(storedDid) }
+            : { storedDid: requestedDid, resolutionDid: requestedDid, events: [], scopeRejected: true };
+    }
+
+    const events = await didDb.getDIDEvents(requestedDid);
+    if (events.length > 0) {
+        return { storedDid: requestedDid, resolutionDid: requestedDid, events };
+    }
+
+    const storedDid = await didDb.findDIDBySuffix(getDIDSuffix(did), didPrefix);
     return storedDid
-        ? { storedDid, events: await didDb.getDIDEvents(storedDid) }
-        : { storedDid: did, events };
+        ? { storedDid, resolutionDid: requestedDid, events: await didDb.getDIDEvents(storedDid) }
+        : { storedDid: requestedDid, resolutionDid: requestedDid, events };
 }

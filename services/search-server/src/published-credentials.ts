@@ -1,4 +1,5 @@
-import { PublishedCredentialRecord } from "./types.js";
+import type { GatekeeperEvent, PublishedCredentialRecord } from "./types.js";
+import { getDIDSuffix } from './did-aliases.js';
 
 interface MaybeVc {
     type?: unknown;
@@ -19,9 +20,6 @@ export interface PublishedCredentialEvidence {
 }
 
 interface MaybeMdipDocument {
-    didDocument?: {
-        id?: unknown;
-    };
     didDocumentData?: {
         manifest?: unknown;
     };
@@ -56,9 +54,7 @@ export function extractPublishedCredentialEvidence(
     doc: object
 ): PublishedCredentialEvidence[] {
     const mdipDoc = doc as MaybeMdipDocument;
-    const holderDid = isDid(mdipDoc.didDocument?.id)
-        ? mdipDoc.didDocument.id
-        : defaultHolderDid;
+    const holderDid = defaultHolderDid;
 
     const manifest = mdipDoc.didDocumentData?.manifest;
     if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
@@ -79,10 +75,11 @@ export function extractPublishedCredentialEvidence(
         const subjectDid = vc.credentialSubject?.id;
 
         if (type[0] !== 'VerifiableCredential' ||
+            !isDid(holderDid) ||
             !isDid(schemaDid) ||
             !isDid(issuerDid) ||
             !isDid(subjectDid) ||
-            subjectDid !== holderDid) {
+            getDIDSuffix(subjectDid) !== getDIDSuffix(holderDid)) {
             continue;
         }
 
@@ -92,7 +89,7 @@ export function extractPublishedCredentialEvidence(
                 credentialDid,
                 schemaDid,
                 issuerDid,
-                subjectDid,
+                subjectDid: holderDid,
                 revealed: vc.credential !== null && vc.credential !== undefined,
                 updatedAt: getPublishedAt(vc, mdipDoc),
             },
@@ -109,4 +106,24 @@ export function extractPublishedCredentials(
 ): PublishedCredentialRecord[] {
     return extractPublishedCredentialEvidence(defaultHolderDid, doc)
         .map(evidence => evidence.credential);
+}
+
+export function extractPublishedCredentialHistory(
+    defaultHolderDid: string,
+    events: GatekeeperEvent[]
+): PublishedCredentialEvidence[] {
+    return events.flatMap(event => event.operation.type === 'update' && event.operation.doc
+        ? extractPublishedCredentialEvidence(defaultHolderDid, event.operation.doc)
+        : []
+    );
+}
+
+export function deduplicateDIDPrefixReferences(
+    references: string[],
+    publishedCredentials: PublishedCredentialRecord[] = []
+): string[] {
+    return Array.from(new Set([
+        ...references,
+        ...publishedCredentials.flatMap(record => [record.credentialDid, record.schemaDid]),
+    ]));
 }

@@ -256,6 +256,7 @@ export interface KeymasterOptions {
     cipher: Cipher;
     search?: SearchEngine;
     defaultRegistry?: string;
+    didPrefix?: string;
     maxNameLength?: number;
 }
 

@@ -35,6 +35,7 @@ describe('search-server DID projections', () => {
             did,
             events,
             removed: true,
+            didPrefixReferences: [],
             publishedCredentials: [],
             challengeReceipts: [],
         });
@@ -79,7 +80,79 @@ describe('search-server DID projections', () => {
             didDocumentData: { name: 'projection' },
             didDocumentMetadata: { confirmed: true },
         });
+        expect(projection.didPrefixReferences).toStrictEqual([]);
         expect(projection.publishedCredentials).toStrictEqual([]);
         expect(projection.challengeReceipts).toStrictEqual([]);
+    });
+
+    it('retains prefix references from credentials absent from the current manifest', async () => {
+        const credentialDid = 'did:mdip:historical-credential';
+        const schemaDid = 'did:mdip:historical-schema';
+        const update = (manifest: Record<string, unknown>, time: string): GatekeeperEvent => ({
+            registry: 'local',
+            time,
+            did,
+            operation: {
+                type: 'update',
+                did,
+                doc: {
+                    didDocument: { id: did, controller: did },
+                    didDocumentData: { manifest },
+                    mdip: { version: 1, type: 'agent', registry: 'local' },
+                },
+            },
+        });
+        const events = [
+            createEvent(),
+            update({
+                [credentialDid]: {
+                    type: ['VerifiableCredential', schemaDid],
+                    issuer: did,
+                    credentialSubject: { id: did },
+                },
+            }, '2026-04-01T11:00:00.000Z'),
+            update({}, '2026-04-01T12:00:00.000Z'),
+        ];
+        events[0].operation.mdip!.type = 'agent';
+
+        const projection = await buildDIDProjectionUpdate(new DIDsDbMemory(), did, events);
+
+        expect(projection.publishedCredentials).toStrictEqual([]);
+        expect(projection.didPrefixReferences).toStrictEqual([credentialDid, schemaDid]);
+    });
+
+    it('ignores credential manifests on non-AgentDID assets', async () => {
+        const credentialDid = 'did:mdip:asset-credential';
+        const schemaDid = 'did:mdip:asset-schema';
+        const events = [
+            createEvent(),
+            {
+                registry: 'local',
+                time: '2026-04-01T11:00:00.000Z',
+                did,
+                operation: {
+                    type: 'update',
+                    did,
+                    doc: {
+                        didDocument: { id: did, controller: did },
+                        didDocumentData: {
+                            manifest: {
+                                [credentialDid]: {
+                                    type: ['VerifiableCredential', schemaDid],
+                                    issuer: did,
+                                    credentialSubject: { id: did },
+                                },
+                            },
+                        },
+                        mdip: { version: 1, type: 'asset', registry: 'local' },
+                    },
+                },
+            } as GatekeeperEvent,
+        ];
+
+        const projection = await buildDIDProjectionUpdate(new DIDsDbMemory(), did, events);
+
+        expect(projection.publishedCredentials).toStrictEqual([]);
+        expect(projection.didPrefixReferences).toStrictEqual([]);
     });
 });

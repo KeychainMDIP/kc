@@ -34,6 +34,9 @@ KC_SEARCH_SERVER_REFRESH_INTERVAL_MS=5000
 # How often (in ms) to rebuild all daily network metric snapshots.
 KC_SEARCH_SERVER_METRICS_REFRESH_INTERVAL_MS=3600000
 
+# Optional network scope: did:test | did:mdip | empty for all networks
+KC_SEARCH_SERVER_DID_PREFIX=did:test
+
 # Database adapter: sqlite | postgres | memory
 KC_SEARCH_SERVER_DB=sqlite
 
@@ -56,32 +59,75 @@ KC_SEARCH_SERVER_RATE_LIMIT_SKIP_PATHS=/api/v1/ready,/api/v1/status
 KC_LOG_LEVEL=info
 ```
 
+The search database is a rebuildable index and this service does not migrate
+older table layouts. Reset an existing search-server database before deploying
+a release that changes its schema.
+
 ### Endpoints
+
+DID resolution, search, query, event, and credential-metric endpoints apply
+`KC_SEARCH_SERVER_DID_PREFIX` when configured. Indexed DID results use the
+effective prefix determined by the precedence documented in
+[DID network classification](#did-network-classification), not necessarily a
+stored alias's prefix.
+
+### `GET /api/v1/ready`
+- **Description**: Returns `{ "ready": true }` once the HTTP service is available.
+
+### `GET /api/v1/status`
+- **Description**: Returns the database adapter, index synchronization state,
+  and the last network-metrics rebuild time or error.
 
 ### `GET /api/v1/did/:did`
 - **Description**: Returns the DID Document
-- **Notes**: If the exact DID prefix is not indexed, Search Server resolves an equivalent DID with the same final CID suffix.
+- **Query Params**:
+    - `versionSequence` (optional, positive integer)
+    - `versionTime` (optional, timestamp accepted by Gatekeeper resolution)
+- **Notes**: Prefix aliases are matched by final CID suffix. A configured
+  network scope must match the DID's effective classification; an existing
+  storage alias cannot bypass that scope.
 - **Returns**:
     - `200 OK` + JSON DID Document if present.
+    - `400 Bad Request` for an invalid `versionSequence`.
     - `404 Not Found` if no cached doc is found for the given `:did`.
 
 ### `GET /api/v1/did/:did/events`
 - **Description**: Returns all indexed events for the DID in operation order.
-- **Notes**: DID prefix aliases are matched by their final CID suffix.
+- **Notes**: DID prefix aliases are matched by final CID suffix and validated
+  against the configured network scope.
 - **Returns**:
     - `200 OK` + an array of Gatekeeper events.
     - `200 OK` + `[]` if the DID has no indexed events.
 
+### `GET /api/v1/events`
+- **Description**: Returns a paginated list of indexed DID events.
+- **Query Params**:
+    - `registry`, `updatedAfter`, `updatedBefore` (optional)
+    - `limit` (optional, default `50`)
+    - `offset` (optional, default `0`)
+- **Returns**:
+    - `200 OK` + `{ "total": 123, "events": [...] }`
+
 ### `GET /api/v1/search`
-- **Description**: Performs a text search across all DID documents. Returns an array of matching DIDs.
+- **Description**: Performs a text search across indexed DID documents in the
+  configured network scope and returns matching effective DIDs.
 - **Query Param**: q (string)
 - **Returns**:
     - 200 OK + [] (empty array) if nothing matches, otherwise an array of DID strings.
+
+### `POST /api/v1/query`
+- **Description**: Queries indexed DID documents in the configured network
+  scope using a `where` object with an `$in` condition.
+- **Body**: `{ "where": { "didDocumentData.type": { "$in": ["value"] } } }`
+- **Returns**:
+    - `200 OK` + an array of matching effective DIDs.
+    - `400 Bad Request` when `where` is missing or is not an object.
 
 ### `GET /api/v1/metrics/schemas/published`
 - **Description**: Returns current published credential counts grouped by schema DID.
 - **Returns**:
     - `200 OK` + `{ "schemas": [{ "schemaDid": "...", "count": 42 }] }`
+    - `400 Bad Request` when the removed `date` query parameter is supplied.
 
 ### `GET /api/v1/metrics/credentials/published`
 - **Description**: Returns published credential rows with optional filtering and pagination.
@@ -90,42 +136,168 @@ KC_LOG_LEVEL=info
     - `schemaDid` (optional)
     - `issuerDid` (optional)
     - `subjectDid` (optional)
-    - `limit` (optional, default `50`)
+    - `revealed` (optional, `true` or `false`)
+    - `limit` (optional, default `50`, maximum `500`)
     - `offset` (optional, default `0`)
 - **Notes**:
     - `updatedAt` is derived from the credential manifest entry's `signature.signed` when available, with a fallback to the subject DID document timestamp.
+    - DID-valued filters match prefix aliases by CID suffix.
 - **Returns**:
     - `200 OK` + `{ "total": 123, "credentials": [{ "credentialDid": "...", "schemaDid": "...", "issuerDid": "...", "subjectDid": "...", "holderDid": "...", "updatedAt": "..." }] }`
 
-### `GET /api/v1/metrics/network/snapshots/:date`
-- **Description**: Returns cumulative network totals for one UTC day.
+### `GET /api/v1/metrics/snapshots/dids/:date`
+- **Description**: Returns the cumulative total of all DIDs created through
+  one UTC day, regardless of DID type or document contents. DIDs are
+  deduplicated by CID suffix and filtered by `KC_SEARCH_SERVER_DID_PREFIX`.
+  Deleted DIDs remain part of the cumulative total.
 - **Path Param**:
     - `date` (required, `YYYY-MM-DD`, must not be in the future)
 - **Returns**:
-    - `200 OK` + `{ "date": "2026-08-05", "agentDidCount": 123, "credentialCount": 456, "schemas": [{ "schemaDid": "did:test:...", "count": 42 }], "rebuiltAt": "..." }`
+    - `200 OK` + `{ "didCount": 123, "didCountsByPrefix": { "did:mdip": 23, "did:test": 100 } }`
     - `400 Bad Request` for an invalid or future date.
     - `404 Not Found` when no snapshot exists for the date.
+    - `503 Service Unavailable` while snapshots are rebuilding for the
+      configured network scope.
+
+### `GET /api/v1/metrics/snapshots/:date`
+- **Description**: Returns the complete cumulative network snapshot for one
+  UTC day in one database read. This keeps all totals and schema usage from the
+  same rebuild generation.
+- **Path Param**:
+    - `date` (required, `YYYY-MM-DD`, must not be in the future)
+- **Returns**:
+    - `200 OK` + the stored snapshot, including all-DID, AgentDID, credential,
+      and per-schema counts plus `date` and `rebuiltAt`.
+    - `400 Bad Request` for an invalid or future date.
+    - `404 Not Found` when no snapshot exists for the date.
+    - `503 Service Unavailable` while snapshots are rebuilding for the
+      configured network scope.
+
+### `GET /api/v1/metrics/snapshots/schemas/:date`
+- **Description**: Returns cumulative credential counts grouped by schema DID for one UTC day.
+- **Path Param**:
+    - `date` (required, `YYYY-MM-DD`, must not be in the future)
+- **Returns**:
+    - `200 OK` + `{ "schemas": [{ "schemaDid": "...", "count": 42 }] }`
+    - `400 Bad Request` for an invalid or future date.
+    - `404 Not Found` when no snapshot exists for the date.
+    - `503 Service Unavailable` while snapshots are rebuilding for the
+      configured network scope.
+
+### `GET /api/v1/metrics/snapshots/credentials/:date`
+- **Description**: Returns the cumulative credential total for one UTC day.
+- **Path Param**:
+    - `date` (required, `YYYY-MM-DD`, must not be in the future)
+- **Returns**:
+    - `200 OK` + `{ "credentialCount": 456, "credentialDidCountsByPrefix": { "did:mdip": 56, "did:test": 400 } }`
+    - `400 Bad Request` for an invalid or future date.
+    - `404 Not Found` when no snapshot exists for the date.
+    - `503 Service Unavailable` while snapshots are rebuilding for the
+      configured network scope.
+
+### `GET /api/v1/metrics/snapshots/agents/:date`
+- **Description**: Returns the cumulative AgentDID total for one UTC day.
+- **Path Param**:
+    - `date` (required, `YYYY-MM-DD`, must not be in the future)
+- **Returns**:
+    - `200 OK` + `{ "agentDidCount": 123, "agentDidCountsByPrefix": { "did:mdip": 23, "did:test": 100 } }`
+    - `400 Bad Request` for an invalid or future date.
+    - `404 Not Found` when no snapshot exists for the date.
+    - `503 Service Unavailable` while snapshots are rebuilding for the
+      configured network scope.
+
+### `GET /api/v1/metrics/challenge-receipts`
+- **Description**: Returns indexed challenge receipts with optional filtering
+  and pagination.
+- **Query Params**:
+    - `receiptDid`, `attesterDid`, `schemaDid`, `requesterDid`,
+      `responseCommitment`, `updatedAfter`, `updatedBefore` (optional)
+    - `limit` (optional, default `50`)
+    - `offset` (optional, default `0`)
+- **Notes**:
+    - DID-valued filters match prefix aliases by CID suffix.
+- **Returns**:
+    - `200 OK` + `{ "total": 123, "receipts": [...] }`
+
+### `GET /api/v1/metrics/challenge-receipts/usage`
+- **Description**: Groups challenge-receipt usage by attester, schema, and
+  requester.
+- **Query Params**:
+    - `attesterDid` (required)
+    - `schemaDid`, `requesterDid`, `updatedAfter`, `updatedBefore` (optional)
+    - `limit` (optional, default `50`)
+    - `offset` (optional, default `0`)
+- **Notes**:
+    - DID-valued filters match prefix aliases by CID suffix.
+    - Usage rows with prefix aliases for the same identities are grouped once.
+- **Returns**:
+    - `200 OK` + `{ "total": 123, "usage": [...] }`
+    - `400 Bad Request` when `attesterDid` is missing.
 
 ### Network metric snapshots
 
-AgentDID snapshot dates come only from anchor `create` operation `created`
-timestamps. Credentials are identified from valid historical AgentDID manifest
-entries and dated by their asset anchor `operation.created` when available,
-falling back to the manifest credential's `validFrom`. Hyperswarm receipt times
-and operation signature timestamps are not used. AgentDIDs remain counted after
+All-DID and AgentDID snapshot dates come only from anchor `create` operation
+`created` timestamps. The all-DID total includes every indexed DID regardless
+of MDIP type or document contents and deduplicates prefix aliases by CID suffix.
+Credentials are identified from valid historical AgentDID manifest entries and
+dated by their asset anchor `operation.created` when available, falling back to
+the manifest credential's `validFrom`. Hyperswarm receipt times and operation
+signature timestamps are not used. DIDs and AgentDIDs remain counted after
 deletion, and credentials remain counted after revocation or unpublishing.
 Private credentials that have never been published cannot be counted by
 search-server.
 
-Each snapshot includes cumulative credential counts grouped by schema DID,
-ordered from most to least used. This historical breakdown differs from
-`/metrics/schemas/published`, which describes only the credentials currently
-present in AgentDID manifests.
+Historical snapshots are cumulative observations: a credential remains in
+snapshots after revocation or unpublishing. The live
+`/metrics/credentials/published` and `/metrics/schemas/published` endpoints only
+describe credentials in current AgentDID manifests, so their totals can fall.
+
+### DID network classification
+
+The effective prefix precedence is:
+
+1. The signed create operation's explicit `mdip.prefix`.
+2. One unique prefix referenced by that DID's update/delete `operation.did`
+   values when the create has no explicit prefix.
+3. For otherwise unclassified credential and schema assets, one unique prefix
+   observed in valid entries across complete historical AgentDID manifests.
+4. `did:test` when no unique evidence exists.
+
+Create and update/delete evidence takes precedence over manifest evidence.
+Conflicting update/delete prefixes are authoritatively classified as
+`did:test`, so manifest evidence cannot move them into another network.
+Manifest evidence is stored by source AgentDID during indexing and survives
+credential unpublishing, keeping historical schema links resolvable in the same
+network scope. Conflicting manifest prefixes fall back to `did:test`. Prefix
+aliases sharing a CID suffix are deduplicated.
+
+Set `KC_SEARCH_SERVER_DID_PREFIX` to any `did:<method>` prefix, such as
+`did:test`, `did:mdip`, or `did:arbitrary`, to return only that network from
+DID, search, event, credential, challenge-receipt, and metric endpoints.
+Explicit DIDs using another prefix are excluded from the configured scope.
+Leave the setting empty to return every indexed network.
+
+Changing the configured scope invalidates the stored snapshot scope before a
+rebuild begins. Snapshot endpoints return `503` until the replacement snapshots
+and new scope marker have both been saved. This also applies when changing
+between a blank scope and `did:test` or `did:mdip`.
+
+Each snapshot stores cumulative all-DID, AgentDID, and credential totals plus
+credential counts grouped by schema DID, ordered from most to least used.
+Request a complete snapshot from `/metrics/snapshots/:date`, or use the
+specialized `/metrics/snapshots/dids/:date`, `/agents/:date`,
+`/credentials/:date`, and `/schemas/:date` endpoints when only one metric is
+needed.
+`/metrics/schemas/published` describes only the credentials currently present
+in AgentDID manifests.
+Schema prefix aliases sharing the same DID suffix are combined under the
+schema asset's explicit classification or durable historical manifest evidence.
 
 Metric dates before the MDIP epoch are included in the `2024-01-01` legacy
 baseline. Future-dated entries and entries without a usable timestamp are
-omitted. The complete daily history is
-rebuilt after the initial index snapshot and then at
+omitted. Manifest `validFrom` fallback values must use canonical UTC form
+`YYYY-MM-DDTHH:mm:ss.sssZ`. The complete daily history is first rebuilt after
+two consecutive change polls report no DID changes, and then at
 `KC_SEARCH_SERVER_METRICS_REFRESH_INTERVAL_MS`, so late operations correct their
 metric day and every later snapshot. If a previously missing credential asset
 operation arrives, its `operation.created` replaces the `validFrom` fallback on

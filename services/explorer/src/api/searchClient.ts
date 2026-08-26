@@ -58,11 +58,11 @@ export interface PublishedSchemaMetric {
 }
 
 export interface NetworkMetricSnapshot {
-    date: string;
     agentDidCount: number;
+    agentDidCountsByPrefix: Record<string, number>;
     credentialCount: number;
+    credentialDidCountsByPrefix: Record<string, number>;
     schemas: PublishedSchemaMetric[];
-    rebuiltAt: string;
 }
 
 export interface PublishedCredentialRow {
@@ -144,6 +144,16 @@ export interface ChallengeReceiptUsageResult {
 function toNumber(value: unknown, fallback = 0): number {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function mapPrefixCounts(value: unknown): Record<string, number> {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return {};
+    }
+
+    return Object.fromEntries(
+        Object.entries(value).map(([prefix, count]) => [prefix, toNumber(count)])
+    );
 }
 
 function mapPublishedCredentialRow(row: any): PublishedCredentialRow {
@@ -249,19 +259,17 @@ export async function fetchPublishedSchemaMetrics(): Promise<PublishedSchemaMetr
 
 export async function fetchNetworkMetricSnapshot(date: string): Promise<NetworkMetricSnapshot | null> {
     try {
-        const response = await axios.get(
-            `${apiBaseUrl}/metrics/network/snapshots/${encodeURIComponent(date)}`
-        );
+        const response = await axios.get(`${apiBaseUrl}/metrics/snapshots/${encodeURIComponent(date)}`);
 
         return {
-            date: response.data.date,
             agentDidCount: toNumber(response.data.agentDidCount),
+            agentDidCountsByPrefix: mapPrefixCounts(response.data.agentDidCountsByPrefix),
             credentialCount: toNumber(response.data.credentialCount),
+            credentialDidCountsByPrefix: mapPrefixCounts(response.data.credentialDidCountsByPrefix),
             schemas: (response.data.schemas ?? []).map((row: any) => ({
                 schemaDid: row.schemaDid,
                 count: toNumber(row.count),
             })),
-            rebuiltAt: response.data.rebuiltAt,
         };
     }
     catch (error: any) {

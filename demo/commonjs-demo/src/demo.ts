@@ -43,6 +43,7 @@ async function main() {
             wallet,
             cipher,
             passphrase: process.env.KC_ENCRYPTED_PASSPHRASE || "passphrase",
+            didPrefix: process.env.KC_KEYMASTER_DID_PREFIX || 'did:test',
         });
     }
 

@@ -21,6 +21,14 @@ import {
     GatekeeperEvent,
 } from '../types.js';
 import { getEventDisplayTime, stableStringify } from './db-utils.js';
+import { deduplicateDIDPrefixReferences } from '../published-credentials.js';
+import {
+    AMBIGUOUS_DID_PREFIX,
+    classifyDIDPrefix,
+    getDIDPrefix,
+    getDIDSuffix,
+    isAgentDID,
+} from '../did-aliases.js';
 
 interface SyncStateRow {
     value: string;
@@ -32,6 +40,10 @@ interface DocRow {
 
 interface DidRow {
     did: string;
+}
+
+interface EffectiveDidRow extends DidRow {
+    storedDid: string;
 }
 
 interface EventRow {
@@ -93,6 +105,17 @@ export default class Postgres implements DIDsDb {
             CREATE INDEX IF NOT EXISTS idx_did_events_registry_time
                 ON did_events (registry, time);
 
+            CREATE TABLE IF NOT EXISTS did_classifications (
+                suffix TEXT PRIMARY KEY,
+                did TEXT NOT NULL UNIQUE,
+                prefix TEXT NOT NULL,
+                prefix_authoritative BOOLEAN NOT NULL,
+                is_agent BOOLEAN NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_did_classifications_prefix
+                ON did_classifications (prefix);
+
             CREATE TABLE IF NOT EXISTS did_docs (
                 did TEXT PRIMARY KEY,
                 doc JSONB NOT NULL
@@ -112,41 +135,76 @@ export default class Postgres implements DIDsDb {
 
             CREATE TABLE IF NOT EXISTS published_credentials (
                 holder_did TEXT NOT NULL,
-                credential_did TEXT NOT NULL,
-                schema_did TEXT NOT NULL,
+                credential_suffix TEXT NOT NULL,
+                schema_suffix TEXT NOT NULL,
                 issuer_did TEXT NOT NULL,
                 subject_did TEXT NOT NULL,
                 revealed BOOLEAN,
                 updated_at TEXT NOT NULL,
-                PRIMARY KEY (holder_did, credential_did)
+                PRIMARY KEY (holder_did, credential_suffix)
             );
 
-            CREATE INDEX IF NOT EXISTS idx_published_credentials_schema
-                ON published_credentials (schema_did);
+            CREATE INDEX IF NOT EXISTS idx_published_credentials_suffixes
+                ON published_credentials (credential_suffix, schema_suffix);
 
-            CREATE INDEX IF NOT EXISTS idx_published_credentials_schema_issuer
-                ON published_credentials (schema_did, issuer_did);
+            CREATE TABLE IF NOT EXISTS did_prefix_references (
+                source_did TEXT NOT NULL,
+                suffix TEXT NOT NULL,
+                prefix TEXT NOT NULL,
+                PRIMARY KEY (source_did, suffix, prefix)
+            );
 
-            CREATE INDEX IF NOT EXISTS idx_published_credentials_schema_subject
-                ON published_credentials (schema_did, subject_did);
+            CREATE INDEX IF NOT EXISTS idx_did_prefix_references_suffix_prefix
+                ON did_prefix_references (suffix, prefix);
+
+            CREATE OR REPLACE VIEW did_reference_prefixes AS
+                SELECT suffix,
+                       CASE WHEN MIN(prefix) = MAX(prefix)
+                           THEN MIN(prefix)
+                           ELSE '${AMBIGUOUS_DID_PREFIX}'
+                       END AS prefix
+                FROM did_prefix_references
+                GROUP BY suffix;
+
+            CREATE OR REPLACE VIEW did_classifications_effective AS
+                SELECT dc.suffix,
+                       dc.did,
+                       CASE WHEN dc.prefix_authoritative OR dc.is_agent THEN dc.prefix
+                           ELSE COALESCE(rp.prefix, '${AMBIGUOUS_DID_PREFIX}')
+                       END AS prefix
+                FROM did_classifications dc
+                LEFT JOIN did_reference_prefixes rp ON rp.suffix = dc.suffix;
+
+            CREATE OR REPLACE VIEW published_credentials_classified AS
+                SELECT pc.*,
+                       CASE WHEN cc.prefix_authoritative OR cc.is_agent THEN cc.prefix ELSE cr.prefix END AS credential_effective_prefix,
+                       CASE WHEN sc.prefix_authoritative OR sc.is_agent THEN sc.prefix ELSE sr.prefix END AS schema_effective_prefix
+                FROM published_credentials pc
+                LEFT JOIN did_classifications cc ON cc.suffix = pc.credential_suffix
+                LEFT JOIN did_classifications sc ON sc.suffix = pc.schema_suffix
+                JOIN did_reference_prefixes cr ON cr.suffix = pc.credential_suffix
+                JOIN did_reference_prefixes sr ON sr.suffix = pc.schema_suffix;
 
             CREATE TABLE IF NOT EXISTS challenge_receipts (
                 receipt_did TEXT PRIMARY KEY,
                 attester_did TEXT NOT NULL,
+                attester_suffix TEXT NOT NULL,
                 schema_did TEXT NOT NULL,
+                schema_suffix TEXT NOT NULL,
                 requester_did TEXT NOT NULL,
+                requester_suffix TEXT NOT NULL,
                 response_commitment TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
 
             CREATE INDEX IF NOT EXISTS idx_challenge_receipts_attester
-                ON challenge_receipts (attester_did);
+                ON challenge_receipts (attester_suffix);
 
             CREATE INDEX IF NOT EXISTS idx_challenge_receipts_schema
-                ON challenge_receipts (schema_did);
+                ON challenge_receipts (schema_suffix);
 
             CREATE INDEX IF NOT EXISTS idx_challenge_receipts_requester
-                ON challenge_receipts (requester_did);
+                ON challenge_receipts (requester_suffix);
 
             CREATE INDEX IF NOT EXISTS idx_challenge_receipts_commitment
                 ON challenge_receipts (response_commitment);
@@ -158,16 +216,15 @@ export default class Postgres implements DIDsDb {
 
             CREATE TABLE IF NOT EXISTS network_metric_snapshots (
                 snapshot_date TEXT PRIMARY KEY,
+                did_count INTEGER NOT NULL CHECK (did_count >= 0),
+                did_counts_by_prefix JSONB NOT NULL DEFAULT '{}'::jsonb,
                 agent_did_count INTEGER NOT NULL CHECK (agent_did_count >= 0),
+                agent_did_counts_by_prefix JSONB NOT NULL DEFAULT '{}'::jsonb,
                 credential_count INTEGER NOT NULL CHECK (credential_count >= 0),
+                credential_did_counts_by_prefix JSONB NOT NULL DEFAULT '{}'::jsonb,
                 schema_counts JSONB NOT NULL DEFAULT '[]'::jsonb,
                 rebuilt_at TEXT NOT NULL
             );
-        `);
-
-        await this.pool.query(`
-            CREATE INDEX IF NOT EXISTS idx_published_credentials_schema_revealed
-                ON published_credentials (schema_did, revealed)
         `);
     }
 
@@ -221,12 +278,13 @@ export default class Postgres implements DIDsDb {
         );
     }
 
-    async findDIDBySuffix(suffix: string): Promise<string | null> {
+    async findDIDBySuffix(suffix: string, didPrefix?: string): Promise<string | null> {
+        const prefixFilter = didPrefix ? 'AND prefix = $2' : '';
         const result = await this.getPool().query<DidRow>(
-            `SELECT DISTINCT did FROM did_events
-             WHERE right(did, length($1) + 1) = ':' || $1
-             ORDER BY did ASC LIMIT 1`,
-            [suffix]
+            `SELECT did FROM did_classifications_effective
+             WHERE suffix = $1 ${prefixFilter}
+             LIMIT 1`,
+            didPrefix ? [suffix, didPrefix] : [suffix]
         );
         return result.rows[0]?.did ?? null;
     }
@@ -310,6 +368,21 @@ export default class Postgres implements DIDsDb {
             }
 
             for (const record of page.dids) {
+                const suffix = getDIDSuffix(record.did);
+                const previousClassification = await client.query<DidRow>(
+                    'SELECT did FROM did_classifications WHERE suffix = $1',
+                    [suffix]
+                );
+                const previousDid = previousClassification?.rows?.[0]?.did;
+                if (previousDid && previousDid !== record.did) {
+                    await client.query('DELETE FROM did_events WHERE did = $1', [previousDid]);
+                    await client.query('DELETE FROM did_docs WHERE did = $1', [previousDid]);
+                    await client.query('DELETE FROM published_credentials WHERE holder_did = $1', [previousDid]);
+                    await client.query('DELETE FROM did_prefix_references WHERE source_did = $1', [previousDid]);
+                    await client.query('DELETE FROM challenge_receipts WHERE receipt_did = $1', [previousDid]);
+                    await client.query('DELETE FROM did_classifications WHERE suffix = $1', [suffix]);
+                }
+
                 const changed = eventChanges.get(record.did) === true;
 
                 if (!changed && !record.removed) {
@@ -322,10 +395,23 @@ export default class Postgres implements DIDsDb {
                 if (record.removed) {
                     await client.query('DELETE FROM did_docs WHERE did = $1', [record.did]);
                     await client.query('DELETE FROM published_credentials WHERE holder_did = $1', [record.did]);
+                    await client.query('DELETE FROM did_prefix_references WHERE source_did = $1', [record.did]);
                     await client.query('DELETE FROM challenge_receipts WHERE receipt_did = $1', [record.did]);
+                    await client.query('DELETE FROM did_classifications WHERE suffix = $1', [suffix]);
                     result.removedDids += 1;
                     continue;
                 }
+
+                const classification = classifyDIDPrefix(record.events);
+                await client.query(
+                    `INSERT INTO did_classifications (suffix, did, prefix, prefix_authoritative, is_agent) VALUES ($1, $2, $3, $4, $5)
+                     ON CONFLICT (suffix) DO UPDATE SET
+                        did = EXCLUDED.did,
+                        prefix = EXCLUDED.prefix,
+                        prefix_authoritative = EXCLUDED.prefix_authoritative,
+                        is_agent = EXCLUDED.is_agent`,
+                    [suffix, record.did, classification.prefix, classification.authoritative, isAgentDID(record.events)]
+                );
 
                 for (const [index, event] of record.events.entries()) {
                     await client.query(
@@ -345,6 +431,12 @@ export default class Postgres implements DIDsDb {
                 await this.replacePublishedCredentialsWithClient(
                     client,
                     record.did,
+                    record.publishedCredentials ?? []
+                );
+                await this.replaceDIDPrefixReferencesWithClient(
+                    client,
+                    record.did,
+                    record.didPrefixReferences ?? [],
                     record.publishedCredentials ?? []
                 );
                 await this.replaceChallengeReceiptsWithClient(
@@ -398,13 +490,17 @@ export default class Postgres implements DIDsDb {
         return doc;
     }
 
-    async getPublishedCredentialCountsBySchema(): Promise<PublishedCredentialSchemaCount[]> {
+    async getPublishedCredentialCountsBySchema(didPrefix?: string): Promise<PublishedCredentialSchemaCount[]> {
         const pool = this.getPool();
         const result = await pool.query<PublishedCredentialSchemaCount>(
-            `SELECT schema_did AS "schemaDid", COUNT(*)::int AS count
-             FROM published_credentials
-             GROUP BY schema_did
-             ORDER BY count DESC, "schemaDid" ASC`
+            `SELECT pc.schema_effective_prefix || ':' || pc.schema_suffix AS "schemaDid",
+                    COUNT(*)::int AS count
+             FROM published_credentials_classified pc
+             ${didPrefix ? `WHERE pc.credential_effective_prefix = $1
+                AND pc.schema_effective_prefix = $1` : ''}
+             GROUP BY "schemaDid"
+             ORDER BY count DESC, "schemaDid" ASC`,
+            didPrefix ? [didPrefix] : []
         );
 
         return result.rows;
@@ -415,6 +511,7 @@ export default class Postgres implements DIDsDb {
     ): Promise<PublishedCredentialListResult> {
         const pool = this.getPool();
         const {
+            didPrefix,
             credentialDid,
             schemaDid,
             issuerDid,
@@ -428,35 +525,43 @@ export default class Postgres implements DIDsDb {
         const params: unknown[] = [];
         let index = 1;
 
+        if (didPrefix) {
+            clauses.push(`pc.credential_effective_prefix = $${index++}`);
+            params.push(didPrefix);
+        }
+
         if (credentialDid) {
-            clauses.push(`credential_did = $${index++}`);
-            params.push(credentialDid);
+            clauses.push(`pc.credential_suffix = $${index++}`);
+            params.push(getDIDSuffix(credentialDid));
         }
 
         if (schemaDid) {
-            clauses.push(`schema_did = $${index++}`);
-            params.push(schemaDid);
+            clauses.push(`pc.schema_suffix = $${index++}`);
+            params.push(getDIDSuffix(schemaDid));
         }
 
         if (issuerDid) {
-            clauses.push(`issuer_did = $${index++}`);
-            params.push(issuerDid);
+            clauses.push(`right(pc.issuer_did, length($${index}) + 1) = ':' || $${index}`);
+            params.push(getDIDSuffix(issuerDid));
+            index++;
         }
 
         if (subjectDid) {
-            clauses.push(`subject_did = $${index++}`);
-            params.push(subjectDid);
+            clauses.push(`pc.subject_did = (
+                SELECT did FROM did_classifications WHERE suffix = $${index++}
+            )`);
+            params.push(getDIDSuffix(subjectDid));
         }
 
         if (typeof revealed === 'boolean') {
-            clauses.push(`revealed = $${index++}`);
+            clauses.push(`pc.revealed = $${index++}`);
             params.push(revealed);
         }
 
         const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
         const totalResult = await pool.query<CountRow>(
             `SELECT COUNT(*)::int AS total
-             FROM published_credentials
+             FROM published_credentials_classified pc
              ${where}`,
             params
         );
@@ -466,16 +571,16 @@ export default class Postgres implements DIDsDb {
         const offsetParam = `$${pageParams.length}`;
         const result = await pool.query<PublishedCredentialRecord>(
             `SELECT
-                holder_did AS "holderDid",
-                credential_did AS "credentialDid",
-                schema_did AS "schemaDid",
-                issuer_did AS "issuerDid",
-                subject_did AS "subjectDid",
-                revealed AS "revealed",
-                updated_at AS "updatedAt"
-             FROM published_credentials
+                pc.holder_did AS "holderDid",
+                pc.credential_effective_prefix || ':' || pc.credential_suffix AS "credentialDid",
+                pc.schema_effective_prefix || ':' || pc.schema_suffix AS "schemaDid",
+                pc.issuer_did AS "issuerDid",
+                pc.subject_did AS "subjectDid",
+                pc.revealed AS "revealed",
+                pc.updated_at AS "updatedAt"
+             FROM published_credentials_classified pc
              ${where}
-             ORDER BY updated_at DESC, credential_did ASC
+             ORDER BY pc.updated_at DESC, "credentialDid" ASC
              LIMIT ${limitParam} OFFSET ${offsetParam}`,
             pageParams
         );
@@ -497,7 +602,8 @@ export default class Postgres implements DIDsDb {
         const { where, params } = this.buildChallengeReceiptWhere(options);
         const totalResult = await pool.query<CountRow>(
             `SELECT COUNT(*)::int AS total
-             FROM challenge_receipts
+             FROM challenge_receipts cr
+             JOIN did_classifications_effective dc ON dc.did = cr.receipt_did
              ${where}`,
             params
         );
@@ -506,15 +612,16 @@ export default class Postgres implements DIDsDb {
         const offsetParam = `$${pageParams.length}`;
         const result = await pool.query<ChallengeReceiptRecord>(
             `SELECT
-                receipt_did AS "receiptDid",
-                attester_did AS "attesterDid",
-                schema_did AS "schemaDid",
-                requester_did AS "requesterDid",
-                response_commitment AS "responseCommitment",
-                updated_at AS "updatedAt"
-             FROM challenge_receipts
+                dc.prefix || ':' || dc.suffix AS "receiptDid",
+                cr.attester_did AS "attesterDid",
+                cr.schema_did AS "schemaDid",
+                cr.requester_did AS "requesterDid",
+                cr.response_commitment AS "responseCommitment",
+                cr.updated_at AS "updatedAt"
+             FROM challenge_receipts cr
+             JOIN did_classifications_effective dc ON dc.did = cr.receipt_did
              ${where}
-             ORDER BY updated_at DESC, receipt_did ASC
+             ORDER BY cr.updated_at DESC, "receiptDid" ASC
              LIMIT ${limitParam} OFFSET ${offsetParam}`,
             pageParams
         );
@@ -538,9 +645,10 @@ export default class Postgres implements DIDsDb {
             `SELECT COUNT(*)::int AS total
              FROM (
                 SELECT 1
-                FROM challenge_receipts
+                FROM challenge_receipts cr
+                JOIN did_classifications_effective dc ON dc.did = cr.receipt_did
                 ${where}
-                GROUP BY attester_did, schema_did, requester_did
+                GROUP BY cr.attester_suffix, cr.schema_suffix, cr.requester_suffix
              ) AS grouped`,
             params
         );
@@ -556,16 +664,17 @@ export default class Postgres implements DIDsDb {
             lastUpdatedAt: string;
         }>(
             `SELECT
-                attester_did AS "attesterDid",
-                schema_did AS "schemaDid",
-                requester_did AS "requesterDid",
-                COUNT(DISTINCT response_commitment)::int AS count,
-                MIN(updated_at) AS "firstUpdatedAt",
-                MAX(updated_at) AS "lastUpdatedAt"
-             FROM challenge_receipts
+                MIN(cr.attester_did) AS "attesterDid",
+                MIN(cr.schema_did) AS "schemaDid",
+                MIN(cr.requester_did) AS "requesterDid",
+                COUNT(DISTINCT cr.response_commitment)::int AS count,
+                MIN(cr.updated_at) AS "firstUpdatedAt",
+                MAX(cr.updated_at) AS "lastUpdatedAt"
+             FROM challenge_receipts cr
+             JOIN did_classifications_effective dc ON dc.did = cr.receipt_did
              ${where}
-             GROUP BY attester_did, schema_did, requester_did
-             ORDER BY count DESC, schema_did ASC, requester_did ASC
+             GROUP BY cr.attester_suffix, cr.schema_suffix, cr.requester_suffix
+             ORDER BY count DESC, "schemaDid" ASC, "requesterDid" ASC
              LIMIT ${limitParam} OFFSET ${offsetParam}`,
             pageParams
         );
@@ -579,6 +688,7 @@ export default class Postgres implements DIDsDb {
     async listEvents(options: DIDEventListOptions = {}): Promise<DIDEventListResult> {
         const pool = this.getPool();
         const {
+            didPrefix,
             registry,
             updatedAfter,
             updatedBefore,
@@ -589,24 +699,32 @@ export default class Postgres implements DIDsDb {
         const params: unknown[] = [];
         let index = 1;
 
+        if (didPrefix) {
+            clauses.push(`dc.prefix = $${index++}`);
+            params.push(didPrefix);
+        }
+
         if (registry) {
-            clauses.push(`registry = $${index++}`);
+            clauses.push(`e.registry = $${index++}`);
             params.push(registry);
         }
 
         if (updatedAfter) {
-            clauses.push(`time > $${index++}`);
+            clauses.push(`e.time > $${index++}`);
             params.push(updatedAfter);
         }
 
         if (updatedBefore) {
-            clauses.push(`time < $${index++}`);
+            clauses.push(`e.time < $${index++}`);
             params.push(updatedBefore);
         }
 
         const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
         const totalResult = await pool.query<CountRow>(
-            `SELECT COUNT(*)::int AS total FROM did_events ${where}`,
+            `SELECT COUNT(*)::int AS total
+             FROM did_events e
+             JOIN did_classifications_effective dc ON dc.did = e.did
+             ${where}`,
             params
         );
         const pageParams = [...params, Math.max(0, limit), Math.max(0, offset)];
@@ -618,10 +736,14 @@ export default class Postgres implements DIDsDb {
             time: string;
             event: GatekeeperEvent | string;
         }>(
-            `SELECT did, registry, time, event
-             FROM did_events
+            `SELECT dc.prefix || ':' || dc.suffix AS did,
+                    e.registry,
+                    e.time,
+                    e.event
+             FROM did_events e
+             JOIN did_classifications_effective dc ON dc.did = e.did
              ${where}
-             ORDER BY time DESC, did ASC, event_index ASC
+             ORDER BY e.time DESC, did ASC, e.event_index ASC
              LIMIT ${limitParam} OFFSET ${offsetParam}`,
             pageParams
         );
@@ -704,15 +826,23 @@ export default class Postgres implements DIDsDb {
                 await client.query(
                     `INSERT INTO network_metric_snapshots (
                         snapshot_date,
+                        did_count,
+                        did_counts_by_prefix,
                         agent_did_count,
+                        agent_did_counts_by_prefix,
                         credential_count,
+                        credential_did_counts_by_prefix,
                         schema_counts,
                         rebuilt_at
-                    ) VALUES ($1, $2, $3, $4, $5)`,
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
                     [
                         snapshot.date,
+                        snapshot.didCount,
+                        JSON.stringify(snapshot.didCountsByPrefix),
                         snapshot.agentDidCount,
+                        JSON.stringify(snapshot.agentDidCountsByPrefix),
                         snapshot.credentialCount,
+                        JSON.stringify(snapshot.credentialDidCountsByPrefix),
                         JSON.stringify(snapshot.schemas),
                         snapshot.rebuiltAt,
                     ]
@@ -732,15 +862,23 @@ export default class Postgres implements DIDsDb {
     async getNetworkMetricSnapshot(date: string): Promise<NetworkMetricSnapshot | null> {
         const result = await this.getPool().query<{
             date: string;
+            didCount: number;
+            didCountsByPrefix: Record<string, number> | string;
             agentDidCount: number;
+            agentDidCountsByPrefix: Record<string, number> | string;
             credentialCount: number;
+            credentialDidCountsByPrefix: Record<string, number> | string;
             schemaCounts: PublishedCredentialSchemaCount[] | string;
             rebuiltAt: string;
         }>(
             `SELECT
                 snapshot_date AS date,
+                did_count AS "didCount",
+                did_counts_by_prefix AS "didCountsByPrefix",
                 agent_did_count AS "agentDidCount",
+                agent_did_counts_by_prefix AS "agentDidCountsByPrefix",
                 credential_count AS "credentialCount",
+                credential_did_counts_by_prefix AS "credentialDidCountsByPrefix",
                 schema_counts AS "schemaCounts",
                 rebuilt_at AS "rebuiltAt"
              FROM network_metric_snapshots
@@ -755,8 +893,18 @@ export default class Postgres implements DIDsDb {
 
         return {
             date: row.date,
+            didCount: row.didCount,
+            didCountsByPrefix: typeof row.didCountsByPrefix === 'string'
+                ? JSON.parse(row.didCountsByPrefix) as Record<string, number>
+                : row.didCountsByPrefix,
             agentDidCount: row.agentDidCount,
+            agentDidCountsByPrefix: typeof row.agentDidCountsByPrefix === 'string'
+                ? JSON.parse(row.agentDidCountsByPrefix) as Record<string, number>
+                : row.agentDidCountsByPrefix,
             credentialCount: row.credentialCount,
+            credentialDidCountsByPrefix: typeof row.credentialDidCountsByPrefix === 'string'
+                ? JSON.parse(row.credentialDidCountsByPrefix) as Record<string, number>
+                : row.credentialDidCountsByPrefix,
             schemas: typeof row.schemaCounts === 'string'
                 ? JSON.parse(row.schemaCounts) as PublishedCredentialSchemaCount[]
                 : row.schemaCounts,
@@ -764,19 +912,21 @@ export default class Postgres implements DIDsDb {
         };
     }
 
-    async searchDocs(q: string): Promise<string[]> {
+    async searchDocs(q: string, didPrefix?: string): Promise<string[]> {
         const pool = this.getPool();
         const result = await pool.query<DidRow>(
-            `SELECT did
-             FROM did_docs
-             WHERE doc::text LIKE '%' || $1 || '%'`,
-            [q]
+            `SELECT dc.prefix || ':' || dc.suffix AS did
+             FROM did_docs d
+             JOIN did_classifications_effective dc ON dc.did = d.did
+             WHERE d.doc::text LIKE '%' || $1 || '%'
+             ${didPrefix ? 'AND dc.prefix = $2' : ''}`,
+            didPrefix ? [q, didPrefix] : [q]
         );
 
         return result.rows.map(row => row.did);
     }
 
-    async queryDocs(where: Record<string, unknown>): Promise<string[]> {
+    async queryDocs(where: Record<string, unknown>, didPrefix?: string): Promise<string[]> {
         const pool = this.getPool();
 
         const entry = Object.entries(where)[0] as [string, any] | undefined;
@@ -887,15 +1037,17 @@ export default class Postgres implements DIDsDb {
             );
         }
 
-        return result.rows.map(row => row.did);
+        return this.effectiveDIDs(result.rows.map(row => row.did), didPrefix);
     }
 
     async wipeDb(): Promise<void> {
         const pool = this.getPool();
         await pool.query('DELETE FROM did_docs');
         await pool.query('DELETE FROM did_events');
+        await pool.query('DELETE FROM did_classifications');
         await pool.query('DELETE FROM blocks');
         await pool.query('DELETE FROM published_credentials');
+        await pool.query('DELETE FROM did_prefix_references');
         await pool.query('DELETE FROM challenge_receipts');
         await pool.query('DELETE FROM network_metric_snapshots');
         await pool.query('DELETE FROM sync_state');
@@ -907,6 +1059,21 @@ export default class Postgres implements DIDsDb {
         }
 
         return this.pool;
+    }
+
+    private async effectiveDIDs(dids: string[], didPrefix?: string): Promise<string[]> {
+        const result = await this.getPool().query<EffectiveDidRow>(
+            `SELECT did AS "storedDid", prefix || ':' || suffix AS did
+             FROM did_classifications_effective
+             WHERE did = ANY($1::text[])
+             ${didPrefix ? 'AND prefix = $2' : ''}`,
+            didPrefix ? [dids, didPrefix] : [dids]
+        );
+        const effectiveByStored = new Map(result.rows.map(row => [row.storedDid, row.did]));
+        return dids.flatMap(did => {
+            const effectiveDid = effectiveByStored.get(did);
+            return effectiveDid ? [effectiveDid] : [];
+        });
     }
 
     protected createPool(): Pool {
@@ -927,28 +1094,44 @@ export default class Postgres implements DIDsDb {
             await client.query(
                 `INSERT INTO published_credentials (
                     holder_did,
-                    credential_did,
-                    schema_did,
+                    credential_suffix,
+                    schema_suffix,
                     issuer_did,
                     subject_did,
                     revealed,
                     updated_at
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-                ON CONFLICT (holder_did, credential_did) DO UPDATE SET
-                    schema_did = EXCLUDED.schema_did,
+                ON CONFLICT (holder_did, credential_suffix) DO UPDATE SET
+                    schema_suffix = EXCLUDED.schema_suffix,
                     issuer_did = EXCLUDED.issuer_did,
                     subject_did = EXCLUDED.subject_did,
                     revealed = EXCLUDED.revealed,
                     updated_at = EXCLUDED.updated_at`,
                 [
                     record.holderDid,
-                    record.credentialDid,
-                    record.schemaDid,
+                    getDIDSuffix(record.credentialDid),
+                    getDIDSuffix(record.schemaDid),
                     record.issuerDid,
                     record.subjectDid,
                     record.revealed,
                     record.updatedAt,
                 ]
+            );
+        }
+    }
+
+    private async replaceDIDPrefixReferencesWithClient(
+        client: PoolClient,
+        sourceDid: string,
+        references: string[],
+        publishedCredentials: PublishedCredentialRecord[]
+    ): Promise<void> {
+        await client.query('DELETE FROM did_prefix_references WHERE source_did = $1', [sourceDid]);
+
+        for (const did of deduplicateDIDPrefixReferences(references, publishedCredentials)) {
+            await client.query(
+                'INSERT INTO did_prefix_references (source_did, suffix, prefix) VALUES ($1, $2, $3)',
+                [sourceDid, getDIDSuffix(did), getDIDPrefix(did)]
             );
         }
     }
@@ -968,22 +1151,31 @@ export default class Postgres implements DIDsDb {
                 `INSERT INTO challenge_receipts (
                     receipt_did,
                     attester_did,
+                    attester_suffix,
                     schema_did,
+                    schema_suffix,
                     requester_did,
+                    requester_suffix,
                     response_commitment,
                     updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6)
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 ON CONFLICT (receipt_did) DO UPDATE SET
                     attester_did = EXCLUDED.attester_did,
+                    attester_suffix = EXCLUDED.attester_suffix,
                     schema_did = EXCLUDED.schema_did,
+                    schema_suffix = EXCLUDED.schema_suffix,
                     requester_did = EXCLUDED.requester_did,
+                    requester_suffix = EXCLUDED.requester_suffix,
                     response_commitment = EXCLUDED.response_commitment,
                     updated_at = EXCLUDED.updated_at`,
                 [
                     record.receiptDid,
                     record.attesterDid,
+                    getDIDSuffix(record.attesterDid),
                     record.schemaDid,
+                    getDIDSuffix(record.schemaDid),
                     record.requesterDid,
+                    getDIDSuffix(record.requesterDid),
                     record.responseCommitment,
                     record.updatedAt,
                 ]
@@ -1000,38 +1192,46 @@ export default class Postgres implements DIDsDb {
         const receiptDid = 'receiptDid' in options ? options.receiptDid : undefined;
         const responseCommitment = 'responseCommitment' in options ? options.responseCommitment : undefined;
 
+        if (options.didPrefix) {
+            clauses.push(`dc.prefix = $${index++}`);
+            params.push(options.didPrefix);
+        }
+
         if (receiptDid) {
-            clauses.push(`receipt_did = $${index++}`);
-            params.push(receiptDid);
+            clauses.push(`dc.suffix = $${index++}`);
+            params.push(getDIDSuffix(receiptDid));
         }
 
         if (options.attesterDid) {
-            clauses.push(`attester_did = $${index++}`);
-            params.push(options.attesterDid);
+            clauses.push(`cr.attester_suffix = $${index}`);
+            params.push(getDIDSuffix(options.attesterDid));
+            index++;
         }
 
         if (options.schemaDid) {
-            clauses.push(`schema_did = $${index++}`);
-            params.push(options.schemaDid);
+            clauses.push(`cr.schema_suffix = $${index}`);
+            params.push(getDIDSuffix(options.schemaDid));
+            index++;
         }
 
         if (options.requesterDid) {
-            clauses.push(`requester_did = $${index++}`);
-            params.push(options.requesterDid);
+            clauses.push(`cr.requester_suffix = $${index}`);
+            params.push(getDIDSuffix(options.requesterDid));
+            index++;
         }
 
         if (responseCommitment) {
-            clauses.push(`response_commitment = $${index++}`);
+            clauses.push(`cr.response_commitment = $${index++}`);
             params.push(responseCommitment);
         }
 
         if (options.updatedAfter) {
-            clauses.push(`updated_at >= $${index++}`);
+            clauses.push(`cr.updated_at >= $${index++}`);
             params.push(options.updatedAfter);
         }
 
         if (options.updatedBefore) {
-            clauses.push(`updated_at <= $${index++}`);
+            clauses.push(`cr.updated_at <= $${index++}`);
             params.push(options.updatedBefore);
         }
 

@@ -13,7 +13,6 @@ import {
     TableContainer,
     TableHead,
     TableRow,
-    TextField,
     Typography,
 } from "@mui/material";
 import { Link as RouterLink, useSearchParams } from "react-router-dom";
@@ -23,12 +22,16 @@ import {
 } from "../config.js";
 import {
     fetchDIDDocument,
-    fetchNetworkMetricSnapshot,
     fetchPublishedCredentials,
+    fetchPublishedSchemaMetrics,
     type PublishedCredentialRow,
     type PublishedSchemaMetric,
 } from "../api/searchClient.js";
 import { useSnackbar } from "../contexts/SnackbarProvider.js";
+import {
+    findCredentialManifestEntry,
+    hasSameDIDSuffix,
+} from "../shared/credential-manifest.js";
 import type { MdipDocument } from "@mdip/gatekeeper/types";
 
 type CredentialDetailDocument = MdipDocument | Record<string, unknown>;
@@ -148,7 +151,10 @@ function getManifestEntryFromDoc(
         return null;
     }
 
-    const entry = (manifest as Record<string, unknown>)[credentialDid];
+    const entry = findCredentialManifestEntry(
+        manifest as Record<string, unknown>,
+        credentialDid
+    );
 
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
         return null;
@@ -231,10 +237,7 @@ function Credentials() {
     const [detailDoc, setDetailDoc] = useState<CredentialDetailDocument | null>(null);
     const [isDetailLoading, setIsDetailLoading] = useState<boolean>(false);
     const [detailError, setDetailError] = useState<string | null>(null);
-    const [schemaMetricsMessage, setSchemaMetricsMessage] = useState("Loading credential metrics...");
 
-    const currentDate = new Date().toISOString().slice(0, 10);
-    const selectedDate = searchParams.get("date") || currentDate;
     const schemaDid = searchParams.get("schemaDid") ?? "";
     const selectedDetailDid = searchParams.get("detailDid") ?? "";
     const schemaPrefix = searchParams.get("schemaPrefix") ?? "";
@@ -262,7 +265,7 @@ function Credentials() {
     );
 
     const selectedSchemaCount = useMemo(
-        () => schemaCounts.find(row => row.schemaDid === schemaDid)?.count ?? 0,
+        () => schemaCounts.find(row => hasSameDIDSuffix(row.schemaDid, schemaDid))?.count ?? 0,
         [schemaCounts, schemaDid]
     );
 
@@ -304,16 +307,6 @@ function Credentials() {
             detailDid: null,
             page: "0",
         });
-    }
-
-    function handleDateChange(value: string) {
-        updateParams({
-            date: value || null,
-            schemaDid: null,
-            detailDid: null,
-            page: "0",
-        });
-        setSchemaPage(0);
     }
 
     function handleBackToSchemas() {
@@ -359,20 +352,15 @@ function Credentials() {
         let ignore = false;
 
         async function fetchSchemaCounts() {
-            setSchemaCounts([]);
-            setSchemaMetricsMessage("Loading credential metrics...");
-
             try {
-                const snapshot = await fetchNetworkMetricSnapshot(selectedDate);
+                const schemas = await fetchPublishedSchemaMetrics();
 
                 if (!ignore) {
-                    setSchemaCounts(snapshot?.schemas ?? []);
-                    setSchemaMetricsMessage(snapshot ? "" : "No network snapshot exists for this date.");
+                    setSchemaCounts(schemas);
                 }
             }
             catch (error: any) {
                 if (!ignore) {
-                    setSchemaMetricsMessage("Unable to load credential metrics.");
                     setError(error);
                 }
             }
@@ -383,7 +371,7 @@ function Credentials() {
         return () => {
             ignore = true;
         };
-    }, [selectedDate, setError]);
+    }, [setError]);
 
     useEffect(() => {
         let ignore = false;
@@ -618,14 +606,7 @@ function Credentials() {
                         <SummaryCard label="Schemas In Use" value={filteredSchemaCounts.length} />
                     </Box>
 
-                    <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2, gap: 2, flexWrap: "wrap" }}>
-                        <TextField
-                            type="date"
-                            size="small"
-                            value={selectedDate}
-                            onChange={event => handleDateChange(event.target.value)}
-                            slotProps={{ htmlInput: { max: currentDate } }}
-                        />
+                    <Box sx={{ display: "flex", alignItems: "center", justifyContent: "flex-end", mb: 2, gap: 2, flexWrap: "wrap" }}>
                         <Box sx={{ display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap" }}>
                             {hasMultipleSchemaPrefixes && (
                                 <FormControl size="small" sx={{ minWidth: 140 }}>
@@ -681,10 +662,8 @@ function Credentials() {
                         </Box>
                     </Box>
 
-                    {schemaMetricsMessage ? (
-                        <Typography>{schemaMetricsMessage}</Typography>
-                    ) : filteredSchemaCounts.length === 0 ? (
-                        <Typography>No credential schemas were in use on this date.</Typography>
+                    {filteredSchemaCounts.length === 0 ? (
+                        <Typography>No published credentials found.</Typography>
                     ) : (
                         <TableContainer sx={{ border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
                             <Table size="small">
@@ -738,7 +717,7 @@ function Credentials() {
                     </Box>
 
                     <Box sx={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 2, mb: 2, flexWrap: "wrap" }}>
-                        <SummaryCard label="Credentials Through Date" value={selectedSchemaCount} minWidth={320} />
+                        <SummaryCard label="Published Credentials" value={selectedSchemaCount} minWidth={320} />
                         <Box sx={{ display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap", ml: "auto" }}>
                             <FormControl size="small" sx={{ minWidth: 100 }}>
                                 <Select
@@ -775,12 +754,6 @@ function Credentials() {
                             </Box>
                         </Box>
                     </Box>
-
-                    {selectedDate !== currentDate && (
-                        <Typography color="text.secondary" sx={{ mb: 2 }}>
-                            The count is cumulative through {selectedDate} (UTC). The records below show the current published state.
-                        </Typography>
-                    )}
 
                     {credentials.length === 0 ? (
                         <Typography>No published credentials found for this schema.</Typography>

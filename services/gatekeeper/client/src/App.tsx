@@ -21,6 +21,7 @@ globalThis.Buffer = Buffer;
 
 const gatekeeper = new GatekeeperClient();
 const cipher = new CipherWeb();
+const DID_PREFIX = 'did:test';
 
 type ModalAction = 'set-passphrase' | 'decrypt' | null;
 type UploadAction = 'upload-plain-v0' | 'upload-enc-v1' | null;
@@ -83,7 +84,7 @@ function App() {
 
     const buildKeymaster = async (wallet: WalletBase, passphrase: string) => {
         const search = await getSearchClient();
-        const instance = new Keymaster({gatekeeper, wallet, cipher, search, passphrase});
+        const instance = new Keymaster({gatekeeper, wallet, cipher, search, passphrase, didPrefix: DID_PREFIX});
 
         try {
             // check pass & convert to v1 if needed
@@ -120,7 +121,7 @@ function App() {
                 await walletMemory.saveWallet(pendingWallet, true);
 
                 try {
-                    const km = new Keymaster({ gatekeeper, wallet: walletMemory, cipher, search, passphrase });
+                    const km = new Keymaster({ gatekeeper, wallet: walletMemory, cipher, search, passphrase, didPrefix: DID_PREFIX });
                     // check pass
                     await km.loadWallet();
                     await walletWeb.saveWallet(pendingWallet, true);
@@ -166,7 +167,7 @@ function App() {
         try {
             const walletWeb = new WalletWeb();
             const search = await getSearchClient();
-            const km = new Keymaster({ gatekeeper, wallet: walletWeb, cipher, search, passphrase: newPassphrase });
+            const km = new Keymaster({ gatekeeper, wallet: walletWeb, cipher, search, passphrase: newPassphrase, didPrefix: DID_PREFIX });
             await km.newWallet(undefined, true);
             setShowResetSetup(false);
             await rebuildKeymaster(newPassphrase);

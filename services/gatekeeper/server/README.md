@@ -24,6 +24,12 @@ Operations come from Keymaster clients such as end-user wallets and network medi
 | `KC_GATEKEEPER_RATE_LIMIT_WHITELIST` | (empty) | Comma-separated IP/CIDR list to bypass limits |
 | `KC_GATEKEEPER_RATE_LIMIT_SKIP_PATHS` | /api/v1/ready | Comma-separated API paths excluded from limits |
 | `KC_MONGODB_URL` | mongodb://localhost:27017/?replicaSet=rs0 | MongoDB connection string when `KC_GATEKEEPER_DB=mongodb` |
+| `KC_POSTGRES_POOL_MAX` | 10 | Maximum number of Gatekeeper PostgreSQL pool connections |
+| `KC_POSTGRES_CONNECTION_TIMEOUT_MS` | 3000 | Maximum time to establish or obtain a PostgreSQL connection |
+| `KC_POSTGRES_KEEP_ALIVE` | true | Enable TCP keep-alive for PostgreSQL connections |
+| `KC_POSTGRES_KEEP_ALIVE_INITIAL_DELAY_MS` | 10000 | Delay before the first PostgreSQL TCP keep-alive probe |
+| `KC_POSTGRES_IDLE_TIMEOUT_MS` | 30000 | Close idle PostgreSQL pool connections after this delay; 0 disables it |
+| `KC_POSTGRES_MAX_LIFETIME_SECONDS` | 300 | Re-create PostgreSQL connections after this lifetime; 0 disables it |
 | `KC_LOG_LEVEL` | info | Log level: `debug`, `info`, `warn`, `error` |
 
 ## MongoDB deployment requirement

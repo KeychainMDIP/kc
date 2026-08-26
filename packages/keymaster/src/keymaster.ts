@@ -107,6 +107,7 @@ export default class Keymaster implements KeymasterInterface {
     private cipher: Cipher;
     private searchEngine: SearchEngine | undefined;
     private readonly defaultRegistry: string;
+    private readonly didPrefix: string | undefined;
     private readonly ephemeralRegistry: string;
     private readonly maxNameLength: number;
     private readonly maxDataLength: number;
@@ -138,6 +139,7 @@ export default class Keymaster implements KeymasterInterface {
         this.searchEngine = options.search;
 
         this.defaultRegistry = options.defaultRegistry || 'hyperswarm';
+        this.didPrefix = options.didPrefix;
         this.ephemeralRegistry = 'hyperswarm';
         this.maxNameLength = options.maxNameLength || 32;
         this.maxDataLength = 8 * 1024; // 8 KB max data to store in a JSON object
@@ -501,6 +503,7 @@ export default class Keymaster implements KeymasterInterface {
                 version: 1,
                 type: "asset",
                 registry: registry,
+                ...(this.didPrefix ? { prefix: this.didPrefix } : {}),
             },
             controller: seedBank.didDocument?.id,
             data: { backup: backup },
@@ -737,7 +740,8 @@ export default class Keymaster implements KeymasterInterface {
                 version: 1,
                 type: "asset",
                 registry,
-                validUntil
+                validUntil,
+                ...(this.didPrefix ? { prefix: this.didPrefix } : {}),
             },
             controller: id.did,
             data,
@@ -1423,7 +1427,8 @@ export default class Keymaster implements KeymasterInterface {
             mdip: {
                 version: 1,
                 type: 'agent',
-                registry
+                registry,
+                ...(this.didPrefix ? { prefix: this.didPrefix } : {}),
             },
             publicJwk: keypair.publicJwk,
         };

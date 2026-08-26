@@ -1288,6 +1288,28 @@ describe('Gatekeeper DB index snapshot export', () => {
         ]);
     });
 
+    it('canonicalizes prefix aliases in incremental DID histories', async () => {
+        const canonicalDid = 'did:test:z1';
+        const aliasDid = 'did:mdip:z1';
+        const create = createEvent(canonicalDid, '2026-01-01T00:00:01.000Z');
+        const update = createEvent(aliasDid, '2026-01-01T00:00:02.000Z', 'update');
+
+        await db.addEvent(canonicalDid, create);
+        await db.addEvent(aliasDid, update);
+
+        const changes = await db.exportIndexChanges({ includeOperations: true });
+
+        expect(changes.cursor).toBe('2');
+        expect(changes.dids).toStrictEqual([{
+            did: canonicalDid,
+            events: [create, update],
+        }]);
+        expect(changes.operations?.map(record => record.did)).toStrictEqual([
+            canonicalDid,
+            aliasDid,
+        ]);
+    });
+
     it('pages incremental changes by cursor and limit', async () => {
         const didA = 'did:test:z1';
         const didB = 'did:test:z2';

@@ -14,6 +14,7 @@ This service is also useful when clients share a wallet, such as the `kc` CLI an
 | `KC_ENCRYPTED_PASSPHRASE` | (no default) | If specified, the wallet will be encrypted and decrypted with this passphrase |
 | `KC_WALLET_CACHE` | false | Use wallet cache to increase performance (but understand security implications) |
 | `KC_DEFAULT_REGISTRY` | hyperswarm | Default registry to use when creating DIDs |
+| `KC_KEYMASTER_DID_PREFIX` | (empty) | Optional DID prefix embedded in new signed create operations |
 | `KC_KEYMASTER_TRUST_PROXY` | false | If true, trust upstream proxy headers when determining client IP (`req.ip`) |
 | `KC_KEYMASTER_RATE_LIMIT_ENABLED` | false | Enable API rate limiting |
 | `KC_KEYMASTER_RATE_LIMIT_WINDOW_VALUE` | 1 | Time window size for rate limiting |

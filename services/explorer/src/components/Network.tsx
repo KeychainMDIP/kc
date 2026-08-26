@@ -15,6 +15,7 @@ import {
     fetchNetworkMetricSnapshot,
     type NetworkMetricSnapshot,
 } from "../api/searchClient.js";
+import { readinessPollIntervalMs } from "../config.js";
 import { useSnackbar } from "../contexts/SnackbarProvider.js";
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -29,30 +30,48 @@ function Network() {
 
     useEffect(() => {
         let ignore = false;
+        let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
         setSnapshot(null);
         setMessage("Loading network snapshot...");
 
-        fetchNetworkMetricSnapshot(selectedDate)
-            .then(result => {
-                if (ignore) {
-                    return;
-                }
+        function loadSnapshot() {
+            fetchNetworkMetricSnapshot(selectedDate)
+                .then(result => {
+                    if (ignore) {
+                        return;
+                    }
 
-                setSnapshot(result);
-                if (!result) {
-                    setMessage("No network snapshot exists for this date.");
-                }
-            })
-            .catch(error => {
-                if (!ignore) {
+                    if (!result) {
+                        setMessage("No network snapshot exists for this date.");
+                        return;
+                    }
+
+                    setSnapshot(result);
+                })
+                .catch(error => {
+                    if (ignore) {
+                        return;
+                    }
+
+                    if (error?.response?.status === 503) {
+                        setMessage("Network metrics are rebuilding...");
+                        retryTimer = setTimeout(loadSnapshot, readinessPollIntervalMs);
+                        return;
+                    }
+
                     setMessage("Unable to load the network snapshot.");
                     setError(error);
-                }
-            });
+                });
+        }
+
+        loadSnapshot();
 
         return () => {
             ignore = true;
+            if (retryTimer) {
+                clearTimeout(retryTimer);
+            }
         };
     }, [selectedDate, setError]);
 
@@ -88,15 +107,23 @@ function Network() {
             ) : (
                 <>
                     <Typography color="text.secondary" sx={{ mb: 2 }}>
-                        Cumulative through {snapshot.date} (UTC)
+                        Cumulative through {selectedDate} (UTC)
                     </Typography>
 
                     <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", mb: 3 }}>
                         {[
-                            ["Agent DIDs", snapshot.agentDidCount],
-                            ["Credentials", snapshot.credentialCount],
-                            ["Schemas in use", snapshot.schemas.length],
-                        ].map(([label, value]) => (
+                            {
+                                label: "Agent DIDs",
+                                value: snapshot.agentDidCount,
+                                prefixes: snapshot.agentDidCountsByPrefix,
+                            },
+                            {
+                                label: "Credentials",
+                                value: snapshot.credentialCount,
+                                prefixes: snapshot.credentialDidCountsByPrefix,
+                            },
+                            { label: "Schemas in use", value: snapshot.schemas.length },
+                        ].map(({ label, value, prefixes }) => (
                             <Box
                                 key={label}
                                 sx={{
@@ -110,6 +137,19 @@ function Network() {
                             >
                                 <Typography variant="overline">{label}</Typography>
                                 <Typography variant="h4">{Number(value).toLocaleString()}</Typography>
+                                {prefixes && Object.entries(prefixes)
+                                    .sort(([a], [b]) => a.localeCompare(b))
+                                    .map(([prefix, count]) => (
+                                        <Box
+                                            key={prefix}
+                                            sx={{ display: "flex", justifyContent: "space-between", gap: 2, mt: 0.5 }}
+                                        >
+                                            <Typography color="text.secondary" sx={{ fontFamily: "Courier, monospace" }}>
+                                                {prefix}
+                                            </Typography>
+                                            <Typography>{count.toLocaleString()}</Typography>
+                                        </Box>
+                                    ))}
                             </Box>
                         ))}
                     </Box>

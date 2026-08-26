@@ -16,6 +16,7 @@ import {
     ProjectionBlockLookup,
 } from "./projections.js";
 import { buildNetworkMetricSnapshots } from './network-metrics.js';
+import { canonicalDID, getDIDSuffix } from './did-aliases.js';
 
 export interface GatekeeperIndexClient {
     isReady(): Promise<boolean>;
@@ -26,6 +27,7 @@ export interface DidIndexerOptions {
     intervalMs: number;
     pageLimit?: number;
     metricsRefreshIntervalMs?: number;
+    didPrefix?: string;
 }
 
 export const INDEX_SYNC_STATE_KEYS = {
@@ -42,6 +44,7 @@ export const INDEX_SYNC_STATE_KEYS = {
     lastBlocksStored: 'index.lastBlocksStored',
     metricsLastRebuiltAt: 'metrics.lastRebuiltAt',
     metricsLastError: 'metrics.lastError',
+    metricsDidPrefix: 'metrics.didPrefix',
 } as const;
 
 interface SyncRunStats {
@@ -53,14 +56,18 @@ interface SyncRunStats {
     removedDids: number;
 }
 
+const INITIAL_METRICS_QUIET_RUNS = 2;
+
 export default class DidIndexer {
     private gatekeeper: GatekeeperIndexClient;
     private db: DIDsDb;
     private readonly intervalMs: number;
     private readonly pageLimit: number;
     private readonly metricsRefreshIntervalMs: number | null;
+    private readonly didPrefix?: string;
     private timer: NodeJS.Timeout | null;
     private refreshInProgress: boolean;
+    private initialMetricsQuietRuns: number;
     private log = childLogger({ service: 'search-server', module: 'DidIndexer' });
 
     constructor(
@@ -73,8 +80,10 @@ export default class DidIndexer {
         this.intervalMs = options.intervalMs;
         this.pageLimit = options.pageLimit ?? 500;
         this.metricsRefreshIntervalMs = options.metricsRefreshIntervalMs ?? null;
+        this.didPrefix = options.didPrefix;
         this.timer = null;
         this.refreshInProgress = false;
+        this.initialMetricsQuietRuns = 0;
     }
 
     async startIndexing(): Promise<void> {
@@ -112,7 +121,7 @@ export default class DidIndexer {
 
             await this.saveRunStats(stats);
             await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.lastSyncError, null);
-            await this.refreshNetworkMetricsIfDue();
+            await this.refreshNetworkMetricsIfDue(stats);
 
             this.log.info(
                 `Indexed ${stats.changedDids} changed DIDs from ${stats.pages} ${stats.mode} page(s). ` +
@@ -242,7 +251,10 @@ export default class DidIndexer {
         const dids: DIDProjectionUpdate[] = [];
 
         for (const record of response.dids) {
-            dids.push(await buildDIDProjectionUpdate(this.db, record.did, record.events, {
+            const did = record.removed
+                ? await this.db.findDIDBySuffix(getDIDSuffix(record.did)) ?? record.did
+                : canonicalDID(record.did, record.events);
+            dids.push(await buildDIDProjectionUpdate(this.db, did, record.events, {
                 removed: record.removed,
                 getBlock,
             }));
@@ -313,7 +325,7 @@ export default class DidIndexer {
         await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.lastBlocksStored, stats.storedBlocks.toString());
     }
 
-    private async refreshNetworkMetricsIfDue(): Promise<void> {
+    private async refreshNetworkMetricsIfDue(syncRun?: SyncRunStats): Promise<void> {
         if (this.metricsRefreshIntervalMs === null) {
             return;
         }
@@ -325,19 +337,43 @@ export default class DidIndexer {
 
             const now = new Date();
             const lastRebuiltAt = await this.db.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsLastRebuiltAt);
+            if (!lastRebuiltAt && syncRun) {
+                const isQuietChangesRun = syncRun.mode === 'changes' && syncRun.changedDids === 0;
+                this.initialMetricsQuietRuns = isQuietChangesRun
+                    ? this.initialMetricsQuietRuns + 1
+                    : 0;
+                if (this.initialMetricsQuietRuns < INITIAL_METRICS_QUIET_RUNS) {
+                    return;
+                }
+            }
+            const metricsDidPrefix = await this.db.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsDidPrefix);
+            const currentMetricsDidPrefix = this.didPrefix ?? '';
             const lastRebuiltMs = lastRebuiltAt ? new Date(lastRebuiltAt).getTime() : Number.NaN;
             if (Number.isFinite(lastRebuiltMs) &&
+                metricsDidPrefix === currentMetricsDidPrefix &&
                 now.getTime() - lastRebuiltMs < this.metricsRefreshIntervalMs) {
                 return;
             }
 
+            this.log.info({
+                previousDidPrefix: metricsDidPrefix,
+                didPrefix: currentMetricsDidPrefix,
+            }, 'Rebuilding network metrics');
+
+            if (metricsDidPrefix !== currentMetricsDidPrefix) {
+                await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.metricsDidPrefix, null);
+            }
+
             const histories = this.db.iterateDIDEventHistories(this.pageLimit);
-            const result = await buildNetworkMetricSnapshots(histories, now);
+            const result = await buildNetworkMetricSnapshots(histories, now, this.didPrefix);
             await this.db.replaceNetworkMetricSnapshots(result.snapshots);
             await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.metricsLastRebuiltAt, now.toISOString());
+            await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.metricsDidPrefix, currentMetricsDidPrefix);
             await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.metricsLastError, null);
+            this.initialMetricsQuietRuns = 0;
             this.log.info({
                 snapshots: result.snapshots.length,
+                agentsWithConflictingPrefixes: result.agentsWithConflictingPrefixes,
                 invalidCreatedTimes: result.invalidCreatedTimes,
                 futureCreatedOperations: result.futureCreatedOperations,
                 credentialsDatedByOperationCreated: result.credentialsDatedByOperationCreated,

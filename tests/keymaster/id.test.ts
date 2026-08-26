@@ -175,6 +175,7 @@ describe('createIdOperation', () => {
         expect(operation.mdip!.version).toBe(1);
         expect(operation.mdip!.type).toBe('agent');
         expect(operation.mdip!.registry).toBe('hyperswarm'); // Default registry
+        expect(operation.mdip).not.toHaveProperty('prefix');
         expect(operation.publicJwk).toBeDefined();
         expect(operation.signature).toBeDefined();
         expect(operation.signature!.signed).toBeDefined();
@@ -298,6 +299,29 @@ describe('createIdOperation', () => {
         const operation = await customKeymaster.createIdOperation(name);
 
         expect(operation.mdip!.registry).toBe(defaultRegistry);
+    });
+
+    it('should include the configured DID prefix in the signed operation', async () => {
+        const didPrefix = 'did:mdip';
+        const customKeymaster = new Keymaster({
+            gatekeeper,
+            wallet,
+            cipher,
+            didPrefix,
+            passphrase: 'passphrase'
+        });
+
+        const operation = await customKeymaster.createIdOperation('Ivy');
+        const msgHash = cipher.hashJSON({
+            type: operation.type,
+            created: operation.created,
+            blockid: operation.blockid,
+            mdip: operation.mdip,
+            publicJwk: operation.publicJwk,
+        });
+
+        expect(operation.mdip!.prefix).toBe(didPrefix);
+        expect(operation.signature!.hash).toBe(msgHash);
     });
 });
 

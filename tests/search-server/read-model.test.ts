@@ -1,5 +1,9 @@
 import { resolveDIDFromEvents } from '@mdip/gatekeeper';
-import { findDIDReadTarget } from '../../services/search-server/src/did-aliases.ts';
+import {
+    canonicalDID,
+    classifyDIDPrefix,
+    findDIDReadTarget,
+} from '../../services/search-server/src/did-aliases.ts';
 import DIDsDbMemory from '../../services/search-server/src/db/json-memory.ts';
 import type { GatekeeperEvent } from '../../services/search-server/src/types.ts';
 import { seedDID } from './db-seed.ts';
@@ -56,6 +60,31 @@ function updateEvent(time: string, data: Record<string, unknown>): GatekeeperEve
 }
 
 describe('search-server DID read model', () => {
+    it('classifies signed prefixes before references and defaults ambiguous histories to test', () => {
+        const create = createEvent('2026-04-01T10:00:00.000Z', {});
+        const mdipUpdate = { ...updateEvent('2026-04-01T11:00:00.000Z', {}), operation: {
+            ...updateEvent('2026-04-01T11:00:00.000Z', {}).operation,
+            did: did.replace('did:test:', 'did:mdip:'),
+        } } as GatekeeperEvent;
+        const testUpdate = updateEvent('2026-04-01T12:00:00.000Z', {});
+
+        expect(classifyDIDPrefix([create])).toStrictEqual({ prefix: 'did:test', conflicting: false, authoritative: false });
+        expect(classifyDIDPrefix([create, mdipUpdate])).toStrictEqual({ prefix: 'did:mdip', conflicting: false, authoritative: true });
+        expect(classifyDIDPrefix([create, mdipUpdate, testUpdate])).toStrictEqual({
+            prefix: 'did:test',
+            conflicting: true,
+            authoritative: true,
+        });
+
+        create.operation.mdip!.prefix = 'did:mdip';
+        expect(classifyDIDPrefix([create, testUpdate])).toStrictEqual({
+            prefix: 'did:mdip',
+            conflicting: true,
+            authoritative: true,
+        });
+        expect(canonicalDID(did, [create])).toBe(did.replace('did:test:', 'did:mdip:'));
+    });
+
     it('resolves DID prefix aliases by their CID suffix', async () => {
         const db = new DIDsDbMemory();
         const event = createEvent('2026-04-01T10:00:00.000Z', { schema: true });
@@ -64,10 +93,51 @@ describe('search-server DID read model', () => {
 
         expect(await findDIDReadTarget(db, did)).toStrictEqual({
             storedDid: did,
+            resolutionDid: did,
             events: [event],
         });
+        const suffix = did.split(':').pop()!;
+        expect(await findDIDReadTarget(db, suffix, 'did:test')).toStrictEqual({
+            storedDid: suffix,
+            resolutionDid: suffix,
+            events: [],
+        });
         const target = await findDIDReadTarget(db, alias);
-        expect(target).toStrictEqual({ storedDid: did, events: [event] });
+        expect(target).toStrictEqual({ storedDid: did, resolutionDid: alias, events: [event] });
+        expect(await findDIDReadTarget(db, alias, 'did:test')).toStrictEqual({
+            storedDid: did,
+            resolutionDid: did,
+            events: [event],
+        });
+        expect(await findDIDReadTarget(db, did, 'did:mdip')).toStrictEqual({
+            storedDid: alias,
+            resolutionDid: alias,
+            events: [],
+            scopeRejected: true,
+        });
+
+        const holderDid = 'did:test:holder';
+        await seedDID(db, holderDid, { publishedCredentials: [{
+            holderDid,
+            credentialDid: 'did:mdip:credential',
+            schemaDid: alias,
+            issuerDid: holderDid,
+            subjectDid: holderDid,
+            revealed: false,
+            updatedAt: '2026-04-01T12:00:00.000Z',
+        }] });
+        expect(await findDIDReadTarget(db, did, 'did:test')).toStrictEqual({
+            storedDid: did,
+            resolutionDid: did,
+            events: [],
+            scopeRejected: true,
+        });
+        expect(await findDIDReadTarget(db, did, 'did:mdip')).toStrictEqual({
+            storedDid: did,
+            resolutionDid: alias,
+            events: [event],
+        });
+
         const doc = await resolveDIDFromEvents({
             did: alias,
             events: target.events,
@@ -81,6 +151,7 @@ describe('search-server DID read model', () => {
         )).toMatchObject({ events: [] });
         expect(await findDIDReadTarget(db, 'did:mdip:not-a-cid')).toStrictEqual({
             storedDid: 'did:mdip:not-a-cid',
+            resolutionDid: 'did:mdip:not-a-cid',
             events: [],
         });
     });
