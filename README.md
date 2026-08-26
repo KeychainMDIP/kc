@@ -20,7 +20,7 @@ $ # Edit .env and set KC_ENCRYPTED_PASSPHRASE to a strong value.
 $ ./start-node gatekeeper keymaster hypr-mediator cli
 ```
 
-`start-node` is a repository-root Docker Compose wrapper. The command above starts a core node that exchanges operations over Hyperswarm and includes the CLI container, without starting the Bitcoin-family nodes. Running `./start-node` without service names starts every Compose service, including all blockchain nodes and mediators. See the [deployment guide](doc/02-server/deployment/index.mdx) for isolated and optional-service configurations.
+`start-node` is a repository-root Docker Compose wrapper. The command above starts a core node that exchanges operations over Hyperswarm and includes the CLI container, without starting the Bitcoin-family nodes. Running `./start-node` without service names starts every Compose service, including all blockchain nodes and mediators. See the [deployment guide](https://keychain.org/docs/server/deployment/) for isolated and optional-service configurations.
 
 REST API references: [Gatekeeper OpenAPI](doc/gatekeeper-api.json) and [Keymaster OpenAPI](doc/keymaster-api.json).
 
@@ -35,9 +35,9 @@ npm run build
 
 ## Overview
 
-[Gatekeeper](services/gatekeeper/server/README.md) validates DID operations and maintains the local DID event database. [Keymaster](services/keymaster/server/README.md) holds the server wallet and signs operations sent to Gatekeeper. Hyperswarm and Satoshi mediators distribute those operations over P2P and blockchain registries. Search Server builds a read model from Gatekeeper for Explorer and wallet search.
+[Gatekeeper](https://github.com/KeychainMDIP/kc/blob/main/services/gatekeeper/server/README.md) validates DID operations and maintains the local DID event database. [Keymaster](https://github.com/KeychainMDIP/kc/blob/main/services/keymaster/server/README.md) holds the server wallet and signs operations sent to Gatekeeper. Hyperswarm and Satoshi mediators distribute those operations over P2P and blockchain registries. Search Server builds a read model from Gatekeeper for Explorer and wallet search.
 
-The browser wallet hosts the Keymaster library and stores its wallet locally. The server wallet and `kc` CLI use Keymaster's HTTP client. The `admin` CLI and mediators use Gatekeeper's HTTP client. See the [deployment guide](doc/02-server/deployment/index.mdx) for the current service list and startup options.
+The browser wallet hosts the Keymaster library and stores its wallet locally. The server wallet and `kc` CLI use Keymaster's HTTP client. The `admin` CLI and mediators use Gatekeeper's HTTP client. See the [deployment guide](https://keychain.org/docs/server/deployment/) for the current service list and startup options.
 
 ## Node configuration
 
@@ -69,7 +69,7 @@ $ ./kc -h                                    # Displays kc CLI help
 $ ./kc list-ids                              # Confirms the configured node identity
 ```
 
-Bitcoin-family nodes and their wallet setup are optional. Start the corresponding node and mediator as described in the [deployment guide](doc/02-server/deployment/index.mdx) before using chain-specific scripts.
+Bitcoin-family nodes and their wallet setup are optional. Start the corresponding node and mediator as described in the [deployment guide](https://keychain.org/docs/server/deployment/) before using chain-specific scripts.
 
 ## Command line interface wallet
 
