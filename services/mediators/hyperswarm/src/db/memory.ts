@@ -211,6 +211,14 @@ export default class InMemoryOperationSyncStore implements OperationSyncStore {
             .length;
     }
 
+    async getLatestSignedTimestamp(): Promise<number | null> {
+        let latest: number | null = null;
+        for (const record of this.records.values()) {
+            latest = Math.max(latest ?? record.signedTs, record.signedTs);
+        }
+        return latest;
+    }
+
     private getSignedTs(record: SyncOperationWriteRecord): number {
         const signedTs = record.signedTs ?? record.ts;
 

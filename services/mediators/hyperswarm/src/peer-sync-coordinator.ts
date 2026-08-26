@@ -583,10 +583,14 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
 
     return {
         async buildCapabilities(): Promise<PeerCapabilities> {
-            const status = await options.getOrderedCatchupCoordinator().getLocalStatus();
+            const [status, latestSignedTimestamp] = await Promise.all([
+                options.getOrderedCatchupCoordinator().getLocalStatus(),
+                options.getSyncStore().getLatestSignedTimestamp(),
+            ]);
             return {
                 negentropy: true,
                 negentropyVersion: options.negentropyVersion,
+                ...(latestSignedTimestamp === null ? {} : { latestSignedTimestamp }),
                 ...buildOrderedCatchupCapabilities({
                     version: options.orderedCatchupVersion,
                     operationCount: status.operationCount,

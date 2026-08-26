@@ -71,7 +71,8 @@ type ScenarioName =
     | 'same-second exact cap'
     | 'same-second cap-plus-one'
     | 'local-only continuation cursor'
-    | 'peer-only older history';
+    | 'peer-only older history'
+    | 'future timestamp pages';
 
 interface ConvergenceScenario {
     operationsA: Operation[];
@@ -601,6 +602,18 @@ async function createConvergenceScenario(name: ScenarioName): Promise<Convergenc
             expectContinuation: true,
         };
     }
+    if (name === 'future timestamp pages') {
+        const operations = await createIndependentOperations(Array.from(
+            { length: 8 },
+            (_value, index) => Date.now() + (24 * 60 * 60 * 1_000) + (index * 1_000),
+        ));
+        return {
+            operationsA: operations.filter((_operation, index) => index % 2 === 0),
+            operationsB: operations.filter((_operation, index) => index % 2 === 1),
+            maxRecordsPerWindow: 2,
+            expectContinuation: true,
+        };
+    }
 
     const operations = await createIndependentOperations(Array.from({ length: 7 }, (_value, index) => baseTime + (index * 1_000)));
     return {
@@ -905,12 +918,16 @@ describe('hyperswarm mediator behavior', () => {
             'same-second cap-plus-one',
             'local-only continuation cursor',
             'peer-only older history',
+            'future timestamp pages',
         ])('self-heals %s stores and repeats with zero transfer', async scenarioName => {
             const scenario = await createConvergenceScenario(scenarioName);
-            const union = [...scenario.operationsA, ...scenario.operationsB];
-            const expectedIds = operationIds(union);
             const publicKeyA = Buffer.alloc(32, publicKeyByteA);
             const publicKeyB = Buffer.alloc(32, publicKeyByteB);
+            if (scenarioName === 'future timestamp pages' && publicKeyA.compare(publicKeyB) > 0) {
+                [scenario.operationsA, scenario.operationsB] = [scenario.operationsB, scenario.operationsA];
+            }
+            const union = [...scenario.operationsA, ...scenario.operationsB];
+            const expectedIds = operationIds(union);
             driver = await createMediatorDriver({
                 ...scenario,
                 publicKeyA,
@@ -934,6 +951,11 @@ describe('hyperswarm mediator behavior', () => {
             }
             if (scenarioName === 'interleaved capped pages') {
                 expect(opens.length).toBeGreaterThanOrEqual(3);
+            }
+            if (scenarioName === 'future timestamp pages') {
+                const expectedToTs = Math.max(...union.map(operation => operationCursor(operation).ts));
+                expect(opens.length).toBeGreaterThan(1);
+                expect(opens.every(open => open.body.window?.toTs === expectedToTs)).toBe(true);
             }
             if (scenarioName === 'same-second exact cap') {
                 expect(opens).toHaveLength(1);

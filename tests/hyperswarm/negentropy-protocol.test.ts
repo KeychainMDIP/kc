@@ -49,6 +49,7 @@ describe('negentropy protocol helpers', () => {
             orderedCatchupReady: false,
             operationCount: null,
             orderedOperationCount: null,
+            latestSignedTimestamp: null,
         });
         expect(chooseSyncMode(unknown, currentNegentropyVersion)).toBeNull();
 
@@ -104,6 +105,16 @@ describe('negentropy protocol helpers', () => {
             operationCount: null,
             orderedOperationCount: null,
         });
+    });
+
+    it('normalizes the latest signed timestamp', () => {
+        expect(normalizePeerCapabilities({ latestSignedTimestamp: 2_000 }).latestSignedTimestamp).toBe(2_000);
+
+        for (const latestSignedTimestamp of [-1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1, '2000']) {
+            expect(normalizePeerCapabilities({
+                latestSignedTimestamp: latestSignedTimestamp as number,
+            }).latestSignedTimestamp).toBeNull();
+        }
     });
 
     it('builds ordered catch-up readiness only when all operations are ordered', () => {

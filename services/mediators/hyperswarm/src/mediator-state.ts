@@ -60,6 +60,7 @@ export function createConnectionInfo(options: ConnectionInfoOptions): Connection
             orderedCatchupReady: false,
             operationCount: null,
             orderedOperationCount: null,
+            latestSignedTimestamp: null,
         },
         syncMode: 'unknown',
         syncStarted: false,

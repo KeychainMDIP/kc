@@ -45,9 +45,11 @@ const recC = { id: h('c'), syncOrder: 10, signedTs: 2000, ts: 2000, operation: o
 async function runStoreContractTests(store: OperationSyncStore): Promise<void> {
     await store.start();
     await store.reset();
+    expect(await store.getLatestSignedTimestamp()).toBeNull();
 
     const inserted1 = await store.upsertMany([recB, recA, recC]);
     expect(inserted1).toStrictEqual({ inserted: 3, updated: 0 });
+    expect(await store.getLatestSignedTimestamp()).toBe(2000);
 
     const inserted2 = await store.upsertMany([recA, recC]);
     expect(inserted2).toStrictEqual({ inserted: 0, updated: 0 });
@@ -186,10 +188,12 @@ async function runStoreContractTests(store: OperationSyncStore): Promise<void> {
     expect(await store.deleteBySyncOrder(Number.MAX_SAFE_INTEGER)).toBe(2);
     expect(await store.deleteBySyncOrder(Number.MAX_SAFE_INTEGER)).toBe(0);
     expect((await store.iterateSorted()).map(item => item.id)).toStrictEqual([recA.id]);
+    expect(await store.getLatestSignedTimestamp()).toBe(1000);
 
     await store.reset();
     expect(await store.count()).toBe(0);
     expect(await store.countOrdered()).toBe(0);
+    expect(await store.getLatestSignedTimestamp()).toBeNull();
 
     await store.stop();
 }
@@ -284,6 +288,7 @@ describe('SqliteOperationSyncStore', () => {
         await expect(store.has(recA.id)).rejects.toThrow('Call start() first');
         await expect(store.count()).rejects.toThrow('Call start() first');
         await expect(store.countOrdered()).rejects.toThrow('Call start() first');
+        await expect(store.getLatestSignedTimestamp()).rejects.toThrow('Call start() first');
     });
 
     it('throws from internal transaction helper when DB is not started', async () => {
@@ -422,6 +427,29 @@ describe('SqliteOperationSyncStore', () => {
 });
 
 describe('PostgresOperationSyncStore', () => {
+    it('reads the latest signed timestamp without loading operation payloads', async () => {
+        const store = new PostgresOperationSyncStore();
+        const calls: string[] = [];
+        const results = [
+            { rowCount: 1, rows: [{ signed_ts: '2000' }] },
+            { rowCount: 0, rows: [] },
+        ];
+        (store as any).pool = {
+            query: async (sql: string) => {
+                calls.push(sql);
+                return results.shift();
+            },
+        };
+
+        await expect(store.getLatestSignedTimestamp()).resolves.toBe(2000);
+        await expect(store.getLatestSignedTimestamp()).resolves.toBeNull();
+
+        const sql = calls[0].replace(/\s+/g, ' ').trim();
+        expect(sql).toContain('SELECT signed_ts FROM hyperswarm_sync_operations');
+        expect(sql).toContain('ORDER BY signed_ts DESC, id DESC LIMIT 1');
+        expect(sql).not.toContain('operation_json');
+    });
+
     it('reads only key columns for sorted key iteration', async () => {
         const store = new PostgresOperationSyncStore();
         const calls: Array<{ sql: string; params: unknown[] }> = [];

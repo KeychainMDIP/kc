@@ -372,6 +372,17 @@ export default class PostgresOperationSyncStore implements OperationSyncStore {
         return this.toNumber(result.rows[0].count);
     }
 
+    async getLatestSignedTimestamp(): Promise<number | null> {
+        const result = await this.getPool().query<Pick<SyncRow, 'signed_ts'>>(
+            `SELECT signed_ts
+             FROM hyperswarm_sync_operations
+             ORDER BY signed_ts DESC, id DESC
+             LIMIT 1`
+        );
+
+        return result.rowCount === 0 ? null : this.toNumber(result.rows[0].signed_ts);
+    }
+
     private mapRow(row: SyncRow): SyncOperationRecord {
         const operation = typeof row.operation_json === 'string'
             ? JSON.parse(row.operation_json) as Operation

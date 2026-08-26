@@ -363,6 +363,17 @@ export default class SqliteOperationSyncStore implements OperationSyncStore {
         return row?.count ?? 0;
     }
 
+    async getLatestSignedTimestamp(): Promise<number | null> {
+        if (!this.db) {
+            throw new Error(SQLITE_NOT_STARTED_ERROR);
+        }
+
+        const row = await this.db.get<Pick<SyncRow, 'signed_ts'>>(
+            'SELECT signed_ts FROM operations ORDER BY signed_ts DESC, id DESC LIMIT 1'
+        );
+        return row?.signed_ts ?? null;
+    }
+
     private mapRow(row: SyncRow): SyncOperationRecord {
         return {
             id: row.id,

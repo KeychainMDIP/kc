@@ -504,14 +504,23 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         return finished;
     }
 
-    async function buildInitialHistoryWindowForSession(): Promise<ReconciliationWindow> {
+    async function buildInitialHistoryWindowForSession(
+        peerLatestSignedTimestamp: number | null = null,
+    ): Promise<ReconciliationWindow> {
         if (!negentropyAdapter) {
             throw new Error('negentropy adapter unavailable');
         }
 
+        const localLatestSignedTimestamp = await options.syncStore.getLatestSignedTimestamp();
+        const toTs = Math.max(
+            currentSyncTimestampSeconds(),
+            localLatestSignedTimestamp ?? 0,
+            peerLatestSignedTimestamp ?? 0,
+        );
+
         return buildInitialHistoryWindow(
             MDIP_EPOCH_SECONDS,
-            currentSyncTimestampSeconds(),
+            toTs,
             options.maxRecordsPerWindow,
         );
     }
@@ -1647,7 +1656,8 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
 
         const session = createPeerSession(peerKey, settings.initiator);
         try {
-            const initialWindow = await buildInitialHistoryWindowForSession();
+            const peerLatestSignedTimestamp = conn.capabilities.latestSignedTimestamp;
+            const initialWindow = await buildInitialHistoryWindowForSession(peerLatestSignedTimestamp);
             if (peerSessions.get(peerKey) !== session) {
                 return false;
             }
@@ -1662,6 +1672,8 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                     sessionId: session.sessionId,
                     source: settings.source,
                     plannedWindows: session.windows.length,
+                    peerLatestSignedTimestamp,
+                    sessionToTs: initialWindow.toTs,
                 },
                 'peer sync mode selected',
             );

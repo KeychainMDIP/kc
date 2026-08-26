@@ -389,6 +389,13 @@ describe('hyperswarm mediator protocol characterization', () => {
                 KC_HYPR_ORDERED_CATCHUP_ENABLE: 'false',
             },
         });
+        const [operation] = await makeOperations(1);
+        const latestSignedTimestamp = Math.floor(Date.parse(operation.signature!.signed) / 1000);
+        await protocolNode.store.upsertMany([{
+            id: operation.signature!.hash,
+            ts: latestSignedTimestamp,
+            operation,
+        }]);
         const { peerKey, pair } = attachPeer(protocolNode);
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.sendPingToPeer(peerKey));
@@ -402,6 +409,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 orderedCatchup: true,
                 orderedCatchupVersion: 1,
                 orderedCatchupReady: false,
+                latestSignedTimestamp,
             },
         });
 
@@ -421,6 +429,53 @@ describe('hyperswarm mediator protocol characterization', () => {
             expect.arrayContaining(['neg_open', 'ping']),
         );
         expect(pair.transcript.every(entry => entry.framed)).toBe(true);
+    });
+
+    it.each([
+        ['the wall clock when both stores end earlier', null, null],
+        ['the local latest timestamp when it is in the future', 1_800_000_000, null],
+        ['the peer latest timestamp when it is in the future', null, 1_800_000_000],
+    ])('sets the initial window upper bound from %s', async (
+        _case,
+        localLatestSignedTimestamp,
+        peerLatestSignedTimestamp,
+    ) => {
+        const nowMs = 1_750_000_000_000;
+        const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(nowMs);
+        const protocolNode = await createNode({ keyByte: 0x11 });
+        if (localLatestSignedTimestamp !== null) {
+            const [operation] = await makeOperations(1);
+            operation.signature!.signed = new Date(localLatestSignedTimestamp * 1000).toISOString();
+            await protocolNode.store.upsertMany([{
+                id: operation.signature!.hash,
+                ts: localLatestSignedTimestamp,
+                operation,
+            }]);
+        }
+        const { peerKey, pair } = attachPeer(protocolNode, { peerKeyByte: 0x22 });
+        const capabilities = {
+            negentropy: true,
+            negentropyVersion: NEGENTROPY_VERSION,
+            ...(peerLatestSignedTimestamp === null ? {} : { latestSignedTimestamp: peerLatestSignedTimestamp }),
+        };
+
+        try {
+            await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, peerPing({
+                capabilities,
+            })));
+        }
+        finally {
+            nowSpy.mockRestore();
+        }
+
+        const open = decodeWrites(pair).find(message => message.type === 'neg_open');
+        expect((open?.window as { toTs?: number } | undefined)?.toTs).toBe(
+            Math.max(
+                Math.floor(nowMs / 1000),
+                localLatestSignedTimestamp ?? 0,
+                peerLatestSignedTimestamp ?? 0,
+            ),
+        );
     });
 
     it.each([

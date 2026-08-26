@@ -14,6 +14,7 @@ export interface PeerCapabilities {
     orderedCatchupReady?: boolean;
     operationCount?: number;
     orderedOperationCount?: number;
+    latestSignedTimestamp?: number;
 }
 
 export interface OrderedCatchupCapabilityOptions {
@@ -31,6 +32,7 @@ export interface NegotiatedPeerCapabilities {
     orderedCatchupReady: boolean;
     operationCount: number | null;
     orderedOperationCount: number | null;
+    latestSignedTimestamp: number | null;
 }
 
 export type ConnectSyncModeReason =
@@ -122,6 +124,7 @@ export function normalizePeerCapabilities(capabilities?: PeerCapabilities): Nego
             orderedCatchupReady: false,
             operationCount: null,
             orderedOperationCount: null,
+            latestSignedTimestamp: null,
         };
     }
 
@@ -134,6 +137,7 @@ export function normalizePeerCapabilities(capabilities?: PeerCapabilities): Nego
         orderedCatchupReady: capabilities.orderedCatchupReady === true,
         operationCount: normalizeNonNegativeInteger(capabilities.operationCount),
         orderedOperationCount: normalizeNonNegativeInteger(capabilities.orderedOperationCount),
+        latestSignedTimestamp: normalizeNonNegativeInteger(capabilities.latestSignedTimestamp),
     };
 }
 

@@ -14,6 +14,7 @@ function makePeer(overrides: Partial<NegotiatedPeerCapabilities> = {}): Negotiat
         orderedCatchupReady: true,
         operationCount: 100,
         orderedOperationCount: 100,
+        latestSignedTimestamp: null,
         ...overrides,
     };
 }

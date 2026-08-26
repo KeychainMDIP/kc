@@ -77,4 +77,5 @@ export interface OperationSyncStore {
     has(id: string): Promise<boolean>;
     count(): Promise<number>;
     countOrdered(): Promise<number>;
+    getLatestSignedTimestamp(): Promise<number | null>;
 }
