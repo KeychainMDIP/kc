@@ -3,7 +3,7 @@
 
 ## Abstract
 
-The MDIP (MultiDimensional Identity Protocol) DID method specification conforms to the requirements specified in the [DID specification](https://www.w3.org/TR/did-core/) currently published by the W3C Credentials Community Group. For more information about DIDs and DID method specifications, please see the [DID Primer](https://w3c-ccg.github.io/did-primer/).
+The MDIP (Multi-Dimensional Identity Protocol) DID method specification conforms to [W3C DID Core](https://www.w3.org/TR/did-core/). For more information about DIDs and DID method specifications, see the [DID Primer](https://w3c-ccg.github.io/did-primer/).
 
 ## Introduction
 
@@ -15,10 +15,10 @@ MDIP DIDs have the following format:
 
 ```
 mdip-did        = "did:mdip:" mdip-identifier
-                 [ ";" did-service ] [ "/" did-path ]
-                 [ "?" did-query ] [ "#" did-fragment ]
 mdip-identifier = CID encoded with base58btc
 ```
+
+Deployments can configure another DID prefix, such as `did:test` for a test network. The signed create operation can carry that prefix in `mdip.prefix`. Otherwise, the receiving Gatekeeper applies its configured fallback.
 
 ### Example: MDIP DID
 
@@ -26,39 +26,38 @@ mdip-identifier = CID encoded with base58btc
 
 ## DID Lifecycle
 
-![](./did-lifecycle.png)
+MDIP DIDs are content-addressed. A node canonicalizes the signed create operation, derives its CID, and uses that CID as the DID suffix. The create operation and later updates are recorded as an ordered event history and distributed over Hyperswarm and, where different, through the registry selected at creation, such as a Bitcoin-derived chain.
 
-All MDIP DIDs begin life anchored to a CAS (Content-Addressable Storage) such as IPFS. Once created they can be used immediately by any application or service connected to an MDIP node. Subsequent updates to the DID (meaning that a document associated with the DID changes) are registered on a registry such as a blockchain (BTC, ETH, etc) or a decentralized database (e.g. hyperswarm). The registry is specified at DID creation so that nodes can determine which single source of truth to check for updates.
-
-The *key concept of this design* is that MDIP DID creation is decentralized through through the CAS, and DID updates are decentralized through the registry specified in the DID creation. The MDIP DID is decentralized for its whole lifecycle, which is a hard requirement of DIDs.
+IPFS integration is optional and is used for content explicitly stored in the CAS. A DID document is generated from its create operation and subsequent ordered events without retrieving data from IPFS.
 
 ## DID Creation
 
-DIDs are anchored to a CAS (e.g. IPFS), prior to any declaration on a registry. This allows DIDs to be created very quickly (less than 10 seconds) and at (virtually) no cost.
+A DID is created by submitting a signed create operation to a node. The node validates it, derives the DID, records the create event locally, and queues a non-local operation for Hyperswarm and, when different, its selected registry.
 
 MDIP DIDs support two main types of DID Subject: **agents** and **assets**. Agents have keys and control assets. Assets do not have keys, and are controlled by a single agent (the owner of the asset). The two types have slightly different creation methods.
 
 ### Agents
 
-To create an agent DID, the MDIP client must sign and submit a "create" operation to the MDIP node. This operation will be used to anchor the DID in the CAS.
+To create an agent DID, the MDIP client must sign and submit a `create` operation to the MDIP node.
 
 1. Generate a new private key
-    1. We recommend deriving a new private key from an Hierarchical Deterministic (HD) wallet (BIP-32).
+    1. We recommend deriving a new private key from a hierarchical deterministic (HD) wallet (BIP-32).
 1. Generate a public key from the private key
 1. Convert to JWK (JSON Web Key) format
-1. Create a operation object with these fields in any order:
+1. Create an operation object with these fields in any order:
     1. `type`  must be "create"
     1. `mdip` metadata includes:
         1. `version`  number, e.g. 1
         1. `type`  must be "agent"
-        1. `registry`  (from a list of valid registries, e.g. "BTC", "hyperswarm", etc.)
+        1. `registry`  (from a list of valid registries, e.g. `TBTC` or `hyperswarm`)
+        1. `prefix` [optional] DID prefix to embed in the new DID
     1. `publicJwk` is the public key in JWK format
     1. `created` time in ISO format
     1. `blockid` [optional] current block ID on registry (if registry is a blockchain)
-1. Sign the JSON with the private key corresponding the the public key (this enables the MDIP node to verify that the operation is coming from the owner of the public key)
-1. Submit the operation to the MDIP node. For example, with a REST API, post the operation to the MDIP node's endpoint to create new DIDs (e.g. `/api/v1/did/`)
+1. Sign the JSON with the private key corresponding to the public key. This enables the MDIP node to verify that the operation came from the key owner.
+1. Submit the operation to the MDIP node. For example, post it to the REST API's `/api/v1/did` endpoint.
 
-Example
+Example:
 ```json
 {
     "type": "create",
@@ -66,7 +65,8 @@ Example
     "mdip": {
         "registry": "hyperswarm",
         "type": "agent",
-        "version": 1
+        "version": 1,
+        "prefix": "did:mdip"
     },
     "publicJwk": {
         "crv": "secp256k1",
@@ -85,26 +85,28 @@ Example
 Upon receiving the operation the MDIP node must:
 1. Verify the signature
 1. Apply JSON canonicalization scheme to the operation.
-1. Pin the seed object to the CAS (e.g. IPFS).
+1. Derive the operation CID and DID.
+1. Record the create event and, for a non-local DID, queue it for Hyperswarm and, when different, the selected registry.
 
-The resulting content address (CID for IPFS) in base58btc encoding is used as the MDIP DID suffix. For example the operation above corresponds to CID "z3v8AuaWjjt2tN9HHtQf8Au9ARZ25zzjkmWmkfVvYDaoM3xcnUP" (in base58btc encoding) yielding the MDIP DID `did:mdip:z3v8AuaWjjt2tN9HHtQf8Au9ARZ25zzjkmWmkfVvYDaoM3xcnUP`.
+The resulting CID in base58btc encoding is used as the MDIP DID suffix. The operation above corresponds to CID `z3v8AuaWjjt2tN9HHtQf8Au9ARZ25zzjkmWmkfVvYDaoM3xcnUP`, yielding the MDIP DID `did:mdip:z3v8AuaWjjt2tN9HHtQf8Au9ARZ25zzjkmWmkfVvYDaoM3xcnUP`.
 
 ### Assets
 
-To create an asset DID, the MDIP client must sign and submit a `create` operation to the MDIP node. This operation will be used to anchor the DID in the CAS.
+To create an asset DID, the MDIP client must sign and submit a `create` operation to the MDIP node.
 
-1. Create a operation object with these fields in any order:
+1. Create an operation object with these fields in any order:
     1. `type`  must be "create"
     1. `mdip` metadata includes:
         1. `version`  number, e.g. 1
-        1. `type`  must be "agent"
-        1. `registry`  (from a list of valid registries, e.g. "BTC", "hyperswarm", etc.)
+        1. `type`  must be "asset"
+        1. `registry`  (from a list of valid registries, e.g. `TBTC` or `hyperswarm`)
+        1. `prefix` [optional] DID prefix to embed in the new DID
     1. `controller` specifies the DID of the owner/controller of the new DID
-    1. `data` can contain any data in JSON format, as long as it is not empty
+    1. `data` can contain data in JSON format
     1. `created` time in ISO format
     1. `blockid` [optional] current block ID on registry (if registry is a blockchain)
 1. Sign the JSON with the private key of the controller
-1. Submit the operation to the MDIP node. For example, with a REST API, post the operation to the MDIP node's endpoint to create new DIDs (e.g. `/api/v1/did/`)
+1. Submit the operation to the MDIP node. For example, post it to the REST API's `/api/v1/did` endpoint.
 
 Example
 ```json
@@ -114,14 +116,15 @@ Example
     "mdip": {
         "version": 1,
         "type": "asset",
-        "registry": "hyperswarm"
+        "registry": "hyperswarm",
+        "prefix": "did:mdip"
     },
-    "controller": "did:mdip:test:z3v8AuaaBKfwrt2Y7AAbDaGqLNgyn1BDhP7wUFpEMEngmwYwi17",
+    "controller": "did:mdip:z3v8AuaaBKfwrt2Y7AAbDaGqLNgyn1BDhP7wUFpEMEngmwYwi17",
     "data": {
         "credentials": []
     },
     "signature": {
-        "signer": "did:mdip:test:z3v8AuaaBKfwrt2Y7AAbDaGqLNgyn1BDhP7wUFpEMEngmwYwi17",
+        "signer": "did:mdip:z3v8AuaaBKfwrt2Y7AAbDaGqLNgyn1BDhP7wUFpEMEngmwYwi17",
         "signed": "2024-03-21T18:47:00.729Z",
         "hash": "3810490d72e7c912d3213d5d96b4f9c184b347038b385aadc568a6624810b0ef",
         "value": "e80a12d81b9be8a63440203dccb90e954d21b91e862b3fe72d0f306877292b9a5f8e00881256132225ab39f2cbe9d47012fb4ac32882ac4bfe3bbb49f80efec4"
@@ -132,15 +135,16 @@ Example
 Upon receiving the operation the MDIP node must:
 1. Verify the signature is valid for the specified controller.
 1. Apply JSON canonicalization scheme to the operation object.
-1. Pin the seed object to the CAS (e.g. IPFS).
+1. Derive the operation CID and DID.
+1. Record the create event and, for a non-local DID, queue it for Hyperswarm and, when different, the selected registry.
 
-For example, the operation above that specifies an empty Credential asset corresponds to CID "z3v8AuahaEdEZrY9BGfu4vntYjQECBvDHqCG3mPAfEbn6No7AHh" yielding a DID of `did:mdip:z3v8AuahaEdEZrY9BGfu4vntYjQECBvDHqCG3mPAfEbn6No7AHh`.
+The operation above corresponds to CID `z3v8AuahaEdEZrY9BGfu4vntYjQECBvDHqCG3mPAfEbn6No7AHh`, yielding the DID `did:mdip:z3v8AuahaEdEZrY9BGfu4vntYjQECBvDHqCG3mPAfEbn6No7AHh`.
 
-# DID Update
+## DID Update
 
-A DID Update is a change to any of the documents associated with the DID. To initiate an update the MDIP client must sign a operation that includes the following fields:
+A DID update is a change to the document set associated with the DID. To initiate an update, the MDIP client must sign an operation that includes the following fields:
 
-1. Create a operation object with these fields in any order:
+1. Create an operation object with these fields in any order:
     1. `type` must be set to "update"
     1. `did` specifies the DID
     1. `doc` is set to the new version of the document set, which must include:
@@ -151,26 +155,26 @@ A DID Update is a change to any of the documents associated with the DID. To ini
     1. `previd` the CID of the previous operation
     1. `blockid` [optional] current block ID on registry (if registry is a blockchain)
 1. Sign the JSON with the private key of the controller of the DID
-1. Submit the operation to the MDIP node. For example, with a REST API, post the operation to the MDIP node's endpoint to update DIDs (e.g. `/api/v1/did/`)
+1. Submit the operation to the MDIP node. For example, post it to the REST API's `/api/v1/did` endpoint.
 
-It is recommended the client fetches the current version of the document and metadata, makes changes to it, then submit the new version in an update operation in order to preserve the fields that shouldn't change.
+The client should fetch the current document set, change it, and submit the complete new version so fields that should not change are preserved.
 
 Example update to rotate keys for an agent DID:
 ```json
 {
     "type": "update",
-    "did": "did:mdip:test:z3v8AuadvRQErtPapNx3ncdUJpPc5dBDGTXXiRxsaH2N8Lj2KzL",
+    "did": "did:mdip:z3v8AuadvRQErtPapNx3ncdUJpPc5dBDGTXXiRxsaH2N8Lj2KzL",
     "doc": {
         "@context": "https://w3id.org/did-resolution/v1",
         "didDocument": {
             "@context": [
                 "https://www.w3.org/ns/did/v1"
             ],
-            "id": "did:mdip:test:z3v8AuadvRQErtPapNx3ncdUJpPc5dBDGTXXiRxsaH2N8Lj2KzL",
+            "id": "did:mdip:z3v8AuadvRQErtPapNx3ncdUJpPc5dBDGTXXiRxsaH2N8Lj2KzL",
             "verificationMethod": [
                 {
                     "id": "#key-2",
-                    "controller": "did:mdip:test:z3v8AuadvRQErtPapNx3ncdUJpPc5dBDGTXXiRxsaH2N8Lj2KzL",
+                    "controller": "did:mdip:z3v8AuadvRQErtPapNx3ncdUJpPc5dBDGTXXiRxsaH2N8Lj2KzL",
                     "type": "EcdsaSecp256k1VerificationKey2019",
                     "publicKeyJwk": {
                         "kty": "EC",
@@ -191,12 +195,13 @@ Example update to rotate keys for an agent DID:
         "mdip": {
             "registry": "hyperswarm",
             "type": "agent",
-            "version": 1
+            "version": 1,
+            "prefix": "did:mdip"
         }
     },
     "previd": "z3v8Auaa5U9xP6TRzobvzZE7j6N8nkatxW1UuWiay5xrbAR5D9e",
     "signature": {
-        "signer": "did:mdip:test:z3v8AuadvRQErtPapNx3ncdUJpPc5dBDGTXXiRxsaH2N8Lj2KzL",
+        "signer": "did:mdip:z3v8AuadvRQErtPapNx3ncdUJpPc5dBDGTXXiRxsaH2N8Lj2KzL",
         "signed": "2024-03-25T14:57:26.343Z",
         "hash": "575612ed3195eef4e1b7d43b3e40f893d834176321fee8ff6ffe51a79647d912",
         "value": "87571672a51e3558ed9a9d4ef5fcad4dafbf22ee881735e579305b3ebb404a1d0891e3b45c8ad5c11c95e3ae76ca6f2328c87313d58fe80713c0887294d9078a"
@@ -206,24 +211,23 @@ Example update to rotate keys for an agent DID:
 
 Upon receiving the operation the MDIP node must:
 1. Verify the signature is valid for the controller of the DID.
-1. Verify the previd is identical to the latest version's operation CID.
-1. Record the operation on the DID specified registry (or forward the request to a trusted node that supports the specified registry).
+1. Record the operation locally and, for a non-local DID, queue it for Hyperswarm and, when different, the DID's registry.
 
-For registries such as BTC with non-trivial transaction costs, it is expected that update operations will be placed in a queue, then registered periodically in a batch in order to balance costs and latency of updates. If the registry has trivial transaction costs, the update operation may be distributed individually and immediately. MDIP defers this tradeoff between cost, speed, and security to the node operators.
+Bitcoin-derived mediators can queue operations to balance cost and latency. The Satoshi mediator writes a DID for a Hyperswarm batch asset to `OP_RETURN`. The inscription mediator instead writes complete operations to Taproot reveal witnesses and uses `OP_RETURN` only for an MDIP marker. A registry with trivial transaction costs can distribute each operation immediately. MDIP leaves this tradeoff between cost, speed, and security to node operators.
 
 ## DID Revocation
 
-Revoking a DID is a special kind of Update that results in the termination of the DID. Revoked DIDs cannot be updated because they have no current controller, therefore they cannot be recovered once revoked. Revoked DIDs can be resolved without error, but resolvers will return a document set with the `didMetada.deactivated` property set to `true`. The `didDocument` and `didDocumentData` properties will be set to empty.
+Revoking a DID is a special kind of Update that results in the termination of the DID. Revoked DIDs cannot be updated because they have no current controller, therefore they cannot be recovered once revoked. Revoked DIDs can be resolved without error, but resolvers return a document set with `didDocumentMetadata.deactivated` set to `true`, a `didDocument` containing only the DID, and empty `didDocumentData`.
 
 To revoke a DID, the MDIP client must sign and submit a `delete` operation to the MDIP node.
 
-1. Create a operation object with these fields in any order:
+1. Create an operation object with these fields in any order:
     1. `type`  must be "delete"
     1. `did` specifies the DID to be deleted
     1. `previd` the CID of the previous operation
     1. `blockid` [optional] current block ID on registry (if registry is a blockchain)
 1. Sign the JSON with the private key of the controller of the DID
-1. Submit the operation to the MDIP node. For example, with a REST API, post the operation using the `DELETE` method to the MDIP node's endpoint to update DIDs (e.g. `/api/v1/did/`)
+1. Submit the operation to the MDIP node. For example, post it to the REST API's `/api/v1/did` endpoint. The older `DELETE /api/v1/did/:did` endpoint is deprecated.
 
 
 Example deletion operation:
@@ -234,7 +238,7 @@ Example deletion operation:
     "previd": "z3v8AuaWLbUPpU31mCazznLYy6JtTWmgx9QFsDVveDPDU8Na1sJ",
     "signature": {
         "signer": "did:mdip:z3v8Auad6fdVkSZE4khWmMwgTjpoMtv82fiT7c56ivNBdjzeMS2",
-        "created": "2024-02-05T20:00:54.171Z",
+        "signed": "2024-02-05T20:00:54.171Z",
         "hash": "ff71d0966ee87d827bf3674cb1511c845e18f010186326b3898f336b30e94662",
         "value": "92f95f431729858c79ec4c10824e5aa996b7ae5277ec5143af43baf55c7c8d2f73931be5be46da0a7795b5c3b773041a91ccc2755857ddfa34758993428e7ad1"
     }
@@ -243,76 +247,65 @@ Example deletion operation:
 
 Upon receiving the operation the MDIP node must:
 1. Verify the signature is valid for the controller of the DID.
-1. Verify the previd is identical to the latest version's operation CID.
-1. Record the operation on the DID specified registry (or forward the request to a trusted node that supports the specified registry).
+1. Record the operation locally and, for a non-local DID, queue it for Hyperswarm and, when different, the DID's registry.
 
 After revocation is confirmed on the DID's registry, resolving the DID will result in response like this:
 ```json
 {
-    "@context": "https://w3id.org/did-resolution/v1",
-    "didDocument": {},
+    "didDocument": {
+        "id": "did:mdip:z3v8AuagQPwk6WhAjauVgkFCBJfHJBVBmNAYEhDNMBEXEmWQrHr"
+    },
     "didDocumentMetadata": {
         "created": "2024-03-21T18:47:00.655Z",
         "deactivated": true,
-        "updated": "2024-03-21T18:55:11.530Z"
+        "deleted": "2024-03-21T18:55:11.530Z",
+        "canonicalId": "did:mdip:z3v8AuagQPwk6WhAjauVgkFCBJfHJBVBmNAYEhDNMBEXEmWQrHr",
+        "versionId": "z3v8AuaTSeaFJNtXpiSLhiYRW9HBJnaehUhKQFuKsHtGpQa4PMU",
+        "version": "2",
+        "confirmed": true
     },
     "didDocumentData": {},
     "mdip": {
         "registry": "hyperswarm",
         "type": "asset",
-        "version": 1
+        "version": 1,
+        "prefix": "did:mdip"
+    },
+    "didResolutionMetadata": {
+        "retrieved": "2024-03-26T20:01:00.000Z"
     }
 }
 ```
 
-The metadata has a deactivated field set to true to conform to the [W3C specification](https://www.w3.org/TR/did-core/#did-document-metadata).
+The metadata has `deactivated` set to `true` to conform to the [W3C specification](https://www.w3.org/TR/did-core/#did-document-metadata).
 
 ## DID Resolution
 
 Resolution is the operation of responding to a DID with a DID Document. If you think of the DID as a secure reference or pointer, then resolution is equivalent to dereferencing.
 
-Given a DID and an optional resolution time, the resolver infers the CAS from the format of the suffix, then retrieves the associated document seed, parsing it as plaintext JSON.
-If CAS cannot be inferred, or the data cannot be retrieved, then the resolver should delegate the resolution request to a fallback node.
-Otherwise, if the data can be retrieved but is not a valid MDIP seed document, an error is returned immediately.
-Once returned and validated, the resolver then evaluates the JSON to determine whether it is a known type (an agent or an asset). If it is not a known type an error is returned.
+The resolver validates the DID, retrieves its ordered events from the local Gatekeeper database, and generates the initial document from the create operation. An agent document contains its public key, while an asset document references its controller and places the asset data in `didDocumentData`.
 
-If we get this far, the resolver then looks up the DID's specified registry in its document seed. If the node does not support the registry (meaning the node is not actively monitoring the registry for updates), then it must forward the resolution request to a trusted node that does support the registry. If the node is not configured with any trusted nodes for the specified registry, then it must forward the request to a trusted fallback node to handle unknown registries.
+The resolver then applies update and delete events in order. Resolution can stop at a requested `versionTime` or `versionSequence`. With confirmation enabled, it stops before later events that have not been confirmed by the DID's native registry. With verification enabled, it verifies create, update, and delete signatures and checks `previd` against the preceding operation CID.
 
-If the node does support the specified registry, the resolver retrieves all update records from its local database that are keyed to the DID, and ordered by each update's ordinal key. The ordinal key is a set of values that can be used to sort the updates into chronological order. For example, the ordinal key for the BTC registry will be a tuple `{block index, transaction index, batch index}`.
-
-The document is then generated by creating an initial version of the document from the document seed, then applying valid updates. In the case of an agent DID, a new DID document is created that includes the public key and the DID as the initial controller. In the case of the asset, a new DID document is created that references the controller and includes the asset data in the document metadata.
-
-If there are any update operations, each one is validated by:
-
-1. verifying that it is signed by the controller of the DID at the time the update was created,
-1. verifying that the previous version hash in the operation is identical to the hash of the document set that it is updating,
-1. verifying the new version is a valid DID document (schema validation).
-
-If invalid, the update is ignored, otherwise it is applied to the previous document in sequence up to the specified resolution time (if specified) or to the end of the sequence (if no resolution time is specified). The resulting DID document is returned to the requestor.
+Blockchain-backed events can add lower and upper timestamp bounds to the returned version metadata. A DID absent from the local event database returns `notFound`. Resolution does not forward requests to a fallback node.
 
 In pseudo-code:
 
 ```
 function resolveDid(did, versionTime=now):
-    get suffix from did
-    use suffix as content address to retrieve document seed from CAS
-    if fail to retrieve the document seed
-        forward request to a trusted node
-        return
-    look up did's registry in its document seed
-    if did's registry is not supported by this node
-        forward request to a trusted node
-        return
-    generate initial document from anchor
-    retrieve all update operations from did's registry
-    for all updates until versionTime:
-        if signature is valid and update is valid:
-            apply update to DID document
+    events = retrieve ordered events for did from local database
+    if events are empty:
+        return notFound
+    generate initial document from the create event
+    for each later event until versionTime:
+        when verification is requested, verify signature and previd
+        stop before unconfirmed events when confirmation is requested
+        apply update or delete to DID document
     return DID document
 ```
 
 ## DID Recovery
 
-For security reasons, MDIP provides no support for storing private keys. We recommend that MDIP clients use BIP-39 to generate a master seed phrase consisting of at least 12 words, and that users safely store the recovery phrase.
+MDIP registries do not escrow private keys. Clients should derive wallet keys from a BIP-39 seed phrase and require users to store that phrase safely.
 
-If a user loses a device that contains their wallet, they should be able to install the wallet software on a new device, initialize it with their seed phrase and recover their DID along with all their credentials. This implies that a "vault" of the credentials should be stored with the agent DID document, though it should be encrypted with the DID's current private key for privacy.
+The seed phrase restores deterministic key material, while encrypted DID backups can restore wallet metadata, identities, and credentials. Backup data must remain encrypted because it is distributed through the same registries as other DID operations.

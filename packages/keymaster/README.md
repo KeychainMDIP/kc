@@ -13,24 +13,25 @@ npm install @mdip/keymaster
 
 ### Library
 
-The library must be configured by calling the start function with 3 dependencies:
+Construct the library with three dependencies:
+
 - a configured gatekeeper instance
 - a wallet database
 - a cipher library (@mdip/cipher/node for servers or @mdip/cipher/web for web browsers)
 
+Install the Gatekeeper and cipher packages when using Keymaster as an embedded library:
+
+```bash
+npm install @mdip/gatekeeper @mdip/cipher
+```
+
 #### Node application
 
 ```js
-// Import using subpaths
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import WalletJson from '@mdip/keymaster/wallet/json';
 import CipherNode from '@mdip/cipher/node';
 import Keymaster from '@mdip/keymaster';
-
-// Non-subpath imports
-import { GatekeeperClient } from '@mdip/gatekeeper';
-import Keymaster, { WalletJson } from '@mdip/keymaster';
-import CipherNode from '@mdip/cipher';
 
 const gatekeeper = new GatekeeperClient();
 await gatekeeper.connect({
@@ -56,16 +57,10 @@ const newId = await keymaster.createId('Bob');
 #### Browser wallet
 
 ```js
-// Import using subpaths
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import WalletWeb from '@mdip/keymaster/wallet/web';
 import CipherWeb from '@mdip/cipher/web';
 import Keymaster from '@mdip/keymaster';
-
-// Non-subpath imports
-import { GatekeeperClient } from '@mdip/gatekeeper';
-import Keymaster, { WalletWeb } from '@mdip/keymaster';
-import CipherWeb from '@mdip/cipher';
 
 const gatekeeper = new GatekeeperClient();
 await gatekeeper.connect({
@@ -93,11 +88,7 @@ const newId = await keymaster.createId('Bob');
 The KeymasterClient is used to communicate with a keymaster REST API service.
 
 ```js
-// Import using subpaths
 import KeymasterClient from '@mdip/keymaster/client';
-
-// Non-subpath imports
-import { KeymasterClient } from '@mdip/keymaster';
 
 const keymaster = new KeymasterClient();
 await keymaster.connect({

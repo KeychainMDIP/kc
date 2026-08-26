@@ -4,7 +4,7 @@ title: Credentials
 
 The Credentials screen allows a user to accept and issue fully P2P Verifiable Credentials. Users must first register a schema on the MDIP network, or select an existing schema DID, before a credential can be issued.
 
-The credential subjects are listed from known Agent DIDs contained in the wallet (from the [IDENTITIES](./identities) and [DIDS](./dids) screens).
+The credential subjects are listed from known Agent DIDs contained in the wallet (from the [IDENTITIES](./03-identities.md) and [DIDS](./04-dids.md) screens).
 
 ![Credentials screen](credentials-screen.png)
 
@@ -20,13 +20,13 @@ In the "ISSUED" Credentials screen, a user can manage the VCs they issued.
 
 ## HELD Screen
 
-In the "HELD" Credentials screen, a user can chose from a variety of options:
+In the "HELD" Credentials screen, a user can choose from a variety of options:
 
 ![Held Credentials](held-credentials.png)
 
 - **Resolve**: This will display the *public* (encrypted) view of the credential. Resolving a credential confirms it exists in the MDIP Gatekeeper node.
 
-- **Decrypt**: If the credential is encrypted to the current DID, this will decrypt the cypher_receiver field using the DID keys.
+- **Decrypt**: If the credential is encrypted to the current DID, this decrypts the `cipher_receiver` field using the DID keys.
 
 - **Remove**: This removes a credential from the user's wallet.
 
@@ -34,7 +34,7 @@ In the "HELD" Credentials screen, a user can chose from a variety of options:
 
 - **Reveal**: This reveals the full content of a credential to the DID manifest, which is visible to the public. The content of the credential is decrypted and included in the DID manifest.
 
-- **Unpublish**: This removes the credential from a DID manifest. Note: other nodes on the network may retain the *history* of a DID; once published or revealed a credential has been winessed by other nodes.
+- **Unpublish**: This removes the credential from a DID manifest. Note: other nodes on the network may retain the *history* of a DID. Once published or revealed, a credential has been witnessed by other nodes.
 
 The image below shows a portion of Alice's Agent DID with a revealed membership Verifiable Credential in the Manifest section of her DID document:
 

@@ -3,7 +3,7 @@ title: Keychain-MDIP CLI User Manual
 sidebar_label: CLI
 ---
 
-The CLI is a Command Line Interface to the Keychain implementation of the MultiDimensional Identity Protocol (MDIP). `kc` (short for KeyChain) is a script invoked in a unix-like terminal environment (bash, zsh, etc).
+The CLI is a command-line interface to the Keychain implementation of the Multi-Dimensional Identity Protocol (MDIP). `kc` (short for KeyChain) is a script invoked in a Unix-like terminal environment (bash, zsh, etc.).
 
 ## Quickstart
 
@@ -12,51 +12,45 @@ The Keychain-MDIP CLI is a user-facing tool used to interact with the MDIP sub-s
 The Keychain CLI brings together functionality from three important sub-components:
 
 1. Decentralized Identity (DID) registration and management as defined by W3C DID Core.
-1. Verifiable Credential (VC) credential and management as defined by W3C VC Data Model.
+1. Verifiable Credential (VC) creation and management as defined by the W3C VC Data Model.
 1. Crypto keys and wallet management.
 
 ### Installation
 
-Keychain is provided as a set of docker containers and scripts:
+Keychain is provided as a set of Docker containers and scripts:
 
 1. From your terminal, download the repository and move to it:
 
    ```sh
-   # SSH
-   git@github.com:KeychainMDIP/kc.git
-   #HTTPS
-   https://github.com/KeychainMDIP/kc.git
+   git clone https://github.com/KeychainMDIP/kc.git
 
    cd kc
    ```
 
 1. Copy `sample.env` to `.env`:
 
-   ```env
+   ```sh
    cp sample.env .env
    ```
 
-1. Edit the `KC_NODE_ID` and `KC_NODE_NAME` with unique values. The remaining values will be covered in futher documentation:
+1. Set `KC_ENCRYPTED_PASSPHRASE` to a strong value, and edit `KC_NODE_ID` and `KC_NODE_NAME` with unique values. The remaining values are documented in the [deployment guide](../../02-server/deployment/index.mdx):
 
    ```sh title=".env" {2-3}
-   # Gatekeeper
+   # General
    KC_DEBUG=false
    KC_NODE_NAME=mynode
    KC_NODE_ID=mynodeID
-   KC_GATEKEEPER_DB=json
-   KC_GATEKEEPER_REGISTRIES=hyperswarm,TBTC,TFTC
+   KC_ENCRYPTED_PASSPHRASE=replace-with-a-strong-passphrase
+   KC_GATEKEEPER_DB=redis
+   KC_GATEKEEPER_REGISTRIES=hyperswarm
 
    ...
    ```
 
-1. Run the keychain start script:
+1. Start the services needed by the CLI and Hyperswarm mediator:
 
    ```sh
-   # Tied to the shell session:
-   ./start-node
-
-   # Daemonized:
-   ./start-node -d
+   ./start-node gatekeeper keymaster hypr-mediator search-server cli
    ```
 
 1. There's also a script to stop Keychain:
@@ -113,7 +107,6 @@ Commands:
   decrypt-json <did>                       Decrypt an encrypted JSON DID
   encrypt-file <file> <did>                Encrypt a file for a DID
   encrypt-message <message> <did>          Encrypt a message for a DID
-  encrypt-wallet                           Encrypt wallet
   fix-wallet                               Remove invalid DIDs from the wallet
   get-asset <id>                           Get asset by name or DID
   get-credential <did>                     Get credential by DID
@@ -133,6 +126,7 @@ Commands:
   list-issued                              List issued credentials
   list-names                               List DID names (aliases)
   list-schemas                             List schemas owned by current ID
+  new-wallet                               Create a new wallet
   perf-test [N]                            Performance test to create N credentials
   publish-credential <did>                 Publish the existence of a credential to the current user manifest
   publish-poll <poll>                      Publish results to poll, hiding ballots
@@ -180,6 +174,8 @@ The following examples use a `$` to denote the shell prompt:
 $ kc
 ```
 
+Resolved-document examples focus on the fields relevant to each task and may omit version, confirmation, timestamp, and retrieval metadata.
+
 > [!NOTE]
 > Unless you edit your shell's `$PATH` variable, you need to invoke kc with a `./` prefix to run the script in the current directory:
 
@@ -191,11 +187,11 @@ Begin by creating a new identity. This will be described in more detail later, b
 
 ```sh
 $ kc create-id yourName
-did:mdip:test:z3v8AuaYd1CGfC6PCQDXKyKkbt5kJ4o3h2ABBNPGyGNQfEQ99Ce
+did:test:z3v8AuaYd1CGfC6PCQDXKyKkbt5kJ4o3h2ABBNPGyGNQfEQ99Ce
 ```
 
 The long string returned starting with `did` will be unique to you. This is your new Decentralized IDentity (DID for short).
 
 Think of a DID as a secure reference. Only the owner of the reference can change what it points to. What makes it decentralized is that anyone can discover what it points to without involving a third party.
 
-Creating a new ID automatically creates a new wallet for your ID, which we will describe next.
+Creating a new ID automatically creates a Keymaster wallet when one does not already exist. Wallets are described next.
