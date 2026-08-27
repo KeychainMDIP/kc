@@ -18,9 +18,10 @@ export default class TestHelper {
             version?: number;
             registry?: string;
             prefix?: string;
+            validUntil?: string;
         } = {}
     ): Promise<Operation> {
-        const { version = 1, registry = 'local', prefix } = options;
+        const { version = 1, registry = 'local', prefix, validUntil } = options;
         const operation: Operation = {
             type: "create",
             created: new Date().toISOString(),
@@ -34,6 +35,9 @@ export default class TestHelper {
 
         if (prefix) {
             operation.mdip!.prefix = prefix;
+        }
+        if (validUntil) {
+            operation.mdip!.validUntil = validUntil;
         }
 
         const msgHash = this.cipher.hashJSON(operation);

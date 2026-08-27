@@ -48,11 +48,14 @@ enum ImportStatus {
     DEFERRED = 'deferred',
 }
 
+const retryableResolutionErrors = new WeakSet<object>();
+
 export default class Gatekeeper implements GatekeeperInterface {
     private db: GatekeeperDb;
     private eventsQueue: GatekeeperEvent[];
     private readonly eventsSeen: Record<string, boolean>;
     private verifiedDIDs: Record<string, boolean>;
+    private mutationRevision: number;
     private isProcessingEvents: boolean;
     private ipfs?: IPFSClient;
     private cipher: CipherNode;
@@ -63,6 +66,9 @@ export default class Gatekeeper implements GatekeeperInterface {
     private readonly ipfsEnabled: boolean;
     supportedRegistries: string[];
     private didLocks = new Map<string, Promise<void>>();
+    private activeMutations = new Set<string>();
+    private pendingExpiredControllers = new Map<string, string>();
+    private verifyDbInFlight?: Promise<VerifyDbResult>;
     constructor(options: GatekeeperOptions) {
         if (!options || !options.db) {
             throw new InvalidParameterError('missing options.db');
@@ -76,6 +82,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         this.eventsQueue = [];
         this.eventsSeen = {};
         this.verifiedDIDs = {};
+        this.mutationRevision = 0;
         this.isProcessingEvents = false;
         this.ipfsEnabled = options.ipfsEnabled ?? true;
         if (this.ipfsEnabled) {
@@ -105,85 +112,309 @@ export default class Gatekeeper implements GatekeeperInterface {
         }
     }
 
+    private didKey(did: string): string {
+        return did.split(':').pop() || did;
+    }
+
+    private async readForResolution<T>(read: () => Promise<T>): Promise<T> {
+        try {
+            return await read();
+        }
+        catch (error) {
+            if (typeof error === 'object' && error !== null) {
+                retryableResolutionErrors.add(error);
+            }
+            throw error;
+        }
+    }
+
+    private invalidateVerifiedDID(did: string): void {
+        this.mutationRevision += 1;
+        delete this.verifiedDIDs[this.didKey(did)];
+    }
+
+    private async mutateDID<T>(did: string, fn: () => Promise<T>): Promise<T> {
+        const key = this.didKey(did);
+        this.activeMutations.add(key);
+        this.invalidateVerifiedDID(did);
+        try {
+            return await fn();
+        }
+        finally {
+            this.invalidateVerifiedDID(did);
+            this.activeMutations.delete(key);
+        }
+    }
+
     private async withDidLock<T>(did: string, fn: () => Promise<T>): Promise<T> {
-        const prev = this.didLocks.get(did) ?? Promise.resolve();
+        const key = this.didKey(did);
+        const prev = this.didLocks.get(key) ?? Promise.resolve();
         let release: () => void = () => { };
         const gate = new Promise<void>(r => (release = r));
+        const current = prev.then(() => gate, () => gate);
 
-        this.didLocks.set(did, prev.then(() => gate, () => gate));
+        this.didLocks.set(key, current);
 
         try {
             await prev;
             return await fn();
         } finally {
             release();
-            if (this.didLocks.get(did) === gate) {
-                this.didLocks.delete(did);
+            if (this.didLocks.get(key) === current) {
+                this.didLocks.delete(key);
             }
         }
     }
 
-    async verifyDb(options?: { chatty?: boolean }): Promise<VerifyDbResult> {
+    verifyDb(options?: { chatty?: boolean }): Promise<VerifyDbResult> {
+        this.verifyDbInFlight ??= this.runVerifyDb(options).finally(() => {
+            this.verifyDbInFlight = undefined;
+        });
+        return this.verifyDbInFlight;
+    }
+
+    private async runVerifyDb(options?: { chatty?: boolean }): Promise<VerifyDbResult> {
         const chatty = options?.chatty ?? true;
         const dids = await this.getDIDs() as string[];
         const total = dids.length;
-        let n = 0;
-        let expired = 0;
-        let invalid = 0;
-        let verified = Object.keys(this.verifiedDIDs).length;
-
+        const snapshotKeys = new Set(dids.map(did => this.didKey(did)));
+        const now = Date.now();
+        const inspectedDIDs = new Set<string>();
+        const expiredDIDs = new Set<string>();
+        const expiredAgents = new Set<string>();
+        const failedDIDs = new Set<string>();
+        const dependents = new Map<string, string[]>();
         const verifyStart = chatty ? Date.now() : 0;
-
-        for (const did of dids) {
-            n += 1;
-
-            if (this.verifiedDIDs[did]) {
-                continue;
-            }
-
-            let validUntil = null;
-
+        const resolveCurrent = async (did: string): Promise<{
+            doc?: MdipDocument;
+            expiresAt?: number;
+            invalid: boolean;
+            notFound?: boolean;
+            retryable?: boolean;
+        }> => {
             try {
-                const doc = await this.resolveDID(did, { verify: true });
-                validUntil = doc.mdip?.validUntil;
+                const doc = await this.resolveDID(did);
+                if (doc.didResolutionMetadata?.error) {
+                    return {
+                        invalid: true,
+                        notFound: doc.didResolutionMetadata.error === 'notFound',
+                    };
+                }
+
+                const validUntil = doc.mdip?.validUntil;
+                if (!validUntil) {
+                    return { doc, invalid: false };
+                }
+
+                const expiresAt = new Date(validUntil).getTime();
+                return isNaN(expiresAt)
+                    ? { doc, invalid: false }
+                    : { doc, expiresAt, invalid: false };
+            }
+            catch (error) {
+                const retryable = typeof error === 'object'
+                    && error !== null
+                    && retryableResolutionErrors.has(error);
+                return { invalid: !retryable, retryable };
+            }
+        };
+
+        const inspectDID = async (did: string, n: number): Promise<void> => {
+            inspectedDIDs.add(did);
+            const key = this.didKey(did);
+            const revision = this.mutationRevision;
+            try {
+                const { doc, expiresAt, invalid, retryable } = await resolveCurrent(did);
+                if (invalid || retryable || !doc) {
+                    throw new InvalidOperationError('DID resolution failed');
+                }
+
+                const controller = doc.didDocument?.controller;
+                if (controller) {
+                    const controllerKey = this.didKey(controller);
+                    const controlledDIDs = dependents.get(controllerKey) ?? [];
+                    controlledDIDs.push(did);
+                    dependents.set(controllerKey, controlledDIDs);
+                }
+
+                if (expiresAt !== undefined) {
+                    if (expiresAt < now) {
+                        if (chatty) {
+                            this.log.warn(`${n}/${total} ${did} expired`);
+                        }
+                        expiredDIDs.add(did);
+                        if (doc.mdip?.type === 'agent') {
+                            expiredAgents.add(did);
+                        }
+                    }
+                    else if (chatty) {
+                        const minutesLeft = Math.round((expiresAt - now) / 60 / 1000);
+                        this.log.debug(`expiring ${n}/${total} ${did} in ${minutesLeft} minutes`);
+                    }
+                    return;
+                }
+
+                if (chatty) {
+                    this.log.debug(`resolved ${n}/${total} ${did} OK`);
+                }
+                if (revision === this.mutationRevision && !this.activeMutations.has(key)) {
+                    this.verifiedDIDs[key] = true;
+                }
             }
             catch {
                 if (chatty) {
-                    this.log.warn(`removing ${n}/${total} ${did} invalid`);
+                    this.log.warn(`${n}/${total} ${did} invalid`);
                 }
-                invalid += 1;
-                await this.db.deleteEvents(did);
+                failedDIDs.add(did);
+            }
+        };
+
+        for (let n = 0; n < dids.length; n += 1) {
+            const did = dids[n];
+            if (!this.verifiedDIDs[this.didKey(did)]) {
+                await inspectDID(did, n + 1);
+            }
+        }
+
+        if (expiredAgents.size > 0 || failedDIDs.size > 0 || this.pendingExpiredControllers.size > 0) {
+            for (let n = 0; n < dids.length; n += 1) {
+                const did = dids[n];
+                if (!inspectedDIDs.has(did)) {
+                    await inspectDID(did, n + 1);
+                }
+            }
+        }
+
+        const removedExpiredDIDs = new Set<string>();
+        const removedInvalidDIDs = new Set<string>();
+        let dependencyDiscoveryFailed = false;
+
+        for (const did of failedDIDs) {
+            await this.withDidLock(did, async () => {
+                const current = await resolveCurrent(did);
+                if (current.retryable) {
+                    dependencyDiscoveryFailed = true;
+                    return;
+                }
+                if (current.invalid || !current.doc) {
+                    await this.removeDIDUnlocked(did);
+                    removedInvalidDIDs.add(did);
+                    return;
+                }
+
+                const controller = current.doc.didDocument?.controller;
+                if (controller) {
+                    const controllerKey = this.didKey(controller);
+                    const controlledDIDs = dependents.get(controllerKey) ?? [];
+                    controlledDIDs.push(did);
+                    dependents.set(controllerKey, controlledDIDs);
+                }
+
+                if (current.expiresAt !== undefined && current.expiresAt < Date.now()) {
+                    expiredDIDs.add(did);
+                    if (current.doc.mdip?.type === 'agent') {
+                        expiredAgents.add(did);
+                    }
+                }
+            });
+        }
+
+        const expiredControllers = new Map(this.pendingExpiredControllers);
+        for (const agentDID of expiredAgents) {
+            expiredControllers.set(this.didKey(agentDID), agentDID);
+        }
+
+        for (const [agentKey, agentDID] of expiredControllers) {
+            await this.withDidLock(agentDID, async () => {
+                const agent = await resolveCurrent(agentDID);
+                if (agent.retryable) {
+                    this.pendingExpiredControllers.set(agentKey, agentDID);
+                    return;
+                }
+                if (agent.notFound) {
+                    this.pendingExpiredControllers.set(agentKey, agentDID);
+                    if (snapshotKeys.has(agentKey)) {
+                        removedExpiredDIDs.add(agentDID);
+                    }
+                }
+                else if (agent.invalid) {
+                    this.pendingExpiredControllers.set(agentKey, agentDID);
+                    return;
+                }
+                else if (agent.doc?.mdip?.type !== 'agent'
+                    || agent.expiresAt === undefined
+                    || agent.expiresAt >= Date.now()) {
+                    this.pendingExpiredControllers.delete(agentKey);
+                    return;
+                }
+                if (dependencyDiscoveryFailed) {
+                    this.pendingExpiredControllers.set(agentKey, agentDID);
+                    return;
+                }
+
+                let revalidationFailed = false;
+                for (const assetDID of dependents.get(agentKey) ?? []) {
+                    await this.withDidLock(assetDID, async () => {
+                        const asset = await resolveCurrent(assetDID);
+                        const controller = asset.doc?.didDocument?.controller;
+                        if (asset.notFound) {
+                            removedExpiredDIDs.add(assetDID);
+                            return;
+                        }
+                        if (asset.invalid || asset.retryable) {
+                            revalidationFailed = true;
+                        }
+                        else if (asset.doc?.mdip?.type === 'asset'
+                            && controller
+                            && this.didKey(controller) === agentKey) {
+                            await this.removeDIDUnlocked(assetDID);
+                            removedExpiredDIDs.add(assetDID);
+                        }
+                    });
+                    if (revalidationFailed) {
+                        this.pendingExpiredControllers.set(agentKey, agentDID);
+                        return;
+                    }
+                }
+
+                if (!agent.notFound) {
+                    await this.removeDIDUnlocked(agentDID);
+                    removedExpiredDIDs.add(agentDID);
+                }
+                this.pendingExpiredControllers.delete(agentKey);
+            });
+        }
+
+        for (const did of expiredDIDs) {
+            if (expiredAgents.has(did) || removedExpiredDIDs.has(did) || removedInvalidDIDs.has(did)) {
                 continue;
             }
 
-            if (validUntil) {
-                const expires = new Date(validUntil);
-                const now = new Date();
-
-                if (expires < now) {
-                    if (chatty) {
-                        this.log.warn(`removing ${n}/${total} ${did} expired`);
-                    }
-                    await this.db.deleteEvents(did);
-                    expired += 1;
+            await this.withDidLock(did, async () => {
+                const current = await resolveCurrent(did);
+                if (current.retryable) {
+                    return;
                 }
-                else {
-                    const minutesLeft = Math.round((expires.getTime() - now.getTime()) / 60 / 1000);
-
-                    if (chatty) {
-                        this.log.debug(`expiring ${n}/${total} ${did} in ${minutesLeft} minutes`);
-                    }
-                    verified += 1;
+                if (current.notFound) {
+                    removedExpiredDIDs.add(did);
                 }
-            }
-            else {
-                if (chatty) {
-                    this.log.debug(`verifying ${n}/${total} ${did} OK`);
+                else if (current.invalid) {
+                    await this.removeDIDUnlocked(did);
+                    removedInvalidDIDs.add(did);
                 }
-                this.verifiedDIDs[did] = true;
-                verified += 1;
-            }
+                else if (current.expiresAt !== undefined && current.expiresAt < Date.now()) {
+                    await this.removeDIDUnlocked(did);
+                    removedExpiredDIDs.add(did);
+                }
+            });
         }
+
+        const invalidKeys = new Set([...removedInvalidDIDs].map(did => this.didKey(did)));
+        const expired = new Set([...removedExpiredDIDs]
+            .map(did => this.didKey(did))
+            .filter(key => !invalidKeys.has(key))).size;
+        const invalid = invalidKeys.size;
+        const verified = total - expired - invalid;
 
         // Clear queue of permanently invalid events
         this.eventsQueue = [];
@@ -279,9 +510,11 @@ export default class Gatekeeper implements GatekeeperInterface {
 
     // For testing purposes
     async resetDb(): Promise<boolean> {
-        await this.db.resetDb();
-        this.clearEventsSeen();
+        this.mutationRevision += 1;
         this.verifiedDIDs = {};
+        await this.db.resetDb();
+        this.pendingExpiredControllers.clear();
+        this.clearEventsSeen();
         this.eventsQueue = [];
         return true;
     }
@@ -544,14 +777,13 @@ export default class Gatekeeper implements GatekeeperInterface {
                 return did;
             }
 
-            await this.db.addEvent(did, {
+            await this.mutateDID(did, () => this.db.addEvent(did, {
                 registry: 'local',
                 time: operation.created!,
                 ordinal: [0],
                 operation,
                 did
-            });
-
+            }));
             await this.queueOperation(registry, operation);
             return did;
         });
@@ -569,7 +801,9 @@ export default class Gatekeeper implements GatekeeperInterface {
         did?: string,
         options?: ResolveDIDOptions
     ): Promise<MdipDocument> {
-        const events = did && isValidDID(did) ? await this.db.getEvents(did) : [];
+        const events = did && isValidDID(did)
+            ? await this.readForResolution(() => this.db.getEvents(did))
+            : [];
 
         return resolveDIDFromEvents({
             did,
@@ -578,7 +812,7 @@ export default class Gatekeeper implements GatekeeperInterface {
             didPrefix: this.didPrefix,
             generateCID: (operation) => this.generateCID(operation),
             generateDID: (operation) => this.generateDID(operation),
-            getBlock: (registry, block) => this.db.getBlock(registry, block),
+            getBlock: (registry, block) => this.readForResolution(() => this.db.getBlock(registry, block)),
             verifyCreateOperation: (operation) => this.verifyCreateOperation(operation),
             verifyUpdateOperation: (operation, doc) => this.verifyUpdateOperation(operation, doc),
         });
@@ -589,29 +823,28 @@ export default class Gatekeeper implements GatekeeperInterface {
             throw new InvalidOperationError('missing operation.did')
         }
 
-        const doc = await this.resolveDID(operation.did);
-        const updateValid = await this.verifyUpdateOperation(operation, doc);
-
-        if (!updateValid) {
-            return false;
-        }
-
-        const registry = doc.mdip?.registry;
-
-        // Reject operations with unsupported registries
-        if (!registry || !this.supportedRegistries.includes(registry)) {
-            throw new InvalidOperationError(`registry ${registry} not supported`);
-        }
-
         return this.withDidLock(operation.did, async () => {
-            await this.db.addEvent(operation.did!, {
+            const doc = await this.resolveDID(operation.did);
+            const updateValid = await this.verifyUpdateOperation(operation, doc);
+
+            if (!updateValid) {
+                return false;
+            }
+
+            const registry = doc.mdip?.registry;
+
+            // Reject operations with unsupported registries
+            if (!registry || !this.supportedRegistries.includes(registry)) {
+                throw new InvalidOperationError(`registry ${registry} not supported`);
+            }
+
+            await this.mutateDID(operation.did!, () => this.db.addEvent(operation.did!, {
                 registry: 'local',
                 time: operation.signature?.signed || '',
                 ordinal: [0],
                 operation,
                 did: operation.did
-            });
-
+            }));
             await this.queueOperation(registry, operation);
 
             return true;
@@ -691,13 +924,17 @@ export default class Gatekeeper implements GatekeeperInterface {
         return this.importBatch(dids.flat());
     }
 
+    private async removeDIDUnlocked(did: string): Promise<void> {
+        await this.mutateDID(did, () => this.db.deleteEvents(did));
+    }
+
     async removeDIDs(dids: string[]): Promise<boolean> {
         if (!Array.isArray(dids)) {
             throw new InvalidParameterError('dids');
         }
 
         for (const did of dids) {
-            await this.db.deleteEvents(did);
+            await this.withDidLock(did, () => this.removeDIDUnlocked(did));
         }
 
         return true;
@@ -748,7 +985,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                         // If this import is on the native registry, replace the current one
                         const index = currentEvents.indexOf(opMatch);
                         currentEvents[index] = event;
-                        await this.db.setEvents(lockedDid, currentEvents);
+                        await this.mutateDID(lockedDid, () => this.db.setEvents(lockedDid, currentEvents));
                         return ImportStatus.ADDED;
                     }
 
@@ -761,13 +998,13 @@ export default class Gatekeeper implements GatekeeperInterface {
                     }
 
                     if (currentEvents.length === 0) {
-                        await this.db.addEvent(lockedDid, event);
+                        await this.mutateDID(lockedDid, () => this.db.addEvent(lockedDid, event));
                         return ImportStatus.ADDED;
                     }
 
                     // TEMP during did:test, operation.previd is optional
                     if (!event.operation.previd) {
-                        await this.db.addEvent(lockedDid, event);
+                        await this.mutateDID(lockedDid, () => this.db.addEvent(lockedDid, event));
                         return ImportStatus.ADDED;
                     }
 
@@ -780,7 +1017,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                     const index = currentEvents.indexOf(idMatch);
 
                     if (index === currentEvents.length - 1) {
-                        await this.db.addEvent(lockedDid, event);
+                        await this.mutateDID(lockedDid, () => this.db.addEvent(lockedDid, event));
                         return ImportStatus.ADDED;
                     }
 
@@ -794,9 +1031,9 @@ export default class Gatekeeper implements GatekeeperInterface {
                             (event.ordinal && nextEvent.ordinal && compareOrdinals(event.ordinal, nextEvent.ordinal) < 0)) {
                             // reorg event, discard the rest of the operation sequence and replace with this event
                             const newSequence = [...currentEvents.slice(0, index + 1), event];
-                            await this.db.setEvents(lockedDid, newSequence, {
+                            await this.mutateDID(lockedDid, () => this.db.setEvents(lockedDid, newSequence, {
                                 operationEvents: [event],
-                            });
+                            }));
                             return ImportStatus.ADDED;
                         }
                     }
