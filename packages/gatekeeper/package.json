@@ -1,6 +1,6 @@
 {
   "name": "@mdip/gatekeeper",
-  "version": "2.1.1-beta.0",
+  "version": "2.1.1-beta.1",
   "description": "MDIP Gatekeeper",
   "type": "module",
   "module": "./dist/esm/index.js",
@@ -115,7 +115,7 @@
   "dependencies": {
     "@mdip/cipher": "^2.1.1-beta.0",
     "@mdip/common": "^2.1.1-beta.0",
-    "@mdip/ipfs": "^2.1.1-beta.0",
+    "@mdip/ipfs": "^2.1.1-beta.1",
     "axios": "^1.13.6",
     "canonicalize": "^2.1.0",
     "dotenv": "^17.3.1",

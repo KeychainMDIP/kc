@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [2.1.1-beta.1](https://github.com/KeychainMDIP/kc/compare/@mdip/keymaster@2.1.1-beta.0...@mdip/keymaster@2.1.1-beta.1) (2026-08-27)
+
+
+### Bug Fixes
+
+* **protocol:** sync metadata-free updates ([#1261](https://github.com/KeychainMDIP/kc/issues/1261)) ([19e55b8](https://github.com/KeychainMDIP/kc/commit/19e55b89c65802b4795610d71119c76e313ba8b6))
+
+
+
+
+
 ## 2.1.1-beta.0 (2026-08-13)
 
 

@@ -1,6 +1,6 @@
 {
   "name": "@mdip/keymaster",
-  "version": "2.1.1-beta.0",
+  "version": "2.1.1-beta.1",
   "description": "MDIP Keymaster",
   "type": "module",
   "module": "./dist/esm/index.js",
