@@ -1,19 +1,22 @@
 # DID Explorer
 
-A React-based DID (Decentralized Identifier) explorer designed for viewing and interacting with DIDs and DID Documents on Bitcoin, Feathercoin, and Hyperswarm networks. This explorer is developed using Vite with native TypeScript support.
+A React-based DID (Decentralized Identifier) explorer for viewing DIDs, DID documents, and operations from configured MDIP registries. It uses Vite with TypeScript.
 
 ## Project Setup
 
 ### Prerequisites
 
-- Node.js (>=18.x recommended)
+- Node.js 22.15.0 and npm 10.8.2 or newer
 
 ### Installation
 
-From the `services/explorer` directory, install dependencies:
+The Explorer server uses built workspace packages. Install and build the workspace from the repository root before installing Explorer's standalone dependencies:
 
 ```bash
-npm install
+npm ci
+npm run build
+cd services/explorer
+npm ci
 ```
 
 ### Configuration
@@ -33,6 +36,9 @@ VITE_EXPLORER_PORT=4000
 # URL where your search server is running
 VITE_SEARCH_SERVER=http://localhost:4002
 
+# Registry names shown in operation network filters
+VITE_OPERATION_NETWORKS=hyperswarm,TFTC,TBTC
+
 # Logging for the explorer server
 KC_LOG_LEVEL=info
 ```
@@ -42,7 +48,7 @@ KC_LOG_LEVEL=info
 Start the explorer in development mode:
 
 ```bash
-npm start
+npm run dev
 ```
 
 This will start the React app locally. Open your browser to view the explorer:
@@ -55,12 +61,8 @@ http://localhost:<VITE_EXPLORER_PORT>
 
 ## Building for Production
 
-To create a production build, run:
+To build and run the production server, run:
 
 ```bash
-npm run build
+npm start
 ```
-
-## Contributing
-
-Feel free to open issues or submit pull requests for improvements and new features.

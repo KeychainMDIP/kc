@@ -13,7 +13,7 @@ Throughout this documentation, we used "aliased names" to facilitate interaction
 Adding a name will append a new alias to the current user's local wallet:
 
 ```sh
-$ kc add-name david "did:mdip:z3v8AuabNBnymLADSwWpDJPdEhvt2kS5v7UXypjzPnkqfdnW6ri"
+$ kc add-name bob "did:test:z3v8AuabNBnymLADSwWpDJPdEhvt2kS5v7UXypjzPnkqfdnW6ri"
 OK
 ```
 
@@ -21,14 +21,14 @@ OK
 
 Listing names will reveal the list of aliases stored in the current user's local wallet:
 
-```json
+```console
 $ kc list-names
 {
-    "vc-social-media": "did:mdip:z3v8AuahM2jN3QRaQ5ZWTmzje9HoNdikuAyNjsGfunGfLCGj87J",
-    "charlie-homepage": "did:mdip:z3v8AuaamvoV6JnvnhJk3E1npohd3jxThPSXFAzZZ4WwzMrirbq",
-    "charlie-parent": "did:mdip:z3v8Auabi92Gj2gFdrf6JCubbz4RL4auHAD5eZvz8zkAzkeaeHw",
-    "req-charlie-homepage": "did:mdip:z3v8AuaWxFtpy6Sp5cpHCBQMrsxdMZVdrYTyXMk62p7n5hs4Tb4",
-    "david": "did:mdip:z3v8AuabNBnymLADSwWpDJPdEhvt2kS5v7UXypjzPnkqfdnW6ri"
+    "vc-social-media": "did:test:z3v8AuahM2jN3QRaQ5ZWTmzje9HoNdikuAyNjsGfunGfLCGj87J",
+    "charlie-homepage": "did:test:z3v8AuaamvoV6JnvnhJk3E1npohd3jxThPSXFAzZZ4WwzMrirbq",
+    "charlie-parent": "did:test:z3v8Auabi92Gj2gFdrf6JCubbz4RL4auHAD5eZvz8zkAzkeaeHw",
+    "req-charlie-homepage": "did:test:z3v8AuaWxFtpy6Sp5cpHCBQMrsxdMZVdrYTyXMk62p7n5hs4Tb4",
+    "bob": "did:test:z3v8AuabNBnymLADSwWpDJPdEhvt2kS5v7UXypjzPnkqfdnW6ri"
 }
 ```
 
@@ -37,6 +37,6 @@ $ kc list-names
 Removing a name will delete an alias from the current user's local wallet:
 
 ```sh
-$ kc remove-name david
+$ kc remove-name bob
 OK
 ```

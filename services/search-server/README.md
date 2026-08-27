@@ -84,7 +84,7 @@ stored alias's prefix.
     - `versionSequence` (optional, positive integer)
     - `versionTime` (optional, timestamp accepted by Gatekeeper resolution)
 - **Notes**: Prefix aliases are matched by final CID suffix. A configured
-  network scope must match the DID's effective classification; an existing
+  network scope must match the DID's effective classification. An existing
   storage alias cannot bypass that scope.
 - **Returns**:
     - `200 OK` + JSON DID Document if present.
@@ -236,14 +236,15 @@ stored alias's prefix.
 
 ### Network metric snapshots
 
-All-DID and AgentDID snapshot dates come only from anchor `create` operation
-`created` timestamps. The all-DID total includes every indexed DID regardless
-of MDIP type or document contents and deduplicates prefix aliases by CID suffix.
-Credentials are identified from valid historical AgentDID manifest entries and
-dated by their asset anchor `operation.created` when available, falling back to
-the manifest credential's `validFrom`. Hyperswarm receipt times and operation
-signature timestamps are not used. DIDs and AgentDIDs remain counted after
-deletion, and credentials remain counted after revocation or unpublishing.
+All-DID and AgentDID snapshot dates come only from the `created` timestamps on
+their `create` operations. The all-DID total includes every indexed DID
+regardless of MDIP type or document contents and deduplicates prefix aliases by
+CID suffix. Credentials are identified from valid historical AgentDID manifest
+entries and dated by the `created` timestamp on their asset `create` operation
+when available, falling back to the manifest credential's `validFrom`.
+Hyperswarm receipt times and operation signature timestamps are not used. DIDs
+and AgentDIDs remain counted after deletion, and credentials remain counted
+after revocation or unpublishing.
 Private credentials that have never been published cannot be counted by
 search-server.
 
@@ -307,7 +308,7 @@ the next rebuild.
 
 `search-server` also derives metrics for publicly published credentials by reading
 subject DID manifests. These metrics only cover credentials that have been
-published into a subject DID document; privately held or merely issued
+published into a subject DID document. Privately held or merely issued
 credentials are not included.
 
 ### Known limitations
