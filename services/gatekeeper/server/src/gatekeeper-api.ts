@@ -1791,11 +1791,11 @@ v1router.get('/db/reset', trackedRoute(async (req, res) => {
  * @swagger
  * /db/verify:
  *   get:
- *     summary: Verify all DIDs in the database
+ *     summary: Check all DIDs in the database
  *
  *     responses:
  *       200:
- *         description: Verification results for all DIDs in the database.
+ *         description: Resolution and expiry results for all DIDs in the database.
  *         content:
  *           application/json:
  *             schema:
@@ -1806,13 +1806,13 @@ v1router.get('/db/reset', trackedRoute(async (req, res) => {
  *                   description: The total number of DIDs that were checked.
  *                 verified:
  *                   type: integer
- *                   description: The count of DIDs that passed verification.
+ *                   description: The count of cached or successfully resolved DIDs retained.
  *                 expired:
  *                   type: integer
- *                   description: The count of DIDs that had expired and were removed.
+ *                   description: The count of expired DIDs and their dependencies that were removed.
  *                 invalid:
  *                   type: integer
- *                   description: The count of DIDs that failed verification and were removed.
+ *                   description: The count of DIDs that failed resolution and were removed.
  *       500:
  *         description: Internal Server Error.
  *         content:
