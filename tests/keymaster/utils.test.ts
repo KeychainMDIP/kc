@@ -203,6 +203,28 @@ describe('updateDID', () => {
         expect(doc2.didDocumentMetadata!.version).toBe("2");
     });
 
+    it('should create updates accepted by another gatekeeper', async () => {
+        const did = await keymaster.createId('Bob', { registry: 'hyperswarm' });
+        const doc = await keymaster.resolveDID(did);
+        doc.didDocumentData = { published: true };
+
+        await keymaster.updateDID(doc);
+        const events = await gatekeeper.exportDID(did);
+        const remote = new Gatekeeper({
+            db: new DbJsonMemory('remote'),
+            ipfs,
+            registries: ['local', 'hyperswarm', 'TFTC'],
+        });
+
+        expect(events[1].operation.doc?.didDocumentMetadata).toStrictEqual({});
+        await expect(remote.importBatch(events)).resolves.toMatchObject({ queued: 2, rejected: 0 });
+        await expect(remote.processEvents()).resolves.toMatchObject({ added: 2, rejected: 0 });
+        await expect(remote.resolveDID(did)).resolves.toMatchObject({
+            didDocumentData: { published: true },
+            didDocumentMetadata: { version: '2' },
+        });
+    });
+
     it('should not update an asset DID if no changes', async () => {
         await keymaster.createId('Bob');
         const mockAnchor = { name: 'mockAnchor', val: 1234 };

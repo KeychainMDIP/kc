@@ -14,41 +14,30 @@ Groups are simply collections of identity DIDs that are allowed to cast votes in
 1. Create a new group:
 
     ```sh
-    kc group-create icecream-tasters
-    did:mdip:klf75KJH6LKlh654LP4C7hexSVfDhFcSiZr8xfS1tg
+    kc create-group icecream-tasters --name icecream-tasters
+    did:test:klf75KJH6LKlh654LP4C7hexSVfDhFcSiZr8xfS1tg
     ```
 
 1. Add members to the polling group using their DID:
 
     ```sh
-    kc group-add icecream-tasters did:mdip:z3v8AuzzXKfwrt4Y3AAbDaGqLNgyn1BDhP7wUFpEMEngmwYwjm8
-    {
-      members: [
-        'did:mdip:z3v8AuzzXKfwrt4Y3AAbDaGqLNgyn1BDhP7wUFpEMEngmwYwjm8'
-      ],
-      name: 'icecream-tasters'
-    }
+    kc add-group-member icecream-tasters did:test:z3v8AuzzXKfwrt4Y3AAbDaGqLNgyn1BDhP7wUFpEMEngmwYwjm8
+    true
     ```
 
-   Members can also be added using their [aliased names](./aliased-names):
+   Members can also be added using their [aliased names](./08-aliased-names.md):
 
     ```sh
-    kc group-add icecream-tasters alice
-    {
-      members: [
-        'did:mdip:z3v8AuzzXKfwrt4Y3AAbDaGqLNgyn1BDhP7wUFpEMEngmwYwjm8',
-        'did:mdip:z3v8AuaZ6U4FwcfLA82aGf6n8qpwRtkKCStRMokvU4gSwHHHrzC'
-      ],
-      name: 'icecream-tasters'
-    }
+    kc add-group-member icecream-tasters alice
+    true
     ```
 
-    If a member should be removed from a group, use `kc group-remove` with their DID or aliased name.
+    If a member should be removed from a group, use `kc remove-group-member` with their DID or aliased name.
 
 1. You can check to see if a DID is part of the group:
 
     ```sh
-    kc group-test icecream-tasters bob
+    kc test-group icecream-tasters bob
     false
     ```
 
@@ -57,10 +46,10 @@ Groups are simply collections of identity DIDs that are allowed to cast votes in
 
 Polls are DID objects that follow a provided template to provide options, and collect and summarize votes.
 
-1. Create a JSON file to define the poll using the `poll-template` command:
+1. Create a JSON file to define the poll using the `create-poll-template` command:
 
     ```sh
-    kc poll-template > icecream-poll.json
+    kc create-poll-template > icecream-poll.json
     ```
 
 1. Edit the poll file:
@@ -70,7 +59,7 @@ Polls are DID objects that follow a provided template to provide options, and co
         "type": "poll",
         "version": 1,
         "description": "Which flavor of ice cream is the best?",
-        "roster": "did:mdip:klf75KJH6LKlh654LP4C7hexSVfDhFcSiZr8xfS1tg",
+        "roster": "did:test:klf75KJH6LKlh654LP4C7hexSVfDhFcSiZr8xfS1tg",
         "options": [
             "Chocolate",
             "Vanilla",
@@ -83,18 +72,19 @@ Polls are DID objects that follow a provided template to provide options, and co
     }
     ```
 
-    In the example above, the value of `roster` matches the DID of the group we created previously.
+    In the example above, `roster` is the DID of the group created previously. Set `deadline` to a future time.
 
 1. Using that file, create the poll:
 
     ```sh
-    kc poll-create icream-poll.json best-icecream-flavor
+    kc create-poll icecream-poll.json --name best-icecream-flavor
+    did:test:z3v8AuaWxFtpy6Sp5cpHCBQMrsxdMZVdrYTyXMk62p7n5hs4Tb4
     ```
 
 1. Anyone can now view the poll using the DID or an aliased name (if they create one locally):
 
-    ```json
-    kc poll-view best-icecream-flavor
+    ```console
+    $ kc view-poll best-icecream-flavor
     {
         "description": "Which flavor of ice cream is the best?",
         "options": [
@@ -159,33 +149,33 @@ Polls are DID objects that follow a provided template to provide options, and co
     }
     ```
 
-1. Members of the group can cast their vote using `poll-vote`:
+1. Members of the group can cast their vote using `vote-poll`:
 
     ```sh
-    kc poll-vote best-icecream-flavor 5
-    did:mdip:z3v8AuaYFc3SZXkXyYxBxdGb1EuC5hV2BcjfMhemYMg56ztyAJx
+    kc vote-poll best-icecream-flavor 5
+    did:test:z3v8AuaYFc3SZXkXyYxBxdGb1EuC5hV2BcjfMhemYMg56ztyAJx
     ```
 
-1. Once vote DIDs are collected, the poll controller can add them to the poll results with `poll-update`, using only the vote's (not the voter's) DID:
+1. Once vote DIDs are collected, the poll controller can add them to the poll results with `update-poll`, using only the vote's (not the voter's) DID:
 
     ```sh
-    kc poll-update did:mdip:z3v8AuaYFc3SZXkXyYxBxdGb1EuC5hV2BcjfMhemYMg56ztyAJx
+    kc update-poll did:test:z3v8AuaYFc3SZXkXyYxBxdGb1EuC5hV2BcjfMhemYMg56ztyAJx
     OK
     ```
 
-1. The controller of the poll can publish the results with `poll-publish`:
+1. After every eligible ballot has been added, or after the deadline passes, the poll becomes final. The controller can then publish the results with `publish-poll`:
 
     ```sh
-    kc poll-publish best-icecream-flavor
+    kc publish-poll best-icecream-flavor
     OK
     ```
 
     This will publish the results without revealing the ballots. Anyone can [resolve](./04-dids.md#resolving-a-did) the poll's DID to view the results.
 
-1. To make the votes in a poll public use `poll-reveal`:
+1. To make the votes in a poll public use `reveal-poll`:
 
     ```sh
-    kc poll-reveal best-icecream-flavor
+    kc reveal-poll best-icecream-flavor
     OK
     ```
 

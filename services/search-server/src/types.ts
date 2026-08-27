@@ -28,6 +28,7 @@ export interface PublishedCredentialSchemaCount {
 }
 
 export interface PublishedCredentialListOptions {
+    didPrefix?: string;
     credentialDid?: string;
     schemaDid?: string;
     issuerDid?: string;
@@ -52,6 +53,7 @@ export interface ChallengeReceiptRecord {
 }
 
 export interface ChallengeReceiptListOptions {
+    didPrefix?: string;
     receiptDid?: string;
     attesterDid?: string;
     schemaDid?: string;
@@ -69,6 +71,7 @@ export interface ChallengeReceiptListResult {
 }
 
 export interface ChallengeReceiptUsageOptions {
+    didPrefix?: string;
     attesterDid?: string;
     schemaDid?: string;
     requesterDid?: string;
@@ -100,6 +103,7 @@ export interface DIDEventRecord {
 }
 
 export interface DIDEventListOptions {
+    didPrefix?: string;
     registry?: string;
     updatedAfter?: string;
     updatedBefore?: string;
@@ -119,6 +123,8 @@ export interface DIDEventHistory {
 
 export interface NetworkMetricSnapshot {
     date: string;
+    didCount: number;
+    didCountsByPrefix: Record<string, number>;
     agentDidCount: number;
     agentDidCountsByPrefix: Record<string, number>;
     credentialCount: number;
@@ -132,6 +138,7 @@ export interface DIDProjectionUpdate {
     events: GatekeeperEvent[];
     removed?: boolean;
     doc?: object;
+    didPrefixReferences?: string[];
     publishedCredentials?: PublishedCredentialRecord[];
     challengeReceipts?: ChallengeReceiptRecord[];
 }
@@ -157,11 +164,11 @@ export interface DIDsDb {
     saveSyncState(key: string, value: string | null): Promise<void>;
 
     getDIDEvents(did: string): Promise<GatekeeperEvent[]>;
-    findDIDBySuffix(suffix: string): Promise<string | null>;
+    findDIDBySuffix(suffix: string, didPrefix?: string): Promise<string | null>;
     getBlock(registry: string, block?: BlockId): Promise<BlockInfo | null>;
     applyIndexPage(page: ApplyIndexPageOptions): Promise<ApplyIndexPageResult>;
     getDID(did: string): Promise<object | null>;
-    getPublishedCredentialCountsBySchema(): Promise<PublishedCredentialSchemaCount[]>;
+    getPublishedCredentialCountsBySchema(didPrefix?: string): Promise<PublishedCredentialSchemaCount[]>;
     listPublishedCredentials(options?: PublishedCredentialListOptions): Promise<PublishedCredentialListResult>;
     listChallengeReceipts(options?: ChallengeReceiptListOptions): Promise<ChallengeReceiptListResult>;
     getChallengeReceiptUsage(options?: ChallengeReceiptUsageOptions): Promise<ChallengeReceiptUsageResult>;
@@ -169,7 +176,7 @@ export interface DIDsDb {
     iterateDIDEventHistories(pageSize?: number): AsyncIterable<DIDEventHistory>;
     replaceNetworkMetricSnapshots(snapshots: NetworkMetricSnapshot[]): Promise<void>;
     getNetworkMetricSnapshot(date: string): Promise<NetworkMetricSnapshot | null>;
-    searchDocs(q: string): Promise<string[]>;
-    queryDocs(where: Record<string, unknown>): Promise<string[]>;
+    searchDocs(q: string, didPrefix?: string): Promise<string[]>;
+    queryDocs(where: Record<string, unknown>, didPrefix?: string): Promise<string[]>;
     wipeDb(): Promise<void>;
 }

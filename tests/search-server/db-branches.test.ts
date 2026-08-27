@@ -430,7 +430,7 @@ describe('search DB branch behavior', () => {
 
             if (text.includes('COUNT(*)::int AS total') ||
                 text.includes('receipt_did AS "receiptDid"') ||
-                text.includes('attester_did AS "attesterDid"')) {
+                text.includes('MIN(cr.attester_did) AS "attesterDid"')) {
                 return { rowCount: 0, rows: [] };
             }
 
@@ -467,6 +467,7 @@ describe('search DB branch behavior', () => {
         const syncState = new Map<string, string>();
         const publishedCredentials = new Map<string, PublishedCredentialRecord[]>();
         const challengeReceipts = new Map<string, ChallengeReceiptRecord[]>();
+        const classifications = new Map<string, string>();
 
         function blockKey(registry: string, hash: string): string {
             return `${registry}\u0000${hash}`;
@@ -485,6 +486,13 @@ describe('search DB branch behavior', () => {
             return rows
                 .filter(row => {
                     let paramIndex = 0;
+
+                    if (sql.includes('dc.prefix =')) {
+                        const prefix = String(params[paramIndex++]);
+                        if (!row.did.startsWith(`${prefix}:`)) {
+                            return false;
+                        }
+                    }
 
                     if (sql.includes('registry =')) {
                         if (row.registry !== params[paramIndex++]) {
@@ -529,10 +537,18 @@ describe('search DB branch behavior', () => {
                 return { rowCount: 1, rows: [] };
             }
 
-            if (text.includes('SELECT DISTINCT did FROM did_events')) {
-                const ending = `:${String(params[0])}`;
-                const did = Array.from(events.keys()).find(candidate => candidate.endsWith(ending));
+            if (text.includes('SELECT did FROM did_classifications')) {
+                const did = classifications.get(String(params[0]));
+                const matchesPrefix = params.length < 2 || did?.startsWith(`${String(params[1])}:`);
                 return did
+                    && matchesPrefix ? { rowCount: 1, rows: [{ did }] }
+                    : { rowCount: 0, rows: [] };
+            }
+
+            if (text.includes('SELECT did FROM did_classifications_effective')) {
+                const did = classifications.get(String(params[0]));
+                const matchesPrefix = params.length < 2 || did?.startsWith(`${String(params[1])}:`);
+                return did && matchesPrefix
                     ? { rowCount: 1, rows: [{ did }] }
                     : { rowCount: 0, rows: [] };
             }
@@ -594,6 +610,17 @@ describe('search DB branch behavior', () => {
                 return { rowCount: deleted ? 1 : 0, rows: [] };
             }
 
+            if (text.includes('INSERT INTO did_classifications')) {
+                classifications.set(String(params[0]), String(params[1]));
+                return { rowCount: 1, rows: [] };
+            }
+
+            if (text.includes('DELETE FROM did_classifications')) {
+                if (params.length === 0) classifications.clear();
+                else classifications.delete(String(params[0]));
+                return { rowCount: 1, rows: [] };
+            }
+
             if (text.includes('INSERT INTO did_events')) {
                 const did = String(params[0]);
                 const eventIndex = Number(params[1]);
@@ -624,12 +651,17 @@ describe('search DB branch behavior', () => {
                 publishedCredentials.set(holderDid, [{
                     holderDid,
                     credentialDid: String(params[1]),
-                    schemaDid: String(params[2]),
-                    issuerDid: String(params[3]),
-                    subjectDid: String(params[4]),
-                    revealed: Boolean(params[5]),
-                    updatedAt: String(params[6]),
+                    schemaDid: String(params[4]),
+                    issuerDid: String(params[7]),
+                    subjectDid: String(params[8]),
+                    revealed: Boolean(params[9]),
+                    updatedAt: String(params[10]),
                 }]);
+                return { rowCount: 1, rows: [] };
+            }
+
+            if (text.includes('DELETE FROM did_prefix_references') ||
+                text.includes('INSERT INTO did_prefix_references')) {
                 return { rowCount: 1, rows: [] };
             }
 
@@ -643,15 +675,15 @@ describe('search DB branch behavior', () => {
                 challengeReceipts.set(receiptDid, [{
                     receiptDid,
                     attesterDid: String(params[1]),
-                    schemaDid: String(params[2]),
-                    requesterDid: String(params[3]),
-                    responseCommitment: String(params[4]),
-                    updatedAt: String(params[5]),
+                    schemaDid: String(params[3]),
+                    requesterDid: String(params[5]),
+                    responseCommitment: String(params[7]),
+                    updatedAt: String(params[8]),
                 }]);
                 return { rowCount: 1, rows: [] };
             }
 
-            if (text.includes('SELECT COUNT(*)::int AS total FROM did_events')) {
+            if (text.includes('COUNT(*)::int AS total') && text.includes('FROM did_events e')) {
                 if (params.length === 0) {
                     return { rowCount: 0, rows: [] };
                 }
@@ -659,7 +691,8 @@ describe('search DB branch behavior', () => {
                 return { rowCount: 1, rows: [{ total: filterEvents(params, text).length }] };
             }
 
-            if (text.includes('SELECT did, registry, time, event')) {
+            if (text.includes("dc.prefix || ':' || dc.suffix AS did") &&
+                text.includes('FROM did_events e')) {
                 const limit = Number(params[params.length - 2]);
                 const offset = Number(params[params.length - 1]);
                 return {
@@ -748,6 +781,7 @@ describe('search DB branch behavior', () => {
         });
 
         expect(await db.listEvents({
+            didPrefix: 'did:test',
             registry: 'local',
             updatedAfter: didEventA.time,
             updatedBefore: '2026-04-01T12:00:00.000Z',
@@ -793,6 +827,20 @@ describe('search DB branch behavior', () => {
             removedDids: 1,
         });
         expect(await db.getDIDEvents(eventDid)).toStrictEqual([]);
+
+        const reclassifiedDid = eventDid.replace('did:test:', 'did:mdip:');
+        await db.applyIndexPage({
+            dids: [{ did: eventDid, events: [didEventA] }],
+            blocks: [],
+        });
+        const reclassifiedEvent = structuredClone(didEventA);
+        reclassifiedEvent.operation.mdip!.prefix = 'did:mdip';
+        await db.applyIndexPage({
+            dids: [{ did: reclassifiedDid, events: [reclassifiedEvent] }],
+            blocks: [],
+        });
+        expect(await db.getDIDEvents(eventDid)).toStrictEqual([]);
+        expect(await db.findDIDBySuffix('event-storage', 'did:mdip')).toBe(reclassifiedDid);
 
         await db.disconnect();
         expect(mockPool.end).toHaveBeenCalledTimes(1);

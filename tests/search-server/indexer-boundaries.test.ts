@@ -77,6 +77,51 @@ beforeEach(() => {
 });
 
 describe('DidIndexer gatekeeper read boundary', () => {
+    it('moves an ambiguous projection when a later signed update establishes its prefix', async () => {
+        const db = new DIDsDbMemory();
+        const create = createEvent(snapshotDid, { name: 'ambiguous' }, '2026-04-01T10:00:00.000Z');
+        const mdipDid = snapshotDid.replace('did:test:', 'did:mdip:');
+        const update: GatekeeperEvent = {
+            did: mdipDid,
+            registry: 'local',
+            time: '2026-04-01T11:00:00.000Z',
+            operation: {
+                type: 'update',
+                did: mdipDid,
+                doc: {
+                    didDocument: { id: mdipDid },
+                    didDocumentData: { name: 'classified' },
+                    mdip: { version: 1, type: 'asset', registry: 'local' },
+                },
+            },
+        };
+        const gatekeeper = {
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>()
+                .mockResolvedValueOnce({
+                    ...createSnapshotResponse(),
+                    dids: [{ did: snapshotDid, events: [create] }],
+                })
+                .mockResolvedValueOnce({
+                    ...createChangesResponse(),
+                    dids: [{ did: snapshotDid, events: [create, update] }],
+                }),
+        };
+        const indexer = new DidIndexer(gatekeeper, db, { intervalMs: 60_000 });
+
+        await (indexer as any).refreshIndex();
+        expect(await db.findDIDBySuffix(snapshotDid.split(':').pop()!)).toBe(snapshotDid);
+
+        await (indexer as any).refreshIndex();
+        expect(await db.getDIDEvents(snapshotDid)).toStrictEqual([]);
+        expect(await db.getDIDEvents(mdipDid)).toHaveLength(2);
+        expect((await db.getDIDEvents(mdipDid))[1].operation).toMatchObject({
+            type: 'update',
+            did: mdipDid,
+        });
+        expect(await db.findDIDBySuffix(snapshotDid.split(':').pop()!)).toBe(mdipDid);
+    });
+
     it('uses exportIndex only and never calls getDIDs or resolveDID during snapshot or changes sync', async () => {
         const db = new DIDsDbMemory();
         const gatekeeper = {
@@ -111,6 +156,40 @@ describe('DidIndexer gatekeeper read boundary', () => {
         expect(await db.loadSyncState('index.snapshot.complete')).toBe('true');
         expect(await db.loadSyncState('index.snapshot.checkpointCursor')).toBe('4');
         expect(await db.loadSyncState('index.changes.cursor')).toBe('7');
+    });
+
+    it('removes records through their stored alias or exported DID', async () => {
+        const db = new DIDsDbMemory();
+        const storedDid = 'did:test:removed-existing';
+        const exportedAlias = 'did:mdip:removed-existing';
+        const missingDid = 'did:test:removed-missing';
+        await db.applyIndexPage({
+            dids: [{
+                did: storedDid,
+                events: [createEvent(storedDid, {}, '2026-04-01T10:00:00.000Z')],
+            }],
+            blocks: [],
+        });
+        const applyIndexPage = jest.spyOn(db, 'applyIndexPage');
+        const indexer = new DidIndexer({
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>(),
+        }, db, { intervalMs: 60_000 });
+
+        await (indexer as any).applyExportPage({
+            ...createChangesResponse(),
+            dids: [
+                { did: exportedAlias, events: [], removed: true },
+                { did: missingDid, events: [], removed: true },
+            ],
+        }, {});
+
+        expect(applyIndexPage).toHaveBeenLastCalledWith(expect.objectContaining({
+            dids: [
+                expect.objectContaining({ did: storedDid, removed: true }),
+                expect.objectContaining({ did: missingDid, removed: true }),
+            ],
+        }));
     });
 
     it('does not start a refresh when gatekeeper is not ready or another refresh is active', async () => {
