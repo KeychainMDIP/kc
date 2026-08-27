@@ -1007,7 +1007,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         else if (operation.type === 'update') {
             const doc = operation.doc;
 
-            if (!doc || !doc.didDocument || !doc.didDocumentMetadata || !doc.didDocumentData || !doc.mdip) {
+            if (!doc || !doc.didDocument || !doc.didDocumentData || !doc.mdip) {
                 return false;
             }
 

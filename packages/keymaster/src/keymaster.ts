@@ -1108,6 +1108,8 @@ export default class Keymaster implements KeymasterInterface {
             return true;
         }
 
+        doc.didDocumentMetadata = {};
+
         const block = await this.gatekeeper.getBlock(current.mdip!.registry);
         const blockid = block?.hash;
 

@@ -266,6 +266,29 @@ describe('importBatch', () => {
         expect(response.queued).toBe(1);
     });
 
+    it('should import updates without generated document metadata', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const did = await gatekeeper.createDID(await helper.createAgentOp(keypair));
+        const doc = await gatekeeper.resolveDID(did);
+        doc.didDocumentData = { published: true };
+        delete doc.didDocumentMetadata;
+        delete doc.didResolutionMetadata;
+        const update = await helper.createUpdateOp(keypair, did, doc);
+
+        const imported = await gatekeeper.importBatch([{
+            registry: 'local',
+            time: new Date().toISOString(),
+            operation: update,
+        }]);
+
+        expect(imported).toMatchObject({ queued: 1, rejected: 0 });
+        await expect(gatekeeper.processEvents()).resolves.toMatchObject({ rejected: 0 });
+        await expect(gatekeeper.resolveDID(did)).resolves.toMatchObject({
+            didDocumentData: { published: true },
+            didDocumentMetadata: { version: '2' },
+        });
+    });
+
     it('should report when event already processed', async () => {
         const keypair = cipher.generateRandomJwk();
         const agentOp = await helper.createAgentOp(keypair);
