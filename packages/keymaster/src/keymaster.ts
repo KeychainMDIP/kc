@@ -2103,9 +2103,8 @@ export default class Keymaster implements KeymasterInterface {
         }
 
         const requestedCredentials = challenge.credentials ?? [];
-        const matchedCredentials = new Set<number>();
         const matchedPresentations = new Set<string>();
-        const vps: VerifiableCredential[] = [];
+        const candidates: { vp: VerifiableCredential; credentialIndexes: number[] }[] = [];
 
         for (let credential of response.credentials) {
             if (matchedPresentations.has(credential.vp)) {
@@ -2147,20 +2146,46 @@ export default class Keymaster implements KeymasterInterface {
                 continue;
             }
 
-            const credentialIndex = requestedCredentials.findIndex((item, index) =>
-                !matchedCredentials.has(index) &&
-                item.schema === schema &&
-                (!item.issuers?.length || item.issuers.includes(vp.issuer))
-            );
+            const credentialIndexes: number[] = [];
+            requestedCredentials.forEach((item, index) => {
+                if (item.schema === schema && (!item.issuers?.length || item.issuers.includes(vp.issuer))) {
+                    credentialIndexes.push(index);
+                }
+            });
 
-            if (credentialIndex === -1) {
+            if (credentialIndexes.length === 0) {
                 continue;
             }
 
-            matchedCredentials.add(credentialIndex);
             matchedPresentations.add(credential.vp);
-            vps.push(vp);
+            candidates.push({ vp, credentialIndexes });
         }
+
+        const matchedCredentials = new Map<number, number>();
+        const assignPresentation = (presentationIndex: number, visited: Set<number>): boolean => {
+            for (const credentialIndex of candidates[presentationIndex].credentialIndexes) {
+                if (visited.has(credentialIndex)) {
+                    continue;
+                }
+
+                visited.add(credentialIndex);
+                const assignedPresentation = matchedCredentials.get(credentialIndex);
+
+                if (assignedPresentation === undefined || assignPresentation(assignedPresentation, visited)) {
+                    matchedCredentials.set(credentialIndex, presentationIndex);
+                    return true;
+                }
+            }
+
+            return false;
+        };
+
+        candidates.forEach((_, index) => assignPresentation(index, new Set()));
+
+        const matchedCandidateIndexes = new Set(matchedCredentials.values());
+        const vps = candidates
+            .filter((_, index) => matchedCandidateIndexes.has(index))
+            .map(candidate => candidate.vp);
 
         response.vps = vps;
         response.match = matchedCredentials.size === requestedCredentials.length;

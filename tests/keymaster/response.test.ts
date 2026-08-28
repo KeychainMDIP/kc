@@ -278,6 +278,59 @@ describe('verifyResponse', () => {
         expect(verification.vps).toHaveLength(1);
     });
 
+    it('should match credentials independently of presentation order', async () => {
+        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const carol = await keymaster.createId('Carol');
+        const victor = await keymaster.createId('Victor');
+
+        await keymaster.setCurrentId('Alice');
+        const schema = await keymaster.createSchema(mockSchema);
+        const vcAlice = await keymaster.issueCredential(await keymaster.bindCredential(schema, carol));
+
+        await keymaster.setCurrentId('Bob');
+        const vcBob = await keymaster.issueCredential(await keymaster.bindCredential(schema, carol));
+
+        await keymaster.setCurrentId('Victor');
+        const challenge = await keymaster.createChallenge({
+            credentials: [
+                { schema },
+                { schema, issuers: [alice] },
+            ],
+        });
+
+        await keymaster.setCurrentId('Carol');
+        const vpAlice = await keymaster.encryptMessage(
+            await keymaster.decryptMessage(vcAlice),
+            victor,
+            { includeHash: true }
+        );
+        const vpBob = await keymaster.encryptMessage(
+            await keymaster.decryptMessage(vcBob),
+            victor,
+            { includeHash: true }
+        );
+        const response = await keymaster.encryptJSON({
+            response: {
+                challenge,
+                credentials: [
+                    { vc: vcAlice, vp: vpAlice },
+                    { vc: vcBob, vp: vpBob },
+                ],
+                requested: 2,
+                fulfilled: 2,
+                match: true,
+                responseNonce: 'mock-nonce',
+            },
+        }, victor);
+
+        await keymaster.setCurrentId('Victor');
+        const verification = await keymaster.verifyResponse(response, { publish: false });
+
+        expect(verification.match).toBe(true);
+        expect(verification.vps).toHaveLength(2);
+    });
+
     it('should not verify a invalid response to a single credential challenge', async () => {
         await keymaster.createId('Alice');
         await keymaster.createId('Carol');
