@@ -451,6 +451,15 @@ v1router.post('/wallet/backup', async (req, res) => {
  * /wallet/recover:
  *   post:
  *     summary: Recover the wallet from an existing backup.
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               did:
+ *                 type: string
+ *                 description: The optional DID of the wallet backup.
  *     responses:
  *       200:
  *         description: The recovered wallet object.
@@ -473,7 +482,7 @@ v1router.post('/wallet/backup', async (req, res) => {
  */
 v1router.post('/wallet/recover', async (req, res) => {
     try {
-        const wallet = await keymaster.recoverWallet();
+        const wallet = await keymaster.recoverWallet(req.body?.did);
         res.json({ wallet });
     } catch (error: any) {
         res.status(500).send({ error: error.toString() });

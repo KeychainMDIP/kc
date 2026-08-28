@@ -325,7 +325,7 @@ export interface KeymasterInterface {
     saveWallet(wallet: StoredWallet, overwrite?: boolean): Promise<boolean>;
     newWallet(mnemonic?: string, overwrite?: boolean): Promise<WalletFile>;
     backupWallet(): Promise<boolean | string>;
-    recoverWallet(): Promise<WalletFile>;
+    recoverWallet(did?: string): Promise<WalletFile>;
     checkWallet(): Promise<CheckWalletResult>;
     fixWallet(): Promise<FixWalletResult>;
     decryptMnemonic(): Promise<string>;

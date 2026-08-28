@@ -10,7 +10,7 @@ Recommended system requirements:
 
 - GNU/Linux OS with [Docker](https://www.docker.com/) for containerized operation
 - Node.js 22.15.0 and npm 10.8.2 or newer for manual and local operation
-- Enough memory and storage for the selected services and registries
+- At least 3 GB RAM for Gatekeeper, Keymaster, the Hyperswarm mediator, Search Server, Explorer, IPFS, and their database dependencies. Other services require additional memory.
 
 ```
 $ git clone https://github.com/KeychainMDIP/kc
@@ -37,7 +37,16 @@ npm run build
 
 [Gatekeeper](https://github.com/KeychainMDIP/kc/blob/main/services/gatekeeper/server/README.md) validates DID operations and maintains the local DID event database. [Keymaster](https://github.com/KeychainMDIP/kc/blob/main/services/keymaster/server/README.md) holds the server wallet and signs operations sent to Gatekeeper. Hyperswarm and Satoshi mediators distribute those operations over P2P and blockchain registries. Search Server builds a read model from Gatekeeper for Explorer and wallet search.
 
-The browser wallet hosts the Keymaster library and stores its wallet locally. The server wallet and `kc` CLI use Keymaster's HTTP client. The `admin` CLI and mediators use Gatekeeper's HTTP client. See the [deployment guide](https://keychain.org/docs/server/deployment/) for the current service list and startup options.
+The Gatekeeper service runs the browser wallet, which hosts the Keymaster library and stores its wallet locally in the browser. The Keymaster service runs the server wallet, which uses Keymaster's HTTP client and shares the service wallet with the `kc` CLI. Both web wallets are demonstration clients that show what the software can do. They run by default and can be disabled with environment variables. The `admin` CLI and mediators use Gatekeeper's HTTP client. See the [deployment guide](https://keychain.org/docs/server/deployment/) for the current service list and startup options.
+
+### Other implementations and examples
+
+- The [browser extension](https://github.com/KeychainMDIP/kc/blob/main/apps/chrome-extension/README.md) packages an MDIP wallet as a Chrome extension.
+- The [React wallet](https://github.com/KeychainMDIP/kc/blob/main/apps/react-wallet/README.md) is a React and Capacitor demonstration wallet for browsers and Android.
+- The [Java implementation](https://github.com/KeychainMDIP/kc/blob/main/java/README.md) provides Keymaster and a Gatekeeper REST client for Java applications.
+- The [Python SDK](https://github.com/KeychainMDIP/kc/blob/main/python/keymaster_sdk/README.md) provides a Python client for the Keymaster service.
+- The [CommonJS demo](https://github.com/KeychainMDIP/kc/tree/main/demo/commonjs-demo) shows how to load the MDIP packages and create and resolve a DID.
+- The [inscription demo](https://github.com/KeychainMDIP/kc/blob/main/demo/inscription-demo/README.md) shows how to export operations as Taproot inscriptions.
 
 ## Node configuration
 
