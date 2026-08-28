@@ -201,6 +201,83 @@ describe('verifyResponse', () => {
         expect(verify1.vps!.length).toBe(1);
     });
 
+    it('should reject a presentation without the requested schema', async () => {
+        await keymaster.createId('Alice');
+        const carol = await keymaster.createId('Carol');
+        const victor = await keymaster.createId('Victor');
+
+        await keymaster.setCurrentId('Alice');
+        const schema = await keymaster.createSchema(mockSchema);
+        const credential = await keymaster.bindCredential(schema, carol);
+        credential.type = ['VerifiableCredential'];
+        const vc = await keymaster.issueCredential(credential);
+
+        await keymaster.setCurrentId('Victor');
+        const challenge = await keymaster.createChallenge({
+            credentials: [{ schema }],
+        });
+
+        await keymaster.setCurrentId('Carol');
+        const plaintext = await keymaster.decryptMessage(vc);
+        const vp = await keymaster.encryptMessage(plaintext, victor, { includeHash: true });
+        const response = await keymaster.encryptJSON({
+            response: {
+                challenge,
+                credentials: [{ vc, vp }],
+                requested: 1,
+                fulfilled: 1,
+                match: true,
+                responseNonce: 'mock-nonce',
+            },
+        }, victor);
+
+        await keymaster.setCurrentId('Victor');
+        const verification = await keymaster.verifyResponse(response, { publish: false });
+
+        expect(verification.match).toBe(false);
+        expect(verification.vps).toStrictEqual([]);
+    });
+
+    it('should not count a presentation more than once', async () => {
+        const alice = await keymaster.createId('Alice');
+        const carol = await keymaster.createId('Carol');
+        const victor = await keymaster.createId('Victor');
+
+        await keymaster.setCurrentId('Alice');
+        const schema1 = await keymaster.createSchema(mockSchema);
+        const schema2 = await keymaster.createSchema(mockSchema);
+        const credential = await keymaster.bindCredential(schema1, carol);
+        const vc = await keymaster.issueCredential(credential);
+
+        await keymaster.setCurrentId('Victor');
+        const challenge = await keymaster.createChallenge({
+            credentials: [
+                { schema: schema1, issuers: [alice] },
+                { schema: schema2, issuers: [alice] },
+            ],
+        });
+
+        await keymaster.setCurrentId('Carol');
+        const plaintext = await keymaster.decryptMessage(vc);
+        const vp = await keymaster.encryptMessage(plaintext, victor, { includeHash: true });
+        const response = await keymaster.encryptJSON({
+            response: {
+                challenge,
+                credentials: [{ vc, vp }, { vc, vp }],
+                requested: 2,
+                fulfilled: 2,
+                match: true,
+                responseNonce: 'mock-nonce',
+            },
+        }, victor);
+
+        await keymaster.setCurrentId('Victor');
+        const verification = await keymaster.verifyResponse(response, { publish: false });
+
+        expect(verification.match).toBe(false);
+        expect(verification.vps).toHaveLength(1);
+    });
+
     it('should not verify a invalid response to a single credential challenge', async () => {
         await keymaster.createId('Alice');
         await keymaster.createId('Carol');

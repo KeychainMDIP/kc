@@ -2102,9 +2102,16 @@ export default class Keymaster implements KeymasterInterface {
             throw new InvalidParameterError('challengeDID');
         }
 
+        const requestedCredentials = challenge.credentials ?? [];
+        const matchedCredentials = new Set<number>();
+        const matchedPresentations = new Set<string>();
         const vps: VerifiableCredential[] = [];
 
         for (let credential of response.credentials) {
+            if (matchedPresentations.has(credential.vp)) {
+                continue;
+            }
+
             const vcData = await this.resolveAsset(credential.vc);
             const vpData = await this.resolveAsset(credential.vp);
 
@@ -2135,26 +2142,28 @@ export default class Keymaster implements KeymasterInterface {
                 continue;
             }
 
-            // Check VP against VCs specified in challenge
-            if (vp.type.length >= 2 && vp.type[1].startsWith('did:')) {
-                const schema = vp.type[1];
-                const credential = challenge.credentials?.find(item => item.schema === schema);
-
-                if (!credential) {
-                    continue;
-                }
-
-                // Check if issuer of VP is in the trusted issuer list
-                if (credential.issuers && credential.issuers.length > 0 && !credential.issuers.includes(vp.issuer)) {
-                    continue;
-                }
+            const schema = vp.type[1];
+            if (typeof schema !== 'string' || !schema.startsWith('did:')) {
+                continue;
             }
 
+            const credentialIndex = requestedCredentials.findIndex((item, index) =>
+                !matchedCredentials.has(index) &&
+                item.schema === schema &&
+                (!item.issuers?.length || item.issuers.includes(vp.issuer))
+            );
+
+            if (credentialIndex === -1) {
+                continue;
+            }
+
+            matchedCredentials.add(credentialIndex);
+            matchedPresentations.add(credential.vp);
             vps.push(vp);
         }
 
         response.vps = vps;
-        response.match = vps.length === (challenge.credentials?.length ?? 0);
+        response.match = matchedCredentials.size === requestedCredentials.length;
         response.responder = responseDoc.didDocument?.controller;
 
         if (publish && response.match) {
