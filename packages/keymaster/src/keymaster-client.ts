@@ -169,9 +169,9 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     }
 
-    async recoverWallet(): Promise<WalletFile> {
+    async recoverWallet(did?: string): Promise<WalletFile> {
         try {
-            const response = await axios.post(`${this.API}/wallet/recover`);
+            const response = await axios.post(`${this.API}/wallet/recover`, { did });
             return response.data.wallet;
         }
         catch (error) {

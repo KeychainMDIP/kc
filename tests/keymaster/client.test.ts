@@ -286,14 +286,26 @@ describe('backupWallet', () => {
 
 describe('recoverWallet', () => {
     const mockWallet = { seed: 1 };
+    const mockDID = 'did:mock:backup';
 
     it('should recover wallet', async () => {
         nock(KeymasterURL)
-            .post(Endpoints.wallet_recover)
+            .post(Endpoints.wallet_recover, {})
             .reply(200, { wallet: mockWallet });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
         const wallet = await keymaster.recoverWallet();
+
+        expect(wallet).toStrictEqual(mockWallet);
+    });
+
+    it('should recover wallet from a backup DID', async () => {
+        nock(KeymasterURL)
+            .post(Endpoints.wallet_recover, { did: mockDID })
+            .reply(200, { wallet: mockWallet });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const wallet = await keymaster.recoverWallet(mockDID);
 
         expect(wallet).toStrictEqual(mockWallet);
     });

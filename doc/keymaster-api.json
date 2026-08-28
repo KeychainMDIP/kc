@@ -499,6 +499,21 @@
     "/wallet/recover": {
       "post": {
         "summary": "Recover the wallet from an existing backup.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "did": {
+                    "type": "string",
+                    "description": "The optional DID of the wallet backup."
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "The recovered wallet object.",
