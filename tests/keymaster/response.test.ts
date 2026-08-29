@@ -283,6 +283,31 @@ describe('verifyResponse', () => {
         expect(verification.vps).toStrictEqual([]);
     });
 
+    it('should reject a presentation that is not encrypted JSON', async () => {
+        await keymaster.createId('Carol');
+        const victor = await keymaster.createId('Victor');
+
+        await keymaster.setCurrentId('Victor');
+        const challenge = await keymaster.createChallenge();
+
+        await keymaster.setCurrentId('Carol');
+        const invalid = await keymaster.encryptMessage('not JSON', victor, { includeHash: true });
+        const response = await keymaster.encryptJSON({
+            response: {
+                challenge,
+                credentials: [{ vc: invalid, vp: invalid }],
+                requested: 0,
+                fulfilled: 1,
+                match: false,
+                responseNonce: 'mock-nonce',
+            },
+        }, victor);
+
+        await keymaster.setCurrentId('Victor');
+        await expect(keymaster.verifyResponse(response, { publish: false }))
+            .rejects.toThrow('Invalid parameter: did not encrypted JSON');
+    });
+
     it('should not count a presentation more than once', async () => {
         const alice = await keymaster.createId('Alice');
         const carol = await keymaster.createId('Carol');
