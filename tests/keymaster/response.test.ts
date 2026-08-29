@@ -238,6 +238,51 @@ describe('verifyResponse', () => {
         expect(verification.vps).toStrictEqual([]);
     });
 
+    it('should reject a presentation whose plaintext does not match the credential hash', async () => {
+        const alice = await keymaster.createId('Alice');
+        const carol = await keymaster.createId('Carol');
+        const victor = await keymaster.createId('Victor');
+
+        await keymaster.setCurrentId('Alice');
+        const schemaA = await keymaster.createSchema(mockSchema);
+        const schemaB = await keymaster.createSchema(mockSchema);
+        const vcA = await keymaster.issueCredential(await keymaster.bindCredential(schemaA, carol));
+        const vcB = await keymaster.issueCredential(await keymaster.bindCredential(schemaB, carol));
+
+        await keymaster.setCurrentId('Victor');
+        const challenge = await keymaster.createChallenge({
+            credentials: [{ schema: schemaB, issuers: [alice] }],
+        });
+
+        await keymaster.setCurrentId('Carol');
+        const vp = await keymaster.encryptMessage(
+            await keymaster.decryptMessage(vcB),
+            victor,
+            { includeHash: true }
+        );
+        const vcData = await keymaster.resolveAsset(vcA);
+        const vpData = await keymaster.resolveAsset(vp);
+        vpData.encrypted.cipher_hash = vcData.encrypted.cipher_hash;
+        await keymaster.updateAsset(vp, vpData);
+
+        const response = await keymaster.encryptJSON({
+            response: {
+                challenge,
+                credentials: [{ vc: vcA, vp }],
+                requested: 1,
+                fulfilled: 1,
+                match: true,
+                responseNonce: 'mock-nonce',
+            },
+        }, victor);
+
+        await keymaster.setCurrentId('Victor');
+        const verification = await keymaster.verifyResponse(response, { publish: false });
+
+        expect(verification.match).toBe(false);
+        expect(verification.vps).toStrictEqual([]);
+    });
+
     it('should not count a presentation more than once', async () => {
         const alice = await keymaster.createId('Alice');
         const carol = await keymaster.createId('Carol');

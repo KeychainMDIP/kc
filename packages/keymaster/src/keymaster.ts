@@ -2130,7 +2130,20 @@ export default class Keymaster implements KeymasterInterface {
                 continue;
             }
 
-            const vp = await this.decryptJSON(credential.vp) as VerifiableCredential;
+            const vpPlaintext = await this.decryptMessage(credential.vp);
+            let vp: VerifiableCredential;
+
+            try {
+                vp = JSON.parse(vpPlaintext) as VerifiableCredential;
+            }
+            catch {
+                throw new InvalidParameterError('did not encrypted JSON');
+            }
+
+            if (this.cipher.hashMessage(vpPlaintext) !== vcHash.cipher_hash) {
+                continue;
+            }
+
             const isValid = await this.verifySignature(vp);
 
             if (!isValid) {
