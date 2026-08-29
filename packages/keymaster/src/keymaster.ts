@@ -2102,9 +2102,15 @@ export default class Keymaster implements KeymasterInterface {
             throw new InvalidParameterError('challengeDID');
         }
 
-        const vps: VerifiableCredential[] = [];
+        const requestedCredentials = challenge.credentials ?? [];
+        const matchedPresentations = new Set<string>();
+        const candidates: { vp: VerifiableCredential; credentialIndexes: number[] }[] = [];
 
         for (let credential of response.credentials) {
+            if (matchedPresentations.has(credential.vp)) {
+                continue;
+            }
+
             const vcData = await this.resolveAsset(credential.vc);
             const vpData = await this.resolveAsset(credential.vp);
 
@@ -2135,26 +2141,54 @@ export default class Keymaster implements KeymasterInterface {
                 continue;
             }
 
-            // Check VP against VCs specified in challenge
-            if (vp.type.length >= 2 && vp.type[1].startsWith('did:')) {
-                const schema = vp.type[1];
-                const credential = challenge.credentials?.find(item => item.schema === schema);
+            const schema = vp.type[1];
+            if (typeof schema !== 'string' || !schema.startsWith('did:')) {
+                continue;
+            }
 
-                if (!credential) {
+            const credentialIndexes: number[] = [];
+            requestedCredentials.forEach((item, index) => {
+                if (item.schema === schema && (!item.issuers?.length || item.issuers.includes(vp.issuer))) {
+                    credentialIndexes.push(index);
+                }
+            });
+
+            if (credentialIndexes.length === 0) {
+                continue;
+            }
+
+            matchedPresentations.add(credential.vp);
+            candidates.push({ vp, credentialIndexes });
+        }
+
+        const matchedCredentials = new Map<number, number>();
+        const assignPresentation = (presentationIndex: number, visited: Set<number>): boolean => {
+            for (const credentialIndex of candidates[presentationIndex].credentialIndexes) {
+                if (visited.has(credentialIndex)) {
                     continue;
                 }
 
-                // Check if issuer of VP is in the trusted issuer list
-                if (credential.issuers && credential.issuers.length > 0 && !credential.issuers.includes(vp.issuer)) {
-                    continue;
+                visited.add(credentialIndex);
+                const assignedPresentation = matchedCredentials.get(credentialIndex);
+
+                if (assignedPresentation === undefined || assignPresentation(assignedPresentation, visited)) {
+                    matchedCredentials.set(credentialIndex, presentationIndex);
+                    return true;
                 }
             }
 
-            vps.push(vp);
-        }
+            return false;
+        };
+
+        candidates.forEach((_, index) => assignPresentation(index, new Set()));
+
+        const matchedCandidateIndexes = new Set(matchedCredentials.values());
+        const vps = candidates
+            .filter((_, index) => matchedCandidateIndexes.has(index))
+            .map(candidate => candidate.vp);
 
         response.vps = vps;
-        response.match = vps.length === (challenge.credentials?.length ?? 0);
+        response.match = matchedCredentials.size === requestedCredentials.length;
         response.responder = responseDoc.didDocument?.controller;
 
         if (publish && response.match) {
