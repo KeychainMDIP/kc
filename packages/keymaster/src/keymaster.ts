@@ -1733,6 +1733,17 @@ export default class Keymaster implements KeymasterInterface {
         return !(!Array.isArray(vc["@context"]) || !Array.isArray(vc.type) || !vc.issuer || !vc.credentialSubject);
     }
 
+    private async verifyCredentialSignature(obj: unknown): Promise<boolean> {
+        const vc = obj as Partial<VerifiableCredential> | null | undefined;
+        if (typeof vc?.issuer !== 'string' ||
+            typeof vc?.signature?.signer !== 'string' ||
+            vc.signature.signer !== vc.issuer) {
+            return false;
+        }
+
+        return this.verifySignature(vc);
+    }
+
     async updateCredential(
         did: string,
         credential: VerifiableCredential
@@ -1812,8 +1823,9 @@ export default class Keymaster implements KeymasterInterface {
             const credential = await this.lookupDID(did);
             const vc = await this.decryptJSON(credential);
 
-            if (this.isVerifiableCredential(vc) &&
-                vc.credentialSubject?.id !== id.did) {
+            if (!this.isVerifiableCredential(vc) ||
+                vc.credentialSubject?.id !== id.did ||
+                !await this.verifyCredentialSignature(vc)) {
                 return false;
             }
 
@@ -2144,9 +2156,7 @@ export default class Keymaster implements KeymasterInterface {
                 continue;
             }
 
-            const isValid = await this.verifySignature(vp);
-
-            if (!isValid) {
+            if (!await this.verifyCredentialSignature(vp)) {
                 continue;
             }
 
