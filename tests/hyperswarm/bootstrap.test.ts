@@ -642,6 +642,36 @@ describe('bootstrapSyncStoreFromGatekeeper', () => {
         expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor)).toBe('12');
     });
 
+    it('invalidates the cache before an index page persists and then throws', async () => {
+        const store = new InMemoryOperationSyncStore();
+        await store.start();
+        await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotComplete, 'true');
+        await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor, '12');
+        const applySyncPage = store.applySyncPage.bind(store);
+        const finishStoreMutation = jest.fn();
+        const beginStoreMutation = jest.fn(() => finishStoreMutation);
+        jest.spyOn(store, 'applySyncPage').mockImplementationOnce(async page => {
+            expect(beginStoreMutation).toHaveBeenCalledTimes(1);
+            expect(finishStoreMutation).not.toHaveBeenCalled();
+            await applySyncPage(page);
+            throw new Error('commit acknowledgement lost');
+        });
+
+        const gatekeeper = {
+            exportIndex: jest.fn(async () => changesResponse({
+                cursor: '13',
+                operations: [makeEvent(makeOperation('a', '2026-02-10T10:00:00.000Z'))],
+            })),
+        };
+
+        await expect(bootstrapSyncStoreFromGatekeeper(store, gatekeeper, { beginStoreMutation }))
+            .rejects
+            .toThrow('commit acknowledgement lost');
+        await expect(store.has(h('a'))).resolves.toBe(true);
+        expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor)).toBe('13');
+        expect(finishStoreMutation).toHaveBeenCalledTimes(1);
+    });
+
     it('rejects snapshot continuations that change checkpoint cursor', async () => {
         const store = new InMemoryOperationSyncStore();
         await store.start();

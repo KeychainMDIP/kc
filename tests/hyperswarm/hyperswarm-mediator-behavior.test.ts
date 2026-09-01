@@ -6,7 +6,7 @@ import { jest } from '@jest/globals';
 import { compareSyncCursor } from '../../services/mediators/hyperswarm/src/negentropy/cursor.ts';
 import { mapOperationToSyncKey } from '../../services/mediators/hyperswarm/src/sync-mapping.ts';
 import {
-    decodeUnknownTransportMessages,
+    decodeFramedMessages,
     encodeFramedMessage,
 } from '../../services/mediators/hyperswarm/src/transport-framing.ts';
 import TestHelper from '../gatekeeper/helper.ts';
@@ -71,7 +71,8 @@ type ScenarioName =
     | 'same-second exact cap'
     | 'same-second cap-plus-one'
     | 'local-only continuation cursor'
-    | 'peer-only older history';
+    | 'peer-only older history'
+    | 'future timestamp pages';
 
 interface ConvergenceScenario {
     operationsA: Operation[];
@@ -318,7 +319,7 @@ function snapshotCappedCursor(
 
 function decodeWire(link: RecordingDuplexPair): WireMessage[] {
     return link.transcript.flatMap(entry => {
-        const decoded = decodeUnknownTransportMessages(entry.raw);
+        const decoded = decodeFramedMessages(entry.raw);
         if (decoded.error || decoded.remaining.length > 0) {
             throw new Error(`failed to decode wire write ${entry.sequence}: ${decoded.error ?? 'remaining bytes'}`);
         }
@@ -598,6 +599,18 @@ async function createConvergenceScenario(name: ScenarioName): Promise<Convergenc
             operationsA: operations,
             operationsB: operations.slice(3),
             maxRecordsPerWindow: 4,
+            expectContinuation: true,
+        };
+    }
+    if (name === 'future timestamp pages') {
+        const operations = await createIndependentOperations(Array.from(
+            { length: 8 },
+            (_value, index) => Date.now() + (24 * 60 * 60 * 1_000) + (index * 1_000),
+        ));
+        return {
+            operationsA: operations.filter((_operation, index) => index % 2 === 0),
+            operationsB: operations.filter((_operation, index) => index % 2 === 1),
+            maxRecordsPerWindow: 2,
             expectContinuation: true,
         };
     }
@@ -905,12 +918,16 @@ describe('hyperswarm mediator behavior', () => {
             'same-second cap-plus-one',
             'local-only continuation cursor',
             'peer-only older history',
+            'future timestamp pages',
         ])('self-heals %s stores and repeats with zero transfer', async scenarioName => {
             const scenario = await createConvergenceScenario(scenarioName);
-            const union = [...scenario.operationsA, ...scenario.operationsB];
-            const expectedIds = operationIds(union);
             const publicKeyA = Buffer.alloc(32, publicKeyByteA);
             const publicKeyB = Buffer.alloc(32, publicKeyByteB);
+            if (scenarioName === 'future timestamp pages' && publicKeyA.compare(publicKeyB) > 0) {
+                [scenario.operationsA, scenario.operationsB] = [scenario.operationsB, scenario.operationsA];
+            }
+            const union = [...scenario.operationsA, ...scenario.operationsB];
+            const expectedIds = operationIds(union);
             driver = await createMediatorDriver({
                 ...scenario,
                 publicKeyA,
@@ -934,6 +951,11 @@ describe('hyperswarm mediator behavior', () => {
             }
             if (scenarioName === 'interleaved capped pages') {
                 expect(opens.length).toBeGreaterThanOrEqual(3);
+            }
+            if (scenarioName === 'future timestamp pages') {
+                const expectedToTs = Math.max(...union.map(operation => operationCursor(operation).ts));
+                expect(opens.length).toBeGreaterThan(1);
+                expect(opens.every(open => open.body.window?.toTs === expectedToTs)).toBe(true);
             }
             if (scenarioName === 'same-second exact cap') {
                 expect(opens).toHaveLength(1);
@@ -1322,7 +1344,7 @@ describe('hyperswarm mediator behavior', () => {
         expect(driver.transport.connectionB.destroyed).toBe(true);
     });
 
-    it('negotiates raw initial pings before switching to framed protocol traffic', async () => {
+    it('uses framed transport from the initial pings through reconciliation', async () => {
         const fixtures = await createOperationFixtures();
         const operationsA = [fixtures.controllerCreate, fixtures.controllerUpdate];
         const operationsB = [fixtures.independentCreate];
@@ -1330,7 +1352,6 @@ describe('hyperswarm mediator behavior', () => {
         driver = await createMediatorDriver({
             operationsA,
             operationsB,
-            connectionMode: 'unknown',
         });
 
         await driver.startSync();
@@ -1339,28 +1360,11 @@ describe('hyperswarm mediator behavior', () => {
         const pings = driver.transcript.filter(entry => entry.messageType === 'ping');
         expect(pings).toHaveLength(2);
         expect(pings.map(entry => entry.direction)).toStrictEqual(['a-to-b', 'b-to-a']);
-        expect(pings.every(entry => entry.transportMode === 'legacy')).toBe(true);
+        expect(pings.every(entry => entry.framed)).toBe(true);
 
         const protocolEntries = driver.transcript.filter(entry => entry.messageType !== 'ping');
         expect(protocolEntries.length).toBeGreaterThan(0);
-        expect(protocolEntries.every(entry => entry.transportMode === 'framed')).toBe(true);
-
-        const peerKeyA = driver.nodeA.publicKey.toString('hex');
-        const peerKeyB = driver.nodeB.publicKey.toString('hex');
-        const stateA = driver.nodeA.run(
-            () => driver!.nodeA.mediator.__test.getConnectionState(peerKeyB),
-        );
-        const stateB = driver.nodeB.run(
-            () => driver!.nodeB.mediator.__test.getConnectionState(peerKeyA),
-        );
-        expect(stateA).toMatchObject({
-            transportMode: 'framed',
-            inboundTransportMode: 'framed',
-        });
-        expect(stateB).toMatchObject({
-            transportMode: 'framed',
-            inboundTransportMode: 'framed',
-        });
+        expect(protocolEntries.every(entry => entry.framed)).toBe(true);
     });
 
     it('waits for deferred client work and reports observable state on bounded failure', async () => {

@@ -10,7 +10,6 @@ import {
 export type OrderedCatchupDecisionReason =
     | 'cold_start'
     | 'substantially_behind'
-    | 'disabled'
     | 'peer_unsupported'
     | 'peer_unready'
     | 'peer_counts_missing'
@@ -21,7 +20,6 @@ export type OrderedCatchupDecisionReason =
 export type ExpectedOrderedCatchupRequestReason =
     | 'cold_start'
     | 'substantially_behind'
-    | 'disabled'
     | 'local_unready'
     | 'peer_unsupported'
     | 'peer_counts_missing'
@@ -29,7 +27,6 @@ export type ExpectedOrderedCatchupRequestReason =
     | 'not_far_behind';
 
 export interface OrderedCatchupDecisionOptions {
-    enabled: boolean;
     localOperationCount: number;
     peerCapabilities: NegotiatedPeerCapabilities;
     requiredVersion: number;
@@ -43,7 +40,6 @@ export interface OrderedCatchupDecision {
 }
 
 export interface ExpectedOrderedCatchupRequestOptions {
-    enabled: boolean;
     localOperationCount: number;
     localOrderedOperationCount: number;
     peerCapabilities: NegotiatedPeerCapabilities;
@@ -106,10 +102,6 @@ export function getOrderedCatchupDecision(options: OrderedCatchupDecisionOptions
     const peerOrderedOperationCount = peer.orderedOperationCount;
     const windowSize = Math.max(1, normalizeCount(options.windowSize));
 
-    if (!options.enabled) {
-        return { useOrderedCatchup: false, reason: 'disabled', gap: 0 };
-    }
-
     if (peer.orderedCatchup !== true || peer.orderedCatchupVersion !== options.requiredVersion) {
         return { useOrderedCatchup: false, reason: 'peer_unsupported', gap: 0 };
     }
@@ -147,10 +139,6 @@ export function getExpectedOrderedCatchupRequestDecision(
     const localOrderedOperationCount = normalizeCount(options.localOrderedOperationCount);
     const peerOperationCount = peer.operationCount;
     const windowSize = Math.max(1, normalizeCount(options.windowSize));
-
-    if (!options.enabled) {
-        return { expectRequest: false, reason: 'disabled', gap: 0 };
-    }
 
     if (localOperationCount === 0 || localOperationCount !== localOrderedOperationCount) {
         return { expectRequest: false, reason: 'local_unready', gap: 0 };

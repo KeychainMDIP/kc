@@ -8,6 +8,7 @@ import {
     OperationSyncStore,
     SyncOperationRecord,
     SyncOperationWriteRecord,
+    SyncStoreCursor,
     SyncStoreListOptions,
     SyncStoreOrderedListOptions,
     SyncStorePage,
@@ -259,6 +260,51 @@ export default class SqliteOperationSyncStore implements OperationSyncStore {
         return rows.map(row => this.mapRow(row));
     }
 
+    async iterateSortedKeys(options: SyncStoreListOptions = {}): Promise<SyncStoreCursor[]> {
+        if (!this.db) {
+            throw new Error(SQLITE_NOT_STARTED_ERROR);
+        }
+
+        const limit = options.limit ?? 1000;
+        const after = options.after;
+        const fromTs = options.fromTs;
+        const toTs = options.toTs;
+        const params: Array<number | string> = [];
+        const predicates: string[] = [];
+
+        if (after) {
+            predicates.push('(signed_ts > ? OR (signed_ts = ? AND id > ?))');
+            params.push(after.ts, after.ts, after.id);
+        }
+
+        if (typeof fromTs === 'number') {
+            predicates.push('signed_ts >= ?');
+            params.push(fromTs);
+        }
+
+        if (typeof toTs === 'number') {
+            predicates.push('signed_ts <= ?');
+            params.push(toTs);
+        }
+
+        const where = predicates.length > 0
+            ? `WHERE ${predicates.join(' AND ')}`
+            : '';
+
+        params.push(limit);
+
+        const rows = await this.db.all<Array<Pick<SyncRow, 'id' | 'signed_ts'>>>(
+            `SELECT id, signed_ts
+             FROM operations
+             ${where}
+             ORDER BY signed_ts ASC, id ASC
+             LIMIT ?`,
+            ...params
+        );
+
+        return rows.map(row => ({ id: row.id, ts: row.signed_ts }));
+    }
+
     async iterateOrdered(options: SyncStoreOrderedListOptions = {}): Promise<SyncOperationRecord[]> {
         if (!this.db) {
             throw new Error(SQLITE_NOT_STARTED_ERROR);
@@ -315,6 +361,17 @@ export default class SqliteOperationSyncStore implements OperationSyncStore {
             'SELECT COUNT(*) AS count FROM operations WHERE sync_order IS NOT NULL'
         );
         return row?.count ?? 0;
+    }
+
+    async getLatestSignedTimestamp(): Promise<number | null> {
+        if (!this.db) {
+            throw new Error(SQLITE_NOT_STARTED_ERROR);
+        }
+
+        const row = await this.db.get<Pick<SyncRow, 'signed_ts'>>(
+            'SELECT signed_ts FROM operations ORDER BY signed_ts DESC, id DESC LIMIT 1'
+        );
+        return row?.signed_ts ?? null;
     }
 
     private mapRow(row: SyncRow): SyncOperationRecord {

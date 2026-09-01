@@ -6,6 +6,7 @@ import sqlite3 from 'sqlite3';
 import { Operation } from '@mdip/gatekeeper/types';
 import SqliteOperationSyncStore from '../../services/mediators/hyperswarm/src/db/sqlite.ts';
 import InMemoryOperationSyncStore from '../../services/mediators/hyperswarm/src/db/memory.ts';
+import PostgresOperationSyncStore from '../../services/mediators/hyperswarm/src/db/postgres.ts';
 import { OperationSyncStore } from '../../services/mediators/hyperswarm/src/db/types.ts';
 
 const h = (c: string) => c.repeat(64);
@@ -44,9 +45,11 @@ const recC = { id: h('c'), syncOrder: 10, signedTs: 2000, ts: 2000, operation: o
 async function runStoreContractTests(store: OperationSyncStore): Promise<void> {
     await store.start();
     await store.reset();
+    expect(await store.getLatestSignedTimestamp()).toBeNull();
 
     const inserted1 = await store.upsertMany([recB, recA, recC]);
     expect(inserted1).toStrictEqual({ inserted: 3, updated: 0 });
+    expect(await store.getLatestSignedTimestamp()).toBe(2000);
 
     const inserted2 = await store.upsertMany([recA, recC]);
     expect(inserted2).toStrictEqual({ inserted: 0, updated: 0 });
@@ -94,6 +97,31 @@ async function runStoreContractTests(store: OperationSyncStore): Promise<void> {
     expect(sortedAll.every(item => Number.isFinite(item.insertedAt))).toBe(true);
     expect(sortedAll.find(item => item.id === recA.id)?.syncOrder).toBe(5);
     expect(sortedAll.find(item => item.id === recC.id)?.syncOrder).toBe(10);
+
+    expect(await store.iterateSortedKeys()).toStrictEqual([
+        { id: recA.id, ts: 1000 },
+        { id: recB.id, ts: 2000 },
+        { id: recC.id, ts: 2000 },
+    ]);
+    expect(await store.iterateSortedKeys({ limit: 2 })).toStrictEqual([
+        { id: recA.id, ts: 1000 },
+        { id: recB.id, ts: 2000 },
+    ]);
+    expect(await store.iterateSortedKeys({ fromTs: 1500, toTs: 2000 })).toStrictEqual([
+        { id: recB.id, ts: 2000 },
+        { id: recC.id, ts: 2000 },
+    ]);
+    expect(await store.iterateSortedKeys({ after: { ts: 2000, id: recB.id } })).toStrictEqual([
+        { id: recC.id, ts: 2000 },
+    ]);
+    expect(await store.iterateSortedKeys({
+        after: { ts: 1500, id: h('0') },
+        fromTs: 1500,
+        toTs: 2000,
+    })).toStrictEqual([
+        { id: recB.id, ts: 2000 },
+        { id: recC.id, ts: 2000 },
+    ]);
 
     const firstTwo = await store.iterateSorted({ limit: 2 });
     expect(firstTwo.map(item => item.id)).toStrictEqual([recA.id, recB.id]);
@@ -160,10 +188,12 @@ async function runStoreContractTests(store: OperationSyncStore): Promise<void> {
     expect(await store.deleteBySyncOrder(Number.MAX_SAFE_INTEGER)).toBe(2);
     expect(await store.deleteBySyncOrder(Number.MAX_SAFE_INTEGER)).toBe(0);
     expect((await store.iterateSorted()).map(item => item.id)).toStrictEqual([recA.id]);
+    expect(await store.getLatestSignedTimestamp()).toBe(1000);
 
     await store.reset();
     expect(await store.count()).toBe(0);
     expect(await store.countOrdered()).toBe(0);
+    expect(await store.getLatestSignedTimestamp()).toBeNull();
 
     await store.stop();
 }
@@ -252,11 +282,13 @@ describe('SqliteOperationSyncStore', () => {
         await expect(store.loadSyncState('cursor')).rejects.toThrow('Call start() first');
         await expect(store.saveSyncState('cursor', '1')).rejects.toThrow('Call start() first');
         await expect(store.getByIds([recA.id])).rejects.toThrow('Call start() first');
+        await expect(store.iterateSortedKeys()).rejects.toThrow('Call start() first');
         await expect(store.iterateSorted()).rejects.toThrow('Call start() first');
         await expect(store.iterateOrdered()).rejects.toThrow('Call start() first');
         await expect(store.has(recA.id)).rejects.toThrow('Call start() first');
         await expect(store.count()).rejects.toThrow('Call start() first');
         await expect(store.countOrdered()).rejects.toThrow('Call start() first');
+        await expect(store.getLatestSignedTimestamp()).rejects.toThrow('Call start() first');
     });
 
     it('throws from internal transaction helper when DB is not started', async () => {
@@ -391,5 +423,56 @@ describe('SqliteOperationSyncStore', () => {
         await expect(store.count()).resolves.toBe(0);
         await expect(store.countOrdered()).resolves.toBe(0);
         db.get = originalGet;
+    });
+});
+
+describe('PostgresOperationSyncStore', () => {
+    it('reads the latest signed timestamp without loading operation payloads', async () => {
+        const store = new PostgresOperationSyncStore();
+        const calls: string[] = [];
+        const results = [
+            { rowCount: 1, rows: [{ signed_ts: '2000' }] },
+            { rowCount: 0, rows: [] },
+        ];
+        (store as any).pool = {
+            query: async (sql: string) => {
+                calls.push(sql);
+                return results.shift();
+            },
+        };
+
+        await expect(store.getLatestSignedTimestamp()).resolves.toBe(2000);
+        await expect(store.getLatestSignedTimestamp()).resolves.toBeNull();
+
+        const sql = calls[0].replace(/\s+/g, ' ').trim();
+        expect(sql).toContain('SELECT signed_ts FROM hyperswarm_sync_operations');
+        expect(sql).toContain('ORDER BY signed_ts DESC, id DESC LIMIT 1');
+        expect(sql).not.toContain('operation_json');
+    });
+
+    it('reads only key columns for sorted key iteration', async () => {
+        const store = new PostgresOperationSyncStore();
+        const calls: Array<{ sql: string; params: unknown[] }> = [];
+
+        (store as any).pool = {
+            query: async (sql: string, params: unknown[]) => {
+                calls.push({ sql, params });
+                return { rows: [{ id: recC.id, signed_ts: '2000' }] };
+            },
+        };
+
+        await expect(store.iterateSortedKeys({
+            after: { ts: 1000, id: recA.id },
+            fromTs: 1500,
+            toTs: 2000,
+            limit: 2,
+        })).resolves.toStrictEqual([{ id: recC.id, ts: 2000 }]);
+
+        const sql = calls[0].sql.replace(/\s+/g, ' ').trim();
+        expect(sql).toContain('SELECT id, signed_ts FROM hyperswarm_sync_operations');
+        expect(sql).not.toContain('operation_json');
+        expect(sql).not.toContain('sync_order');
+        expect(sql).not.toContain('inserted_at');
+        expect(calls[0].params).toStrictEqual([1000, recA.id, 1500, 2000, 2]);
     });
 });

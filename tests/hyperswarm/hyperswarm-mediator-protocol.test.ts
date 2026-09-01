@@ -5,15 +5,22 @@ import type { Operation } from '@mdip/gatekeeper/types';
 import { jest } from '@jest/globals';
 
 import InMemoryOperationSyncStore from '../../services/mediators/hyperswarm/src/db/memory.ts';
+import { HYPR_INDEX_SYNC_STATE_KEYS } from '../../services/mediators/hyperswarm/src/bootstrap.ts';
 import NegentropyAdapter from '../../services/mediators/hyperswarm/src/negentropy/adapter.ts';
 import {
     decodeNegentropyFrame,
     encodeNegentropyFrame,
     normalizePeerCapabilities,
 } from '../../services/mediators/hyperswarm/src/negentropy/protocol.ts';
+import {
+    buildInitialHistoryWindow,
+    buildNextHistoryPage,
+    makeWindowId,
+    MDIP_EPOCH_SECONDS,
+} from '../../services/mediators/hyperswarm/src/negentropy/windows.ts';
 import { estimateOperationBytes } from '../../services/mediators/hyperswarm/src/negentropy/transfer.ts';
 import {
-    decodeUnknownTransportMessages,
+    decodeFramedMessages,
     encodeFramedMessage,
 } from '../../services/mediators/hyperswarm/src/transport-framing.ts';
 import TestHelper from '../gatekeeper/helper.ts';
@@ -30,7 +37,6 @@ import {
 
 installMediatorMocks();
 
-const FRAMING_VERSION = 1;
 const NEGENTROPY_VERSION = 1;
 const hash = (char: string) => char.repeat(64);
 
@@ -78,14 +84,14 @@ function peerPing(overrides: Record<string, unknown> = {}): Record<string, unkno
             negentropy: true,
             negentropyVersion: NEGENTROPY_VERSION,
         },
-        transportFramingVersion: FRAMING_VERSION,
+        transportFramingVersion: 1,
         ...overrides,
     };
 }
 
 function decodeWrites(pair: RecordingDuplexPair): Array<Record<string, unknown>> {
     return pair.transcript.flatMap(entry => {
-        const decoded = decodeUnknownTransportMessages(entry.raw);
+        const decoded = decodeFramedMessages(entry.raw);
         return decoded.messages.map(message => JSON.parse(message.toString('utf8')) as Record<string, unknown>);
     });
 }
@@ -242,9 +248,6 @@ describe('hyperswarm mediator protocol characterization', () => {
             name: `protocol-node-${++nodeNumber}`,
             publicKey: Buffer.alloc(32, options.keyByte ?? 0x11),
             env: {
-                KC_HYPR_NEGENTROPY_ENABLE: 'true',
-                KC_HYPR_ORDERED_CATCHUP_ENABLE: 'false',
-                KC_HYPR_LEGACY_SYNC_ENABLE: 'true',
                 KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW: String(maxRecords),
                 KC_HYPR_NEGENTROPY_MAX_ROUNDS_PER_SESSION: String(maxRounds),
                 ...options.env,
@@ -274,7 +277,6 @@ describe('hyperswarm mediator protocol characterization', () => {
         protocolNode: ProtocolNode,
         options: {
             peerKeyByte?: number;
-            mode?: 'unknown' | 'framed' | 'legacy';
             overrides?: Record<string, unknown>;
         } = {},
     ): AttachedPeer {
@@ -288,19 +290,9 @@ describe('hyperswarm mediator protocol characterization', () => {
         });
         pairs.push(pair);
 
-        const mode = options.mode ?? 'unknown';
         protocolNode.node.run(() => protocolNode.node.mediator.__test.addConnection(peerKey, {
             connection: pair.connectionA,
-            ...(mode === 'framed' && {
-                capabilities: compatibleCapabilities(),
-                transportMode: 'framed',
-                inboundTransportMode: 'framed',
-                peerTransportFramingVersion: FRAMING_VERSION,
-            }),
-            ...(mode === 'legacy' && {
-                transportMode: 'legacy',
-                inboundTransportMode: 'legacy',
-            }),
+            capabilities: compatibleCapabilities(),
             ...options.overrides,
         }));
         return { peerKey, pair };
@@ -315,7 +307,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 operation,
             })));
         }
-        const peer = attachPeer(source, { mode: 'framed' });
+        const peer = attachPeer(source, {});
         await source.node.run(() => source.node.mediator.__test.maybeStartPeerSync(peer.peerKey));
         const open = decodeWrites(peer.pair).find(message => message.type === 'neg_open');
         if (!open) {
@@ -343,7 +335,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         sessionId = 'replacement-session',
     ): AttachedPeer {
         protocolNode.node.run(() => protocolNode.node.mediator.__test.disconnectPeer(peerKey));
-        const replacement = attachPeer(protocolNode, { mode: 'framed' });
+        const replacement = attachPeer(protocolNode, {});
         protocolNode.node.run(
             () => protocolNode.node.mediator.__test.createOrderedCatchupClientSession(peerKey, sessionId),
         );
@@ -390,95 +382,114 @@ describe('hyperswarm mediator protocol characterization', () => {
         jest.restoreAllMocks();
     });
 
-    it('sends one raw initial ping then negotiates framed Negentropy traffic', async () => {
-        const protocolNode = await createNode();
+    it('frames the initial ping and advertises always-on sync capabilities', async () => {
+        const protocolNode = await createNode({
+            env: {
+                KC_HYPR_NEGENTROPY_ENABLE: 'false',
+                KC_HYPR_ORDERED_CATCHUP_ENABLE: 'false',
+            },
+        });
+        const [operation] = await makeOperations(1);
+        const latestSignedTimestamp = Math.floor(Date.parse(operation.signature!.signed) / 1000);
+        await protocolNode.store.upsertMany([{
+            id: operation.signature!.hash,
+            ts: latestSignedTimestamp,
+            operation,
+        }]);
         const { peerKey, pair } = attachPeer(protocolNode);
 
-        await protocolNode.node.run(() => protocolNode.node.mediator.__test.sendPingToPeer(peerKey, 'initial'));
-        await protocolNode.node.run(() => protocolNode.node.mediator.__test.sendPingToPeer(peerKey, 'initial'));
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.sendPingToPeer(peerKey));
         expect(pair.transcript).toHaveLength(1);
-        expect(pair.transcript[0]).toMatchObject({ messageType: 'ping', transportMode: 'legacy' });
+        expect(pair.transcript[0]).toMatchObject({ messageType: 'ping', framed: true });
+        expect(decodeWrites(pair)[0]).toMatchObject({
+            transportFramingVersion: 1,
+            capabilities: {
+                negentropy: true,
+                negentropyVersion: 1,
+                orderedCatchup: true,
+                orderedCatchupVersion: 1,
+                orderedCatchupReady: false,
+                latestSignedTimestamp,
+            },
+        });
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
             peerKey,
-            Buffer.from(JSON.stringify(peerPing())),
+            encodeFramedMessage(JSON.stringify(peerPing())),
         ));
-        await protocolNode.node.run(() => protocolNode.node.mediator.__test.sendPingToPeer(peerKey, 'periodic'));
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.sendPingToPeer(peerKey));
 
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
         )).toMatchObject({
             syncMode: 'negentropy',
-            transportMode: 'framed',
-            inboundTransportMode: 'framed',
-            peerTransportFramingVersion: FRAMING_VERSION,
             activeSession: { mode: 'negentropy' },
         });
-        expect(pair.transcript.slice(1).map(entry => [entry.messageType, entry.transportMode])).toEqual(
-            expect.arrayContaining([
-                ['neg_open', 'framed'],
-                ['ping', 'framed'],
-            ]),
+        expect(pair.transcript.map(entry => entry.messageType)).toEqual(
+            expect.arrayContaining(['neg_open', 'ping']),
+        );
+        expect(pair.transcript.every(entry => entry.framed)).toBe(true);
+    });
+
+    it.each([
+        ['the wall clock when both stores end earlier', null, null],
+        ['the local latest timestamp when it is in the future', 1_800_000_000, null],
+        ['the peer latest timestamp when it is in the future', null, 1_800_000_000],
+    ])('sets the initial window upper bound from %s', async (
+        _case,
+        localLatestSignedTimestamp,
+        peerLatestSignedTimestamp,
+    ) => {
+        const nowMs = 1_750_000_000_000;
+        const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(nowMs);
+        const protocolNode = await createNode({ keyByte: 0x11 });
+        if (localLatestSignedTimestamp !== null) {
+            const [operation] = await makeOperations(1);
+            operation.signature!.signed = new Date(localLatestSignedTimestamp * 1000).toISOString();
+            await protocolNode.store.upsertMany([{
+                id: operation.signature!.hash,
+                ts: localLatestSignedTimestamp,
+                operation,
+            }]);
+        }
+        const { peerKey, pair } = attachPeer(protocolNode, { peerKeyByte: 0x22 });
+        const capabilities = {
+            negentropy: true,
+            negentropyVersion: NEGENTROPY_VERSION,
+            ...(peerLatestSignedTimestamp === null ? {} : { latestSignedTimestamp: peerLatestSignedTimestamp }),
+        };
+
+        try {
+            await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, peerPing({
+                capabilities,
+            })));
+        }
+        finally {
+            nowSpy.mockRestore();
+        }
+
+        const open = decodeWrites(pair).find(message => message.type === 'neg_open');
+        expect((open?.window as { toTs?: number } | undefined)?.toTs).toBe(
+            Math.max(
+                Math.floor(nowMs / 1000),
+                localLatestSignedTimestamp ?? 0,
+                peerLatestSignedTimestamp ?? 0,
+            ),
         );
     });
 
     it.each([
-        ['missing capabilities', undefined, FRAMING_VERSION, 'legacy'],
-        ['version mismatch', { negentropy: true, negentropyVersion: 2 }, FRAMING_VERSION, 'legacy'],
-        ['framing mismatch', { negentropy: true, negentropyVersion: 1 }, 2, 'legacy'],
-    ])('falls back for %s', async (
+        ['missing capabilities', undefined],
+        ['version mismatch', { negentropy: true, negentropyVersion: 2 }],
+    ])('does not select a sync mode for %s', async (
         _case,
         capabilities,
-        transportFramingVersion,
-        expectedMode,
     ) => {
         const protocolNode = await createNode();
-        const { peerKey } = attachPeer(protocolNode);
-
-        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, peerPing({
-            capabilities,
-            transportFramingVersion,
-        })));
-
-        expect(protocolNode.node.run(
-            () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
-        )).toMatchObject({ syncMode: expectedMode, activeSession: { mode: 'legacy' } });
-    });
-
-    it('does not suppress legacy sync while ordered catch-up is active', async () => {
-        const protocolNode = await createNode({
-            env: { KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true' },
-        });
-        const catchupPeer = attachPeer(protocolNode, { mode: 'framed' });
-        protocolNode.node.run(
-            () => protocolNode.node.mediator.__test.createOrderedCatchupClientSession(
-                catchupPeer.peerKey,
-                'active-catchup',
-            ),
-        );
-        const legacyPeer = attachPeer(protocolNode, { peerKeyByte: 0x33 });
-
-        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(
-            legacyPeer.peerKey,
-            peerPing({
-                capabilities: undefined,
-                transportFramingVersion: undefined,
-            }),
-        ));
-
-        expect(protocolNode.node.run(
-            () => protocolNode.node.mediator.__test.getConnectionState(legacyPeer.peerKey),
-        )).toMatchObject({ syncMode: 'legacy', activeSession: { mode: 'legacy' } });
-    });
-
-    it('selects no mode for an incompatible peer when legacy synchronization is disabled', async () => {
-        const protocolNode = await createNode({
-            env: { KC_HYPR_LEGACY_SYNC_ENABLE: 'false' },
-        });
         const { peerKey, pair } = attachPeer(protocolNode);
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, peerPing({
-            capabilities: { negentropy: true, negentropyVersion: 2 },
+            capabilities,
         })));
 
         expect(protocolNode.node.run(
@@ -487,12 +498,32 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(pair.transcript).toHaveLength(0);
     });
 
+    it('ignores removed full-store sync messages', async () => {
+        const [operation] = await makeOperations(1);
+        const protocolNode = await createNode();
+        const { peerKey, pair } = attachPeer(protocolNode);
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
+            peerKey,
+            Buffer.concat([
+                encodeFramedMessage(JSON.stringify({ type: 'sync', node: 'removed-peer' })),
+                encodeFramedMessage(JSON.stringify({ type: 'batch', data: [operation] })),
+            ]),
+        ));
+
+        expect(protocolNode.node.gatekeeperClient.getDIDs).not.toHaveBeenCalled();
+        expect(protocolNode.node.gatekeeperClient.exportBatch).not.toHaveBeenCalled();
+        expect(protocolNode.node.gatekeeperClient.importBatch).not.toHaveBeenCalled();
+        expect(await protocolNode.store.count()).toBe(0);
+        expect(pair.transcript).toHaveLength(0);
+    });
+
     it.each([
         ['lower local key initiates', 0x11, 0x22, true],
         ['higher local key waits', 0x33, 0x22, false],
     ])('%s', async (_case, localKeyByte, peerKeyByte, shouldInitiate) => {
         const protocolNode = await createNode({ keyByte: localKeyByte });
-        const { peerKey, pair } = attachPeer(protocolNode, { peerKeyByte, mode: 'framed' });
+        const { peerKey, pair } = attachPeer(protocolNode, { peerKeyByte });
 
         await protocolNode.node.run(
             () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey),
@@ -515,18 +546,19 @@ describe('hyperswarm mediator protocol characterization', () => {
             pingFrame.subarray(0, 3),
         ));
         expect(protocolNode.node.run(
-            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.transportMode,
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.syncMode,
         )).toBe('unknown');
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
             peerKey,
             pingFrame.subarray(3),
         ));
         expect(protocolNode.node.run(
-            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.transportMode,
-        )).toBe('framed');
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.syncMode,
+        )).toBe('negentropy');
 
         const coalesced = Buffer.concat(operations.map(operation => encodeFramedMessage(JSON.stringify({
-            type: 'batch',
+            type: 'queue',
+            relays: [],
             data: [operation],
         }))));
         await protocolNode.node.run(
@@ -536,36 +568,190 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(protocolNode.node.gatekeeperClient.importBatch).toHaveBeenCalledTimes(2);
     });
 
-    it('transitions from a raw ping to a framed message in the same chunk', async () => {
-        const [operation] = await makeOperations(1);
-        const protocolNode = await createNode({ keyByte: 0x33 });
-        const { peerKey } = attachPeer(protocolNode);
-        const chunk = Buffer.concat([
-            Buffer.from(JSON.stringify(peerPing())),
-            encodeFramedMessage(JSON.stringify({ type: 'batch', data: [operation] })),
-        ]);
+    it.each([
+        ['raw ping without a framing version', false, undefined],
+        ['framed ping without a framing version', true, undefined],
+        ['framed ping with an unsupported framing version', true, 2],
+    ])('quarantines a %s without starting synchronization', async (
+        _case,
+        framed,
+        transportFramingVersion,
+    ) => {
+        const protocolNode = await createNode();
+        const { peerKey, pair } = attachPeer(protocolNode);
+        const destroySpy = jest.spyOn(pair.connectionA, 'destroy');
+        const ping = peerPing({ transportFramingVersion });
+        const payload = Buffer.from(JSON.stringify(ping));
 
         await protocolNode.node.run(
-            () => protocolNode.node.mediator.__test.processInboundPeerData(peerKey, chunk),
+            () => protocolNode.node.mediator.__test.processInboundPeerData(
+                peerKey,
+                framed ? encodeFramedMessage(payload) : payload,
+            ),
         );
-        await eventually(async () => (await protocolNode.store.count()) === 1);
+
+        expect(destroySpy).not.toHaveBeenCalled();
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
+        )).toMatchObject({
+            syncMode: 'unknown',
+            syncStarted: false,
+            activeSession: null,
+            peerTransportFramingVersion: transportFramingVersion ?? null,
+            legacyTransportQuarantined: true,
+        });
+        expect(pair.transcript.some(entry => entry.messageType === 'neg_open')).toBe(false);
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getSyncStatsSnapshot(),
+        )).toMatchObject({
+            transport: {
+                malformedPeerCooldowns: 0,
+                legacyTransportConnectionsQuarantined: 1,
+            },
+        });
+    });
+
+    it('quarantines framed protocol traffic received before a compatible ping', async () => {
+        const protocolNode = await createNode();
+        const { peerKey, pair } = attachPeer(protocolNode, {
+            overrides: { peerTransportFramingVersion: null },
+        });
+
+        await protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.processInboundPeerData(
+                peerKey,
+                encodeFramedMessage(JSON.stringify({
+                    type: 'ordered_catchup_req',
+                    sessionId: 'unverified-session',
+                    cursor: null,
+                })),
+            ),
+        );
 
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
-        )).toMatchObject({ transportMode: 'framed', inboundTransportMode: 'framed' });
+        )).toMatchObject({
+            activeSession: null,
+            peerTransportFramingVersion: null,
+            legacyTransportQuarantined: true,
+        });
+        expect(pair.transcript).toHaveLength(0);
     });
 
-    it.each([
-        ['malformed framed header', Buffer.alloc(4)],
-        ['malformed legacy prefix', Buffer.from('not-json')],
-    ])('terminates a peer after %s', async (_case, payload) => {
+    it('ignores frames coalesced after an incompatible ping', async () => {
         const protocolNode = await createNode();
-        const mode = payload[0] === 0 ? 'framed' : 'unknown';
-        const { peerKey, pair } = attachPeer(protocolNode, { mode });
-        const destroySpy = jest.spyOn(pair.connectionA, 'destroy');
+        const { peerKey, pair } = attachPeer(protocolNode);
+        const payload = Buffer.concat([
+            encodeFramedMessage(JSON.stringify(peerPing({
+                transportFramingVersion: undefined,
+            }))),
+            encodeFramedMessage(JSON.stringify(peerPing())),
+        ]);
 
         await protocolNode.node.run(
             () => protocolNode.node.mediator.__test.processInboundPeerData(peerKey, payload),
+        );
+
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
+        )).toMatchObject({
+            syncMode: 'unknown',
+            activeSession: null,
+            peerTransportFramingVersion: null,
+            legacyTransportQuarantined: true,
+        });
+        expect(pair.transcript).toHaveLength(0);
+    });
+
+    it('quarantines a peer that continues using raw transport after its compatibility ping', async () => {
+        const protocolNode = await createNode();
+        const { peerKey, pair } = attachPeer(protocolNode);
+        const destroySpy = jest.spyOn(pair.connectionA, 'destroy');
+        const rawPing = Buffer.from(JSON.stringify(peerPing()));
+
+        await protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.processInboundPeerData(
+                peerKey,
+                rawPing.subarray(0, 3),
+            ),
+        );
+        expect(destroySpy).not.toHaveBeenCalled();
+
+        await protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.processInboundPeerData(
+                peerKey,
+                rawPing.subarray(3),
+            ),
+        );
+
+        expect(destroySpy).not.toHaveBeenCalled();
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
+        )).toMatchObject({ syncMode: 'negentropy', activeSession: { mode: 'negentropy' } });
+        const writesBeforeQuarantine = pair.transcript.length;
+
+        await protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.processInboundPeerData(
+                peerKey,
+                Buffer.from(JSON.stringify({ type: 'sync', node: 'legacy-peer' })),
+            ),
+        );
+
+        expect(destroySpy).not.toHaveBeenCalled();
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
+        )).toMatchObject({
+            syncMode: 'unknown',
+            syncStarted: false,
+            activeSession: null,
+            legacyTransportQuarantined: true,
+        });
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getSyncStatsSnapshot(),
+        )).toMatchObject({
+            transport: {
+                malformedPeerCooldowns: 0,
+                legacyTransportConnectionsQuarantined: 1,
+            },
+        });
+
+        await protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.processInboundPeerData(
+                peerKey,
+                encodeFramedMessage(JSON.stringify(peerPing())),
+            ),
+        );
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.sendPingToPeer(peerKey));
+        await protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey, 'periodic'),
+        );
+
+        expect(pair.transcript).toHaveLength(writesBeforeQuarantine);
+    });
+
+    it('rejects an unframed non-ping as the initial message', async () => {
+        const protocolNode = await createNode();
+        const { peerKey, pair } = attachPeer(protocolNode);
+        const destroySpy = jest.spyOn(pair.connectionA, 'destroy');
+
+        await protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.processInboundPeerData(
+                peerKey,
+                Buffer.from(JSON.stringify({ type: 'queue', data: [], relays: [] })),
+            ),
+        );
+
+        expect(destroySpy).toHaveBeenCalled();
+        expect(protocolNode.node.gatekeeperClient.importBatch).not.toHaveBeenCalled();
+    });
+
+    it('terminates a peer after a malformed framed header', async () => {
+        const protocolNode = await createNode();
+        const { peerKey, pair } = attachPeer(protocolNode);
+        const destroySpy = jest.spyOn(pair.connectionA, 'destroy');
+
+        await protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.processInboundPeerData(peerKey, Buffer.alloc(4)),
         );
 
         expect(destroySpy).toHaveBeenCalled();
@@ -576,7 +762,7 @@ describe('hyperswarm mediator protocol characterization', () => {
 
     it('preserves an incomplete frame without terminating the peer', async () => {
         const protocolNode = await createNode();
-        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const { peerKey, pair } = attachPeer(protocolNode, {});
         const destroySpy = jest.spyOn(pair.connectionA, 'destroy');
         const frame = encodeFramedMessage(JSON.stringify(peerPing()));
 
@@ -594,7 +780,7 @@ describe('hyperswarm mediator protocol characterization', () => {
     it('rejects invalid framed neg_open windows and window IDs', async () => {
         const open = await createRemoteOpen();
         const protocolNode = await createNode({ keyByte: 0x33 });
-        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const { peerKey, pair } = attachPeer(protocolNode, {});
         const destroySpy = jest.spyOn(pair.connectionA, 'destroy');
         const buildSnapshot = jest.spyOn(protocolNode.adapter, 'buildSnapshotForWindow');
         const window = open.window as Record<string, unknown>;
@@ -630,9 +816,8 @@ describe('hyperswarm mediator protocol characterization', () => {
         const open = await createRemoteOpen();
         const protocolNode = await createNode({
             keyByte: 0x33,
-            env: { KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true' },
         });
-        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const { peerKey, pair } = attachPeer(protocolNode, {});
         const buildSnapshot = jest.spyOn(protocolNode.adapter, 'buildSnapshotForWindow');
         protocolNode.node.run(
             () => protocolNode.node.mediator.__test.createOrderedCatchupClientSession(peerKey, 'catchup-session'),
@@ -662,7 +847,7 @@ describe('hyperswarm mediator protocol characterization', () => {
 
     it('retries Negentropy on the next periodic pass after an ordered catch-up rejection', async () => {
         const protocolNode = await createNode({ keyByte: 0x11 });
-        const { peerKey, pair } = attachPeer(protocolNode, { peerKeyByte: 0x22, mode: 'framed' });
+        const { peerKey, pair } = attachPeer(protocolNode, { peerKeyByte: 0x22 });
         const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(Date.now());
 
         try {
@@ -694,9 +879,44 @@ describe('hyperswarm mediator protocol characterization', () => {
         }
     });
 
+    it('does not retry Negentropy after a peer advertises incompatible capabilities', async () => {
+        const protocolNode = await createNode({ keyByte: 0x11 });
+        const { peerKey, pair } = attachPeer(protocolNode, { peerKeyByte: 0x22 });
+
+        await protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey),
+        );
+        const firstOpen = decodeWrites(pair).find(message => message.type === 'neg_open');
+        expect(firstOpen).toMatchObject({
+            sessionId: expect.any(String),
+            windowId: expect.any(String),
+        });
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'neg_close',
+            sessionId: firstOpen!.sessionId,
+            windowId: firstOpen!.windowId,
+            reason: 'ordered_catchup_active',
+        }));
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, peerPing({
+            capabilities: {
+                negentropy: true,
+                negentropyVersion: 2,
+            },
+        })));
+        await protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey, 'periodic'),
+        );
+
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
+        )).toMatchObject({ syncMode: 'unknown', activeSession: null });
+        expect(decodeWrites(pair).filter(message => message.type === 'neg_open')).toHaveLength(1);
+    });
+
     it('rejects stale-window neg_msg and unknown-session ops_req frames', async () => {
         const protocolNode = await createNode();
-        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const { peerKey, pair } = attachPeer(protocolNode, {});
         await protocolNode.node.run(
             () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey),
         );
@@ -737,7 +957,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const [operation] = await makeOperations(1);
         const open = await createRemoteOpen([operation]);
         const protocolNode = await createNode({ keyByte: 0x33 });
-        const { peerKey } = attachPeer(protocolNode, { mode: 'framed' });
+        const { peerKey } = attachPeer(protocolNode, {});
         const createEngine = jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot');
         const framedOpen = encodeFramedMessage(JSON.stringify(open));
 
@@ -760,7 +980,7 @@ describe('hyperswarm mediator protocol characterization', () => {
 
     it('ignores an unknown framed message type without disconnecting the peer', async () => {
         const protocolNode = await createNode();
-        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const { peerKey, pair } = attachPeer(protocolNode, {});
         const destroySpy = jest.spyOn(pair.connectionA, 'destroy');
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
@@ -778,7 +998,7 @@ describe('hyperswarm mediator protocol characterization', () => {
 
     it('replaces Negentropy sessions and ignores stale sessions and windows', async () => {
         const protocolNode = await createNode();
-        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const { peerKey, pair } = attachPeer(protocolNode, {});
         await protocolNode.node.run(
             () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey),
         );
@@ -828,7 +1048,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         'does not open a stale window after its session is replaced during %s',
         async boundary => {
             const protocolNode = await createNode();
-            const initialPeer = attachPeer(protocolNode, { mode: 'framed' });
+            const initialPeer = attachPeer(protocolNode, {});
             let noteAwaitStarted!: () => void;
             const awaitStarted = new Promise<void>(resolve => {
                 noteAwaitStarted = resolve;
@@ -873,7 +1093,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 protocolNode.node.run(
                     () => protocolNode.node.mediator.__test.disconnectPeer(initialPeer.peerKey),
                 );
-                const replacementPeer = attachPeer(protocolNode, { mode: 'framed' });
+                const replacementPeer = attachPeer(protocolNode, {});
                 protocolNode.node.run(() => protocolNode.node.mediator.__test.createOrderedCatchupClientSession(
                     replacementPeer.peerKey,
                     'replacement-session',
@@ -909,7 +1129,6 @@ describe('hyperswarm mediator protocol characterization', () => {
             const operations = method === 'countOrdered' ? await makeOperations(1) : [];
             const protocolNode = await createNode({
                 maxRecords: 1,
-                env: { KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true' },
             });
             if (operations.length > 0) {
                 await protocolNode.store.upsertMany([{
@@ -921,7 +1140,6 @@ describe('hyperswarm mediator protocol characterization', () => {
             }
             const peerOperationCount = method === 'count' ? 1 : 0;
             const initialPeer = attachPeer(protocolNode, {
-                mode: 'framed',
                 overrides: {
                     capabilities: compatibleCapabilities({
                         orderedCatchup: true,
@@ -957,7 +1175,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 protocolNode.node.run(
                     () => protocolNode.node.mediator.__test.disconnectPeer(initialPeer.peerKey),
                 );
-                const replacement = attachPeer(protocolNode, { mode: 'framed' });
+                const replacement = attachPeer(protocolNode, {});
                 release();
                 await start;
                 replacementState = protocolNode.node.run(
@@ -987,7 +1205,7 @@ describe('hyperswarm mediator protocol characterization', () => {
     it('recovers from a missing background snapshot with the queued rebuild', async () => {
         const operations = await makeOperations(2);
         const protocolNode = await createNode();
-        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const { peerKey, pair } = attachPeer(protocolNode, {});
         const buildSnapshot = protocolNode.adapter.buildSnapshotForWindow.bind(protocolNode.adapter);
         let buildCalls = 0;
         let markFirstBuildStarted!: () => void;
@@ -1024,12 +1242,12 @@ describe('hyperswarm mediator protocol characterization', () => {
         try {
             await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
                 peerKey,
-                encodeFramedMessage(JSON.stringify({ type: 'batch', data: [operations[0]] })),
+                encodeFramedMessage(JSON.stringify({ type: 'queue', relays: [], data: [operations[0]] })),
             ));
             await firstBuildStarted;
             await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
                 peerKey,
-                encodeFramedMessage(JSON.stringify({ type: 'batch', data: [operations[1]] })),
+                encodeFramedMessage(JSON.stringify({ type: 'queue', relays: [], data: [operations[1]] })),
             ));
             await eventually(async () => (await protocolNode.store.count()) === 2);
             await nextTurn();
@@ -1041,7 +1259,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey),
             );
 
-            expect(buildCalls).toBe(2);
+            expect(buildCalls).toBe(3);
             expect(pair.transcript.some(entry => entry.messageType === 'neg_open')).toBe(true);
             expect(protocolNode.node.run(
                 () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
@@ -1055,13 +1273,8 @@ describe('hyperswarm mediator protocol characterization', () => {
 
     it('defers a queued background rebuild until ordered catch-up completes', async () => {
         const operations = await makeOperations(3);
-        const protocolNode = await createNode({
-            env: {
-                KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true',
-                KC_HYPR_LEGACY_SYNC_ENABLE: 'false',
-            },
-        });
-        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const protocolNode = await createNode();
+        const { peerKey, pair } = attachPeer(protocolNode, {});
         const buildSnapshot = protocolNode.adapter.buildSnapshotForWindow.bind(protocolNode.adapter);
         let buildCalls = 0;
         let markFirstBuildStarted!: () => void;
@@ -1097,7 +1310,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         );
 
         try {
-            await send({ type: 'batch', data: [operations[0]] });
+            await send({ type: 'queue', relays: [], data: [operations[0]] });
             await firstBuildStarted;
             protocolNode.node.run(
                 () => protocolNode.node.mediator.__test.createOrderedCatchupClientSession(peerKey, 'deferred-build-session'),
@@ -1139,7 +1352,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             const operations = await makeOperations(1);
             const open = await createRemoteOpen(operations);
             const protocolNode = await createNode({ keyByte: 0x33 });
-            const initialPeer = attachPeer(protocolNode, { mode: 'framed' });
+            const initialPeer = attachPeer(protocolNode, {});
             const remoteOpen = open as any;
             const probeSnapshot = await protocolNode.adapter.buildSnapshotForWindow(remoteOpen.window);
             const probeEngine = protocolNode.adapter.createEngineForSnapshot(probeSnapshot);
@@ -1221,7 +1434,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
             operation,
         }]);
-        const initialPeer = attachPeer(protocolNode, { mode: 'framed' });
+        const initialPeer = attachPeer(protocolNode, {});
         await protocolNode.node.run(
             () => protocolNode.node.mediator.__test.maybeStartPeerSync(initialPeer.peerKey),
         );
@@ -1292,7 +1505,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             },
         } as Operation));
         const protocolNode = await createNode({ maxRecords: requestedIds.length });
-        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const { peerKey, pair } = attachPeer(protocolNode, {});
         const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
         jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
             const engine = createEngine(snapshot);
@@ -1355,7 +1568,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const acceptedId = acceptedOperation.signature!.hash;
         const rejectedId = rejectedOperation.signature!.hash;
         const protocolNode = await createNode();
-        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const { peerKey, pair } = attachPeer(protocolNode, {});
         const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
         jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
             const engine = createEngine(snapshot);
@@ -1422,7 +1635,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const operation = await makeLegacyUpdateWithoutPrevid();
         const operationId = operation.signature!.hash;
         const protocolNode = await createNode();
-        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const { peerKey, pair } = attachPeer(protocolNode, {});
         const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
         jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
             const engine = createEngine(snapshot);
@@ -1479,11 +1692,88 @@ describe('hyperswarm mediator protocol characterization', () => {
         }));
     });
 
+    it('completes when terminal work finds an unresolved operation already stored normally', async () => {
+        const operation = await makeLegacyUpdateWithoutPrevid();
+        const operationId = operation.signature!.hash;
+        const protocolNode = await createNode();
+        const { peerKey, pair } = attachPeer(protocolNode, {});
+        const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
+        jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
+            const engine = createEngine(snapshot);
+            jest.spyOn(engine, 'reconcile').mockResolvedValueOnce({
+                nextMsg: null,
+                haveIds: [],
+                needIds: [operationId],
+            });
+            return engine;
+        });
+        protocolNode.node.gatekeeperClient.importBatch.mockResolvedValueOnce({
+            queued: 1,
+            processed: 0,
+            rejected: 0,
+            total: 1,
+            rejectedIndices: [],
+        });
+        protocolNode.node.gatekeeperClient.processEvents.mockResolvedValueOnce({
+            added: 0,
+            merged: 0,
+            rejected: 0,
+            pending: 1,
+            acceptedHashes: [],
+            acceptedEvents: [],
+        });
+        const getByIds = protocolNode.store.getByIds.bind(protocolNode.store);
+        let operationLookups = 0;
+        jest.spyOn(protocolNode.store, 'getByIds').mockImplementation(async ids => {
+            if (ids.includes(operationId) && ++operationLookups === 2) {
+                await protocolNode.store.upsertMany([{
+                    id: operationId,
+                    signedTs: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+                    operation,
+                }]);
+                return [];
+            }
+            return getByIds(ids);
+        });
+
+        await protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey),
+        );
+        const open = decodeWrites(pair).find(message => message.type === 'neg_open');
+        if (!open) {
+            throw new Error('expected local neg_open');
+        }
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'neg_msg',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            frame: encodeNegentropyFrame('normally-stored-terminal-candidate'),
+        }));
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'ops_push',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            data: [operation],
+        }));
+
+        expect(operationLookups).toBe(3);
+        expect((await getByIds([operationId]))[0].syncOrder).toBeUndefined();
+        expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
+            type: 'neg_close',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            reason: 'complete',
+        }));
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+        )).toBeNull();
+    });
+
     it('leaves a modern update with an unknown predecessor unresolved', async () => {
         const operation = await makeModernUpdateWithMissingPredecessor();
         const operationId = operation.signature!.hash;
         const protocolNode = await createNode();
-        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const { peerKey, pair } = attachPeer(protocolNode, {});
         const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
         jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
             const engine = createEngine(snapshot);
@@ -1545,7 +1835,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const childId = child.signature!.hash;
         const triggerId = trigger.signature!.hash;
         const protocolNode = await createNode();
-        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const { peerKey, pair } = attachPeer(protocolNode, {});
         const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
         jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
             const engine = createEngine(snapshot);
@@ -1637,7 +1927,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const [operation] = await makeOperations(1);
         const operationId = operation.signature!.hash;
         const protocolNode = await createNode();
-        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const { peerKey, pair } = attachPeer(protocolNode, {});
         const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
         jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
             const engine = createEngine(snapshot);
@@ -1694,7 +1984,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const rejectedOperation = makeStructurallyRejectedOperation();
         const rejectedId = rejectedOperation.signature!.hash;
         const protocolNode = await createNode();
-        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const { peerKey, pair } = attachPeer(protocolNode, {});
         const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
         jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
             const engine = createEngine(snapshot);
@@ -1745,7 +2035,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const malformedOperation = { ...legitimateOperation };
         delete malformedOperation.publicJwk;
         const protocolNode = await createNode();
-        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const { peerKey, pair } = attachPeer(protocolNode, {});
         const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
         jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
             const engine = createEngine(snapshot);
@@ -1814,7 +2104,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
             operation,
         })));
-        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const { peerKey, pair } = attachPeer(protocolNode, {});
         const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
         const outcomes = [
             { nextMsg: null, haveIds: [], needIds: [rejectedId] },
@@ -1893,9 +2183,124 @@ describe('hyperswarm mediator protocol characterization', () => {
         )).toBeNull();
     });
 
+    it('reuses capped history windows but always rebuilds the dynamic tail', async () => {
+        const operations = await makeOperations(13);
+        const protocolNode = await createNode({ maxRecords: 2 });
+        await protocolNode.store.upsertMany(operations.map(operation => ({
+            id: operation.signature!.hash,
+            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            operation,
+        })));
+        const buildSnapshot = jest.spyOn(protocolNode.adapter, 'buildSnapshotForWindow');
+        mockTerminalResponder(protocolNode);
+
+        const completeSession = async ({ peerKey, pair }: AttachedPeer): Promise<number> => {
+            await protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey),
+            );
+
+            let completedWindows = 0;
+            while (protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+            )) {
+                const open = decodeWrites(pair)
+                    .filter(message => message.type === 'neg_open')[completedWindows];
+                if (!open) {
+                    throw new Error('expected next negentropy window');
+                }
+                completedWindows += 1;
+                await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+                    type: 'neg_msg',
+                    sessionId: open.sessionId,
+                    windowId: open.windowId,
+                    frame: encodeNegentropyFrame(`complete-window-${completedWindows}`),
+                }));
+            }
+            return completedWindows;
+        };
+
+        const firstPeer = attachPeer(protocolNode);
+        expect(await completeSession(firstPeer)).toBe(7);
+        expect(buildSnapshot).toHaveBeenCalledTimes(7);
+
+        protocolNode.node.run(() => protocolNode.node.mediator.__test.disconnectPeer(firstPeer.peerKey));
+        const secondPeer = attachPeer(protocolNode);
+        const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 60_000);
+        try {
+            expect(await completeSession(secondPeer)).toBe(7);
+        }
+        finally {
+            nowSpy.mockRestore();
+        }
+        expect(buildSnapshot).toHaveBeenCalledTimes(8);
+
+        protocolNode.node.run(() => protocolNode.node.mediator.__test.disconnectPeer(secondPeer.peerKey));
+        const thirdPeer = attachPeer(protocolNode);
+        const [newOperation] = await makeOperations(1);
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(thirdPeer.peerKey, {
+            type: 'queue',
+            time: new Date().toISOString(),
+            node: 'peer',
+            relays: [],
+            data: [newOperation],
+        }));
+        await eventually(() => protocolNode.store.has(newOperation.signature!.hash));
+
+        expect(await completeSession(thirdPeer)).toBe(7);
+        expect(buildSnapshot).toHaveBeenCalledTimes(15);
+    });
+
+    it('retains only canonical responder history windows', async () => {
+        const operations = await makeOperations(13);
+        const protocolNode = await createNode({ maxRecords: 2 });
+        await protocolNode.store.upsertMany(operations.map(operation => ({
+            id: operation.signature!.hash,
+            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            operation,
+        })));
+        const buildSnapshot = jest.spyOn(protocolNode.adapter, 'buildSnapshotForWindow');
+        mockTerminalResponder(protocolNode);
+        const { peerKey } = attachPeer(protocolNode);
+        const toTs = Math.floor(Date.now() / 1000);
+        const windows = [buildInitialHistoryWindow(MDIP_EPOCH_SECONDS, toTs, 2)];
+        for (let order = 1; order < 7; order += 1) {
+            const operation = operations[(order * 2) - 1];
+            windows.push(buildNextHistoryPage(windows[order - 1], {
+                ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+                id: operation.signature!.hash,
+            }, order));
+        }
+        const sendWindows = async (sessionId: string, selected = windows): Promise<void> => {
+            for (const window of selected) {
+                await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+                    type: 'neg_open',
+                    sessionId,
+                    windowId: makeWindowId(window),
+                    window,
+                    round: 0,
+                    frame: encodeNegentropyFrame(`${sessionId}-${window.order}`),
+                }));
+            }
+        };
+
+        await sendWindows('canonical-first');
+        expect(buildSnapshot).toHaveBeenCalledTimes(7);
+
+        await sendWindows('canonical-second');
+        expect(buildSnapshot).toHaveBeenCalledTimes(8);
+
+        const arbitraryWindow = { ...windows[0], order: 100 };
+        await sendWindows('arbitrary-first', [arbitraryWindow]);
+        await sendWindows('arbitrary-second', [arbitraryWindow]);
+        expect(buildSnapshot).toHaveBeenCalledTimes(10);
+
+        await sendWindows('canonical-third');
+        expect(buildSnapshot).toHaveBeenCalledTimes(11);
+    });
+
     it('closes a session when sending neg_open throws', async () => {
         const protocolNode = await createNode();
-        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const { peerKey, pair } = attachPeer(protocolNode, {});
         jest.spyOn(pair.connectionA, 'write').mockImplementation(() => {
             throw new Error('write failed');
         });
@@ -1927,7 +2332,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
                 operation,
             }]);
-            const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+            const { peerKey, pair } = attachPeer(protocolNode, {});
             await protocolNode.node.run(
                 () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey),
             );
@@ -1957,7 +2362,7 @@ describe('hyperswarm mediator protocol characterization', () => {
 
             const attemptedChunk = write.mock.calls[0]?.[0] as Uint8Array;
             expect(JSON.parse(
-                decodeUnknownTransportMessages(Buffer.from(attemptedChunk)).messages[0].toString('utf8'),
+                decodeFramedMessages(Buffer.from(attemptedChunk)).messages[0].toString('utf8'),
             )).toMatchObject({ type: failedType, sessionId: open.sessionId });
             await expectFailedNegentropySessionCanRetry(protocolNode, peerKey, pair, open.sessionId);
         },
@@ -1967,7 +2372,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const [operation] = await makeOperations(1);
         const open = await createRemoteOpen([operation]);
         const protocolNode = await createNode();
-        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const { peerKey, pair } = attachPeer(protocolNode, {});
         const write = jest.spyOn(pair.connectionA, 'write').mockImplementationOnce(() => {
             throw new Error('neg_msg write failed');
         });
@@ -1979,7 +2384,7 @@ describe('hyperswarm mediator protocol characterization', () => {
 
         const attemptedChunk = write.mock.calls[0]?.[0] as Uint8Array;
         expect(JSON.parse(
-            decodeUnknownTransportMessages(Buffer.from(attemptedChunk)).messages[0].toString('utf8'),
+            decodeFramedMessages(Buffer.from(attemptedChunk)).messages[0].toString('utf8'),
         )).toMatchObject({ type: 'neg_msg', sessionId: open.sessionId });
         await expectFailedNegentropySessionCanRetry(protocolNode, peerKey, pair, open.sessionId);
     });
@@ -1992,7 +2397,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
             operation,
         }]);
-        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const { peerKey, pair } = attachPeer(protocolNode, {});
         await protocolNode.node.run(
             () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey),
         );
@@ -2016,7 +2421,7 @@ describe('hyperswarm mediator protocol characterization', () => {
 
         const attemptedChunk = write.mock.calls[0]?.[0] as Uint8Array;
         expect(JSON.parse(
-            decodeUnknownTransportMessages(Buffer.from(attemptedChunk)).messages[0].toString('utf8'),
+            decodeFramedMessages(Buffer.from(attemptedChunk)).messages[0].toString('utf8'),
         )).toMatchObject({ type: 'ops_push', sessionId: open.sessionId });
         await expectFailedNegentropySessionCanRetry(protocolNode, peerKey, pair, open.sessionId);
     });
@@ -2024,7 +2429,6 @@ describe('hyperswarm mediator protocol characterization', () => {
     it('starts eligible periodic repair without requiring a timer loop', async () => {
         const protocolNode = await createNode();
         const { peerKey, pair } = attachPeer(protocolNode, {
-            mode: 'framed',
             overrides: {
                 syncMode: 'negentropy',
                 syncStarted: true,
@@ -2046,13 +2450,8 @@ describe('hyperswarm mediator protocol characterization', () => {
     it('uses Negentropy for a one-window gap between mature stores', async () => {
         const protocolNode = await createNode({
             maxRecords: 25_000,
-            env: {
-                KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true',
-                KC_HYPR_LEGACY_SYNC_ENABLE: 'false',
-            },
         });
         const { peerKey, pair } = attachPeer(protocolNode, {
-            mode: 'framed',
             overrides: {
                 capabilities: compatibleCapabilities({
                     orderedCatchup: true,
@@ -2078,14 +2477,9 @@ describe('hyperswarm mediator protocol characterization', () => {
     it('serializes peer sync decisions while a store count is pending', async () => {
         const protocolNode = await createNode({
             maxRecords: 4,
-            env: {
-                KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true',
-                KC_HYPR_LEGACY_SYNC_ENABLE: 'false',
-            },
         });
         const firstPeer = attachPeer(protocolNode, {
             peerKeyByte: 0x22,
-            mode: 'framed',
             overrides: {
                 capabilities: compatibleCapabilities({
                     orderedCatchup: true,
@@ -2098,7 +2492,6 @@ describe('hyperswarm mediator protocol characterization', () => {
         });
         const secondPeer = attachPeer(protocolNode, {
             peerKeyByte: 0x33,
-            mode: 'framed',
             overrides: {
                 capabilities: compatibleCapabilities({
                     orderedCatchup: true,
@@ -2164,7 +2557,7 @@ describe('hyperswarm mediator protocol characterization', () => {
     it('does not restart Negentropy when an older store count resumes after completion', async () => {
         const remoteOpen = await createRemoteOpen();
         const protocolNode = await createNode();
-        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const { peerKey, pair } = attachPeer(protocolNode, {});
         const count = protocolNode.store.count.bind(protocolNode.store);
         let markCountStarted!: () => void;
         const countStarted = new Promise<void>(resolve => {
@@ -2212,13 +2605,8 @@ describe('hyperswarm mediator protocol characterization', () => {
     it('does not replace an ordered session when an older store count resumes', async () => {
         const protocolNode = await createNode({
             maxRecords: 4,
-            env: {
-                KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true',
-                KC_HYPR_LEGACY_SYNC_ENABLE: 'false',
-            },
         });
         const { peerKey, pair } = attachPeer(protocolNode, {
-            mode: 'framed',
             overrides: {
                 capabilities: compatibleCapabilities({
                     orderedCatchup: true,
@@ -2273,13 +2661,8 @@ describe('hyperswarm mediator protocol characterization', () => {
         const remoteOpen = await createRemoteOpen();
         const protocolNode = await createNode({
             maxRecords: 4,
-            env: {
-                KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true',
-                KC_HYPR_LEGACY_SYNC_ENABLE: 'false',
-            },
         });
         const { peerKey, pair } = attachPeer(protocolNode, {
-            mode: 'framed',
             overrides: {
                 capabilities: compatibleCapabilities({
                     orderedCatchup: true,
@@ -2337,10 +2720,6 @@ describe('hyperswarm mediator protocol characterization', () => {
         const protocolNode = await createNode({
             keyByte: 0x11,
             maxRecords: 4,
-            env: {
-                KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true',
-                KC_HYPR_LEGACY_SYNC_ENABLE: 'false',
-            },
         });
         await protocolNode.store.upsertMany(operations.map((operation, index) => ({
             id: operation.signature!.hash,
@@ -2350,7 +2729,6 @@ describe('hyperswarm mediator protocol characterization', () => {
         })));
         const { peerKey, pair } = attachPeer(protocolNode, {
             peerKeyByte: 0x22,
-            mode: 'framed',
             overrides: {
                 capabilities: compatibleCapabilities({
                     orderedCatchup: true,
@@ -2441,7 +2819,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         });
         await protocolNode.store.upsertMany([toRecord(localOperation)]);
         await peerStore.upsertMany([toRecord(peerOperation)]);
-        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const { peerKey, pair } = attachPeer(protocolNode, {});
 
         try {
             await protocolNode.node.run(
@@ -2486,7 +2864,7 @@ describe('hyperswarm mediator protocol characterization', () => {
 
     it('closes without a continuation when a remote round cap cannot split the window', async () => {
         const protocolNode = await createNode({ maxRecords: 1 });
-        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const { peerKey, pair } = attachPeer(protocolNode, {});
         await protocolNode.node.run(
             () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey),
         );
@@ -2514,7 +2892,7 @@ describe('hyperswarm mediator protocol characterization', () => {
     it('waits for the initiator close after responder-side terminal completion', async () => {
         const open = await createRemoteOpen();
         const protocolNode = await createNode({ keyByte: 0x33 });
-        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const { peerKey, pair } = attachPeer(protocolNode, {});
         const getByIds = jest.spyOn(protocolNode.store, 'getByIds');
         mockTerminalResponder(protocolNode);
 
@@ -2557,7 +2935,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const operationId = operation.signature!.hash;
         const open = await createRemoteOpen();
         const protocolNode = await createNode({ keyByte: 0x33 });
-        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const { peerKey, pair } = attachPeer(protocolNode, {});
         mockTerminalResponder(protocolNode);
         protocolNode.node.gatekeeperClient.importBatch.mockResolvedValueOnce({
             queued: 1,
@@ -2607,7 +2985,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const rejectedId = rejectedOperation.signature!.hash;
         const open = await createRemoteOpen();
         const protocolNode = await createNode({ keyByte: 0x33 });
-        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const { peerKey, pair } = attachPeer(protocolNode, {});
         const getByIds = jest.spyOn(protocolNode.store, 'getByIds');
         mockTerminalResponder(protocolNode);
         protocolNode.node.gatekeeperClient.importBatch.mockImplementationOnce(async events => ({
@@ -2668,7 +3046,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const [operation] = await makeOperations(1);
         const open = await createRemoteOpen();
         const protocolNode = await createNode({ keyByte: 0x33 });
-        const { peerKey } = attachPeer(protocolNode, { mode: 'framed' });
+        const { peerKey } = attachPeer(protocolNode, {});
         mockTerminalResponder(protocolNode);
         protocolNode.node.gatekeeperClient.importBatch.mockImplementationOnce(async events => ({
             queued: events.length,
@@ -2720,7 +3098,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const [operation] = await makeOperations(1);
         const open = await createRemoteOpen();
         const protocolNode = await createNode({ keyByte: 0x33 });
-        const { peerKey } = attachPeer(protocolNode, { mode: 'framed' });
+        const { peerKey } = attachPeer(protocolNode, {});
         mockTerminalResponder(protocolNode);
         protocolNode.node.gatekeeperClient.importBatch.mockRejectedValueOnce(new Error('temporary import failure'));
 
@@ -2755,7 +3133,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const [operation] = await makeOperations(1);
         const open = await createRemoteOpen();
         const protocolNode = await createNode({ keyByte: 0x33 });
-        const initialPeer = attachPeer(protocolNode, { mode: 'framed' });
+        const initialPeer = attachPeer(protocolNode, {});
         mockTerminalResponder(protocolNode);
         protocolNode.node.gatekeeperClient.importBatch.mockImplementationOnce(async events => ({
             queued: events.length,
@@ -2830,9 +3208,9 @@ describe('hyperswarm mediator protocol characterization', () => {
     it('imports queue gossip, suppresses relays, and filters known operations', async () => {
         const [knownOperation, newOperation] = await makeOperations(2);
         const protocolNode = await createNode({ keyByte: 0x44 });
-        const source = attachPeer(protocolNode, { peerKeyByte: 0x11, mode: 'framed' });
-        const excluded = attachPeer(protocolNode, { peerKeyByte: 0x22, mode: 'framed' });
-        const recipient = attachPeer(protocolNode, { peerKeyByte: 0x33, mode: 'framed' });
+        const source = attachPeer(protocolNode, { peerKeyByte: 0x11 });
+        const excluded = attachPeer(protocolNode, { peerKeyByte: 0x22 });
+        const recipient = attachPeer(protocolNode, { peerKeyByte: 0x33 });
 
         const queueMessage = {
             type: 'queue',
@@ -2854,7 +3232,8 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(recipient.pair.transcript).toHaveLength(1);
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(source.peerKey, {
-            type: 'batch',
+            type: 'queue',
+            relays: [],
             data: [knownOperation, newOperation],
         }));
         await eventually(async () => await protocolNode.store.has(newOperation.signature!.hash));
@@ -2866,9 +3245,7 @@ describe('hyperswarm mediator protocol characterization', () => {
 
     it('serves ordered catch-up pages and validates request cursors', async () => {
         const operations = await makeOperations(2);
-        const protocolNode = await createNode({
-            env: { KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true' },
-        });
+        const protocolNode = await createNode();
         await protocolNode.store.upsertMany(operations.map((operation, index) => ({
             id: operation.signature!.hash,
             ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
@@ -2876,7 +3253,6 @@ describe('hyperswarm mediator protocol characterization', () => {
             operation,
         })));
         const { peerKey, pair } = attachPeer(protocolNode, {
-            mode: 'framed',
             overrides: {
                 capabilities: compatibleCapabilities({
                     orderedCatchup: true,
@@ -2934,9 +3310,8 @@ describe('hyperswarm mediator protocol characterization', () => {
         const [operation] = await makeOperations(1);
         const protocolNode = await createNode({
             keyByte: 0x33,
-            env: { KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true' },
         });
-        const { peerKey, pair } = attachPeer(protocolNode, { peerKeyByte: 0x22, mode: 'framed' });
+        const { peerKey, pair } = attachPeer(protocolNode, { peerKeyByte: 0x22 });
         const processEvents = protocolNode.node.gatekeeperClient.processEvents;
         const processEventsImplementation = processEvents.getMockImplementation();
         if (!processEventsImplementation) {
@@ -3006,14 +3381,9 @@ describe('hyperswarm mediator protocol characterization', () => {
         const [acceptedOperation, lateOperation] = await makeOperations(2);
         const protocolNode = await createNode({
             keyByte: 0x33,
-            env: {
-                KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true',
-                KC_HYPR_LEGACY_SYNC_ENABLE: 'false',
-            },
         });
         const { peerKey } = attachPeer(protocolNode, {
             peerKeyByte: 0x22,
-            mode: 'framed',
             overrides: {
                 capabilities: compatibleCapabilities({ negentropy: false }),
             },
@@ -3089,13 +3459,8 @@ describe('hyperswarm mediator protocol characterization', () => {
 
     it('rebuilds the Negentropy adapter only after ordered catch-up imports finish', async () => {
         const operations = await makeOperations(3);
-        const protocolNode = await createNode({
-            env: {
-                KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true',
-                KC_HYPR_LEGACY_SYNC_ENABLE: 'false',
-            },
-        });
-        const { peerKey, pair } = attachPeer(protocolNode, { mode: 'framed' });
+        const protocolNode = await createNode();
+        const { peerKey, pair } = attachPeer(protocolNode, {});
         const buildSnapshotForWindow = protocolNode.adapter.buildSnapshotForWindow.bind(protocolNode.adapter);
         let lastBuiltRecordCount = 0;
         const buildSnapshot = jest.spyOn(protocolNode.adapter, 'buildSnapshotForWindow').mockImplementation(async window => {
@@ -3138,9 +3503,8 @@ describe('hyperswarm mediator protocol characterization', () => {
         const operations = await makeOperations(3);
         const protocolNode = await createNode({
             keyByte: 0x33,
-            env: { KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true' },
         });
-        const { peerKey, pair } = attachPeer(protocolNode, { peerKeyByte: 0x22, mode: 'framed' });
+        const { peerKey, pair } = attachPeer(protocolNode, { peerKeyByte: 0x22 });
         let markStarted!: () => void;
         const started = new Promise<void>(resolve => {
             markStarted = resolve;
@@ -3211,9 +3575,8 @@ describe('hyperswarm mediator protocol characterization', () => {
         const operations = await makeOperations(3);
         const protocolNode = await createNode({
             keyByte: 0x33,
-            env: { KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true' },
         });
-        const initialPeer = attachPeer(protocolNode, { peerKeyByte: 0x22, mode: 'framed' });
+        const initialPeer = attachPeer(protocolNode, { peerKeyByte: 0x22 });
         let markStarted!: () => void;
         const started = new Promise<void>(resolve => {
             markStarted = resolve;
@@ -3279,9 +3642,8 @@ describe('hyperswarm mediator protocol characterization', () => {
         const [operation] = await makeOperations(1);
         const protocolNode = await createNode({
             keyByte: 0x33,
-            env: { KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true' },
         });
-        const initialPeer = attachPeer(protocolNode, { peerKeyByte: 0x22, mode: 'framed' });
+        const initialPeer = attachPeer(protocolNode, { peerKeyByte: 0x22 });
         const processEvents = protocolNode.node.gatekeeperClient.processEvents;
         const processEventsImplementation = processEvents.getMockImplementation();
         if (!processEventsImplementation) {
@@ -3325,7 +3687,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 }),
             ]);
             protocolNode.node.run(() => protocolNode.node.mediator.__test.disconnectPeer(initialPeer.peerKey));
-            const replacement = attachPeer(protocolNode, { peerKeyByte: 0x22, mode: 'framed' });
+            const replacement = attachPeer(protocolNode, { peerKeyByte: 0x22 });
             protocolNode.node.run(() => protocolNode.node.mediator.__test.createOrderedCatchupClientSession(
                 replacement.peerKey,
                 'replacement-session',
@@ -3351,14 +3713,9 @@ describe('hyperswarm mediator protocol characterization', () => {
         const initialNode = await createNode({
             keyByte: 0x33,
             maxRecords: 4,
-            env: {
-                KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true',
-                KC_HYPR_LEGACY_SYNC_ENABLE: 'false',
-            },
         });
         const initialPeer = attachPeer(initialNode, {
             peerKeyByte: 0x22,
-            mode: 'framed',
             overrides: {
                 capabilities: compatibleCapabilities({
                     orderedCatchup: true,
@@ -3386,14 +3743,9 @@ describe('hyperswarm mediator protocol characterization', () => {
 
         const continuationNode = await createNode({
             keyByte: 0x33,
-            env: {
-                KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true',
-                KC_HYPR_LEGACY_SYNC_ENABLE: 'false',
-            },
         });
         const continuationPeer = attachPeer(continuationNode, {
             peerKeyByte: 0x22,
-            mode: 'framed',
         });
         continuationNode.node.run(
             () => continuationNode.node.mediator.__test.createOrderedCatchupClientSession(
@@ -3432,9 +3784,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         'clears ordered catch-up server state when sending %s fails',
         async failedType => {
             const operations = failedType === 'ordered_catchup_push' ? await makeOperations(1) : [];
-            const protocolNode = await createNode({
-                env: { KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true' },
-            });
+            const protocolNode = await createNode();
             if (operations.length > 0) {
                 await protocolNode.store.upsertMany([{
                     id: operations[0].signature!.hash,
@@ -3444,7 +3794,6 @@ describe('hyperswarm mediator protocol characterization', () => {
                 }]);
             }
             const { peerKey, pair } = attachPeer(protocolNode, {
-                mode: 'framed',
                 overrides: {
                     capabilities: compatibleCapabilities({
                         orderedCatchup: true,
@@ -3468,7 +3817,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             expect(write).toHaveBeenCalledTimes(1);
             const attemptedChunk = write.mock.calls[0]?.[0] as Uint8Array;
             expect(JSON.parse(
-                decodeUnknownTransportMessages(Buffer.from(attemptedChunk)).messages[0].toString('utf8'),
+                decodeFramedMessages(Buffer.from(attemptedChunk)).messages[0].toString('utf8'),
             )).toMatchObject({ type: failedType, sessionId: 'send-failure-session' });
             expect(protocolNode.node.run(
                 () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
@@ -3482,17 +3831,12 @@ describe('hyperswarm mediator protocol characterization', () => {
         },
     );
 
-    it('coalesces duplicate ordered catch-up post-import continuations', async () => {
+    it('rejects a second ordered catch-up client during post-import transition', async () => {
         const protocolNode = await createNode({
             keyByte: 0x33,
-            env: {
-                KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true',
-                KC_HYPR_LEGACY_SYNC_ENABLE: 'false',
-            },
         });
         const { peerKey, pair } = attachPeer(protocolNode, {
             peerKeyByte: 0x22,
-            mode: 'framed',
             overrides: {
                 capabilities: compatibleCapabilities({
                     orderedCatchup: true,
@@ -3554,6 +3898,15 @@ describe('hyperswarm mediator protocol characterization', () => {
 
             expect(exportIndex).toHaveBeenCalledTimes(1);
             expect(pair.transcript.some(entry => entry.messageType === 'neg_open')).toBe(false);
+            expect(protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.getSyncStatsSnapshot(),
+            )).toMatchObject({
+                orderedCatchup: {
+                    sessionsStarted: 1,
+                    sessionsCompleted: 0,
+                    sessionsFailed: 0,
+                },
+            });
 
             release();
             await eventually(() => applySyncPage.mock.calls.length === 1);
@@ -3563,6 +3916,101 @@ describe('hyperswarm mediator protocol characterization', () => {
             expect(protocolNode.node.run(
                 () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
             )).toEqual(expect.objectContaining({ mode: 'negentropy' }));
+            expect(protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.getSyncStatsSnapshot(),
+            )).toMatchObject({
+                orderedCatchup: {
+                    sessionsStarted: 1,
+                    sessionsCompleted: 1,
+                    sessionsFailed: 0,
+                },
+            });
+        }
+        finally {
+            release();
+        }
+    });
+
+    it('records one failure when a peer disconnects during ordered catch-up post-import', async () => {
+        const protocolNode = await createNode({ keyByte: 0x33 });
+        const { peerKey, pair } = attachPeer(protocolNode, {
+            peerKeyByte: 0x22,
+            overrides: {
+                capabilities: compatibleCapabilities({
+                    orderedCatchup: true,
+                    orderedCatchupVersion: 1,
+                    orderedCatchupReady: true,
+                }),
+            },
+        });
+        const exportIndex = protocolNode.node.gatekeeperClient.exportIndex;
+        const exportIndexImplementation = exportIndex.getMockImplementation();
+        if (!exportIndexImplementation) {
+            throw new Error('Gatekeeper exportIndex implementation is unavailable');
+        }
+        let markStarted!: () => void;
+        const started = new Promise<void>(resolve => {
+            markStarted = resolve;
+        });
+        let release!: () => void;
+        const blocked = new Promise<void>(resolve => {
+            release = resolve;
+        });
+        exportIndex.mockImplementationOnce(async request => {
+            markStarted();
+            await blocked;
+            return exportIndexImplementation(request);
+        });
+
+        try {
+            protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.createOrderedCatchupClientSession(
+                    peerKey,
+                    'disconnect-post-import-session',
+                ),
+            );
+            await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
+                peerKey,
+                encodeFramedMessage(JSON.stringify({
+                    type: 'ordered_catchup_done',
+                    sessionId: 'disconnect-post-import-session',
+                })),
+            ));
+            await started;
+            expect(protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.getSyncStatsSnapshot(),
+            )).toMatchObject({
+                orderedCatchup: {
+                    sessionsStarted: 1,
+                    sessionsCompleted: 0,
+                    sessionsFailed: 0,
+                },
+            });
+
+            protocolNode.node.run(() => protocolNode.node.mediator.__test.disconnectPeer(peerKey));
+            await eventually(() => {
+                const stats = protocolNode.node.run(
+                    () => protocolNode.node.mediator.__test.getSyncStatsSnapshot(),
+                ) as { orderedCatchup: { sessionsFailed: number } };
+                return stats.orderedCatchup.sessionsFailed === 1;
+            });
+
+            release();
+            await Promise.allSettled(exportIndex.mock.results.map(result => result.value));
+            await nextTurn();
+            await nextTurn();
+
+            expect(protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.getSyncStatsSnapshot(),
+            )).toMatchObject({
+                orderedCatchup: {
+                    sessionsStarted: 1,
+                    sessionsCompleted: 0,
+                    sessionsFailed: 1,
+                },
+                syncDurationMs: { sessions: 1 },
+            });
+            expect(pair.transcript.some(entry => entry.messageType === 'neg_open')).toBe(false);
         }
         finally {
             release();
@@ -3574,14 +4022,9 @@ describe('hyperswarm mediator protocol characterization', () => {
         const remoteOpen = await createRemoteOpen();
         const protocolNode = await createNode({
             keyByte: 0x11,
-            env: {
-                KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true',
-                KC_HYPR_LEGACY_SYNC_ENABLE: 'false',
-            },
         });
         const catchupPeer = attachPeer(protocolNode, {
             peerKeyByte: 0x22,
-            mode: 'framed',
             overrides: {
                 capabilities: compatibleCapabilities({
                     orderedCatchup: true,
@@ -3592,7 +4035,6 @@ describe('hyperswarm mediator protocol characterization', () => {
         });
         const otherPeer = attachPeer(protocolNode, {
             peerKeyByte: 0x33,
-            mode: 'framed',
             overrides: {
                 capabilities: compatibleCapabilities({
                     orderedCatchup: false,
@@ -3739,14 +4181,9 @@ describe('hyperswarm mediator protocol characterization', () => {
     it('does not start Negentropy when ordered catch-up index sync fails', async () => {
         const protocolNode = await createNode({
             keyByte: 0x11,
-            env: {
-                KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true',
-                KC_HYPR_LEGACY_SYNC_ENABLE: 'false',
-            },
         });
         const { peerKey, pair } = attachPeer(protocolNode, {
             peerKeyByte: 0x22,
-            mode: 'framed',
             overrides: {
                 capabilities: compatibleCapabilities({
                     orderedCatchup: true,
@@ -3798,13 +4235,183 @@ describe('hyperswarm mediator protocol characterization', () => {
         });
     });
 
+    it('applies index reset handling before completing ordered catch-up', async () => {
+        const protocolNode = await createNode({ keyByte: 0x22 });
+        const { peerKey, pair } = attachPeer(protocolNode, {
+            peerKeyByte: 0x11,
+            overrides: {
+                capabilities: compatibleCapabilities({ negentropyVersion: 2 }),
+            },
+        });
+        const index = await protocolNode.node.gatekeeperDb.exportIndexSnapshot({
+            limit: 500,
+        });
+        if (!index.indexEpoch) {
+            throw new Error('Gatekeeper index epoch is unavailable');
+        }
+        await protocolNode.store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotComplete, 'true');
+        await protocolNode.store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor, '999');
+        await protocolNode.store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.gatekeeperIndexEpoch, index.indexEpoch);
+        const reset = jest.spyOn(protocolNode.store, 'reset');
+
+        protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.createOrderedCatchupClientSession(
+                peerKey,
+                'reset-index-session',
+            ),
+        );
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
+        )).toMatchObject({ syncStarted: true });
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
+            peerKey,
+            encodeFramedMessage(JSON.stringify({
+                type: 'ordered_catchup_done',
+                sessionId: 'reset-index-session',
+            })),
+        ));
+        await eventually(() => reset.mock.calls.length === 1);
+        await eventually(() => protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.syncStarted,
+        ) === false);
+
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
+        )).toMatchObject({
+            syncMode: 'unknown',
+            syncStarted: false,
+            activeSession: null,
+        });
+        expect(pair.transcript.some(entry => entry.messageType === 'neg_open')).toBe(false);
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getSyncStatsSnapshot(),
+        )).toMatchObject({
+            orderedCatchup: {
+                sessionsStarted: 1,
+                sessionsCompleted: 0,
+                sessionsFailed: 1,
+            },
+            syncDurationMs: { sessions: 1 },
+        });
+    });
+
+    it.each(['status lookup', 'page lookup'] as const)(
+        'does not send an ordered catch-up response after a Gatekeeper reset during %s',
+        async boundary => {
+            const [operation] = await makeOperations(1);
+            const protocolNode = await createNode({ keyByte: 0x22 });
+            await protocolNode.store.upsertMany([{
+                id: operation.signature!.hash,
+                ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+                syncOrder: 1,
+                operation,
+            }]);
+            const serverPeer = attachPeer(protocolNode, {
+                peerKeyByte: 0x11,
+                overrides: {
+                    capabilities: compatibleCapabilities({
+                        negentropyVersion: 2,
+                        orderedCatchup: true,
+                        orderedCatchupVersion: 1,
+                        orderedCatchupReady: true,
+                    }),
+                },
+            });
+            const resetPeer = attachPeer(protocolNode, {
+                peerKeyByte: 0x33,
+                overrides: {
+                    capabilities: compatibleCapabilities({
+                        negentropyVersion: 2,
+                        orderedCatchup: true,
+                        orderedCatchupVersion: 1,
+                        orderedCatchupReady: true,
+                    }),
+                },
+            });
+            const index = await protocolNode.node.gatekeeperDb.exportIndexSnapshot({
+                limit: 500,
+            });
+            if (!index.indexEpoch) {
+                throw new Error('Gatekeeper index epoch is unavailable');
+            }
+            await protocolNode.store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotComplete, 'true');
+            await protocolNode.store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor, '999');
+            await protocolNode.store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.gatekeeperIndexEpoch, index.indexEpoch);
+            const reset = jest.spyOn(protocolNode.store, 'reset');
+            let noteStarted!: () => void;
+            const started = new Promise<void>(resolve => {
+                noteStarted = resolve;
+            });
+            let release!: () => void;
+            const blocked = new Promise<void>(resolve => {
+                release = resolve;
+            });
+
+            if (boundary === 'status lookup') {
+                const count = protocolNode.store.count.bind(protocolNode.store);
+                jest.spyOn(protocolNode.store, 'count').mockImplementationOnce(async () => {
+                    noteStarted();
+                    await blocked;
+                    return count();
+                });
+            }
+            else {
+                const iterateOrdered = protocolNode.store.iterateOrdered.bind(protocolNode.store);
+                jest.spyOn(protocolNode.store, 'iterateOrdered').mockImplementationOnce(async options => {
+                    noteStarted();
+                    await blocked;
+                    return iterateOrdered(options);
+                });
+            }
+
+            const staleRequest = protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.sendOrderedCatchupPage(serverPeer.peerKey, {
+                    type: 'ordered_catchup_req',
+                    sessionId: 'reset-stale-server-session',
+                } as any),
+            );
+            try {
+                await started;
+                protocolNode.node.run(
+                    () => protocolNode.node.mediator.__test.createOrderedCatchupClientSession(
+                        resetPeer.peerKey,
+                        'reset-trigger-session',
+                    ),
+                );
+                await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
+                    resetPeer.peerKey,
+                    encodeFramedMessage(JSON.stringify({
+                        type: 'ordered_catchup_done',
+                        sessionId: 'reset-trigger-session',
+                    })),
+                ));
+                await eventually(() => reset.mock.calls.length === 1);
+                release();
+                await staleRequest;
+            }
+            finally {
+                release();
+                await staleRequest.catch(() => undefined);
+            }
+
+            expect(decodeWrites(serverPeer.pair).filter(
+                message => message.sessionId === 'reset-stale-server-session',
+            )).toHaveLength(0);
+            expect(protocolNode.node.run(
+                () => protocolNode.node.mediator.__test.getConnectionState(serverPeer.peerKey),
+            )).toMatchObject({
+                orderedCatchupServerSessionId: null,
+                activeSession: null,
+            });
+        },
+    );
+
     it.each(['status lookup', 'page lookup'] as const)(
         'does not send an ordered catch-up response on a replacement connection after %s',
         async boundary => {
             const [operation] = await makeOperations(1);
-            const protocolNode = await createNode({
-                env: { KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true' },
-            });
+            const protocolNode = await createNode();
             await protocolNode.store.upsertMany([{
                 id: operation.signature!.hash,
                 ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
@@ -3812,7 +4419,6 @@ describe('hyperswarm mediator protocol characterization', () => {
                 operation,
             }]);
             const initialPeer = attachPeer(protocolNode, {
-                mode: 'framed',
                 overrides: {
                     capabilities: compatibleCapabilities({
                         orderedCatchup: true,
@@ -3860,7 +4466,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 protocolNode.node.run(
                     () => protocolNode.node.mediator.__test.disconnectPeer(initialPeer.peerKey),
                 );
-                const replacement = attachPeer(protocolNode, { mode: 'framed' });
+                const replacement = attachPeer(protocolNode, {});
                 release();
                 await request;
                 replacementState = protocolNode.node.run(
@@ -3886,9 +4492,7 @@ describe('hyperswarm mediator protocol characterization', () => {
 
     it('continues an admitted ordered session while new rows await sync order', async () => {
         const operations = await makeOperations(302);
-        const protocolNode = await createNode({
-            env: { KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true' },
-        });
+        const protocolNode = await createNode();
         await protocolNode.store.upsertMany(operations.slice(0, 301).map((operation, index) => ({
             id: operation.signature!.hash,
             ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
@@ -3898,7 +4502,6 @@ describe('hyperswarm mediator protocol characterization', () => {
         const count = jest.spyOn(protocolNode.store, 'count');
         const countOrdered = jest.spyOn(protocolNode.store, 'countOrdered');
         const { peerKey, pair } = attachPeer(protocolNode, {
-            mode: 'framed',
             overrides: {
                 capabilities: compatibleCapabilities({
                     orderedCatchup: true,
@@ -3943,9 +4546,7 @@ describe('hyperswarm mediator protocol characterization', () => {
 
     it.each([300, 301])('serves an ordered catch-up history of %i operations without gaps', async count => {
         const operations = await makeOperations(count);
-        const protocolNode = await createNode({
-            env: { KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true' },
-        });
+        const protocolNode = await createNode();
         await protocolNode.store.upsertMany(operations.map((operation, index) => ({
             id: operation.signature!.hash,
             ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
@@ -3953,7 +4554,6 @@ describe('hyperswarm mediator protocol characterization', () => {
             operation,
         })));
         const { peerKey, pair } = attachPeer(protocolNode, {
-            mode: 'framed',
             overrides: {
                 capabilities: compatibleCapabilities({
                     orderedCatchup: true,
@@ -4010,9 +4610,7 @@ describe('hyperswarm mediator protocol characterization', () => {
 
     it('limits an ordered catch-up page by encoded operation bytes', async () => {
         const operations = await makeLargeAssetOperations(10, 55_000);
-        const protocolNode = await createNode({
-            env: { KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true' },
-        });
+        const protocolNode = await createNode();
         await protocolNode.store.upsertMany(operations.map((operation, index) => ({
             id: operation.signature!.hash,
             ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
@@ -4020,7 +4618,6 @@ describe('hyperswarm mediator protocol characterization', () => {
             operation,
         })));
         const { peerKey, pair } = attachPeer(protocolNode, {
-            mode: 'framed',
             overrides: {
                 capabilities: compatibleCapabilities({
                     orderedCatchup: true,
@@ -4061,11 +4658,9 @@ describe('hyperswarm mediator protocol characterization', () => {
         const [controller, asset, update, deletion] = await makeDependencyChain();
         const protocolNode = await createNode({
             keyByte: 0x33,
-            env: { KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true' },
         });
         const { peerKey, pair } = attachPeer(protocolNode, {
             peerKeyByte: 0x22,
-            mode: 'framed',
             overrides: {
                 capabilities: compatibleCapabilities({
                     orderedCatchup: true,
@@ -4146,9 +4741,8 @@ describe('hyperswarm mediator protocol characterization', () => {
         const operations = await makeOperations(2);
         const protocolNode = await createNode({
             keyByte: 0x33,
-            env: { KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true' },
         });
-        const { peerKey, pair } = attachPeer(protocolNode, { peerKeyByte: 0x22, mode: 'framed' });
+        const { peerKey, pair } = attachPeer(protocolNode, { peerKeyByte: 0x22 });
         protocolNode.node.run(
             () => protocolNode.node.mediator.__test.createOrderedCatchupClientSession(peerKey, 'cursor-session'),
         );
@@ -4185,7 +4779,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(protocolNode.node.gatekeeperClient.importBatch).toHaveBeenCalledTimes(importsBefore);
     });
 
-    it('rejects unsupported ordered catch-up and finishes disabled or unready requests', async () => {
+    it('rejects unsupported ordered catch-up and finishes empty or unready requests', async () => {
         const request = {
             type: 'ordered_catchup_req',
             sessionId: 'server-session',
@@ -4196,32 +4790,15 @@ describe('hyperswarm mediator protocol characterization', () => {
             orderedCatchupReady: true,
         });
 
-        const unsupportedNode = await createNode({
-            env: { KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true' },
-        });
-        const unsupportedPeer = attachPeer(unsupportedNode, { mode: 'framed' });
+        const unsupportedNode = await createNode();
+        const unsupportedPeer = attachPeer(unsupportedNode, {});
         await unsupportedNode.node.run(
             () => unsupportedNode.node.mediator.__test.sendOrderedCatchupPage(unsupportedPeer.peerKey, request),
         );
         expect(unsupportedPeer.pair.transcript).toHaveLength(0);
 
-        const disabledNode = await createNode({
-            env: { KC_HYPR_ORDERED_CATCHUP_ENABLE: 'false' },
-        });
-        const disabledPeer = attachPeer(disabledNode, {
-            mode: 'framed',
-            overrides: { capabilities: orderedCapabilities },
-        });
-        await disabledNode.node.run(
-            () => disabledNode.node.mediator.__test.sendOrderedCatchupPage(disabledPeer.peerKey, request),
-        );
-        expect(decodeWrites(disabledPeer.pair).at(-1)).toMatchObject({ type: 'ordered_catchup_done' });
-
-        const emptyNode = await createNode({
-            env: { KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true' },
-        });
+        const emptyNode = await createNode();
         const emptyPeer = attachPeer(emptyNode, {
-            mode: 'framed',
             overrides: { capabilities: orderedCapabilities },
         });
         await emptyNode.node.run(
@@ -4230,16 +4807,13 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(decodeWrites(emptyPeer.pair).at(-1)).toMatchObject({ type: 'ordered_catchup_done' });
 
         const [operation] = await makeOperations(1);
-        const unorderedNode = await createNode({
-            env: { KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true' },
-        });
+        const unorderedNode = await createNode();
         await unorderedNode.store.upsertMany([{
             id: operation.signature!.hash,
             ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
             operation,
         }]);
         const unorderedPeer = attachPeer(unorderedNode, {
-            mode: 'framed',
             overrides: { capabilities: orderedCapabilities },
         });
         await unorderedNode.node.run(
@@ -4252,9 +4826,8 @@ describe('hyperswarm mediator protocol characterization', () => {
         const [operation] = await makeOperations(1);
         const protocolNode = await createNode({
             keyByte: 0x33,
-            env: { KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true' },
         });
-        const { peerKey, pair } = attachPeer(protocolNode, { peerKeyByte: 0x22, mode: 'framed' });
+        const { peerKey, pair } = attachPeer(protocolNode, { peerKeyByte: 0x22 });
         protocolNode.node.run(
             () => protocolNode.node.mediator.__test.createOrderedCatchupClientSession(peerKey, 'client-session'),
         );
