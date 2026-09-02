@@ -1,6 +1,6 @@
 {
   "name": "@mdip/gatekeeper",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "MDIP Gatekeeper",
   "type": "module",
   "module": "./dist/esm/index.js",
@@ -113,9 +113,9 @@
   "author": "David McFadzean <davidmc@gmail.com>",
   "license": "MIT",
   "dependencies": {
-    "@mdip/cipher": "*",
-    "@mdip/common": "*",
-    "@mdip/ipfs": "*",
+    "@mdip/cipher": "^2.2.0",
+    "@mdip/common": "^2.2.0",
+    "@mdip/ipfs": "^2.2.0",
     "axios": "^1.13.6",
     "canonicalize": "^2.1.0",
     "dotenv": "^17.3.1",
@@ -130,7 +130,7 @@
     "url": "git+https://github.com/KeychainMDIP/kc.git"
   },
   "devDependencies": {
-    "@types/pg": "^8.15.5",
-    "@rollup/plugin-json": "^6.1.0"
+    "@rollup/plugin-json": "^6.1.0",
+    "@types/pg": "^8.15.5"
   }
 }
