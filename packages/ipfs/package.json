@@ -1,6 +1,6 @@
 {
   "name": "@mdip/ipfs",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "MDIP IPFS lib",
   "type": "module",
   "module": "./dist/esm/index.js",
