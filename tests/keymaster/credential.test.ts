@@ -658,4 +658,61 @@ describe('acceptCredential', () => {
         const ok = await keymaster.acceptCredential(credentialDid);
         expect(ok).toBe(false);
     });
+
+    it('should return false for decryptable non-credential data', async () => {
+        await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+
+        await keymaster.setCurrentId('Alice');
+        const did = await keymaster.encryptJSON({ message: 'not a credential' }, bob);
+
+        await keymaster.setCurrentId('Bob');
+        await expect(keymaster.acceptCredential(did)).resolves.toBe(false);
+    });
+
+    it('should return false for an unsigned credential', async () => {
+        await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+
+        await keymaster.setCurrentId('Alice');
+        const schema = await keymaster.createSchema(mockSchema);
+        const credential = await keymaster.bindCredential(schema, bob);
+        const did = await keymaster.encryptJSON(credential, bob);
+
+        await keymaster.setCurrentId('Bob');
+        await expect(keymaster.acceptCredential(did)).resolves.toBe(false);
+    });
+
+    it('should return false when the credential signer is not its issuer', async () => {
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        await keymaster.createId('Mallory');
+
+        await keymaster.setCurrentId('Alice');
+        const schema = await keymaster.createSchema(mockSchema);
+
+        await keymaster.setCurrentId('Mallory');
+        const credential = await keymaster.bindCredential(schema, bob);
+        credential.issuer = alice;
+        const signed = await keymaster.addSignature(credential);
+        const did = await keymaster.encryptJSON(signed, bob);
+
+        await keymaster.setCurrentId('Bob');
+        await expect(keymaster.acceptCredential(did)).resolves.toBe(false);
+    });
+
+    it('should return false when the credential signature is invalid', async () => {
+        await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+
+        await keymaster.setCurrentId('Alice');
+        const schema = await keymaster.createSchema(mockSchema);
+        const credential = await keymaster.bindCredential(schema, bob);
+        const signed = await keymaster.addSignature(credential);
+        signed.credential!.email = 'tampered@example.com';
+        const did = await keymaster.encryptJSON(signed, bob);
+
+        await keymaster.setCurrentId('Bob');
+        await expect(keymaster.acceptCredential(did)).resolves.toBe(false);
+    });
 });
