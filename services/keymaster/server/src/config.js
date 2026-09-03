@@ -57,6 +57,20 @@ function parseCsv(value) {
         .filter(Boolean);
 }
 
+function parseDidPrefix(value) {
+    const normalized = value?.trim();
+
+    if (!normalized) {
+        return undefined;
+    }
+
+    if (/^did:[a-z0-9]+$/.test(normalized)) {
+        return normalized;
+    }
+
+    throw new Error('KC_KEYMASTER_DID_PREFIX must be a did:<method> prefix using lowercase letters and digits, or empty');
+}
+
 const configuredSkipPaths = parseCsv(process.env.KC_KEYMASTER_RATE_LIMIT_SKIP_PATHS);
 
 const config = {
@@ -69,7 +83,7 @@ const config = {
     keymasterPassphrase: process.env.KC_ENCRYPTED_PASSPHRASE || '',
     walletCache: process.env.KC_WALLET_CACHE ? process.env.KC_WALLET_CACHE === 'true' : false,
     defaultRegistry: process.env.KC_DEFAULT_REGISTRY,
-    didPrefix: process.env.KC_KEYMASTER_DID_PREFIX || undefined,
+    didPrefix: parseDidPrefix(process.env.KC_KEYMASTER_DID_PREFIX),
     keymasterTrustProxy: parseBoolean(process.env.KC_KEYMASTER_TRUST_PROXY, false),
     rateLimitEnabled: parseBoolean(process.env.KC_KEYMASTER_RATE_LIMIT_ENABLED, false),
     rateLimitWindowValue: parsePositiveInteger(process.env.KC_KEYMASTER_RATE_LIMIT_WINDOW_VALUE, 1),

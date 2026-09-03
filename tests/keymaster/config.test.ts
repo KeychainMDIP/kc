@@ -127,6 +127,24 @@ describe('keymaster server config', () => {
         });
     });
 
+    it('normalizes a valid DID prefix', async () => {
+        expect((await importConfig({
+            KC_KEYMASTER_DID_PREFIX: ' did:mdip ',
+        })).didPrefix).toBe('did:mdip');
+    });
+
+    it.each([
+        'invalid',
+        'did:',
+        'did:mdip:test',
+        'did:MDIP',
+        'did:m-dip',
+    ])('rejects invalid DID prefix %s', async (didPrefix) => {
+        await expect(importConfig({ KC_KEYMASTER_DID_PREFIX: didPrefix }))
+            .rejects
+            .toThrow('KC_KEYMASTER_DID_PREFIX must be a did:<method> prefix using lowercase letters and digits, or empty');
+    });
+
     it.each([
         ['second', 'second'],
         ['hour', 'hour'],
