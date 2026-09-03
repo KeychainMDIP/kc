@@ -20,6 +20,10 @@ COPY services/explorer ./explorer/
 WORKDIR /app/explorer
 
 RUN npm i
+
+ARG VITE_SEARCH_SERVER
+ARG VITE_OPERATION_NETWORKS
+
 RUN npm run build
 
 EXPOSE 4000

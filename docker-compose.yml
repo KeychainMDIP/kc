@@ -409,11 +409,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.explorer
+      args:
+        VITE_SEARCH_SERVER: http://localhost:${KC_SEARCH_SERVER_PORT:-4002}
+        VITE_OPERATION_NETWORKS: hyperswarm,local,TFTC,TBTC
     image: keychainmdip/explorer
     environment:
       - VITE_EXPLORER_PORT=4000
-      - VITE_SEARCH_SERVER=http://localhost:${KC_SEARCH_SERVER_PORT:-4002}
-      - VITE_OPERATION_NETWORKS=hyperswarm,local,TFTC,TBTC
       - KC_LOG_LEVEL=${KC_LOG_LEVEL}
     ports:
       - "4000:4000"
