@@ -20,6 +20,10 @@ COPY apps/react-wallet ./apps/react-wallet/
 WORKDIR /app/apps/react-wallet
 
 RUN npm ci
+
+ARG VITE_GATEKEEPER_URL
+ARG VITE_SEARCH_URL
+
 RUN npm run build
 
 ENV VITE_PORT=4228

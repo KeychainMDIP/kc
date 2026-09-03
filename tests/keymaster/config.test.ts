@@ -21,6 +21,10 @@ const CONFIG_ENV_KEYS = [
     'KC_KEYMASTER_RATE_LIMIT_WHITELIST',
     'KC_KEYMASTER_RATE_LIMIT_SKIP_PATHS',
 ];
+const REQUIRED_ENV = {
+    KC_NODE_ID: 'node',
+    KC_ENCRYPTED_PASSPHRASE: 'passphrase',
+};
 
 jest.unstable_mockModule('@mdip/common/env', () => ({ loadEnv: jest.fn() }));
 
@@ -28,7 +32,7 @@ async function importConfig(env: Record<string, string> = {}) {
     for (const key of CONFIG_ENV_KEYS) {
         delete process.env[key];
     }
-    Object.assign(process.env, env);
+    Object.assign(process.env, REQUIRED_ENV, env);
 
     let config: any;
     await jest.isolateModulesAsync(async () => {
@@ -49,9 +53,9 @@ describe('keymaster server config', () => {
             searchURL: 'http://localhost:4002',
             disableSearch: false,
             keymasterPort: 4226,
-            nodeID: '',
+            nodeID: 'node',
             db: 'json',
-            keymasterPassphrase: '',
+            keymasterPassphrase: 'passphrase',
             walletCache: false,
             defaultRegistry: undefined,
             didPrefix: undefined,
@@ -72,7 +76,7 @@ describe('keymaster server config', () => {
             KC_DISABLE_SEARCH: 'true',
             KC_KEYMASTER_PORT: '1234',
             KC_NODE_ID: 'node',
-            KC_KEYMASTER_DB: 'sqlite',
+            KC_KEYMASTER_DB: 'redis',
             KC_ENCRYPTED_PASSPHRASE: 'passphrase',
             KC_WALLET_CACHE: 'true',
             KC_DEFAULT_REGISTRY: 'local',
@@ -90,7 +94,7 @@ describe('keymaster server config', () => {
             disableSearch: true,
             keymasterPort: 1234,
             nodeID: 'node',
-            db: 'sqlite',
+            db: 'redis',
             keymasterPassphrase: 'passphrase',
             walletCache: true,
             defaultRegistry: 'local',
@@ -127,6 +131,24 @@ describe('keymaster server config', () => {
         });
     });
 
+    it('normalizes a valid DID prefix', async () => {
+        expect((await importConfig({
+            KC_KEYMASTER_DID_PREFIX: ' did:mdip ',
+        })).didPrefix).toBe('did:mdip');
+    });
+
+    it.each([
+        'invalid',
+        'did:',
+        'did:mdip:test',
+        'did:MDIP',
+        'did:m-dip',
+    ])('rejects invalid DID prefix %s', async (didPrefix) => {
+        await expect(importConfig({ KC_KEYMASTER_DID_PREFIX: didPrefix }))
+            .rejects
+            .toThrow('KC_KEYMASTER_DID_PREFIX must be a did:<method> prefix using lowercase letters and digits, or empty');
+    });
+
     it.each([
         ['second', 'second'],
         ['hour', 'hour'],
@@ -135,5 +157,17 @@ describe('keymaster server config', () => {
         expect((await importConfig({
             KC_KEYMASTER_RATE_LIMIT_WINDOW_UNIT: value,
         })).rateLimitWindowUnit).toBe(expected);
+    });
+
+    it('rejects missing required settings and an invalid wallet database', async () => {
+        await expect(importConfig({ KC_NODE_ID: '' }))
+            .rejects
+            .toThrow('KC_NODE_ID is required');
+        await expect(importConfig({ KC_ENCRYPTED_PASSPHRASE: '' }))
+            .rejects
+            .toThrow('KC_ENCRYPTED_PASSPHRASE is required');
+        await expect(importConfig({ KC_KEYMASTER_DB: 'memory' }))
+            .rejects
+            .toThrow('Invalid KC_KEYMASTER_DB "memory", expected redis, json, mongodb, sqlite, or postgres');
     });
 });

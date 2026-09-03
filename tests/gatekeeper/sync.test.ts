@@ -452,6 +452,23 @@ describe('importBatch', () => {
         expect(response.rejected).toBe(1);
     });
 
+    it('should reject operations exceeding the UTF-8 byte limit', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const operation = await helper.createAgentOp(keypair, { prefix: 'did:tést' });
+        const json = JSON.stringify(operation);
+        const gk = new Gatekeeper({ db, ipfs, console: mockConsole, maxOpBytes: json.length });
+
+        expect(Buffer.byteLength(json, 'utf8')).toBeGreaterThan(json.length);
+
+        const response = await gk.importBatch([{
+            registry: 'local',
+            time: new Date().toISOString(),
+            operation,
+        }]);
+
+        expect(response.rejected).toBe(1);
+    });
+
     it('should report an error on invalid operation type', async () => {
         const keypair = cipher.generateRandomJwk();
         const agentOp = await helper.createAgentOp(keypair);

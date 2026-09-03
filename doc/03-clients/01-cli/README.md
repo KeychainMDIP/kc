@@ -37,7 +37,6 @@ Keychain is provided as a set of Docker containers and scripts:
 
    ```sh title=".env" {2-3}
    # General
-   KC_DEBUG=false
    KC_NODE_NAME=mynode
    KC_NODE_ID=mynodeID
    KC_ENCRYPTED_PASSPHRASE=replace-with-a-strong-passphrase

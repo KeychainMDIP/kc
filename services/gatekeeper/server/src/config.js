@@ -57,6 +57,16 @@ function parseCsv(value) {
         .filter(Boolean);
 }
 
+function parseDidPrefix(value) {
+    const normalized = value?.trim() || 'did:test';
+
+    if (/^did:[a-z0-9]+$/.test(normalized)) {
+        return normalized;
+    }
+
+    throw new Error('KC_GATEKEEPER_DID_PREFIX must be a did:<method> prefix using lowercase letters and digits');
+}
+
 const configuredSkipPaths = parseCsv(process.env.KC_GATEKEEPER_RATE_LIMIT_SKIP_PATHS);
 
 const config = {
@@ -66,7 +76,7 @@ const config = {
     ipfsClusterURL: process.env.KC_IPFS_CLUSTER_URL,
     ipfsClusterAuthHeader: process.env.KC_IPFS_CLUSTER_AUTH_HEADER,
     ipfsEnabled: process.env.KC_IPFS_ENABLE ? process.env.KC_IPFS_ENABLE.toLowerCase() !== 'false' : true,
-    didPrefix: process.env.KC_GATEKEEPER_DID_PREFIX || 'did:test',
+    didPrefix: parseDidPrefix(process.env.KC_GATEKEEPER_DID_PREFIX),
     registries: process.env.KC_GATEKEEPER_REGISTRIES ? process.env.KC_GATEKEEPER_REGISTRIES.split(',') : undefined,
     jsonLimit: process.env.KC_GATEKEEPER_JSON_LIMIT || '4mb',
     maxOpBytes: process.env.KC_GATEKEEPER_MAX_OP_BYTES ? parseInt(process.env.KC_GATEKEEPER_MAX_OP_BYTES) : undefined,

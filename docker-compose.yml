@@ -68,6 +68,8 @@ services:
       - KC_GATEKEEPER_DB=${KC_GATEKEEPER_DB}
       - KC_GATEKEEPER_DID_PREFIX=${KC_GATEKEEPER_DID_PREFIX}
       - KC_GATEKEEPER_REGISTRIES=${KC_GATEKEEPER_REGISTRIES}
+      - KC_GATEKEEPER_JSON_LIMIT=${KC_GATEKEEPER_JSON_LIMIT}
+      - KC_GATEKEEPER_MAX_OP_BYTES=${KC_GATEKEEPER_MAX_OP_BYTES}
       - KC_GATEKEEPER_GC_INTERVAL=${KC_GATEKEEPER_GC_INTERVAL}
       - KC_GATEKEEPER_STATUS_INTERVAL=${KC_GATEKEEPER_STATUS_INTERVAL}
       - KC_GATEKEEPER_SERVE_CLIENT=${KC_GATEKEEPER_SERVE_CLIENT}
@@ -200,8 +202,7 @@ services:
       - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
       - KC_NODE_ID=${KC_NODE_ID}
       - KC_SAT_CHAIN=TFTC
-      - KC_SAT_NETWORK=testnet
-      - KC_SAT_START_BLOCK=0
+      - KC_SAT_START_BLOCK=${KC_TFTC_START_BLOCK}
       - KC_SAT_HOST=tftc-node
       - KC_SAT_PORT=19337
       - KC_SAT_USER=${KC_TFTC_USER}
@@ -231,19 +232,17 @@ services:
     ports:
       - 8332:8332
 
-  btc-mediator:
+  btc-ins-mediator:
     build:
       context: .
       dockerfile: Dockerfile.satoshi-inscription
     image: keychainmdip/btc-inscription-mediator
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
-      - KC_KEYMASTER_URL=http://keymaster:4226
       - KC_MONGODB_URL=mongodb://mongodb:27017/?replicaSet=rs0
       - KC_REDIS_URL=redis://redis:6379
       - PGPASSWORD=${KC_POSTGRES_PASSWORD:-mdip}
       - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
-      - KC_NODE_ID=${KC_NODE_ID}
       - KC_SAT_CHAIN=BTC
       - KC_SAT_NETWORK=bitcoin
       - KC_SAT_HOST=btc-node
@@ -267,7 +266,6 @@ services:
     depends_on:
       - btc-node
       - gatekeeper
-      - keymaster
 
   tbtc-node:
     image: keychainmdip/bitcoin-core:v28.0-multiarch
@@ -288,7 +286,6 @@ services:
       - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
       - KC_NODE_ID=${KC_NODE_ID}
       - KC_SAT_CHAIN=TBTC
-      - KC_SAT_NETWORK=testnet
       - KC_SAT_HOST=tbtc-node
       - KC_SAT_PORT=48332
       - KC_SAT_START_BLOCK=${KC_TBTC_START_BLOCK}
@@ -333,7 +330,6 @@ services:
       - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
       - KC_NODE_ID=${KC_NODE_ID}
       - KC_SAT_CHAIN=Signet
-      - KC_SAT_NETWORK=testnet
       - KC_SAT_HOST=signet-node
       - KC_SAT_PORT=38332
       - KC_SAT_START_BLOCK=${KC_SIGNET_START_BLOCK}
@@ -364,12 +360,10 @@ services:
     image: keychainmdip/signet-inscription-mediator
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
-      - KC_KEYMASTER_URL=http://keymaster:4226
       - KC_MONGODB_URL=mongodb://mongodb:27017/?replicaSet=rs0
       - KC_REDIS_URL=redis://redis:6379
       - PGPASSWORD=${KC_POSTGRES_PASSWORD:-mdip}
       - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
-      - KC_NODE_ID=${KC_NODE_ID}
       - KC_SAT_CHAIN=Signet
       - KC_SAT_NETWORK=testnet
       - KC_SAT_HOST=signet-node
@@ -393,7 +387,6 @@ services:
     depends_on:
       - signet-node
       - gatekeeper
-      - keymaster
 
   cli:
     build:
@@ -416,11 +409,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.explorer
+      args:
+        VITE_SEARCH_SERVER: http://localhost:${KC_SEARCH_SERVER_PORT:-4002}
+        VITE_OPERATION_NETWORKS: hyperswarm,local,TFTC,TBTC
     image: keychainmdip/explorer
     environment:
       - VITE_EXPLORER_PORT=4000
-      - VITE_SEARCH_SERVER=http://localhost:${KC_SEARCH_SERVER_PORT:-4002}
-      - VITE_OPERATION_NETWORKS=hyperswarm,local,TFTC,TBTC
       - KC_LOG_LEVEL=${KC_LOG_LEVEL}
     ports:
       - "4000:4000"
@@ -462,12 +456,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.react-wallet
+      args:
+        VITE_GATEKEEPER_URL: http://localhost:${KC_GATEKEEPER_PORT:-4224}
+        VITE_SEARCH_URL: http://localhost:${KC_SEARCH_SERVER_PORT:-4002}
     image: keychainmdip/react-wallet
     environment:
       - VITE_PORT=${KC_REACT_WALLET_PORT:-4228}
-      - VITE_GATEKEEPER_URL=http://gatekeeper:4224
-      - VITE_KEYMASTER_URL=http://keymaster:4226
-      - VITE_SEARCH_SERVER=http://search-server:${KC_SEARCH_SERVER_PORT:-4002}
     user: "${KC_UID}:${KC_GID}"
     ports:
       - "${KC_REACT_WALLET_PORT:-4228}:${KC_REACT_WALLET_PORT:-4228}"

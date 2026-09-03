@@ -33,7 +33,6 @@ describe('hyperswarm config', () => {
     });
 
     it('uses built-in defaults when basic service env vars are blank', async () => {
-        process.env.KC_DEBUG = '';
         process.env.KC_GATEKEEPER_URL = '';
         process.env.KC_KEYMASTER_URL = '';
         process.env.KC_IPFS_URL = '';
@@ -44,7 +43,6 @@ describe('hyperswarm config', () => {
 
         const config = await importConfigIsolated();
 
-        expect(config.debug).toBe(false);
         expect(config.gatekeeperURL).toBe('http://localhost:4224');
         expect(config.keymasterURL).toBe('http://localhost:4226');
         expect(config.ipfsURL).toBe('http://localhost:5001/api/v0');
@@ -55,7 +53,6 @@ describe('hyperswarm config', () => {
     });
 
     it('uses explicit env values for basic service and node settings', async () => {
-        process.env.KC_DEBUG = 'true';
         process.env.KC_GATEKEEPER_URL = 'http://gatekeeper:4224';
         process.env.KC_KEYMASTER_URL = 'http://keymaster:4226';
         process.env.KC_IPFS_URL = 'http://ipfs:5001/api/v0';
@@ -66,7 +63,6 @@ describe('hyperswarm config', () => {
 
         const config = await importConfigIsolated();
 
-        expect(config.debug).toBe(true);
         expect(config.gatekeeperURL).toBe('http://gatekeeper:4224');
         expect(config.keymasterURL).toBe('http://keymaster:4226');
         expect(config.ipfsURL).toBe('http://ipfs:5001/api/v0');

@@ -2,16 +2,19 @@ import { loadEnv } from '@mdip/common/env';
 
 loadEnv();
 
-export type NetworkName = 'bitcoin' | 'testnet' | 'regtest';
-export type ChainName = 'BTC' | 'TBTC' | 'Signet' | 'TFTC';
+// Larger Node.js timeouts are clamped to 1 ms.
+const MAX_INTERVAL_MINUTES = 35_791;
+
+export type NetworkName = 'bitcoin' | 'testnet';
+export type ChainName = 'BTC' | 'Signet';
+export type RpcChainName = 'main' | 'signet';
 export type SatoshiDB = 'json' | 'sqlite' | 'mongodb' | 'redis' | 'postgres';
 
 export interface AppConfig {
-    nodeID?: string;
     gatekeeperURL: string;
-    keymasterURL?: string;
     chain: ChainName;
     network: NetworkName;
+    rpcChain: RpcChainName;
     host: string;
     port: number;
     wallet?: string;
@@ -28,17 +31,56 @@ export interface AppConfig {
     db: SatoshiDB;
 }
 
+function parseIntegerEnv(
+    name: string,
+    defaultValue: number,
+    options: { allowZero?: boolean; max?: number } = {}
+): number {
+    const raw = process.env[name];
+
+    if (raw === undefined || raw === '') {
+        return defaultValue;
+    }
+
+    const normalized = raw.trim();
+    const value = Number(normalized);
+    const minimum = options.allowZero ? 0 : 1;
+
+    if (!/^\d+$/.test(normalized)
+        || !Number.isSafeInteger(value)
+        || value < minimum
+        || (options.max !== undefined && value > options.max)) {
+        const expected = options.allowZero ? 'a non-negative integer' : 'a positive integer';
+        const maximum = options.max === undefined ? '' : ` no greater than ${options.max}`;
+        throw new Error(`Invalid ${name}, expected ${expected}${maximum}`);
+    }
+
+    return value;
+}
+
+function parsePositiveNumberEnv(name: string, defaultValue: number): number {
+    const raw = process.env[name];
+
+    if (raw === undefined || raw === '') {
+        return defaultValue;
+    }
+
+    const value = Number(raw);
+
+    if (!Number.isFinite(value) || value <= 0) {
+        throw new Error(`Invalid ${name}, expected a positive number`);
+    }
+
+    return value;
+}
+
 function toChain(name: string | undefined): ChainName {
     switch (name) {
     case 'BTC':
     case undefined:
         return 'BTC';
-    case 'TBTC':
-        return 'TBTC';
     case 'Signet':
         return 'Signet';
-    case 'TFTC':
-        return 'TFTC';
     default:
         throw new Error(`Unsupported chain "${name}"`);
     }
@@ -52,11 +94,21 @@ function toNetwork(name: string | undefined): NetworkName {
         return 'bitcoin';
     case 'testnet':
         return 'testnet';
-    case 'regtest':
-        return 'regtest';
     default:
         throw new Error(`Unsupported network "${name}"`);
     }
+}
+
+function toRpcChain(chain: ChainName, network: NetworkName): RpcChainName {
+    if (chain === 'BTC' && network === 'bitcoin') {
+        return 'main';
+    }
+
+    if (chain === 'Signet' && network === 'testnet') {
+        return 'signet';
+    }
+
+    throw new Error(`Network "${network}" is incompatible with chain "${chain}"`);
 }
 
 function toDB(name: string | undefined): SatoshiDB {
@@ -77,24 +129,26 @@ function toDB(name: string | undefined): SatoshiDB {
     }
 }
 
+const chain = toChain(process.env.KC_SAT_CHAIN);
+const network = toNetwork(process.env.KC_SAT_NETWORK);
+
 const config: AppConfig = {
-    nodeID: process.env.KC_NODE_ID,
     gatekeeperURL: process.env.KC_GATEKEEPER_URL || 'http://localhost:4224',
-    keymasterURL: process.env.KC_KEYMASTER_URL,
-    chain: toChain(process.env.KC_SAT_CHAIN),
-    network: toNetwork(process.env.KC_SAT_NETWORK),
+    chain,
+    network,
+    rpcChain: toRpcChain(chain, network),
     host: process.env.KC_SAT_HOST || 'localhost',
-    port: process.env.KC_SAT_PORT ? parseInt(process.env.KC_SAT_PORT) : 8332,
+    port: parseIntegerEnv('KC_SAT_PORT', 8332, { max: 65535 }),
     wallet: process.env.KC_SAT_WALLET,
     user: process.env.KC_SAT_USER,
     pass: process.env.KC_SAT_PASS,
-    importInterval: process.env.KC_SAT_IMPORT_INTERVAL ? parseInt(process.env.KC_SAT_IMPORT_INTERVAL) : 0,
-    exportInterval: process.env.KC_SAT_EXPORT_INTERVAL ? parseInt(process.env.KC_SAT_EXPORT_INTERVAL) : 0,
-    feeConf: process.env.KC_SAT_FEE_BLOCK_TARGET ? parseInt(process.env.KC_SAT_FEE_BLOCK_TARGET) : 1,
-    feeFallback: process.env.KC_SAT_FEE_FALLBACK_SAT_BYTE ? parseInt(process.env.KC_SAT_FEE_FALLBACK_SAT_BYTE) : 10,
-    feeMax: process.env.KC_SAT_FEE_MAX ? parseFloat(process.env.KC_SAT_FEE_MAX) : 0.00002,
+    importInterval: parseIntegerEnv('KC_SAT_IMPORT_INTERVAL', 0, { allowZero: true, max: MAX_INTERVAL_MINUTES }),
+    exportInterval: parseIntegerEnv('KC_SAT_EXPORT_INTERVAL', 0, { allowZero: true, max: MAX_INTERVAL_MINUTES }),
+    feeConf: parseIntegerEnv('KC_SAT_FEE_BLOCK_TARGET', 1),
+    feeFallback: parseIntegerEnv('KC_SAT_FEE_FALLBACK_SAT_BYTE', 10),
+    feeMax: parsePositiveNumberEnv('KC_SAT_FEE_MAX', 0.00002),
     rbfEnabled: process.env.KC_SAT_RBF_ENABLED === 'true',
-    startBlock: process.env.KC_SAT_START_BLOCK ? parseInt(process.env.KC_SAT_START_BLOCK) : 0,
+    startBlock: parseIntegerEnv('KC_SAT_START_BLOCK', 0, { allowZero: true }),
     reimport: process.env.KC_SAT_REIMPORT ? (process.env.KC_SAT_REIMPORT === 'true') : true,
     db: toDB(process.env.KC_SAT_DB),
 };

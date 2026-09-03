@@ -45,7 +45,6 @@ The mediator emits periodic structured sync metrics in `connectionLoop` includin
 | `KC_HYPR_POSTGRES_URL`    | `KC_POSTGRES_URL`, then built-in DSN | Postgres DSN used when `KC_HYPR_DB=postgres` |
 | `KC_POSTGRES_URL`         | (no default)                 | Shared fallback for `KC_HYPR_POSTGRES_URL` |
 | `KC_HYPR_EXPORT_INTERVAL` | 2                            | Seconds between export cycles |
-| `KC_HYPR_NEGENTROPY_ENABLE` | true                       | Enable negentropy synchronization |
 | `KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT` | 0                            | Negentropy frame-size limit in KB (0 or >= 4) |
 | `KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW` | 25000                        | Maximum operations loaded into a single window adapter. It is also the non-empty-node gap threshold for ordered catch-up |
 | `KC_HYPR_NEGENTROPY_MAX_ROUNDS_PER_SESSION` | 64                           | Maximum negentropy rounds per window session |
