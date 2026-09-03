@@ -88,6 +88,8 @@ Docker Compose exposes separate settings for each bundled blockchain mediator. F
 
 The root `sample.env` provides the values for each network. The [Satoshi mediator](https://github.com/KeychainMDIP/kc/blob/main/services/mediators/satoshi/README.md) and [Satoshi inscription mediator](https://github.com/KeychainMDIP/kc/blob/main/services/mediators/satoshi-inscription/README.md) READMEs define the corresponding generic `KC_SAT_*` settings. Network identity fields such as chain, network, host, and port are set directly in `docker-compose.yml` for the bundled services.
 
+Compose constructs internal PostgreSQL URLs from `KC_POSTGRES_DB`, `KC_POSTGRES_USER`, and `KC_POSTGRES_PASSWORD`. The PostgreSQL URL variables documented in the component READMEs apply when running services outside Compose.
+
 The service READMEs document the remaining settings:
 
 - [Gatekeeper](https://github.com/KeychainMDIP/kc/blob/main/services/gatekeeper/server/README.md)
