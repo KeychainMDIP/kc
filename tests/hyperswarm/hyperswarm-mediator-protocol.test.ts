@@ -385,7 +385,6 @@ describe('hyperswarm mediator protocol characterization', () => {
     it('frames the initial ping and advertises always-on sync capabilities', async () => {
         const protocolNode = await createNode({
             env: {
-                KC_HYPR_NEGENTROPY_ENABLE: 'false',
                 KC_HYPR_ORDERED_CATCHUP_ENABLE: 'false',
             },
         });

@@ -44,7 +44,6 @@ function parseSyncDbEnv() {
 const negentropyMaxRecordsPerWindow = parsePositiveIntEnv('KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW', 25000);
 
 const config = {
-    debug: process.env.KC_DEBUG ? process.env.KC_DEBUG === 'true' : false,
     gatekeeperURL: process.env.KC_GATEKEEPER_URL || 'http://localhost:4224',
     keymasterURL: process.env.KC_KEYMASTER_URL || 'http://localhost:4226',
     ipfsURL: process.env.KC_IPFS_URL || 'http://localhost:5001/api/v0',
