@@ -37,3 +37,5 @@ The mediator appends `-Inscription` to `KC_SAT_CHAIN`. Gatekeeper currently acce
 | `KC_REDIS_URL`            | redis://localhost:6379 | Redis connection string when `KC_SAT_DB=redis`                   |
 | `KC_POSTGRES_URL`         | postgresql://mdip:mdip@localhost:5432/mdip | PostgreSQL connection string when `KC_SAT_DB=postgres` |
 | `KC_LOG_LEVEL`            | info                  | Log level: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, or `silent` |
+
+Numeric settings are validated at startup. The port must be an integer from 1 to 65535. Intervals must be integers from 0 to 35791 minutes, and the starting block must be a non-negative integer. The fee confirmation target and fallback fee must be positive integers, and the maximum fee must be a positive number.
