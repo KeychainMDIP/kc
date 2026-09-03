@@ -15,7 +15,7 @@ Operations come from Keymaster clients such as end-user wallets and network medi
 | `KC_GATEKEEPER_DID_PREFIX` | did:test | Fallback prefix when a signed create operation does not specify one |
 | `KC_GATEKEEPER_REGISTRIES` | local,hyperswarm | Comma-separated registries accepted by this node |
 | `KC_GATEKEEPER_JSON_LIMIT` | 4mb | Maximum JSON request-body size accepted by the API |
-| `KC_GATEKEEPER_MAX_OP_BYTES` | 65536 | Maximum `JSON.stringify` character length of an operation |
+| `KC_GATEKEEPER_MAX_OP_BYTES` | 65536 | Maximum UTF-8 byte length of a JSON-stringified operation |
 | `KC_GATEKEEPER_SERVE_CLIENT` | true | Serve the Gatekeeper web client from the API process |
 | `KC_IPFS_URL` | http://localhost:5001/api/v0 | IPFS RPC URL |
 | `KC_IPFS_ENABLE` | true | Enable IPFS-backed CAS endpoints |

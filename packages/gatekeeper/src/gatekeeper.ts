@@ -596,12 +596,16 @@ export default class Gatekeeper implements GatekeeperInterface {
         }
     }
 
+    private operationExceedsMaxBytes(operation: Operation): boolean {
+        return Buffer.byteLength(JSON.stringify(operation), 'utf8') > this.maxOpBytes;
+    }
+
     async verifyCreateOperation(operation: Operation): Promise<boolean> {
         if (!operation) {
             throw new InvalidOperationError('missing');
         }
 
-        if (JSON.stringify(operation).length > this.maxOpBytes) {
+        if (this.operationExceedsMaxBytes(operation)) {
             throw new InvalidOperationError('size');
         }
 
@@ -687,7 +691,7 @@ export default class Gatekeeper implements GatekeeperInterface {
     }
 
     async verifyUpdateOperation(operation: Operation, doc: MdipDocument): Promise<boolean> {
-        if (JSON.stringify(operation).length > this.maxOpBytes) {
+        if (this.operationExceedsMaxBytes(operation)) {
             throw new InvalidOperationError('size');
         }
 
@@ -1198,7 +1202,7 @@ export default class Gatekeeper implements GatekeeperInterface {
 
         const operation = event.operation;
 
-        if (JSON.stringify(operation).length > this.maxOpBytes) {
+        if (this.operationExceedsMaxBytes(operation)) {
             return false;
         }
 

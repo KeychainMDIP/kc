@@ -172,9 +172,12 @@ describe('createDID', () => {
     });
 
     it('should throw exception on create op size exceeding limit', async () => {
-        const gk = new Gatekeeper({ db, ipfs, console: mockConsole, maxOpBytes: 100 });
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await helper.createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair, { prefix: 'did:tést' });
+        const json = JSON.stringify(agentOp);
+        const gk = new Gatekeeper({ db, ipfs, console: mockConsole, maxOpBytes: json.length });
+
+        expect(Buffer.byteLength(json, 'utf8')).toBeGreaterThan(json.length);
 
         try {
             await gk.createDID(agentOp);
@@ -761,10 +764,14 @@ describe('updateDID', () => {
         const agentOp = await helper.createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
+        doc.didDocumentData = 'é';
+        const updateOp = await helper.createUpdateOp(keypair, did, doc);
+        const json = JSON.stringify(updateOp);
+        const gk = new Gatekeeper({ db, ipfs, console: mockConsole, maxOpBytes: json.length });
+
+        expect(Buffer.byteLength(json, 'utf8')).toBeGreaterThan(json.length);
 
         try {
-            const gk = new Gatekeeper({ db, ipfs, console: mockConsole, maxOpBytes: 100 });
-            const updateOp = await helper.createUpdateOp(keypair, did, doc);
             await gk.updateDID(updateOp);
             throw new ExpectedExceptionError();
         } catch (error: any) {
