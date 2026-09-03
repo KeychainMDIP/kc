@@ -6123,10 +6123,6 @@ process.on('unhandledRejection', (reason, promise) => {
 async function waitForNodeId() {
     let isReady = false;
 
-    if (!config.nodeID) {
-        throw new Error('KC_NODE_ID is not set in the configuration.');
-    }
-
     const ids = await keymaster.listIds();
 
     if (!ids.includes(config.nodeID)) {
