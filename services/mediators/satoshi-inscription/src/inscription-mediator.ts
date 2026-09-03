@@ -761,8 +761,14 @@ async function waitForChain() {
 
     while (!isReady) {
         try {
-            const blockchainInfo = await btcClient.getBlockchainInfo();
+            const blockchainInfo = await btcClient.getBlockchainInfo() as { chain?: string };
             log.debug({ blockchainInfo }, 'Blockchain Info');
+
+            if (blockchainInfo.chain !== config.rpcChain) {
+                log.error(`Configured ${config.chain} mediator requires RPC chain '${config.rpcChain}', received '${blockchainInfo.chain}'`);
+                return false;
+            }
+
             isReady = true;
         } catch {
             log.debug(`Waiting for ${config.chain} node...`);

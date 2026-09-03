@@ -109,4 +109,36 @@ describe.each(CONFIGS)('%s config', (_name, configPath, usesKeymaster) => {
             .rejects
             .toThrow(`Invalid ${name}, expected ${expected}`);
     });
+
+    if (!usesKeymaster) {
+        it.each([
+            ['BTC', 'bitcoin', 'main'],
+            ['BTC', 'mainnet', 'main'],
+            ['Signet', 'testnet', 'signet'],
+        ])('accepts %s with %s', async (chain, network, rpcChain) => {
+            process.env.KC_SAT_CHAIN = chain;
+            process.env.KC_SAT_NETWORK = network;
+
+            const config = await importConfigIsolated(configPath);
+
+            expect(config).toMatchObject({
+                chain,
+                network: network === 'mainnet' ? 'bitcoin' : network,
+                rpcChain,
+            });
+        });
+
+        it.each([
+            ['TBTC', 'testnet', 'Unsupported chain "TBTC"'],
+            ['TFTC', 'testnet', 'Unsupported chain "TFTC"'],
+            ['BTC', 'regtest', 'Unsupported network "regtest"'],
+            ['BTC', 'testnet', 'Network "testnet" is incompatible with chain "BTC"'],
+            ['Signet', 'bitcoin', 'Network "bitcoin" is incompatible with chain "Signet"'],
+        ])('rejects %s with %s', async (chain, network, expected) => {
+            process.env.KC_SAT_CHAIN = chain;
+            process.env.KC_SAT_NETWORK = network;
+
+            await expect(importConfigIsolated(configPath)).rejects.toThrow(expected);
+        });
+    }
 });

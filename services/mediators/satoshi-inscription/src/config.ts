@@ -5,14 +5,16 @@ loadEnv();
 // Larger Node.js timeouts are clamped to 1 ms.
 const MAX_INTERVAL_MINUTES = 35_791;
 
-export type NetworkName = 'bitcoin' | 'testnet' | 'regtest';
-export type ChainName = 'BTC' | 'TBTC' | 'Signet' | 'TFTC';
+export type NetworkName = 'bitcoin' | 'testnet';
+export type ChainName = 'BTC' | 'Signet';
+export type RpcChainName = 'main' | 'signet';
 export type SatoshiDB = 'json' | 'sqlite' | 'mongodb' | 'redis' | 'postgres';
 
 export interface AppConfig {
     gatekeeperURL: string;
     chain: ChainName;
     network: NetworkName;
+    rpcChain: RpcChainName;
     host: string;
     port: number;
     wallet?: string;
@@ -77,12 +79,8 @@ function toChain(name: string | undefined): ChainName {
     case 'BTC':
     case undefined:
         return 'BTC';
-    case 'TBTC':
-        return 'TBTC';
     case 'Signet':
         return 'Signet';
-    case 'TFTC':
-        return 'TFTC';
     default:
         throw new Error(`Unsupported chain "${name}"`);
     }
@@ -96,11 +94,21 @@ function toNetwork(name: string | undefined): NetworkName {
         return 'bitcoin';
     case 'testnet':
         return 'testnet';
-    case 'regtest':
-        return 'regtest';
     default:
         throw new Error(`Unsupported network "${name}"`);
     }
+}
+
+function toRpcChain(chain: ChainName, network: NetworkName): RpcChainName {
+    if (chain === 'BTC' && network === 'bitcoin') {
+        return 'main';
+    }
+
+    if (chain === 'Signet' && network === 'testnet') {
+        return 'signet';
+    }
+
+    throw new Error(`Network "${network}" is incompatible with chain "${chain}"`);
 }
 
 function toDB(name: string | undefined): SatoshiDB {
@@ -121,10 +129,14 @@ function toDB(name: string | undefined): SatoshiDB {
     }
 }
 
+const chain = toChain(process.env.KC_SAT_CHAIN);
+const network = toNetwork(process.env.KC_SAT_NETWORK);
+
 const config: AppConfig = {
     gatekeeperURL: process.env.KC_GATEKEEPER_URL || 'http://localhost:4224',
-    chain: toChain(process.env.KC_SAT_CHAIN),
-    network: toNetwork(process.env.KC_SAT_NETWORK),
+    chain,
+    network,
+    rpcChain: toRpcChain(chain, network),
     host: process.env.KC_SAT_HOST || 'localhost',
     port: parseIntegerEnv('KC_SAT_PORT', 8332, { max: 65535 }),
     wallet: process.env.KC_SAT_WALLET,

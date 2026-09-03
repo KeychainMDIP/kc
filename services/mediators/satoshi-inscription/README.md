@@ -10,6 +10,7 @@ The mediator has two responsibilities:
 Unlike the Satoshi mediator, which puts a DID that resolves to an operation batch in `OP_RETURN`, this mediator uses `OP_RETURN` only for an MDIP marker. Complete operation data is stored directly in the Taproot reveal witnesses, and one reveal transaction can contain multiple operations.
 
 The mediator appends `-Inscription` to `KC_SAT_CHAIN`. Gatekeeper currently accepts `BTC-Inscription` and `Signet-Inscription`, so use `BTC` or `Signet` as the base chain.
+The chain, address network, and blockchain node must agree. `BTC` uses `bitcoin` or `mainnet` with a Bitcoin mainnet node. `Signet` uses `testnet` with a Signet node. The mediator verifies the node's reported chain at startup.
 
 ## Environment variables
 
@@ -17,7 +18,7 @@ The mediator appends `-Inscription` to `KC_SAT_CHAIN`. Gatekeeper currently acce
 |---------------------------|-----------------------|-------------------------------------------------------------------|
 | `KC_GATEKEEPER_URL`       | http://localhost:4224 | MDIP gatekeeper service URL                                       |
 | `KC_SAT_CHAIN`            | BTC                   | Base chain: `BTC` or `Signet`                                     |
-| `KC_SAT_NETWORK`          | bitcoin               | `bitcoin`/`mainnet`, `testnet`, or `regtest`                       |
+| `KC_SAT_NETWORK`          | bitcoin               | `bitcoin`/`mainnet` for BTC or `testnet` for Signet                |
 | `KC_SAT_HOST`             | localhost             | Host where blockchain node is running                             |
 | `KC_SAT_PORT`             | 8332                  | Port where blockchain node is running                             |
 | `KC_SAT_WALLET`           | (no default)          | Blockchain node wallet to use                                     |
