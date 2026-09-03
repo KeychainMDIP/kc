@@ -832,11 +832,6 @@ async function syncBlocks(): Promise<void> {
 }
 
 async function main() {
-    if (!READ_ONLY && !config.nodeID) {
-        log.error('inscription-mediator must have a KC_NODE_ID configured');
-        return;
-    }
-
     const jsonFile = new JsonFile(REGISTRY);
 
     if (config.db === 'redis') {

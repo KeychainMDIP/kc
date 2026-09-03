@@ -15,7 +15,6 @@ The mediator appends `-Inscription` to `KC_SAT_CHAIN`. Gatekeeper currently acce
 
 | variable                  | default               | description                                                       |
 |---------------------------|-----------------------|-------------------------------------------------------------------|
-| `KC_NODE_ID`              | (no default)          | Required non-empty value when exporting                           |
 | `KC_GATEKEEPER_URL`       | http://localhost:4224 | MDIP gatekeeper service URL                                       |
 | `KC_SAT_CHAIN`            | BTC                   | Base chain: `BTC` or `Signet`                                     |
 | `KC_SAT_NETWORK`          | bitcoin               | `bitcoin`/`mainnet`, `testnet`, or `regtest`                       |

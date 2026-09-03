@@ -2,8 +2,8 @@ import { jest } from '@jest/globals';
 
 const ORIGINAL_ENV = { ...process.env };
 const CONFIGS = [
-    ['Satoshi', '../../services/mediators/satoshi/src/config.ts'],
-    ['Satoshi inscription', '../../services/mediators/satoshi-inscription/src/config.ts'],
+    ['Satoshi', '../../services/mediators/satoshi/src/config.ts', true],
+    ['Satoshi inscription', '../../services/mediators/satoshi-inscription/src/config.ts', false],
 ] as const;
 const NUMERIC_DEFAULTS = {
     KC_SAT_PORT: '',
@@ -25,7 +25,7 @@ async function importConfigIsolated(configPath: string) {
     return loaded;
 }
 
-describe.each(CONFIGS)('%s config', (_name, configPath) => {
+describe.each(CONFIGS)('%s config', (_name, configPath, usesKeymaster) => {
     beforeEach(() => {
         process.env = {
             ...ORIGINAL_ENV,
@@ -73,6 +73,21 @@ describe.each(CONFIGS)('%s config', (_name, configPath) => {
         expect(config.feeFallback).toBe(5);
         expect(config.feeMax).toBe(0.001);
         expect(config.startBlock).toBe(100);
+    });
+
+    it('only exposes batch-asset settings when they are used', async () => {
+        process.env.KC_NODE_ID = 'node';
+        process.env.KC_KEYMASTER_URL = 'http://keymaster:4226';
+
+        const config = await importConfigIsolated(configPath);
+
+        if (usesKeymaster) {
+            expect(config).toMatchObject({ nodeID: 'node', keymasterURL: 'http://keymaster:4226' });
+        }
+        else {
+            expect(config).not.toHaveProperty('nodeID');
+            expect(config).not.toHaveProperty('keymasterURL');
+        }
     });
 
     it.each([

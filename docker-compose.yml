@@ -232,19 +232,17 @@ services:
     ports:
       - 8332:8332
 
-  btc-mediator:
+  btc-ins-mediator:
     build:
       context: .
       dockerfile: Dockerfile.satoshi-inscription
     image: keychainmdip/btc-inscription-mediator
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
-      - KC_KEYMASTER_URL=http://keymaster:4226
       - KC_MONGODB_URL=mongodb://mongodb:27017/?replicaSet=rs0
       - KC_REDIS_URL=redis://redis:6379
       - PGPASSWORD=${KC_POSTGRES_PASSWORD:-mdip}
       - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
-      - KC_NODE_ID=${KC_NODE_ID}
       - KC_SAT_CHAIN=BTC
       - KC_SAT_NETWORK=bitcoin
       - KC_SAT_HOST=btc-node
@@ -268,7 +266,6 @@ services:
     depends_on:
       - btc-node
       - gatekeeper
-      - keymaster
 
   tbtc-node:
     image: keychainmdip/bitcoin-core:v28.0-multiarch
@@ -363,12 +360,10 @@ services:
     image: keychainmdip/signet-inscription-mediator
     environment:
       - KC_GATEKEEPER_URL=http://gatekeeper:4224
-      - KC_KEYMASTER_URL=http://keymaster:4226
       - KC_MONGODB_URL=mongodb://mongodb:27017/?replicaSet=rs0
       - KC_REDIS_URL=redis://redis:6379
       - PGPASSWORD=${KC_POSTGRES_PASSWORD:-mdip}
       - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
-      - KC_NODE_ID=${KC_NODE_ID}
       - KC_SAT_CHAIN=Signet
       - KC_SAT_NETWORK=testnet
       - KC_SAT_HOST=signet-node
@@ -392,7 +387,6 @@ services:
     depends_on:
       - signet-node
       - gatekeeper
-      - keymaster
 
   cli:
     build:

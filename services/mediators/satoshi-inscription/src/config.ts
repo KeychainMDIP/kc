@@ -10,9 +10,7 @@ export type ChainName = 'BTC' | 'TBTC' | 'Signet' | 'TFTC';
 export type SatoshiDB = 'json' | 'sqlite' | 'mongodb' | 'redis' | 'postgres';
 
 export interface AppConfig {
-    nodeID?: string;
     gatekeeperURL: string;
-    keymasterURL?: string;
     chain: ChainName;
     network: NetworkName;
     host: string;
@@ -124,9 +122,7 @@ function toDB(name: string | undefined): SatoshiDB {
 }
 
 const config: AppConfig = {
-    nodeID: process.env.KC_NODE_ID,
     gatekeeperURL: process.env.KC_GATEKEEPER_URL || 'http://localhost:4224',
-    keymasterURL: process.env.KC_KEYMASTER_URL,
     chain: toChain(process.env.KC_SAT_CHAIN),
     network: toNetwork(process.env.KC_SAT_NETWORK),
     host: process.env.KC_SAT_HOST || 'localhost',
