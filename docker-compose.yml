@@ -200,8 +200,7 @@ services:
       - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
       - KC_NODE_ID=${KC_NODE_ID}
       - KC_SAT_CHAIN=TFTC
-      - KC_SAT_NETWORK=testnet
-      - KC_SAT_START_BLOCK=0
+      - KC_SAT_START_BLOCK=${KC_TFTC_START_BLOCK}
       - KC_SAT_HOST=tftc-node
       - KC_SAT_PORT=19337
       - KC_SAT_USER=${KC_TFTC_USER}
@@ -288,7 +287,6 @@ services:
       - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
       - KC_NODE_ID=${KC_NODE_ID}
       - KC_SAT_CHAIN=TBTC
-      - KC_SAT_NETWORK=testnet
       - KC_SAT_HOST=tbtc-node
       - KC_SAT_PORT=48332
       - KC_SAT_START_BLOCK=${KC_TBTC_START_BLOCK}
@@ -333,7 +331,6 @@ services:
       - KC_POSTGRES_URL=postgresql://${KC_POSTGRES_USER:-mdip}@postgres:5432/${KC_POSTGRES_DB:-mdip}
       - KC_NODE_ID=${KC_NODE_ID}
       - KC_SAT_CHAIN=Signet
-      - KC_SAT_NETWORK=testnet
       - KC_SAT_HOST=signet-node
       - KC_SAT_PORT=38332
       - KC_SAT_START_BLOCK=${KC_SIGNET_START_BLOCK}

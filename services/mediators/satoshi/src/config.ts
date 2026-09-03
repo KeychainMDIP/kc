@@ -2,7 +2,6 @@ import { loadEnv } from '@mdip/common/env';
 
 loadEnv();
 
-export type NetworkName = 'bitcoin' | 'testnet' | 'regtest';
 export type ChainName = 'BTC' | 'TBTC' | 'Signet' | 'TFTC';
 export type SatoshiDB = 'json' | 'sqlite' | 'mongodb' | 'redis' | 'postgres';
 
@@ -11,7 +10,6 @@ export interface AppConfig {
     gatekeeperURL: string;
     keymasterURL?: string;
     chain: ChainName;
-    network: NetworkName;
     host: string;
     port: number;
     wallet?: string;
@@ -44,21 +42,6 @@ function toChain(name: string | undefined): ChainName {
     }
 }
 
-function toNetwork(name: string | undefined): NetworkName {
-    switch (name) {
-    case 'bitcoin':
-    case 'mainnet':
-    case undefined:
-        return 'bitcoin';
-    case 'testnet':
-        return 'testnet';
-    case 'regtest':
-        return 'regtest';
-    default:
-        throw new Error(`Unsupported network "${name}"`);
-    }
-}
-
 function toDB(name: string | undefined): SatoshiDB {
     switch (name) {
     case 'json':
@@ -82,7 +65,6 @@ const config: AppConfig = {
     gatekeeperURL: process.env.KC_GATEKEEPER_URL || 'http://localhost:4224',
     keymasterURL: process.env.KC_KEYMASTER_URL,
     chain: toChain(process.env.KC_SAT_CHAIN),
-    network: toNetwork(process.env.KC_SAT_NETWORK),
     host: process.env.KC_SAT_HOST || 'localhost',
     port: process.env.KC_SAT_PORT ? parseInt(process.env.KC_SAT_PORT) : 8332,
     wallet: process.env.KC_SAT_WALLET,
