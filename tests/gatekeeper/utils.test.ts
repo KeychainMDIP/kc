@@ -267,7 +267,7 @@ describe('ipfs disabled', () => {
         await expect(gatekeeper.getJSON('cid')).rejects.toThrow('IPFS disabled');
     });
 
-    it('should still generate CID when save=true and disabled', async () => {
+    it('should still generate CID when disabled', async () => {
         const gatekeeper = new Gatekeeper({ db, ipfsEnabled: false });
         const operation: Operation = {
             type: "create",
@@ -279,7 +279,7 @@ describe('ipfs disabled', () => {
             }
         };
 
-        const cid = await gatekeeper.generateCID(operation, true);
+        const cid = await gatekeeper.generateCID(operation);
         expect(typeof cid).toBe('string');
     });
 
