@@ -18,7 +18,6 @@ import CipherNode from '@mdip/cipher/node';
 import { InvalidParameterError } from '@mdip/common/errors';
 import { childLogger } from '@mdip/common/logger';
 import config from './config.js';
-import { proxyCasData } from './cas-proxy.js';
 
 const app = express();
 const v1router = express.Router();
@@ -4902,7 +4901,21 @@ v1router.post('/documents/:id/test', async (req, res) => {
  *               type: string
  */
 v1router.get('/cas/data/:cid', async (req, res) => {
-    await proxyCasData(req.params.cid, config.gatekeeperURL, res);
+    try {
+        const url = `${config.gatekeeperURL}/api/v1/cas/data/${encodeURIComponent(req.params.cid)}`;
+        const response = await fetch(url);
+        const contentType = response.headers.get('content-type');
+        const data = Buffer.from(await response.arrayBuffer());
+
+        if (contentType) {
+            res.set('Content-Type', contentType);
+        }
+
+        res.status(response.status).send(data);
+    }
+    catch (error) {
+        res.status(502).send(String(error));
+    }
 });
 
 /**
