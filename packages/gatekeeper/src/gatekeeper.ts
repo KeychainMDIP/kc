@@ -966,12 +966,12 @@ export default class Gatekeeper implements GatekeeperInterface {
 
                 for (const e of currentEvents) {
                     if (!e.opid) {
-                        e.opid = await this.generateCID(e.operation, true);
+                        e.opid = await this.generateCID(e.operation);
                     }
                 }
 
                 if (!event.opid) {
-                    event.opid = await this.generateCID(event.operation, true);
+                    event.opid = await this.generateCID(event.operation);
                 }
 
                 const opMatch = currentEvents.find(item => item.operation.signature?.value === event.operation.signature?.value);

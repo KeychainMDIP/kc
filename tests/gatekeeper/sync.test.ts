@@ -932,6 +932,26 @@ describe('processEvents', () => {
         }
     });
 
+    it('should generate missing opids without writing operations to IPFS', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await helper.createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const [event] = await gatekeeper.exportDID(did);
+        const expectedOpid = await gatekeeper.generateCID(event.operation);
+        const addJSON = jest.spyOn(ipfs, 'addJSON');
+
+        try {
+            event.registry = 'hyperswarm';
+            await gatekeeper.importBatch([event]);
+            await gatekeeper.processEvents();
+
+            expect(event.opid).toBe(expectedOpid);
+            expect(addJSON).not.toHaveBeenCalled();
+        } finally {
+            addJSON.mockRestore();
+        }
+    });
+
     it('should not overwrite events when verified DID is later synced from another registry', async () => {
         const keypair = cipher.generateRandomJwk();
         const agentOp = await helper.createAgentOp(keypair, { version: 1, registry: 'TFTC' });
