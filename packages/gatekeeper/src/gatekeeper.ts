@@ -519,13 +519,8 @@ export default class Gatekeeper implements GatekeeperInterface {
         return true;
     }
 
-    async generateCID(operation: unknown, save: boolean = false): Promise<string> {
+    async generateCID(operation: unknown): Promise<string> {
         const canonical = this.cipher.canonicalizeJSON(operation);
-
-        if (save && this.ipfs) {
-            return this.ipfs.addJSON(JSON.parse(canonical));
-        }
-
         return generateCID(JSON.parse(canonical));
     }
 
