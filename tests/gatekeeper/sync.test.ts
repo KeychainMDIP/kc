@@ -766,6 +766,27 @@ describe('processEvents', () => {
         expect(response.added).toBe(3);
     });
 
+    it('should reject an event when DID generation returns no DID', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const operation = await helper.createAgentOp(keypair);
+        const generateDID = jest.spyOn(gatekeeper, 'generateDID').mockResolvedValue('');
+
+        try {
+            await gatekeeper.importBatch([{
+                registry: 'local',
+                time: operation.created!,
+                operation,
+            }]);
+
+            await expect(gatekeeper.processEvents()).resolves.toMatchObject({
+                rejected: 1,
+                pending: 0,
+            });
+        } finally {
+            generateDID.mockRestore();
+        }
+    });
+
     it('should report 0 ops added when DID exists', async () => {
         const keypair = cipher.generateRandomJwk();
         const agentOp = await helper.createAgentOp(keypair);
