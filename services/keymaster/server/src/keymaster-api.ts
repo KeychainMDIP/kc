@@ -18,6 +18,7 @@ import CipherNode from '@mdip/cipher/node';
 import { InvalidParameterError } from '@mdip/common/errors';
 import { childLogger } from '@mdip/common/logger';
 import config from './config.js';
+import { createWalletFromBody } from './helpers.js';
 
 const app = express();
 const v1router = express.Router();
@@ -368,7 +369,7 @@ v1router.put('/wallet', async (req, res) => {
  *   post:
  *     summary: Create a new wallet.
  *     requestBody:
- *       required: true
+ *       required: false
  *       content:
  *         application/json:
  *           schema:
@@ -403,8 +404,7 @@ v1router.put('/wallet', async (req, res) => {
  */
 v1router.post('/wallet/new', async (req, res) => {
     try {
-        const { mnemonic, overwrite } = req.body;
-        const wallet = await keymaster.newWallet(mnemonic, overwrite);
+        const wallet = await createWalletFromBody(keymaster, req.body);
         res.json({ wallet });
     } catch (error: any) {
         res.status(500).send({ error: error.toString() });

@@ -404,7 +404,7 @@
       "post": {
         "summary": "Create a new wallet.",
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
