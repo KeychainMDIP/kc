@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import Gatekeeper from '@mdip/gatekeeper';
 import Keymaster from '@mdip/keymaster';
 import {
@@ -626,26 +627,52 @@ describe('recoverWallet', () => {
         );
     });
 
-    it('should do nothing if wallet was not backed up', async () => {
+    it('should reject recovery if wallet was not backed up', async () => {
         await keymaster.createId('Bob');
         const mnemonic = await keymaster.decryptMnemonic();
 
         // Recover wallet from mnemonic
         await keymaster.newWallet(mnemonic, true);
-        const recovered = await keymaster.recoverWallet();
 
-        expect(recovered.ids).toStrictEqual({});
+        await expect(keymaster.recoverWallet()).rejects.toThrow('Invalid parameter: No backup DID found');
     });
 
-    it('should do nothing if backup DID is invalid', async () => {
+    it('should reject recovery if backup DID is invalid', async () => {
         const agentDID = await keymaster.createId('Bob');
         const mnemonic = await keymaster.decryptMnemonic();
 
         // Recover wallet from mnemonic
         await keymaster.newWallet(mnemonic, true);
-        const recovered = await keymaster.recoverWallet(agentDID);
 
-        expect(recovered.ids).toStrictEqual({});
+        await expect(keymaster.recoverWallet(agentDID))
+            .rejects
+            .toThrow('Invalid parameter: Asset "backup" is missing or not a string');
+    });
+
+    it('should propagate backup decryption failures', async () => {
+        await keymaster.createId('Bob');
+        const did = await keymaster.backupWallet();
+        jest.spyOn(cipher, 'decryptMessage').mockImplementationOnce(() => {
+            throw new Error('decryption failed');
+        });
+
+        await expect(keymaster.recoverWallet(did)).rejects.toThrow('decryption failed');
+    });
+
+    it('should reject malformed backup data', async () => {
+        await keymaster.createId('Bob');
+        const did = await keymaster.backupWallet();
+        jest.spyOn(cipher, 'decryptMessage').mockReturnValueOnce('not JSON');
+
+        await expect(keymaster.recoverWallet(did)).rejects.toThrow(SyntaxError);
+    });
+
+    it('should propagate wallet storage failures', async () => {
+        await keymaster.createId('Bob');
+        await keymaster.backupWallet();
+        jest.spyOn(wallet, 'saveWallet').mockResolvedValueOnce(false);
+
+        await expect(keymaster.recoverWallet()).rejects.toThrow('Keymaster: save wallet failed');
     });
 });
 

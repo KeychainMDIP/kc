@@ -534,63 +534,57 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async recoverWallet(did?: string): Promise<WalletFile> {
-        try {
+        if (!did) {
+            const seedBank = await this.resolveSeedBank();
+            if (seedBank.didDocumentData && typeof seedBank.didDocumentData === 'object' && !Array.isArray(seedBank.didDocumentData)) {
+                const data = seedBank.didDocumentData as { wallet?: string };
+                did = data.wallet;
+            }
             if (!did) {
-                const seedBank = await this.resolveSeedBank();
-                if (seedBank.didDocumentData && typeof seedBank.didDocumentData === 'object' && !Array.isArray(seedBank.didDocumentData)) {
-                    const data = seedBank.didDocumentData as { wallet?: string };
-                    did = data.wallet;
-                }
-                if (!did) {
-                    throw new InvalidParameterError('No backup DID found');
-                }
+                throw new InvalidParameterError('No backup DID found');
             }
-
-            const keypair = await this.hdKeyPair();
-            const data = await this.resolveAsset(did);
-            if (!data) {
-                throw new InvalidParameterError('No asset data found');
-            }
-
-            const castData = data as { backup?: string };
-
-            if (typeof castData.backup !== 'string') {
-                throw new InvalidParameterError('Asset "backup" is missing or not a string');
-            }
-
-            const backup = this.cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, castData.backup);
-            let wallet = JSON.parse(backup);
-
-            if (isV1Decrypted(wallet)) {
-                const mnemonic = await this.decryptMnemonic();
-                // Backup might have a different mnemonic passphase so re-encrypt
-                wallet.seed.mnemonicEnc = await encMnemonic(mnemonic, this.passphrase);
-            }
-
-            await this.mutateWallet(async (current) => {
-                // Clear all existing properties from the current wallet
-                // This ensures a clean slate before restoring the recovered wallet
-                for (const k in current) {
-                    delete current[k as keyof StoredWallet];
-                }
-
-                // Upgrade the recovered wallet to the latest version if needed
-                wallet = await this.upgradeWallet(wallet);
-
-                // Decrypt the wallet if needed
-                wallet = isV1WithEnc(wallet) ? await this.decryptWalletFromStorage(wallet) : wallet;
-
-                // Copy all properties from the recovered wallet into the cleared current wallet
-                // This effectively replaces the current wallet with the recovered one
-                Object.assign(current, wallet);
-            });
-
-            return this.loadWallet();
         }
-        catch {
-            // If we can't recover the wallet, just return the current one
-            return this.loadWallet();
+
+        const keypair = await this.hdKeyPair();
+        const data = await this.resolveAsset(did);
+        if (!data) {
+            throw new InvalidParameterError('No asset data found');
         }
+
+        const castData = data as { backup?: string };
+
+        if (typeof castData.backup !== 'string') {
+            throw new InvalidParameterError('Asset "backup" is missing or not a string');
+        }
+
+        const backup = this.cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, castData.backup);
+        let wallet = JSON.parse(backup);
+
+        if (isV1Decrypted(wallet)) {
+            const mnemonic = await this.decryptMnemonic();
+            // Backup might have a different mnemonic passphase so re-encrypt
+            wallet.seed.mnemonicEnc = await encMnemonic(mnemonic, this.passphrase);
+        }
+
+        await this.mutateWallet(async (current) => {
+            // Clear all existing properties from the current wallet
+            // This ensures a clean slate before restoring the recovered wallet
+            for (const k in current) {
+                delete current[k as keyof StoredWallet];
+            }
+
+            // Upgrade the recovered wallet to the latest version if needed
+            wallet = await this.upgradeWallet(wallet);
+
+            // Decrypt the wallet if needed
+            wallet = isV1WithEnc(wallet) ? await this.decryptWalletFromStorage(wallet) : wallet;
+
+            // Copy all properties from the recovered wallet into the cleared current wallet
+            // This effectively replaces the current wallet with the recovered one
+            Object.assign(current, wallet);
+        });
+
+        return this.loadWallet();
     }
 
     async listIds(): Promise<string[]> {
