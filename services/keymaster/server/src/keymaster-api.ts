@@ -18,6 +18,7 @@ import CipherNode from '@mdip/cipher/node';
 import { InvalidParameterError } from '@mdip/common/errors';
 import { childLogger } from '@mdip/common/logger';
 import config from './config.js';
+import { proxyCasData } from './cas-proxy.js';
 
 const app = express();
 const v1router = express.Router();
@@ -4881,16 +4882,27 @@ v1router.post('/documents/:id/test', async (req, res) => {
  *           text/html:
  *             schema:
  *               type: string
+ *       500:
+ *         description: Gatekeeper failed to retrieve the data
+ *         content:
+ *           text/html:
+ *             schema:
+ *               type: string
+ *       502:
+ *         description: Gatekeeper is unavailable
+ *         content:
+ *           text/html:
+ *             schema:
+ *               type: string
+ *       503:
+ *         description: Content addressable storage is unavailable
+ *         content:
+ *           text/html:
+ *             schema:
+ *               type: string
  */
 v1router.get('/cas/data/:cid', async (req, res) => {
-    try {
-        const response = await gatekeeper.getData(req.params.cid);
-        // eslint-disable-next-line
-        res.set('Content-Type', 'application/octet-stream');
-        res.send(response);
-    } catch (error: any) {
-        res.status(404).send(error.toString());
-    }
+    await proxyCasData(req.params.cid, config.gatekeeperURL, res);
 });
 
 /**

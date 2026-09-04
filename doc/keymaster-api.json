@@ -5799,6 +5799,36 @@
                 }
               }
             }
+          },
+          "500": {
+            "description": "Gatekeeper failed to retrieve the data",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Gatekeeper is unavailable",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Content addressable storage is unavailable",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         }
       }
