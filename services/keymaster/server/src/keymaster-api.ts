@@ -368,7 +368,7 @@ v1router.put('/wallet', async (req, res) => {
  *   post:
  *     summary: Create a new wallet.
  *     requestBody:
- *       required: true
+ *       required: false
  *       content:
  *         application/json:
  *           schema:
@@ -403,7 +403,7 @@ v1router.put('/wallet', async (req, res) => {
  */
 v1router.post('/wallet/new', async (req, res) => {
     try {
-        const { mnemonic, overwrite } = req.body;
+        const { mnemonic, overwrite } = req.body ?? {};
         const wallet = await keymaster.newWallet(mnemonic, overwrite);
         res.json({ wallet });
     } catch (error: any) {
