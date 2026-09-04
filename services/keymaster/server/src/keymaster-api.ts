@@ -4881,15 +4881,40 @@ v1router.post('/documents/:id/test', async (req, res) => {
  *           text/html:
  *             schema:
  *               type: string
+ *       500:
+ *         description: Gatekeeper failed to retrieve the data
+ *         content:
+ *           text/html:
+ *             schema:
+ *               type: string
+ *       502:
+ *         description: Gatekeeper is unavailable
+ *         content:
+ *           text/html:
+ *             schema:
+ *               type: string
+ *       503:
+ *         description: Content addressable storage is unavailable
+ *         content:
+ *           text/html:
+ *             schema:
+ *               type: string
  */
 v1router.get('/cas/data/:cid', async (req, res) => {
     try {
-        const response = await gatekeeper.getData(req.params.cid);
-        // eslint-disable-next-line
-        res.set('Content-Type', 'application/octet-stream');
-        res.send(response);
-    } catch (error: any) {
-        res.status(404).send(error.toString());
+        const url = `${config.gatekeeperURL}/api/v1/cas/data/${encodeURIComponent(req.params.cid)}`;
+        const response = await fetch(url);
+        const contentType = response.headers.get('content-type');
+        const data = Buffer.from(await response.arrayBuffer());
+
+        if (contentType) {
+            res.set('Content-Type', contentType);
+        }
+
+        res.status(response.status).send(data);
+    }
+    catch (error) {
+        res.status(502).send(String(error));
     }
 });
 
