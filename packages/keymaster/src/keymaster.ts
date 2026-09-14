@@ -158,9 +158,8 @@ export default class Keymaster implements KeymasterInterface {
                 await this.loadWallet();
             }
 
-            const decrypted = this._walletCache!;
-
-            const before = JSON.stringify(decrypted);
+            const before = JSON.stringify(this._walletCache!);
+            const decrypted: WalletFile = JSON.parse(before);
             await mutator(decrypted);
             const after = JSON.stringify(decrypted);
 
@@ -567,17 +566,16 @@ export default class Keymaster implements KeymasterInterface {
         }
 
         await this.mutateWallet(async (current) => {
+            // Validate and decrypt the backup before replacing the candidate.
+            // mutateWallet performs the only recovery write.
+            wallet = await this.upgradeWallet(wallet, false);
+            wallet = await this.decryptWallet(wallet);
+
             // Clear all existing properties from the current wallet
             // This ensures a clean slate before restoring the recovered wallet
             for (const k in current) {
                 delete current[k as keyof StoredWallet];
             }
-
-            // Upgrade the recovered wallet to the latest version if needed
-            wallet = await this.upgradeWallet(wallet);
-
-            // Decrypt the wallet if needed
-            wallet = isV1WithEnc(wallet) ? await this.decryptWalletFromStorage(wallet) : wallet;
 
             // Copy all properties from the recovered wallet into the cleared current wallet
             // This effectively replaces the current wallet with the recovered one
@@ -1549,6 +1547,7 @@ export default class Keymaster implements KeymasterInterface {
 
         await this.mutateWallet(async (wallet) => {
             const id = wallet.ids[wallet.current!];
+            const cachedId = this._walletCache!.ids[wallet.current!];
             const nextIndex = id.index + 1;
 
             const hdkey = await this.getHDKeyFromCacheOrMnemonic(wallet);
@@ -1576,6 +1575,9 @@ export default class Keymaster implements KeymasterInterface {
             }
 
             id.index = nextIndex; // persist in same mutation
+            // Gatekeeper has accepted the rotation. Keep its key accessible in
+            // memory even if the wallet save fails.
+            cachedId.index = nextIndex;
         });
 
         return ok;
@@ -3816,7 +3818,7 @@ export default class Keymaster implements KeymasterInterface {
         return wallet;
     }
 
-    private async upgradeWallet(wallet: any): Promise<WalletFile> {
+    private async upgradeWallet(wallet: any, persist = true): Promise<WalletFile> {
         if (isLegacyV0(wallet)) {
             const hdkey = this.cipher.generateHDKeyJSON(wallet.seed.hdkey!);
             const keypair = this.cipher.generateJwk(hdkey.privateKey!);
@@ -3826,7 +3828,9 @@ export default class Keymaster implements KeymasterInterface {
             const newWallet = { version: 1, seed: { mnemonicEnc }, ...rest };
             this._hdkeyCache = this.cipher.generateHDKey(plaintext);
             wallet = await this.encryptWallet(newWallet);
-            await this.db.saveWallet(wallet, true);
+            if (persist) {
+                await this.db.saveWallet(wallet, true);
+            }
         }
 
         if (wallet.version !== 1) {
