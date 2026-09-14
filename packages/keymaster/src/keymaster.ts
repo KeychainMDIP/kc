@@ -113,7 +113,8 @@ export default class Keymaster implements KeymasterInterface {
     private readonly maxDataLength: number;
     private _walletCache?: WalletFile;
     private _walletMutationLock: Promise<void> = Promise.resolve();
-    private _hdkeyCache?: any;
+    private _hdkeyCache?: ReturnType<Cipher['generateHDKey']>;
+    private _hdkeyCacheSeed?: string;
 
     constructor(options: KeymasterOptions) {
         if (!options || !options.gatekeeper || !options.gatekeeper.createDID) {
@@ -168,12 +169,15 @@ export default class Keymaster implements KeymasterInterface {
                 return;
             }
 
-            const reenc = await this.encryptWalletForStorage(decrypted);
+            const hdkey = await this.getHDKeyFromCacheOrMnemonic(decrypted);
+            const reenc = await this.encryptWalletForStorage(decrypted, hdkey);
             const ok = await this.db.saveWallet(reenc, true);
             if (!ok) {
                 throw new KeymasterError('save wallet failed');
             }
 
+            this._hdkeyCache = hdkey;
+            this._hdkeyCacheSeed = JSON.stringify(reenc.seed.mnemonicEnc);
             this._walletCache = decrypted;
         };
 
@@ -221,7 +225,8 @@ export default class Keymaster implements KeymasterInterface {
                 mnemonic = this.cipher.generateMnemonic();
             }
 
-            this._hdkeyCache = this.cipher.generateHDKey(mnemonic);
+            // Validate without replacing the active wallet's cached key.
+            this.cipher.generateHDKey(mnemonic);
         } catch {
             throw new InvalidParameterError('mnemonic');
         }
@@ -3757,7 +3762,7 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     private async getHDKeyFromCacheOrMnemonic(wallet: WalletFile) {
-        if (this._hdkeyCache) {
+        if (this._hdkeyCache && this._hdkeyCacheSeed === JSON.stringify(wallet.seed.mnemonicEnc)) {
             return this._hdkeyCache;
         }
 
@@ -3765,12 +3770,15 @@ export default class Keymaster implements KeymasterInterface {
         return this.cipher.generateHDKey(mnemonic);
     }
 
-    private async encryptWalletForStorage(decrypted: WalletFile): Promise<WalletEncFile> {
+    private async encryptWalletForStorage(
+        decrypted: WalletFile,
+        hdkey?: ReturnType<Cipher['generateHDKey']>
+    ): Promise<WalletEncFile> {
         const { version, seed, ...rest } = decrypted;
 
         const safeSeed: Seed = { mnemonicEnc: seed.mnemonicEnc };
 
-        const hdkey = await this.getHDKeyFromCacheOrMnemonic(decrypted);
+        hdkey ??= await this.getHDKeyFromCacheOrMnemonic(decrypted);
         const { publicJwk, privateJwk } = this.cipher.generateJwk(hdkey.privateKey!);
 
         const plaintext = JSON.stringify(rest);
@@ -3787,13 +3795,15 @@ export default class Keymaster implements KeymasterInterface {
             throw new KeymasterError('Incorrect passphrase.');
         }
 
-        this._hdkeyCache = this.cipher.generateHDKey(mnemonic);
-        const { publicJwk, privateJwk } = this.cipher.generateJwk(this._hdkeyCache.privateKey!);
+        const hdkey = this.cipher.generateHDKey(mnemonic);
+        const { publicJwk, privateJwk } = this.cipher.generateJwk(hdkey.privateKey!);
 
         const plaintext = this.cipher.decryptMessage(publicJwk, privateJwk, stored.enc);
         const data = JSON.parse(plaintext);
 
         const wallet: WalletFile = { version: stored.version, seed: stored.seed, ...data };
+        this._hdkeyCache = hdkey;
+        this._hdkeyCacheSeed = JSON.stringify(stored.seed.mnemonicEnc);
         return wallet;
     }
 
@@ -3824,7 +3834,6 @@ export default class Keymaster implements KeymasterInterface {
             const mnemonicEnc = await encMnemonic(plaintext, this.passphrase);
             const { seed, version, ...rest } = wallet;
             const newWallet = { version: 1, seed: { mnemonicEnc }, ...rest };
-            this._hdkeyCache = this.cipher.generateHDKey(plaintext);
             wallet = await this.encryptWallet(newWallet);
             await this.db.saveWallet(wallet, true);
         }

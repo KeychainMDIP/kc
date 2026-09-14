@@ -309,6 +309,64 @@ describe('saveWallet', () => {
         expect(wallet).toStrictEqual(wallet2);
     });
 
+    it('should restore a decrypted wallet using its own seed', async () => {
+        const alice = await keymaster.createId('Alice');
+        const original = JSON.parse(JSON.stringify(await keymaster.loadWallet()));
+        const mnemonic = await keymaster.decryptMnemonic();
+        const keypair = await keymaster.fetchKeyPair();
+
+        await keymaster.newWallet(undefined, true);
+        await keymaster.createId('Bob');
+
+        expect(await keymaster.saveWallet(original)).toBe(true);
+        expect(await keymaster.decryptMnemonic()).toBe(mnemonic);
+        expect(await keymaster.fetchKeyPair()).toStrictEqual(keypair);
+
+        await keymaster.addName('friend', alice);
+        const restarted = new Keymaster({ gatekeeper, wallet, cipher, passphrase: PASSPHRASE });
+        expect(await restarted.loadWallet()).toStrictEqual(await keymaster.loadWallet());
+        expect(await restarted.fetchKeyPair()).toStrictEqual(keypair);
+    });
+
+    it('should preserve keys when restoring a different wallet is refused', async () => {
+        const replacement = JSON.parse(JSON.stringify(await keymaster.loadWallet()));
+        await keymaster.newWallet(undefined, true);
+        const alice = await keymaster.createId('Alice');
+        const original = JSON.parse(JSON.stringify(await keymaster.loadWallet()));
+        const stored = await wallet.loadWallet();
+        const keypair = await keymaster.fetchKeyPair();
+
+        expect(await keymaster.saveWallet(replacement, false)).toBe(false);
+        expect(await keymaster.loadWallet()).toStrictEqual(original);
+        expect(await wallet.loadWallet()).toStrictEqual(stored);
+        expect(await keymaster.fetchKeyPair()).toStrictEqual(keypair);
+
+        await keymaster.addName('friend', alice);
+        const restarted = new Keymaster({ gatekeeper, wallet, cipher, passphrase: PASSPHRASE });
+        expect(await restarted.loadWallet()).toStrictEqual(await keymaster.loadWallet());
+        expect(await restarted.fetchKeyPair()).toStrictEqual(keypair);
+    });
+
+    it('should preserve active keys when replacement decryption fails', async () => {
+        const replacement = await keymaster.exportEncryptedWallet();
+        await keymaster.newWallet(undefined, true);
+        const alice = await keymaster.createId('Alice');
+        const original = JSON.parse(JSON.stringify(await keymaster.loadWallet()));
+        const keypair = await keymaster.fetchKeyPair();
+        jest.spyOn(cipher, 'decryptMessage').mockImplementationOnce(() => {
+            throw new Error('decryption failed');
+        });
+
+        await expect(keymaster.saveWallet(replacement)).rejects.toThrow('decryption failed');
+        expect(await keymaster.loadWallet()).toStrictEqual(original);
+        expect(await keymaster.fetchKeyPair()).toStrictEqual(keypair);
+
+        await keymaster.addName('friend', alice);
+        const restarted = new Keymaster({ gatekeeper, wallet, cipher, passphrase: PASSPHRASE });
+        expect(await restarted.loadWallet()).toStrictEqual(await keymaster.loadWallet());
+        expect(await restarted.fetchKeyPair()).toStrictEqual(keypair);
+    });
+
     it('should upgrade a v0 wallet to v1', async () => {
         const ok = await keymaster.saveWallet(MOCK_WALLET_V0_UNENCRYPTED);
         expect(ok).toBe(true);
@@ -418,15 +476,46 @@ describe('newWallet', () => {
     });
 
     it('should not overwrite an existing wallet by default', async () => {
-        await keymaster.loadWallet();
+        const alice = await keymaster.createId('Alice');
+        const original = JSON.parse(JSON.stringify(await keymaster.loadWallet()));
+        const stored = await wallet.loadWallet();
+        const keypair = await keymaster.fetchKeyPair();
 
-        try {
-            await keymaster.newWallet();
-            throw new ExpectedExceptionError();
+        await expect(keymaster.newWallet()).rejects.toThrow('Keymaster: save wallet failed');
+        expect(await keymaster.loadWallet()).toStrictEqual(original);
+        expect(await wallet.loadWallet()).toStrictEqual(stored);
+        expect(await keymaster.fetchKeyPair()).toStrictEqual(keypair);
+
+        await keymaster.addName('friend', alice);
+        const restarted = new Keymaster({ gatekeeper, wallet, cipher, passphrase: PASSPHRASE });
+        expect(await restarted.loadWallet()).toStrictEqual(await keymaster.loadWallet());
+        expect(await restarted.fetchKeyPair()).toStrictEqual(keypair);
+    });
+
+    it.each(['refuses', 'throws'])('should preserve keys when storage %s a replacement wallet', async (failure) => {
+        const alice = await keymaster.createId('Alice');
+        const original = JSON.parse(JSON.stringify(await keymaster.loadWallet()));
+        const stored = await wallet.loadWallet();
+        const keypair = await keymaster.fetchKeyPair();
+        const save = jest.spyOn(wallet, 'saveWallet');
+
+        if (failure === 'refuses') {
+            save.mockResolvedValueOnce(false);
+        } else {
+            save.mockRejectedValueOnce(new Error('storage failed'));
         }
-        catch (error: any) {
-            expect(error.message).toBe('Keymaster: save wallet failed');
-        }
+
+        await expect(keymaster.newWallet(undefined, true)).rejects.toThrow(
+            failure === 'refuses' ? 'Keymaster: save wallet failed' : 'storage failed'
+        );
+        expect(await keymaster.loadWallet()).toStrictEqual(original);
+        expect(await wallet.loadWallet()).toStrictEqual(stored);
+        expect(await keymaster.fetchKeyPair()).toStrictEqual(keypair);
+
+        await keymaster.addName('friend', alice);
+        const restarted = new Keymaster({ gatekeeper, wallet, cipher, passphrase: PASSPHRASE });
+        expect(await restarted.loadWallet()).toStrictEqual(await keymaster.loadWallet());
+        expect(await restarted.fetchKeyPair()).toStrictEqual(keypair);
     });
 
     it('should create a wallet from a mnemonic', async () => {
@@ -513,6 +602,49 @@ describe('backupWallet', () => {
 });
 
 describe('recoverWallet', () => {
+    it('should reuse recovered keys for lookups and subsequent wallet saves', async () => {
+        const alice = await keymaster.createId('Alice');
+        const keypair = await keymaster.fetchKeyPair();
+        const did = await keymaster.backupWallet();
+
+        await keymaster.recoverWallet(did);
+        const derive = jest.spyOn(cipher, 'generateHDKey');
+
+        for (let i = 0; i < 5; i++) {
+            expect(await keymaster.fetchKeyPair()).toStrictEqual(keypair);
+        }
+        await keymaster.addName('friend', alice);
+        expect(derive).not.toHaveBeenCalled();
+
+        const restarted = new Keymaster({ gatekeeper, wallet, cipher, passphrase: PASSPHRASE });
+        expect(await restarted.loadWallet()).toStrictEqual(await keymaster.loadWallet());
+        expect(await restarted.fetchKeyPair()).toStrictEqual(keypair);
+    });
+
+    it.each(['refusal', 'exception'])('should preserve cached keys on a recovery storage %s', async (failure) => {
+        await keymaster.createId('Alice');
+        const did = await keymaster.backupWallet();
+        const original = JSON.parse(JSON.stringify(await keymaster.loadWallet()));
+        const stored = await wallet.loadWallet();
+        const save = jest.spyOn(wallet, 'saveWallet');
+
+        if (failure === 'refusal') {
+            save.mockResolvedValueOnce(false);
+        } else {
+            save.mockRejectedValueOnce(new Error('storage failed'));
+        }
+
+        await expect(keymaster.recoverWallet(did)).rejects.toThrow(
+            failure === 'refusal' ? 'Keymaster: save wallet failed' : 'storage failed'
+        );
+
+        // Encrypting the original seed should still hit the original cache.
+        const derive = jest.spyOn(cipher, 'generateHDKey');
+        expect(await keymaster.saveWallet(original, false)).toBe(false);
+        expect(derive).not.toHaveBeenCalled();
+        expect(await wallet.loadWallet()).toStrictEqual(stored);
+    });
+
     it('should recover wallet from seed bank', async () => {
         await keymaster.createId('Bob');
         const wallet = await keymaster.loadWallet();
