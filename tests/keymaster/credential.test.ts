@@ -314,6 +314,43 @@ describe('issueCredential', () => {
         expect(wallet.ids['Bob'].owned!.includes(did)).toEqual(true);
     });
 
+    it('should issue, accept and verify a credential with a delegated controller', async () => {
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        const carol = await keymaster.createId('Carol');
+        await keymaster.createId('Victor');
+
+        await keymaster.setCurrentId('Alice');
+        const schema = await keymaster.createSchema(mockSchema);
+        const boundCredential = await keymaster.bindCredential(schema, carol);
+        const did = await keymaster.issueCredential(boundCredential, { controller: bob });
+
+        const doc = await keymaster.resolveDID(did);
+        expect(doc.didDocument!.controller).toBe(bob);
+
+        await keymaster.setCurrentId('Carol');
+        const vc = await keymaster.decryptJSON(did) as VerifiableCredential;
+        expect(vc.issuer).toBe(alice);
+        expect(vc.signature!.signer).toBe(alice);
+        expect(vc.credentialSubject!.id).toBe(carol);
+        expect(await keymaster.verifySignature(vc)).toBe(true);
+        expect(await keymaster.acceptCredential(did)).toBe(true);
+        expect(await keymaster.listCredentials()).toStrictEqual([did]);
+
+        await keymaster.setCurrentId('Victor');
+        const challengeDID = await keymaster.createChallenge({
+            credentials: [{ schema, issuers: [alice] }],
+        });
+
+        await keymaster.setCurrentId('Carol');
+        const responseDID = await keymaster.createResponse(challengeDID);
+
+        await keymaster.setCurrentId('Victor');
+        const verified = await keymaster.verifyResponse(responseDID, { publish: false });
+        expect(verified.match).toBe(true);
+        expect(verified.vps).toStrictEqual([vc]);
+    });
+
     it('should bind and issue a credential', async () => {
         const subject = await keymaster.createId('Bob');
         const schema = await keymaster.createSchema(mockSchema);
