@@ -337,27 +337,30 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async fixWallet(): Promise<FixWalletResult> {
+        const shouldRemove = async (did: string): Promise<boolean> => {
+            if (!isValidDID(did)) {
+                return true;
+            }
+
+            const doc = await this.resolveDID(did);
+            if (doc.didResolutionMetadata?.error) {
+                throw new KeymasterError(`DID resolution failed: ${doc.didResolutionMetadata.error}`);
+            }
+            return !!doc.didDocumentMetadata?.deactivated;
+        };
+
         let idsRemoved = 0;
         let ownedRemoved = 0;
         let heldRemoved = 0;
         let namesRemoved = 0;
 
         await this.mutateWallet(async (wallet) => {
-
             for (const name of Object.keys(wallet.ids)) {
-                let remove = false;
-                try {
-                    const doc = await this.resolveDID(wallet.ids[name].did);
-
-                    if (doc.didDocumentMetadata?.deactivated) {
-                        remove = true;
-                    }
-                } catch {
-                    remove = true;
-                }
-
-                if (remove) {
+                if (await shouldRemove(wallet.ids[name]?.did)) {
                     delete wallet.ids[name];
+                    if (wallet.current === name) {
+                        wallet.current = Object.keys(wallet.ids)[0] || '';
+                    }
                     idsRemoved++;
                 }
             }
@@ -365,18 +368,7 @@ export default class Keymaster implements KeymasterInterface {
             for (const id of Object.values(wallet.ids)) {
                 if (id.owned) {
                     for (let i = 0; i < id.owned.length; i++) {
-                        let remove = false;
-                        try {
-                            const doc = await this.resolveDID(id.owned[i]);
-
-                            if (doc.didDocumentMetadata?.deactivated) {
-                                remove = true;
-                            }
-                        } catch {
-                            remove = true;
-                        }
-
-                        if (remove) {
+                        if (await shouldRemove(id.owned[i])) {
                             id.owned.splice(i, 1);
                             i--;
                             ownedRemoved++;
@@ -386,18 +378,7 @@ export default class Keymaster implements KeymasterInterface {
 
                 if (id.held) {
                     for (let i = 0; i < id.held.length; i++) {
-                        let remove = false;
-                        try {
-                            const doc = await this.resolveDID(id.held[i]);
-
-                            if (doc.didDocumentMetadata?.deactivated) {
-                                remove = true;
-                            }
-                        } catch {
-                            remove = true;
-                        }
-
-                        if (remove) {
+                        if (await shouldRemove(id.held[i])) {
                             id.held.splice(i, 1);
                             i--;
                             heldRemoved++;
@@ -408,18 +389,7 @@ export default class Keymaster implements KeymasterInterface {
 
             if (wallet.names) {
                 for (const name of Object.keys(wallet.names)) {
-                    let remove = false;
-                    try {
-                        const doc = await this.resolveDID(wallet.names[name]);
-
-                        if (doc.didDocumentMetadata?.deactivated) {
-                            remove = true;
-                        }
-                    } catch {
-                        remove = true;
-                    }
-
-                    if (remove) {
+                    if (await shouldRemove(wallet.names[name])) {
                         delete wallet.names[name];
                         namesRemoved++;
                     }

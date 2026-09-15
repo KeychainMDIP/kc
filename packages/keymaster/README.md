@@ -100,3 +100,11 @@ await keymaster.connect({
 
 const newId = await keymaster.createId('Bob');
 ```
+
+### Wallet cleanup
+
+`fixWallet()` removes malformed DIDs and entries whose resolved DID document is
+deactivated. If resolution fails, including a `notFound` result, cleanup stops
+without saving any removals. A DID missing from one Gatekeeper may not have
+synchronized yet. If cleanup removes the current identity, it selects the first
+remaining identity, or clears `current` if none remain.

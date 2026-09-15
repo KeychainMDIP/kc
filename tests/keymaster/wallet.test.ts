@@ -916,33 +916,112 @@ describe('fixWallet', () => {
         expect(ownedRemoved).toBe(0);
         expect(heldRemoved).toBe(0);
         expect(namesRemoved).toBe(0);
+        expect((await keymaster.loadWallet()).current).toBe('');
+        const restarted = new Keymaster({ gatekeeper, wallet, cipher, passphrase: PASSPHRASE });
+        expect((await restarted.loadWallet()).current).toBe('');
     });
 
-    it('should remove deleted DIDs', async () => {
-        const agentDID = await keymaster.createId('Alice');
-        const schemaDID = await keymaster.createSchema();
-        await keymaster.addName('schema', schemaDID);
-        await gatekeeper.removeDIDs([agentDID, schemaDID]);
+    it.each(['Alice', 'Bob'])('should keep a valid current ID after removing %s', async (name) => {
+        await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        await keymaster.revokeDID(name);
+
+        expect((await keymaster.fixWallet()).idsRemoved).toBe(1);
+
+        const remaining = name === 'Alice' ? 'Bob' : 'Alice';
+        expect(await keymaster.listIds()).toStrictEqual([remaining]);
+        expect((await keymaster.loadWallet()).current).toBe(remaining);
+        expect(await keymaster.fetchKeyPair()).not.toBeNull();
+        const restarted = new Keymaster({ gatekeeper, wallet, cipher, passphrase: PASSPHRASE });
+        expect((await restarted.loadWallet()).current).toBe(remaining);
+    });
+
+    describe.each(['identity', 'owned', 'held', 'alias'] as const)('%s resolution failure', (entry) => {
+        it.each(['connection', 'timeout', 'HTTP error', 'not found', 'resolution error'])(
+            'should preserve the entire wallet on %s', async (failure) => {
+                await keymaster.createId('Alice');
+                const identity = await keymaster.createId('Bob');
+                const owned = await keymaster.createAsset({ kind: 'owned' });
+                const held = await keymaster.createAsset({ kind: 'held' });
+                const alias = await keymaster.createAsset({ kind: 'alias' });
+                const candidate = JSON.parse(JSON.stringify(await keymaster.loadWallet()));
+                candidate.ids.Alice.did = 'did:test:invalid';
+                candidate.ids.Bob.owned = ['did:test:invalid', owned];
+                candidate.ids.Bob.held = ['did:test:invalid', held];
+                candidate.names = { invalid: 'did:test:invalid', alias };
+                await keymaster.saveWallet(candidate);
+
+                const active = await keymaster.loadWallet();
+                const original = JSON.parse(JSON.stringify(active));
+                const stored = await wallet.loadWallet();
+                const save = jest.spyOn(wallet, 'saveWallet');
+                const target = { identity, owned, held, alias }[entry];
+                const error = failure === 'connection'
+                    ? Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' })
+                    : failure === 'timeout' ? 'timeout of 5000ms exceeded' : { error: 'DID not found' };
+
+                if (failure === 'not found') {
+                    await gatekeeper.removeDIDs([target]);
+                } else {
+                    const resolve = gatekeeper.resolveDID.bind(gatekeeper);
+                    jest.spyOn(gatekeeper, 'resolveDID').mockImplementation(async (did, options) => {
+                        if (did === target) {
+                            if (failure === 'resolution error') {
+                                return { didResolutionMetadata: { error: 'temporarilyUnavailable' } };
+                            }
+                            throw error;
+                        }
+                        return resolve(did, options);
+                    });
+                }
+
+                const result = keymaster.fixWallet();
+                if (failure === 'not found') {
+                    await expect(result).rejects.toThrow('Invalid DID: unknown');
+                } else if (failure === 'resolution error') {
+                    await expect(result).rejects.toThrow('temporarilyUnavailable');
+                } else {
+                    await expect(result).rejects.toBe(error);
+                }
+
+                expect(save).not.toHaveBeenCalled();
+                expect(await keymaster.loadWallet()).toBe(active);
+                expect(active).toStrictEqual(original);
+                expect(await wallet.loadWallet()).toStrictEqual(stored);
+                const restarted = new Keymaster({ gatekeeper, wallet, cipher, passphrase: PASSPHRASE });
+                expect(await restarted.loadWallet()).toStrictEqual(original);
+
+                await keymaster.addName('later', alias);
+                expect(await keymaster.loadWallet()).toStrictEqual({
+                    ...original, names: { ...original.names, later: alias },
+                });
+            }
+        );
+    });
+
+    it.each(['malformed', 'null'])('should remove invalid DIDs and a %s identity', async (invalid) => {
+        await keymaster.createId('Alice');
+        await keymaster.addToOwned('did:test:mock1');
+        await keymaster.addToHeld('did:test:mock2');
+        await keymaster.createId('Invalid');
+        const candidate = await keymaster.loadWallet();
+        Object.assign(candidate.ids, {
+            Invalid: invalid === 'null' ? null : { ...candidate.ids.Invalid, did: 'not-a-did' },
+        });
+        candidate.names = { invalid: 'not-a-did' };
 
         const { idsRemoved, ownedRemoved, heldRemoved, namesRemoved } = await keymaster.fixWallet();
 
         expect(idsRemoved).toBe(1);
-        expect(ownedRemoved).toBe(0);
-        expect(heldRemoved).toBe(0);
-        expect(namesRemoved).toBe(1);
-    });
-
-    it('should remove invalid DIDs', async () => {
-        await keymaster.createId('Alice');
-        await keymaster.addToOwned('did:test:mock1');
-        await keymaster.addToHeld('did:test:mock2');
-
-        const { idsRemoved, ownedRemoved, heldRemoved, namesRemoved } = await keymaster.fixWallet();
-
-        expect(idsRemoved).toBe(0);
         expect(ownedRemoved).toBe(1);
         expect(heldRemoved).toBe(1);
-        expect(namesRemoved).toBe(0);
+        expect(namesRemoved).toBe(1);
+        const fixed = await keymaster.loadWallet();
+        expect(fixed.current).toBe('Alice');
+        expect(Object.keys(fixed.ids)).toStrictEqual(['Alice']);
+        expect(fixed.ids.Alice.owned).toStrictEqual([]);
+        expect(fixed.ids.Alice.held).toStrictEqual([]);
+        expect(fixed.names).toStrictEqual({});
     });
 
     it('should remove revoked credentials', async () => {
