@@ -1598,7 +1598,7 @@ v1router.post('/challenge', async (req, res) => {
  *                     description: Whether to embed a hash of the plaintext in the stored asset. Defaults to false.
  *                   controller:
  *                     type: string
- *                     description: A specific ID or DID to act as the controller of the newly created asset. If not set, the current ID is used.
+ *                     description: Controller of the response asset. Defaults to the current ID, and must match the encryption sender for the response to pass verification.
  *     responses:
  *       200:
  *         description: A DID containing the response to the challenge.
@@ -1644,6 +1644,10 @@ v1router.post('/response', async (req, res) => {
  * /response/verify:
  *   post:
  *     summary: Verify a response to a challenge.
+ *     description: >
+ *       The response asset controller must match its encryption sender. Each accepted credential must name that responder
+ *       in credentialSubject.id and pass the existing signature, plaintext hash, schema, and trusted-issuer checks.
+ *       Credential asset controllers may differ from their issuers and subjects. Empty challenges require no credentials.
  *     requestBody:
  *       required: true
  *       content:
@@ -1708,12 +1712,12 @@ v1router.post('/response', async (req, res) => {
  *                       description: true if the response satisfies all challenge requirements, otherwise `false`.
  *                     vps:
  *                       type: array
- *                       description: Any verifiable presentations that passed verification.
+ *                       description: Accepted presentations, each with a credential subject equal to the verified responder.
  *                       items:
  *                         type: object
  *                     responder:
  *                       type: string
- *                       description: The DID (controller) of the responder.
+ *                       description: The response asset controller, verified to match its encryption sender.
  *       400:
  *         description: Verification failed or request was invalid.
  *         content:

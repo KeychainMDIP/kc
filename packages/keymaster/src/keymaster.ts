@@ -2099,7 +2099,37 @@ export default class Keymaster implements KeymasterInterface {
             throw new InvalidParameterError('responseDID does not resolve');
         }
 
-        const wrapper = await this.decryptJSON(responseDID);
+        const asset = responseDoc.didDocumentData as { encrypted?: EncryptedMessage; cipher_hash?: string } | undefined;
+        if (responseDoc.didDocumentMetadata?.deactivated || !asset || (!asset.encrypted && !asset.cipher_hash)) {
+            throw new InvalidParameterError('did not encrypted');
+        }
+
+        const responder = responseDoc.didDocument?.controller;
+        if (typeof responder !== 'string' || !responder) {
+            throw new InvalidParameterError('response controller');
+        }
+
+        const crypt = (asset.encrypted ? asset.encrypted : asset) as EncryptedMessage;
+        if (crypt.sender !== responder) {
+            throw new InvalidParameterError('response sender');
+        }
+
+        // Decrypt the same response version whose controller and sender were checked.
+        const wallet = await this.loadWallet();
+        const id = await this.fetchIdInfo(undefined, wallet);
+        const senderDoc = await this.resolveDID(crypt.sender, { confirm: true, versionTime: crypt.created });
+        const senderPublicJwk = this.getPublicKeyJwk(senderDoc);
+        const ciphertext = (crypt.sender === id.did && crypt.cipher_sender) ? crypt.cipher_sender : crypt.cipher_receiver;
+        const plaintext = await this.decryptWithDerivedKeys(wallet, id, senderPublicJwk, ciphertext!);
+
+        let wrapper: unknown;
+        try {
+            wrapper = JSON.parse(plaintext);
+        }
+        catch {
+            throw new InvalidParameterError('did not encrypted JSON');
+        }
+
         if (typeof wrapper !== 'object' || !wrapper || !('response' in wrapper)) {
             throw new InvalidParameterError('responseDID not a valid challenge response');
         }
@@ -2161,6 +2191,10 @@ export default class Keymaster implements KeymasterInterface {
                 continue;
             }
 
+            if (vp.credentialSubject?.id !== responder) {
+                continue;
+            }
+
             if (!vp.type || !Array.isArray(vp.type)) {
                 continue;
             }
@@ -2213,7 +2247,7 @@ export default class Keymaster implements KeymasterInterface {
 
         response.vps = vps;
         response.match = matchedCredentials.size === requestedCredentials.length;
-        response.responder = responseDoc.didDocument?.controller;
+        response.responder = responder;
 
         if (publish && response.match) {
             await this.publishChallengeReceipts(responseDID, { verification: response });

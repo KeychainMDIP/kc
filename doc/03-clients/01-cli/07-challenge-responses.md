@@ -88,6 +88,8 @@ The command above matched the challenge against Bob's held VCs. The encrypted re
 
 To verify the response received to a challenge, a user passes the DID of the VP received from the VC Holder being challenged. The encrypted response includes its challenge reference.
 
+Every accepted credential must name the responder in `credentialSubject.id`. The responder is derived from the outer response DID's controller, which must match its encryption sender. A credential's controller may differ from both its issuer and subject. Empty challenges require no credentials.
+
 ```console
 $ kc use-id Alice
 OK

@@ -1,6 +1,6 @@
 import Gatekeeper from '@mdip/gatekeeper';
 import Keymaster from '@mdip/keymaster';
-import { ChallengeReceipt, ChallengeResponse } from '@mdip/keymaster/types';
+import { ChallengeReceipt, ChallengeResponse, VerifiableCredential } from '@mdip/keymaster/types';
 import { jest } from '@jest/globals';
 import CipherNode from '@mdip/cipher/node';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory';
@@ -199,6 +199,290 @@ describe('verifyResponse', () => {
         expect(verify1.requested).toBe(1);
         expect(verify1.fulfilled).toBe(1);
         expect(verify1.vps!.length).toBe(1);
+    });
+
+    describe('subject and responder binding', () => {
+        let other: Keymaster;
+        let alice: string;
+        let carol: string;
+        let dave: string;
+        let victor: string;
+        let schema: string;
+        let vc: string;
+        let plaintext: string;
+        let challenge: string;
+        let responseDID: string;
+        let payload: { response: ChallengeResponse };
+
+        beforeEach(async () => {
+            keymaster = new Keymaster({ gatekeeper, wallet, cipher, passphrase: 'passphrase', defaultRegistry: 'local' });
+            alice = await keymaster.createId('Alice', { registry: 'local' });
+            carol = await keymaster.createId('Carol', { registry: 'local' });
+            victor = await keymaster.createId('Victor', { registry: 'local' });
+            other = new Keymaster({ gatekeeper, wallet: new WalletJsonMemory(), cipher, passphrase: 'passphrase' });
+            dave = await other.createId('Dave', { registry: 'local' });
+
+            await keymaster.setCurrentId('Alice');
+            schema = await keymaster.createSchema(mockSchema, { registry: 'local' });
+            vc = await keymaster.issueCredential(await keymaster.bindCredential(schema, carol), { registry: 'local' });
+
+            await keymaster.setCurrentId('Carol');
+            plaintext = await keymaster.decryptMessage(vc);
+            expect(await keymaster.verifySignature(JSON.parse(plaintext))).toBe(true);
+
+            await keymaster.setCurrentId('Victor');
+            challenge = await keymaster.createChallenge({ credentials: [{ schema, issuers: [alice] }] }, { registry: 'local' });
+
+            // Dave receives the plaintext, but none of Carol's private keys.
+            const vp = await other.encryptMessage(plaintext, victor, { includeHash: true, registry: 'local' });
+            const vcData = await keymaster.resolveAsset(vc);
+            const vpData = await keymaster.resolveAsset(vp);
+            expect(vpData.encrypted.cipher_hash).toBe(vcData.encrypted.cipher_hash);
+            expect(cipher.hashMessage(plaintext)).toBe(vcData.encrypted.cipher_hash);
+
+            payload = { response: {
+                challenge,
+                credentials: [{ vc, vp }],
+                requested: 1,
+                fulfilled: 1,
+                match: true,
+                responseNonce: 'mock-nonce',
+            } };
+            responseDID = await other.encryptJSON(payload, victor, { registry: 'local' });
+        });
+
+        it.each([false, undefined])('rejects another subject\'s credential with publish=%s', async (publish) => {
+            const publishReceipts = jest.spyOn(keymaster, 'publishChallengeReceipts');
+            try {
+                const result = await keymaster.verifyResponse(responseDID, { publish });
+                expect(result.match).toBe(false);
+                expect(result.responder).toBe(dave);
+                expect(result.vps).toStrictEqual([]);
+                expect(publishReceipts).not.toHaveBeenCalled();
+            } finally {
+                publishReceipts.mockRestore();
+            }
+        });
+
+        it.each([false, undefined])('rejects transferring the response to its credential subject with publish=%s', async (publish) => {
+            expect(await other.transferAsset(responseDID, carol)).toBe(true);
+            const publishReceipts = jest.spyOn(keymaster, 'publishChallengeReceipts');
+            try {
+                await expect(keymaster.verifyResponse(responseDID, { publish }))
+                    .rejects.toThrow('Invalid parameter: response sender');
+                expect(publishReceipts).not.toHaveBeenCalled();
+            } finally {
+                publishReceipts.mockRestore();
+            }
+        });
+
+        it('ignores a responder supplied inside the response payload', async () => {
+            payload.response.responder = carol;
+            responseDID = await other.encryptJSON(payload, victor, { registry: 'local' });
+
+            const result = await keymaster.verifyResponse(responseDID, { publish: false });
+            expect(result.match).toBe(false);
+            expect(result.responder).toBe(dave);
+            expect(result.vps).toStrictEqual([]);
+        });
+
+        it('binds the subject to the outer response, not the presentation sender', async () => {
+            await keymaster.setCurrentId('Carol');
+            const vp = await keymaster.encryptMessage(plaintext, victor, { includeHash: true, registry: 'local' });
+            payload.response.credentials = [{ vc, vp }];
+            responseDID = await other.encryptJSON(payload, victor, { registry: 'local' });
+
+            await keymaster.setCurrentId('Victor');
+            const result = await keymaster.verifyResponse(responseDID, { publish: false });
+            expect(result.match).toBe(false);
+            expect(result.responder).toBe(dave);
+            expect(result.vps).toStrictEqual([]);
+        });
+
+        it('accepts the subject\'s response when its presentation asset has a delegated controller', async () => {
+            await keymaster.setCurrentId('Carol');
+            const vp = await keymaster.encryptMessage(plaintext, victor, { includeHash: true, controller: alice, registry: 'local' });
+            expect((await keymaster.resolveDID(vp)).didDocument!.controller).toBe(alice);
+            payload.response.credentials = [{ vc, vp }];
+            responseDID = await keymaster.encryptJSON(payload, victor, { registry: 'local' });
+
+            await keymaster.setCurrentId('Victor');
+            const result = await keymaster.verifyResponse(responseDID, { publish: false });
+            expect(result.match).toBe(true);
+            expect(result.responder).toBe(carol);
+            expect(result.vps).toStrictEqual([JSON.parse(plaintext)]);
+        });
+
+        it.each([undefined, null, {}, { id: '' }, { id: 123 }, []])(
+            'rejects a signed credential with an invalid subject %j', async (subject) => {
+                const credential = JSON.parse(plaintext) as VerifiableCredential;
+                delete credential.signature;
+                credential.credentialSubject = subject as VerifiableCredential['credentialSubject'];
+
+                await keymaster.setCurrentId('Alice');
+                const signed = await keymaster.addSignature(credential);
+                expect(await keymaster.verifySignature(signed)).toBe(true);
+                const message = JSON.stringify(signed);
+                const invalidVC = await keymaster.encryptMessage(message, carol, { includeHash: true, registry: 'local' });
+                const vp = await other.encryptMessage(message, victor, { includeHash: true, registry: 'local' });
+                payload.response.credentials = [{ vc: invalidVC, vp }];
+                responseDID = await other.encryptJSON(payload, victor, { registry: 'local' });
+
+                await keymaster.setCurrentId('Victor');
+                const result = await keymaster.verifyResponse(responseDID, { publish: false });
+                expect(result.match).toBe(false);
+                expect(result.vps).toStrictEqual([]);
+            }
+        );
+
+        it.each([false, true])('counts only the responder\'s credentials when the foreign credential is required=%s', async (required) => {
+            await keymaster.setCurrentId('Alice');
+            const ownSchema = await keymaster.createSchema({ ...mockSchema, title: 'Dave credential' }, { registry: 'local' });
+            const ownVC = await keymaster.issueCredential(await keymaster.bindCredential(ownSchema, dave), { registry: 'local' });
+            const ownPlaintext = await other.decryptMessage(ownVC);
+            const vp = await other.encryptMessage(ownPlaintext, victor, { includeHash: true, registry: 'local' });
+            payload.response.credentials.push({ vc: ownVC, vp });
+            responseDID = await other.encryptJSON(payload, victor, { registry: 'local' });
+
+            await keymaster.setCurrentId('Victor');
+            const credentials = [{ schema: ownSchema, issuers: [alice] }];
+            if (required) {
+                credentials.push({ schema, issuers: [alice] });
+            }
+            await keymaster.updateAsset(challenge, { challenge: { credentials } });
+
+            const result = await keymaster.verifyResponse(responseDID, { publish: false });
+            expect(result.match).toBe(!required);
+            expect(result.responder).toBe(dave);
+            expect(result.vps).toStrictEqual([JSON.parse(ownPlaintext)]);
+        });
+
+        it('rejects an outer response created with a different controller from its sender', async () => {
+            await keymaster.setCurrentId('Alice');
+            responseDID = await keymaster.encryptJSON(payload, victor, { controller: carol, registry: 'local' });
+
+            await keymaster.setCurrentId('Victor');
+            await expect(keymaster.verifyResponse(responseDID, { publish: false }))
+                .rejects.toThrow('Invalid parameter: response sender');
+        });
+
+        it('cannot authenticate as the subject by changing sender metadata and transferring the response', async () => {
+            const data = await other.resolveAsset(responseDID);
+            data.encrypted.sender = carol;
+            await other.updateAsset(responseDID, data);
+            await other.transferAsset(responseDID, carol);
+
+            await expect(keymaster.verifyResponse(responseDID, { publish: false }))
+                .rejects.toThrow("ID can't decrypt ciphertext");
+        });
+
+        it('decrypts the checked response version without resolving it again', async () => {
+            const resolveDID = keymaster.resolveDID.bind(keymaster);
+            let responseReads = 0;
+            const resolve = jest.spyOn(keymaster, 'resolveDID').mockImplementation(async (did, options) => {
+                if (did === responseDID && ++responseReads > 1) {
+                    throw new Error('response changed during verification');
+                }
+                return resolveDID(did, options);
+            });
+            try {
+                const result = await keymaster.verifyResponse(responseDID, { publish: false });
+                expect(result.match).toBe(false);
+                expect(result.responder).toBe(dave);
+                expect(responseReads).toBe(1);
+            } finally {
+                resolve.mockRestore();
+            }
+        });
+    });
+
+    describe('response envelope validation', () => {
+        let alice: string;
+        let responseDID: string;
+
+        beforeEach(async () => {
+            alice = await keymaster.createId('Alice');
+            await keymaster.createId('Bob');
+            await keymaster.setCurrentId('Alice');
+            const challenge = await keymaster.createChallenge();
+            await keymaster.setCurrentId('Bob');
+            responseDID = await keymaster.createResponse(challenge);
+            await keymaster.setCurrentId('Alice');
+        });
+
+        it.each([undefined, '', 123])('rejects an invalid response controller %j', async (controller) => {
+            const doc = await keymaster.resolveDID(responseDID);
+            doc.didDocument!.controller = controller as string;
+            const resolve = jest.spyOn(keymaster, 'resolveDID').mockResolvedValueOnce(doc);
+            try {
+                await expect(keymaster.verifyResponse(responseDID, { publish: false }))
+                    .rejects.toThrow('Invalid parameter: response controller');
+            } finally {
+                resolve.mockRestore();
+            }
+        });
+
+        it('rejects a revoked response', async () => {
+            await keymaster.setCurrentId('Bob');
+            await keymaster.revokeDID(responseDID);
+            await keymaster.setCurrentId('Alice');
+
+            await expect(keymaster.verifyResponse(responseDID, { publish: false }))
+                .rejects.toThrow('Invalid parameter: did not encrypted');
+        });
+
+        it('rejects a response with no document data', async () => {
+            const doc = await keymaster.resolveDID(responseDID);
+            delete doc.didDocumentData;
+            const resolve = jest.spyOn(keymaster, 'resolveDID').mockResolvedValueOnce(doc);
+            try {
+                await expect(keymaster.verifyResponse(responseDID, { publish: false }))
+                    .rejects.toThrow('Invalid parameter: did not encrypted');
+            } finally {
+                resolve.mockRestore();
+            }
+        });
+
+        it('decrypts a response using the legacy flat envelope', async () => {
+            const wrapper = await keymaster.decryptJSON(responseDID);
+            await keymaster.setCurrentId('Bob');
+            const encryptedDID = await keymaster.encryptJSON(wrapper, alice, { includeHash: true });
+            const data = await keymaster.resolveAsset(encryptedDID);
+            const legacyDID = await keymaster.createAsset(data.encrypted);
+
+            await keymaster.setCurrentId('Alice');
+            const result = await keymaster.verifyResponse(legacyDID, { publish: false });
+            expect(result.match).toBe(true);
+            expect(result.responder).toBe(data.encrypted.sender);
+            expect(result.vps).toStrictEqual([]);
+        });
+
+        it.each([false, true])('decrypts a self-response with encryptForSender=%s', async (encryptForSender) => {
+            const wrapper = await keymaster.decryptJSON(responseDID);
+            const selfResponse = await keymaster.encryptJSON(wrapper, alice, { encryptForSender });
+
+            const result = await keymaster.verifyResponse(selfResponse, { publish: false });
+            expect(result.match).toBe(true);
+            expect(result.responder).toBe(alice);
+        });
+
+        it('rejects a response that is not encrypted JSON', async () => {
+            await keymaster.setCurrentId('Bob');
+            responseDID = await keymaster.encryptMessage('not JSON', alice);
+            await keymaster.setCurrentId('Alice');
+
+            await expect(keymaster.verifyResponse(responseDID, { publish: false }))
+                .rejects.toThrow('Invalid parameter: did not encrypted JSON');
+        });
+
+        it.each([null, 'text', {}])('rejects an invalid response wrapper %j', async (wrapper) => {
+            await keymaster.setCurrentId('Bob');
+            responseDID = await keymaster.encryptJSON(wrapper, alice);
+            await keymaster.setCurrentId('Alice');
+
+            await expect(keymaster.verifyResponse(responseDID, { publish: false }))
+                .rejects.toThrow('Invalid parameter: responseDID not a valid challenge response');
+        });
     });
 
     it('should reject a presentation whose signer is not its issuer', async () => {
