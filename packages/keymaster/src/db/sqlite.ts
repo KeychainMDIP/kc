@@ -54,9 +54,12 @@ export default class WalletSQLite implements WalletBase {
             return false;
         }
 
-        await this.db.run('DELETE FROM wallet');
-        await this.db.run('INSERT INTO wallet (data) VALUES (?)', JSON.stringify(wallet));
-        return true;
+        const result = await this.db.run(
+            `INSERT INTO wallet (id, data) VALUES (1, ?)
+             ON CONFLICT (id) DO UPDATE SET data = excluded.data WHERE ?`,
+            JSON.stringify(wallet), overwrite ? 1 : 0
+        );
+        return result.changes === 1;
     }
 
     async loadWallet(): Promise<StoredWallet | null> {
