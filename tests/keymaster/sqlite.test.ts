@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -24,6 +25,42 @@ describe('SQLite wallet storage', () => {
         await wallet.disconnect();
         await db.close();
         fs.rmSync(tempDir, { recursive: true, force: true });
+    });
+
+    it('uses data/wallet.db by default for construction and creation', async () => {
+        const originalCwd = process.cwd();
+        fs.mkdirSync(path.join(tempDir, 'data'));
+        let defaultWallet: WalletSQLite | undefined;
+
+        try {
+            process.chdir(tempDir);
+            defaultWallet = new WalletSQLite();
+            expect(await defaultWallet.saveWallet(original)).toBe(true);
+            expect(fs.existsSync(path.join(tempDir, 'data', 'wallet.db'))).toBe(true);
+            await defaultWallet.disconnect();
+
+            defaultWallet = await WalletSQLite.create();
+            expect(await defaultWallet.loadWallet()).toStrictEqual(original);
+        } finally {
+            process.chdir(originalCwd);
+            await defaultWallet?.disconnect();
+        }
+    });
+
+    it('rejects reads and writes when connect leaves the adapter disconnected', async () => {
+        await wallet.saveWallet(original);
+        await wallet.disconnect();
+        const connect = jest.spyOn(wallet, 'connect').mockResolvedValue(undefined);
+
+        try {
+            await expect(wallet.saveWallet(replacement, true)).rejects.toThrow('DB failed to connect.');
+            await expect(wallet.loadWallet()).rejects.toThrow('DB failed to connect.');
+            await expect(wallet.disconnect()).resolves.toBeUndefined();
+        } finally {
+            connect.mockRestore();
+        }
+
+        expect(await wallet.loadWallet()).toStrictEqual(original);
     });
 
     it('creates the first wallet and refuses an unrequested overwrite', async () => {
