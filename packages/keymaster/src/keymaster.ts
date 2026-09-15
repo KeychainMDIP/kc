@@ -53,7 +53,8 @@ import {
 import {
     isV1WithEnc,
     isV1Decrypted,
-    isLegacyV0
+    isLegacyV0,
+    isValidWalletPayload,
 } from './db/typeGuards.js';
 import {
     Cipher,
@@ -3811,17 +3812,7 @@ export default class Keymaster implements KeymasterInterface {
         const plaintext = this.cipher.decryptMessage(publicJwk, privateJwk, stored.enc);
         const data = JSON.parse(plaintext);
 
-        // Payload data must not replace the encryption envelope's metadata.
-        if (!data || typeof data !== 'object' || Array.isArray(data)
-            || 'seed' in data || 'version' in data || 'enc' in data
-            || !Number.isSafeInteger(data.counter) || data.counter < 0
-            || !data.ids || typeof data.ids !== 'object' || Array.isArray(data.ids)
-            || Object.values(data.ids).some((id: any) =>
-                !id || typeof id !== 'object' || Array.isArray(id)
-                || typeof id.did !== 'string' || !id.did
-                || !Number.isSafeInteger(id.account) || id.account < 0
-                || !Number.isSafeInteger(id.index) || id.index < 0
-            )) {
+        if (!isValidWalletPayload(data)) {
             throw new KeymasterError('Invalid wallet data.');
         }
 
