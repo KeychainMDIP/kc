@@ -356,6 +356,7 @@ describe('saveWallet', () => {
         await keymaster.newWallet(undefined, true);
         const alice = await keymaster.createId('Alice');
         const original = JSON.parse(JSON.stringify(await keymaster.loadWallet()));
+        const stored = await wallet.loadWallet();
         const keypair = await keymaster.fetchKeyPair();
         jest.spyOn(cipher, 'decryptMessage').mockImplementationOnce(() => {
             throw new Error('decryption failed');
@@ -363,6 +364,7 @@ describe('saveWallet', () => {
 
         await expect(keymaster.saveWallet(replacement)).rejects.toThrow('decryption failed');
         expect(await keymaster.loadWallet()).toStrictEqual(original);
+        expect(await wallet.loadWallet()).toStrictEqual(stored);
         expect(await keymaster.fetchKeyPair()).toStrictEqual(keypair);
 
         await keymaster.addName('friend', alice);
@@ -371,9 +373,185 @@ describe('saveWallet', () => {
         expect(await restarted.fetchKeyPair()).toStrictEqual(keypair);
     });
 
+    it.each(['ciphertext', 'mnemonic', 'JSON', 'version'])(
+        'should preserve the stored and active wallet after restoring invalid %s', async (invalid) => {
+            const alice = await keymaster.createId('Alice');
+            const active = await keymaster.loadWallet();
+            const original = JSON.parse(JSON.stringify(active));
+            const stored = await wallet.loadWallet();
+            const keypair = await keymaster.fetchKeyPair();
+            const replacement = JSON.parse(JSON.stringify(await keymaster.exportEncryptedWallet()));
+
+            if (invalid === 'ciphertext') {
+                replacement.enc = 'invalid ciphertext';
+            } else if (invalid === 'mnemonic') {
+                replacement.seed.mnemonicEnc!.data = 'invalid ciphertext';
+            } else {
+                const mnemonic = await keymaster.decryptMnemonic();
+                const hdkey = cipher.generateHDKey(mnemonic);
+                const keys = cipher.generateJwk(hdkey.privateKey!);
+                replacement.enc = cipher.encryptMessage(
+                    keys.publicJwk, keys.privateJwk,
+                    invalid === 'JSON' ? 'invalid JSON' : JSON.stringify({ version: 999, counter: 0, ids: {} })
+                );
+            }
+
+            const save = jest.spyOn(wallet, 'saveWallet');
+            await expect(keymaster.saveWallet(replacement)).rejects.toThrow();
+            expect(save).not.toHaveBeenCalled();
+            expect(await keymaster.loadWallet()).toBe(active);
+            expect(active).toStrictEqual(original);
+            expect(await wallet.loadWallet()).toStrictEqual(stored);
+            expect(await keymaster.fetchKeyPair()).toStrictEqual(keypair);
+
+            const restarted = new Keymaster({ gatekeeper, wallet, cipher, passphrase: PASSPHRASE });
+            expect(await restarted.loadWallet()).toStrictEqual(original);
+            expect(await restarted.fetchKeyPair()).toStrictEqual(keypair);
+
+            await keymaster.addName('friend', alice);
+            const afterSave = new Keymaster({ gatekeeper, wallet, cipher, passphrase: PASSPHRASE });
+            expect(await afterSave.loadWallet()).toStrictEqual(await keymaster.loadWallet());
+            expect(await afterSave.fetchKeyPair()).toStrictEqual(keypair);
+        }
+    );
+
+    it.each([
+        ['null', null],
+        ['boolean', true],
+        ['number', 1],
+        ['string', 'wallet'],
+        ['array', []],
+        ['missing fields', {}],
+        ['missing counter', { ids: {} }],
+        ['string counter', { counter: '0', ids: {} }],
+        ['negative counter', { counter: -1, ids: {} }],
+        ['fractional counter', { counter: 0.5, ids: {} }],
+        ['unsafe counter', { counter: Number.MAX_SAFE_INTEGER + 1, ids: {} }],
+        ['missing ids', { counter: 0 }],
+        ['null ids', { counter: 0, ids: null }],
+        ['array ids', { counter: 0, ids: [] }],
+        ['string ids', { counter: 0, ids: 'Alice' }],
+        ['null identity', { counter: 1, ids: { Alice: null } }],
+        ['string identity', { counter: 1, ids: { Alice: 'invalid' } }],
+        ['array identity', { counter: 1, ids: { Alice: [] } }],
+        ['missing DID', { counter: 1, ids: { Alice: { account: 0, index: 0 } } }],
+        ['non-string DID', { counter: 1, ids: { Alice: { did: 1, account: 0, index: 0 } } }],
+        ['empty DID', { counter: 1, ids: { Alice: { did: '', account: 0, index: 0 } } }],
+        ['missing account', { counter: 1, ids: { Alice: { did: 'did:test:example', index: 0 } } }],
+        ['negative account', { counter: 1, ids: { Alice: { did: 'did:test:example', account: -1, index: 0 } } }],
+        ['missing index', { counter: 1, ids: { Alice: { did: 'did:test:example', account: 0 } } }],
+        ['negative index', { counter: 1, ids: { Alice: { did: 'did:test:example', account: 0, index: -1 } } }],
+        ['seed override', { counter: 0, ids: {}, seed: { mnemonicEnc: { salt: '', iv: '', data: '' } } }],
+        ['version override', { counter: 0, ids: {}, version: 1 }],
+        ['nested ciphertext', { counter: 0, ids: {}, enc: 'ciphertext' }],
+    ])('should reject %s wallet data before saving', async (_description, data) => {
+        await keymaster.createId('Alice');
+        const active = await keymaster.loadWallet();
+        const original = JSON.parse(JSON.stringify(active));
+        const stored = await wallet.loadWallet();
+        const keys = await keymaster.fetchKeyPair();
+        const backup = new Keymaster({ gatekeeper, wallet: new WalletJsonMemory(), cipher, passphrase: PASSPHRASE });
+        const replacement = await backup.exportEncryptedWallet();
+        const rootKeys = await backup.hdKeyPair();
+        replacement.enc = cipher.encryptMessage(rootKeys.publicJwk, rootKeys.privateJwk, JSON.stringify(data));
+        const save = jest.spyOn(wallet, 'saveWallet');
+
+        await expect(keymaster.saveWallet(replacement)).rejects.toThrow('Invalid wallet data');
+        expect(save).not.toHaveBeenCalled();
+        expect(await keymaster.loadWallet()).toBe(active);
+        expect(active).toStrictEqual(original);
+        expect(await wallet.loadWallet()).toStrictEqual(stored);
+        const derive = jest.spyOn(cipher, 'generateHDKey');
+        expect(await keymaster.fetchKeyPair()).toStrictEqual(keys);
+        expect(derive).not.toHaveBeenCalled();
+
+        const restarted = new Keymaster({ gatekeeper, wallet, cipher, passphrase: PASSPHRASE });
+        expect(await restarted.loadWallet()).toStrictEqual(original);
+        expect(await restarted.fetchKeyPair()).toStrictEqual(keys);
+    });
+
+    it.each(['v0', 'v1'])('should validate an unencrypted %s restore before saving', async (version) => {
+        await keymaster.createId('Alice');
+        const original = JSON.parse(JSON.stringify(await keymaster.loadWallet()));
+        const stored = await wallet.loadWallet();
+        const replacement = JSON.parse(JSON.stringify(version === 'v0' ? MOCK_WALLET_V0_UNENCRYPTED : original));
+        replacement.ids = null;
+        const save = jest.spyOn(wallet, 'saveWallet');
+
+        await expect(keymaster.saveWallet(replacement)).rejects.toThrow('Invalid wallet data');
+        expect(save).not.toHaveBeenCalled();
+        expect(await keymaster.loadWallet()).toStrictEqual(original);
+        expect(await wallet.loadWallet()).toStrictEqual(stored);
+        const restarted = new Keymaster({ gatekeeper, wallet, cipher, passphrase: PASSPHRASE });
+        expect(await restarted.loadWallet()).toStrictEqual(original);
+    });
+
+    it('should not write a legacy restore before validation', async () => {
+        await keymaster.createId('Alice');
+        const original = JSON.parse(JSON.stringify(await keymaster.loadWallet()));
+        const stored = await wallet.loadWallet();
+        const save = jest.spyOn(wallet, 'saveWallet');
+        const decrypt = cipher.decryptMessage.bind(cipher);
+        jest.spyOn(cipher, 'decryptMessage')
+            .mockImplementationOnce(decrypt)
+            .mockImplementationOnce(() => { throw new Error('decryption failed'); });
+
+        await expect(keymaster.saveWallet(MOCK_WALLET_V0_UNENCRYPTED)).rejects.toThrow('decryption failed');
+        expect(save).not.toHaveBeenCalled();
+        expect(await keymaster.loadWallet()).toStrictEqual(original);
+        expect(await wallet.loadWallet()).toStrictEqual(stored);
+        const restarted = new Keymaster({ gatekeeper, wallet, cipher, passphrase: PASSPHRASE });
+        expect(await restarted.loadWallet()).toStrictEqual(original);
+    });
+
+    it.each(['refusal', 'exception', 'success'])(
+        'should activate restored wallet keys only after storage %s', async (result) => {
+            await keymaster.createId('Bob');
+            const replacement = await keymaster.exportEncryptedWallet();
+            const restored = JSON.parse(JSON.stringify(await keymaster.loadWallet()));
+            const restoredKeys = await keymaster.fetchKeyPair();
+            await keymaster.newWallet(undefined, true);
+            await keymaster.createId('Alice');
+            const active = await keymaster.loadWallet();
+            const stored = await wallet.loadWallet();
+            const keys = await keymaster.fetchKeyPair();
+            const derive = jest.spyOn(cipher, 'generateHDKey');
+            const persist = wallet.saveWallet.bind(wallet);
+            jest.spyOn(wallet, 'saveWallet').mockImplementationOnce(async (candidate, overwrite) => {
+                expect(await keymaster.loadWallet()).toBe(active);
+                derive.mockClear();
+                expect(await keymaster.fetchKeyPair()).toStrictEqual(keys);
+                expect(derive).not.toHaveBeenCalled();
+                if (result === 'exception') {
+                    throw new Error('storage failed');
+                }
+                return persist(candidate, overwrite);
+            });
+
+            const save = keymaster.saveWallet(replacement, result !== 'refusal');
+            if (result === 'exception') {
+                await expect(save).rejects.toThrow('storage failed');
+            } else {
+                expect(await save).toBe(result === 'success');
+            }
+            const expected = result === 'success' ? restored : active;
+            const expectedKeys = result === 'success' ? restoredKeys : keys;
+            derive.mockClear();
+            expect(await keymaster.loadWallet()).toStrictEqual(expected);
+            expect(await keymaster.fetchKeyPair()).toStrictEqual(expectedKeys);
+            expect(derive).not.toHaveBeenCalled();
+            expect(await wallet.loadWallet()).toStrictEqual(result === 'success' ? replacement : stored);
+            const restarted = new Keymaster({ gatekeeper, wallet, cipher, passphrase: PASSPHRASE });
+            expect(await restarted.loadWallet()).toStrictEqual(expected);
+            expect(await restarted.fetchKeyPair()).toStrictEqual(expectedKeys);
+        }
+    );
+
     it('should upgrade a v0 wallet to v1', async () => {
+        const save = jest.spyOn(wallet, 'saveWallet');
         const ok = await keymaster.saveWallet(MOCK_WALLET_V0_UNENCRYPTED);
         expect(ok).toBe(true);
+        expect(save).toHaveBeenCalledTimes(1);
 
         const res = await wallet.loadWallet();
         expect(res).toEqual(

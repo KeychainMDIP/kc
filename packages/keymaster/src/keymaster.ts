@@ -205,12 +205,15 @@ export default class Keymaster implements KeymasterInterface {
         wallet: StoredWallet,
         overwrite = true
     ): Promise<boolean> {
-        let upgraded: WalletFile = await this.upgradeWallet(wallet);
-        let toStore: WalletEncFile = await this.encryptWallet(upgraded);
+        const upgraded: WalletFile = await this.upgradeWallet(wallet, false);
+        const toStore: WalletEncFile = await this.encryptWallet(upgraded);
+        const { wallet: decrypted, hdkey } = await this.decryptWalletFromStorage(toStore);
 
         const ok = await this.db.saveWallet(toStore, overwrite);
         if (ok) {
-            this._walletCache = await this.decryptWalletFromStorage(toStore);
+            this._hdkeyCache = hdkey;
+            this._hdkeyCacheSeed = JSON.stringify(toStore.seed.mnemonicEnc);
+            this._walletCache = decrypted;
         }
         return ok;
     }
@@ -3789,7 +3792,10 @@ export default class Keymaster implements KeymasterInterface {
         return { version: version!, seed: safeSeed, enc };
     }
 
-    private async decryptWalletFromStorage(stored: WalletEncFile): Promise<WalletFile> {
+    private async decryptWalletFromStorage(stored: WalletEncFile): Promise<{
+        wallet: WalletFile;
+        hdkey: ReturnType<Cipher['generateHDKey']>;
+    }> {
         let mnemonic: string;
         try {
             mnemonic = await decMnemonic(stored.seed.mnemonicEnc!, this.passphrase);
@@ -3797,21 +3803,38 @@ export default class Keymaster implements KeymasterInterface {
             throw new KeymasterError('Incorrect passphrase.');
         }
 
-        const hdkey = this.cipher.generateHDKey(mnemonic);
+        const hdkey = this._hdkeyCache && this._hdkeyCacheSeed === JSON.stringify(stored.seed.mnemonicEnc)
+            ? this._hdkeyCache
+            : this.cipher.generateHDKey(mnemonic);
         const { publicJwk, privateJwk } = this.cipher.generateJwk(hdkey.privateKey!);
 
         const plaintext = this.cipher.decryptMessage(publicJwk, privateJwk, stored.enc);
         const data = JSON.parse(plaintext);
 
+        // Payload data must not replace the encryption envelope's metadata.
+        if (!data || typeof data !== 'object' || Array.isArray(data)
+            || 'seed' in data || 'version' in data || 'enc' in data
+            || !Number.isSafeInteger(data.counter) || data.counter < 0
+            || !data.ids || typeof data.ids !== 'object' || Array.isArray(data.ids)
+            || Object.values(data.ids).some((id: any) =>
+                !id || typeof id !== 'object' || Array.isArray(id)
+                || typeof id.did !== 'string' || !id.did
+                || !Number.isSafeInteger(id.account) || id.account < 0
+                || !Number.isSafeInteger(id.index) || id.index < 0
+            )) {
+            throw new KeymasterError('Invalid wallet data.');
+        }
+
         const wallet: WalletFile = { version: stored.version, seed: stored.seed, ...data };
-        this._hdkeyCache = hdkey;
-        this._hdkeyCacheSeed = JSON.stringify(stored.seed.mnemonicEnc);
-        return wallet;
+        return { wallet, hdkey };
     }
 
     private async decryptWallet(wallet: WalletFile): Promise<WalletFile> {
         if (isV1WithEnc(wallet)) {
-            wallet = await this.decryptWalletFromStorage(wallet);
+            const decrypted = await this.decryptWalletFromStorage(wallet);
+            this._hdkeyCache = decrypted.hdkey;
+            this._hdkeyCacheSeed = JSON.stringify(wallet.seed.mnemonicEnc);
+            wallet = decrypted.wallet;
         }
 
         if (!isV1Decrypted(wallet)) {
