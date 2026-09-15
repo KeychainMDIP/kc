@@ -351,6 +351,35 @@ describe('issueCredential', () => {
         expect(verified.vps).toStrictEqual([vc]);
     });
 
+    it('should accept and verify a credential transferred after issuance', async () => {
+        const alice = await keymaster.createId('Alice', { registry: 'local' });
+        const bob = await keymaster.createId('Bob', { registry: 'local' });
+        const carol = await keymaster.createId('Carol', { registry: 'local' });
+        await keymaster.createId('Victor', { registry: 'local' });
+
+        await keymaster.setCurrentId('Alice');
+        const schema = await keymaster.createSchema(mockSchema, { registry: 'local' });
+        const did = await keymaster.issueCredential(await keymaster.bindCredential(schema, carol), { registry: 'local' });
+        const original = await keymaster.decryptJSON(did);
+        expect(await keymaster.transferAsset(did, bob)).toBe(true);
+        expect((await keymaster.resolveDID(did)).didDocument!.controller).toBe(bob);
+
+        await keymaster.setCurrentId('Carol');
+        expect(await keymaster.acceptCredential(did)).toBe(true);
+        expect(await keymaster.decryptJSON(did)).toStrictEqual(original);
+
+        await keymaster.setCurrentId('Victor');
+        const challenge = await keymaster.createChallenge({ credentials: [{ schema, issuers: [alice] }] }, { registry: 'local' });
+        await keymaster.setCurrentId('Carol');
+        const response = await keymaster.createResponse(challenge, { registry: 'local' });
+
+        await keymaster.setCurrentId('Victor');
+        const verified = await keymaster.verifyResponse(response, { publish: false });
+        expect(verified.match).toBe(true);
+        expect(verified.responder).toBe(carol);
+        expect(verified.vps).toStrictEqual([original]);
+    });
+
     it('should bind and issue a credential', async () => {
         const subject = await keymaster.createId('Bob');
         const schema = await keymaster.createSchema(mockSchema);
