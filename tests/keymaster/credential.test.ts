@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import Gatekeeper from '@mdip/gatekeeper';
 import Keymaster from '@mdip/keymaster';
 import { VerifiableCredential } from '@mdip/keymaster/types';
@@ -504,9 +505,134 @@ describe('updateCredential', () => {
 
         const updated = (await keymaster.getCredential(did))!;
         expect(updated.validUntil).toBe(vc.validUntil);
+        expect(updated.issuer).toBe(userDid);
+        expect(updated.signature!.signer).toBe(userDid);
+        expect(await keymaster.verifySignature(updated)).toBe(true);
+        expect(await keymaster.acceptCredential(did)).toBe(true);
 
         const doc = await keymaster.resolveDID(did);
         expect(doc.didDocumentMetadata!.version).toBe("2");
+    });
+
+    it('should keep signing and encryption bound to the validated issuer if the current ID changes', async () => {
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        await keymaster.setCurrentId('Alice');
+        const schema = await keymaster.createSchema(mockSchema);
+        const did = await keymaster.issueCredential(await keymaster.bindCredential(schema, bob));
+        const candidate = (await keymaster.getCredential(did))!;
+        candidate.credential = { email: 'updated@example.com' };
+        const addSignature = keymaster.addSignature.bind(keymaster);
+        const signing = jest.spyOn(keymaster, 'addSignature').mockImplementationOnce(async (obj, signer) => {
+            await keymaster.setCurrentId('Bob');
+            return addSignature(obj, signer);
+        });
+
+        try {
+            expect(await keymaster.updateCredential(did, candidate)).toBe(true);
+        } finally {
+            signing.mockRestore();
+        }
+
+        expect(await keymaster.acceptCredential(did)).toBe(true);
+        const updated = (await keymaster.getCredential(did))!;
+        expect(updated.issuer).toBe(alice);
+        expect(updated.signature!.signer).toBe(alice);
+        expect((await keymaster.resolveAsset(did)).encrypted.sender).toBe(alice);
+        await keymaster.setCurrentId('Alice');
+        expect(await keymaster.getCredential(did)).toStrictEqual(updated);
+    });
+
+    it('should reject updates by the holder even when the issuer is in the wallet', async () => {
+        await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        await keymaster.setCurrentId('Alice');
+        const schema = await keymaster.createSchema(mockSchema);
+        const did = await keymaster.issueCredential(await keymaster.bindCredential(schema, bob));
+
+        await keymaster.setCurrentId('Bob');
+        const original = (await keymaster.getCredential(did))!;
+        const candidate = copyJSON(original);
+        candidate.credential = { email: 'updated@example.com' };
+        const input = copyJSON(candidate);
+        const events = await gatekeeper.exportDID(did);
+
+        await expect(keymaster.updateCredential(did, candidate)).rejects.toThrow('Invalid parameter: credential.issuer');
+
+        expect(candidate).toStrictEqual(input);
+        expect(await gatekeeper.exportDID(did)).toStrictEqual(events);
+        expect(await keymaster.getCredential(did)).toStrictEqual(original);
+        expect((await keymaster.fetchIdInfo()).did).toBe(bob);
+        expect(await keymaster.acceptCredential(did)).toBe(true);
+    });
+
+    it.each([undefined, '', 'did:test:other'])('should reject an invalid issuer (%p) before changing the credential', async (issuer) => {
+        const alice = await keymaster.createId('Alice');
+        const schema = await keymaster.createSchema(mockSchema);
+        const did = await keymaster.issueCredential(await keymaster.bindCredential(schema, alice));
+        const original = (await keymaster.getCredential(did))!;
+        const candidate = { ...original, issuer } as VerifiableCredential;
+        const signature = candidate.signature;
+        const events = await gatekeeper.exportDID(did);
+
+        await expect(keymaster.updateCredential(did, candidate)).rejects.toThrow('Invalid parameter: credential.issuer');
+
+        expect(candidate.signature).toStrictEqual(signature);
+        expect(await gatekeeper.exportDID(did)).toStrictEqual(events);
+        expect(await keymaster.getCredential(did)).toStrictEqual(original);
+    });
+
+    it.each(['delegated', 'transferred'])('should update a credential with a %s controller using separate signing identities', async (mode) => {
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        const carol = await keymaster.createId('Carol');
+        await keymaster.setCurrentId('Alice');
+        const schema = await keymaster.createSchema(mockSchema);
+        const did = await keymaster.issueCredential(
+            await keymaster.bindCredential(schema, carol),
+            mode === 'delegated' ? { controller: bob } : {},
+        );
+        if (mode === 'transferred') {
+            expect(await keymaster.transferAsset(did, bob)).toBe(true);
+        }
+        const candidate = (await keymaster.getCredential(did))!;
+        candidate.credential = { email: 'updated@example.com' };
+
+        expect(await keymaster.updateCredential(did, candidate)).toBe(true);
+
+        const updated = (await keymaster.getCredential(did))!;
+        expect(updated.issuer).toBe(alice);
+        expect(updated.signature!.signer).toBe(alice);
+        expect(updated.credential).toStrictEqual(candidate.credential);
+        expect(await keymaster.verifySignature(updated)).toBe(true);
+        const doc = await keymaster.resolveDID(did);
+        expect(doc.didDocument!.controller).toBe(bob);
+        expect((await keymaster.resolveAsset(did)).encrypted.sender).toBe(alice);
+        const events = await gatekeeper.exportDID(did);
+        expect(events.at(-1)!.operation.signature!.signer).toBe(bob);
+
+        await keymaster.setCurrentId('Carol');
+        expect(await keymaster.getCredential(did)).toStrictEqual(updated);
+        expect(await keymaster.acceptCredential(did)).toBe(true);
+    });
+
+    it('should not persist an update without the delegated controller key', async () => {
+        await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        const carol = await keymaster.createId('Carol');
+        await keymaster.setCurrentId('Alice');
+        const schema = await keymaster.createSchema(mockSchema);
+        const did = await keymaster.issueCredential(await keymaster.bindCredential(schema, carol), { controller: bob });
+        await keymaster.removeId('Bob');
+        const original = (await keymaster.getCredential(did))!;
+        const candidate = copyJSON(original);
+        candidate.credential = { email: 'updated@example.com' };
+        const events = await gatekeeper.exportDID(did);
+
+        await expect(keymaster.updateCredential(did, candidate)).rejects.toThrow(UnknownIDError);
+
+        expect(await gatekeeper.exportDID(did)).toStrictEqual(events);
+        expect(await keymaster.getCredential(did)).toStrictEqual(original);
     });
 
     it('should throw exception on invalid parameters', async () => {
