@@ -23,7 +23,6 @@ const config = {
         'db/mongo': 'dist/esm/db/mongo.js',
         'db/sqlite': 'dist/esm/db/sqlite.js',
         'db/postgres': 'dist/esm/db/postgres.js',
-        'db/cache': 'dist/esm/db/cache.js',
         'db/web': 'dist/esm/db/web.js',
         'db/chrome': 'dist/esm/db/chrome.js',
         'db/typeGuards': 'dist/esm/db/typeGuards.js',

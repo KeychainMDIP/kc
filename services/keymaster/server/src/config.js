@@ -104,7 +104,6 @@ const config = {
     nodeID: parseRequired('KC_NODE_ID', process.env.KC_NODE_ID, true),
     db: parseDatabase(process.env.KC_KEYMASTER_DB),
     keymasterPassphrase: parseRequired('KC_ENCRYPTED_PASSPHRASE', process.env.KC_ENCRYPTED_PASSPHRASE),
-    walletCache: process.env.KC_WALLET_CACHE ? process.env.KC_WALLET_CACHE === 'true' : false,
     defaultRegistry: process.env.KC_DEFAULT_REGISTRY,
     didPrefix: parseDidPrefix(process.env.KC_KEYMASTER_DID_PREFIX),
     keymasterTrustProxy: parseBoolean(process.env.KC_KEYMASTER_TRUST_PROXY, false),

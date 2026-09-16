@@ -10,7 +10,6 @@ const CONFIG_ENV_KEYS = [
     'KC_NODE_ID',
     'KC_KEYMASTER_DB',
     'KC_ENCRYPTED_PASSPHRASE',
-    'KC_WALLET_CACHE',
     'KC_DEFAULT_REGISTRY',
     'KC_KEYMASTER_DID_PREFIX',
     'KC_KEYMASTER_TRUST_PROXY',
@@ -56,7 +55,6 @@ describe('keymaster server config', () => {
             nodeID: 'node',
             db: 'json',
             keymasterPassphrase: 'passphrase',
-            walletCache: false,
             defaultRegistry: undefined,
             didPrefix: undefined,
             keymasterTrustProxy: false,
@@ -78,7 +76,6 @@ describe('keymaster server config', () => {
             KC_NODE_ID: 'node',
             KC_KEYMASTER_DB: 'redis',
             KC_ENCRYPTED_PASSPHRASE: 'passphrase',
-            KC_WALLET_CACHE: 'true',
             KC_DEFAULT_REGISTRY: 'local',
             KC_KEYMASTER_DID_PREFIX: 'did:mdip',
             KC_KEYMASTER_TRUST_PROXY: 'true',
@@ -96,7 +93,6 @@ describe('keymaster server config', () => {
             nodeID: 'node',
             db: 'redis',
             keymasterPassphrase: 'passphrase',
-            walletCache: true,
             defaultRegistry: 'local',
             didPrefix: 'did:mdip',
             keymasterTrustProxy: true,
@@ -112,7 +108,6 @@ describe('keymaster server config', () => {
     it('falls back for invalid settings', async () => {
         expect(await importConfig({
             KC_DISABLE_SEARCH: 'false',
-            KC_WALLET_CACHE: 'false',
             KC_KEYMASTER_DID_PREFIX: '',
             KC_KEYMASTER_TRUST_PROXY: 'invalid',
             KC_KEYMASTER_RATE_LIMIT_ENABLED: 'true',
@@ -121,7 +116,6 @@ describe('keymaster server config', () => {
             KC_KEYMASTER_RATE_LIMIT_MAX_REQUESTS: 'invalid',
         })).toMatchObject({
             disableSearch: false,
-            walletCache: false,
             didPrefix: undefined,
             keymasterTrustProxy: false,
             rateLimitEnabled: true,

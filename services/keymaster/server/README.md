@@ -15,7 +15,6 @@ This service is also useful when clients share a wallet, such as the `kc` CLI an
 | `KC_NODE_ID` | required | Node identity name to create if missing and resolve at startup |
 | `KC_KEYMASTER_DB` | json | Wallet database adapter, must be `redis`, `json`, `mongodb`, `sqlite`, or `postgres` |
 | `KC_ENCRYPTED_PASSPHRASE` | required | Passphrase used to encrypt and decrypt the server wallet |
-| `KC_WALLET_CACHE` | false | Use wallet cache to increase performance (but understand security implications) |
 | `KC_DEFAULT_REGISTRY` | hyperswarm | Default registry to use when creating DIDs |
 | `KC_KEYMASTER_DID_PREFIX` | (empty) | Optional `did:<method>` prefix embedded in new signed create operations. Method names use only lowercase letters and digits |
 | `KC_KEYMASTER_SERVE_CLIENT` | true | Serve the Keymaster web client from the API process |
