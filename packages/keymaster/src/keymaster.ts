@@ -2109,14 +2109,14 @@ export default class Keymaster implements KeymasterInterface {
         }
         const { response } = wrapper as { response: ChallengeResponse };
 
-        const result = await this.resolveAsset(response.challenge);
-        if (!result) {
-            throw new InvalidParameterError('challenge not found');
+        const challengeDoc = await this.resolveDID(response.challenge);
+        const challenge = (challengeDoc.didDocumentData as { challenge?: Challenge } | undefined)?.challenge;
+        if (challengeDoc.didDocumentMetadata?.deactivated || !challenge) {
+            throw new InvalidParameterError('challengeDID');
         }
 
-        const challenge = (result as { challenge?: Challenge }).challenge;
-        if (!challenge) {
-            throw new InvalidParameterError('challengeDID');
+        if (challengeDoc.didDocument?.controller !== id.did) {
+            throw new InvalidParameterError('requesterDid');
         }
 
         const requestedCredentials = challenge.credentials ?? [];

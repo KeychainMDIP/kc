@@ -161,6 +161,127 @@ describe('verifyResponse', () => {
         publishReceipts.mockRestore();
     });
 
+    describe('challenge ownership', () => {
+        let other: Keymaster;
+        let otherDID: string;
+        let verifierDID: string;
+
+        beforeEach(async () => {
+            verifierDID = await keymaster.createId('Verifier');
+            other = new Keymaster({ gatekeeper, wallet: new WalletJsonMemory(), cipher, passphrase: 'passphrase' });
+            otherDID = await other.createId('Other');
+        });
+
+        it.each([false, true, undefined])('rejects a foreign empty challenge before publishing with publish=%s', async (publish) => {
+            const challenge = await other.createChallenge({ credentials: [] });
+            const response = await other.createResponse(challenge);
+            const wrapper = await other.decryptJSON(response);
+            const forwarded = await other.encryptJSON(wrapper, verifierDID);
+            const publishReceipts = jest.spyOn(keymaster, 'publishChallengeReceipts');
+
+            try {
+                await expect(keymaster.verifyResponse(forwarded, { publish }))
+                    .rejects.toThrow('Invalid parameter: requesterDid');
+                expect(publishReceipts).not.toHaveBeenCalled();
+            } finally {
+                publishReceipts.mockRestore();
+            }
+        });
+
+        it('rejects a foreign challenge even when its credential requirements are satisfied', async () => {
+            const schema = await other.createSchema(mockSchema);
+            const vc = await other.issueCredential(await other.bindCredential(schema, otherDID));
+            await other.acceptCredential(vc);
+            const challenge = await other.createChallenge({ credentials: [{ schema, issuers: [otherDID] }] });
+            const response = await other.createResponse(challenge);
+            const wrapper = await other.decryptJSON(response) as { response: ChallengeResponse };
+            expect(wrapper.response.fulfilled).toBe(1);
+
+            const vp = await other.encryptMessage(await other.decryptMessage(vc), verifierDID, { includeHash: true });
+            wrapper.response.credentials = [{ vc, vp }];
+            const forwarded = await other.encryptJSON(wrapper, verifierDID);
+
+            await expect(keymaster.verifyResponse(forwarded, { publish: false }))
+                .rejects.toThrow('Invalid parameter: requesterDid');
+        });
+
+        it('requires the active verifier, not merely another identity in its wallet', async () => {
+            const secondVerifier = await keymaster.createId('SecondVerifier');
+            const challenge = await keymaster.createChallenge();
+            expect((await keymaster.resolveDID(challenge)).didDocument!.controller).toBe(secondVerifier);
+            const response = await other.createResponse(challenge);
+            const forwarded = await other.encryptJSON(await other.decryptJSON(response), verifierDID);
+
+            await keymaster.setCurrentId('Verifier');
+            await expect(keymaster.verifyResponse(forwarded, { publish: false }))
+                .rejects.toThrow('Invalid parameter: requesterDid');
+        });
+
+        it.each([false, undefined])('accepts the verifier\'s empty challenge with publish=%s', async (publish) => {
+            const challenge = await keymaster.createChallenge({ credentials: [] });
+            const response = await other.createResponse(challenge);
+
+            const result = await keymaster.verifyResponse(response, { publish });
+            expect(result.match).toBe(true);
+            expect(result.challenge).toBe(challenge);
+            expect(result.responder).toBe(otherDID);
+            expect(result.vps).toStrictEqual([]);
+        });
+
+        it('rejects a revoked challenge', async () => {
+            const challenge = await keymaster.createChallenge();
+            const response = await other.createResponse(challenge);
+            await keymaster.revokeDID(challenge);
+
+            await expect(keymaster.verifyResponse(response, { publish: false }))
+                .rejects.toThrow('Invalid parameter: challengeDID');
+        });
+
+        it.each(['missing data', 'missing challenge', 'missing controller'])('rejects a challenge with %s', async (invalid) => {
+            const challenge = await keymaster.createChallenge();
+            const response = await other.createResponse(challenge);
+            const doc = await keymaster.resolveDID(challenge);
+            if (invalid === 'missing data') {
+                delete doc.didDocumentData;
+            } else if (invalid === 'missing challenge') {
+                doc.didDocumentData = {};
+            } else {
+                delete doc.didDocument!.controller;
+            }
+            const resolveDID = keymaster.resolveDID.bind(keymaster);
+            const resolve = jest.spyOn(keymaster, 'resolveDID').mockImplementation(async (did, options) => {
+                return did === challenge ? doc : resolveDID(did, options);
+            });
+
+            try {
+                await expect(keymaster.verifyResponse(response, { publish: false }))
+                    .rejects.toThrow(`Invalid parameter: ${invalid === 'missing controller' ? 'requesterDid' : 'challengeDID'}`);
+            } finally {
+                resolve.mockRestore();
+            }
+        });
+
+        it('uses the same resolved challenge for ownership and credential requirements', async () => {
+            const challenge = await keymaster.createChallenge();
+            const response = await other.createResponse(challenge);
+            const resolveDID = keymaster.resolveDID.bind(keymaster);
+            let challengeReads = 0;
+            const resolve = jest.spyOn(keymaster, 'resolveDID').mockImplementation(async (did, options) => {
+                if (did === challenge && ++challengeReads > 1) {
+                    throw new Error('challenge changed during verification');
+                }
+                return resolveDID(did, options);
+            });
+
+            try {
+                expect((await keymaster.verifyResponse(response, { publish: false })).match).toBe(true);
+                expect(challengeReads).toBe(1);
+            } finally {
+                resolve.mockRestore();
+            }
+        });
+    });
+
     it('should verify a valid response to a single credential challenge', async () => {
         await keymaster.createId('Alice');
         const carol = await keymaster.createId('Carol');

@@ -1,4 +1,5 @@
 import keymaster_sdk as keymaster
+import pytest
 from datetime import datetime, timedelta, timezone
 import random
 import string
@@ -289,7 +290,12 @@ def test_challenge_response():
     assert_equal(response["response"]["challenge"], challenge_did)
     assert_equal(response["response"]["credentials"], [])
 
+    with pytest.raises(keymaster.KeymasterError, match="Invalid parameter: requesterDid"):
+        keymaster.verify_response(response_did, publish=False)
+
+    keymaster.set_current_id(alice)
     response = keymaster.verify_response(response_did, publish=False)
+    assert_equal(response["match"], True)
     assert_equal(response["challenge"], challenge_did)
     assert_equal(response["responder"], bob_id)
 
