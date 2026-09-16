@@ -8,6 +8,7 @@ import {
 import CipherNode from '@mdip/cipher/node';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory';
 import WalletJsonMemory from '@mdip/keymaster/wallet/json-memory';
+import WalletWeb from '@mdip/keymaster/wallet/web';
 import { ExpectedExceptionError } from '@mdip/common/errors';
 import HeliaClient from '@mdip/ipfs/helia';
 import { MdipDocument } from "@mdip/gatekeeper/types";
@@ -135,6 +136,54 @@ describe('loadWallet', () => {
         const wallet2 = await keymaster.loadWallet();
 
         expect(wallet2).toStrictEqual(wallet1);
+    });
+
+    it('should persist a browser wallet directly and preserve it after rejected writes', async () => {
+        const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+        const storage = new Map<string, string>();
+        const localStorage = {
+            getItem: jest.fn((key: string) => storage.get(key) ?? null),
+            setItem: jest.fn((key: string, value: string) => { storage.set(key, value); }),
+        };
+        Object.defineProperty(globalThis, 'window', { configurable: true, value: { localStorage } });
+
+        try {
+            const browserWallet = new WalletWeb();
+            const options = { gatekeeper, wallet: browserWallet, cipher, passphrase: PASSPHRASE };
+            const browserKeymaster = new Keymaster(options);
+            const original = await browserKeymaster.loadWallet();
+            const reads = localStorage.getItem.mock.calls.length;
+
+            expect(await browserKeymaster.loadWallet()).toBe(original);
+            expect(localStorage.getItem).toHaveBeenCalledTimes(reads);
+            expect(localStorage.getItem).toHaveBeenCalledWith('mdip-keymaster');
+
+            const stored = await browserWallet.loadWallet();
+            expect(stored).toMatchObject({ version: 1, enc: expect.any(String) });
+            expect(stored).not.toHaveProperty('ids');
+            expect(await browserWallet.saveWallet(stored)).toBe(false);
+            await expect(browserKeymaster.newWallet()).rejects.toThrow('save wallet failed');
+            expect(await browserKeymaster.loadWallet()).toBe(original);
+            expect(await browserWallet.loadWallet()).toStrictEqual(stored);
+
+            const did = 'did:test:example';
+            await browserKeymaster.addName('saved', did);
+            const active = await browserKeymaster.loadWallet();
+            localStorage.setItem.mockImplementationOnce(() => { throw new Error('storage failed'); });
+
+            await expect(browserKeymaster.addName('rejected', did)).rejects.toThrow('storage failed');
+            expect(await browserKeymaster.loadWallet()).toBe(active);
+
+            const restarted = new Keymaster({ ...options, wallet: new WalletWeb('mdip-keymaster') });
+            expect(await restarted.loadWallet()).toStrictEqual(active);
+            expect(await restarted.listNames()).toStrictEqual({ saved: did });
+        } finally {
+            if (originalWindow) {
+                Object.defineProperty(globalThis, 'window', originalWindow);
+            } else {
+                Reflect.deleteProperty(globalThis, 'window');
+            }
+        }
     });
 
     it('should throw exception on load with incorrect passphrase', async () => {
