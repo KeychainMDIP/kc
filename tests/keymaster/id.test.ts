@@ -468,6 +468,47 @@ describe('recoverId', () => {
         expect(wallet.counter).toBe(1);
     });
 
+    it.each([
+        { account: 1, identities: 2, reset: true, nextAccount: 2 },
+        { account: 3, identities: 4, reset: true, nextAccount: 4 },
+        { account: 1, identities: 2, reset: false, nextAccount: 2 },
+        { account: 1, identities: 4, reset: false, nextAccount: 4 },
+    ])('should use account $nextAccount after recovering account $account (identities=$identities, reset=$reset)', async ({ account, identities, reset, nextAccount }) => {
+        for (let index = 0; index < identities; index++) {
+            await keymaster.createId(`ID${index}`);
+        }
+
+        const name = `ID${account}`;
+        const did = (await keymaster.loadWallet()).ids[name].did;
+        const originalDoc = await keymaster.resolveDID(did);
+        expect(await keymaster.backupId(name)).toBe(true);
+
+        if (reset) {
+            const mnemonic = await keymaster.decryptMnemonic();
+            await keymaster.newWallet(mnemonic, true);
+        } else {
+            await keymaster.removeId(name);
+        }
+
+        expect(await keymaster.recoverId(did)).toBe(name);
+        const recovered = await keymaster.loadWallet();
+        expect(recovered.ids[name]).toMatchObject({ did, account, index: 0 });
+        expect(recovered.current).toBe(name);
+        expect(recovered.counter).toBe(nextAccount);
+
+        const restarted = new Keymaster({ gatekeeper, wallet, cipher, passphrase: 'passphrase' });
+        expect(await restarted.loadWallet()).toStrictEqual(recovered);
+
+        const nextDid = await restarted.createId('Next');
+        const nextWallet = await restarted.loadWallet();
+        expect(nextWallet.ids.Next.account).toBe(nextAccount);
+        expect(nextWallet.counter).toBe(nextAccount + 1);
+
+        const nextDoc = await restarted.resolveDID(nextDid);
+        expect(nextDoc.didDocument!.verificationMethod![0].publicKeyJwk)
+            .not.toStrictEqual(originalDoc.didDocument!.verificationMethod![0].publicKeyJwk);
+    });
+
     it('should not overwrite an id with the same name', async () => {
         const did = await keymaster.createId('Bob');
         await keymaster.backupId();

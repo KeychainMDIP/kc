@@ -1508,7 +1508,7 @@ export default class Keymaster implements KeymasterInterface {
                 }
                 wallet.ids[data.name] = data.id;
                 wallet.current = data.name;
-                wallet.counter += 1;
+                wallet.counter = Math.max(wallet.counter, data.id.account + 1);
             });
 
             return data.name;
