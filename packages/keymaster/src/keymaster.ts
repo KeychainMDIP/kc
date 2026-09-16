@@ -1737,12 +1737,16 @@ export default class Keymaster implements KeymasterInterface {
             throw new InvalidParameterError('credential');
         }
 
+        const id = await this.fetchIdInfo();
+        if (credential.issuer !== id.did) {
+            throw new InvalidParameterError('credential.issuer');
+        }
+
         delete credential.signature;
-        const signed = await this.addSignature(credential);
+        const signed = await this.addSignature(credential, id.did);
         const msg = JSON.stringify(signed);
 
-        const id = await this.fetchIdInfo();
-        const senderKeypair = await this.fetchKeyPair();
+        const senderKeypair = await this.fetchKeyPair(id.did);
         if (!senderKeypair) {
             throw new KeymasterError('No valid sender keypair');
         }
