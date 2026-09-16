@@ -6,7 +6,6 @@ import CipherWeb from '@mdip/cipher/web';
 import Keymaster from '@mdip/keymaster';
 import SearchClient from '@mdip/keymaster/search';
 import WalletWeb from '@mdip/keymaster/wallet/web';
-import WalletCache from '@mdip/keymaster/wallet/cache';
 import WalletJsonMemory from "@mdip/keymaster/wallet/json-memory";
 import { isV1WithEnc, isLegacyV0 } from '@mdip/keymaster/wallet/typeGuards';
 import type { KeymasterInterface, StoredWallet, WalletBase } from '@mdip/keymaster/types';
@@ -105,8 +104,7 @@ function App() {
 
     async function rebuildKeymaster(passphrase: string) {
         const walletWeb = new WalletWeb();
-        const walletCached = new WalletCache(walletWeb);
-        await buildKeymaster(walletCached, passphrase);
+        await buildKeymaster(walletWeb, passphrase);
     }
 
     async function handlePassphraseSubmit(passphrase: string) {

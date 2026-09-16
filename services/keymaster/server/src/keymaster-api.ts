@@ -13,7 +13,6 @@ import WalletRedis from '@mdip/keymaster/wallet/redis';
 import WalletMongo from '@mdip/keymaster/wallet/mongo';
 import WalletSQLite from '@mdip/keymaster/wallet/sqlite';
 import WalletPostgres from '@mdip/keymaster/wallet/postgres';
-import WalletCache from '@mdip/keymaster/wallet/cache';
 import CipherNode from '@mdip/cipher/node';
 import { InvalidParameterError } from '@mdip/common/errors';
 import { childLogger } from '@mdip/common/logger';
@@ -6187,10 +6186,6 @@ async function initWallet() {
         wallet = new WalletJson();
     } else {
         throw new InvalidParameterError(`db=${config.db}`);
-    }
-
-    if (config.walletCache) {
-        wallet = new WalletCache(wallet);
     }
 
     return wallet;
