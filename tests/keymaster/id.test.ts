@@ -354,17 +354,71 @@ describe('removeId', () => {
 });
 
 describe('renameId', () => {
-    it('should rename an existing ID', async () => {
+    it.each(['Alice', ' Alice '])('should rename an existing ID to %p', async (newName) => {
         const name1 = 'Bob';
         const name2 = 'Alice';
         const did = await keymaster.createId(name1);
-        const ok = await keymaster.renameId(name1, name2);
+        const ok = await keymaster.renameId(name1, newName);
 
         const wallet = await keymaster.loadWallet();
 
         expect(ok).toBe(true);
         expect(wallet.ids[name2].did).toBe(did);
+        expect(wallet.ids).not.toHaveProperty(name1);
         expect(wallet.current).toBe(name2);
+        expect(await keymaster.lookupDID(name2)).toBe(did);
+        expect((await keymaster.fetchIdInfo(name2)).did).toBe(did);
+    });
+
+    it.each(['friend', ' friend ', 'Bob', ' Bob '])('should reject an existing alias or identity name (%p) without changing the wallet', async (name) => {
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        await keymaster.addName('friend', bob);
+        await keymaster.setCurrentId('Alice');
+        const before = JSON.stringify(await keymaster.loadWallet());
+        const stored = await wallet.loadWallet();
+
+        await expect(keymaster.renameId('Alice', name)).rejects.toThrow('Invalid parameter: name already used');
+
+        expect(JSON.stringify(await keymaster.loadWallet())).toBe(before);
+        expect(await wallet.loadWallet()).toStrictEqual(stored);
+        expect((await keymaster.fetchIdInfo('Alice')).did).toBe(alice);
+        expect(await keymaster.lookupDID('Alice')).toBe(alice);
+        expect(await keymaster.lookupDID('friend')).toBe(bob);
+    });
+
+    it.each(['Alice', 'Bob'])('should preserve unrelated aliases and selection when renaming with %s selected', async (current) => {
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        await keymaster.addName('friend', bob);
+        await keymaster.setCurrentId(current);
+
+        expect(await keymaster.renameId('Alice', 'Carol')).toBe(true);
+
+        const restarted = new Keymaster({ gatekeeper, wallet, cipher, passphrase: 'passphrase' });
+        expect(await restarted.listIds()).toStrictEqual(['Bob', 'Carol']);
+        expect(await restarted.listNames()).toStrictEqual({ friend: bob });
+        expect(await restarted.getCurrentId()).toBe(current === 'Alice' ? 'Carol' : 'Bob');
+        expect(await restarted.lookupDID('Carol')).toBe(alice);
+        expect((await restarted.fetchIdInfo('Carol')).did).toBe(alice);
+        expect(await restarted.lookupDID('friend')).toBe(bob);
+    });
+
+    it('should reject a rename when an earlier queued mutation claims the name', async () => {
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        const results = await Promise.allSettled([
+            keymaster.addName('friend', bob),
+            keymaster.renameId('Alice', 'friend'),
+        ]);
+
+        expect(results[0]).toStrictEqual({ status: 'fulfilled', value: true });
+        expect(results[1]).toMatchObject({
+            status: 'rejected',
+            reason: { message: 'Invalid parameter: name already used' },
+        });
+        expect((await keymaster.fetchIdInfo('Alice')).did).toBe(alice);
+        expect(await keymaster.lookupDID('friend')).toBe(bob);
     });
 
     it('should not rename from an non-existent ID', async () => {

@@ -1437,13 +1437,10 @@ export default class Keymaster implements KeymasterInterface {
         name: string
     ): Promise<boolean> {
         await this.mutateWallet((wallet) => {
-            name = this.validateName(name);
+            name = this.validateName(name, wallet);
 
             if (!(id in wallet.ids)) {
                 throw new UnknownIDError();
-            }
-            if (name in wallet.ids) {
-                throw new InvalidParameterError('name already used');
             }
 
             wallet.ids[name] = wallet.ids[id];
