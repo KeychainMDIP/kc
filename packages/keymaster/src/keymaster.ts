@@ -1716,6 +1716,53 @@ export default class Keymaster implements KeymasterInterface {
         return this.verifySignature(vc);
     }
 
+    private credentialTimestamp(value: unknown): number {
+        if (typeof value !== 'string') {
+            return NaN;
+        }
+
+        // Require an XSD dateTimeStamp with an explicit timezone.
+        const match = /^(-?(?:[1-9]\d{3,}|0\d{3}))-(\d{2})-(\d{2})T(\d{2}):([0-5]\d):([0-5]\d)(?:\.(\d+))?(Z|[+-]\d{2}:[0-5]\d)$/.exec(value);
+        if (!match || match[0] !== value) {
+            return NaN;
+        }
+
+        const [, year, month, day, hour, minute, second, fraction = '', zone] = match;
+        if (Number(hour) > 24 || (hour === '24' && (minute !== '00' || second !== '00' || /[1-9]/.test(fraction)))) {
+            return NaN;
+        }
+
+        const date = new Date(0);
+        date.setUTCFullYear(Number(year), Number(month) - 1, Number(day));
+        if (date.getUTCDate() !== Number(day) || date.getUTCMonth() !== Number(month) - 1) {
+            return NaN;
+        }
+
+        date.setUTCHours(Number(hour), Number(minute), Number(second), Number(fraction.slice(0, 3).padEnd(3, '0')));
+        let offset = 0;
+        if (zone !== 'Z') {
+            offset = (Number(zone.slice(1, 3)) * 60 + Number(zone.slice(4, 6))) * 60_000;
+            if (offset > 14 * 60 * 60_000) {
+                return NaN;
+            }
+            if (zone[0] === '-') {
+                offset = -offset;
+            }
+        }
+
+        // Round up to the first integer millisecond at or after the boundary.
+        // This preserves both comparisons against the integer Date.now() clock.
+        return date.getTime() - offset + Number(/[1-9]/.test(fraction.slice(3)));
+    }
+
+    private isCredentialCurrent(credential: VerifiableCredential, now: number): boolean {
+        const { validFrom, validUntil } = credential;
+
+        // Legacy credentials use null for an absent validity bound.
+        return (validFrom == null || this.credentialTimestamp(validFrom) <= now)
+            && (validUntil == null || now < this.credentialTimestamp(validUntil));
+    }
+
     async updateCredential(
         did: string,
         credential: VerifiableCredential
@@ -1926,7 +1973,8 @@ export default class Keymaster implements KeymasterInterface {
         credential: {
             schema: string;
             issuers?: string[]
-        }
+        },
+        now: number
     ): Promise<string | undefined> {
         const id = await this.fetchIdInfo();
 
@@ -1957,7 +2005,10 @@ export default class Keymaster implements KeymasterInterface {
                     continue;
                 }
 
-                // TBD test for VC expiry too
+                if (!this.isCredentialCurrent(doc, now)) {
+                    continue;
+                }
+
                 return did;
             }
             catch {
@@ -2016,10 +2067,11 @@ export default class Keymaster implements KeymasterInterface {
         // TBD check challenge isValid for expired?
 
         const matches = [];
+        const now = Date.now();
 
         if (challenge.credentials) {
             for (let credential of challenge.credentials) {
-                const vc = await this.findMatchingCredential(credential);
+                const vc = await this.findMatchingCredential(credential, now);
 
                 if (vc) {
                     matches.push(vc);
@@ -2123,6 +2175,7 @@ export default class Keymaster implements KeymasterInterface {
         const requestedCredentials = challenge.credentials ?? [];
         const matchedPresentations = new Set<string>();
         const candidates: { vp: VerifiableCredential; credentialIndexes: number[] }[] = [];
+        const now = Date.now();
 
         for (let credential of response.credentials) {
             if (matchedPresentations.has(credential.vp)) {
@@ -2163,6 +2216,10 @@ export default class Keymaster implements KeymasterInterface {
             }
 
             if (!await this.verifyCredentialSignature(vp)) {
+                continue;
+            }
+
+            if (!this.isCredentialCurrent(vp, now)) {
                 continue;
             }
 
