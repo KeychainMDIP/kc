@@ -1008,7 +1008,7 @@ describe('resolveDID', () => {
 
     it('should resolve DID', async () => {
         nock(KeymasterURL)
-            .get(`${Endpoints.did}/${mockDID}`)
+            .get(`${Endpoints.did}/${encodeURIComponent(mockDID)}`)
             .reply(200, { docs: mockDocument });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -1019,7 +1019,7 @@ describe('resolveDID', () => {
 
     it('should resolve specified DID', async () => {
         nock(KeymasterURL)
-            .get(`${Endpoints.did}/${mockDID}?confirm=true`)
+            .get(`${Endpoints.did}/${encodeURIComponent(mockDID)}?confirm=true`)
             .reply(200, { docs: mockDocument });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -1030,7 +1030,7 @@ describe('resolveDID', () => {
 
     it('should throw exception on resolveDID server error', async () => {
         nock(KeymasterURL)
-            .get(`${Endpoints.did}/${mockDID}`)
+            .get(`${Endpoints.did}/${encodeURIComponent(mockDID)}`)
             .reply(500, ServerError);
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -1050,7 +1050,7 @@ describe('revokeDID', () => {
 
     it('should revoke DID', async () => {
         nock(KeymasterURL)
-            .delete(`${Endpoints.did}/${mockDID}`)
+            .delete(`${Endpoints.did}/${encodeURIComponent(mockDID)}`)
             .reply(200, { ok: true });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -1061,7 +1061,7 @@ describe('revokeDID', () => {
 
     it('should throw exception on revokeDID server error', async () => {
         nock(KeymasterURL)
-            .delete(`${Endpoints.did}/${mockDID}`)
+            .delete(`${Endpoints.did}/${encodeURIComponent(mockDID)}`)
             .reply(500, ServerError);
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -1223,7 +1223,7 @@ describe('cloneAsset', () => {
 
     it('should clone asset', async () => {
         nock(KeymasterURL)
-            .post(`${Endpoints.assets}/${mockDID}/clone`)
+            .post(`${Endpoints.assets}/${encodeURIComponent(mockDID)}/clone`)
             .reply(200, { did: cloneDID });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -1234,7 +1234,7 @@ describe('cloneAsset', () => {
 
     it('should throw exception on cloneAsset server error', async () => {
         nock(KeymasterURL)
-            .post(`${Endpoints.assets}/${mockDID}/clone`)
+            .post(`${Endpoints.assets}/${encodeURIComponent(mockDID)}/clone`)
             .reply(500, ServerError);
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -1255,7 +1255,7 @@ describe('transferAsset', () => {
 
     it('should transfer asset', async () => {
         nock(KeymasterURL)
-            .post(`${Endpoints.assets}/${mockDID}/transfer`)
+            .post(`${Endpoints.assets}/${encodeURIComponent(mockDID)}/transfer`)
             .reply(200, { ok: true });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -1266,7 +1266,7 @@ describe('transferAsset', () => {
 
     it('should throw exception on transferAsset server error', async () => {
         nock(KeymasterURL)
-            .post(`${Endpoints.assets}/${mockDID}/transfer`)
+            .post(`${Endpoints.assets}/${encodeURIComponent(mockDID)}/transfer`)
             .reply(500, ServerError);
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -1801,7 +1801,7 @@ describe('createTemplate', () => {
 
     it('should create a template from the schema', async () => {
         nock(KeymasterURL)
-            .post(`${Endpoints.schemas}/${mockDID}/template`)
+            .post(`${Endpoints.schemas}/${encodeURIComponent(mockDID)}/template`)
             .reply(200, { template: mockTemplate });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -1812,7 +1812,7 @@ describe('createTemplate', () => {
 
     it('should throw exception on createTemplate server error', async () => {
         nock(KeymasterURL)
-            .post(`${Endpoints.schemas}/${mockDID}/template`)
+            .post(`${Endpoints.schemas}/${encodeURIComponent(mockDID)}/template`)
             .reply(500, ServerError);
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -1946,7 +1946,7 @@ describe('sendCredential', () => {
 
     it('should send credential DID', async () => {
         nock(KeymasterURL)
-            .post(`${Endpoints.credentials_issued}/${mockCredential}/send`)
+            .post(`${Endpoints.credentials_issued}/${encodeURIComponent(mockCredential)}/send`)
             .reply(200, { did: mockNotice });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -1957,7 +1957,7 @@ describe('sendCredential', () => {
 
     it('should throw exception on sendCredential server error', async () => {
         nock(KeymasterURL)
-            .post(`${Endpoints.credentials_issued}/${mockCredential}/send`)
+            .post(`${Endpoints.credentials_issued}/${encodeURIComponent(mockCredential)}/send`)
             .reply(500, ServerError);
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -2554,7 +2554,7 @@ describe('updateImage', () => {
 
     it('should create an image asset', async () => {
         nock(KeymasterURL)
-            .put(`${Endpoints.images}/${mockDID}`)
+            .put(`${Endpoints.images}/${encodeURIComponent(mockDID)}`)
             .reply(200, { ok: true });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -2565,7 +2565,7 @@ describe('updateImage', () => {
 
     it('should throw exception on updateImage server error', async () => {
         nock(KeymasterURL)
-            .put(`${Endpoints.images}/${mockDID}`)
+            .put(`${Endpoints.images}/${encodeURIComponent(mockDID)}`)
             .reply(500, ServerError);
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -2681,7 +2681,7 @@ describe('updateDocument', () => {
 
     it('should update a document asset', async () => {
         nock(KeymasterURL)
-            .put(`${Endpoints.documents}/${mockDID}`)
+            .put(`${Endpoints.documents}/${encodeURIComponent(mockDID)}`)
             .reply(200, { ok: true });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -2692,7 +2692,7 @@ describe('updateDocument', () => {
 
     it('should throw exception on updateDocument server error', async () => {
         nock(KeymasterURL)
-            .put(`${Endpoints.documents}/${mockDID}`)
+            .put(`${Endpoints.documents}/${encodeURIComponent(mockDID)}`)
             .reply(500, ServerError);
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -2915,7 +2915,7 @@ describe('removeGroupVaultMember', () => {
 
     it('should remove vault member', async () => {
         nock(KeymasterURL)
-            .delete(`${Endpoints.groupVaults}/${mockVaultId}/members/${mockMember}`)
+            .delete(`${Endpoints.groupVaults}/${mockVaultId}/members/${encodeURIComponent(mockMember)}`)
             .reply(200, { ok: true });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -2926,7 +2926,7 @@ describe('removeGroupVaultMember', () => {
 
     it('should throw exception on removeGroupVaultMember server error', async () => {
         nock(KeymasterURL)
-            .delete(`${Endpoints.groupVaults}/${mockVaultId}/members/${mockMember}`)
+            .delete(`${Endpoints.groupVaults}/${mockVaultId}/members/${encodeURIComponent(mockMember)}`)
             .reply(500, ServerError);
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -3187,7 +3187,7 @@ describe('createDmail', () => {
 describe('updateDmail', () => {
     it('should update dmail DID', async () => {
         nock(KeymasterURL)
-            .put(`${Endpoints.dmail}/${mockDmailId}`)
+            .put(`${Endpoints.dmail}/${encodeURIComponent(mockDmailId)}`)
             .reply(200, { ok: true });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -3198,7 +3198,7 @@ describe('updateDmail', () => {
 
     it('should throw exception on updateDmail server error', async () => {
         nock(KeymasterURL)
-            .put(`${Endpoints.dmail}/${mockDmailId}`)
+            .put(`${Endpoints.dmail}/${encodeURIComponent(mockDmailId)}`)
             .reply(500, ServerError);
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -3218,7 +3218,7 @@ describe('sendDmail', () => {
 
     it('should send dmail DID', async () => {
         nock(KeymasterURL)
-            .post(`${Endpoints.dmail}/${mockDmailId}/send`)
+            .post(`${Endpoints.dmail}/${encodeURIComponent(mockDmailId)}/send`)
             .reply(200, { did: mockNotice });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -3229,7 +3229,7 @@ describe('sendDmail', () => {
 
     it('should throw exception on sendDmail server error', async () => {
         nock(KeymasterURL)
-            .post(`${Endpoints.dmail}/${mockDmailId}/send`)
+            .post(`${Endpoints.dmail}/${encodeURIComponent(mockDmailId)}/send`)
             .reply(500, ServerError);
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -3247,7 +3247,7 @@ describe('sendDmail', () => {
 describe('fileDmail', () => {
     it('should file dmail DID', async () => {
         nock(KeymasterURL)
-            .post(`${Endpoints.dmail}/${mockDmailId}/file`)
+            .post(`${Endpoints.dmail}/${encodeURIComponent(mockDmailId)}/file`)
             .reply(200, { ok: true });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -3258,7 +3258,7 @@ describe('fileDmail', () => {
 
     it('should throw exception on fileDmail server error', async () => {
         nock(KeymasterURL)
-            .post(`${Endpoints.dmail}/${mockDmailId}/file`)
+            .post(`${Endpoints.dmail}/${encodeURIComponent(mockDmailId)}/file`)
             .reply(500, ServerError);
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -3276,7 +3276,7 @@ describe('fileDmail', () => {
 describe('removeDmail', () => {
     it('should remove dmail DID', async () => {
         nock(KeymasterURL)
-            .delete(`${Endpoints.dmail}/${mockDmailId}`)
+            .delete(`${Endpoints.dmail}/${encodeURIComponent(mockDmailId)}`)
             .reply(200, { ok: true });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -3287,7 +3287,7 @@ describe('removeDmail', () => {
 
     it('should throw exception on removeDmail server error', async () => {
         nock(KeymasterURL)
-            .delete(`${Endpoints.dmail}/${mockDmailId}`)
+            .delete(`${Endpoints.dmail}/${encodeURIComponent(mockDmailId)}`)
             .reply(500, ServerError);
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -3499,7 +3499,7 @@ describe('importDmail', () => {
 describe('getDmailMessage', () => {
     it('should get message', async () => {
         nock(KeymasterURL)
-            .get(`${Endpoints.dmail}/${mockDmailId}`)
+            .get(`${Endpoints.dmail}/${encodeURIComponent(mockDmailId)}`)
             .reply(200, { message: mockDmail });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -3511,7 +3511,7 @@ describe('getDmailMessage', () => {
     it('should get message at a version time', async () => {
         const options = { versionTime: '2026-06-01T00:00:00.000Z' };
         nock(KeymasterURL)
-            .get(`${Endpoints.dmail}/${mockDmailId}`)
+            .get(`${Endpoints.dmail}/${encodeURIComponent(mockDmailId)}`)
             .query(options)
             .reply(200, { message: mockDmail });
 
@@ -3523,7 +3523,7 @@ describe('getDmailMessage', () => {
 
     it('should throw exception on getDmailMessage server error', async () => {
         nock(KeymasterURL)
-            .get(`${Endpoints.dmail}/${mockDmailId}`)
+            .get(`${Endpoints.dmail}/${encodeURIComponent(mockDmailId)}`)
             .reply(500, ServerError);
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -3604,7 +3604,7 @@ describe('createNotice', () => {
 describe('updateNotice', () => {
     it('should update notice DID', async () => {
         nock(KeymasterURL)
-            .put(`${Endpoints.notices}/${mockNoticeId}`)
+            .put(`${Endpoints.notices}/${encodeURIComponent(mockNoticeId)}`)
             .reply(200, { ok: true });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -3615,7 +3615,7 @@ describe('updateNotice', () => {
 
     it('should throw exception on updateNotice server error', async () => {
         nock(KeymasterURL)
-            .put(`${Endpoints.notices}/${mockNoticeId}`)
+            .put(`${Endpoints.notices}/${encodeURIComponent(mockNoticeId)}`)
             .reply(500, ServerError);
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
