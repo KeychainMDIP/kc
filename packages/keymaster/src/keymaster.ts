@@ -2436,8 +2436,22 @@ export default class Keymaster implements KeymasterInterface {
         groupId: string,
         memberId?: string
     ): Promise<boolean> {
+        return this.testGroupRecursive(groupId, memberId, new Set<string>());
+    }
+
+    private async testGroupRecursive(
+        groupId: string,
+        memberId: string | undefined,
+        visited: Set<string>
+    ): Promise<boolean> {
         try {
-            const group = await this.getGroup(groupId);
+            const groupDID = await this.lookupDID(groupId);
+            if (visited.has(groupDID)) {
+                return false;
+            }
+            visited.add(groupDID);
+
+            const group = await this.getGroup(groupDID);
 
             if (!group) {
                 return false;
@@ -2452,7 +2466,7 @@ export default class Keymaster implements KeymasterInterface {
 
             if (!isMember) {
                 for (const did of group.members) {
-                    isMember = await this.testGroup(did, didMember);
+                    isMember = await this.testGroupRecursive(did, didMember, visited);
 
                     if (isMember) {
                         break;
