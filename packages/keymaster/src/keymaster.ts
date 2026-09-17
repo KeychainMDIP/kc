@@ -3627,16 +3627,19 @@ export default class Keymaster implements KeymasterInterface {
             return false; // Not for this user
         }
 
+        let tags: string[] = [];
+
         for (const noticeDID of asset.notice.dids) {
             const dmail = await this.getDmailMessage(noticeDID);
 
             if (dmail) {
                 const imported = await this.importDmail(noticeDID);
 
-                if (imported) {
-                    await this.addToNotices(did, [NoticeTags.DMAIL]);
+                if (!imported) {
+                    return false;
                 }
 
+                tags = [NoticeTags.DMAIL];
                 continue;
             }
 
@@ -3648,10 +3651,11 @@ export default class Keymaster implements KeymasterInterface {
                     imported = await this.updatePoll(noticeDID);
                 } catch { }
 
-                if (imported) {
-                    await this.addToNotices(did, [NoticeTags.BALLOT]);
+                if (!imported) {
+                    return false;
                 }
 
+                tags = [NoticeTags.BALLOT];
                 continue;
             }
 
@@ -3660,9 +3664,11 @@ export default class Keymaster implements KeymasterInterface {
             if (poll) {
                 const names = await this.listNames();
                 if (!Object.values(names).includes(noticeDID)) {
-                    await this.addUnnamedPoll(noticeDID);
+                    if (!await this.addUnnamedPoll(noticeDID)) {
+                        return false;
+                    }
                 }
-                await this.addToNotices(did, [NoticeTags.POLL]);
+                tags = [NoticeTags.POLL];
 
                 continue;
             }
@@ -3670,11 +3676,15 @@ export default class Keymaster implements KeymasterInterface {
             const isCredential = await this.acceptCredential(noticeDID);
 
             if (isCredential) {
-                await this.addToNotices(did, [NoticeTags.CREDENTIAL]);
+                tags = [NoticeTags.CREDENTIAL];
                 continue;
             }
 
             return false;
+        }
+
+        if (tags.length > 0) {
+            await this.addToNotices(did, tags);
         }
 
         return true;
@@ -3765,11 +3775,13 @@ export default class Keymaster implements KeymasterInterface {
         return payload && typeof payload.poll === "string" && typeof payload.vote === "number";
     }
 
-    private async addUnnamedPoll(did: string): Promise<void> {
+    private async addUnnamedPoll(did: string): Promise<boolean> {
         const fallbackName = did.slice(-32);
         try {
-            await this.addName(fallbackName, did);
-        } catch { }
+            return await this.addName(fallbackName, did);
+        } catch {
+            return false;
+        }
     }
 
     private async getHDKeyFromCacheOrMnemonic(wallet: WalletFile) {
