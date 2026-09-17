@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import Gatekeeper from '@mdip/gatekeeper';
 import Keymaster from '@mdip/keymaster';
 import CipherNode from '@mdip/cipher/node';
@@ -286,5 +287,27 @@ describe('listNames', () => {
         const names = await keymaster.listNames();
 
         expect(Object.keys(names).length).toBe(0);
+    });
+
+    it('should return independent aliases when the identity map is missing', async () => {
+        const bob = await keymaster.createId('Bob');
+        await keymaster.addName('friend', bob);
+        const currentWallet = await keymaster.loadWallet();
+        const loadWallet = jest.spyOn(keymaster, 'loadWallet').mockResolvedValueOnce({
+            ...currentWallet,
+            // @ts-expect-error Exercise the defensive fallback for a missing identity map.
+            ids: undefined,
+        });
+
+        try {
+            const names = await keymaster.listNames({ includeIDs: true });
+            expect(names).toStrictEqual({ friend: bob });
+
+            delete names.friend;
+            expect(currentWallet.names).toStrictEqual({ friend: bob });
+        }
+        finally {
+            loadWallet.mockRestore();
+        }
     });
 });
