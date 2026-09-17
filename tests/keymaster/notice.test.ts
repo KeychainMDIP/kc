@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import Gatekeeper from '@mdip/gatekeeper';
 import Keymaster, { DmailTags, NoticeTags } from '@mdip/keymaster';
 import CipherNode from '@mdip/cipher/node';
@@ -188,6 +189,194 @@ describe('verifyDIDList', () => {
 });
 
 describe('importNotice', () => {
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    async function createCredentialNotice() {
+        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const schema = await keymaster.createSchema();
+        const bound = await keymaster.bindCredential(schema, alice);
+        const first = await keymaster.issueCredential(bound);
+        const second = await keymaster.issueCredential(bound);
+        const notice = await keymaster.createNotice({ to: [alice], dids: [first, second] });
+        await keymaster.setCurrentId('Alice');
+        return { first, second, notice };
+    }
+
+    it('should retry remaining credentials after a resolution failure and restart', async () => {
+        const { first, second, notice } = await createCredentialNotice();
+        const resolveDID = gatekeeper.resolveDID.bind(gatekeeper);
+        const failure = new Error('ECONNREFUSED');
+        const resolve = jest.spyOn(gatekeeper, 'resolveDID').mockImplementation(async (did, options) => {
+            if (did === second) {
+                throw failure;
+            }
+            return resolveDID(did, options);
+        });
+
+        await expect(keymaster.importNotice(notice)).rejects.toThrow(failure);
+        expect(await keymaster.listCredentials()).toStrictEqual([first]);
+        expect((await keymaster.fetchIdInfo()).notices?.[notice]).toBeUndefined();
+
+        resolve.mockRestore();
+        keymaster = new Keymaster({ gatekeeper, wallet, cipher, search, passphrase: 'passphrase' });
+        expect((await keymaster.fetchIdInfo()).notices?.[notice]).toBeUndefined();
+        await expect(keymaster.importNotice(notice)).resolves.toBe(true);
+        expect(await keymaster.listCredentials()).toStrictEqual([first, second]);
+        expect((await keymaster.fetchIdInfo()).notices?.[notice].tags).toStrictEqual([NoticeTags.CREDENTIAL]);
+
+        const accept = jest.spyOn(keymaster, 'acceptCredential');
+        await expect(keymaster.importNotice(notice)).resolves.toBe(true);
+        expect(accept).not.toHaveBeenCalled();
+    });
+
+    it('should retry a notice when a later credential was not accepted', async () => {
+        const { first, second, notice } = await createCredentialNotice();
+        const acceptCredential = keymaster.acceptCredential.bind(keymaster);
+        const accept = jest.spyOn(keymaster, 'acceptCredential').mockImplementation(async did =>
+            did === second ? false : acceptCredential(did));
+
+        await expect(keymaster.importNotice(notice)).resolves.toBe(false);
+        expect(await keymaster.listCredentials()).toStrictEqual([first]);
+        expect((await keymaster.fetchIdInfo()).notices?.[notice]).toBeUndefined();
+
+        accept.mockRestore();
+        await expect(keymaster.importNotice(notice)).resolves.toBe(true);
+        expect(await keymaster.listCredentials()).toStrictEqual([first, second]);
+    });
+
+    it.each([2, 3])('should remain retryable when wallet save %s fails', async failAt => {
+        const { first, second, notice } = await createCredentialNotice();
+        const saveWallet = wallet.saveWallet.bind(wallet);
+        const failure = new Error('Wallet storage unavailable');
+        let saves = 0;
+        const save = jest.spyOn(wallet, 'saveWallet').mockImplementation(async (candidate, overwrite) => {
+            if (++saves === failAt) {
+                throw failure;
+            }
+            return saveWallet(candidate, overwrite);
+        });
+
+        await expect(keymaster.importNotice(notice)).rejects.toThrow(failure);
+        expect((await keymaster.fetchIdInfo()).notices?.[notice]).toBeUndefined();
+
+        save.mockRestore();
+        keymaster = new Keymaster({ gatekeeper, wallet, cipher, search, passphrase: 'passphrase' });
+        expect(await keymaster.listCredentials()).toStrictEqual(failAt === 2 ? [first] : [first, second]);
+        expect((await keymaster.fetchIdInfo()).notices?.[notice]).toBeUndefined();
+        await expect(keymaster.importNotice(notice)).resolves.toBe(true);
+        expect(await keymaster.listCredentials()).toStrictEqual([first, second]);
+        expect((await keymaster.fetchIdInfo()).notices?.[notice].tags).toStrictEqual([NoticeTags.CREDENTIAL]);
+    });
+
+    it('should let search retry a partially imported notice', async () => {
+        const { first, second, notice } = await createCredentialNotice();
+        await search.setResults([notice]);
+        const acceptCredential = keymaster.acceptCredential.bind(keymaster);
+        const accept = jest.spyOn(keymaster, 'acceptCredential').mockImplementation(async did =>
+            did === second ? false : acceptCredential(did));
+
+        await expect(keymaster.searchNotices()).resolves.toBe(true);
+        expect(await keymaster.listCredentials()).toStrictEqual([first]);
+        expect((await keymaster.fetchIdInfo()).notices?.[notice]).toBeUndefined();
+
+        accept.mockRestore();
+        await expect(keymaster.searchNotices()).resolves.toBe(true);
+        expect(await keymaster.listCredentials()).toStrictEqual([first, second]);
+        expect((await keymaster.fetchIdInfo()).notices?.[notice].tags).toStrictEqual([NoticeTags.CREDENTIAL]);
+    });
+
+    it('should not complete a notice when a DMail import returns false', async () => {
+        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const dmail = await keymaster.createDmail({ to: [alice], cc: [], subject: 'Notice', body: 'Message' });
+        const notice = await keymaster.createNotice({ to: [alice], dids: [dmail] });
+        await keymaster.setCurrentId('Alice');
+        jest.spyOn(keymaster, 'importDmail').mockResolvedValueOnce(false);
+
+        await expect(keymaster.importNotice(notice)).resolves.toBe(false);
+        expect((await keymaster.fetchIdInfo()).notices?.[notice]).toBeUndefined();
+        await expect(keymaster.importNotice(notice)).resolves.toBe(true);
+        expect((await keymaster.fetchIdInfo()).dmail?.[dmail]).toBeDefined();
+        expect((await keymaster.fetchIdInfo()).notices?.[notice].tags).toStrictEqual([NoticeTags.DMAIL]);
+    });
+
+    it.each(['false', 'throw'])('should retry a ballot import that fails with %s', async failure => {
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        const roster = await keymaster.createGroup('PollGroup');
+        await keymaster.addGroupMember(roster, alice);
+        const poll = await keymaster.createPoll({ ...await keymaster.pollTemplate(), roster });
+        await keymaster.setCurrentId('Alice');
+        const ballot = await keymaster.votePoll(poll, 1);
+        const notice = await keymaster.createNotice({ to: [bob], dids: [ballot] });
+        await keymaster.setCurrentId('Bob');
+        const update = jest.spyOn(keymaster, 'updatePoll');
+        if (failure === 'throw') {
+            update.mockRejectedValueOnce(new Error('Temporary update failure'));
+        } else {
+            update.mockResolvedValueOnce(false);
+        }
+
+        await expect(keymaster.importNotice(notice)).resolves.toBe(false);
+        expect((await keymaster.fetchIdInfo()).notices?.[notice]).toBeUndefined();
+        await expect(keymaster.importNotice(notice)).resolves.toBe(true);
+        expect((await keymaster.getPoll(poll))?.ballots?.[alice].ballot).toBe(ballot);
+        expect((await keymaster.fetchIdInfo()).notices?.[notice].tags).toStrictEqual([NoticeTags.BALLOT]);
+    });
+
+    it('should not complete a poll notice when saving its alias fails', async () => {
+        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const roster = await keymaster.createGroup('PollGroup');
+        await keymaster.addGroupMember(roster, alice);
+        const poll = await keymaster.createPoll({ ...await keymaster.pollTemplate(), roster });
+        const notice = await keymaster.createNotice({ to: [alice], dids: [poll] });
+        await keymaster.setCurrentId('Alice');
+        jest.spyOn(wallet, 'saveWallet').mockRejectedValueOnce(new Error('Wallet storage unavailable'));
+
+        await expect(keymaster.importNotice(notice)).resolves.toBe(false);
+        expect((await keymaster.fetchIdInfo()).notices?.[notice]).toBeUndefined();
+        await expect(keymaster.importNotice(notice)).resolves.toBe(true);
+        expect(Object.values(await keymaster.listNames())).toContain(poll);
+        expect((await keymaster.fetchIdInfo()).notices?.[notice].tags).toStrictEqual([NoticeTags.POLL]);
+    });
+
+    it('should retain a poll alias while retrying later items in a mixed notice', async () => {
+        const { first, second, notice } = await createCredentialNotice();
+        const alice = (await keymaster.fetchIdInfo()).did;
+        const roster = await keymaster.createGroup('PollGroup');
+        await keymaster.addGroupMember(roster, alice);
+        const poll = await keymaster.createPoll({ ...await keymaster.pollTemplate(), roster });
+        await keymaster.updateNotice(notice, { to: [alice], dids: [poll, first, second] });
+        const acceptCredential = keymaster.acceptCredential.bind(keymaster);
+        const accept = jest.spyOn(keymaster, 'acceptCredential').mockImplementation(async did =>
+            did === second ? false : acceptCredential(did));
+        const addName = jest.spyOn(keymaster, 'addName');
+        const recordNotice = jest.spyOn(keymaster, 'addToNotices');
+
+        await expect(keymaster.importNotice(notice)).resolves.toBe(false);
+        expect(Object.values(await keymaster.listNames())).toContain(poll);
+        expect(recordNotice).not.toHaveBeenCalled();
+
+        accept.mockRestore();
+        await expect(keymaster.importNotice(notice)).resolves.toBe(true);
+        expect(addName).toHaveBeenCalledTimes(1);
+        expect(recordNotice).toHaveBeenCalledTimes(1);
+        expect(recordNotice).toHaveBeenCalledWith(notice, [NoticeTags.CREDENTIAL]);
+        expect(await keymaster.listCredentials()).toStrictEqual([first, second]);
+    });
+
+    it('should leave a notice with no items unrecorded', async () => {
+        const alice = await keymaster.createId('Alice');
+        const notice = await keymaster.createAsset({ notice: { to: [alice], dids: [] } });
+
+        await expect(keymaster.importNotice(notice)).resolves.toBe(true);
+        expect((await keymaster.fetchIdInfo()).notices?.[notice]).toBeUndefined();
+    });
+
     it('should import a dmail notice', async () => {
         const alice = await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
