@@ -126,6 +126,205 @@ describe('createResponse', () => {
     });
 });
 
+describe('credential validity periods', () => {
+    const now = Date.parse('2030-06-15T12:00:00.000Z');
+    const past = new Date(now - 60_000).toISOString();
+    const current = new Date(now).toISOString();
+    const future = new Date(now + 60_000).toISOString();
+    const cases: [string, Record<string, unknown>, boolean][] = [
+        ['within the window', { validFrom: past, validUntil: future }, true],
+        ['at validFrom', { validFrom: current }, true],
+        ['just before validUntil', { validUntil: new Date(now + 1).toISOString() }, true],
+        ['at validUntil', { validUntil: current }, false],
+        ['expired', { validUntil: past }, false],
+        ['not yet valid', { validFrom: future }, false],
+        ['reversed window', { validFrom: future, validUntil: past }, false],
+        ['empty window', { validFrom: current, validUntil: current }, false],
+        ['no validUntil', {}, true],
+        ['legacy null validUntil', { validUntil: null }, true],
+        ['no validFrom', { validFrom: undefined, validUntil: future }, true],
+        ['no bounds', { validFrom: undefined }, true],
+        ['null bounds', { validFrom: null, validUntil: null }, true],
+        ['offset validFrom', { validFrom: '2030-06-15T13:00:00+01:00' }, true],
+        ['offset validUntil', { validUntil: '2030-06-15T08:00:00-04:00' }, false],
+        ['timezone-free validFrom', { validFrom: '2030-06-15T00:00:00' }, false],
+        ['timezone-free validUntil', { validUntil: '2030-06-16T00:00:00' }, false],
+        ['date-only validFrom', { validFrom: '2030-06-14' }, false],
+        ['date-only validUntil', { validUntil: '2030-06-16' }, false],
+        ['impossible validFrom', { validFrom: '2030-02-30T00:00:00Z' }, false],
+        ['impossible validUntil', { validUntil: '2031-02-30T00:00:00Z' }, false],
+        ['impossible offset date', { validUntil: '2031-04-31T23:00:00-04:00' }, false],
+        ['non-leap February 29', { validFrom: '2030-02-29T00:00:00Z' }, false],
+        ['non-leap century', { validUntil: '2100-02-29T00:00:00Z' }, false],
+        ['leap year', { validFrom: '2028-02-29T00:00:00Z' }, true],
+        ['leap century', { validFrom: '2000-02-29T00:00:00Z' }, true],
+        ['early year', { validFrom: '0001-01-01T00:00:00Z' }, true],
+        ['negative year', { validFrom: '-0001-01-01T00:00:00Z' }, true],
+        ['extended year', { validUntil: '10000-01-01T00:00:00Z' }, true],
+        ['invalid month', { validUntil: '2031-13-01T00:00:00Z' }, false],
+        ['invalid day', { validUntil: '2031-01-00T00:00:00Z' }, false],
+        ['invalid hour', { validUntil: '2031-01-01T25:00:00Z' }, false],
+        ['invalid minute', { validUntil: '2031-01-01T00:60:00Z' }, false],
+        ['invalid second', { validUntil: '2031-01-01T00:00:60Z' }, false],
+        ['invalid offset hour', { validUntil: '2031-01-01T00:00:00+15:00' }, false],
+        ['invalid offset minute', { validUntil: '2031-01-01T00:00:00+01:60' }, false],
+        ['offset exceeds fourteen hours', { validUntil: '2031-01-01T00:00:00+14:01' }, false],
+        ['maximum positive offset', { validFrom: '2030-06-16T02:00:00+14:00' }, true],
+        ['maximum negative offset', { validUntil: '2030-06-14T22:00:00-14:00' }, false],
+        ['trailing newline', { validFrom: `${past}\n` }, false],
+        ['end of day', { validFrom: '2030-06-14T24:00:00Z' }, true],
+        ['fractional end of day', { validFrom: '2030-06-14T24:00:00.0000Z' }, true],
+        ['nonzero end-of-day minutes', { validUntil: '2031-01-01T24:01:00Z' }, false],
+        ['nonzero end-of-day seconds', { validUntil: '2031-01-01T24:00:01Z' }, false],
+        ['nonzero end-of-day fraction', { validUntil: '2031-01-01T24:00:00.0001Z' }, false],
+        ['submillisecond future start', { validFrom: '2030-06-15T12:00:00.0009Z' }, false],
+        ['submillisecond future expiry', { validUntil: '2030-06-15T12:00:00.0009Z' }, true],
+        ['submillisecond past start', { validFrom: '2030-06-15T11:59:59.9999Z' }, true],
+        ['submillisecond past expiry', { validUntil: '2030-06-15T11:59:59.9999Z' }, false],
+        ['higher precision at start', { validFrom: '2030-06-15T12:00:00.000000Z' }, true],
+        ['higher precision at expiry', { validUntil: '2030-06-15T12:00:00.000000Z' }, false],
+        ['higher precision offset start', { validFrom: '2030-06-15T13:00:00.000001+01:00' }, false],
+        ['higher precision offset expiry', { validUntil: '2030-06-15T08:00:00.000001-04:00' }, true],
+        ['very small fractional expiry', { validUntil: '2030-06-15T12:00:00.000000000000000000001Z' }, true],
+        ['invalid validFrom', { validFrom: 'not a date' }, false],
+        ['invalid validUntil', { validUntil: 'not a date' }, false],
+        ['empty validFrom', { validFrom: '' }, false],
+        ['empty validUntil', { validUntil: '' }, false],
+        ['numeric validFrom', { validFrom: now - 60_000 }, false],
+        ['numeric validUntil', { validUntil: now + 60_000 }, false],
+        ['array validFrom', { validFrom: [past] }, false],
+        ['array validUntil', { validUntil: [future] }, false],
+    ];
+    let clock: jest.SpiedFunction<typeof Date.now>;
+    let alice: string;
+    let bob: string;
+    let victor: string;
+    let schema: string;
+    let challenge: string;
+
+    beforeEach(async () => {
+        clock = jest.spyOn(Date, 'now').mockReturnValue(now);
+        keymaster = new Keymaster({ gatekeeper, wallet, cipher, passphrase: 'passphrase', defaultRegistry: 'local' });
+        alice = await keymaster.createId('Alice');
+        bob = await keymaster.createId('Bob');
+        victor = await keymaster.createId('Victor');
+        await keymaster.setCurrentId('Alice');
+        schema = await keymaster.createSchema(mockSchema);
+        await keymaster.setCurrentId('Victor');
+        challenge = await keymaster.createChallenge({ credentials: [{ schema, issuers: [alice] }] }, { registry: 'local' });
+    });
+
+    afterEach(() => {
+        clock.mockRestore();
+    });
+
+    async function issueCredential(validity: Record<string, unknown> = {}) {
+        await keymaster.setCurrentId('Alice');
+        const credential = await keymaster.bindCredential(schema, bob, { validFrom: past });
+        Object.assign(credential, validity);
+        // The signed validity window is independent of the asset's expiration.
+        const vc = await keymaster.issueCredential(credential, { registry: 'local' });
+        expect((await keymaster.resolveDID(vc)).mdip?.validUntil).toBeUndefined();
+        await keymaster.setCurrentId('Bob');
+        return vc;
+    }
+
+    async function presentCredential(vc: string) {
+        const vp = await keymaster.encryptMessage(await keymaster.decryptMessage(vc), victor, { includeHash: true, registry: 'local' });
+        // Construct the response without using the holder's credential selection.
+        return keymaster.encryptJSON({
+            response: {
+                challenge,
+                credentials: [{ vc, vp }],
+                requested: 1,
+                fulfilled: 1,
+                match: true,
+                responseNonce: 'mock-nonce',
+            },
+        }, victor, { registry: 'local' });
+    }
+
+    it.each(cases)('selects only current credentials: %s', async (_name, validity, expected) => {
+        const vc = await issueCredential(validity);
+        expect(await keymaster.acceptCredential(vc)).toBe(true);
+        const responseDID = await keymaster.createResponse(challenge, { registry: 'local' });
+        const { response } = await keymaster.decryptJSON(responseDID) as { response: ChallengeResponse };
+
+        expect(response.match).toBe(expected);
+        expect(response.credentials.map(pair => pair.vc)).toStrictEqual(expected ? [vc] : []);
+        expect(response.fulfilled).toBe(expected ? 1 : 0);
+        expect((await keymaster.loadWallet()).ids.Bob.held).toContain(vc);
+    });
+
+    it.each(cases)('independently verifies the signed validity window: %s', async (_name, validity, expected) => {
+        const vc = await issueCredential(validity);
+        const responseDID = await presentCredential(vc);
+        await keymaster.setCurrentId('Victor');
+        const result = await keymaster.verifyResponse(responseDID, { publish: false });
+
+        expect(result.match).toBe(expected);
+        expect(result.vps).toHaveLength(expected ? 1 : 0);
+        expect(result.responder).toBe(bob);
+    });
+
+    it.each([
+        ['validFrom', false, true],
+        ['validUntil', true, false],
+    ] as const)('crosses a submillisecond %s boundary at the next clock tick', async (field, before, after) => {
+        const vc = await issueCredential({ [field]: '2030-06-15T12:00:00.0009Z' });
+        await keymaster.acceptCredential(vc);
+        const responseDID = await presentCredential(vc);
+
+        for (const [elapsed, expected] of [[0, before], [1, after]] as const) {
+            clock.mockReturnValue(now + elapsed);
+            await keymaster.setCurrentId('Bob');
+            const selectedDID = await keymaster.createResponse(challenge, { registry: 'local' });
+            const { response } = await keymaster.decryptJSON(selectedDID) as { response: ChallengeResponse };
+            expect(response.match).toBe(expected);
+
+            await keymaster.setCurrentId('Victor');
+            expect((await keymaster.verifyResponse(responseDID, { publish: false })).match).toBe(expected);
+        }
+    });
+
+    it('skips unusable credentials and selects a later current credential without removing any', async () => {
+        const held = [];
+        for (const validity of [{ validUntil: past }, { validFrom: future }, { validUntil: 'invalid' }, {}]) {
+            const vc = await issueCredential(validity);
+            expect(await keymaster.acceptCredential(vc)).toBe(true);
+            held.push(vc);
+        }
+
+        const responseDID = await keymaster.createResponse(challenge, { registry: 'local' });
+        const { response } = await keymaster.decryptJSON(responseDID) as { response: ChallengeResponse };
+        expect(response.credentials.map(pair => pair.vc)).toStrictEqual([held[3]]);
+        expect((await keymaster.loadWallet()).ids.Bob.held).toStrictEqual(held);
+
+        await keymaster.setCurrentId('Victor');
+        expect((await keymaster.verifyResponse(responseDID, { publish: false })).match).toBe(true);
+    });
+
+    it.each([false, true])('rejects a credential that expires after response creation with publish=%s', async (publish) => {
+        const vc = await issueCredential({ validUntil: future });
+        await keymaster.acceptCredential(vc);
+        const responseDID = await keymaster.createResponse(challenge, { registry: 'local' });
+        await keymaster.setCurrentId('Victor');
+        expect((await keymaster.verifyResponse(responseDID, { publish: false })).match).toBe(true);
+
+        clock.mockReturnValue(now + 60_000);
+        const publishReceipts = jest.spyOn(keymaster, 'publishChallengeReceipts');
+        try {
+            const result = await keymaster.verifyResponse(responseDID, { publish });
+            expect(result.match).toBe(false);
+            expect(result.vps).toStrictEqual([]);
+            expect(publishReceipts).not.toHaveBeenCalled();
+            expect((await keymaster.resolveDID(vc)).didDocumentMetadata?.deactivated).not.toBe(true);
+        } finally {
+            publishReceipts.mockRestore();
+        }
+    });
+});
+
 describe('verifyResponse', () => {
     it('should verify valid response to empty challenge', async () => {
         await keymaster.createId('Alice');
