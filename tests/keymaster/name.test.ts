@@ -240,6 +240,48 @@ describe('listNames', () => {
         expect(names['Alice']).toBe(alice);
     });
 
+    it('should not turn identity names into aliases or persist them after a rename', async () => {
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        await keymaster.addName('friend', bob);
+        const before = JSON.stringify(await keymaster.loadWallet());
+        const storedBefore = await wallet.loadWallet();
+
+        expect(await keymaster.listNames({ includeIDs: true })).toStrictEqual({ friend: bob, Alice: alice, Bob: bob });
+        expect(JSON.stringify(await keymaster.loadWallet())).toBe(before);
+        expect(await wallet.loadWallet()).toStrictEqual(storedBefore);
+
+        await keymaster.renameId('Alice', 'Carol');
+        const restarted = new Keymaster({ gatekeeper, wallet, cipher, passphrase: 'passphrase' });
+        expect(await restarted.listNames()).toStrictEqual({ friend: bob });
+        expect(await restarted.getName('Alice')).toBeNull();
+        expect(await restarted.listNames({ includeIDs: true })).toStrictEqual({ friend: bob, Bob: bob, Carol: alice });
+    });
+
+    it.each([false, true])('should return an independent names map with includeIDs=%s', async (includeIDs) => {
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        await keymaster.addName('friend', alice);
+        await keymaster.addName('contact', bob);
+
+        const names = await keymaster.listNames({ includeIDs });
+        names.friend = bob;
+        delete names.contact;
+        names.unintended = alice;
+
+        expect((await keymaster.loadWallet()).names).toStrictEqual({ friend: alice, contact: bob });
+        expect(await keymaster.listNames()).toStrictEqual({ friend: alice, contact: bob });
+    });
+
+    it('should include identities without creating a missing aliases map', async () => {
+        const alice = await keymaster.createId('Alice');
+        expect((await keymaster.loadWallet()).names).toBeUndefined();
+
+        expect(await keymaster.listNames({ includeIDs: true })).toStrictEqual({ Alice: alice });
+        expect(await keymaster.listNames()).toStrictEqual({});
+        expect((await keymaster.loadWallet()).names).toBeUndefined();
+    });
+
     it('should return empty list if no names added', async () => {
         const names = await keymaster.listNames();
 
