@@ -5,6 +5,7 @@ import DbJsonMemory from '@mdip/gatekeeper/db/json-memory';
 import WalletJsonMemory from '@mdip/keymaster/wallet/json-memory';
 import { InvalidDIDError, ExpectedExceptionError, UnknownIDError } from '@mdip/common/errors';
 import HeliaClient from '@mdip/ipfs/helia';
+import { jest } from '@jest/globals';
 
 let ipfs: HeliaClient;
 let gatekeeper: Gatekeeper;
@@ -559,6 +560,23 @@ describe('removeGroupMember', () => {
 });
 
 describe('testGroup', () => {
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    function limitGroupResolutions() {
+        const getGroup = keymaster.getGroup.bind(keymaster);
+        let resolutions = 0;
+
+        return jest.spyOn(keymaster, 'getGroup').mockImplementation(async (id) => {
+            // Bound the regression test even if cycle protection is removed.
+            if (++resolutions > 10) {
+                throw new Error('Group resolution limit exceeded');
+            }
+            return getGroup(id);
+        });
+    }
+
     it('should return true when member in group', async () => {
         await keymaster.createId('Bob');
         const groupName = 'mockGroup';
@@ -628,6 +646,104 @@ describe('testGroup', () => {
 
         const test4 = await keymaster.testGroup(group1Did, group5Did);
         expect(test4).toBe(true);
+    });
+
+    it.each([1, 2, 3])('should stop after visiting each group in a %i-group cycle', async (count) => {
+        const unrelated = await keymaster.createId('Bob');
+        const groups: string[] = [];
+        for (let i = 0; i < count; i++) {
+            groups.push(await keymaster.createGroup(`group-${i}`));
+        }
+        for (let i = 0; i < count; i++) {
+            await keymaster.updateAsset(groups[i], {
+                group: { name: `group-${i}`, members: [groups[(i + 1) % count]] },
+            });
+        }
+        await keymaster.addName('root', groups[0]);
+        const getGroup = limitGroupResolutions();
+
+        expect(await keymaster.testGroup('root', unrelated)).toBe(false);
+        expect(getGroup).toHaveBeenCalledTimes(count);
+
+        getGroup.mockClear();
+        expect(await keymaster.testGroup('root')).toBe(true);
+        expect(await keymaster.testGroup('root', groups[1 % count])).toBe(true);
+        expect(getGroup).toHaveBeenCalledTimes(2);
+    });
+
+    it('should find a member on a later branch after skipping a cycle', async () => {
+        const member = await keymaster.createId('Bob');
+        const root = await keymaster.createGroup('root');
+        const cyclic = await keymaster.createGroup('cyclic');
+        const valid = await keymaster.createGroup('valid');
+        await keymaster.addGroupMember(valid, member);
+        await keymaster.updateAsset(root, { group: { name: 'root', members: [cyclic, valid] } });
+        await keymaster.updateAsset(cyclic, { group: { name: 'cyclic', members: [root] } });
+        const getGroup = limitGroupResolutions();
+
+        expect(await keymaster.testGroup(root, member)).toBe(true);
+        expect(getGroup).toHaveBeenCalledTimes(3);
+    });
+
+    it('should resolve a shared subgroup only once per traversal', async () => {
+        const unrelated = await keymaster.createId('Bob');
+        const root = await keymaster.createGroup('root');
+        const left = await keymaster.createGroup('left');
+        const right = await keymaster.createGroup('right');
+        const shared = await keymaster.createGroup('shared');
+        await keymaster.addGroupMember(left, shared);
+        await keymaster.addGroupMember(right, shared);
+        await keymaster.addGroupMember(root, left);
+        await keymaster.addGroupMember(root, right);
+        const getGroup = limitGroupResolutions();
+
+        expect(await keymaster.testGroup(root, unrelated)).toBe(false);
+        expect(getGroup).toHaveBeenCalledTimes(4);
+    });
+
+    it('should keep traversal state separate for concurrent and subsequent calls', async () => {
+        const member = await keymaster.createId('Bob');
+        const root = await keymaster.createGroup('root');
+        const nested = await keymaster.createGroup('nested');
+        await keymaster.addGroupMember(root, nested);
+        await keymaster.addGroupMember(nested, member);
+        await keymaster.addName('root', root);
+        const getGroup = limitGroupResolutions();
+
+        expect(await Promise.all([
+            keymaster.testGroup('root', 'Bob'),
+            keymaster.testGroup(root, member),
+        ])).toEqual([true, true]);
+        expect(await keymaster.testGroup(root, member)).toBe(true);
+        expect(getGroup).toHaveBeenCalledTimes(6);
+    });
+
+    it('should stop cycles involving legacy group assets', async () => {
+        const unrelated = await keymaster.createId('Bob');
+        const legacy = await keymaster.createAsset({ name: 'legacy', members: [] });
+        const group = await keymaster.createGroup('group');
+        await keymaster.updateAsset(legacy, { members: [group] });
+        await keymaster.updateAsset(group, { group: { name: 'group', members: [legacy] } });
+        const getGroup = limitGroupResolutions();
+
+        expect(await keymaster.testGroup(legacy, unrelated)).toBe(false);
+        expect(getGroup).toHaveBeenCalledTimes(2);
+    });
+
+    it('should still reject mutual membership beyond an existing cycle', async () => {
+        await keymaster.createId('Bob');
+        const target = await keymaster.createGroup('target');
+        const root = await keymaster.createGroup('root');
+        const cyclic = await keymaster.createGroup('cyclic');
+        const nested = await keymaster.createGroup('nested');
+        await keymaster.addGroupMember(nested, target);
+        await keymaster.updateAsset(root, { group: { name: 'root', members: [cyclic, nested] } });
+        await keymaster.updateAsset(cyclic, { group: { name: 'cyclic', members: [root] } });
+        const getGroup = limitGroupResolutions();
+
+        await expect(keymaster.addGroupMember(target, root))
+            .rejects.toThrow("can't create mutual membership");
+        expect(getGroup).toHaveBeenCalledTimes(4);
     });
 });
 
