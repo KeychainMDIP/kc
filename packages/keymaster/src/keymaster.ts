@@ -1995,7 +1995,7 @@ export default class Keymaster implements KeymasterInterface {
                     continue;
                 }
 
-                if (credential.issuers && !credential.issuers.includes(doc.issuer)) {
+                if (credential.issuers?.length && !credential.issuers.includes(doc.issuer)) {
                     // Attestor not trusted by Verifier
                     continue;
                 }

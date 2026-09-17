@@ -35,7 +35,7 @@ beforeEach(() => {
 });
 
 describe('createResponse', () => {
-    it('should create a valid response to a simple challenge', async () => {
+    it.each(['omitted', 'empty', 'matching', 'multiple'] as const)('should create and verify a response with %s issuers', async issuerList => {
         const alice = await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
         await keymaster.createId('Victor');
@@ -57,11 +57,17 @@ describe('createResponse', () => {
 
         await keymaster.setCurrentId('Victor');
 
+        const issuers = {
+            omitted: undefined,
+            empty: [],
+            matching: [alice],
+            multiple: [bob, alice],
+        }[issuerList];
         const challenge = {
             credentials: [
                 {
                     schema: credentialDid,
-                    issuers: [alice]
+                    issuers,
                 }
             ]
         };
@@ -74,10 +80,57 @@ describe('createResponse', () => {
         expect(response.challenge).toBe(challengeDID);
         expect(response.credentials.length).toBe(1);
         expect(response.credentials[0].vc).toBe(vcDid);
+        expect(response.fulfilled).toBe(1);
+        expect(response.match).toBe(true);
         expect(response.responseNonce).toEqual(expect.any(String));
 
         const publicAsset = await keymaster.resolveAsset(responseDID) as Record<string, unknown>;
         expect(publicAsset).not.toHaveProperty('response');
+
+        await keymaster.setCurrentId('Victor');
+        const verified = await keymaster.verifyResponse(responseDID, { publish: false });
+        expect(verified.match).toBe(true);
+        expect(verified.vps).toHaveLength(1);
+        expect(verified.vps![0].issuer).toBe(alice);
+    });
+
+    it.each(['unlisted issuer', 'wrong schema'] as const)('should reject %s during selection and verification', async mismatch => {
+        await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        const victor = await keymaster.createId('Victor');
+        await keymaster.setCurrentId('Alice');
+        const schema = await keymaster.createSchema(mockSchema);
+        const otherSchema = await keymaster.createSchema({ ...mockSchema, title: 'Other schema' });
+        const vc = await keymaster.issueCredential(await keymaster.bindCredential(schema, bob));
+        await keymaster.setCurrentId('Bob');
+        expect(await keymaster.acceptCredential(vc)).toBe(true);
+
+        await keymaster.setCurrentId('Victor');
+        const challenge = await keymaster.createChallenge({ credentials: [{
+            schema: mismatch === 'wrong schema' ? otherSchema : schema,
+            issuers: mismatch === 'unlisted issuer' ? [victor] : [],
+        }] });
+        await keymaster.setCurrentId('Bob');
+        const generated = await keymaster.createResponse(challenge);
+        const { response } = await keymaster.decryptJSON(generated) as { response: ChallengeResponse };
+        expect(response.credentials).toStrictEqual([]);
+        expect(response.requested).toBe(1);
+        expect(response.fulfilled).toBe(0);
+        expect(response.match).toBe(false);
+
+        // Supply the same credential manually to check the verifier independently.
+        const vp = await keymaster.encryptMessage(await keymaster.decryptMessage(vc), victor, { includeHash: true });
+        response.credentials = [{ vc, vp }];
+        response.fulfilled = 1;
+        response.match = true;
+        const supplied = await keymaster.encryptJSON({ response }, victor);
+
+        await keymaster.setCurrentId('Victor');
+        for (const did of [generated, supplied]) {
+            const verified = await keymaster.verifyResponse(did, { publish: false });
+            expect(verified.match).toBe(false);
+            expect(verified.vps).toStrictEqual([]);
+        }
     });
 
     it('should throw an exception on invalid challenge', async () => {
