@@ -59,6 +59,7 @@ const config = {
         '^\\.\\/health\\.js$': '<rootDir>/packages/gatekeeper/src/db/health.ts',
         '^\\.\\/index-export\\.js$': '<rootDir>/packages/gatekeeper/src/db/index-export.ts',
         '^\\.\\/index-helpers\\.js$': '<rootDir>/services/search-server/src/index-helpers.ts',
+        '^\\.\\/DidIndexer\\.js$': '<rootDir>/services/search-server/src/DidIndexer.ts',
         '^\\.\\/projections\\.js$': '<rootDir>/services/search-server/src/projections.ts',
         '^\\.\\/network-metrics\\.js$': '<rootDir>/services/search-server/src/network-metrics.ts',
         '^\\.\\.?\\/did-aliases\\.js$': '<rootDir>/services/search-server/src/did-aliases.ts',

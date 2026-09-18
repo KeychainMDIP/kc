@@ -13,6 +13,8 @@ import {
     DIDEventHistory,
     DIDEventListOptions,
     DIDEventListResult,
+    IdentityListOptions,
+    IdentityListResult,
     NetworkMetricSnapshot,
     PublishedCredentialListOptions,
     PublishedCredentialListResult,
@@ -21,7 +23,7 @@ import {
     GatekeeperEvent,
 } from '../types.js';
 import { getEventDisplayTime, stableStringify } from './db-utils.js';
-import { deduplicateDIDPrefixReferences } from '../published-credentials.js';
+import { deduplicateDIDPrefixReferences, extractIdentity } from '../published-credentials.js';
 import {
     AMBIGUOUS_DID_PREFIX,
     classifyDIDPrefix,
@@ -115,6 +117,9 @@ export default class Postgres implements DIDsDb {
 
             CREATE INDEX IF NOT EXISTS idx_did_classifications_prefix
                 ON did_classifications (prefix);
+
+            CREATE INDEX IF NOT EXISTS idx_did_classifications_agents
+                ON did_classifications (is_agent, prefix COLLATE "C", suffix COLLATE "C");
 
             CREATE TABLE IF NOT EXISTS did_docs (
                 did TEXT PRIMARY KEY,
@@ -488,6 +493,28 @@ export default class Postgres implements DIDsDb {
         }
 
         return doc;
+    }
+
+    async listIdentities(options: IdentityListOptions = {}): Promise<IdentityListResult> {
+        const pool = this.getPool();
+        const { didPrefix, limit = 50, offset = 0 } = options;
+        const from = `FROM did_classifications dc
+            JOIN did_docs d ON d.did = dc.did
+            WHERE dc.is_agent = TRUE ${didPrefix ? 'AND dc.prefix COLLATE "C" = $1' : ''}`;
+        const params = didPrefix ? [didPrefix] : [];
+        const count = await pool.query<CountRow>(`SELECT COUNT(*)::int AS total ${from}`, params);
+        const rows = await pool.query<DocRow & DidRow>(
+            `SELECT dc.prefix || ':' || dc.suffix AS did, d.doc ${from}
+             ORDER BY dc.prefix COLLATE "C", dc.suffix COLLATE "C"
+             LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+            [...params, Math.max(0, limit), Math.max(0, offset)]
+        );
+        return {
+            total: count.rows[0].total,
+            identities: rows.rows.map(row => extractIdentity(
+                row.did, typeof row.doc === 'string' ? JSON.parse(row.doc) : row.doc, options
+            )),
+        };
     }
 
     async getPublishedCredentialCountsBySchema(didPrefix?: string): Promise<PublishedCredentialSchemaCount[]> {

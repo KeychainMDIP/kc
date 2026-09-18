@@ -65,7 +65,7 @@ a release that changes its schema.
 
 ### Endpoints
 
-DID resolution, search, query, event, and credential-metric endpoints apply
+DID resolution, search, query, identity, event, and credential-metric endpoints apply
 `KC_SEARCH_SERVER_DID_PREFIX` when configured. Indexed DID results use the
 effective prefix determined by the precedence documented in
 [DID network classification](#did-network-classification), not necessarily a
@@ -122,6 +122,87 @@ stored alias's prefix.
 - **Returns**:
     - `200 OK` + an array of matching effective DIDs.
     - `400 Bad Request` when `where` is missing or is not an object.
+
+### `GET /api/v1/identities`
+
+Enumerates indexed agent DIDs with the schema DIDs in their current manifests.
+Use this instead of a generic `/query` on `mdip.type` to enumerate identities.
+SQLite and PostgreSQL use the agent-classification index, then read documents
+only for the requested page. Assets are excluded, so there is no `isAgent` field.
+The additional index is created on startup without rebuilding existing data.
+
+Query parameters:
+
+- `limit` (optional, default `50`, maximum `500`) and `offset` (optional, default
+  `0`) are non-negative integers. `limit=0` returns only the total.
+- `schemaDid` (optional) selects the credential schema for field extraction.
+  Prefix aliases match by CID suffix. This does not filter the identity list.
+- `fields` (optional, repeated parameter) selects literal, top-level keys from
+  the revealed credential's `credential` object. Supply one `schemaDid` when
+  requesting fields. For example, `fields=publicName&fields=avatarUrl` selects
+  those two claims, not credential metadata. Field names are case-sensitive,
+  and dots are literal characters rather than nested-property paths.
+
+With no fields requested, the response contains no credential values:
+
+```json
+{
+  "total": 123,
+  "identities": [
+    {
+      "did": "did:mdip:<identity-cid>",
+      "manifestSchemaDids": ["did:mdip:<profile-schema-cid>"]
+    }
+  ]
+}
+```
+
+For example, to request two claims defined by an application's schema:
+
+```bash
+curl --get 'http://localhost:4002/api/v1/identities' \
+  --data-urlencode 'schemaDid=did:mdip:<profile-schema-cid>' \
+  --data-urlencode 'fields=publicName' \
+  --data-urlencode 'fields=avatarUrl' \
+  --data-urlencode 'limit=50' \
+  --data-urlencode 'offset=0'
+```
+
+Each identity then also has a `credentials` array:
+
+```json
+{
+  "did": "did:mdip:<identity-cid>",
+  "manifestSchemaDids": ["did:mdip:<profile-schema-cid>"],
+  "credentials": [
+    {
+      "credentialDid": "did:mdip:<credential-cid>",
+      "fields": { "publicName": "Alice", "avatarUrl": "https://example.org/alice.png" }
+    }
+  ]
+}
+```
+
+Missing fields are omitted. Matching revealed credentials are returned separately,
+ordered by credential DID, with only the requested claims. An identity with no
+matching revealed credential has `credentials: []`. Published but unrevealed
+credentials contribute schema DIDs but never claim values. MDIP does not assign
+meaning to any schema or field, select a preferred credential, or verify the
+manifest's signatures or credential status on this read path.
+
+`manifestSchemaDids` is a sorted, unique list of schema strings as published in
+valid entries of the current identity manifest, using the same structural and
+subject checks as the published-credential metrics. It is not a list of all
+historically published schemas. Credential and schema DIDs in these manifest
+entries retain their published prefixes.
+
+Identities are ordered by effective prefix, then CID suffix, with one result
+per CID suffix. Ordering is case-sensitive and independent of locale.
+`total` counts all indexed agents with a resolved document in the configured
+network scope, including deactivated agents whose manifests have been cleared.
+Pages reflect the current index, not a frozen snapshot across requests.
+Invalid `schemaDid`, `fields`, or pagination values return `400`, and database
+failures return `500`.
 
 ### `GET /api/v1/metrics/schemas/published`
 - **Description**: Returns current published credential counts grouped by schema DID.

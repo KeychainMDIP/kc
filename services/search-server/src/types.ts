@@ -43,6 +43,28 @@ export interface PublishedCredentialListResult {
     credentials: PublishedCredentialRecord[];
 }
 
+export interface IdentityListOptions {
+    didPrefix?: string;
+    schemaDid?: string;
+    fields?: string[];
+    limit?: number;
+    offset?: number;
+}
+
+export interface IdentityRecord {
+    did: string;
+    manifestSchemaDids: string[];
+    credentials?: {
+        credentialDid: string;
+        fields: Record<string, unknown>;
+    }[];
+}
+
+export interface IdentityListResult {
+    total: number;
+    identities: IdentityRecord[];
+}
+
 export interface ChallengeReceiptRecord {
     receiptDid: string;
     attesterDid: string;
@@ -168,6 +190,7 @@ export interface DIDsDb {
     getBlock(registry: string, block?: BlockId): Promise<BlockInfo | null>;
     applyIndexPage(page: ApplyIndexPageOptions): Promise<ApplyIndexPageResult>;
     getDID(did: string): Promise<object | null>;
+    listIdentities(options?: IdentityListOptions): Promise<IdentityListResult>;
     getPublishedCredentialCountsBySchema(didPrefix?: string): Promise<PublishedCredentialSchemaCount[]>;
     listPublishedCredentials(options?: PublishedCredentialListOptions): Promise<PublishedCredentialListResult>;
     listChallengeReceipts(options?: ChallengeReceiptListOptions): Promise<ChallengeReceiptListResult>;

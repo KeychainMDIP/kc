@@ -1,4 +1,4 @@
-import type { GatekeeperEvent, PublishedCredentialRecord } from "./types.js";
+import type { GatekeeperEvent, IdentityListOptions, IdentityRecord, PublishedCredentialRecord } from "./types.js";
 import { getDIDSuffix } from './did-aliases.js';
 
 interface MaybeVc {
@@ -106,6 +106,40 @@ export function extractPublishedCredentials(
 ): PublishedCredentialRecord[] {
     return extractPublishedCredentialEvidence(defaultHolderDid, doc)
         .map(evidence => evidence.credential);
+}
+
+export function extractIdentity(
+    did: string,
+    doc: object,
+    { schemaDid, fields = [] }: IdentityListOptions
+): IdentityRecord {
+    const published = extractPublishedCredentials(did, doc);
+    const identity: IdentityRecord = {
+        did,
+        manifestSchemaDids: [...new Set(published.map(record => record.schemaDid))].sort(),
+    };
+
+    if (fields.length > 0) {
+        const manifest = (doc as MaybeMdipDocument).didDocumentData?.manifest as Record<string, MaybeVc>;
+        identity.credentials = published
+            .filter(record => record.revealed && schemaDid
+                && getDIDSuffix(record.schemaDid) === getDIDSuffix(schemaDid))
+            .sort((a, b) => a.credentialDid < b.credentialDid ? -1 : a.credentialDid > b.credentialDid ? 1 : 0)
+            .flatMap(record => {
+                const claims = manifest[record.credentialDid].credential;
+                if (!claims || typeof claims !== 'object' || Array.isArray(claims)) {
+                    return [];
+                }
+                return [{
+                    credentialDid: record.credentialDid,
+                    fields: Object.fromEntries(fields
+                        .filter(field => Object.hasOwn(claims, field))
+                        .map(field => [field, (claims as Record<string, unknown>)[field]])),
+                }];
+            });
+    }
+
+    return identity;
 }
 
 export function extractPublishedCredentialHistory(

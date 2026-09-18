@@ -16,6 +16,7 @@ import {
     createWhitelistBlockList,
     getSearchStatus,
     isRateLimitWhitelistedRequest,
+    parseIdentityListOptions,
     parseNonNegativeInteger,
     parseOptionalBoolean,
     parseOptionalPositiveInteger,
@@ -245,6 +246,24 @@ async function main() {
         } catch (err) {
             log.error({ error: err }, '/query error');
             res.status(500).json({ error: String(err) });
+        }
+    });
+
+    v1router.get('/identities', async (req, res) => {
+        let options;
+        try {
+            options = parseIdentityListOptions(req.query);
+        }
+        catch (error) {
+            return res.status(400).json({ error: String(error) });
+        }
+
+        try {
+            return res.json(await didDb.listIdentities({ ...options, didPrefix: config.didPrefix }));
+        }
+        catch (error) {
+            log.error({ error }, '/identities error');
+            return res.status(500).json({ error: String(error) });
         }
     });
 

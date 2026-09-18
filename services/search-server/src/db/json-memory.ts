@@ -13,6 +13,8 @@ import {
     DIDEventHistory,
     DIDEventListOptions,
     DIDEventListResult,
+    IdentityListOptions,
+    IdentityListResult,
     NetworkMetricSnapshot,
     PublishedCredentialListOptions,
     PublishedCredentialListResult,
@@ -21,7 +23,7 @@ import {
     GatekeeperEvent,
 } from "../types.js";
 import { copyJSON, getEventDisplayTime, stableStringify } from "./db-utils.js";
-import { deduplicateDIDPrefixReferences } from '../published-credentials.js';
+import { deduplicateDIDPrefixReferences, extractIdentity } from '../published-credentials.js';
 import {
     AMBIGUOUS_DID_PREFIX,
     classifyDIDPrefix,
@@ -211,6 +213,27 @@ export default class DIDsDbMemory implements DIDsDb {
     async getDID(did: string): Promise<object | null> {
         const v = this.docs.get(did);
         return v ? JSON.parse(JSON.stringify(v)) : null;
+    }
+
+    async listIdentities(options: IdentityListOptions = {}): Promise<IdentityListResult> {
+        const { didPrefix, limit = 50, offset = 0 } = options;
+        const agents = [...this.agentDIDSuffixes].flatMap(suffix => {
+            const storedDid = this.didsBySuffix.get(suffix)!;
+            const prefix = this.authoritativeDIDPrefixes.get(suffix) ?? AMBIGUOUS_DID_PREFIX;
+            if (!this.docs.has(storedDid) || (didPrefix && prefix !== didPrefix)) {
+                return [];
+            }
+            return [{ did: `${prefix}:${suffix}`, prefix, storedDid }];
+        }).sort((a, b) => {
+            if (a.prefix !== b.prefix) return a.prefix < b.prefix ? -1 : 1;
+            return a.did < b.did ? -1 : a.did > b.did ? 1 : 0;
+        });
+
+        return {
+            total: agents.length,
+            identities: agents.slice(Math.max(0, offset), Math.max(0, offset) + Math.max(0, limit))
+                .map(({ did, storedDid }) => copyJSON(extractIdentity(did, this.docs.get(storedDid)!, options))),
+        };
     }
 
     async getPublishedCredentialCountsBySchema(didPrefix?: string): Promise<PublishedCredentialSchemaCount[]> {
