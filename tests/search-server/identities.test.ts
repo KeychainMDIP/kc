@@ -513,6 +513,77 @@ describe('SQLite identity query isolation', () => {
 });
 
 describe('SQL identity enumeration', () => {
+    it.each(['insert', 'remove', 'update'])('keeps PostgreSQL count and page consistent during a concurrent %s', async change => {
+        const original = { did: alice, doc: document({ 'did:mdip:vc': credential() }) };
+        let live = change === 'insert' ? [] : [original];
+        const expected = structuredClone(live);
+        let snapshot = live;
+        let repeatable = false;
+        const query = jest.fn(async (sql: string) => {
+            if (sql.startsWith('BEGIN')) repeatable = sql.includes('REPEATABLE READ');
+            if (sql.includes('COUNT(*)')) {
+                snapshot = structuredClone(live);
+                // Simulate another connection committing after the count is read.
+                live = change === 'remove' ? [] : [{ did: alice, doc: document({
+                    'did:mdip:vc': credential(alice, schemaDid, { publicName: 'Changed Alice' }),
+                }) }];
+                return { rows: [{ total: snapshot.length }] };
+            }
+            if (sql.startsWith('SELECT dc.prefix')) return { rows: repeatable ? snapshot : live };
+            return { rows: [] };
+        });
+        const client = { query, release: jest.fn() };
+        const connect = jest.fn(async () => client);
+        class TestPostgres extends Postgres {
+            protected createPool(): any { return { query, connect, end: jest.fn() }; }
+        }
+        const db = await TestPostgres.create('postgresql://isolated-test');
+        try {
+            const options = { schemaDid, fields: ['publicName'] };
+            expect(await db.listIdentities(options)).toEqual({
+                total: expected.length,
+                identities: expected.map(row => extractIdentity(row.did, row.doc, options)),
+            });
+            expect(connect).toHaveBeenCalledTimes(1);
+            expect(query).toHaveBeenCalledWith('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+            expect(query).toHaveBeenLastCalledWith('COMMIT');
+            expect(client.release).toHaveBeenCalledTimes(1);
+        }
+        finally {
+            await db.disconnect();
+        }
+    });
+
+    it.each(['BEGIN', 'COUNT(*)', 'SELECT dc.prefix', 'COMMIT'].flatMap(failure =>
+        [false, true].map(rollbackFails => ({ failure, rollbackFails }))
+    ))('cleans up failed PostgreSQL identity reads: %j', async ({ failure, rollbackFails }) => {
+        const error = new Error('read transaction failed');
+        const query = jest.fn(async (sql: string) => {
+            if (sql.includes(failure)) throw error;
+            if (sql === 'ROLLBACK' && rollbackFails) throw new Error('rollback failed');
+            return { rows: sql.includes('COUNT(*)') ? [{ total: 0 }] : [] };
+        });
+        const client = { query, release: jest.fn() };
+        const poolQuery = jest.fn(async () => ({ rows: [] }));
+        class TestPostgres extends Postgres {
+            protected createPool(): any {
+                return { query: poolQuery, connect: async () => client, end: jest.fn() };
+            }
+        }
+        const db = await TestPostgres.create('postgresql://isolated-test');
+        try {
+            poolQuery.mockClear();
+            await expect(db.listIdentities()).rejects.toBe(error);
+            expect(poolQuery).not.toHaveBeenCalled();
+            expect(query).toHaveBeenLastCalledWith('ROLLBACK');
+            expect(client.release).toHaveBeenCalledTimes(1);
+            expect(client.release).toHaveBeenCalledWith(rollbackFails);
+        }
+        finally {
+            await db.disconnect();
+        }
+    });
+
     it('keeps SQLite schema membership atomic and clears it on alias replacement, removal and reset', async () => {
         const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'search-identities-lifecycle-'));
         const sqlite = await Sqlite.create('test.db', directory);
@@ -623,8 +694,13 @@ describe('SQL identity enumeration', () => {
                 ...(filtered ? [] : [{ did: bob, doc: JSON.stringify(document()) }]),
             ] };
         });
+        const client = {
+            query: async (sql: string, params?: unknown[]) => sql.startsWith('SELECT')
+                ? query(sql, params) : { rows: [] },
+            release: jest.fn(),
+        };
         class TestPostgres extends Postgres {
-            protected createPool(): any { return { query, end: jest.fn() }; }
+            protected createPool(): any { return { query, connect: async () => client, end: jest.fn() }; }
         }
         const db = await TestPostgres.create('postgresql://isolated-test');
         try {

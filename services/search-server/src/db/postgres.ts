@@ -550,19 +550,37 @@ export default class Postgres implements DIDsDb {
                 WHERE ids.did = dc.did AND ids.schema_suffix = $${params.length}
             )`;
         }
-        const count = await pool.query<CountRow>(`SELECT COUNT(*)::int AS total ${from}`, params);
-        const rows = await pool.query<DocRow & DidRow>(
-            `SELECT dc.prefix || ':' || dc.suffix AS did, d.doc ${from}
-             ORDER BY dc.prefix COLLATE "C", dc.suffix COLLATE "C"
-             LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
-            [...params, Math.max(0, limit), Math.max(0, offset)]
-        );
-        return {
-            total: count.rows[0].total,
-            identities: rows.rows.map(row => extractIdentity(
-                row.did, typeof row.doc === 'string' ? JSON.parse(row.doc) : row.doc, options
-            )),
-        };
+        const client = await pool.connect();
+        let discardClient = false;
+        try {
+            await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+            const count = await client.query<CountRow>(`SELECT COUNT(*)::int AS total ${from}`, params);
+            const rows = await client.query<DocRow & DidRow>(
+                `SELECT dc.prefix || ':' || dc.suffix AS did, d.doc ${from}
+                 ORDER BY dc.prefix COLLATE "C", dc.suffix COLLATE "C"
+                 LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+                [...params, Math.max(0, limit), Math.max(0, offset)]
+            );
+            await client.query('COMMIT');
+            return {
+                total: count.rows[0].total,
+                identities: rows.rows.map(row => extractIdentity(
+                    row.did, typeof row.doc === 'string' ? JSON.parse(row.doc) : row.doc, options
+                )),
+            };
+        }
+        catch (error) {
+            try {
+                await client.query('ROLLBACK');
+            }
+            catch {
+                discardClient = true;
+            }
+            throw error;
+        }
+        finally {
+            client.release(discardClient);
+        }
     }
 
     async getPublishedCredentialCountsBySchema(didPrefix?: string): Promise<PublishedCredentialSchemaCount[]> {
