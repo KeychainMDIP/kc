@@ -127,16 +127,20 @@ stored alias's prefix.
 
 Enumerates indexed agent DIDs with the schema DIDs in their current manifests.
 Use this instead of a generic `/query` on `mdip.type` to enumerate identities.
-SQLite and PostgreSQL use the agent-classification index, then read documents
-only for the requested page. Assets are excluded, so there is no `isAgent` field.
-The additional index is created on startup without rebuilding existing data.
+SQLite and PostgreSQL use the agent-classification and identity-schema
+indexes, then read documents only for the requested page. Assets are excluded,
+so there is no `isAgent` field. Existing SQLite and PostgreSQL Search Server
+databases must be reset when first upgrading to the identity-schema filter so
+the new `identity_schemas` table can be populated by reindexing Gatekeeper.
 
 Query parameters:
 
 - `limit` (optional, default `50`, maximum `500`) and `offset` (optional, default
   `0`) are non-negative integers. `limit=0` returns only the total.
-- `schemaDid` (optional) selects the credential schema for field extraction.
-  Prefix aliases match by CID suffix. This does not filter the identity list.
+- `schemaDid` (optional) filters identities to those with a published credential
+  of that schema in their current manifest, before counting and pagination.
+  It also selects the credential schema for field extraction. Prefix aliases
+  match by CID suffix. Omitting it returns identities regardless of schema.
 - `fields` (optional, repeated parameter) selects literal, top-level keys from
   the revealed credential's `credential` object. Supply one `schemaDid` when
   requesting fields. For example, `fields=publicName&fields=avatarUrl` selects
@@ -186,9 +190,10 @@ Each identity then also has a `credentials` array:
 Missing fields are omitted. Matching revealed credentials are returned separately,
 ordered by credential DID, with only the requested claims. An identity with no
 matching revealed credential has `credentials: []`. Published but unrevealed
-credentials contribute schema DIDs but never claim values. MDIP does not assign
-meaning to any schema or field, select a preferred credential, or verify the
-manifest's signatures or credential status on this read path.
+credentials match the schema filter and contribute schema DIDs but never claim
+values. MDIP does not assign meaning to any schema or field, select a preferred
+credential, or verify the manifest's signatures or credential status on this
+read path.
 
 `manifestSchemaDids` is a sorted, unique list of schema strings as published in
 valid entries of the current identity manifest, using the same structural and
@@ -198,8 +203,9 @@ entries retain their published prefixes.
 
 Identities are ordered by effective prefix, then CID suffix, with one result
 per CID suffix. Ordering is case-sensitive and independent of locale.
-`total` counts all indexed agents with a resolved document in the configured
-network scope, including deactivated agents whose manifests have been cleared.
+`total` counts matching indexed agents with a resolved document in the configured
+network scope. Without a schema filter, this includes deactivated agents whose
+manifests have been cleared.
 Pages reflect the current index, not a frozen snapshot across requests.
 Invalid `schemaDid`, `fields`, or pagination values return `400`, and database
 failures return `500`.

@@ -466,6 +466,7 @@ describe('search DB branch behavior', () => {
         const blocks = new Map<string, BlockInfo>();
         const syncState = new Map<string, string>();
         const publishedCredentials = new Map<string, PublishedCredentialRecord[]>();
+        const identitySchemas = new Map<string, Set<string>>();
         const challengeReceipts = new Map<string, ChallengeReceiptRecord[]>();
         const classifications = new Map<string, string>();
 
@@ -665,6 +666,20 @@ describe('search DB branch behavior', () => {
                 return { rowCount: 1, rows: [] };
             }
 
+            if (text.includes('DELETE FROM identity_schemas')) {
+                if (params.length === 0) identitySchemas.clear();
+                else identitySchemas.delete(String(params[0]));
+                return { rowCount: 1, rows: [] };
+            }
+
+            if (text.includes('INSERT INTO identity_schemas')) {
+                const did = String(params[0]);
+                const schemas = identitySchemas.get(did) ?? new Set<string>();
+                schemas.add(String(params[1]));
+                identitySchemas.set(did, schemas);
+                return { rowCount: 1, rows: [] };
+            }
+
             if (text.includes('DELETE FROM challenge_receipts')) {
                 const deleted = challengeReceipts.delete(String(params[0]));
                 return { rowCount: deleted ? 1 : 0, rows: [] };
@@ -753,6 +768,7 @@ describe('search DB branch behavior', () => {
             changedDids: [eventDid],
             storedBlocks: 1,
         });
+        expect(identitySchemas.get(eventDid)).toEqual(new Set(['schema-a']));
         expect(await db.findDIDBySuffix('event-storage')).toBe(eventDid);
         expect(await db.findDIDBySuffix('missing')).toBeNull();
         expect(await db.getDIDEvents(eventDid)).toStrictEqual([didEventA, didEventB]);
@@ -827,10 +843,11 @@ describe('search DB branch behavior', () => {
             removedDids: 1,
         });
         expect(await db.getDIDEvents(eventDid)).toStrictEqual([]);
+        expect(identitySchemas.size).toBe(0);
 
         const reclassifiedDid = eventDid.replace('did:test:', 'did:mdip:');
         await db.applyIndexPage({
-            dids: [{ did: eventDid, events: [didEventA] }],
+            dids: [{ did: eventDid, events: [didEventA], publishedCredentials: [{ ...publishedCredentialA, holderDid: eventDid }] }],
             blocks: [],
         });
         const reclassifiedEvent = structuredClone(didEventA);
@@ -841,6 +858,7 @@ describe('search DB branch behavior', () => {
         });
         expect(await db.getDIDEvents(eventDid)).toStrictEqual([]);
         expect(await db.findDIDBySuffix('event-storage', 'did:mdip')).toBe(reclassifiedDid);
+        expect(identitySchemas.size).toBe(0);
 
         await db.disconnect();
         expect(mockPool.end).toHaveBeenCalledTimes(1);

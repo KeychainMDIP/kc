@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { jest } from '@jest/globals';
 import DIDsDbMemory from '../../services/search-server/src/db/json-memory.ts';
 import { INDEX_SYNC_STATE_KEYS } from '../../services/search-server/src/DidIndexer.ts';
+import { extractPublishedCredentials } from '../../services/search-server/src/published-credentials.ts';
 import { createSeedEvent, seedDID } from './db-seed.ts';
 import type { NetworkMetricSnapshot } from '../../services/search-server/src/types.ts';
 
@@ -111,10 +112,11 @@ describe('Search Server HTTP routes', () => {
         const event = createSeedEvent(schemaDid);
         event.operation.mdip!.type = 'agent';
         event.operation.mdip!.prefix = 'did:mdip';
-        await seedDID(db, schemaDid, { events: [event], doc: { didDocumentData: { manifest: {
+        const doc = { didDocumentData: { manifest: {
             'did:mdip:credential': { type: ['VerifiableCredential', schemaDid], issuer: schemaDid,
                 credentialSubject: { id: schemaDid }, credential: { label: 'Alice', score: 0, unrequested: 'omit' } },
-        } } } });
+        } } };
+        await seedDID(db, schemaDid, { events: [event], doc, publishedCredentials: extractPublishedCredentials(schemaDid, doc) });
         const list = jest.spyOn(db, 'listIdentities');
         await boot();
         expect(await request('/identities')).toEqual({ status: 200, body: { total: 1, identities: [
@@ -131,6 +133,35 @@ describe('Search Server HTTP routes', () => {
         ]);
         expect(list).toHaveBeenLastCalledWith({ didPrefix: 'did:mdip', schemaDid, fields: ['label', 'score'], limit: 500, offset: 0 });
         expect(await request('/identities?offset=1')).toEqual({ status: 200, body: { total: 1, identities: [] } });
+    });
+
+    it('filters identities and their total by schema before paginating the HTTP response', async () => {
+        for (const name of ['Alice', 'Bob', 'Carol']) {
+            const did = `did:mdip:${name}`;
+            const event = createSeedEvent(did);
+            event.operation.mdip!.type = 'agent';
+            event.operation.mdip!.prefix = 'did:mdip';
+            const doc = { didDocumentData: { manifest: name === 'Alice' ? {} : {
+                [`did:mdip:profile-${name}`]: {
+                    type: ['VerifiableCredential', schemaDid], issuer: did,
+                    credentialSubject: { id: did }, credential: { publicName: name },
+                },
+            } } };
+            await seedDID(db, did, { events: [event], doc, publishedCredentials: extractPublishedCredentials(did, doc) });
+        }
+        await boot();
+        expect((await request('/identities')).body.total).toBe(3);
+        const query = new URLSearchParams({ schemaDid, fields: 'publicName', limit: '1', offset: '0' });
+        expect(await request(`/identities?${query}`)).toEqual({ status: 200, body: {
+            total: 2, identities: [{ did: 'did:mdip:Bob', manifestSchemaDids: [schemaDid], credentials: [
+                { credentialDid: 'did:mdip:profile-Bob', fields: { publicName: 'Bob' } },
+            ] }],
+        } });
+        query.set('offset', '1');
+        query.delete('fields');
+        expect(await request(`/identities?${query}`)).toEqual({ status: 200, body: {
+            total: 2, identities: [{ did: 'did:mdip:Carol', manifestSchemaDids: [schemaDid] }],
+        } });
     });
 
     it('rejects invalid identity queries before consulting storage and reports storage errors as 500', async () => {

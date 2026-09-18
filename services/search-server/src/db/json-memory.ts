@@ -216,11 +216,17 @@ export default class DIDsDbMemory implements DIDsDb {
     }
 
     async listIdentities(options: IdentityListOptions = {}): Promise<IdentityListResult> {
-        const { didPrefix, limit = 50, offset = 0 } = options;
+        const { didPrefix, schemaDid, limit = 50, offset = 0 } = options;
+        const schemaSuffix = schemaDid ? getDIDSuffix(schemaDid) : undefined;
         const agents = [...this.agentDIDSuffixes].flatMap(suffix => {
             const storedDid = this.didsBySuffix.get(suffix)!;
             const prefix = this.authoritativeDIDPrefixes.get(suffix) ?? AMBIGUOUS_DID_PREFIX;
             if (!this.docs.has(storedDid) || (didPrefix && prefix !== didPrefix)) {
+                return [];
+            }
+            if (schemaSuffix && !this.publishedCredentials.get(storedDid)?.some(
+                record => getDIDSuffix(record.schemaDid) === schemaSuffix
+            )) {
                 return [];
             }
             return [{ did: `${prefix}:${suffix}`, prefix, storedDid }];

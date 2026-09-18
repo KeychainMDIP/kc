@@ -152,6 +152,12 @@ export default class Postgres implements DIDsDb {
             CREATE INDEX IF NOT EXISTS idx_published_credentials_suffixes
                 ON published_credentials (credential_suffix, schema_suffix);
 
+            CREATE TABLE IF NOT EXISTS identity_schemas (
+                did TEXT NOT NULL,
+                schema_suffix TEXT NOT NULL,
+                PRIMARY KEY (did, schema_suffix)
+            );
+
             CREATE TABLE IF NOT EXISTS did_prefix_references (
                 source_did TEXT NOT NULL,
                 suffix TEXT NOT NULL,
@@ -383,6 +389,7 @@ export default class Postgres implements DIDsDb {
                     await client.query('DELETE FROM did_events WHERE did = $1', [previousDid]);
                     await client.query('DELETE FROM did_docs WHERE did = $1', [previousDid]);
                     await client.query('DELETE FROM published_credentials WHERE holder_did = $1', [previousDid]);
+                    await client.query('DELETE FROM identity_schemas WHERE did = $1', [previousDid]);
                     await client.query('DELETE FROM did_prefix_references WHERE source_did = $1', [previousDid]);
                     await client.query('DELETE FROM challenge_receipts WHERE receipt_did = $1', [previousDid]);
                     await client.query('DELETE FROM did_classifications WHERE suffix = $1', [suffix]);
@@ -400,6 +407,7 @@ export default class Postgres implements DIDsDb {
                 if (record.removed) {
                     await client.query('DELETE FROM did_docs WHERE did = $1', [record.did]);
                     await client.query('DELETE FROM published_credentials WHERE holder_did = $1', [record.did]);
+                    await client.query('DELETE FROM identity_schemas WHERE did = $1', [record.did]);
                     await client.query('DELETE FROM did_prefix_references WHERE source_did = $1', [record.did]);
                     await client.query('DELETE FROM challenge_receipts WHERE receipt_did = $1', [record.did]);
                     await client.query('DELETE FROM did_classifications WHERE suffix = $1', [suffix]);
@@ -438,6 +446,10 @@ export default class Postgres implements DIDsDb {
                     record.did,
                     record.publishedCredentials ?? []
                 );
+                await client.query('DELETE FROM identity_schemas WHERE did = $1', [record.did]);
+                for (const schemaSuffix of new Set((record.publishedCredentials ?? []).map(item => getDIDSuffix(item.schemaDid)))) {
+                    await client.query('INSERT INTO identity_schemas (did, schema_suffix) VALUES ($1, $2)', [record.did, schemaSuffix]);
+                }
                 await this.replaceDIDPrefixReferencesWithClient(
                     client,
                     record.did,
@@ -497,11 +509,18 @@ export default class Postgres implements DIDsDb {
 
     async listIdentities(options: IdentityListOptions = {}): Promise<IdentityListResult> {
         const pool = this.getPool();
-        const { didPrefix, limit = 50, offset = 0 } = options;
-        const from = `FROM did_classifications dc
+        const { didPrefix, schemaDid, limit = 50, offset = 0 } = options;
+        let from = `FROM did_classifications dc
             JOIN did_docs d ON d.did = dc.did
             WHERE dc.is_agent = TRUE ${didPrefix ? 'AND dc.prefix COLLATE "C" = $1' : ''}`;
         const params = didPrefix ? [didPrefix] : [];
+        if (schemaDid) {
+            params.push(getDIDSuffix(schemaDid));
+            from += ` AND EXISTS (
+                SELECT 1 FROM identity_schemas ids
+                WHERE ids.did = dc.did AND ids.schema_suffix = $${params.length}
+            )`;
+        }
         const count = await pool.query<CountRow>(`SELECT COUNT(*)::int AS total ${from}`, params);
         const rows = await pool.query<DocRow & DidRow>(
             `SELECT dc.prefix || ':' || dc.suffix AS did, d.doc ${from}
@@ -1074,6 +1093,7 @@ export default class Postgres implements DIDsDb {
         await pool.query('DELETE FROM did_classifications');
         await pool.query('DELETE FROM blocks');
         await pool.query('DELETE FROM published_credentials');
+        await pool.query('DELETE FROM identity_schemas');
         await pool.query('DELETE FROM did_prefix_references');
         await pool.query('DELETE FROM challenge_receipts');
         await pool.query('DELETE FROM network_metric_snapshots');
