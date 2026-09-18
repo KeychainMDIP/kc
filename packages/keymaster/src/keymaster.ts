@@ -1566,7 +1566,7 @@ export default class Keymaster implements KeymasterInterface {
     ): Promise<Record<string, string>> {
         const { includeIDs = false } = options;
         const wallet = await this.loadWallet();
-        const names = wallet.names || {};
+        const names = { ...wallet.names };
 
         if (includeIDs) {
             for (const [name, id] of Object.entries(wallet.ids || {})) {
