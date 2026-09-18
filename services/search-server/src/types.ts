@@ -56,6 +56,8 @@ export interface IdentityRecord {
     manifestSchemaDids: string[];
     credentials?: {
         credentialDid: string;
+        issuerDid: string;
+        updatedAt: string;
         fields: Record<string, unknown>;
     }[];
 }

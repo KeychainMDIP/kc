@@ -114,7 +114,8 @@ describe('Search Server HTTP routes', () => {
         event.operation.mdip!.prefix = 'did:mdip';
         const doc = { didDocumentData: { manifest: {
             'did:mdip:credential': { type: ['VerifiableCredential', schemaDid], issuer: schemaDid,
-                credentialSubject: { id: schemaDid }, credential: { label: 'Alice', score: 0, unrequested: 'omit' } },
+                credentialSubject: { id: schemaDid }, signature: { signed: '2026-09-18T12:00:00.000Z' },
+                credential: { label: 'Alice', score: 0, unrequested: 'omit' } },
         } } };
         await seedDID(db, schemaDid, { events: [event], doc, publishedCredentials: extractPublishedCredentials(schemaDid, doc) });
         const list = jest.spyOn(db, 'listIdentities');
@@ -129,7 +130,7 @@ describe('Search Server HTTP routes', () => {
         const result = await request(`/identities?${query}`);
         expect(result.status).toBe(200);
         expect(result.body.identities[0].credentials).toEqual([
-            { credentialDid: 'did:mdip:credential', fields: { label: 'Alice', score: 0 } },
+            { credentialDid: 'did:mdip:credential', issuerDid: schemaDid, updatedAt: '2026-09-18T12:00:00.000Z', fields: { label: 'Alice', score: 0 } },
         ]);
         expect(list).toHaveBeenLastCalledWith({ didPrefix: 'did:mdip', schemaDid, fields: ['label', 'score'], limit: 500, offset: 0 });
         query.delete('schemaDid');
@@ -157,7 +158,7 @@ describe('Search Server HTTP routes', () => {
         const query = new URLSearchParams({ schemaDid, fields: 'publicName', limit: '1', offset: '0' });
         expect(await request(`/identities?${query}`)).toEqual({ status: 200, body: {
             total: 2, identities: [{ did: 'did:mdip:Bob', manifestSchemaDids: [schemaDid], credentials: [
-                { credentialDid: 'did:mdip:profile-Bob', fields: { publicName: 'Bob' } },
+                { credentialDid: 'did:mdip:profile-Bob', issuerDid: 'did:mdip:Bob', updatedAt: '', fields: { publicName: 'Bob' } },
             ] }],
         } });
         query.set('offset', '1');

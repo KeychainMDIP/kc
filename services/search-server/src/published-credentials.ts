@@ -156,6 +156,8 @@ export function extractIdentity(
                 if (selected.length === 0) return [];
                 return [{
                     credentialDid: record.credentialDid,
+                    issuerDid: record.issuerDid,
+                    updatedAt: record.updatedAt,
                     fields: Object.fromEntries(selected.map(field => [field, claims[field]])),
                 }];
             });

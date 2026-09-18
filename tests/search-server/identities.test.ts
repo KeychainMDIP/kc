@@ -159,10 +159,10 @@ describe.each(['memory', 'sqlite'])('%s identities', adapter => {
         const result = await db.listIdentities({ schemaDid, fields });
         expect(result).toEqual({ total: 2, identities: [
             { did: bob, manifestSchemaDids: [schemaDid], credentials: [
-                { credentialDid: 'did:mdip:bob-vc', fields: { publicName: 'Bob' } },
+                { credentialDid: 'did:mdip:bob-vc', issuerDid: 'did:mdip:Issuer', updatedAt: '', fields: { publicName: 'Bob' } },
             ] },
             { did: carol, manifestSchemaDids: [schemaDid], credentials: [
-                { credentialDid: 'did:mdip:carol-vc', fields: { faveFood: 'Pizza' } },
+                { credentialDid: 'did:mdip:carol-vc', issuerDid: 'did:mdip:Issuer', updatedAt: '', fields: { faveFood: 'Pizza' } },
             ] },
         ] });
         expect(await db.listIdentities({ schemaDid, fields, limit: 1, offset: 1 })).toEqual({
@@ -175,7 +175,7 @@ describe.each(['memory', 'sqlite'])('%s identities', adapter => {
         expect(anySchema.total).toBe(3);
         expect(anySchema.identities.map(id => id.did)).toEqual([alice, bob, carol]);
         expect(anySchema.identities[0].credentials).toEqual([
-            { credentialDid: 'did:test:vc', fields: { publicName: 'Alice' } },
+            { credentialDid: 'did:test:vc', issuerDid: 'did:mdip:Issuer', updatedAt: '', fields: { publicName: 'Alice' } },
         ]);
         expect(await db.listIdentities({ fields, didPrefix: 'did:test' })).toEqual({ total: 0, identities: [] });
         expect((await db.listIdentities({ schemaDid })).total).toBe(4);
@@ -194,7 +194,7 @@ describe.each(['memory', 'sqlite'])('%s identities', adapter => {
         for (const field of Object.keys(claims)) {
             expect(await db.listIdentities({ schemaDid, fields: [field, field] })).toEqual({
                 total: 1, identities: [{ did: alice, manifestSchemaDids: [schemaDid], credentials: [
-                    { credentialDid: 'did:mdip:vc', fields: Object.fromEntries([[field, claims[field]]]) },
+                    { credentialDid: 'did:mdip:vc', issuerDid: 'did:mdip:Issuer', updatedAt: '', fields: Object.fromEntries([[field, claims[field]]]) },
                 ] }],
             });
         }
@@ -206,21 +206,23 @@ describe.each(['memory', 'sqlite'])('%s identities', adapter => {
     it.each([false, true])('matches every schema when credential aliases contain different versions (reversed: %s)', async reversed => {
         const otherSchema = 'did:mdip:other-schema';
         const entries = [
-            ['did:mdip:vc', credential(alice, schemaDid, { publicName: 'Alice' })],
-            ['did:test:vc', credential(alice, otherSchema, { publicName: 'Updated Alice' })],
+            ['did:mdip:vc', { ...credential(alice, schemaDid, { publicName: 'Alice' }), issuer: bob,
+                signature: { signed: '2026-09-01T00:00:00.000Z' } }],
+            ['did:test:vc', { ...credential(alice, otherSchema, { publicName: 'Updated Alice' }), issuer: 'did:test:Issuer',
+                signature: { signed: '2026-09-02T00:00:00.000Z' } }],
         ];
         await seedAgent(db, alice, Object.fromEntries(reversed ? entries.reverse() : entries));
         await seedAgent(db, bob, { 'did:mdip:vc-bob': credential(bob) });
 
         expect(await db.listIdentities({ schemaDid, fields: ['publicName'], limit: 1 })).toEqual({
             total: 2, identities: [{ did: alice, manifestSchemaDids: [otherSchema, schemaDid].sort(), credentials: [
-                { credentialDid: 'did:mdip:vc', fields: { publicName: 'Alice' } },
+                { credentialDid: 'did:mdip:vc', issuerDid: bob, updatedAt: '2026-09-01T00:00:00.000Z', fields: { publicName: 'Alice' } },
             ] }],
         });
         expect((await db.listIdentities({ schemaDid, limit: 1, offset: 1 })).identities[0].did).toBe(bob);
         expect(await db.listIdentities({ schemaDid: otherSchema, fields: ['publicName'] })).toEqual({
             total: 1, identities: [{ did: alice, manifestSchemaDids: [otherSchema, schemaDid].sort(), credentials: [
-                { credentialDid: 'did:test:vc', fields: { publicName: 'Updated Alice' } },
+                { credentialDid: 'did:test:vc', issuerDid: 'did:test:Issuer', updatedAt: '2026-09-02T00:00:00.000Z', fields: { publicName: 'Updated Alice' } },
             ] }],
         });
 
@@ -251,10 +253,12 @@ describe.each(['memory', 'sqlite'])('%s identities', adapter => {
             manifestSchemaDids: [schemaDid, 'did:mdip:other-schema'].sort(),
             credentials: [{
                 credentialDid: 'did:mdip:credential-a',
+                issuerDid: 'did:mdip:Issuer',
+                updatedAt: '',
                 fields: { publicName: 'Alice A', active: false, score: 0, empty: '', nullable: null,
                     nested: { value: 1 }, 'literal.dot': 'literal' },
             }, {
-                credentialDid: 'did:mdip:credential-b', fields: { publicName: 'Alice B' },
+                credentialDid: 'did:mdip:credential-b', issuerDid: 'did:mdip:Issuer', updatedAt: '', fields: { publicName: 'Alice B' },
             }],
         }] });
         (result.identities[0].credentials![0].fields.nested as { value: number }).value = 2;
@@ -304,6 +308,28 @@ describe.each(['memory', 'sqlite'])('%s identities', adapter => {
 });
 
 describe('identity field projection', () => {
+    it.each([
+        { signed: '2026-09-01T00:00:00.000Z', metadata: { updated: '2026-09-02T00:00:00.000Z' }, expected: '2026-09-01T00:00:00.000Z' },
+        { signed: undefined, metadata: { updated: '2026-09-02T00:00:00.000Z', created: '2026-08-01T00:00:00.000Z' }, expected: '2026-09-02T00:00:00.000Z' },
+        { signed: 42, metadata: { updated: '2026-09-02T00:00:00.000Z' }, expected: '2026-09-02T00:00:00.000Z' },
+        { signed: undefined, metadata: { created: '2026-08-01T00:00:00.000Z' }, expected: '2026-08-01T00:00:00.000Z' },
+        { signed: undefined, metadata: {}, expected: '' },
+    ])('returns issuer and timestamp metadata independently of claims: %j', ({ signed, metadata, expected }) => {
+        const claims = { publicName: 'Alice', issuerDid: 'claim issuer', updatedAt: 'claim timestamp' };
+        const doc = {
+            ...document({ 'did:mdip:vc': {
+                ...credential(alice, schemaDid, claims),
+                issuer: bob,
+                signature: { signed },
+                validFrom: '2026-01-01T00:00:00.000Z',
+            } }),
+            didDocumentMetadata: metadata,
+        };
+        expect(extractIdentity(alice, doc, { schemaDid, fields: Object.keys(claims) }).credentials).toEqual([{
+            credentialDid: 'did:mdip:vc', issuerDid: bob, updatedAt: expected, fields: claims,
+        }]);
+    });
+
     it.each([{}, document(null), document([]), document('bad')])('handles absent or malformed manifests', doc => {
         expect(extractIdentity(alice, doc, { schemaDid, fields: ['publicName'] })).toEqual({
             did: alice, manifestSchemaDids: [], credentials: [],
@@ -332,7 +358,7 @@ describe('identity field projection', () => {
         expect(Object.getPrototypeOf(result.credentials![0].fields)).toBe(Object.prototype);
         expect(extractIdentity(alice, document({ 'did:mdip:vc': credential() }), {
             fields: ['publicName'],
-        }).credentials).toEqual([{ credentialDid: 'did:mdip:vc', fields: { publicName: 'Alice' } }]);
+        }).credentials).toEqual([{ credentialDid: 'did:mdip:vc', issuerDid: 'did:mdip:Issuer', updatedAt: '', fields: { publicName: 'Alice' } }]);
     });
 });
 
@@ -417,7 +443,7 @@ describe('SQLite identity query isolation', () => {
         expect(await read).toEqual({ total: 1, identities: [{
             did: alice,
             manifestSchemaDids: [schemaDid],
-            credentials: [{ credentialDid: 'did:mdip:vc', fields: {
+            credentials: [{ credentialDid: 'did:mdip:vc', issuerDid: 'did:mdip:Issuer', updatedAt: '', fields: {
                 publicName: rollback ? 'Alice' : 'Updated Alice',
             } }],
         }] });
@@ -510,7 +536,7 @@ describe('SQL identity enumeration', () => {
                 'did:mdip:vc': credential(alice, schemaDid, { publicName: 'Changed', reject: true }),
             })).rejects.toThrow('field write failed');
             expect((await sqlite.listIdentities({ fields: ['publicName'] })).identities[0].credentials).toEqual([
-                { credentialDid: 'did:mdip:vc', fields: { publicName: 'Alice' } },
+                { credentialDid: 'did:mdip:vc', issuerDid: 'did:mdip:Issuer', updatedAt: '', fields: { publicName: 'Alice' } },
             ]);
             expect((await sqlite.listIdentities({ fields: ['reject'] })).total).toBe(0);
             expect(await sqlite.getDIDEvents(alice)).toEqual(events);
@@ -614,7 +640,7 @@ describe('SQL identity enumeration', () => {
             query.mockClear();
             const field = "faveFood') OR TRUE --";
             const result = await db.listIdentities({ didPrefix: prefix, schemaDid, fields: ['publicName', field], limit: 2, offset: 4 });
-            expect(result.identities[0].credentials).toEqual([{ credentialDid: 'did:mdip:vc', fields: { publicName: 'Alice' } }]);
+            expect(result.identities[0].credentials).toEqual([{ credentialDid: 'did:mdip:vc', issuerDid: 'did:mdip:Issuer', updatedAt: '', fields: { publicName: 'Alice' } }]);
             const suffix = schemaDid.split(':').pop();
             expect(query.mock.calls).toHaveLength(2);
             for (const [sql] of query.mock.calls) {

@@ -194,6 +194,8 @@ Each identity then also has a `credentials` array:
   "credentials": [
     {
       "credentialDid": "did:mdip:<credential-cid>",
+      "issuerDid": "did:mdip:<issuer-cid>",
+      "updatedAt": "2026-09-18T12:00:00.000Z",
       "fields": { "publicName": "Alice", "avatarUrl": "https://example.org/alice.png" }
     }
   ]
@@ -208,6 +210,14 @@ schema-only filter and contribute schema DIDs but cannot match a field filter
 or supply claim values. MDIP does not assign meaning to any schema or field,
 select a preferred credential, or verify the manifest's signatures or
 credential status on this read path.
+
+Each returned credential also includes `issuerDid` from its published `issuer`
+and `updatedAt`, using the same metadata as the published-credential metrics.
+`updatedAt` uses the published credential's `signature.signed`, falling back to
+the holder DID document's `updated` or `created` timestamp, or an empty string
+if none is available. It is not a publication timestamp and does not track
+changes to the underlying credential asset that the holder has not republished.
+These metadata fields are separate from the requested claims in `fields`.
 
 `manifestSchemaDids` is a sorted, unique list of schema strings as published in
 valid entries of the current identity manifest, using the same structural and
