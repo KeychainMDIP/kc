@@ -108,6 +108,29 @@ export function extractPublishedCredentials(
         .map(evidence => evidence.credential);
 }
 
+function getCredentialClaims(doc: object, credentialDid: string): Record<string, unknown> | undefined {
+    const manifest = (doc as MaybeMdipDocument).didDocumentData?.manifest as Record<string, MaybeVc> | undefined;
+    const claims = manifest?.[credentialDid]?.credential;
+    return claims && typeof claims === 'object' && !Array.isArray(claims)
+        ? claims as Record<string, unknown> : undefined;
+}
+
+export function extractIdentityFields(
+    doc: object,
+    published: PublishedCredentialRecord[]
+): Map<string, Set<string>> {
+    const schemaFields = new Map<string, Set<string>>();
+    for (const record of published) {
+        const claims = getCredentialClaims(doc, record.credentialDid);
+        if (!claims) continue;
+        const suffix = getDIDSuffix(record.schemaDid);
+        const fields = schemaFields.get(suffix) ?? new Set<string>();
+        for (const field of Object.keys(claims)) fields.add(field);
+        schemaFields.set(suffix, fields);
+    }
+    return schemaFields;
+}
+
 export function extractIdentity(
     did: string,
     doc: object,
@@ -120,21 +143,20 @@ export function extractIdentity(
     };
 
     if (fields.length > 0) {
-        const manifest = (doc as MaybeMdipDocument).didDocumentData?.manifest as Record<string, MaybeVc>;
         identity.credentials = published
-            .filter(record => record.revealed && schemaDid
-                && getDIDSuffix(record.schemaDid) === getDIDSuffix(schemaDid))
+            .filter(record => record.revealed && (!schemaDid
+                || getDIDSuffix(record.schemaDid) === getDIDSuffix(schemaDid)))
             .sort((a, b) => a.credentialDid < b.credentialDid ? -1 : a.credentialDid > b.credentialDid ? 1 : 0)
             .flatMap(record => {
-                const claims = manifest[record.credentialDid].credential;
-                if (!claims || typeof claims !== 'object' || Array.isArray(claims)) {
+                const claims = getCredentialClaims(doc, record.credentialDid);
+                if (!claims) {
                     return [];
                 }
+                const selected = fields.filter(field => Object.hasOwn(claims, field));
+                if (selected.length === 0) return [];
                 return [{
                     credentialDid: record.credentialDid,
-                    fields: Object.fromEntries(fields
-                        .filter(field => Object.hasOwn(claims, field))
-                        .map(field => [field, (claims as Record<string, unknown>)[field]])),
+                    fields: Object.fromEntries(selected.map(field => [field, claims[field]])),
                 }];
             });
     }

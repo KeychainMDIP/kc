@@ -23,7 +23,7 @@ import {
     GatekeeperEvent,
 } from '../types.js';
 import { getEventDisplayTime, stableStringify } from './db-utils.js';
-import { deduplicateDIDPrefixReferences, extractIdentity } from '../published-credentials.js';
+import { deduplicateDIDPrefixReferences, extractIdentity, extractIdentityFields } from '../published-credentials.js';
 import {
     AMBIGUOUS_DID_PREFIX,
     classifyDIDPrefix,
@@ -157,6 +157,15 @@ export default class Postgres implements DIDsDb {
                 schema_suffix TEXT NOT NULL,
                 PRIMARY KEY (did, schema_suffix)
             );
+
+            CREATE TABLE IF NOT EXISTS identity_fields (
+                did TEXT NOT NULL,
+                field TEXT NOT NULL,
+                schema_suffix TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_identity_fields_lookup
+                ON identity_fields (did, md5(field), schema_suffix);
 
             CREATE TABLE IF NOT EXISTS did_prefix_references (
                 source_did TEXT NOT NULL,
@@ -390,6 +399,7 @@ export default class Postgres implements DIDsDb {
                     await client.query('DELETE FROM did_docs WHERE did = $1', [previousDid]);
                     await client.query('DELETE FROM published_credentials WHERE holder_did = $1', [previousDid]);
                     await client.query('DELETE FROM identity_schemas WHERE did = $1', [previousDid]);
+                    await client.query('DELETE FROM identity_fields WHERE did = $1', [previousDid]);
                     await client.query('DELETE FROM did_prefix_references WHERE source_did = $1', [previousDid]);
                     await client.query('DELETE FROM challenge_receipts WHERE receipt_did = $1', [previousDid]);
                     await client.query('DELETE FROM did_classifications WHERE suffix = $1', [suffix]);
@@ -408,6 +418,7 @@ export default class Postgres implements DIDsDb {
                     await client.query('DELETE FROM did_docs WHERE did = $1', [record.did]);
                     await client.query('DELETE FROM published_credentials WHERE holder_did = $1', [record.did]);
                     await client.query('DELETE FROM identity_schemas WHERE did = $1', [record.did]);
+                    await client.query('DELETE FROM identity_fields WHERE did = $1', [record.did]);
                     await client.query('DELETE FROM did_prefix_references WHERE source_did = $1', [record.did]);
                     await client.query('DELETE FROM challenge_receipts WHERE receipt_did = $1', [record.did]);
                     await client.query('DELETE FROM did_classifications WHERE suffix = $1', [suffix]);
@@ -449,6 +460,12 @@ export default class Postgres implements DIDsDb {
                 await client.query('DELETE FROM identity_schemas WHERE did = $1', [record.did]);
                 for (const schemaSuffix of new Set((record.publishedCredentials ?? []).map(item => getDIDSuffix(item.schemaDid)))) {
                     await client.query('INSERT INTO identity_schemas (did, schema_suffix) VALUES ($1, $2)', [record.did, schemaSuffix]);
+                }
+                await client.query('DELETE FROM identity_fields WHERE did = $1', [record.did]);
+                for (const [suffix, fields] of extractIdentityFields(record.doc ?? {}, record.publishedCredentials ?? [])) {
+                    for (const field of fields) {
+                        await client.query('INSERT INTO identity_fields (did, field, schema_suffix) VALUES ($1, $2, $3)', [record.did, field, suffix]);
+                    }
                 }
                 await this.replaceDIDPrefixReferencesWithClient(
                     client,
@@ -509,12 +526,24 @@ export default class Postgres implements DIDsDb {
 
     async listIdentities(options: IdentityListOptions = {}): Promise<IdentityListResult> {
         const pool = this.getPool();
-        const { didPrefix, schemaDid, limit = 50, offset = 0 } = options;
+        const { didPrefix, schemaDid, fields = [], limit = 50, offset = 0 } = options;
         let from = `FROM did_classifications dc
             JOIN did_docs d ON d.did = dc.did
             WHERE dc.is_agent = TRUE ${didPrefix ? 'AND dc.prefix COLLATE "C" = $1' : ''}`;
         const params = didPrefix ? [didPrefix] : [];
-        if (schemaDid) {
+        if (fields.length > 0) {
+            const placeholders = fields.map((_, index) => `$${params.length + index + 1}`);
+            params.push(...fields);
+            if (schemaDid) params.push(getDIDSuffix(schemaDid));
+            // Hash long field names for lookup, but compare literals too so collisions cannot match.
+            from += ` AND EXISTS (
+                SELECT 1 FROM identity_fields idf
+                WHERE idf.did = dc.did AND idf.field IN (${placeholders.join(',')})
+                AND md5(idf.field) IN (${placeholders.map(value => `md5(${value})`).join(',')})
+                ${schemaDid ? `AND idf.schema_suffix = $${params.length}` : ''}
+            )`;
+        }
+        else if (schemaDid) {
             params.push(getDIDSuffix(schemaDid));
             from += ` AND EXISTS (
                 SELECT 1 FROM identity_schemas ids
@@ -1094,6 +1123,7 @@ export default class Postgres implements DIDsDb {
         await pool.query('DELETE FROM blocks');
         await pool.query('DELETE FROM published_credentials');
         await pool.query('DELETE FROM identity_schemas');
+        await pool.query('DELETE FROM identity_fields');
         await pool.query('DELETE FROM did_prefix_references');
         await pool.query('DELETE FROM challenge_receipts');
         await pool.query('DELETE FROM network_metric_snapshots');

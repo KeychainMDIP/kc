@@ -467,6 +467,7 @@ describe('search DB branch behavior', () => {
         const syncState = new Map<string, string>();
         const publishedCredentials = new Map<string, PublishedCredentialRecord[]>();
         const identitySchemas = new Map<string, Set<string>>();
+        const identityFields = new Map<string, Set<string>>();
         const challengeReceipts = new Map<string, ChallengeReceiptRecord[]>();
         const classifications = new Map<string, string>();
 
@@ -680,6 +681,20 @@ describe('search DB branch behavior', () => {
                 return { rowCount: 1, rows: [] };
             }
 
+            if (text.includes('DELETE FROM identity_fields')) {
+                if (params.length === 0) identityFields.clear();
+                else identityFields.delete(String(params[0]));
+                return { rowCount: 1, rows: [] };
+            }
+
+            if (text.includes('INSERT INTO identity_fields')) {
+                const did = String(params[0]);
+                const fields = identityFields.get(did) ?? new Set<string>();
+                fields.add(JSON.stringify(params.slice(1)));
+                identityFields.set(did, fields);
+                return { rowCount: 1, rows: [] };
+            }
+
             if (text.includes('DELETE FROM challenge_receipts')) {
                 const deleted = challengeReceipts.delete(String(params[0]));
                 return { rowCount: deleted ? 1 : 0, rows: [] };
@@ -753,7 +768,9 @@ describe('search DB branch behavior', () => {
             dids: [{
                 did: eventDid,
                 events: [didEventA, didEventB],
-                doc: { didDocument: { id: eventDid } },
+                doc: { didDocument: { id: eventDid }, didDocumentData: { manifest: {
+                    [publishedCredentialA.credentialDid]: { credential: { publicName: 'Alice' } },
+                } } },
                 publishedCredentials: [{ ...publishedCredentialA, holderDid: eventDid }],
                 challengeReceipts: [{ ...challengeReceipt, receiptDid: eventDid }],
             }],
@@ -769,6 +786,7 @@ describe('search DB branch behavior', () => {
             storedBlocks: 1,
         });
         expect(identitySchemas.get(eventDid)).toEqual(new Set(['schema-a']));
+        expect(identityFields.get(eventDid)).toEqual(new Set(['["publicName","schema-a"]']));
         expect(await db.findDIDBySuffix('event-storage')).toBe(eventDid);
         expect(await db.findDIDBySuffix('missing')).toBeNull();
         expect(await db.getDIDEvents(eventDid)).toStrictEqual([didEventA, didEventB]);
@@ -844,10 +862,13 @@ describe('search DB branch behavior', () => {
         });
         expect(await db.getDIDEvents(eventDid)).toStrictEqual([]);
         expect(identitySchemas.size).toBe(0);
+        expect(identityFields.size).toBe(0);
 
         const reclassifiedDid = eventDid.replace('did:test:', 'did:mdip:');
         await db.applyIndexPage({
-            dids: [{ did: eventDid, events: [didEventA], publishedCredentials: [{ ...publishedCredentialA, holderDid: eventDid }] }],
+            dids: [{ did: eventDid, events: [didEventA],
+                doc: { didDocumentData: { manifest: { [publishedCredentialA.credentialDid]: { credential: { publicName: 'Alice' } } } } },
+                publishedCredentials: [{ ...publishedCredentialA, holderDid: eventDid }] }],
             blocks: [],
         });
         const reclassifiedEvent = structuredClone(didEventA);
@@ -859,6 +880,7 @@ describe('search DB branch behavior', () => {
         expect(await db.getDIDEvents(eventDid)).toStrictEqual([]);
         expect(await db.findDIDBySuffix('event-storage', 'did:mdip')).toBe(reclassifiedDid);
         expect(identitySchemas.size).toBe(0);
+        expect(identityFields.size).toBe(0);
 
         await db.disconnect();
         expect(mockPool.end).toHaveBeenCalledTimes(1);

@@ -132,6 +132,9 @@ describe('Search Server HTTP routes', () => {
             { credentialDid: 'did:mdip:credential', fields: { label: 'Alice', score: 0 } },
         ]);
         expect(list).toHaveBeenLastCalledWith({ didPrefix: 'did:mdip', schemaDid, fields: ['label', 'score'], limit: 500, offset: 0 });
+        query.delete('schemaDid');
+        expect(await request(`/identities?${query}`)).toEqual(result);
+        expect(await request('/identities?fields=missing')).toEqual({ status: 200, body: { total: 0, identities: [] } });
         expect(await request('/identities?offset=1')).toEqual({ status: 200, body: { total: 1, identities: [] } });
     });
 
@@ -167,7 +170,7 @@ describe('Search Server HTTP routes', () => {
     it('rejects invalid identity queries before consulting storage and reports storage errors as 500', async () => {
         const list = jest.spyOn(db, 'listIdentities');
         await boot();
-        for (const query of ['fields=label', 'schemaDid=invalid', 'limit=-1', 'offset=1.5', 'limit=1&limit=2', `schemaDid=${schemaDid}&fields=`]) {
+        for (const query of ['fields=', 'schemaDid=invalid', 'limit=-1', 'offset=1.5', 'limit=1&limit=2', `schemaDid=${schemaDid}&fields=`]) {
             expect((await request(`/identities?${query}`)).status).toBe(400);
         }
         expect(list).not.toHaveBeenCalled();

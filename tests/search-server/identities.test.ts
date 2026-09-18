@@ -1,6 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { randomBytes } from 'node:crypto';
 import { jest } from '@jest/globals';
 import DIDsDbMemory from '../../services/search-server/src/db/json-memory.ts';
 import Sqlite from '../../services/search-server/src/db/sqlite.ts';
@@ -125,7 +126,7 @@ describe.each(['memory', 'sqlite'])('%s identities', adapter => {
         expect(await db.listIdentities({ ...options, offset: 2 })).toEqual({ total: 2, identities: [] });
         expect(await db.listIdentities({ ...options, schemaDid: 'did:mdip:missing' })).toEqual({ total: 0, identities: [] });
         expect(await db.listIdentities({ ...options, fields: ['publicName'], offset: 1 })).toEqual({
-            total: 2, identities: [{ ...daveResult, credentials: [] }],
+            total: 1, identities: [],
         });
         expect((await db.listIdentities({ schemaDid })).total).toBe(3);
         expect((await db.listIdentities()).total).toBe(5);
@@ -135,6 +136,71 @@ describe.each(['memory', 'sqlite'])('%s identities', adapter => {
         await seedAgent(db, alice, { 'did:mdip:wrong-subject': credential(bob), 'not-a-did': credential() });
         await seedAgent(db, bob, []);
         expect(await db.listIdentities({ schemaDid })).toEqual({ total: 0, identities: [] });
+        expect(await db.listIdentities({ fields: ['publicName'] })).toEqual({ total: 0, identities: [] });
+    });
+
+    it('uses OR field filters before pagination and requires schema and fields in the same credential', async () => {
+        const otherSchema = 'did:mdip:other-schema';
+        const carol = 'did:mdip:Carol';
+        const dave = 'did:mdip:Dave';
+        await seedAgent(db, alice, {
+            'did:mdip:vc': credential(alice, schemaDid, { region: 'UK' }),
+            'did:test:vc': credential(alice, otherSchema),
+        });
+        await seedAgent(db, bob, {
+            'did:mdip:bob-vc': credential(bob, schemaDid, { publicName: 'Bob' }),
+            'did:mdip:empty': credential(bob, schemaDid, {}),
+        });
+        await seedAgent(db, carol, {
+            'did:mdip:carol-vc': credential(carol, schemaDid, { faveFood: 'Pizza' }),
+        });
+        await seedAgent(db, dave, { 'did:mdip:hidden': credential(dave, schemaDid, null) });
+        const fields = ['publicName', 'faveFood'];
+        const result = await db.listIdentities({ schemaDid, fields });
+        expect(result).toEqual({ total: 2, identities: [
+            { did: bob, manifestSchemaDids: [schemaDid], credentials: [
+                { credentialDid: 'did:mdip:bob-vc', fields: { publicName: 'Bob' } },
+            ] },
+            { did: carol, manifestSchemaDids: [schemaDid], credentials: [
+                { credentialDid: 'did:mdip:carol-vc', fields: { faveFood: 'Pizza' } },
+            ] },
+        ] });
+        expect(await db.listIdentities({ schemaDid, fields, limit: 1, offset: 1 })).toEqual({
+            total: 2, identities: [result.identities[1]],
+        });
+        expect(await db.listIdentities({ schemaDid, fields, limit: 0 })).toEqual({ total: 2, identities: [] });
+        expect(await db.listIdentities({ schemaDid, fields, offset: 2 })).toEqual({ total: 2, identities: [] });
+        expect((await db.listIdentities({ schemaDid, fields: ['publicName'] })).identities.map(id => id.did)).toEqual([bob]);
+        const anySchema = await db.listIdentities({ fields });
+        expect(anySchema.total).toBe(3);
+        expect(anySchema.identities.map(id => id.did)).toEqual([alice, bob, carol]);
+        expect(anySchema.identities[0].credentials).toEqual([
+            { credentialDid: 'did:test:vc', fields: { publicName: 'Alice' } },
+        ]);
+        expect(await db.listIdentities({ fields, didPrefix: 'did:test' })).toEqual({ total: 0, identities: [] });
+        expect((await db.listIdentities({ schemaDid })).total).toBe(4);
+        expect((await db.listIdentities()).total).toBe(4);
+    });
+
+    it('matches own literal field names regardless of value and ignores malformed claim payloads', async () => {
+        const claims = JSON.parse('{"publicName":"","score":0,"active":false,"nullable":null,"literal.dot":"value","nested":{"key":1},"__proto__":"safe","constructor":"value","x\u0027) OR TRUE --":"literal"}');
+        claims[randomBytes(4096).toString('hex')] = 'long field';
+        await seedAgent(db, alice, { 'did:mdip:vc': credential(alice, schemaDid, claims) });
+        await seedAgent(db, bob, {
+            'did:mdip:array': credential(bob, schemaDid, ['publicName']),
+            'did:mdip:scalar': credential(bob, schemaDid, 'publicName'),
+            'did:mdip:false': credential(bob, schemaDid, false),
+        });
+        for (const field of Object.keys(claims)) {
+            expect(await db.listIdentities({ schemaDid, fields: [field, field] })).toEqual({
+                total: 1, identities: [{ did: alice, manifestSchemaDids: [schemaDid], credentials: [
+                    { credentialDid: 'did:mdip:vc', fields: Object.fromEntries([[field, claims[field]]]) },
+                ] }],
+            });
+        }
+        for (const field of ['missing', 'PublicName', 'nested.key', 'toString']) {
+            expect(await db.listIdentities({ fields: [field] })).toEqual({ total: 0, identities: [] });
+        }
     });
 
     it.each([false, true])('matches every schema when credential aliases contain different versions (reversed: %s)', async reversed => {
@@ -160,6 +226,7 @@ describe.each(['memory', 'sqlite'])('%s identities', adapter => {
 
         await seedAgent(db, alice, { 'did:test:vc': credential(alice, otherSchema) });
         expect((await db.listIdentities({ schemaDid })).identities.map(identity => identity.did)).toEqual([bob]);
+        expect((await db.listIdentities({ schemaDid, fields: ['publicName'] })).identities.map(identity => identity.did)).toEqual([bob]);
         expect((await db.listIdentities({ schemaDid: otherSchema })).total).toBe(1);
     });
 
@@ -198,6 +265,7 @@ describe.each(['memory', 'sqlite'])('%s identities', adapter => {
     it('reflects manifest updates, deactivation and removal rather than historical publications', async () => {
         await seedAgent(db, alice, { 'did:mdip:vc': credential() });
         expect((await db.listIdentities({ schemaDid })).total).toBe(1);
+        expect((await db.listIdentities({ fields: ['publicName'] })).total).toBe(1);
         await seedAgent(db, alice, { 'did:mdip:vc2': credential(alice, 'did:mdip:new-schema') });
         expect((await db.listIdentities()).identities[0].manifestSchemaDids).toEqual(['did:mdip:new-schema']);
         expect((await db.listIdentities({ schemaDid })).total).toBe(0);
@@ -208,20 +276,24 @@ describe.each(['memory', 'sqlite'])('%s identities', adapter => {
         await seedDID(db, alice, { events: [event], doc: { didDocumentMetadata: { deactivated: true } } });
         expect(await db.listIdentities()).toEqual({ total: 1, identities: [{ did: alice, manifestSchemaDids: [] }] });
         expect((await db.listIdentities({ schemaDid: 'did:mdip:new-schema' })).total).toBe(0);
+        expect((await db.listIdentities({ fields: ['publicName'] })).total).toBe(0);
         await seedAgent(db, alice, { 'did:mdip:vc': credential() });
         expect((await db.listIdentities({ schemaDid })).total).toBe(1);
         await seedDID(db, alice, { removed: true });
         expect(await db.listIdentities()).toEqual({ total: 0, identities: [] });
         expect((await db.listIdentities({ schemaDid })).total).toBe(0);
+        expect((await db.listIdentities({ fields: ['publicName'] })).total).toBe(0);
     });
 
     it('deduplicates storage aliases and uses signed prefix classification for agents', async () => {
         await seedAgent(db, 'did:test:Alice', { 'did:mdip:vc': credential() });
         expect((await db.listIdentities({ didPrefix: 'did:mdip' })).identities[0].did).toBe(alice);
         expect((await db.listIdentities({ didPrefix: 'did:mdip', schemaDid })).identities[0].did).toBe(alice);
+        expect((await db.listIdentities({ didPrefix: 'did:mdip', fields: ['publicName'] })).identities[0].did).toBe(alice);
         expect((await db.listIdentities({ didPrefix: 'did:test' })).total).toBe(0);
         await seedAgent(db, alice);
         expect((await db.listIdentities()).total).toBe(1);
+        expect((await db.listIdentities({ fields: ['publicName'] })).total).toBe(0);
         const event = createSeedEvent('did:mdip:legacy');
         event.operation.mdip!.type = 'agent';
         await seedDID(db, 'did:mdip:legacy', { events: [event], doc: document() });
@@ -260,13 +332,16 @@ describe('identity field projection', () => {
         expect(Object.getPrototypeOf(result.credentials![0].fields)).toBe(Object.prototype);
         expect(extractIdentity(alice, document({ 'did:mdip:vc': credential() }), {
             fields: ['publicName'],
-        }).credentials).toEqual([]);
+        }).credentials).toEqual([{ credentialDid: 'did:mdip:vc', fields: { publicName: 'Alice' } }]);
     });
 });
 
 describe('identity query parameters', () => {
     it('defaults, caps pagination and supports repeated fields without duplicate keys', () => {
         expect(parseIdentityListOptions({})).toEqual({ schemaDid: undefined, fields: [], limit: 50, offset: 0 });
+        expect(parseIdentityListOptions({ fields: ['publicName', 'faveFood'] })).toEqual({
+            schemaDid: undefined, fields: ['publicName', 'faveFood'], limit: 50, offset: 0,
+        });
         expect(parseIdentityListOptions({ schemaDid, fields: 'publicName', limit: '0', offset: '12' })).toEqual({
             schemaDid, fields: ['publicName'], limit: 0, offset: 12,
         });
@@ -275,7 +350,7 @@ describe('identity query parameters', () => {
     });
 
     it.each([
-        { fields: 'publicName' }, { fields: '' }, { schemaDid, fields: [''] },
+        { fields: '' }, { schemaDid, fields: [''] },
         { schemaDid, fields: [{}] }, { schemaDid, fields: 1 }, { schemaDid: [schemaDid] },
         { schemaDid: '' }, { schemaDid: 'invalid' }, { schemaDid: 'did:mdip:not-a-cid' },
         ...['limit', 'offset'].flatMap(key => ['-1', '1.5', '1x', 'NaN', '', '9007199254740992', ['1'], {}]
@@ -428,16 +503,31 @@ describe('SQL identity enumeration', () => {
             })).rejects.toThrow('schema write failed');
             expect(await sqlite.listIdentities({ schemaDid })).toEqual(original);
             expect(await sqlite.getDIDEvents(alice)).toEqual(events);
+            await connection.exec(`CREATE TRIGGER fail_field BEFORE INSERT ON identity_fields
+                WHEN NEW.field = 'reject'
+                BEGIN SELECT RAISE(ABORT, 'field write failed'); END`);
+            await expect(seedAgent(sqlite, alice, {
+                'did:mdip:vc': credential(alice, schemaDid, { publicName: 'Changed', reject: true }),
+            })).rejects.toThrow('field write failed');
+            expect((await sqlite.listIdentities({ fields: ['publicName'] })).identities[0].credentials).toEqual([
+                { credentialDid: 'did:mdip:vc', fields: { publicName: 'Alice' } },
+            ]);
+            expect((await sqlite.listIdentities({ fields: ['reject'] })).total).toBe(0);
+            expect(await sqlite.getDIDEvents(alice)).toEqual(events);
 
             const alias = 'did:test:Alice';
             await seedAgent(sqlite, alias, { 'did:mdip:vc': credential() });
             expect(await connection.all('SELECT did FROM identity_schemas')).toEqual([{ did: alias }]);
+            expect(await connection.all('SELECT did, field FROM identity_fields')).toEqual([{ did: alias, field: 'publicName' }]);
             expect(await sqlite.listIdentities({ schemaDid })).toEqual(original);
             await seedDID(sqlite, alias, { removed: true });
             expect(await connection.all('SELECT * FROM identity_schemas')).toEqual([]);
+            expect(await connection.all('SELECT * FROM identity_fields')).toEqual([]);
             await seedAgent(sqlite, alice, { 'did:mdip:vc': credential() });
             await sqlite.wipeDb();
             expect(await connection.all('SELECT * FROM identity_schemas')).toEqual([]);
+            expect(await connection.all('SELECT * FROM identity_fields')).toEqual([]);
+            expect(await sqlite.listIdentities({ fields: ['publicName'] })).toEqual({ total: 0, identities: [] });
         }
         finally {
             await sqlite.disconnect();
@@ -456,6 +546,7 @@ describe('SQL identity enumeration', () => {
             await sqlite.disconnect();
             await sqlite.connect();
             expect((await sqlite.listIdentities({ schemaDid })).total).toBe(1);
+            expect((await sqlite.listIdentities({ fields: ['publicName'] })).total).toBe(1);
             const plan = await (sqlite as any).db.all(`EXPLAIN QUERY PLAN
                 SELECT dc.prefix || ':' || dc.suffix AS did, d.doc
                 FROM did_classifications dc JOIN did_docs d ON d.did = dc.did
@@ -473,6 +564,18 @@ describe('SQL identity enumeration', () => {
             ['did:mdip', schemaDid.split(':').pop(), 50, 0]);
             expect(filteredPlan.some((row: { detail: string }) => row.detail.includes('SEARCH ids USING COVERING INDEX'))).toBe(true);
             expect(filteredPlan.some((row: { detail: string }) => row.detail.includes('TEMP B-TREE'))).toBe(false);
+            for (const schema of [undefined, schemaDid]) {
+                const fieldPlan = await (sqlite as any).db.all(`EXPLAIN QUERY PLAN
+                    SELECT dc.prefix || ':' || dc.suffix AS did, d.doc
+                    FROM did_classifications dc JOIN did_docs d ON d.did = dc.did
+                    WHERE dc.is_agent = 1 AND EXISTS (
+                        SELECT 1 FROM identity_fields idf
+                        WHERE idf.did = dc.did AND idf.field IN (?, ?)
+                        ${schema ? 'AND idf.schema_suffix = ?' : ''}
+                    ) ORDER BY dc.prefix, dc.suffix LIMIT 50 OFFSET 0`,
+                ['publicName', 'faveFood', ...(schema ? [schema.split(':').pop()] : [])]);
+                expect(fieldPlan.some((row: { detail: string }) => row.detail.includes('SEARCH idf USING COVERING INDEX'))).toBe(true);
+            }
         }
         finally {
             await sqlite.disconnect();
@@ -499,6 +602,7 @@ describe('SQL identity enumeration', () => {
         }
         const db = await TestPostgres.create('postgresql://isolated-test');
         try {
+            expect(query).toHaveBeenCalledWith(expect.stringContaining('ON identity_fields (did, md5(field), schema_suffix)'));
             expect((await db.listIdentities()).identities).toEqual([
                 { did: alice, manifestSchemaDids: [schemaDid] }, { did: bob, manifestSchemaDids: [] },
             ]);
@@ -508,20 +612,39 @@ describe('SQL identity enumeration', () => {
             expect(query).toHaveBeenLastCalledWith(expect.stringContaining('AND dc.prefix COLLATE "C" = $1'), [prefix, 50, 0]);
             expect(query).toHaveBeenLastCalledWith(expect.not.stringContaining(prefix), [prefix, 50, 0]);
             query.mockClear();
-            const result = await db.listIdentities({ didPrefix: prefix, schemaDid, fields: ['publicName'], limit: 2, offset: 4 });
+            const field = "faveFood') OR TRUE --";
+            const result = await db.listIdentities({ didPrefix: prefix, schemaDid, fields: ['publicName', field], limit: 2, offset: 4 });
             expect(result.identities[0].credentials).toEqual([{ credentialDid: 'did:mdip:vc', fields: { publicName: 'Alice' } }]);
             const suffix = schemaDid.split(':').pop();
             expect(query.mock.calls).toHaveLength(2);
             for (const [sql] of query.mock.calls) {
                 expect(sql).toContain('AND dc.prefix COLLATE "C" = $1');
                 expect(sql).toContain('AND EXISTS');
-                expect(sql).toContain('FROM identity_schemas ids');
-                expect(sql).toContain('ids.did = dc.did AND ids.schema_suffix = $2');
+                expect(sql).toContain('FROM identity_fields idf');
+                expect(sql).toContain('idf.did = dc.did AND idf.field IN ($2,$3)');
+                expect(sql).toContain('md5(idf.field) IN (md5($2),md5($3))');
+                expect(sql).toContain('AND idf.schema_suffix = $4');
                 expect(sql).not.toContain(prefix);
                 expect(sql).not.toContain(suffix);
+                expect(sql).not.toContain(field);
             }
-            expect(query).toHaveBeenNthCalledWith(1, expect.stringContaining('COUNT(*)'), [prefix, suffix]);
-            expect(query).toHaveBeenLastCalledWith(expect.any(String), [prefix, suffix, 2, 4]);
+            expect(query).toHaveBeenNthCalledWith(1, expect.stringContaining('COUNT(*)'), [prefix, 'publicName', field, suffix]);
+            expect(query).toHaveBeenLastCalledWith(expect.any(String), [prefix, 'publicName', field, suffix, 2, 4]);
+            for (const scope of [undefined, prefix]) {
+                for (const schema of [undefined, schemaDid]) {
+                    query.mockClear();
+                    await db.listIdentities({ didPrefix: scope, schemaDid: schema, fields: ['publicName', 'faveFood'] });
+                    const params = [...(scope ? [scope] : []), 'publicName', 'faveFood', ...(schema ? [suffix] : [])];
+                    expect(query).toHaveBeenNthCalledWith(1, expect.stringContaining('FROM identity_fields idf'), params);
+                    expect(query).toHaveBeenLastCalledWith(expect.any(String), [...params, 50, 0]);
+                    for (const [sql] of query.mock.calls) {
+                        expect(sql).toContain(`idf.field IN ($${scope ? 2 : 1},$${scope ? 3 : 2})`);
+                        expect(sql).toContain(`md5(idf.field) IN (md5($${scope ? 2 : 1}),md5($${scope ? 3 : 2}))`);
+                        if (schema) expect(sql).toContain(`AND idf.schema_suffix = $${params.length}`);
+                        else expect(sql).not.toContain('idf.schema_suffix');
+                    }
+                }
+            }
             query.mockClear();
             await db.listIdentities({ schemaDid: schemaDid.replace('did:mdip:', 'did:test:') });
             for (const [sql] of query.mock.calls) {
@@ -531,6 +654,8 @@ describe('SQL identity enumeration', () => {
             }
             expect(query).toHaveBeenNthCalledWith(1, expect.stringContaining('COUNT(*)'), [suffix]);
             expect(query).toHaveBeenLastCalledWith(expect.any(String), [suffix, 50, 0]);
+            await db.listIdentities({ didPrefix: prefix, schemaDid });
+            expect(query).toHaveBeenLastCalledWith(expect.stringContaining('ids.schema_suffix = $2'), [prefix, suffix, 50, 0]);
             await db.listIdentities({ limit: -1, offset: -2 });
             expect(query).toHaveBeenLastCalledWith(expect.any(String), [0, 0]);
         }

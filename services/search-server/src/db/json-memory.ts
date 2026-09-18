@@ -23,7 +23,7 @@ import {
     GatekeeperEvent,
 } from "../types.js";
 import { copyJSON, getEventDisplayTime, stableStringify } from "./db-utils.js";
-import { deduplicateDIDPrefixReferences, extractIdentity } from '../published-credentials.js';
+import { deduplicateDIDPrefixReferences, extractIdentity, extractIdentityFields } from '../published-credentials.js';
 import {
     AMBIGUOUS_DID_PREFIX,
     classifyDIDPrefix,
@@ -43,6 +43,7 @@ export default class DIDsDbMemory implements DIDsDb {
     private events = new Map<string, GatekeeperEvent[]>();
     private blocks = new Map<string, Map<string, BlockInfo>>();
     private publishedCredentials = new Map<string, PublishedCredentialRecord[]>();
+    private identityFields = new Map<string, Map<string, Set<string>>>();
     private didPrefixReferences = new Map<string, string[]>();
     private challengeReceipts = new Map<string, ChallengeReceiptRecord[]>();
     private networkMetricSnapshots = new Map<string, NetworkMetricSnapshot>();
@@ -138,6 +139,7 @@ export default class DIDsDbMemory implements DIDsDb {
                 this.events.delete(previousDid);
                 this.docs.delete(previousDid);
                 this.publishedCredentials.delete(previousDid);
+                this.identityFields.delete(previousDid);
                 this.didPrefixReferences.delete(previousDid);
                 this.challengeReceipts.delete(previousDid);
                 this.didsBySuffix.delete(suffix);
@@ -158,6 +160,7 @@ export default class DIDsDbMemory implements DIDsDb {
                 this.events.delete(record.did);
                 this.docs.delete(record.did);
                 this.publishedCredentials.delete(record.did);
+                this.identityFields.delete(record.did);
                 this.didPrefixReferences.delete(record.did);
                 this.challengeReceipts.delete(record.did);
                 if (this.didsBySuffix.get(suffix) === record.did) {
@@ -193,6 +196,7 @@ export default class DIDsDbMemory implements DIDsDb {
                 record.did,
                 copyJSON(record.publishedCredentials ?? [])
             );
+            this.identityFields.set(record.did, extractIdentityFields(record.doc ?? {}, record.publishedCredentials ?? []));
             this.didPrefixReferences.set(record.did, deduplicateDIDPrefixReferences(
                 record.didPrefixReferences ?? [],
                 record.publishedCredentials
@@ -216,7 +220,7 @@ export default class DIDsDbMemory implements DIDsDb {
     }
 
     async listIdentities(options: IdentityListOptions = {}): Promise<IdentityListResult> {
-        const { didPrefix, schemaDid, limit = 50, offset = 0 } = options;
+        const { didPrefix, schemaDid, fields = [], limit = 50, offset = 0 } = options;
         const schemaSuffix = schemaDid ? getDIDSuffix(schemaDid) : undefined;
         const agents = [...this.agentDIDSuffixes].flatMap(suffix => {
             const storedDid = this.didsBySuffix.get(suffix)!;
@@ -226,6 +230,12 @@ export default class DIDsDbMemory implements DIDsDb {
             }
             if (schemaSuffix && !this.publishedCredentials.get(storedDid)?.some(
                 record => getDIDSuffix(record.schemaDid) === schemaSuffix
+            )) {
+                return [];
+            }
+            if (fields.length > 0 && ![...(this.identityFields.get(storedDid) ?? [])].some(
+                ([suffix, names]) => (!schemaSuffix || suffix === schemaSuffix)
+                    && fields.some(field => names.has(field))
             )) {
                 return [];
             }
@@ -513,6 +523,7 @@ export default class DIDsDbMemory implements DIDsDb {
         this.events.clear();
         this.blocks.clear();
         this.publishedCredentials.clear();
+        this.identityFields.clear();
         this.didPrefixReferences.clear();
         this.challengeReceipts.clear();
         this.networkMetricSnapshots.clear();

@@ -127,9 +127,6 @@ export function parseIdentityListOptions(query: Record<string, unknown>): Identi
     if (fields.some(field => typeof field !== 'string' || field.length === 0)) {
         throw new Error('fields must contain non-empty field names');
     }
-    if (fields.length > 0 && !schemaDid) {
-        throw new Error('schemaDid is required when requesting fields');
-    }
 
     for (const name of ['limit', 'offset']) {
         const value = query[name];

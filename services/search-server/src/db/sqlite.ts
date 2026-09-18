@@ -24,7 +24,7 @@ import {
     GatekeeperEvent,
 } from "../types.js";
 import { getEventDisplayTime, stableStringify } from './db-utils.js';
-import { deduplicateDIDPrefixReferences, extractIdentity } from '../published-credentials.js';
+import { deduplicateDIDPrefixReferences, extractIdentity, extractIdentityFields } from '../published-credentials.js';
 import {
     AMBIGUOUS_DID_PREFIX,
     classifyDIDPrefix,
@@ -138,6 +138,13 @@ export default class Sqlite implements DIDsDb {
                 did TEXT NOT NULL,
                 schema_suffix TEXT NOT NULL,
                 PRIMARY KEY (did, schema_suffix)
+            );
+
+            CREATE TABLE IF NOT EXISTS identity_fields (
+                did TEXT NOT NULL,
+                field TEXT NOT NULL,
+                schema_suffix TEXT NOT NULL,
+                PRIMARY KEY (did, field, schema_suffix)
             );
 
             CREATE TABLE IF NOT EXISTS did_prefix_references (
@@ -381,6 +388,7 @@ export default class Sqlite implements DIDsDb {
                     await this.db.run('DELETE FROM did_docs WHERE did = ?', [previous.did]);
                     await this.db.run('DELETE FROM published_credentials WHERE holder_did = ?', [previous.did]);
                     await this.db.run('DELETE FROM identity_schemas WHERE did = ?', [previous.did]);
+                    await this.db.run('DELETE FROM identity_fields WHERE did = ?', [previous.did]);
                     await this.db.run('DELETE FROM did_prefix_references WHERE source_did = ?', [previous.did]);
                     await this.db.run('DELETE FROM challenge_receipts WHERE receipt_did = ?', [previous.did]);
                     await this.db.run('DELETE FROM did_classifications WHERE suffix = ?', [suffix]);
@@ -399,6 +407,7 @@ export default class Sqlite implements DIDsDb {
                     await this.db.run('DELETE FROM did_docs WHERE did = ?', [record.did]);
                     await this.db.run('DELETE FROM published_credentials WHERE holder_did = ?', [record.did]);
                     await this.db.run('DELETE FROM identity_schemas WHERE did = ?', [record.did]);
+                    await this.db.run('DELETE FROM identity_fields WHERE did = ?', [record.did]);
                     await this.db.run('DELETE FROM did_prefix_references WHERE source_did = ?', [record.did]);
                     await this.db.run('DELETE FROM challenge_receipts WHERE receipt_did = ?', [record.did]);
                     await this.db.run('DELETE FROM did_classifications WHERE suffix = ?', [suffix]);
@@ -434,6 +443,12 @@ export default class Sqlite implements DIDsDb {
                 await this.db.run('DELETE FROM identity_schemas WHERE did = ?', [record.did]);
                 for (const schemaSuffix of new Set((record.publishedCredentials ?? []).map(item => getDIDSuffix(item.schemaDid)))) {
                     await this.db.run('INSERT INTO identity_schemas (did, schema_suffix) VALUES (?, ?)', [record.did, schemaSuffix]);
+                }
+                await this.db.run('DELETE FROM identity_fields WHERE did = ?', [record.did]);
+                for (const [suffix, fields] of extractIdentityFields(record.doc ?? {}, record.publishedCredentials ?? [])) {
+                    for (const field of fields) {
+                        await this.db.run('INSERT INTO identity_fields (did, field, schema_suffix) VALUES (?, ?, ?)', [record.did, field, suffix]);
+                    }
                 }
                 await this.replaceDIDPrefixReferencesInTx(
                     record.did,
@@ -483,12 +498,21 @@ export default class Sqlite implements DIDsDb {
         if (!this.db) {
             throw new Error('SQLite DB not connected');
         }
-        const { didPrefix, schemaDid, limit = 50, offset = 0 } = options;
+        const { didPrefix, schemaDid, fields = [], limit = 50, offset = 0 } = options;
         let from = `FROM did_classifications dc
             JOIN did_docs d ON d.did = dc.did
             WHERE dc.is_agent = 1 ${didPrefix ? 'AND dc.prefix = ?' : ''}`;
         const params = didPrefix ? [didPrefix] : [];
-        if (schemaDid) {
+        if (fields.length > 0) {
+            from += ` AND EXISTS (
+                SELECT 1 FROM identity_fields idf
+                WHERE idf.did = dc.did AND idf.field IN (${fields.map(() => '?').join(',')})
+                ${schemaDid ? 'AND idf.schema_suffix = ?' : ''}
+            )`;
+            params.push(...fields);
+            if (schemaDid) params.push(getDIDSuffix(schemaDid));
+        }
+        else if (schemaDid) {
             from += ` AND EXISTS (
                 SELECT 1 FROM identity_schemas ids
                 WHERE ids.did = dc.did AND ids.schema_suffix = ?
@@ -1074,6 +1098,7 @@ export default class Sqlite implements DIDsDb {
                 DELETE FROM blocks;
                 DELETE FROM published_credentials;
                 DELETE FROM identity_schemas;
+                DELETE FROM identity_fields;
                 DELETE FROM did_prefix_references;
                 DELETE FROM challenge_receipts;
                 DELETE FROM network_metric_snapshots;
