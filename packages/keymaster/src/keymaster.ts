@@ -2202,10 +2202,10 @@ export default class Keymaster implements KeymasterInterface {
             }
 
             const vpPlaintext = await this.decryptMessage(credential.vp);
-            let vp: VerifiableCredential;
+            let vp: unknown;
 
             try {
-                vp = JSON.parse(vpPlaintext) as VerifiableCredential;
+                vp = JSON.parse(vpPlaintext);
             }
             catch {
                 throw new InvalidParameterError('did not encrypted JSON');
@@ -2215,7 +2215,7 @@ export default class Keymaster implements KeymasterInterface {
                 continue;
             }
 
-            if (!await this.verifyCredentialSignature(vp)) {
+            if (!this.isVerifiableCredential(vp) || !await this.verifyCredentialSignature(vp)) {
                 continue;
             }
 
@@ -2224,10 +2224,6 @@ export default class Keymaster implements KeymasterInterface {
             }
 
             if (vp.credentialSubject?.id !== responder) {
-                continue;
-            }
-
-            if (!vp.type || !Array.isArray(vp.type)) {
                 continue;
             }
 

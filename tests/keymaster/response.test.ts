@@ -902,6 +902,61 @@ describe('verifyResponse', () => {
         expect(verification.vps).toStrictEqual([]);
     });
 
+    it.each([undefined, null, 'https://www.w3.org/ns/credentials/v2', {}])(
+        'should reject a correctly signed presentation with invalid @context %j', async context => {
+            const alice = await keymaster.createId('Alice');
+            const carol = await keymaster.createId('Carol');
+            const victor = await keymaster.createId('Victor');
+
+            await keymaster.setCurrentId('Alice');
+            const schema = await keymaster.createSchema(mockSchema);
+            const credential: Record<string, unknown> = { ...await keymaster.bindCredential(schema, carol) };
+            if (context === undefined) {
+                delete credential['@context'];
+            }
+            else {
+                credential['@context'] = context;
+            }
+            const signed = await keymaster.addSignature(credential);
+            expect(await keymaster.verifySignature(signed)).toBe(true);
+            const vc = await keymaster.encryptJSON(signed, carol, { includeHash: true });
+
+            await keymaster.setCurrentId('Victor');
+            const challenge = await keymaster.createChallenge({ credentials: [{ schema, issuers: [alice] }] });
+
+            await keymaster.setCurrentId('Carol');
+            expect(await keymaster.acceptCredential(vc)).toBe(false);
+            const plaintext = await keymaster.decryptMessage(vc);
+            const vp = await keymaster.encryptMessage(plaintext, victor, { includeHash: true });
+            const vcData = await keymaster.resolveAsset(vc);
+            const vpData = await keymaster.resolveAsset(vp);
+            expect(cipher.hashMessage(plaintext)).toBe(vcData.encrypted.cipher_hash);
+            expect(vpData.encrypted.cipher_hash).toBe(vcData.encrypted.cipher_hash);
+            const response = await keymaster.encryptJSON({ response: {
+                challenge,
+                credentials: [{ vc, vp }],
+                requested: 1,
+                fulfilled: 1,
+                match: true,
+                responseNonce: 'mock-nonce',
+            } }, victor);
+
+            await keymaster.setCurrentId('Victor');
+            const publishReceipts = jest.spyOn(keymaster, 'publishChallengeReceipts');
+            try {
+                for (const publish of [false, true, undefined]) {
+                    const verification = await keymaster.verifyResponse(response, { publish });
+                    expect(verification.match).toBe(false);
+                    expect(verification.vps).toStrictEqual([]);
+                }
+                expect(publishReceipts).not.toHaveBeenCalled();
+            }
+            finally {
+                publishReceipts.mockRestore();
+            }
+        }
+    );
+
     it('should reject a presentation without the requested schema', async () => {
         await keymaster.createId('Alice');
         const carol = await keymaster.createId('Carol');
