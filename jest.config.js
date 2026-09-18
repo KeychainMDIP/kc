@@ -67,6 +67,7 @@ const config = {
         '^\\.\\/challenge-receipts\\.js$': '<rootDir>/services/search-server/src/challenge-receipts.ts',
         '^\\.\\/cipher-base\\.js$': '<rootDir>/packages/cipher/src/cipher-base.ts',
         '^\\.\\/encryption\\.js$': '<rootDir>/packages/keymaster/src/encryption.ts',
+        '^(\\.{1,2}/.*)\\.js$': '$1',
     },
     testPathIgnorePatterns: [
         "/node_modules/",
