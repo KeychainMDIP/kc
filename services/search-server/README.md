@@ -65,7 +65,7 @@ a release that changes its schema.
 
 ### Endpoints
 
-DID resolution, search, query, event, and credential-metric endpoints apply
+DID resolution, search, query, identity, event, and credential-metric endpoints apply
 `KC_SEARCH_SERVER_DID_PREFIX` when configured. Indexed DID results use the
 effective prefix determined by the precedence documented in
 [DID network classification](#did-network-classification), not necessarily a
@@ -122,6 +122,117 @@ stored alias's prefix.
 - **Returns**:
     - `200 OK` + an array of matching effective DIDs.
     - `400 Bad Request` when `where` is missing or is not an object.
+
+### `GET /api/v1/identities`
+
+Enumerates indexed agent DIDs with the schema DIDs in their current manifests.
+Use this instead of a generic `/query` on `mdip.type` to enumerate identities.
+SQLite and PostgreSQL use the agent-classification, identity-schema, and field-name
+indexes, then read documents only for the requested page. Assets are excluded,
+so there is no `isAgent` field. Existing SQLite and PostgreSQL Search Server
+databases must be reset when first upgrading to these filters so the
+`identity_schemas` and `identity_fields` tables can be populated by reindexing
+Gatekeeper.
+
+Query parameters:
+
+- `limit` (optional, default `50`, maximum `500`) and `offset` (optional, default
+  `0`) are non-negative integers. `limit=0` returns only the total.
+- `schemaDid` (optional) filters identities to those with a published credential
+  of that schema in their current manifest, before counting and pagination.
+  It also selects the credential schema for field extraction. Prefix aliases
+  match by CID suffix. Omitting it searches across schemas.
+- `fields` (optional, repeated parameter) filters identities to those with a
+  revealed credential containing at least one requested field (OR, not AND).
+  It also selects which literal, top-level keys to return from the credential's
+  `credential` object, not its metadata. For example,
+  `fields=publicName&fields=faveFood` matches either field and returns both when
+  present. Field names are case-sensitive, and dots are literal characters
+  rather than nested-property paths. Matching uses key presence, so `0`,
+  `false`, an empty string, and `null` all count as present values.
+
+The filters are independently optional. With neither, all indexed agents in
+scope are returned. With only a schema, matching published credentials may be
+revealed or unrevealed. With only fields, matching revealed credentials may
+use any schema. When both are supplied, the same credential must match the
+schema and contain at least one requested field. Filtering happens before
+counting and pagination, and each matching identity is counted only once.
+
+With no fields requested, the response contains no credential values:
+
+```json
+{
+  "total": 123,
+  "identities": [
+    {
+      "did": "did:mdip:<identity-cid>",
+      "manifestSchemaDids": ["did:mdip:<profile-schema-cid>"]
+    }
+  ]
+}
+```
+
+For example, to request two claims defined by an application's schema:
+
+```bash
+curl --get 'http://localhost:4002/api/v1/identities' \
+  --data-urlencode 'schemaDid=did:mdip:<profile-schema-cid>' \
+  --data-urlencode 'fields=publicName' \
+  --data-urlencode 'fields=avatarUrl' \
+  --data-urlencode 'limit=50' \
+  --data-urlencode 'offset=0'
+```
+
+Omit `schemaDid` from this request to match the requested fields across schemas.
+
+Each identity then also has a `credentials` array:
+
+```json
+{
+  "did": "did:mdip:<identity-cid>",
+  "manifestSchemaDids": ["did:mdip:<profile-schema-cid>"],
+  "credentials": [
+    {
+      "credentialDid": "did:mdip:<credential-cid>",
+      "issuerDid": "did:mdip:<issuer-cid>",
+      "updatedAt": "2026-09-18T12:00:00.000Z",
+      "fields": { "publicName": "Alice", "avatarUrl": "https://example.org/alice.png" }
+    }
+  ]
+}
+```
+
+Missing fields are omitted. Matching revealed credentials are returned separately,
+ordered by credential DID, with only the requested claims. When fields are
+requested, credentials containing none of them are omitted, as are identities
+with no matching credential. Published but unrevealed credentials match a
+schema-only filter and contribute schema DIDs but cannot match a field filter
+or supply claim values. MDIP does not assign meaning to any schema or field,
+select a preferred credential, or verify the manifest's signatures or
+credential status on this read path.
+
+Each returned credential also includes `issuerDid` from its published `issuer`
+and `updatedAt`, using the same metadata as the published-credential metrics.
+`updatedAt` uses the published credential's `signature.signed`, falling back to
+the holder DID document's `updated` or `created` timestamp, or an empty string
+if none is available. It is not a publication timestamp and does not track
+changes to the underlying credential asset that the holder has not republished.
+These metadata fields are separate from the requested claims in `fields`.
+
+`manifestSchemaDids` is a sorted, unique list of schema strings as published in
+valid entries of the current identity manifest, using the same structural and
+subject checks as the published-credential metrics. It is not a list of all
+historically published schemas. Credential and schema DIDs in these manifest
+entries retain their published prefixes.
+
+Identities are ordered by effective prefix, then CID suffix, with one result
+per CID suffix. Ordering is case-sensitive and independent of locale.
+`total` counts matching indexed agents with a resolved document in the configured
+network scope. Without either filter, this includes deactivated agents whose
+manifests have been cleared.
+Pages reflect the current index, not a frozen snapshot across requests.
+Invalid `schemaDid`, `fields`, or pagination values return `400`, and database
+failures return `500`.
 
 ### `GET /api/v1/metrics/schemas/published`
 - **Description**: Returns current published credential counts grouped by schema DID.

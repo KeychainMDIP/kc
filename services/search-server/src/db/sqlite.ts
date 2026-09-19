@@ -14,6 +14,8 @@ import {
     DIDEventHistory,
     DIDEventListOptions,
     DIDEventListResult,
+    IdentityListOptions,
+    IdentityListResult,
     NetworkMetricSnapshot,
     PublishedCredentialListOptions,
     PublishedCredentialListResult,
@@ -22,7 +24,7 @@ import {
     GatekeeperEvent,
 } from "../types.js";
 import { getEventDisplayTime, stableStringify } from './db-utils.js';
-import { deduplicateDIDPrefixReferences } from '../published-credentials.js';
+import { deduplicateDIDPrefixReferences, extractIdentity, extractIdentityFields } from '../published-credentials.js';
 import {
     AMBIGUOUS_DID_PREFIX,
     classifyDIDPrefix,
@@ -40,6 +42,7 @@ interface HistoryEventRow {
 export default class Sqlite implements DIDsDb {
     private readonly dbFile: string;
     private db: Database | null = null;
+    private _lock: Promise<void> = Promise.resolve();
     private static readonly ARRAY_WILDCARD_END = /\[\*]$/;
     private static readonly ARRAY_WILDCARD_MID = /\[\*]\./;
 
@@ -51,6 +54,13 @@ export default class Sqlite implements DIDsDb {
 
     constructor(dbFileName: string = 'dids.db', dataFolder: string = 'data') {
         this.dbFile = `${dataFolder}/${dbFileName}`;
+    }
+
+    // ponytail: identity reads wait for index pages, use a separate read connection if latency becomes an issue.
+    private runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+        const chained = this._lock.then(fn);
+        this._lock = chained.then(() => undefined, () => undefined);
+        return chained;
     }
 
     async connect(): Promise<void> {
@@ -90,6 +100,9 @@ export default class Sqlite implements DIDsDb {
             CREATE INDEX IF NOT EXISTS idx_did_classifications_prefix
                 ON did_classifications (prefix);
 
+            CREATE INDEX IF NOT EXISTS idx_did_classifications_agents
+                ON did_classifications (is_agent, prefix, suffix);
+
             CREATE TABLE IF NOT EXISTS did_docs (
                                                     did TEXT PRIMARY KEY,
                                                     doc TEXT NOT NULL
@@ -120,6 +133,19 @@ export default class Sqlite implements DIDsDb {
 
             CREATE INDEX IF NOT EXISTS idx_published_credentials_suffixes
                 ON published_credentials (credential_suffix, schema_suffix);
+
+            CREATE TABLE IF NOT EXISTS identity_schemas (
+                did TEXT NOT NULL,
+                schema_suffix TEXT NOT NULL,
+                PRIMARY KEY (did, schema_suffix)
+            );
+
+            CREATE TABLE IF NOT EXISTS identity_fields (
+                did TEXT NOT NULL,
+                field TEXT NOT NULL,
+                schema_suffix TEXT NOT NULL,
+                PRIMARY KEY (did, field, schema_suffix)
+            );
 
             CREATE TABLE IF NOT EXISTS did_prefix_references (
                 source_did TEXT NOT NULL,
@@ -203,10 +229,12 @@ export default class Sqlite implements DIDsDb {
     }
 
     async disconnect(): Promise<void> {
-        if (this.db) {
-            await this.db.close();
-            this.db = null;
-        }
+        await this.runExclusive(async () => {
+            if (this.db) {
+                await this.db.close();
+                this.db = null;
+            }
+        });
     }
 
     async loadSyncState(key: string): Promise<string | null> {
@@ -298,6 +326,10 @@ export default class Sqlite implements DIDsDb {
     }
 
     async applyIndexPage(page: ApplyIndexPageOptions): Promise<ApplyIndexPageResult> {
+        return this.runExclusive(() => this.applyIndexPageUnlocked(page));
+    }
+
+    private async applyIndexPageUnlocked(page: ApplyIndexPageOptions): Promise<ApplyIndexPageResult> {
         if (!this.db) {
             throw new Error('DB not connected');
         }
@@ -355,6 +387,8 @@ export default class Sqlite implements DIDsDb {
                     await this.db.run('DELETE FROM did_events WHERE did = ?', [previous.did]);
                     await this.db.run('DELETE FROM did_docs WHERE did = ?', [previous.did]);
                     await this.db.run('DELETE FROM published_credentials WHERE holder_did = ?', [previous.did]);
+                    await this.db.run('DELETE FROM identity_schemas WHERE did = ?', [previous.did]);
+                    await this.db.run('DELETE FROM identity_fields WHERE did = ?', [previous.did]);
                     await this.db.run('DELETE FROM did_prefix_references WHERE source_did = ?', [previous.did]);
                     await this.db.run('DELETE FROM challenge_receipts WHERE receipt_did = ?', [previous.did]);
                     await this.db.run('DELETE FROM did_classifications WHERE suffix = ?', [suffix]);
@@ -372,6 +406,8 @@ export default class Sqlite implements DIDsDb {
                 if (record.removed) {
                     await this.db.run('DELETE FROM did_docs WHERE did = ?', [record.did]);
                     await this.db.run('DELETE FROM published_credentials WHERE holder_did = ?', [record.did]);
+                    await this.db.run('DELETE FROM identity_schemas WHERE did = ?', [record.did]);
+                    await this.db.run('DELETE FROM identity_fields WHERE did = ?', [record.did]);
                     await this.db.run('DELETE FROM did_prefix_references WHERE source_did = ?', [record.did]);
                     await this.db.run('DELETE FROM challenge_receipts WHERE receipt_did = ?', [record.did]);
                     await this.db.run('DELETE FROM did_classifications WHERE suffix = ?', [suffix]);
@@ -404,6 +440,16 @@ export default class Sqlite implements DIDsDb {
                 }
 
                 await this.replacePublishedCredentialsInTx(record.did, record.publishedCredentials ?? []);
+                await this.db.run('DELETE FROM identity_schemas WHERE did = ?', [record.did]);
+                for (const schemaSuffix of new Set((record.publishedCredentials ?? []).map(item => getDIDSuffix(item.schemaDid)))) {
+                    await this.db.run('INSERT INTO identity_schemas (did, schema_suffix) VALUES (?, ?)', [record.did, schemaSuffix]);
+                }
+                await this.db.run('DELETE FROM identity_fields WHERE did = ?', [record.did]);
+                for (const [suffix, fields] of extractIdentityFields(record.doc ?? {}, record.publishedCredentials ?? [])) {
+                    for (const field of fields) {
+                        await this.db.run('INSERT INTO identity_fields (did, field, schema_suffix) VALUES (?, ?, ?)', [record.did, field, suffix]);
+                    }
+                }
                 await this.replaceDIDPrefixReferencesInTx(
                     record.did,
                     record.didPrefixReferences ?? [],
@@ -442,6 +488,47 @@ export default class Sqlite implements DIDsDb {
             return null;
         }
         return JSON.parse(row.doc);
+    }
+
+    async listIdentities(options: IdentityListOptions = {}): Promise<IdentityListResult> {
+        return this.runExclusive(() => this.listIdentitiesUnlocked(options));
+    }
+
+    private async listIdentitiesUnlocked(options: IdentityListOptions): Promise<IdentityListResult> {
+        if (!this.db) {
+            throw new Error('SQLite DB not connected');
+        }
+        const { didPrefix, schemaDid, fields = [], limit = 50, offset = 0 } = options;
+        let from = `FROM did_classifications dc
+            JOIN did_docs d ON d.did = dc.did
+            WHERE dc.is_agent = 1 ${didPrefix ? 'AND dc.prefix = ?' : ''}`;
+        const params = didPrefix ? [didPrefix] : [];
+        if (fields.length > 0) {
+            from += ` AND EXISTS (
+                SELECT 1 FROM identity_fields idf
+                WHERE idf.did = dc.did AND idf.field IN (${fields.map(() => '?').join(',')})
+                ${schemaDid ? 'AND idf.schema_suffix = ?' : ''}
+            )`;
+            params.push(...fields);
+            if (schemaDid) params.push(getDIDSuffix(schemaDid));
+        }
+        else if (schemaDid) {
+            from += ` AND EXISTS (
+                SELECT 1 FROM identity_schemas ids
+                WHERE ids.did = dc.did AND ids.schema_suffix = ?
+            )`;
+            params.push(getDIDSuffix(schemaDid));
+        }
+        const count = await this.db.get<{ total: number }>(`SELECT COUNT(*) AS total ${from}`, params);
+        const rows = await this.db.all<{ did: string; doc: string }[]>(
+            `SELECT dc.prefix || ':' || dc.suffix AS did, d.doc ${from}
+             ORDER BY dc.prefix, dc.suffix LIMIT ? OFFSET ?`,
+            [...params, Math.max(0, limit), Math.max(0, offset)]
+        );
+        return {
+            total: count!.total,
+            identities: rows.map(row => extractIdentity(row.did, JSON.parse(row.doc), options)),
+        };
     }
 
     async getPublishedCredentialCountsBySchema(didPrefix?: string): Promise<PublishedCredentialSchemaCount[]> {
@@ -1000,20 +1087,24 @@ export default class Sqlite implements DIDsDb {
     }
 
     async wipeDb(): Promise<void> {
-        if (!this.db) {
-            throw new Error('DB not connected');
-        }
-        await this.db.exec(`
-            DELETE FROM did_docs;
-            DELETE FROM did_events;
-            DELETE FROM did_classifications;
-            DELETE FROM blocks;
-            DELETE FROM published_credentials;
-            DELETE FROM did_prefix_references;
-            DELETE FROM challenge_receipts;
-            DELETE FROM network_metric_snapshots;
-            DELETE FROM sync_state;
-        `);
+        await this.runExclusive(async () => {
+            if (!this.db) {
+                throw new Error('DB not connected');
+            }
+            await this.db.exec(`
+                DELETE FROM did_docs;
+                DELETE FROM did_events;
+                DELETE FROM did_classifications;
+                DELETE FROM blocks;
+                DELETE FROM published_credentials;
+                DELETE FROM identity_schemas;
+                DELETE FROM identity_fields;
+                DELETE FROM did_prefix_references;
+                DELETE FROM challenge_receipts;
+                DELETE FROM network_metric_snapshots;
+                DELETE FROM sync_state;
+            `);
+        });
     }
 
     private buildChallengeReceiptWhere(

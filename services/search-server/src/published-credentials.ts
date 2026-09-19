@@ -1,4 +1,4 @@
-import type { GatekeeperEvent, PublishedCredentialRecord } from "./types.js";
+import type { GatekeeperEvent, IdentityListOptions, IdentityRecord, PublishedCredentialRecord } from "./types.js";
 import { getDIDSuffix } from './did-aliases.js';
 
 interface MaybeVc {
@@ -106,6 +106,64 @@ export function extractPublishedCredentials(
 ): PublishedCredentialRecord[] {
     return extractPublishedCredentialEvidence(defaultHolderDid, doc)
         .map(evidence => evidence.credential);
+}
+
+function getCredentialClaims(doc: object, credentialDid: string): Record<string, unknown> | undefined {
+    const manifest = (doc as MaybeMdipDocument).didDocumentData?.manifest as Record<string, MaybeVc> | undefined;
+    const claims = manifest?.[credentialDid]?.credential;
+    return claims && typeof claims === 'object' && !Array.isArray(claims)
+        ? claims as Record<string, unknown> : undefined;
+}
+
+export function extractIdentityFields(
+    doc: object,
+    published: PublishedCredentialRecord[]
+): Map<string, Set<string>> {
+    const schemaFields = new Map<string, Set<string>>();
+    for (const record of published) {
+        const claims = getCredentialClaims(doc, record.credentialDid);
+        if (!claims) continue;
+        const suffix = getDIDSuffix(record.schemaDid);
+        const fields = schemaFields.get(suffix) ?? new Set<string>();
+        for (const field of Object.keys(claims)) fields.add(field);
+        schemaFields.set(suffix, fields);
+    }
+    return schemaFields;
+}
+
+export function extractIdentity(
+    did: string,
+    doc: object,
+    { schemaDid, fields = [] }: IdentityListOptions
+): IdentityRecord {
+    const published = extractPublishedCredentials(did, doc);
+    const identity: IdentityRecord = {
+        did,
+        manifestSchemaDids: [...new Set(published.map(record => record.schemaDid))].sort(),
+    };
+
+    if (fields.length > 0) {
+        identity.credentials = published
+            .filter(record => record.revealed && (!schemaDid
+                || getDIDSuffix(record.schemaDid) === getDIDSuffix(schemaDid)))
+            .sort((a, b) => a.credentialDid < b.credentialDid ? -1 : a.credentialDid > b.credentialDid ? 1 : 0)
+            .flatMap(record => {
+                const claims = getCredentialClaims(doc, record.credentialDid);
+                if (!claims) {
+                    return [];
+                }
+                const selected = fields.filter(field => Object.hasOwn(claims, field));
+                if (selected.length === 0) return [];
+                return [{
+                    credentialDid: record.credentialDid,
+                    issuerDid: record.issuerDid,
+                    updatedAt: record.updatedAt,
+                    fields: Object.fromEntries(selected.map(field => [field, claims[field]])),
+                }];
+            });
+    }
+
+    return identity;
 }
 
 export function extractPublishedCredentialHistory(

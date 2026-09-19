@@ -59,6 +59,7 @@ const config = {
         '^\\.\\/health\\.js$': '<rootDir>/packages/gatekeeper/src/db/health.ts',
         '^\\.\\/index-export\\.js$': '<rootDir>/packages/gatekeeper/src/db/index-export.ts',
         '^\\.\\/index-helpers\\.js$': '<rootDir>/services/search-server/src/index-helpers.ts',
+        '^\\.\\/DidIndexer\\.js$': '<rootDir>/services/search-server/src/DidIndexer.ts',
         '^\\.\\/projections\\.js$': '<rootDir>/services/search-server/src/projections.ts',
         '^\\.\\/network-metrics\\.js$': '<rootDir>/services/search-server/src/network-metrics.ts',
         '^\\.\\.?\\/did-aliases\\.js$': '<rootDir>/services/search-server/src/did-aliases.ts',
@@ -66,6 +67,7 @@ const config = {
         '^\\.\\/challenge-receipts\\.js$': '<rootDir>/services/search-server/src/challenge-receipts.ts',
         '^\\.\\/cipher-base\\.js$': '<rootDir>/packages/cipher/src/cipher-base.ts',
         '^\\.\\/encryption\\.js$': '<rootDir>/packages/keymaster/src/encryption.ts',
+        '^(\\.{1,2}/.*)\\.js$': '$1',
     },
     testPathIgnorePatterns: [
         "/node_modules/",

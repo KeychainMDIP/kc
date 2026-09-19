@@ -2,8 +2,9 @@ import type { Request } from "express";
 import { BlockList, isIP } from "net";
 
 import { childLogger } from "@mdip/common/logger";
+import { isValidDID } from "@mdip/ipfs/utils";
 import { INDEX_SYNC_STATE_KEYS } from "./DidIndexer.js";
-import type { DIDsDb } from "./types.js";
+import type { DIDsDb, IdentityListOptions } from "./types.js";
 
 const log = childLogger({ service: 'search-server' });
 
@@ -113,6 +114,34 @@ export function parseNonNegativeInteger(value: unknown, fallback: number): numbe
     }
 
     return fallback;
+}
+
+export function parseIdentityListOptions(query: Record<string, unknown>): IdentityListOptions {
+    const { schemaDid } = query;
+    if (schemaDid !== undefined && (typeof schemaDid !== 'string' || !isValidDID(schemaDid))) {
+        throw new Error('schemaDid must be a DID');
+    }
+
+    const fields = query.fields === undefined ? []
+        : Array.isArray(query.fields) ? query.fields : [query.fields];
+    if (fields.some(field => typeof field !== 'string' || field.length === 0)) {
+        throw new Error('fields must contain non-empty field names');
+    }
+
+    for (const name of ['limit', 'offset']) {
+        const value = query[name];
+        if (value !== undefined && (typeof value !== 'string' || !/^\d+$/.test(value)
+            || !Number.isSafeInteger(Number(value)))) {
+            throw new Error(`${name} must be a non-negative integer`);
+        }
+    }
+
+    return {
+        schemaDid,
+        fields: [...new Set(fields as string[])],
+        limit: Math.min(Number(query.limit ?? 50), 500),
+        offset: Number(query.offset ?? 0),
+    };
 }
 
 export function parseOptionalBoolean(value: unknown): boolean | undefined {
