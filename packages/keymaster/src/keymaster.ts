@@ -113,7 +113,7 @@ export default class Keymaster implements KeymasterInterface {
     private readonly maxNameLength: number;
     private readonly maxDataLength: number;
     private _walletCache?: WalletFile;
-    private _walletMutationLock: Promise<void> = Promise.resolve();
+    private _walletLock: Promise<void> = Promise.resolve();
     private _hdkeyCache?: ReturnType<Cipher['generateHDKey']>;
     private _hdkeyCacheSeed?: string;
 
@@ -151,16 +151,18 @@ export default class Keymaster implements KeymasterInterface {
         return this.gatekeeper.listRegistries();
     }
 
+    private runWalletExclusive<T>(fn: () => Promise<T>): Promise<T> {
+        const chained = this._walletLock.then(fn, fn);
+        this._walletLock = chained.then(() => undefined, () => undefined);
+        return chained;
+    }
+
     private async mutateWallet(
         mutator: (wallet: WalletFile) => void | Promise<void>
     ): Promise<void> {
-        const run = async () => {
-            // Create wallet if none and make sure _walletCache is set
-            if (!this._walletCache) {
-                await this.loadWallet();
-            }
-
-            const before = JSON.stringify(this._walletCache!);
+        return this.runWalletExclusive(async () => {
+            const wallet = await this.loadWalletUnlocked();
+            const before = JSON.stringify(wallet);
             const decrypted: WalletFile = JSON.parse(before);
             await mutator(decrypted);
             const after = JSON.stringify(decrypted);
@@ -179,22 +181,19 @@ export default class Keymaster implements KeymasterInterface {
             this._hdkeyCache = hdkey;
             this._hdkeyCacheSeed = JSON.stringify(reenc.seed.mnemonicEnc);
             this._walletCache = decrypted;
-        };
-
-        const chained = this._walletMutationLock.then(run, run);
-        this._walletMutationLock = chained.catch(() => { });
-        return chained;
+        });
     }
 
-    async loadWallet(): Promise<WalletFile> {
+    private async loadWalletUnlocked(): Promise<WalletFile> {
         if (this._walletCache) {
             return this._walletCache;
         }
 
-        let stored = await this.db.loadWallet() as WalletFile | null;
+        const stored = await this.db.loadWallet() as WalletFile | null;
 
         if (!stored) {
-            stored = await this.newWallet();
+            await this.newWalletUnlocked();
+            return this._walletCache!;
         }
 
         const upgraded: WalletFile = await this.upgradeWallet(stored);
@@ -202,7 +201,14 @@ export default class Keymaster implements KeymasterInterface {
         return this._walletCache;
     }
 
-    async saveWallet(
+    async loadWallet(): Promise<WalletFile> {
+        if (this._walletCache) {
+            return this._walletCache;
+        }
+        return this.runWalletExclusive(() => this.loadWalletUnlocked());
+    }
+
+    private async saveWalletUnlocked(
         wallet: StoredWallet,
         overwrite = true
     ): Promise<boolean> {
@@ -219,7 +225,14 @@ export default class Keymaster implements KeymasterInterface {
         return ok;
     }
 
-    async newWallet(
+    async saveWallet(
+        wallet: StoredWallet,
+        overwrite = true
+    ): Promise<boolean> {
+        return this.runWalletExclusive(() => this.saveWalletUnlocked(wallet, overwrite));
+    }
+
+    private async newWalletUnlocked(
         mnemonic?: string,
         overwrite = false
     ): Promise<WalletFile> {
@@ -242,12 +255,19 @@ export default class Keymaster implements KeymasterInterface {
             ids: {}
         };
 
-        const ok = await this.saveWallet(wallet, overwrite)
+        const ok = await this.saveWalletUnlocked(wallet, overwrite)
         if (!ok) {
             throw new KeymasterError('save wallet failed');
         }
 
         return wallet;
+    }
+
+    async newWallet(
+        mnemonic?: string,
+        overwrite = false
+    ): Promise<WalletFile> {
+        return this.runWalletExclusive(() => this.newWalletUnlocked(mnemonic, overwrite));
     }
 
     async decryptMnemonic(): Promise<string> {
