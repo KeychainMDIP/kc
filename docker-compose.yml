@@ -140,7 +140,7 @@ services:
       - ./data:/app/keymaster/data
     user: "${KC_UID}:${KC_GID}"
     ports:
-      - ${KC_KEYMASTER_PORT}:4226
+      - "${KC_KEYMASTER_BIND_ADDRESS:-127.0.0.1}:${KC_KEYMASTER_PORT:-4226}:4226"
     depends_on:
       gatekeeper:
         condition: service_started

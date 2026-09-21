@@ -64,6 +64,7 @@ Copy those values to `KC_UID` and `KC_GID` in `.env`. At minimum, also review:
 | `KC_NODE_NAME` | Human-readable Hyperswarm node name |
 | `KC_NODE_ID` | Keymaster ID name used by the node and mediators |
 | `KC_ENCRYPTED_PASSPHRASE` | Required passphrase used to encrypt the server wallet. Set a strong value and retain it securely |
+| `KC_KEYMASTER_BIND_ADDRESS` | Host interface for Keymaster's Compose-published port. Keep the default `127.0.0.1` unless access is protected by an appropriate private network or authenticated proxy |
 | `KC_GATEKEEPER_REGISTRIES` | Comma-separated registries accepted by Gatekeeper |
 | `KC_DEFAULT_REGISTRY` | Registry used by Keymaster when no command option is supplied |
 | `KC_GATEKEEPER_DID_PREFIX` | Fallback prefix for create operations that omit one |
@@ -225,7 +226,7 @@ When their corresponding services and embedded clients are enabled, the local us
 
 ## Public hosting
 
-Keymaster controls the server wallet and must remain private. Database and blockchain RPC ports must also remain private. For a read-only public resolver, expose only the required Gatekeeper read endpoints, preferably through a firewall and TLS reverse proxy.
+Keymaster controls the server wallet and must remain private. Compose binds its host port to `127.0.0.1` by default. Database and blockchain RPC ports must also remain private. For a read-only public resolver, expose only the required Gatekeeper read endpoints, preferably through a firewall and TLS reverse proxy.
 
 The following read-only nginx example deliberately denies every other API route. Add your certificate configuration separately.
 
