@@ -1334,6 +1334,38 @@ describe('rotation persistence failures', () => {
 });
 
 describe('wallet mutation rollback', () => {
+    it('should serialize wallet replacement after an in-flight mutation', async () => {
+        const alice = await keymaster.createId('Alice');
+        const replacement = JSON.parse(JSON.stringify(await keymaster.loadWallet()));
+        replacement.names = { restored: alice };
+        let signalSaving!: () => void;
+        const saving = new Promise<void>(resolve => { signalSaving = resolve; });
+        let finishSave!: () => void;
+        const pendingSave = new Promise<void>(resolve => { finishSave = resolve; });
+        const persist = wallet.saveWallet.bind(wallet);
+        jest.spyOn(wallet, 'saveWallet').mockImplementationOnce(async (candidate, overwrite) => {
+            signalSaving();
+            await pendingSave;
+            return persist(candidate, overwrite);
+        });
+
+        const mutation = keymaster.addName('stale', alice);
+        await saving;
+        const encrypt = jest.spyOn(cipher, 'encryptMessage');
+        const restore = keymaster.saveWallet(replacement, true);
+        await new Promise<void>(resolve => setImmediate(resolve));
+        const encryptionsBeforeRelease = encrypt.mock.calls.length;
+        finishSave();
+
+        await expect(mutation).resolves.toBe(true);
+        await expect(restore).resolves.toBe(true);
+        expect(encryptionsBeforeRelease).toBe(0);
+        expect(encrypt).toHaveBeenCalledTimes(1);
+        expect(await keymaster.listNames()).toStrictEqual({ restored: alice });
+        const restarted = new Keymaster({ gatekeeper, wallet, cipher, passphrase: PASSPHRASE });
+        expect(await restarted.loadWallet()).toStrictEqual(replacement);
+    });
+
     it.each(['storage refusal', 'storage exception', 'encryption exception'])(
         'should discard an alias after %s', async (failure) => {
             const alice = await keymaster.createId('Alice');
