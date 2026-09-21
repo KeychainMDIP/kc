@@ -227,16 +227,19 @@ describe('importNotice', () => {
         expect(await keymaster.listCredentials()).toStrictEqual([first, second]);
         expect((await keymaster.fetchIdInfo()).notices?.[notice].tags).toStrictEqual([NoticeTags.CREDENTIAL]);
 
-        const accept = jest.spyOn(keymaster, 'acceptCredential');
+        const accept = jest.spyOn(keymaster as any, 'acceptCredentialFor');
         await expect(keymaster.importNotice(notice)).resolves.toBe(true);
         expect(accept).not.toHaveBeenCalled();
     });
 
     it('should retry a notice when a later credential was not accepted', async () => {
         const { first, second, notice } = await createCredentialNotice();
-        const acceptCredential = keymaster.acceptCredential.bind(keymaster);
-        const accept = jest.spyOn(keymaster, 'acceptCredential').mockImplementation(async did =>
-            did === second ? false : acceptCredential(did));
+        const internal = keymaster as any;
+        const acceptCredential = internal.acceptCredentialFor.bind(keymaster);
+        const accept = jest.spyOn(internal, 'acceptCredentialFor').mockImplementation(async (...args: unknown[]) => {
+            const [did, holder] = args as [string, string];
+            return did === second ? false : acceptCredential(did, holder);
+        });
 
         await expect(keymaster.importNotice(notice)).resolves.toBe(false);
         expect(await keymaster.listCredentials()).toStrictEqual([first]);
@@ -274,9 +277,12 @@ describe('importNotice', () => {
     it('should let search retry a partially imported notice', async () => {
         const { first, second, notice } = await createCredentialNotice();
         await search.setResults([notice]);
-        const acceptCredential = keymaster.acceptCredential.bind(keymaster);
-        const accept = jest.spyOn(keymaster, 'acceptCredential').mockImplementation(async did =>
-            did === second ? false : acceptCredential(did));
+        const internal = keymaster as any;
+        const acceptCredential = internal.acceptCredentialFor.bind(keymaster);
+        const accept = jest.spyOn(internal, 'acceptCredentialFor').mockImplementation(async (...args: unknown[]) => {
+            const [did, holder] = args as [string, string];
+            return did === second ? false : acceptCredential(did, holder);
+        });
 
         await expect(keymaster.searchNotices()).resolves.toBe(true);
         expect(await keymaster.listCredentials()).toStrictEqual([first]);
@@ -294,7 +300,7 @@ describe('importNotice', () => {
         const dmail = await keymaster.createDmail({ to: [alice], cc: [], subject: 'Notice', body: 'Message' });
         const notice = await keymaster.createNotice({ to: [alice], dids: [dmail] });
         await keymaster.setCurrentId('Alice');
-        jest.spyOn(keymaster, 'importDmail').mockResolvedValueOnce(false);
+        jest.spyOn(keymaster as any, 'importDmailFor').mockResolvedValueOnce(false);
 
         await expect(keymaster.importNotice(notice)).resolves.toBe(false);
         expect((await keymaster.fetchIdInfo()).notices?.[notice]).toBeUndefined();
@@ -313,7 +319,7 @@ describe('importNotice', () => {
         const ballot = await keymaster.votePoll(poll, 1);
         const notice = await keymaster.createNotice({ to: [bob], dids: [ballot] });
         await keymaster.setCurrentId('Bob');
-        const update = jest.spyOn(keymaster, 'updatePoll');
+        const update = jest.spyOn(keymaster as any, 'updatePollFor');
         if (failure === 'throw') {
             update.mockRejectedValueOnce(new Error('Temporary update failure'));
         } else {
@@ -351,11 +357,14 @@ describe('importNotice', () => {
         await keymaster.addGroupMember(roster, alice);
         const poll = await keymaster.createPoll({ ...await keymaster.pollTemplate(), roster });
         await keymaster.updateNotice(notice, { to: [alice], dids: [poll, first, second] });
-        const acceptCredential = keymaster.acceptCredential.bind(keymaster);
-        const accept = jest.spyOn(keymaster, 'acceptCredential').mockImplementation(async did =>
-            did === second ? false : acceptCredential(did));
+        const internal = keymaster as any;
+        const acceptCredential = internal.acceptCredentialFor.bind(keymaster);
+        const accept = jest.spyOn(internal, 'acceptCredentialFor').mockImplementation(async (...args: unknown[]) => {
+            const [did, holder] = args as [string, string];
+            return did === second ? false : acceptCredential(did, holder);
+        });
         const addName = jest.spyOn(keymaster, 'addName');
-        const recordNotice = jest.spyOn(keymaster, 'addToNotices');
+        const recordNotice = jest.spyOn(internal, 'addToNoticesFor');
 
         await expect(keymaster.importNotice(notice)).resolves.toBe(false);
         expect(Object.values(await keymaster.listNames())).toContain(poll);
@@ -365,7 +374,7 @@ describe('importNotice', () => {
         await expect(keymaster.importNotice(notice)).resolves.toBe(true);
         expect(addName).toHaveBeenCalledTimes(1);
         expect(recordNotice).toHaveBeenCalledTimes(1);
-        expect(recordNotice).toHaveBeenCalledWith(notice, [NoticeTags.CREDENTIAL]);
+        expect(recordNotice).toHaveBeenCalledWith(notice, [NoticeTags.CREDENTIAL], alice);
         expect(await keymaster.listCredentials()).toStrictEqual([first, second]);
     });
 

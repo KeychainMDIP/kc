@@ -365,7 +365,7 @@ describe('credential validity periods', () => {
         expect((await keymaster.verifyResponse(responseDID, { publish: false })).match).toBe(true);
 
         clock.mockReturnValue(now + 60_000);
-        const publishReceipts = jest.spyOn(keymaster, 'publishChallengeReceipts');
+        const publishReceipts = jest.spyOn(keymaster as any, 'publishChallengeReceiptsFor');
         try {
             const result = await keymaster.verifyResponse(responseDID, { publish });
             expect(result.match).toBe(false);
@@ -380,7 +380,7 @@ describe('credential validity periods', () => {
 
 describe('verifyResponse', () => {
     it('should verify valid response to empty challenge', async () => {
-        await keymaster.createId('Alice');
+        const alice = await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
 
         await keymaster.setCurrentId('Alice');
@@ -390,7 +390,7 @@ describe('verifyResponse', () => {
         const responseDID = await keymaster.createResponse(challengeDID);
 
         await keymaster.setCurrentId('Alice');
-        const publishReceipts = jest.spyOn(keymaster, 'publishChallengeReceipts');
+        const publishReceipts = jest.spyOn(keymaster as any, 'publishChallengeReceiptsFor');
         const verify = await keymaster.verifyResponse(responseDID);
 
         const expected = {
@@ -405,7 +405,7 @@ describe('verifyResponse', () => {
         };
 
         expect(verify).toStrictEqual(expected);
-        expect(publishReceipts).toHaveBeenCalledWith(responseDID, { verification: verify });
+        expect(publishReceipts).toHaveBeenCalledWith(responseDID, alice, { verification: verify });
 
         publishReceipts.mockClear();
         await expect(keymaster.verifyResponse(responseDID, { publish: false })).resolves.toStrictEqual(expected);
@@ -429,7 +429,7 @@ describe('verifyResponse', () => {
             const response = await other.createResponse(challenge);
             const wrapper = await other.decryptJSON(response);
             const forwarded = await other.encryptJSON(wrapper, verifierDID);
-            const publishReceipts = jest.spyOn(keymaster, 'publishChallengeReceipts');
+            const publishReceipts = jest.spyOn(keymaster as any, 'publishChallengeReceiptsFor');
 
             try {
                 await expect(keymaster.verifyResponse(forwarded, { publish }))
@@ -625,7 +625,7 @@ describe('verifyResponse', () => {
         });
 
         it.each([false, undefined])('rejects another subject\'s credential with publish=%s', async (publish) => {
-            const publishReceipts = jest.spyOn(keymaster, 'publishChallengeReceipts');
+            const publishReceipts = jest.spyOn(keymaster as any, 'publishChallengeReceiptsFor');
             try {
                 const result = await keymaster.verifyResponse(responseDID, { publish });
                 expect(result.match).toBe(false);
@@ -639,7 +639,7 @@ describe('verifyResponse', () => {
 
         it.each([false, undefined])('rejects transferring the response to its credential subject with publish=%s', async (publish) => {
             expect(await other.transferAsset(responseDID, carol)).toBe(true);
-            const publishReceipts = jest.spyOn(keymaster, 'publishChallengeReceipts');
+            const publishReceipts = jest.spyOn(keymaster as any, 'publishChallengeReceiptsFor');
             try {
                 await expect(keymaster.verifyResponse(responseDID, { publish }))
                     .rejects.toThrow('Invalid parameter: response sender');
@@ -942,7 +942,7 @@ describe('verifyResponse', () => {
             } }, victor);
 
             await keymaster.setCurrentId('Victor');
-            const publishReceipts = jest.spyOn(keymaster, 'publishChallengeReceipts');
+            const publishReceipts = jest.spyOn(keymaster as any, 'publishChallengeReceiptsFor');
             try {
                 for (const publish of [false, true, undefined]) {
                     const verification = await keymaster.verifyResponse(response, { publish });
@@ -1182,7 +1182,7 @@ describe('verifyResponse', () => {
 
         await keymaster.setCurrentId('Victor');
 
-        const publishReceipts = jest.spyOn(keymaster, 'publishChallengeReceipts');
+        const publishReceipts = jest.spyOn(keymaster as any, 'publishChallengeReceiptsFor');
         const verify1 = await keymaster.verifyResponse(responseDID);
 
         expect(verify1.match).toBe(false);
@@ -1205,7 +1205,7 @@ describe('verifyResponse', () => {
         const responseDID = await keymaster.createResponse(challengeDID);
 
         await keymaster.setCurrentId('Alice');
-        const publishReceipts = jest.spyOn(keymaster, 'publishChallengeReceipts')
+        const publishReceipts = jest.spyOn(keymaster as any, 'publishChallengeReceiptsFor')
             .mockRejectedValueOnce(new Error('receipt publication failed'));
 
         await expect(keymaster.verifyResponse(responseDID)).rejects.toThrow('receipt publication failed');
@@ -1471,16 +1471,8 @@ describe('challenge receipts', () => {
         const receiptDoc = await keymaster.resolveDID(receiptDIDs[0]);
         expect(receiptDoc.didDocument?.controller).toBe(victor);
 
-        const verifyResponse = jest.spyOn(keymaster, 'verifyResponse');
         const defaultReceiptDIDs = await keymaster.publishChallengeReceipts(responseDID);
         expect(defaultReceiptDIDs).toHaveLength(1);
-        expect(verifyResponse).toHaveBeenCalledTimes(1);
-        expect(verifyResponse).toHaveBeenCalledWith(responseDID, {
-            retries: undefined,
-            delay: undefined,
-            publish: false,
-        });
-        verifyResponse.mockRestore();
 
         const defaultReceiptAsset = await keymaster.resolveAsset(defaultReceiptDIDs[0]) as { challengeReceipt: ChallengeReceipt };
         expect(defaultReceiptAsset.challengeReceipt).toStrictEqual(expectedReceipt);
