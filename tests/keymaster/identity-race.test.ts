@@ -317,6 +317,37 @@ describe('current identity changes during operations', () => {
         expect((await keymaster.fetchIdInfo('Verifier')).did).toBe(verifier);
     });
 
+    it('keeps response actors through transient resolution retries', async () => {
+        const verifier = await keymaster.createId('Verifier');
+        const responder = await keymaster.createId('Responder');
+        await keymaster.createId('Other');
+        await keymaster.setCurrentId('Verifier');
+        const challenge = await keymaster.createChallenge();
+        await keymaster.setCurrentId('Responder');
+
+        const resolve = jest.spyOn(keymaster, 'resolveDID');
+        resolve.mockImplementationOnce(async () => {
+            await keymaster.setCurrentId('Other');
+            throw new Error('Temporary resolution failure');
+        });
+        const response = await keymaster.createResponse(challenge, { retries: 1, delay: 0 });
+
+        expect((await keymaster.resolveDID(response)).didDocument?.controller).toBe(responder);
+
+        await keymaster.setCurrentId('Verifier');
+        resolve.mockImplementationOnce(async () => {
+            await keymaster.setCurrentId('Other');
+            throw new Error('Temporary resolution failure');
+        });
+
+        await expect(keymaster.verifyResponse(response, {
+            retries: 1,
+            delay: 0,
+            publish: false,
+        })).resolves.toMatchObject({ match: true, challenge, responder });
+        expect((await keymaster.fetchIdInfo('Verifier')).did).toBe(verifier);
+    });
+
     it('keeps poll ballot processing with the initiating owner', async () => {
         const owner = await keymaster.createId('Owner');
         const voter = await keymaster.createId('Voter');
@@ -405,6 +436,8 @@ describe('current identity changes during operations', () => {
         const alice = await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
         await keymaster.setCurrentId('Alice');
+
+        await expect(keymaster.refreshNotices()).resolves.toBe(true);
 
         await keymaster.addToHeld(bob);
         await expect(keymaster.removeFromHeld(bob)).resolves.toBe(true);
