@@ -401,6 +401,33 @@ describe('current identity changes during operations', () => {
         expect(await keymaster.listCredentials('Other')).not.toContain(credential);
     });
 
+    it('uses the selected identity for wallet bookkeeping helpers', async () => {
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        await keymaster.setCurrentId('Alice');
+
+        await keymaster.addToHeld(bob);
+        await expect(keymaster.removeFromHeld(bob)).resolves.toBe(true);
+
+        const dmail = await keymaster.createDmail({
+            to: [bob],
+            cc: [],
+            subject: 'Subject',
+            body: 'Body',
+        });
+        await keymaster.fileDmail(dmail, [DmailTags.SENT]);
+        await expect(keymaster.listDmailAttachments(dmail)).resolves.toStrictEqual({});
+
+        const notice = await keymaster.createNotice({ to: [alice], dids: [dmail] });
+        await keymaster.addToNotices(notice, ['test']);
+        await expect(keymaster.cleanupNotices()).resolves.toBe(true);
+
+        const id = await keymaster.fetchIdInfo('Alice');
+        expect(id.held).not.toContain(bob);
+        expect(id.dmail?.[dmail].tags).toStrictEqual([DmailTags.SENT]);
+        expect(id.notices?.[notice].tags).toStrictEqual(['test']);
+    });
+
     it('preserves sentinel results when no identity is selected', async () => {
         const did = 'did:test:z3v8AuahfDKeebhCEEgZFcX7YctAeQjFmz9h6q33Ui1sGkqNQZB';
 
