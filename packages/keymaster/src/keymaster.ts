@@ -210,7 +210,7 @@ export default class Keymaster implements KeymasterInterface {
 
     private async saveWalletUnlocked(
         wallet: StoredWallet,
-        overwrite = true
+        overwrite: boolean
     ): Promise<boolean> {
         const upgraded: WalletFile = await this.upgradeWallet(wallet, false);
         const toStore: WalletEncFile = await this.encryptWallet(upgraded);
