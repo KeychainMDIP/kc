@@ -188,6 +188,16 @@ describe('publishCredential', () => {
             expect(error.message).toContain('did is not a credential');
         }
     });
+
+    it('should reject publishing another subject\'s credential', async () => {
+        await keymaster.createId('Issuer');
+        const holder = await keymaster.createId('Holder');
+        await keymaster.setCurrentId('Issuer');
+        const schema = await keymaster.createSchema(mockSchema);
+        const did = await keymaster.issueCredential(await keymaster.bindCredential(schema, holder));
+
+        await expect(keymaster.publishCredential(did)).rejects.toThrow('only subject can publish a credential');
+    });
 });
 
 describe('unpublishCredential', () => {
@@ -467,6 +477,13 @@ describe('sendCredential', () => {
             expect(error.message).toBe('Invalid parameter: did not encrypted');
         }
     });
+
+    it('should return null for an encrypted non-credential', async () => {
+        const bob = await keymaster.createId('Bob');
+        const did = await keymaster.encryptJSON(mockJson, bob);
+
+        await expect(keymaster.sendCredential(did)).resolves.toBeNull();
+    });
 });
 
 describe('listIssued', () => {
@@ -512,6 +529,19 @@ describe('updateCredential', () => {
 
         const doc = await keymaster.resolveDID(did);
         expect(doc.didDocumentMetadata!.version).toBe("2");
+    });
+
+    it('should throw when the issuer encryption keypair is unavailable', async () => {
+        const userDid = await keymaster.createId('Bob');
+        const schema = await keymaster.createSchema(mockSchema);
+        const did = await keymaster.issueCredential(await keymaster.bindCredential(schema, userDid));
+        const credential = (await keymaster.getCredential(did))!;
+        const fetchKeyPair = keymaster.fetchKeyPair.bind(keymaster);
+        jest.spyOn(keymaster, 'fetchKeyPair')
+            .mockImplementationOnce(fetchKeyPair)
+            .mockResolvedValueOnce(null);
+
+        await expect(keymaster.updateCredential(did, credential)).rejects.toThrow('Keymaster: No valid sender keypair');
     });
 
     it('should keep signing and encryption bound to the validated issuer if the current ID changes', async () => {
