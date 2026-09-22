@@ -84,6 +84,7 @@ const configuredSkipPaths = parseCsv(process.env.KC_SEARCH_SERVER_RATE_LIMIT_SKI
 const config = {
     port: parsePositiveInteger(process.env.KC_SEARCH_SERVER_PORT, 4002),
     gatekeeperURL: process.env.KC_SEARCH_SERVER_GATEKEEPER_URL || 'http://localhost:4224',
+    hyperswarmURL: process.env.KC_SEARCH_SERVER_HYPR_URL || 'http://localhost:4003',
     refreshIntervalMs: parsePositiveInteger(process.env.KC_SEARCH_SERVER_REFRESH_INTERVAL_MS, 5000),
     metricsRefreshIntervalMs: parsePositiveInteger(
         process.env.KC_SEARCH_SERVER_METRICS_REFRESH_INTERVAL_MS,

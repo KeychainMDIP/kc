@@ -3,6 +3,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { EventEmitter } from 'node:events';
 import { createRequire } from 'node:module';
+import { createServer, type AddressInfo } from 'node:net';
 import type { ProcessEventMap } from 'node:process';
 import { jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
@@ -334,12 +335,21 @@ const BASELINE_ENV = {
     KC_HYPR_DB: 'sqlite',
     KC_IPFS_ENABLE: 'false',
     KC_HYPR_EXPORT_INTERVAL: '2',
+    KC_HYPR_STATUS_BIND_ADDRESS: '127.0.0.1',
     KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT: '0',
     KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW: '25000',
     KC_HYPR_NEGENTROPY_MAX_ROUNDS_PER_SESSION: '64',
     KC_HYPR_NEGENTROPY_INTERVAL: '300',
     KC_MDIP_PROTOCOL: '/MDIP/v1.0-public',
 } as const;
+
+async function getAvailablePort(): Promise<number> {
+    const server = createServer();
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const port = (server.address() as AddressInfo).port;
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    return port;
+}
 
 export interface CreateMediatorNodeOptions {
     name: string;
@@ -371,8 +381,10 @@ export async function createMediatorNode(options: CreateMediatorNodeOptions): Pr
 
     isolatedImportActive = true;
     const context = createMediatorNodeContext(options.name, options.publicKey);
+    const statusPort = await getAvailablePort();
     const envValues: Record<string, string | undefined> = {
         ...BASELINE_ENV,
+        KC_HYPR_STATUS_PORT: String(statusPort),
         ...options.env,
         KC_HYPR_DB: 'sqlite',
         KC_IPFS_ENABLE: 'false',

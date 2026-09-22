@@ -28,6 +28,9 @@ KC_SEARCH_SERVER_PORT=4002
 # URL where your Gatekeeper service is running
 KC_SEARCH_SERVER_GATEKEEPER_URL=http://localhost:4224
 
+# URL where your Hyperswarm mediator status endpoint is running
+KC_SEARCH_SERVER_HYPR_URL=http://localhost:4003
+
 # How often (in ms) to poll Gatekeeper for new or updated DIDs.
 KC_SEARCH_SERVER_REFRESH_INTERVAL_MS=5000
 
@@ -77,6 +80,10 @@ stored alias's prefix.
 ### `GET /api/v1/status`
 - **Description**: Returns the database adapter, index synchronization state,
   and the last network-metrics rebuild time or error.
+
+### `GET /api/v1/network`
+- **Description**: Proxies the configured Hyperswarm mediator's local node and
+  direct-peer connection status. Returns `503` when the mediator is unavailable.
 
 ### `GET /api/v1/did/:did`
 - **Description**: Returns the DID Document

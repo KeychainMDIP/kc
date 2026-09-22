@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import JsonViewer from "./components/JsonViewer.js";
 import Events from "./components/Events.js";
 import Network from "./components/Network.js";
+import Metrics from "./components/Metrics.js";
 import Credentials from "./components/Credentials.js";
 import ChallengeReceipts from "./components/ChallengeReceipts.js";
 import {
@@ -154,12 +155,16 @@ function App() {
                             )}
                         />
                         <Route
-                            path="/network"
+                            path="/metrics"
                             element={isReady ? (
-                                <Network />
+                                <Metrics />
                             ) : (
                                 waiting
                             )}
+                        />
+                        <Route
+                            path="/network"
+                            element={<Network />}
                         />
                         <Route
                             path="/credentials"

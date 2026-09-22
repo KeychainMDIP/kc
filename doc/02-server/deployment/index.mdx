@@ -19,9 +19,9 @@ A full node combines the following services:
 | --- | --- | --- |
 | `gatekeeper` | Validates DID operations and maintains the DID database | `4224` |
 | `keymaster` | Holds the server wallet and signs or decrypts operations | `4226` |
-| `hypr-mediator` | Distributes operations over Hyperswarm | none |
+| `hypr-mediator` | Distributes operations over Hyperswarm and reports direct peer connections | internal `4003` |
 | `search-server` | Builds a searchable read model from Gatekeeper's index export | `4002` |
-| `explorer` | Displays DIDs, events, credentials, receipts, and network metrics | `4000` |
+| `explorer` | Displays DIDs, events, credentials, receipts, metrics, and live Hyperswarm peers | `4000` |
 | `react-wallet` | Browser and mobile wallet web application | `4228` |
 | `ipfs` | Optional content-addressable storage | `4001`, local API `5001` |
 | `mongodb`, `redis`, `postgres` | Available database backends | loopback only |
@@ -30,7 +30,7 @@ A full node combines the following services:
 
 The Compose file includes Bitcoin, Bitcoin Testnet4, Bitcoin Signet, and Feathercoin Testnet nodes and mediators. Bitcoin and Signet also have inscription mediator configurations. Their Gatekeeper registry names are `BTC-Inscription`, `TBTC`, `Signet`, `Signet-Inscription`, and `TFTC`. Enable only the registries the node intends to operate.
 
-Gatekeeper is the core service. Keymaster and the mediators submit operations to it. Search Server consumes Gatekeeper's ordered index export. Explorer reads Search Server. IPFS is optional and controlled by a Compose profile.
+Gatekeeper is the core service. Keymaster and the mediators submit operations to it. Search Server consumes Gatekeeper's ordered index export and proxies the Hyperswarm mediator's local peer status. Explorer reads Search Server. IPFS is optional and controlled by a Compose profile.
 
 ## Requirements
 
@@ -123,6 +123,8 @@ Add the Hyperswarm mediator and CLI for a networked core node that can be manage
 ```
 
 Compose automatically starts MongoDB, Redis, PostgreSQL, and Search Server because they are declared dependencies of Gatekeeper and Keymaster. Only the database adapters selected in `.env` are used. Omit `cli` if you only use the APIs or web interfaces. Explorer, React Wallet, and all Bitcoin-family nodes and mediators are optional.
+
+Explorer's Network tab shows the direct peers visible to the local Hyperswarm mediator. It reports the status as unavailable when `hypr-mediator` is not running.
 
 When `KC_IPFS_ENABLE` is not `false`, `start-node` also enables the `ipfs` profile.
 

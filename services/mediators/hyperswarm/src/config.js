@@ -28,6 +28,19 @@ function parseFrameSizeLimit() {
     return valueKb * 1024;
 }
 
+function parseStatusPort() {
+    const raw = process.env.KC_HYPR_STATUS_PORT;
+    if (raw == null || raw === '') {
+        return 4003;
+    }
+
+    const port = Number(raw);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+        throw new Error('Invalid KC_HYPR_STATUS_PORT; expected an integer from 1 to 65535');
+    }
+    return port;
+}
+
 function parseSyncDbEnv() {
     const normalized = process.env.KC_HYPR_DB?.trim().toLowerCase();
     if (!normalized) {
@@ -51,6 +64,8 @@ const config = {
     nodeID: process.env.KC_NODE_ID || '',
     nodeName: process.env.KC_NODE_NAME || 'anon',
     protocol: process.env.KC_MDIP_PROTOCOL || '/MDIP/v1.0-public',
+    statusBindAddress: process.env.KC_HYPR_STATUS_BIND_ADDRESS?.trim() || '127.0.0.1',
+    statusPort: parseStatusPort(),
     exportInterval: parsePositiveIntEnv('KC_HYPR_EXPORT_INTERVAL', 2),
     negentropyFrameSizeLimit: parseFrameSizeLimit(),
     negentropyMaxRecordsPerWindow,

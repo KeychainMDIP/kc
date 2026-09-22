@@ -26,10 +26,14 @@ describe('hyperswarm config', () => {
 
     it('uses defaults when optional env vars are empty', async () => {
         process.env.KC_HYPR_EXPORT_INTERVAL = '';
+        process.env.KC_HYPR_STATUS_BIND_ADDRESS = '';
+        process.env.KC_HYPR_STATUS_PORT = '';
 
         const config = await importConfigIsolated();
 
         expect(config.exportInterval).toBe(2);
+        expect(config.statusBindAddress).toBe('127.0.0.1');
+        expect(config.statusPort).toBe(4003);
     });
 
     it('uses built-in defaults when basic service env vars are blank', async () => {
@@ -60,6 +64,8 @@ describe('hyperswarm config', () => {
         process.env.KC_NODE_ID = 'did:test:node';
         process.env.KC_NODE_NAME = 'BushStar';
         process.env.KC_MDIP_PROTOCOL = '/MDIP/v1.0-test';
+        process.env.KC_HYPR_STATUS_BIND_ADDRESS = '0.0.0.0';
+        process.env.KC_HYPR_STATUS_PORT = '4100';
 
         const config = await importConfigIsolated();
 
@@ -70,6 +76,17 @@ describe('hyperswarm config', () => {
         expect(config.nodeID).toBe('did:test:node');
         expect(config.nodeName).toBe('BushStar');
         expect(config.protocol).toBe('/MDIP/v1.0-test');
+        expect(config.statusBindAddress).toBe('0.0.0.0');
+        expect(config.statusPort).toBe(4100);
+    });
+
+    it('rejects invalid network status ports', async () => {
+        for (const value of ['0', '65536', '4003junk']) {
+            process.env.KC_HYPR_STATUS_PORT = value;
+            await expect(importConfigIsolated()).rejects.toThrow(
+                'Invalid KC_HYPR_STATUS_PORT; expected an integer from 1 to 65535'
+            );
+        }
     });
 
     it('treats KC_IPFS_ENABLE=false as disabled', async () => {
