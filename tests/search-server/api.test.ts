@@ -193,6 +193,17 @@ describe('Search Server HTTP routes', () => {
         expect(status.body).toMatchObject({ ready: true, db: 'memory', sync: { snapshotComplete: false } });
     });
 
+    it('reports readiness response failures', async () => {
+        await boot();
+        jest.spyOn(app.response, 'json').mockImplementationOnce(() => {
+            throw new Error('serialization failed');
+        });
+        expect(await request('/ready')).toEqual({
+            status: 500,
+            body: { error: 'Error: serialization failed' },
+        });
+    });
+
     it('proxies live Hyperswarm status and reports mediator failures', async () => {
         const status = {
             generatedAt: '2026-09-22T12:00:00.000Z',
