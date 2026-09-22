@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import Gatekeeper from '@mdip/gatekeeper';
 import Keymaster from '@mdip/keymaster';
 import CipherNode from '@mdip/cipher/node';
@@ -93,6 +94,53 @@ describe('createId', () => {
         expect(wallet.ids[name1].did).toBe(did1);
         expect(wallet.ids[name2].did).toBe(did2);
         expect(wallet.current).toBe(name2);
+    });
+
+    it.each(['refusal', 'exception'])(
+        'should not reuse a published identity account after a wallet storage %s', async (failure) => {
+            await keymaster.loadWallet();
+            const persist = wallet.saveWallet.bind(wallet);
+            const save = jest.spyOn(wallet, 'saveWallet');
+            save.mockImplementationOnce(persist);
+            if (failure === 'refusal') {
+                save.mockResolvedValueOnce(false);
+            } else {
+                save.mockRejectedValueOnce(new Error('storage failed'));
+            }
+
+            await expect(keymaster.createId('Orphan', { registry: 'local' })).rejects.toThrow(
+                failure === 'refusal' ? 'save wallet failed' : 'storage failed'
+            );
+
+            const [orphan] = await gatekeeper.getDIDs() as string[];
+            const orphanDoc = await keymaster.resolveDID(orphan);
+            const restarted = new Keymaster({ gatekeeper, wallet, cipher, passphrase: 'passphrase' });
+            const recovered = await restarted.loadWallet();
+            expect(recovered.counter).toBe(1);
+            expect(recovered.ids).not.toHaveProperty('Orphan');
+
+            const alice = await restarted.createId('Alice', { registry: 'local' });
+            const aliceDoc = await restarted.resolveDID(alice);
+            expect(aliceDoc.didDocument!.verificationMethod![0].publicKeyJwk)
+                .not.toStrictEqual(orphanDoc.didDocument!.verificationMethod![0].publicKeyJwk);
+            const persisted = await restarted.loadWallet();
+            expect(persisted.counter).toBe(2);
+            expect(persisted.ids.Alice.account).toBe(1);
+        }
+    );
+
+    it('should not publish an identity when its account reservation cannot be saved', async () => {
+        const original = await keymaster.loadWallet();
+        jest.spyOn(wallet, 'saveWallet').mockResolvedValueOnce(false);
+        const publish = jest.spyOn(gatekeeper, 'createDID');
+
+        await expect(keymaster.createId('Alice', { registry: 'local' }))
+            .rejects.toThrow('save wallet failed');
+
+        expect(publish).not.toHaveBeenCalled();
+        expect(await keymaster.loadWallet()).toBe(original);
+        expect(original.counter).toBe(0);
+        expect(await gatekeeper.getDIDs()).toStrictEqual([]);
     });
 
     it('should not create an ID with an empty name', async () => {

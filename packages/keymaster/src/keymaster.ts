@@ -1443,10 +1443,15 @@ export default class Keymaster implements KeymasterInterface {
             const index = 0;
             const signed = await this.createIdOperation(name, account, options);
 
+            wallet.counter += 1;
+            const reserved = await this.saveWalletUnlocked(wallet, true);
+            if (!reserved) {
+                throw new KeymasterError('save wallet failed');
+            }
+
             did = await this.gatekeeper.createDID(signed);
 
             wallet.ids[name] = { did, account, index };
-            wallet.counter += 1;
             wallet.current = name;
         });
 
