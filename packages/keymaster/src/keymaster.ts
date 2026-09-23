@@ -54,6 +54,7 @@ import {
     isV1WithEnc,
     isV1Decrypted,
     isLegacyV0,
+    isValidIDInfo,
     isValidWalletPayload,
 } from './db/typeGuards.js';
 import {
@@ -1581,18 +1582,26 @@ export default class Keymaster implements KeymasterInterface {
             }
 
             const backup = this.cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, vault.backup);
-            const data = JSON.parse(backup) as { name: string; id: IDInfo };
+            const data = JSON.parse(backup) as { name?: unknown; id?: unknown };
+            if (!data || typeof data !== 'object' || Array.isArray(data)
+                || typeof data.name !== 'string' || !isValidIDInfo(data.id)) {
+                throw new InvalidDIDError('invalid identity backup');
+            }
+
+            let name = data.name;
+            const id = data.id;
 
             await this.mutateWallet((wallet) => {
-                if (wallet.ids[data.name]) {
-                    throw new KeymasterError(`${data.name} already exists in wallet`);
+                if (wallet.ids[name]) {
+                    throw new KeymasterError(`${name} already exists in wallet`);
                 }
-                wallet.ids[data.name] = data.id;
-                wallet.current = data.name;
-                wallet.counter = Math.max(wallet.counter, data.id.account + 1);
+                name = this.validateName(name, wallet);
+                wallet.ids[name] = id;
+                wallet.current = name;
+                wallet.counter = Math.max(wallet.counter, id.account + 1);
             });
 
-            return data.name;
+            return name;
         } catch (error: any) {
             if (error.type === 'Keymaster') {
                 throw error;
