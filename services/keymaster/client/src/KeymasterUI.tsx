@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import type { ChangeEvent } from 'react';
 import type { SelectChangeEvent } from '@mui/material/Select';
 import {
@@ -199,6 +199,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
     const [widget, setWidget] = useState<boolean>(false);
     const [response, setResponse] = useState<string | null>(null);
     const [accessGranted, setAccessGranted] = useState<boolean>(false);
+    const verificationRequest = useRef<number>(0);
     const [newName, setNewName] = useState<string>('');
     const [registry, setRegistry] = useState<string>('');
     const [nameList, setNameList] = useState<NameMap>({});
@@ -659,12 +660,19 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
     }
 
     async function verifyResponse() {
+        const request = ++verificationRequest.current;
+        setAccessGranted(false);
+        setDisableSendReceipt(true);
+
         try {
             if (!response) {
                 return;
             }
 
             const verify = await keymaster.verifyResponse(response, { publish: false });
+            if (request !== verificationRequest.current) {
+                return;
+            }
 
             if (verify.match) {
                 showError("Response is VALID");
@@ -677,11 +685,18 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
                 setDisableSendReceipt(true);
             }
         } catch (error) {
+            if (request !== verificationRequest.current) {
+                return;
+            }
+
+            setAccessGranted(false);
+            setDisableSendReceipt(true);
             showError(error);
         }
     }
 
     async function clearResponse() {
+        verificationRequest.current++;
         setResponse('');
         setAccessGranted(false);
         setDisableSendReceipt(true);
@@ -701,6 +716,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
     }
 
     function updateResponse(did: string) {
+        verificationRequest.current++;
         setResponse(did.trim());
         setAccessGranted(false);
         setDisableSendReceipt(true);
@@ -5499,7 +5515,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
                             </Box>
                         </Box>
                     }
-                    {tab === 'access' &&
+                    {tab === 'access' && accessGranted &&
                         <Box>
                             Special Access
                         </Box>
