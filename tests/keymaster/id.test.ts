@@ -611,6 +611,48 @@ describe('recoverId', () => {
             .not.toStrictEqual(originalDoc.didDocument!.verificationMethod![0].publicKeyJwk);
     });
 
+    it('should recover an older backup after multiple key rotations', async () => {
+        const did = await keymaster.createId('Bob', { registry: 'local' });
+        const mnemonic = await keymaster.decryptMnemonic();
+        await keymaster.backupId();
+        await keymaster.rotateKeys();
+        await keymaster.rotateKeys();
+        const currentKey = await keymaster.fetchKeyPair();
+
+        await keymaster.newWallet(mnemonic, true);
+        await keymaster.recoverId(did);
+
+        const restarted = new Keymaster({ gatekeeper, wallet, cipher, passphrase: 'passphrase' });
+        expect((await restarted.loadWallet()).ids.Bob.index).toBe(2);
+        expect(await restarted.fetchKeyPair()).toStrictEqual(currentKey);
+        const signed = await restarted.addSignature({ message: 'after recovery' });
+        expect(await restarted.verifySignature(signed)).toBe(true);
+        await expect(restarted.rotateKeys()).resolves.toBe(true);
+    });
+
+    it.each(['missing', 'unrelated'])('should reject a backup when the current key is %s', async (key) => {
+        const did = await keymaster.createId('Bob', { registry: 'local' });
+        const mnemonic = await keymaster.decryptMnemonic();
+        await keymaster.backupId();
+        const doc = await keymaster.resolveDID(did);
+        const vmethod = doc.didDocument!.verificationMethod![0];
+
+        if (key === 'missing') {
+            delete vmethod.publicKeyJwk;
+        } else {
+            const other = await keymaster.createId('Alice', { registry: 'local' });
+            const otherDoc = await keymaster.resolveDID(other);
+            vmethod.id = '#key-2';
+            vmethod.publicKeyJwk = otherDoc.didDocument!.verificationMethod![0].publicKeyJwk;
+        }
+
+        expect(await keymaster.updateDID(doc)).toBe(true);
+        await keymaster.newWallet(mnemonic, true);
+
+        await expect(keymaster.recoverId(did)).rejects.toThrow(InvalidDIDError.type);
+        expect((await keymaster.loadWallet()).ids).toStrictEqual({});
+    });
+
     it('should not overwrite an id with the same name', async () => {
         const did = await keymaster.createId('Bob');
         await keymaster.backupId();

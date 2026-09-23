@@ -1582,11 +1582,32 @@ export default class Keymaster implements KeymasterInterface {
 
             const backup = this.cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, vault.backup);
             const data = JSON.parse(backup) as { name: string; id: IDInfo };
+            const vmethod = doc.didDocument?.verificationMethod?.[0];
+            const currentPublicKey = vmethod?.publicKeyJwk;
 
-            await this.mutateWallet((wallet) => {
+            if (!currentPublicKey) {
+                throw new InvalidDIDError('current key cannot be reconciled with backup');
+            }
+
+            await this.mutateWallet(async (wallet) => {
                 if (wallet.ids[data.name]) {
                     throw new KeymasterError(`${data.name} already exists in wallet`);
                 }
+
+                const keyId = vmethod?.id?.match(/^#key-([1-9]\d*)$/);
+                const indexedKey = Number(keyId?.[1]) - 1;
+                const currentIndex = Number.isSafeInteger(indexedKey) && indexedKey > data.id.index
+                    ? indexedKey
+                    : data.id.index;
+                const hdkey = await this.getHDKeyFromCacheOrMnemonic(wallet);
+                const path = `m/44'/0'/${data.id.account}'/0/${currentIndex}`;
+                const didkey = hdkey.derive(path);
+                const recoveredKey = this.cipher.generateJwk(didkey.privateKey!).publicJwk;
+                if (recoveredKey.x !== currentPublicKey.x || recoveredKey.y !== currentPublicKey.y) {
+                    throw new InvalidDIDError('current key does not belong to wallet');
+                }
+
+                data.id.index = currentIndex;
                 wallet.ids[data.name] = data.id;
                 wallet.current = data.name;
                 wallet.counter = Math.max(wallet.counter, data.id.account + 1);
@@ -2123,6 +2144,10 @@ export default class Keymaster implements KeymasterInterface {
                 }
 
                 if (!this.isCredentialCurrent(doc, now)) {
+                    continue;
+                }
+
+                if (!await this.verifyCredentialSignature(doc)) {
                     continue;
                 }
 

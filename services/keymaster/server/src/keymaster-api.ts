@@ -6193,7 +6193,7 @@ async function initWallet() {
 
 const port = config.keymasterPort;
 
-const server = app.listen(port, async () => {
+async function initialize() {
     gatekeeper = new GatekeeperClient();
 
     await gatekeeper.connect({
@@ -6226,13 +6226,16 @@ const server = app.listen(port, async () => {
     log.info(`Keymaster server running on port ${port}`);
     log.info(`Keymaster server persisting to ${config.db}`);
 
-    try {
-        await waitForNodeId();
-        serverReady = true;
-    }
-    catch (error) {
-        log.error({ error }, 'Failed to wait for node ID');
-    }
+    await waitForNodeId();
+    serverReady = true;
+}
+
+const server = app.listen(port, () => {
+    initialize().catch((error) => {
+        log.error({ error }, 'Failed to initialize Keymaster server');
+        server.close();
+        process.exit(1);
+    });
 });
 
 const shutdown = async () => {
