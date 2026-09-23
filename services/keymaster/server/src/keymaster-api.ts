@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import rateLimit from 'express-rate-limit';
 
 import GatekeeperClient from '@mdip/gatekeeper/client';
+import type { ResolveDIDOptions } from '@mdip/gatekeeper/types';
 import Keymaster from '@mdip/keymaster';
 import SearchClient from '@mdip/keymaster/search';
 import { WalletBase } from '@mdip/keymaster/types';
@@ -190,6 +191,62 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const DIDNotFound = { error: 'DID not found' };
 
+function optionalQueryString(value: unknown, name: string): string | undefined {
+    if (value === undefined) {
+        return undefined;
+    }
+    if (typeof value !== 'string' || !value) {
+        throw new InvalidParameterError(name);
+    }
+    return value;
+}
+
+function parseResolveOptions(query: express.Request['query']): ResolveDIDOptions {
+    const { versionTime, versionSequence } = query;
+    const options: ResolveDIDOptions = {};
+
+    if (versionTime !== undefined) {
+        if (typeof versionTime !== 'string') {
+            throw new InvalidParameterError('versionTime');
+        }
+
+        const parts = /^(\d{4})-(\d{2})-(\d{2})T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/i.exec(versionTime);
+        if (!parts || !Number.isFinite(Date.parse(versionTime))) {
+            throw new InvalidParameterError('versionTime');
+        }
+
+        const calendarDate = new Date(0);
+        calendarDate.setUTCFullYear(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]));
+        if (calendarDate.getUTCFullYear() !== Number(parts[1])
+            || calendarDate.getUTCMonth() + 1 !== Number(parts[2])
+            || calendarDate.getUTCDate() !== Number(parts[3])) {
+            throw new InvalidParameterError('versionTime');
+        }
+        options.versionTime = versionTime;
+    }
+
+    if (versionSequence !== undefined) {
+        if (typeof versionSequence !== 'string'
+            || !/^[1-9]\d*$/.test(versionSequence)
+            || !Number.isSafeInteger(Number(versionSequence))) {
+            throw new InvalidParameterError('versionSequence');
+        }
+        options.versionSequence = Number(versionSequence);
+    }
+
+    for (const name of ['confirm', 'verify'] as const) {
+        const value = query[name];
+        if (value !== undefined) {
+            if (value !== 'true' && value !== 'false') {
+                throw new InvalidParameterError(name);
+            }
+            options[name] = value === 'true';
+        }
+    }
+
+    return options;
+}
+
 const serveClient = (process.env.KC_KEYMASTER_SERVE_CLIENT ?? 'true').toLowerCase() === 'true';
 
 if (serveClient) {
@@ -329,6 +386,10 @@ v1router.get('/wallet', async (req, res) => {
  *             properties:
  *               wallet:
  *                 $ref: '#/components/schemas/StoredWallet'
+ *               overwrite:
+ *                 type: boolean
+ *                 default: true
+ *                 description: Whether to replace an existing wallet.
  *             required:
  *               - wallet
  *     responses:
@@ -341,6 +402,15 @@ v1router.get('/wallet', async (req, res) => {
  *               properties:
  *                 ok:
  *                   type: boolean
+ *       400:
+ *         description: The overwrite value must be a boolean.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
  *       500:
  *         description: Internal server error.
  *         content:
@@ -353,11 +423,14 @@ v1router.get('/wallet', async (req, res) => {
  */
 v1router.put('/wallet', async (req, res) => {
     try {
-        const { wallet } = req.body;
-        const ok = await keymaster.saveWallet(wallet);
+        const { wallet, overwrite } = req.body;
+        if (overwrite !== undefined && typeof overwrite !== 'boolean') {
+            throw new InvalidParameterError('overwrite');
+        }
+        const ok = await keymaster.saveWallet(wallet, overwrite);
         res.json({ ok });
     } catch (error: any) {
-        res.status(500).send({ error: error.toString() });
+        res.status(error instanceof InvalidParameterError ? 400 : 500).send({ error: error.toString() });
     }
 });
 
@@ -797,6 +870,15 @@ v1router.get('/export/wallet/encrypted', async (req, res) => {
  *                           format: date-time
  *                         created:
  *                           type: string
+ *       400:
+ *         description: Invalid DID resolution options.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
  *       404:
  *         description: DID not found or cannot be resolved.
  *         content:
@@ -818,10 +900,15 @@ v1router.get('/export/wallet/encrypted', async (req, res) => {
  */
 v1router.get('/did/:id', async (req, res) => {
     try {
-        const docs = await keymaster.resolveDID(req.params.id, req.query);
+        const docs = await keymaster.resolveDID(req.params.id, parseResolveOptions(req.query));
         res.json({ docs });
-    } catch {
-        res.status(404).send(DIDNotFound);
+    } catch (error) {
+        if (error instanceof InvalidParameterError) {
+            res.status(400).send({ error: error.toString() });
+        }
+        else {
+            res.status(404).send(DIDNotFound);
+        }
     }
 });
 
@@ -2525,7 +2612,14 @@ v1router.post('/credentials/bind', async (req, res) => {
  * @swagger
  * /credentials/held:
  *   get:
- *     summary: List all credentials currently held by the active ID.
+ *     summary: List credentials held by an ID.
+ *     parameters:
+ *       - in: query
+ *         name: id
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: The name or DID of the holder. Defaults to the active ID.
  *     responses:
  *       200:
  *         description: The list of held credential DIDs.
@@ -2538,6 +2632,8 @@ v1router.post('/credentials/bind', async (req, res) => {
  *                   type: array
  *                   items:
  *                     type: string
+ *       400:
+ *         description: Invalid holder query parameter.
  *       500:
  *         description: Internal server error.
  *         content:
@@ -2550,10 +2646,11 @@ v1router.post('/credentials/bind', async (req, res) => {
  */
 v1router.get('/credentials/held', async (req, res) => {
     try {
-        const held = await keymaster.listCredentials();
+        const id = optionalQueryString(req.query.id, 'id');
+        const held = await keymaster.listCredentials(id);
         res.json({ held });
     } catch (error: any) {
-        res.status(500).send({ error: error.toString() });
+        res.status(error instanceof InvalidParameterError ? 400 : 500).send({ error: error.toString() });
     }
 });
 
@@ -2800,10 +2897,17 @@ v1router.post('/credentials/held/:did/unpublish', async (req, res) => {
  * @swagger
  * /credentials/issued:
  *   get:
- *     summary: List all credentials issued by the current ID.
+ *     summary: List credentials issued by an ID.
+ *     parameters:
+ *       - in: query
+ *         name: issuer
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: The name or DID of the issuer. Defaults to the active ID.
  *     responses:
  *       200:
- *         description: The list of credential DIDs issued by the current ID.
+ *         description: The list of credential DIDs issued by the selected ID.
  *         content:
  *           application/json:
  *             schema:
@@ -2813,6 +2917,8 @@ v1router.post('/credentials/held/:did/unpublish', async (req, res) => {
  *                   type: array
  *                   items:
  *                     type: string
+ *       400:
+ *         description: Invalid issuer query parameter.
  *       500:
  *         description: Internal server error.
  *         content:
@@ -2825,10 +2931,11 @@ v1router.post('/credentials/held/:did/unpublish', async (req, res) => {
  */
 v1router.get('/credentials/issued', async (req, res) => {
     try {
-        const issued = await keymaster.listIssued();
+        const issuer = optionalQueryString(req.query.issuer, 'issuer');
+        const issued = await keymaster.listIssued(issuer);
         res.json({ issued });
     } catch (error: any) {
-        res.status(500).send({ error: error.toString() });
+        res.status(error instanceof InvalidParameterError ? 400 : 500).send({ error: error.toString() });
     }
 });
 
@@ -3609,7 +3716,14 @@ v1router.post('/assets', async (req, res) => {
  * @swagger
  * /assets:
  *   get:
- *     summary: List all asset DIDs owned by the current ID.
+ *     summary: List asset DIDs owned by an ID.
+ *     parameters:
+ *       - in: query
+ *         name: owner
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: The name or DID of the owner. Defaults to the active ID.
  *     responses:
  *       200:
  *         description: A list of asset DIDs.
@@ -3622,6 +3736,8 @@ v1router.post('/assets', async (req, res) => {
  *                   type: array
  *                   items:
  *                     type: string
+ *       400:
+ *         description: Invalid owner query parameter.
  *       500:
  *         description: Internal server error.
  *         content:
@@ -3634,10 +3750,11 @@ v1router.post('/assets', async (req, res) => {
  */
 v1router.get('/assets', async (req, res) => {
     try {
-        const assets = await keymaster.listAssets();
+        const owner = optionalQueryString(req.query.owner, 'owner');
+        const assets = await keymaster.listAssets(owner);
         res.json({ assets });
     } catch (error: any) {
-        res.status(500).send({ error: error.toString() });
+        res.status(error instanceof InvalidParameterError ? 400 : 500).send({ error: error.toString() });
     }
 });
 
@@ -3653,6 +3770,32 @@ v1router.get('/assets', async (req, res) => {
  *         schema:
  *           type: string
  *         description: The asset name or DID to resolve.
+ *       - in: query
+ *         name: versionTime
+ *         required: false
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Timestamp at which to resolve the asset.
+ *       - in: query
+ *         name: versionSequence
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *         description: Specific asset version to resolve.
+ *       - in: query
+ *         name: confirm
+ *         required: false
+ *         schema:
+ *           type: boolean
+ *         description: Whether to exclude later events until confirmed by the asset's native registry.
+ *       - in: query
+ *         name: verify
+ *         required: false
+ *         schema:
+ *           type: boolean
+ *         description: Whether to verify operation signatures while resolving the asset.
  *     responses:
  *       200:
  *         description: The resolved asset data.
@@ -3664,6 +3807,15 @@ v1router.get('/assets', async (req, res) => {
  *                 asset:
  *                   type: object
  *                   description: The `didDocumentData` for the asset, or null if not found.
+ *       400:
+ *         description: Invalid asset resolution options.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
  *       404:
  *         description: Asset not found or is deactivated.
  *         content:
@@ -3676,10 +3828,15 @@ v1router.get('/assets', async (req, res) => {
  */
 v1router.get('/assets/:id', async (req, res) => {
     try {
-        const asset = await keymaster.resolveAsset(req.params.id);
+        const asset = await keymaster.resolveAsset(req.params.id, parseResolveOptions(req.query));
         res.json({ asset });
-    } catch {
-        res.status(404).send({ error: 'Asset not found' });
+    } catch (error) {
+        if (error instanceof InvalidParameterError) {
+            res.status(400).send({ error: error.toString() });
+        }
+        else {
+            res.status(404).send({ error: 'Asset not found' });
+        }
     }
 });
 
