@@ -2126,6 +2126,10 @@ export default class Keymaster implements KeymasterInterface {
                     continue;
                 }
 
+                if (!await this.verifyCredentialSignature(doc)) {
+                    continue;
+                }
+
                 return did;
             }
             catch {
