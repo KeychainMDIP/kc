@@ -133,6 +133,51 @@ describe('createResponse', () => {
         }
     });
 
+    it.each([
+        ['at type[1] with an additional type', true],
+        ['after another type', false],
+    ] as const)('uses the schema %s during creation and verification', async (_position, schemaAtIndexOne) => {
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        const victor = await keymaster.createId('Victor');
+
+        await keymaster.setCurrentId('Alice');
+        const schema = await keymaster.createSchema(mockSchema);
+        const credential = await keymaster.bindCredential(schema, bob);
+        credential.type = schemaAtIndexOne
+            ? ['VerifiableCredential', schema, 'EmployeeCredential']
+            : ['VerifiableCredential', 'EmployeeCredential', schema];
+        const vc = await keymaster.issueCredential(credential);
+
+        await keymaster.setCurrentId('Bob');
+        expect(await keymaster.acceptCredential(vc)).toBe(true);
+        await keymaster.setCurrentId('Victor');
+        const challenge = await keymaster.createChallenge({ credentials: [{ schema, issuers: [alice] }] });
+        await keymaster.setCurrentId('Bob');
+        const generated = await keymaster.createResponse(challenge);
+        const { response } = await keymaster.decryptJSON(generated) as { response: ChallengeResponse };
+
+        expect(response.credentials.map(pair => pair.vc)).toStrictEqual(schemaAtIndexOne ? [vc] : []);
+        expect(response.match).toBe(schemaAtIndexOne);
+
+        const vp = await keymaster.encryptMessage(await keymaster.decryptMessage(vc), victor, { includeHash: true });
+        const supplied = await keymaster.encryptJSON({
+            response: {
+                challenge,
+                credentials: [{ vc, vp }],
+                requested: 1,
+                fulfilled: 1,
+                match: true,
+                responseNonce: 'mock-nonce',
+            },
+        }, victor);
+
+        await keymaster.setCurrentId('Victor');
+        for (const did of [generated, supplied]) {
+            expect((await keymaster.verifyResponse(did, { publish: false })).match).toBe(schemaAtIndexOne);
+        }
+    });
+
     it('should skip an invalidly signed credential and select a valid alternative', async () => {
         const alice = await keymaster.createId('Alice');
         const bob = await keymaster.createId('Bob');
