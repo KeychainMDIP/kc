@@ -51,6 +51,47 @@ describe('createId', () => {
         expect(wallet.current).toBe(name);
     });
 
+    it('should normalize an ID name before storing it', async () => {
+        const did = await keymaster.createId(' Alice ');
+        let wallet = await keymaster.loadWallet();
+
+        expect(wallet.ids.Alice.did).toBe(did);
+        expect(wallet.ids).not.toHaveProperty(' Alice ');
+        expect(wallet.current).toBe('Alice');
+
+        await expect(keymaster.createId('Alice')).rejects.toThrow('Invalid parameter: name already used');
+
+        wallet = await keymaster.loadWallet();
+        expect(wallet.counter).toBe(1);
+        expect(await gatekeeper.getDIDs()).toHaveLength(1);
+    });
+
+    it('should reject names matching non-normalized legacy entries', async () => {
+        const bob = await keymaster.createId('Bob');
+        const carol = await keymaster.createId('Carol');
+        const legacy = JSON.parse(JSON.stringify(await keymaster.loadWallet()));
+        legacy.ids[' Bob '] = legacy.ids.Bob;
+        delete legacy.ids.Bob;
+        legacy.names = { ' Alice ': carol };
+        await keymaster.saveWallet(legacy);
+
+        await expect(keymaster.createId('Bob')).rejects.toThrow('Invalid parameter: name already used');
+        await expect(keymaster.createId('Alice')).rejects.toThrow('Invalid parameter: name already used');
+
+        const wallet = await keymaster.loadWallet();
+        expect(wallet.counter).toBe(2);
+        expect(wallet.ids[' Bob '].did).toBe(bob);
+        expect(await gatekeeper.getDIDs()).toHaveLength(2);
+    });
+
+    it.each(['.', '..', ' . ', ' .. '])('should reject the URL path segment name %p', async (name) => {
+        await expect(keymaster.createId(name)).rejects.toThrow('Invalid parameter: name cannot be "." or ".."');
+
+        const wallet = await keymaster.loadWallet();
+        expect(wallet.counter).toBe(0);
+        expect(await gatekeeper.getDIDs()).toStrictEqual([]);
+    });
+
     it('should create a new ID on default registry', async () => {
         const name = 'Bob';
         const did = await keymaster.createId(name);
