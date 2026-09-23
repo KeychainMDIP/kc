@@ -2117,7 +2117,7 @@ export default class Keymaster implements KeymasterInterface {
                     continue;
                 }
 
-                if (doc.type && !doc.type.includes(credential.schema)) {
+                if (doc.type[1] !== credential.schema) {
                     // Wrong type
                     continue;
                 }
