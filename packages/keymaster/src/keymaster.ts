@@ -1590,12 +1590,33 @@ export default class Keymaster implements KeymasterInterface {
 
             let name = data.name;
             const id = data.id;
+            const vmethod = doc.didDocument?.verificationMethod?.[0];
+            const currentPublicKey = vmethod?.publicKeyJwk;
 
-            await this.mutateWallet((wallet) => {
+            if (!currentPublicKey) {
+                throw new InvalidDIDError('current key cannot be reconciled with backup');
+            }
+
+            await this.mutateWallet(async (wallet) => {
                 if (wallet.ids[name]) {
                     throw new KeymasterError(`${name} already exists in wallet`);
                 }
                 name = this.validateName(name, wallet);
+
+                const keyId = vmethod?.id?.match(/^#key-([1-9]\d*)$/);
+                const indexedKey = Number(keyId?.[1]) - 1;
+                const currentIndex = Number.isSafeInteger(indexedKey) && indexedKey > id.index
+                    ? indexedKey
+                    : id.index;
+                const hdkey = await this.getHDKeyFromCacheOrMnemonic(wallet);
+                const path = `m/44'/0'/${id.account}'/0/${currentIndex}`;
+                const didkey = hdkey.derive(path);
+                const recoveredKey = this.cipher.generateJwk(didkey.privateKey!).publicJwk;
+                if (recoveredKey.x !== currentPublicKey.x || recoveredKey.y !== currentPublicKey.y) {
+                    throw new InvalidDIDError('current key does not belong to wallet');
+                }
+
+                id.index = currentIndex;
                 wallet.ids[name] = id;
                 wallet.current = name;
                 wallet.counter = Math.max(wallet.counter, id.account + 1);
@@ -2132,6 +2153,10 @@ export default class Keymaster implements KeymasterInterface {
                 }
 
                 if (!this.isCredentialCurrent(doc, now)) {
+                    continue;
+                }
+
+                if (!await this.verifyCredentialSignature(doc)) {
                     continue;
                 }
 
