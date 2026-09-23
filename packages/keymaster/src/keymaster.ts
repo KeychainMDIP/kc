@@ -1412,6 +1412,10 @@ export default class Keymaster implements KeymasterInterface {
 
         name = name.trim(); // Remove leading/trailing whitespace
 
+        if (name === '.' || name === '..') {
+            throw new InvalidParameterError('name cannot be "." or ".."');
+        }
+
         if (name.length > this.maxNameLength) {
             throw new InvalidParameterError(`name too long`);
         }
@@ -1422,12 +1426,17 @@ export default class Keymaster implements KeymasterInterface {
 
         const alreadyUsedError = 'name already used';
 
-        if (wallet && wallet.names && name in wallet.names) {
-            throw new InvalidParameterError(alreadyUsedError);
-        }
+        if (wallet) {
+            const storedNames = [
+                ...Object.keys(wallet.names ?? {}),
+                ...Object.keys(wallet.ids),
+            ];
 
-        if (wallet && wallet.ids && name in wallet.ids) {
-            throw new InvalidParameterError(alreadyUsedError);
+            if (name in (wallet.names ?? {})
+                || name in wallet.ids
+                || storedNames.some(storedName => storedName.trim() === name)) {
+                throw new InvalidParameterError(alreadyUsedError);
+            }
         }
 
         return name;
@@ -1439,6 +1448,7 @@ export default class Keymaster implements KeymasterInterface {
     ): Promise<string> {
         let did = '';
         await this.mutateWallet(async (wallet) => {
+            name = this.validateName(name, wallet);
             const account = wallet.counter;
             const index = 0;
             const signed = await this.createIdOperation(name, account, options);
