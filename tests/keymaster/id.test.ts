@@ -652,6 +652,34 @@ describe('recoverId', () => {
             .not.toStrictEqual(originalDoc.didDocument!.verificationMethod![0].publicKeyJwk);
     });
 
+    it('should not recover an identity whose name is already an alias', async () => {
+        const alice = await keymaster.createId('Alice');
+        const mnemonic = await keymaster.decryptMnemonic();
+        await keymaster.backupId();
+        await keymaster.newWallet(mnemonic, true);
+        const bob = await keymaster.createId('Bob');
+        await keymaster.addName('Alice', bob);
+
+        await expect(keymaster.recoverId(alice)).rejects.toThrow(InvalidDIDError.type);
+
+        expect(await keymaster.listIds()).toStrictEqual(['Bob']);
+        expect(await keymaster.listNames()).toStrictEqual({ Alice: bob });
+        expect(await keymaster.lookupDID('Alice')).toBe(bob);
+    });
+
+    it('should not recover malformed identity data', async () => {
+        const did = await keymaster.createId('Bob');
+        const mnemonic = await keymaster.decryptMnemonic();
+        await keymaster.backupId();
+        await keymaster.newWallet(mnemonic, true);
+        jest.spyOn(cipher, 'decryptMessage').mockReturnValueOnce(JSON.stringify({
+            name: 'Bob',
+            id: { did, account: 0 },
+        }));
+        await expect(keymaster.recoverId(did)).rejects.toThrow(InvalidDIDError.type);
+        expect((await keymaster.loadWallet()).ids).toStrictEqual({});
+    });
+
     it('should recover an older backup after multiple key rotations', async () => {
         const did = await keymaster.createId('Bob', { registry: 'local' });
         const mnemonic = await keymaster.decryptMnemonic();

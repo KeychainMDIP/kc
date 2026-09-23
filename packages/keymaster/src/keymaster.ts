@@ -54,6 +54,7 @@ import {
     isV1WithEnc,
     isV1Decrypted,
     isLegacyV0,
+    isValidIDInfo,
     isValidWalletPayload,
 } from './db/typeGuards.js';
 import {
@@ -1591,7 +1592,14 @@ export default class Keymaster implements KeymasterInterface {
             }
 
             const backup = this.cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, vault.backup);
-            const data = JSON.parse(backup) as { name: string; id: IDInfo };
+            const data = JSON.parse(backup) as { name?: unknown; id?: unknown };
+            if (!data || typeof data !== 'object' || Array.isArray(data)
+                || typeof data.name !== 'string' || !isValidIDInfo(data.id)) {
+                throw new InvalidDIDError('invalid identity backup');
+            }
+
+            let name = data.name;
+            const id = data.id;
             const vmethod = doc.didDocument?.verificationMethod?.[0];
             const currentPublicKey = vmethod?.publicKeyJwk;
 
@@ -1600,30 +1608,31 @@ export default class Keymaster implements KeymasterInterface {
             }
 
             await this.mutateWallet(async (wallet) => {
-                if (wallet.ids[data.name]) {
-                    throw new KeymasterError(`${data.name} already exists in wallet`);
+                if (wallet.ids[name]) {
+                    throw new KeymasterError(`${name} already exists in wallet`);
                 }
+                name = this.validateName(name, wallet);
 
                 const keyId = vmethod?.id?.match(/^#key-([1-9]\d*)$/);
                 const indexedKey = Number(keyId?.[1]) - 1;
-                const currentIndex = Number.isSafeInteger(indexedKey) && indexedKey > data.id.index
+                const currentIndex = Number.isSafeInteger(indexedKey) && indexedKey > id.index
                     ? indexedKey
-                    : data.id.index;
+                    : id.index;
                 const hdkey = await this.getHDKeyFromCacheOrMnemonic(wallet);
-                const path = `m/44'/0'/${data.id.account}'/0/${currentIndex}`;
+                const path = `m/44'/0'/${id.account}'/0/${currentIndex}`;
                 const didkey = hdkey.derive(path);
                 const recoveredKey = this.cipher.generateJwk(didkey.privateKey!).publicJwk;
                 if (recoveredKey.x !== currentPublicKey.x || recoveredKey.y !== currentPublicKey.y) {
                     throw new InvalidDIDError('current key does not belong to wallet');
                 }
 
-                data.id.index = currentIndex;
-                wallet.ids[data.name] = data.id;
-                wallet.current = data.name;
-                wallet.counter = Math.max(wallet.counter, data.id.account + 1);
+                id.index = currentIndex;
+                wallet.ids[name] = id;
+                wallet.current = name;
+                wallet.counter = Math.max(wallet.counter, id.account + 1);
             });
 
-            return data.name;
+            return name;
         } catch (error: any) {
             if (error.type === 'Keymaster') {
                 throw error;
