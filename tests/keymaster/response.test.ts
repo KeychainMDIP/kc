@@ -133,6 +133,38 @@ describe('createResponse', () => {
         }
     });
 
+    it('should skip an invalidly signed credential and select a valid alternative', async () => {
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        await keymaster.createId('Victor');
+
+        await keymaster.setCurrentId('Alice');
+        const schema = await keymaster.createSchema(mockSchema);
+        const credential = await keymaster.bindCredential(schema, bob);
+        const invalid = await keymaster.addSignature(credential);
+        invalid.credential!.email = 'tampered@example.com';
+        const invalidDid = await keymaster.encryptJSON(invalid, bob);
+        const validDid = await keymaster.issueCredential(credential);
+
+        await keymaster.setCurrentId('Bob');
+        expect(await keymaster.acceptCredential(validDid)).toBe(true);
+        const wallet = await keymaster.loadWallet();
+        wallet.ids.Bob.held!.unshift(invalidDid);
+        await keymaster.saveWallet(wallet);
+
+        await keymaster.setCurrentId('Victor');
+        const challenge = await keymaster.createChallenge({ credentials: [{ schema, issuers: [alice] }] });
+        await keymaster.setCurrentId('Bob');
+        const responseDid = await keymaster.createResponse(challenge);
+        const { response } = await keymaster.decryptJSON(responseDid) as { response: ChallengeResponse };
+
+        expect(response.credentials.map(pair => pair.vc)).toStrictEqual([validDid]);
+        expect(response.match).toBe(true);
+
+        await keymaster.setCurrentId('Victor');
+        expect((await keymaster.verifyResponse(responseDid, { publish: false })).match).toBe(true);
+    });
+
     it('should throw an exception on invalid challenge', async () => {
         const alice = await keymaster.createId('Alice');
 
