@@ -1429,11 +1429,11 @@ export default class Keymaster implements KeymasterInterface {
         if (wallet) {
             const storedNames = [
                 ...Object.keys(wallet.names ?? {}),
-                ...Object.keys(wallet.ids ?? {}),
+                ...Object.keys(wallet.ids),
             ];
 
             if (name in (wallet.names ?? {})
-                || name in (wallet.ids ?? {})
+                || name in wallet.ids
                 || storedNames.some(storedName => storedName.trim() === name)) {
                 throw new InvalidParameterError(alreadyUsedError);
             }
