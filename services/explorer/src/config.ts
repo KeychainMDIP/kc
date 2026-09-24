@@ -39,3 +39,4 @@ export const usageFetchLimit = 500;
 export const receiptBrowseFetchLimit = 500;
 export const readinessPollIntervalMs = 5000;
 export const eventsPollIntervalMs = 10000;
+export const networkPollIntervalMs = 10000;

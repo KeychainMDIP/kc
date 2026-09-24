@@ -59,6 +59,10 @@ http://localhost:<VITE_EXPLORER_PORT>
 
 (Replace `<VITE_EXPLORER_PORT>` with the port number you specified in `.env`)
 
+The Metrics tab shows indexed historical network totals. The Network tab shows
+the configured Hyperswarm mediator's current direct peer connections through
+Search Server. No separate mediator URL is required in the browser.
+
 ## Building for Production
 
 To build and run the production server, run:

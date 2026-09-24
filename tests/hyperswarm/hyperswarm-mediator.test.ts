@@ -195,6 +195,55 @@ describe('hyperswarm mediator test harness', () => {
             node.mediator.__test.setNegentropyAdapter(adapter);
         });
 
+        const peerKey = Buffer.alloc(32, 0x44).toString('hex');
+        node.run(() => node.mediator.__test.addConnection(peerKey, {
+            nodeName: 'node-b',
+            lastSeen: Date.parse('2026-09-22T12:00:00.000Z'),
+            syncMode: 'negentropy',
+            capabilities: {
+                operationCount: 12,
+                orderedOperationCount: 12,
+            },
+        }));
+        const secondPeerKey = Buffer.alloc(32, 0x55).toString('hex');
+        node.run(() => node.mediator.__test.addConnection(secondPeerKey, {
+            nodeName: 'node-c',
+        }));
+
+        const countSpy = jest.spyOn(syncStore, 'count');
+        await expect(node.run(() => node.mediator.__test.getNetworkStatus())).resolves.toMatchObject({
+            protocol: '/MDIP/v1.0-public',
+            node: {
+                name: 'node-a',
+                peerId: node.publicKey.toString('hex'),
+                operationCount: 0,
+                orderedOperationCount: 0,
+            },
+            totals: {
+                visibleNodes: 3,
+                connectedPeers: 2,
+            },
+            peers: [
+                {
+                    name: 'node-b',
+                    peerId: peerKey,
+                    lastSeen: '2026-09-22T12:00:00.000Z',
+                    syncMode: 'negentropy',
+                    operationCount: 12,
+                    orderedOperationCount: 12,
+                },
+                {
+                    name: 'node-c',
+                    peerId: secondPeerKey,
+                    syncMode: 'unknown',
+                    operationCount: null,
+                    orderedOperationCount: null,
+                },
+            ],
+        });
+        await node.run(() => node.mediator.__test.getNetworkStatus());
+        expect(countSpy).toHaveBeenCalledTimes(1);
+
         expect(node.run(() => getMediatorNodeContext().syncStore)).toBe(syncStore);
         expect(node.run(() => getMediatorNodeContext().negentropyAdapter)).toBe(adapter);
 

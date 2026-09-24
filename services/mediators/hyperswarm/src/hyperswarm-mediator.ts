@@ -3,6 +3,7 @@ import goodbye from 'graceful-goodbye';
 import b4a from 'b4a';
 import { createHash, randomBytes } from 'crypto';
 import { EventEmitter } from 'events';
+import type { Server } from 'http';
 
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import KeymasterClient from '@mdip/keymaster/client';
@@ -14,6 +15,7 @@ import type { OperationSyncStore } from './db/types.js';
 import SqliteOperationSyncStore from './db/sqlite.js';
 import PostgresOperationSyncStore from './db/postgres.js';
 import NegentropyAdapter from './negentropy/adapter.js';
+import type { PeerCapabilities } from './negentropy/protocol.js';
 import {
     createImportPipeline,
     TERMINAL_REJECTED_SYNC_ORDER,
@@ -41,6 +43,10 @@ import {
     buildSyncStatsSnapshot,
     createMediatorSyncStats,
 } from './sync-stats.js';
+import {
+    createStatusServer,
+    type NetworkStatus,
+} from './status-server.js';
 import { exit } from 'process';
 import path from 'path';
 import { pathToFileURL } from 'url';
@@ -63,6 +69,7 @@ function createConfiguredSyncStore(): OperationSyncStore {
 }
 
 let syncStore: OperationSyncStore = createConfiguredSyncStore();
+let localCapabilities: PeerCapabilities | null = null;
 
 EventEmitter.defaultMaxListeners = 100;
 
@@ -207,12 +214,14 @@ function replaceSyncStore(store: OperationSyncStore): void {
     orderedCatchupCoordinator.shutdown();
     importPipeline.shutdown();
     syncStore = store;
+    localCapabilities = null;
     importPipeline = buildImportPipeline(store);
     orderedCatchupCoordinator = buildOrderedCatchupCoordinator(store, importPipeline);
     negentropyCoordinator.replaceStore(store, importPipeline);
 }
 
 let swarm: Hyperswarm | null = null;
+let statusServer: Server | null = null;
 
 goodbye(async () => {
     const peerSyncShutdown = peerSyncCoordinator.shutdown();
@@ -227,6 +236,11 @@ goodbye(async () => {
         } finally {
             swarm = null;
         }
+    }
+
+    if (statusServer) {
+        await new Promise<void>(resolve => statusServer!.close(() => resolve()));
+        statusServer = null;
     }
 
     try {
@@ -261,6 +275,51 @@ function shortName(peerKey: string): string {
     return peerKey.slice(0, 4) + '-' + peerKey.slice(-4);
 }
 
+async function getNetworkStatus(): Promise<NetworkStatus> {
+    const capabilities = localCapabilities ?? await refreshLocalCapabilities();
+    const peers = transport.getPeerKeys()
+        .map(peerKey => {
+            const connection = transport.getConnection(peerKey)!;
+            return {
+                name: connection.nodeName,
+                peerId: peerKey,
+                lastSeen: new Date(connection.lastSeen).toISOString(),
+                syncMode: connection.syncMode,
+                operationCount: connection.capabilities.operationCount,
+                orderedOperationCount: connection.capabilities.orderedOperationCount,
+            };
+        })
+        .sort((a, b) => a.name.localeCompare(b.name) || a.peerId.localeCompare(b.peerId));
+
+    return {
+        generatedAt: new Date().toISOString(),
+        protocol: config.protocol,
+        node: {
+            name: nodeInfo?.name || config.nodeName,
+            peerId: nodeKey,
+            operationCount: capabilities.operationCount ?? 0,
+            orderedOperationCount: capabilities.orderedOperationCount ?? 0,
+        },
+        totals: {
+            visibleNodes: peers.length + 1,
+            connectedPeers: peers.length,
+        },
+        peers,
+    };
+}
+
+async function startStatusServer(): Promise<void> {
+    statusServer = createStatusServer(getNetworkStatus);
+    await new Promise<void>((resolve, reject) => {
+        statusServer!.once('error', reject);
+        statusServer!.listen(config.statusPort, config.statusBindAddress, () => {
+            statusServer!.removeListener('error', reject);
+            log.info(`Network status listening on ${config.statusBindAddress}:${config.statusPort}`);
+            resolve();
+        });
+    });
+}
+
 function createBaseMessage<T extends HyperMessage['type']>(type: T): Omit<HyperMessageBase, 'type'> & { type: T } {
     return {
         type,
@@ -271,7 +330,7 @@ function createBaseMessage<T extends HyperMessage['type']>(type: T): Omit<HyperM
 }
 
 async function buildPingMessage(): Promise<PingMessage> {
-    const capabilities = await peerSyncCoordinator.buildCapabilities();
+    const capabilities = await refreshLocalCapabilities();
 
     return {
         ...createBaseMessage('ping'),
@@ -279,6 +338,11 @@ async function buildPingMessage(): Promise<PingMessage> {
         capabilities,
         transportFramingVersion: TRANSPORT_FRAMING_VERSION,
     };
+}
+
+async function refreshLocalCapabilities(): Promise<PeerCapabilities> {
+    localCapabilities = await peerSyncCoordinator.buildCapabilities();
+    return localCapabilities;
 }
 
 function createSessionId(peerKey: string): string {
@@ -467,6 +531,7 @@ async function main(): Promise<void> {
 
     await exportLoop();
     await connectionLoop();
+    await startStatusServer();
 }
 
 export async function runMediator(options: MediatorMainOptions = {}): Promise<void> {
@@ -601,6 +666,8 @@ export const __test = {
     getSyncStatsSnapshot(): object {
         return buildSyncStatsSnapshot(syncStats);
     },
+
+    getNetworkStatus,
 };
 
 const isDirectRun = !!process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;

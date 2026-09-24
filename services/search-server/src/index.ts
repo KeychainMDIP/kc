@@ -127,6 +127,25 @@ async function main() {
         }
     });
 
+    v1router.get('/network', async (_req, res) => {
+        try {
+            const baseURL = config.hyperswarmURL.endsWith('/')
+                ? config.hyperswarmURL.slice(0, -1)
+                : config.hyperswarmURL;
+            const response = await fetch(`${baseURL}/api/v1/network`, {
+                signal: AbortSignal.timeout(3000),
+            });
+            if (!response.ok) {
+                throw new Error(`Hyperswarm mediator returned HTTP ${response.status}`);
+            }
+            res.json(await response.json());
+        }
+        catch (error) {
+            log.warn({ error }, 'Hyperswarm network status unavailable');
+            res.status(503).json({ error: 'Hyperswarm network status unavailable' });
+        }
+    });
+
     v1router.get("/did/:did/events", async (req, res) => {
         try {
             const target = await findDIDReadTarget(didDb, req.params.did, config.didPrefix);

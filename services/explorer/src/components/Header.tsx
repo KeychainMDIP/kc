@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Typography, Switch, Tabs, Tab } from "@mui/material";
+import { Box, IconButton, Switch, Tabs, Tab } from "@mui/material";
 import { DarkMode, LightMode } from "@mui/icons-material";
 import iconInverted from '../static/icon_inverted.png';
 import { useNavigate, useLocation } from "react-router-dom";
@@ -14,6 +14,9 @@ const Header = () => {
 
     if (location.pathname.startsWith("/events")) {
         currentTab = "events";
+    }
+    else if (location.pathname.startsWith("/metrics")) {
+        currentTab = "metrics";
     }
     else if (location.pathname.startsWith("/network")) {
         currentTab = "network";
@@ -40,20 +43,19 @@ const Header = () => {
             }}
         >
             <Box sx={{ display: "flex", alignItems: "center", mr: 4 }}>
-                <Typography variant="h6" sx={{ mr: 2 }}>
-                    MDIP
-                </Typography>
-                <Box
-                    component="img"
-                    src={iconInverted}
-                    alt="MDIP"
-                    sx={{
-                        width: 32,
-                        height: 32,
-                        filter: darkMode ? "invert(1)" : "none",
-                        transition: "filter 150ms ease-in-out",
-                    }}
-                />
+                <IconButton aria-label="Go to search" onClick={() => navigate("/search")} sx={{ p: 0 }}>
+                    <Box
+                        component="img"
+                        src={iconInverted}
+                        alt="MDIP"
+                        sx={{
+                            width: 32,
+                            height: 32,
+                            filter: darkMode ? "invert(1)" : "none",
+                            transition: "filter 150ms ease-in-out",
+                        }}
+                    />
+                </IconButton>
             </Box>
 
             <Tabs
@@ -64,9 +66,10 @@ const Header = () => {
             >
                 <Tab label="Search" value="search" />
                 <Tab label="Events" value="events" />
-                <Tab label="Network" value="network" />
+                <Tab label="Metrics" value="metrics" />
                 <Tab label="Credentials" value="credentials" />
                 <Tab label="Receipts" value="receipts" />
+                <Tab label="Network" value="network" />
             </Tabs>
 
             <Box sx={{ ml: "auto", display: "flex", alignItems: "center" }}>

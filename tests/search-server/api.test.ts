@@ -26,6 +26,7 @@ let db: DIDsDbMemory;
 let config: Record<string, any>;
 let app: ReturnType<typeof express>;
 let server: Server | undefined;
+let hyperswarmServer: Server | undefined;
 let base: string;
 let limiter: { skip: (req: any) => boolean };
 let signalListeners: Record<string, ReturnType<typeof process.listeners>>;
@@ -59,6 +60,7 @@ beforeEach(() => {
     config = {
         db: 'memory', port: 0, didPrefix: 'did:mdip', postgresURL: 'postgresql://fixture',
         gatekeeperURL: 'http://fixture.invalid', refreshIntervalMs: 5000, metricsRefreshIntervalMs: 60000,
+        hyperswarmURL: 'http://fixture.invalid',
         rateLimitEnabled: false, rateLimitWhitelist: [], rateLimitSkipPaths: ['/api/v1/ready'],
         rateLimitWindowValue: 1, rateLimitWindowUnit: 'minute', rateLimitMaxRequests: 10,
         jsonLimit: '2mb', trustProxy: false,
@@ -78,6 +80,10 @@ afterEach(async () => {
     if (server) {
         server.closeAllConnections();
         await new Promise<void>(resolve => server!.close(() => resolve()));
+    }
+    if (hyperswarmServer) {
+        hyperswarmServer.closeAllConnections();
+        await new Promise<void>(resolve => hyperswarmServer!.close(() => resolve()));
     }
     for (const signal of ['SIGTERM', 'SIGINT']) {
         for (const listener of process.listeners(signal)) {
@@ -185,6 +191,44 @@ describe('Search Server HTTP routes', () => {
         const status = await request('/status');
         expect(status.status).toBe(200);
         expect(status.body).toMatchObject({ ready: true, db: 'memory', sync: { snapshotComplete: false } });
+    });
+
+    it('reports readiness response failures', async () => {
+        await boot();
+        jest.spyOn(app.response, 'json').mockImplementationOnce(() => {
+            throw new Error('serialization failed');
+        });
+        expect(await request('/ready')).toEqual({
+            status: 500,
+            body: { error: 'Error: serialization failed' },
+        });
+    });
+
+    it('proxies live Hyperswarm status and reports mediator failures', async () => {
+        const status = {
+            generatedAt: '2026-09-22T12:00:00.000Z',
+            protocol: '/MDIP/v1.0-public',
+            node: { name: 'local', peerId: 'local-peer', operationCount: 10, orderedOperationCount: 10 },
+            totals: { visibleNodes: 1, connectedPeers: 0 },
+            peers: [],
+        };
+        let unavailable = false;
+        hyperswarmServer = createServer((_req, res) => {
+            res.setHeader('Content-Type', 'application/json');
+            res.statusCode = unavailable ? 500 : 200;
+            res.end(JSON.stringify(unavailable ? { error: 'failed' } : status));
+        });
+        await new Promise<void>(resolve => hyperswarmServer!.listen(0, '127.0.0.1', resolve));
+        config.hyperswarmURL = `http://127.0.0.1:${(hyperswarmServer.address() as AddressInfo).port}/`;
+
+        await boot();
+        expect(await request('/network')).toEqual({ status: 200, body: status });
+
+        unavailable = true;
+        expect(await request('/network')).toEqual({
+            status: 503,
+            body: { error: 'Hyperswarm network status unavailable' },
+        });
     });
 
     it('forwards event, credential and receipt filters and pagination to storage', async () => {
