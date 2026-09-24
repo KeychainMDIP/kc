@@ -265,6 +265,67 @@ describe('isVerifiableCredential', () => {
         expect(res1).toBe(false);
         expect(res2).toBe(false);
     })
+
+    it('rejects malformed signed credential structures', async () => {
+        await keymaster.createId('Alice');
+        const subject = await keymaster.createId('Bob');
+        await keymaster.setCurrentId('Alice');
+        const schema = await keymaster.createSchema(mockSchema);
+        const vc = await keymaster.addSignature(await keymaster.bindCredential(schema, subject));
+        const isCredential = (value: unknown): boolean => (keymaster as any).isVerifiableCredential(value);
+
+        expect(isCredential(vc)).toBe(true);
+        expect(isCredential({ ...vc, signature: { ...vc.signature, hash: undefined } })).toBe(true);
+        expect(isCredential({ ...vc, validFrom: null, validUntil: null })).toBe(true);
+        expect(isCredential({ ...vc, validFrom: '2030-01-01T01:00:00+01:00', validUntil: '2030-01-01T00:00:00Z' })).toBe(true);
+        expect(isCredential({ ...vc, validFrom: '2030-01-01T00:00:00.0009Z', validUntil: '2030-01-01T00:00:00.0010Z' })).toBe(true);
+        expect(isCredential({ ...vc, validFrom: '2030-01-01T00:00:00.9999Z', validUntil: '2030-01-01T00:00:01Z' })).toBe(true);
+        expect(isCredential({ ...vc, '@context': [vc['@context'][0], 'http://localhost:8080/context.json'] })).toBe(true);
+
+        const invalid: Record<string, unknown> = {
+            array: [],
+            'empty context': { ...vc, '@context': [] },
+            'wrong base context': { ...vc, '@context': ['https://www.w3.org/ns/credentials/examples/v2'] },
+            'non-string context': { ...vc, '@context': [vc['@context'][0], 7] },
+            'invalid context URL': { ...vc, '@context': [vc['@context'][0], 'not-a-url'] },
+            'unsupported context scheme': { ...vc, '@context': [vc['@context'][0], 'javascript:alert(1)'] },
+            'context without host': { ...vc, '@context': [vc['@context'][0], 'https://'] },
+            'context with invalid host': { ...vc, '@context': [vc['@context'][0], 'https://%'] },
+            'context with invalid port': { ...vc, '@context': [vc['@context'][0], 'https://example.com:65536/context'] },
+            'missing credential type': { ...vc, type: [schema] },
+            'non-string type': { ...vc, type: ['VerifiableCredential', 7] },
+            'invalid issuer': { ...vc, issuer: {} },
+            'invalid validFrom': { ...vc, validFrom: 'not-a-date' },
+            'non-string validFrom': { ...vc, validFrom: 7 },
+            'invalid validUntil': { ...vc, validUntil: '2031-02-30T00:00:00Z' },
+            'non-string validUntil': { ...vc, validUntil: 7 },
+            'reversed validity window': { ...vc, validFrom: '2030-01-02T00:00:00Z', validUntil: '2030-01-01T00:00:00Z' },
+            'reversed submillisecond window': { ...vc, validFrom: '2030-01-01T00:00:00.0009Z', validUntil: '2030-01-01T00:00:00.0001Z' },
+            'missing subject ID': { ...vc, credentialSubject: {} },
+            'array subject': { ...vc, credentialSubject: [] },
+            'invalid subject ID': { ...vc, credentialSubject: { id: 'not-a-did' } },
+            'missing signature': { ...vc, signature: undefined },
+            'array signature': { ...vc, signature: [] },
+            'missing signer': { ...vc, signature: { ...vc.signature, signer: undefined } },
+            'invalid signature date': { ...vc, signature: { ...vc.signature, signed: 7 } },
+            'invalid signature date string': { ...vc, signature: { ...vc.signature, signed: 'not-a-date' } },
+            'invalid signature hash': { ...vc, signature: { ...vc.signature, hash: 7 } },
+            'missing signature value': { ...vc, signature: { ...vc.signature, value: '' } },
+        };
+
+        for (const [name, candidate] of Object.entries(invalid)) {
+            expect({ name, valid: isCredential(candidate) }).toEqual({ name, valid: false });
+        }
+
+        const originalURL = globalThis.URL;
+        try {
+            (globalThis as any).URL = class {};
+            expect(isCredential(vc)).toBe(true);
+            expect(isCredential(invalid['invalid context URL'])).toBe(false);
+        } finally {
+            globalThis.URL = originalURL;
+        }
+    });
 })
 
 describe('bindCredential', () => {
@@ -306,6 +367,60 @@ describe('bindCredential', () => {
 });
 
 describe('issueCredential', () => {
+    it('rejects credentials that cannot be accepted before creating an asset', async () => {
+        await keymaster.createId('Alice');
+        const subject = await keymaster.createId('Bob');
+        await keymaster.setCurrentId('Alice');
+        const schema = await keymaster.createSchema(mockSchema);
+        const bound = await keymaster.bindCredential(schema, subject);
+        const didsBefore = await gatekeeper.getDIDs();
+
+        const invalid: Record<string, Record<string, unknown>> = {
+            'empty context': { '@context': [] },
+            'unsupported inline context': { '@context': [bound['@context'][0], { name: 'https://example.com/name' }] },
+            'invalid context URL': { '@context': [bound['@context'][0], 'not-a-url'] },
+            'missing credential type': { type: [schema] },
+            'missing subject ID': { credentialSubject: {} },
+            'invalid validFrom': { validFrom: 'not-a-date' },
+            'invalid validUntil': { validUntil: 7 },
+            'reversed validity window': { validFrom: '2030-01-02T00:00:00Z', validUntil: '2030-01-01T00:00:00Z' },
+            'reversed submillisecond window': { validFrom: '2030-01-01T00:00:00.0009Z', validUntil: '2030-01-01T00:00:00.0001Z' },
+        };
+
+        for (const change of Object.values(invalid)) {
+            await expect(keymaster.issueCredential({ ...bound, ...change } as VerifiableCredential))
+                .rejects.toThrow('Invalid parameter: credential');
+        }
+        expect(await gatekeeper.getDIDs()).toStrictEqual(didsBefore);
+    });
+
+    it('can issue and accept an expired credential with well-formed dates', async () => {
+        await keymaster.createId('Alice');
+        const subject = await keymaster.createId('Bob');
+        await keymaster.setCurrentId('Alice');
+        const schema = await keymaster.createSchema(mockSchema);
+        const credential = await keymaster.bindCredential(schema, subject, {
+            validFrom: '2020-01-01T00:00:00Z',
+            validUntil: '2021-01-01T00:00:00Z',
+        });
+        const did = await keymaster.issueCredential(credential);
+
+        await keymaster.setCurrentId('Bob');
+        expect(await keymaster.acceptCredential(did)).toBe(true);
+    });
+
+    it('re-signs a supplied credential without retaining its old signature in the payload', async () => {
+        await keymaster.createId('Alice');
+        const subject = await keymaster.createId('Bob');
+        await keymaster.setCurrentId('Alice');
+        const schema = await keymaster.createSchema(mockSchema);
+        const credential = await keymaster.addSignature(await keymaster.bindCredential(schema, subject));
+        const did = await keymaster.issueCredential(credential);
+
+        await keymaster.setCurrentId('Bob');
+        expect(await keymaster.acceptCredential(did)).toBe(true);
+    });
+
     it('should issue a bound credential when user is issuer', async () => {
         const subject = await keymaster.createId('Bob');
         const schema = await keymaster.createSchema(mockSchema);
@@ -529,6 +644,25 @@ describe('updateCredential', () => {
 
         const doc = await keymaster.resolveDID(did);
         expect(doc.didDocumentMetadata!.version).toBe("2");
+    });
+
+    it.each([
+        { '@context': [] },
+        { '@context': ['https://www.w3.org/ns/credentials/v2', 'not-a-url'] },
+        { validFrom: '2030-01-02T00:00:00Z', validUntil: '2030-01-01T00:00:00Z' },
+    ])('rejects malformed replacement credentials without updating the asset', async change => {
+        const issuer = await keymaster.createId('Alice');
+        const schema = await keymaster.createSchema(mockSchema);
+        const did = await keymaster.issueCredential(await keymaster.bindCredential(schema, issuer));
+        const original = (await keymaster.getCredential(did))!;
+        const candidate = { ...original, ...change } as VerifiableCredential;
+        const events = await gatekeeper.exportDID(did);
+
+        await expect(keymaster.updateCredential(did, candidate)).rejects.toThrow('Invalid parameter: credential');
+
+        expect(candidate.signature).toStrictEqual(original.signature);
+        expect(await gatekeeper.exportDID(did)).toStrictEqual(events);
+        expect(await keymaster.getCredential(did)).toStrictEqual(original);
     });
 
     it('should throw when the issuer encryption keypair is unavailable', async () => {

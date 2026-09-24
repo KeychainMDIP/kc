@@ -1807,7 +1807,13 @@ export default class Keymaster implements KeymasterInterface {
             throw new InvalidParameterError('credential.issuer');
         }
 
-        const signed = await this.addSignature(credential, id.did);
+        const unsigned = { ...credential };
+        delete unsigned.signature;
+        const signed = await this.addSignature(unsigned, id.did);
+        if (!this.isVerifiableCredential(signed)) {
+            throw new InvalidParameterError('credential');
+        }
+
         return this.encryptJSONFor(signed, credential.credentialSubject!.id, id.did, { ...options, includeHash: true });
     }
 
@@ -1834,13 +1840,40 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     private isVerifiableCredential(obj: unknown): obj is VerifiableCredential {
-        if (typeof obj !== 'object' || !obj) {
+        if (typeof obj !== 'object' || !obj || Array.isArray(obj)) {
             return false;
         }
 
         const vc = obj as Partial<VerifiableCredential>;
+        const subject = vc.credentialSubject;
+        const signature = vc.signature;
+        const validFrom = vc.validFrom == null ? null : this.credentialTimestamp(vc.validFrom);
+        const validUntil = vc.validUntil == null ? null : this.credentialTimestamp(vc.validUntil);
 
-        return !(!Array.isArray(vc["@context"]) || !Array.isArray(vc.type) || !vc.issuer || !vc.credentialSubject);
+        // ponytail: Portable URL check; revisit IPv6, IDN, and malformed IP hosts in a URL-validation PR.
+        const contextURL = /^https?:\/\/[a-z\d](?:[a-z\d.-]*[a-z\d])?(?::(\d{1,5}))?(?:[/?#]|$)/i;
+        return Array.isArray(vc["@context"])
+            && vc["@context"][0] === 'https://www.w3.org/ns/credentials/v2'
+            && vc["@context"].every(context => {
+                if (typeof context !== 'string') return false;
+                const match = contextURL.exec(context);
+                return !!match && (!match[1] || Number(match[1]) <= 65535);
+            })
+            && Array.isArray(vc.type)
+            && vc.type.includes('VerifiableCredential')
+            && vc.type.every(type => typeof type === 'string' && type.length > 0)
+            && typeof vc.issuer === 'string' && isValidDID(vc.issuer)
+            && (validFrom === null || Number.isFinite(validFrom))
+            && (validUntil === null || Number.isFinite(validUntil))
+            && (validFrom === null || validUntil === null
+                || this.credentialPeriodOrdered(vc.validFrom!, vc.validUntil!, validFrom, validUntil))
+            && !!subject && typeof subject === 'object' && !Array.isArray(subject)
+            && typeof subject.id === 'string' && isValidDID(subject.id)
+            && !!signature && typeof signature === 'object' && !Array.isArray(signature)
+            && typeof signature.signer === 'string' && isValidDID(signature.signer)
+            && Number.isFinite(this.credentialTimestamp(signature.signed))
+            && (signature.hash === undefined || typeof signature.hash === 'string' && signature.hash.length > 0)
+            && typeof signature.value === 'string' && signature.value.length > 0;
     }
 
     private async verifyCredentialSignature(obj: unknown): Promise<boolean> {
@@ -1893,6 +1926,21 @@ export default class Keymaster implements KeymasterInterface {
         return date.getTime() - offset + Number(/[1-9]/.test(fraction.slice(3)));
     }
 
+    private credentialPeriodOrdered(fromValue: string, untilValue: string, from: number, until: number): boolean {
+        if (from !== until) return from < until;
+
+        // A submillisecond reversal can be hidden when both boundaries round to the same millisecond.
+        const remainder = (value: string) => /\.(\d+)(?:Z|[+-]\d{2}:[0-5]\d)$/.exec(value)?.[1].slice(3) ?? '';
+        const fromRemainder = remainder(fromValue);
+        const untilRemainder = remainder(untilValue);
+        const fromBase = from - Number(/[1-9]/.test(fromRemainder));
+        const untilBase = until - Number(/[1-9]/.test(untilRemainder));
+        if (fromBase !== untilBase) return fromBase < untilBase;
+
+        const length = Math.max(fromRemainder.length, untilRemainder.length);
+        return fromRemainder.padEnd(length, '0') <= untilRemainder.padEnd(length, '0');
+    }
+
     private isCredentialCurrent(credential: VerifiableCredential, now: number): boolean {
         const { validFrom, validUntil } = credential;
 
@@ -1924,8 +1972,12 @@ export default class Keymaster implements KeymasterInterface {
             throw new InvalidParameterError('credential.issuer');
         }
 
-        delete credential.signature;
-        const signed = await this.addSignature(credential, id.did);
+        const unsigned = { ...credential };
+        delete unsigned.signature;
+        const signed = await this.addSignature(unsigned, id.did);
+        if (!this.isVerifiableCredential(signed)) {
+            throw new InvalidParameterError('credential');
+        }
         const msg = JSON.stringify(signed);
 
         const senderKeypair = await this.fetchKeyPair(id.did);
