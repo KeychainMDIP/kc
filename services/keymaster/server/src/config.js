@@ -103,6 +103,7 @@ const config = {
     keymasterPort: process.env.KC_KEYMASTER_PORT ? parseInt(process.env.KC_KEYMASTER_PORT) : 4226,
     nodeID: parseRequired('KC_NODE_ID', process.env.KC_NODE_ID, true),
     db: parseDatabase(process.env.KC_KEYMASTER_DB),
+    jsonLimit: process.env.KC_KEYMASTER_JSON_LIMIT || '4mb',
     keymasterPassphrase: parseRequired('KC_ENCRYPTED_PASSPHRASE', process.env.KC_ENCRYPTED_PASSPHRASE),
     defaultRegistry: process.env.KC_DEFAULT_REGISTRY,
     didPrefix: parseDidPrefix(process.env.KC_KEYMASTER_DID_PREFIX),
