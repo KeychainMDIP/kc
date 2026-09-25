@@ -1,10 +1,12 @@
 import keymaster_sdk as keymaster
 import pytest
+import os
+import requests
 from datetime import datetime, timedelta, timezone
 import random
 import string
 import base64
-from unittest.mock import ANY
+from unittest.mock import ANY, patch
 from copy import deepcopy
 
 # Test vars
@@ -64,6 +66,85 @@ def test_schemas():
 
     response = keymaster.set_schema(did, schema)
     assert_equal(response, True)
+
+
+def test_resolve_asset_serializes_boolean_options():
+    with patch(
+        "keymaster_sdk.keymaster_sdk.proxy_request", return_value={"asset": {}}
+    ) as proxy:
+        keymaster.resolve_asset(
+            "did:example:asset",
+            {"confirm": True, "verify": True, "versionSequence": 1},
+        )
+
+    params = proxy.call_args.kwargs["params"]
+    request = requests.Request("GET", "http://example.com", params=params).prepare()
+    assert request.url.endswith("?confirm=true&verify=true&versionSequence=1")
+
+
+def test_optional_http_contracts():
+    alice = generate_id()
+    alice_id = keymaster.create_id(alice, local_options)
+
+    schema_id = keymaster.create_schema(None, local_options)
+    original_asset = keymaster.resolve_asset(schema_id)
+    updated_schema = deepcopy(original_asset["schema"])
+    updated_schema["properties"]["updated"] = {"type": "boolean"}
+    assert_equal(keymaster.set_schema(schema_id, updated_schema), True)
+
+    credential = keymaster.bind_credential(schema_id, alice, local_options)
+    credential_id = keymaster.issue_credential(credential, local_options)
+    assert_equal(keymaster.accept_credential(credential_id), True)
+
+    keymaster.create_id(generate_id(), local_options)
+
+    assert schema_id in keymaster.list_assets(alice_id)
+    assert credential_id in keymaster.list_credentials(alice_id)
+    assert credential_id in keymaster.list_issued(alice_id)
+    assert_equal(
+        keymaster.resolve_asset(schema_id, {"versionSequence": 1}),
+        original_asset,
+    )
+    assert_equal(
+        keymaster.resolve_asset(schema_id, {"confirm": True, "verify": True})["schema"],
+        updated_schema,
+    )
+
+    api = os.environ.get("KC_KEYMASTER_URL", "http://localhost:4226")
+    for path, name in (
+        ("assets", "owner"),
+        ("credentials/held", "id"),
+        ("credentials/issued", "issuer"),
+    ):
+        response = requests.get(
+            f"{api}/api/v1/{path}",
+            params=[(name, alice), (name, alice_id)],
+            timeout=10,
+        )
+        assert response.status_code == 400, response.text
+
+    response = requests.get(
+        f"{api}/api/v1/did/{schema_id}",
+        params={"versionSequence": 1},
+        timeout=10,
+    )
+    assert response.status_code == 200, response.text
+    assert_equal(response.json()["docs"]["didDocumentData"], original_asset)
+
+    url = f"{api}/api/v1/assets/{schema_id}"
+    did_url = f"{api}/api/v1/did/{schema_id}"
+    for params in (
+        {"versionSequence": "oops"},
+        {"versionSequence": "1.5"},
+        {"versionTime": "not-a-date"},
+        {"versionTime": "2026-02-30T00:00:00Z"},
+        {"versionTime": "2026-01-01T24:00:00Z"},
+        {"confirm": "True"},
+        {"verify": "True"},
+    ):
+        for endpoint in (url, did_url):
+            response = requests.get(endpoint, params=params, timeout=10)
+            assert response.status_code == 400, response.text
 
 
 def test_encrypt_decrypt_json():
@@ -185,6 +266,18 @@ def test_wallet():
     assert "data" in wallet["seed"]["mnemonicEnc"], "data not present in mnemonicEnc"
     assert "iv" in wallet["seed"]["mnemonicEnc"], "iv not present in mnemonicEnc"
     assert "salt" in wallet["seed"]["mnemonicEnc"], "salt not present in mnemonicEnc"
+
+    api = os.environ.get("KC_KEYMASTER_URL", "http://localhost:4226")
+    invalid = requests.put(
+        f"{api}/api/v1/wallet",
+        json={"wallet": wallet, "overwrite": "false"},
+        timeout=10,
+    )
+    assert invalid.status_code == 400, invalid.text
+    assert_equal(keymaster.load_wallet(), wallet)
+
+    response = keymaster.save_wallet(wallet, False)
+    assert_equal(response, False)
 
     response = keymaster.save_wallet(wallet)
     assert_equal(response, True)

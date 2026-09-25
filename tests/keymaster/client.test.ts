@@ -198,11 +198,11 @@ describe('saveWallet', () => {
 
     it('should save wallet', async () => {
         nock(KeymasterURL)
-            .put(Endpoints.wallet)
+            .put(Endpoints.wallet, { wallet: mockWallet, overwrite: false })
             .reply(200, { ok: true });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
-        const ok = await keymaster.saveWallet(mockWallet);
+        const ok = await keymaster.saveWallet(mockWallet, false);
 
         expect(ok).toStrictEqual(true);
     });
@@ -1114,10 +1114,11 @@ describe('listAssets', () => {
     it('should list assets', async () => {
         nock(KeymasterURL)
             .get(Endpoints.assets)
+            .query({ owner: 'Alice' })
             .reply(200, { assets: mockAssets });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
-        const assets = await keymaster.listAssets();
+        const assets = await keymaster.listAssets('Alice');
 
         expect(assets).toStrictEqual(mockAssets);
     });
@@ -1159,11 +1160,13 @@ describe('resolveAsset', () => {
 
         nock(KeymasterURL)
             .get(`${Endpoints.assets}/${mockAssetId}`)
-            .query((query) => query.versionTime === versionTime && query.confirm === 'true')
+            .query((query) => query.versionTime === versionTime
+                && query.versionSequence === '1'
+                && query.confirm === 'true')
             .reply(200, { asset: mockAsset });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
-        const asset = await keymaster.resolveAsset(mockAssetId, { versionTime, confirm: true });
+        const asset = await keymaster.resolveAsset(mockAssetId, { versionTime, versionSequence: 1, confirm: true });
 
         expect(asset).toStrictEqual(mockAsset);
     });
@@ -2009,10 +2012,11 @@ describe('listCredentials', () => {
     it('should list credentials', async () => {
         nock(KeymasterURL)
             .get(Endpoints.credentials_held)
+            .query({ id: 'Alice' })
             .reply(200, { held: mockCredentials });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
-        const credentials = await keymaster.listCredentials();
+        const credentials = await keymaster.listCredentials('Alice');
 
         expect(credentials).toStrictEqual(mockCredentials);
     });
@@ -2196,10 +2200,11 @@ describe('listIssued', () => {
     it('should list issued credentials', async () => {
         nock(KeymasterURL)
             .get(Endpoints.credentials_issued)
+            .query({ issuer: 'Alice' })
             .reply(200, { issued: mockCredentials });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
-        const issued = await keymaster.listIssued();
+        const issued = await keymaster.listIssued('Alice');
 
         expect(issued).toStrictEqual(mockCredentials);
     });

@@ -348,14 +348,18 @@ describe('credential validity periods', () => {
         clock.mockRestore();
     });
 
-    async function issueCredential(validity: Record<string, unknown> = {}) {
+    async function createSignedCredential(validity: Record<string, unknown> = {}) {
         await keymaster.setCurrentId('Alice');
         const credential = await keymaster.bindCredential(schema, bob, { validFrom: past });
         Object.assign(credential, validity);
         // The signed validity window is independent of the asset's expiration.
-        const vc = await keymaster.issueCredential(credential, { registry: 'local' });
+        const signed = await keymaster.addSignature(credential);
+        const vc = await keymaster.encryptJSON(signed, bob, { includeHash: true, registry: 'local' });
         expect((await keymaster.resolveDID(vc)).mdip?.validUntil).toBeUndefined();
         await keymaster.setCurrentId('Bob');
+        const wallet = await keymaster.loadWallet();
+        wallet.ids.Bob.held = [...(wallet.ids.Bob.held || []), vc];
+        await keymaster.saveWallet(wallet);
         return vc;
     }
 
@@ -375,8 +379,7 @@ describe('credential validity periods', () => {
     }
 
     it.each(cases)('selects only current credentials: %s', async (_name, validity, expected) => {
-        const vc = await issueCredential(validity);
-        expect(await keymaster.acceptCredential(vc)).toBe(true);
+        const vc = await createSignedCredential(validity);
         const responseDID = await keymaster.createResponse(challenge, { registry: 'local' });
         const { response } = await keymaster.decryptJSON(responseDID) as { response: ChallengeResponse };
 
@@ -387,7 +390,7 @@ describe('credential validity periods', () => {
     });
 
     it.each(cases)('independently verifies the signed validity window: %s', async (_name, validity, expected) => {
-        const vc = await issueCredential(validity);
+        const vc = await createSignedCredential(validity);
         const responseDID = await presentCredential(vc);
         await keymaster.setCurrentId('Victor');
         const result = await keymaster.verifyResponse(responseDID, { publish: false });
@@ -401,8 +404,7 @@ describe('credential validity periods', () => {
         ['validFrom', false, true],
         ['validUntil', true, false],
     ] as const)('crosses a submillisecond %s boundary at the next clock tick', async (field, before, after) => {
-        const vc = await issueCredential({ [field]: '2030-06-15T12:00:00.0009Z' });
-        await keymaster.acceptCredential(vc);
+        const vc = await createSignedCredential({ [field]: '2030-06-15T12:00:00.0009Z' });
         const responseDID = await presentCredential(vc);
 
         for (const [elapsed, expected] of [[0, before], [1, after]] as const) {
@@ -420,8 +422,7 @@ describe('credential validity periods', () => {
     it('skips unusable credentials and selects a later current credential without removing any', async () => {
         const held = [];
         for (const validity of [{ validUntil: past }, { validFrom: future }, { validUntil: 'invalid' }, {}]) {
-            const vc = await issueCredential(validity);
-            expect(await keymaster.acceptCredential(vc)).toBe(true);
+            const vc = await createSignedCredential(validity);
             held.push(vc);
         }
 
@@ -435,8 +436,7 @@ describe('credential validity periods', () => {
     });
 
     it.each([false, true])('rejects a credential that expires after response creation with publish=%s', async (publish) => {
-        const vc = await issueCredential({ validUntil: future });
-        await keymaster.acceptCredential(vc);
+        const vc = await createSignedCredential({ validUntil: future });
         const responseDID = await keymaster.createResponse(challenge, { registry: 'local' });
         await keymaster.setCurrentId('Victor');
         expect((await keymaster.verifyResponse(responseDID, { publish: false })).match).toBe(true);
@@ -979,7 +979,7 @@ describe('verifyResponse', () => {
         expect(verification.vps).toStrictEqual([]);
     });
 
-    it.each([undefined, null, 'https://www.w3.org/ns/credentials/v2', {}])(
+    it.each([undefined, null, 'https://www.w3.org/ns/credentials/v2', {}, [], ['https://www.w3.org/ns/credentials/examples/v2'], ['https://www.w3.org/ns/credentials/v2', 'not-a-url']])(
         'should reject a correctly signed presentation with invalid @context %j', async context => {
             const alice = await keymaster.createId('Alice');
             const carol = await keymaster.createId('Carol');
@@ -1034,7 +1034,7 @@ describe('verifyResponse', () => {
         }
     );
 
-    it('should reject a presentation without the requested schema', async () => {
+    it.each(['missing schema', 'missing VerifiableCredential type'])('should reject a presentation with %s', async defect => {
         await keymaster.createId('Alice');
         const carol = await keymaster.createId('Carol');
         const victor = await keymaster.createId('Victor');
@@ -1042,8 +1042,8 @@ describe('verifyResponse', () => {
         await keymaster.setCurrentId('Alice');
         const schema = await keymaster.createSchema(mockSchema);
         const credential = await keymaster.bindCredential(schema, carol);
-        credential.type = ['VerifiableCredential'];
-        const vc = await keymaster.issueCredential(credential);
+        credential.type = defect === 'missing schema' ? ['VerifiableCredential'] : ['NotACredential', schema];
+        const vc = await keymaster.encryptJSON(await keymaster.addSignature(credential), carol, { includeHash: true });
 
         await keymaster.setCurrentId('Victor');
         const challenge = await keymaster.createChallenge({
@@ -1697,12 +1697,18 @@ describe('challenge receipts', () => {
                     responseNonce: 'mock-nonce',
                     vps: [
                         {
-                            '@context': [],
+                            '@context': ['https://www.w3.org/ns/credentials/v2'],
                             type: ['VerifiableCredential'],
                             issuer: victor,
                             validFrom: '2026-01-01T00:00:00.000Z',
                             credentialSubject: {
                                 id: victor,
+                            },
+                            signature: {
+                                signer: victor,
+                                signed: '2026-01-01T00:00:00.000Z',
+                                hash: 'mock-hash',
+                                value: 'mock-signature',
                             },
                         },
                     ],
@@ -1719,6 +1725,19 @@ describe('challenge receipts', () => {
         const victor = await keymaster.createId('Victor');
         const schemaDid = await keymaster.createSchema(mockSchema);
         const challengeDID = await keymaster.createChallenge();
+        const vp: VerifiableCredential = {
+            '@context': ['https://www.w3.org/ns/credentials/v2'],
+            type: ['VerifiableCredential', schemaDid],
+            issuer: victor,
+            validFrom: '2026-01-01T00:00:00.000Z',
+            credentialSubject: { id: victor },
+            signature: {
+                signer: victor,
+                signed: '2026-01-01T00:00:00.000Z',
+                hash: 'mock-hash',
+                value: 'mock-signature',
+            },
+        };
         const verification: ChallengeResponse = {
             challenge: challengeDID,
             credentials: [],
@@ -1726,26 +1745,7 @@ describe('challenge receipts', () => {
             fulfilled: 0,
             match: true,
             responseNonce: 'mock-nonce',
-            vps: [
-                {
-                    '@context': [],
-                    type: ['VerifiableCredential', schemaDid],
-                    issuer: victor,
-                    validFrom: '2026-01-01T00:00:00.000Z',
-                    credentialSubject: {
-                        id: victor,
-                    },
-                },
-                {
-                    '@context': [],
-                    type: ['VerifiableCredential', schemaDid],
-                    issuer: victor,
-                    validFrom: '2026-01-01T00:00:00.000Z',
-                    credentialSubject: {
-                        id: victor,
-                    },
-                },
-            ],
+            vps: [vp, vp],
         };
 
         try {

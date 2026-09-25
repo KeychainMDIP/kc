@@ -135,10 +135,11 @@ export default class KeymasterClient implements KeymasterInterface {
     }
 
     async saveWallet(
-        wallet: StoredWallet
+        wallet: StoredWallet,
+        overwrite?: boolean
     ): Promise<boolean> {
         try {
-            const response = await axios.put(`${this.API}/wallet`, { wallet });
+            const response = await axios.put(`${this.API}/wallet`, { wallet, overwrite });
             return response.data.ok;
         }
         catch (error) {
@@ -462,9 +463,9 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     }
 
-    async listAssets(): Promise<string[]> {
+    async listAssets(owner?: string): Promise<string[]> {
         try {
-            const response = await axios.get(`${this.API}/assets`);
+            const response = await axios.get(`${this.API}/assets`, { params: { owner } });
             return response.data.assets;
         }
         catch (error) {
@@ -776,9 +777,9 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     }
 
-    async listCredentials(): Promise<string[]> {
+    async listCredentials(id?: string): Promise<string[]> {
         try {
-            const response = await axios.get(`${this.API}/credentials/held`);
+            const response = await axios.get(`${this.API}/credentials/held`, { params: { id } });
             return response.data.held;
         }
         catch (error) {
@@ -839,9 +840,9 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     }
 
-    async listIssued(): Promise<string[]> {
+    async listIssued(issuer?: string): Promise<string[]> {
         try {
-            const response = await axios.get(`${this.API}/credentials/issued`);
+            const response = await axios.get(`${this.API}/credentials/issued`, { params: { issuer } });
             return response.data.issued;
         }
         catch (error) {

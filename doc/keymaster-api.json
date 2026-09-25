@@ -357,6 +357,11 @@
                 "properties": {
                   "wallet": {
                     "$ref": "#/components/schemas/StoredWallet"
+                  },
+                  "overwrite": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Whether to replace an existing wallet."
                   }
                 },
                 "required": [
@@ -376,6 +381,21 @@
                   "properties": {
                     "ok": {
                       "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The overwrite value must be a boolean.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
                     }
                   }
                 }
@@ -940,6 +960,21 @@
                           }
                         }
                       }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid DID resolution options.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
                     }
                   }
                 }
@@ -3023,7 +3058,18 @@
     },
     "/credentials/held": {
       "get": {
-        "summary": "List all credentials currently held by the active ID.",
+        "summary": "List credentials held by an ID.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The name or DID of the holder. Defaults to the active ID."
+          }
+        ],
         "responses": {
           "200": {
             "description": "The list of held credential DIDs.",
@@ -3042,6 +3088,9 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Invalid holder query parameter."
           },
           "500": {
             "description": "Internal server error.",
@@ -3344,10 +3393,21 @@
     },
     "/credentials/issued": {
       "get": {
-        "summary": "List all credentials issued by the current ID.",
+        "summary": "List credentials issued by an ID.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "issuer",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The name or DID of the issuer. Defaults to the active ID."
+          }
+        ],
         "responses": {
           "200": {
-            "description": "The list of credential DIDs issued by the current ID.",
+            "description": "The list of credential DIDs issued by the selected ID.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3363,6 +3423,9 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Invalid issuer query parameter."
           },
           "500": {
             "description": "Internal server error.",
@@ -4306,7 +4369,18 @@
         }
       },
       "get": {
-        "summary": "List all asset DIDs owned by the current ID.",
+        "summary": "List asset DIDs owned by an ID.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "owner",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The name or DID of the owner. Defaults to the active ID."
+          }
+        ],
         "responses": {
           "200": {
             "description": "A list of asset DIDs.",
@@ -4325,6 +4399,9 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Invalid owner query parameter."
           },
           "500": {
             "description": "Internal server error.",
@@ -4356,6 +4433,44 @@
               "type": "string"
             },
             "description": "The asset name or DID to resolve."
+          },
+          {
+            "in": "query",
+            "name": "versionTime",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Timestamp at which to resolve the asset."
+          },
+          {
+            "in": "query",
+            "name": "versionSequence",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Specific asset version to resolve."
+          },
+          {
+            "in": "query",
+            "name": "confirm",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Whether to exclude later events until confirmed by the asset's native registry."
+          },
+          {
+            "in": "query",
+            "name": "verify",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Whether to verify operation signatures while resolving the asset."
           }
         ],
         "responses": {
@@ -4369,6 +4484,21 @@
                     "asset": {
                       "type": "object",
                       "description": "The `didDocumentData` for the asset, or null if not found."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid asset resolution options.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
                     }
                   }
                 }
