@@ -14,6 +14,7 @@ This service is also useful when clients share a wallet, such as the `kc` CLI an
 | `KC_KEYMASTER_PORT` | 4226 | Service port |
 | `KC_NODE_ID` | required | Node identity name to create if missing and resolve at startup |
 | `KC_KEYMASTER_DB` | json | Wallet database adapter, must be `redis`, `json`, `mongodb`, `sqlite`, or `postgres` |
+| `KC_KEYMASTER_JSON_LIMIT` | 4mb | Maximum JSON request-body size accepted by the API |
 | `KC_ENCRYPTED_PASSPHRASE` | required | Passphrase used to encrypt and decrypt the server wallet |
 | `KC_DEFAULT_REGISTRY` | hyperswarm | Default registry to use when creating DIDs |
 | `KC_KEYMASTER_DID_PREFIX` | (empty) | Optional `did:<method>` prefix embedded in new signed create operations. Method names use only lowercase letters and digits |

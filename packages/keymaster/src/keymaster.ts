@@ -4208,14 +4208,27 @@ export default class Keymaster implements KeymasterInterface {
                 return;
             }
 
-            for (const nDid of Object.keys(id.notices)) {
-                try {
-                    const asset = await this.resolveAsset(nDid) as { notice?: NoticeMessage };
-                    if (!asset || !asset.notice) {
-                        delete id.notices[nDid]; // revoked or invalid
-                    }
-                } catch {
-                    delete id.notices[nDid]; // expired/unresolvable
+            for (const did of Object.keys(id.notices)) {
+                if (!isValidDID(did)) {
+                    delete id.notices[did];
+                    continue;
+                }
+
+                const doc = await this.gatekeeper.resolveDID(did);
+                if (doc.didResolutionMetadata?.error === 'notFound') {
+                    continue;
+                }
+                if (doc.didResolutionMetadata?.error) {
+                    throw new KeymasterError(`DID resolution failed: ${doc.didResolutionMetadata.error}`);
+                }
+                if (doc.didDocument?.id !== did) {
+                    throw new KeymasterError(`DID resolution failed: ${did}`);
+                }
+
+                const asset = doc.didDocumentData as { notice?: NoticeMessage } | undefined;
+                if (doc.didDocumentMetadata?.deactivated || !doc.didDocument?.controller || !asset?.notice
+                    || (doc.mdip?.validUntil && Date.parse(doc.mdip.validUntil) <= Date.now())) {
+                    delete id.notices[did];
                 }
             }
         });
