@@ -389,6 +389,38 @@ describe('listGroupVaultMembers', () => {
         expect(await keymaster.getGroupVaultItem(did, 'new.txt')).toStrictEqual(content);
     });
 
+    it.each([
+        ['removed', 'missing', 'groupVaultId'],
+        ['already upgraded', 1, null],
+        ['changed to an unsupported version', 2, 'Unsupported group vault version'],
+    ] as const)('should handle a vault %s between reads', async (_description, state, error) => {
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault({ version: 0 });
+        const previous = await keymaster.resolveDID(did);
+        const current = structuredClone(previous);
+
+        if (state === 'missing') {
+            delete current.didDocument!.controller;
+        }
+        else {
+            (current.didDocumentData as { groupVault: GroupVault }).groupVault.version = state;
+        }
+
+        const resolve = jest.spyOn(keymaster, 'resolveDID')
+            .mockResolvedValueOnce(previous)
+            .mockResolvedValueOnce(current);
+
+        if (error) {
+            await expect(keymaster.listGroupVaultMembers(did)).rejects.toThrow(error);
+        }
+        else {
+            await expect(keymaster.listGroupVaultMembers(did)).resolves.toEqual({});
+        }
+
+        expect(resolve).toHaveBeenCalledTimes(2);
+        resolve.mockRestore();
+    });
+
     it('should throw an exception if triggered version upgrade encounters unsupported version', async () => {
         const alice = await keymaster.createId('Alice');
         await keymaster.createId('Bob');
