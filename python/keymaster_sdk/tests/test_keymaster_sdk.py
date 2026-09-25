@@ -365,6 +365,12 @@ def test_names():
     assert_equal(response, True)
 
 
+def test_get_challenge_is_not_supported():
+    api = os.environ.get("KC_KEYMASTER_URL", "http://localhost:4226")
+    response = requests.get(f"{api}/api/v1/challenge", timeout=10)
+    assert response.status_code == 404, response.text
+
+
 def test_challenge_response():
     alice = generate_id()
     alice_id = keymaster.create_id(alice, local_options)

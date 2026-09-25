@@ -1541,42 +1541,6 @@ v1router.delete('/names/:name', async (req, res) => {
 /**
  * @swagger
  * /challenge:
- *   get:
- *     summary: Create a default challenge DID with no parameters.
- *     responses:
- *       200:
- *         description: A DID representing the newly created challenge.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 did:
- *                   type: string
- *                   description: The DID for the newly created challenge.
- *       500:
- *         description: Internal server error.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- */
-v1router.get('/challenge', async (req, res) => {
-    try {
-        const did = await keymaster.createChallenge();
-        res.json({ did });
-    } catch (error: any) {
-        res.status(500).send({ error: error.toString() });
-    }
-});
-
-
-/**
- * @swagger
- * /challenge:
  *   post:
  *     summary: Create a challenge DID with custom data or options.
  *     requestBody:
