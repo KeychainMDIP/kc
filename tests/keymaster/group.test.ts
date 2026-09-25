@@ -32,6 +32,23 @@ beforeEach(() => {
     keymaster = new Keymaster({ gatekeeper, wallet, cipher, passphrase: 'passphrase' });
 });
 
+function holdFirstTwoGroupReads(groupDID: string) {
+    const resolveDID = keymaster.resolveDID.bind(keymaster);
+    let reads = 0;
+    let release!: () => void;
+    const bothRead = new Promise<void>(resolve => { release = resolve; });
+
+    return jest.spyOn(keymaster, 'resolveDID').mockImplementation(async (did, options) => {
+        const doc = await resolveDID(did, options);
+        if (did === groupDID && reads < 2) {
+            reads += 1;
+            if (reads === 2) release();
+            await bothRead;
+        }
+        return doc;
+    });
+}
+
 describe('createGroup', () => {
     it('should create a new named group', async () => {
         const ownerDid = await keymaster.createId('Bob');
@@ -219,6 +236,64 @@ describe('addGroupMember', () => {
         expect(group.members.length).toBe(memberCount);
     });
 
+    it('should reject one concurrent addition without losing the other', async () => {
+        await keymaster.createId('Bob');
+        const groupDID = await keymaster.createGroup('team');
+        const alice = await keymaster.createAsset({ name: 'Alice' });
+        const carol = await keymaster.createAsset({ name: 'Carol' });
+        const resolveDID = holdFirstTwoGroupReads(groupDID);
+
+        const results = await Promise.allSettled([
+            keymaster.addGroupMember(groupDID, alice),
+            keymaster.addGroupMember(groupDID, carol),
+        ]);
+        resolveDID.mockRestore();
+
+        expect(results.map(result => result.status).sort()).toEqual(['fulfilled', 'rejected']);
+        expect(results.find(result => result.status === 'rejected')).toMatchObject({
+            reason: expect.objectContaining({ message: expect.stringContaining('Please try again') }),
+        });
+        expect((await keymaster.getGroup(groupDID))?.members).toHaveLength(1);
+        const missing = results[0].status === 'rejected' ? alice : carol;
+        expect(await keymaster.addGroupMember(groupDID, missing)).toBe(true);
+        expect(new Set((await keymaster.getGroup(groupDID))?.members)).toEqual(new Set([alice, carol]));
+    });
+
+    it('should reject a group document read before another update', async () => {
+        await keymaster.createId('Bob');
+        const groupDID = await keymaster.createGroup('team');
+        const stale = await keymaster.resolveDID(groupDID);
+        await keymaster.updateAsset(groupDID, { note: 'newer' });
+        stale.didDocumentData = { group: { name: 'team', members: [] } };
+
+        expect(await keymaster.updateDID(stale)).toBe(false);
+        expect((await keymaster.resolveDID(groupDID)).didDocumentData).toEqual({
+            group: { name: 'team', members: [] }, note: 'newer',
+        });
+    });
+
+    it('should report a rejected addition without retrying', async () => {
+        await keymaster.createId('Bob');
+        const groupDID = await keymaster.createGroup('team');
+        const alice = await keymaster.createAsset({ name: 'Alice' });
+        const update = jest.spyOn(keymaster, 'updateDID').mockResolvedValue(false);
+
+        await expect(keymaster.addGroupMember(groupDID, alice)).rejects.toThrow('Please try again');
+        expect(update).toHaveBeenCalledTimes(1);
+        expect((await keymaster.getGroup(groupDID))?.members).toEqual([]);
+    });
+
+    it('should update an old-style group without losing its other fields', async () => {
+        await keymaster.createId('Bob');
+        const groupDID = await keymaster.createAsset({ name: 'team', members: [], note: 'legacy' });
+        const alice = await keymaster.createAsset({ name: 'Alice' });
+
+        expect(await keymaster.addGroupMember(groupDID, alice)).toBe(true);
+        expect((await keymaster.resolveDID(groupDID)).didDocumentData).toEqual({
+            name: 'team', members: [alice], note: 'legacy',
+        });
+    });
+
     it('should not add a non-DID to the group', async () => {
         await keymaster.createId('Bob');
         const groupName = 'mockGroup';
@@ -379,6 +454,45 @@ describe('removeGroupMember', () => {
         };
 
         expect(group).toStrictEqual(expectedGroup);
+    });
+
+    it('should reject one concurrent change without losing the other', async () => {
+        await keymaster.createId('Bob');
+        const groupDID = await keymaster.createGroup('team');
+        const alice = await keymaster.createAsset({ name: 'Alice' });
+        const carol = await keymaster.createAsset({ name: 'Carol' });
+        await keymaster.addGroupMember(groupDID, alice);
+        const resolveDID = holdFirstTwoGroupReads(groupDID);
+
+        const results = await Promise.allSettled([
+            keymaster.addGroupMember(groupDID, carol),
+            keymaster.removeGroupMember(groupDID, alice),
+        ]);
+        resolveDID.mockRestore();
+
+        expect(results.map(result => result.status).sort()).toEqual(['fulfilled', 'rejected']);
+        expect(results.find(result => result.status === 'rejected')).toMatchObject({
+            reason: expect.objectContaining({ message: expect.stringContaining('Please try again') }),
+        });
+        if (results[0].status === 'rejected') {
+            expect(await keymaster.addGroupMember(groupDID, carol)).toBe(true);
+        }
+        else {
+            expect(await keymaster.removeGroupMember(groupDID, alice)).toBe(true);
+        }
+        expect((await keymaster.getGroup(groupDID))?.members).toEqual([carol]);
+    });
+
+    it('should report a rejected removal without retrying', async () => {
+        await keymaster.createId('Bob');
+        const groupDID = await keymaster.createGroup('team');
+        const alice = await keymaster.createAsset({ name: 'Alice' });
+        await keymaster.addGroupMember(groupDID, alice);
+        const update = jest.spyOn(keymaster, 'updateDID').mockResolvedValue(false);
+
+        await expect(keymaster.removeGroupMember(groupDID, alice)).rejects.toThrow('Please try again');
+        expect(update).toHaveBeenCalledTimes(1);
+        expect((await keymaster.getGroup(groupDID))?.members).toEqual([alice]);
     });
 
     it('should remove a DID alias from a group', async () => {
@@ -743,7 +857,7 @@ describe('testGroup', () => {
 
         await expect(keymaster.addGroupMember(target, root))
             .rejects.toThrow("can't create mutual membership");
-        expect(getGroup).toHaveBeenCalledTimes(4);
+        expect(getGroup).toHaveBeenCalledTimes(3);
     });
 });
 

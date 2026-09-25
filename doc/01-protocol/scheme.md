@@ -158,6 +158,7 @@ A DID update is a change to the document set associated with the DID. To initiat
 1. Submit the operation to the MDIP node. For example, post it to the REST API's `/api/v1/did` endpoint.
 
 The client should fetch the current document set, change it, and submit the complete new version so fields that should not change are preserved.
+Gatekeeper rejects a newly submitted update when its `previd` does not identify the current version. After such a rejection, the client must fetch the latest document and reapply its change before retrying. Replacing only `previd` on the old document would overwrite intervening changes.
 
 Example update to rotate keys for an agent DID:
 ```json
