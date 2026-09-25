@@ -10,6 +10,7 @@ import DbJsonMemory from '@mdip/gatekeeper/db/json-memory';
 import WalletJsonMemory from '@mdip/keymaster/wallet/json-memory';
 import { ExpectedExceptionError, UnknownIDError, InvalidParameterError } from '@mdip/common/errors';
 import HeliaClient from '@mdip/ipfs/helia';
+import { jest } from '@jest/globals';
 
 let ipfs: HeliaClient;
 let gatekeeper: Gatekeeper;
@@ -338,6 +339,54 @@ describe('listGroupVaultMembers', () => {
 
         const groupVault = await keymaster.getGroupVault(did);
         expect(groupVault.version).toBe(1);
+    });
+
+    it('should report a rejected version upgrade', async () => {
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault({ version: 0 });
+        const update = jest.spyOn(keymaster, 'updateDID').mockResolvedValueOnce(false);
+
+        await expect(keymaster.listGroupVaultMembers(did)).rejects.toThrow('Please try again');
+        expect(update).toHaveBeenCalledTimes(1);
+        update.mockRestore();
+        expect((await keymaster.getGroupVault(did)).version).toBeUndefined();
+        await expect(keymaster.listGroupVaultMembers(did)).resolves.toEqual({});
+        expect((await keymaster.getGroupVault(did)).version).toBe(1);
+    });
+
+    it('should preserve an item added while upgrading a vault', async () => {
+        await keymaster.createId('Bob');
+        const did = await keymaster.createGroupVault({ version: 0 });
+        const content = Buffer.from('new item');
+        const resolveDID = keymaster.resolveDID.bind(keymaster);
+        let firstRead = true;
+        let signalRead!: () => void;
+        let resumeRead!: () => void;
+        const readStarted = new Promise<void>(resolve => { signalRead = resolve; });
+        const resume = new Promise<void>(resolve => { resumeRead = resolve; });
+        const resolve = jest.spyOn(keymaster, 'resolveDID').mockImplementation(async (id, options) => {
+            const doc = await resolveDID(id, options);
+            if (id === did && firstRead) {
+                firstRead = false;
+                signalRead();
+                await resume;
+            }
+            return doc;
+        });
+
+        const listing = keymaster.listGroupVaultMembers(did);
+        await readStarted;
+        try {
+            expect(await keymaster.addGroupVaultItem(did, 'new.txt', content)).toBe(true);
+        }
+        finally {
+            resumeRead();
+        }
+        await listing;
+        resolve.mockRestore();
+
+        expect((await keymaster.getGroupVault(did)).version).toBe(1);
+        expect(await keymaster.getGroupVaultItem(did, 'new.txt')).toStrictEqual(content);
     });
 
     it('should throw an exception if triggered version upgrade encounters unsupported version', async () => {

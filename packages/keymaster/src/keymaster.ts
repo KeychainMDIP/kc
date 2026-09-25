@@ -64,6 +64,7 @@ import {
     EcdsaJwkPublic,
 } from '@mdip/cipher/types';
 import { isValidDID } from '@mdip/ipfs/utils';
+import { copyJSON } from '@mdip/common/utils';
 import { decMnemonic, encMnemonic } from "./encryption.js";
 
 const DefaultSchema = {
@@ -1129,18 +1130,25 @@ export default class Keymaster implements KeymasterInterface {
             throw new InvalidParameterError('doc.didDocument.id');
         }
 
+        const expectedPrevid = doc.didDocumentMetadata?.versionId;
         const current = await this.resolveDID(did);
-        const previd = current.didDocumentMetadata?.versionId;
+
+        if (expectedPrevid !== undefined && expectedPrevid !== current.didDocumentMetadata?.versionId) {
+            return false;
+        }
+
+        const previd = expectedPrevid ?? current.didDocumentMetadata?.versionId;
 
         // Compare the hashes of the current and updated documents without the metadata
-        delete current.didDocumentMetadata;
-        delete current.didResolutionMetadata;
+        const currentForHash = copyJSON(current);
+        const update = copyJSON(doc);
+        delete currentForHash.didDocumentMetadata;
+        delete currentForHash.didResolutionMetadata;
+        delete update.didDocumentMetadata;
+        delete update.didResolutionMetadata;
 
-        delete doc.didDocumentMetadata;
-        delete doc.didResolutionMetadata;
-
-        const currentHash = this.cipher.hashJSON(current);
-        const updateHash = this.cipher.hashJSON(doc);
+        const currentHash = this.cipher.hashJSON(currentForHash);
+        const updateHash = this.cipher.hashJSON(update);
 
         // If no change, return immediately without updating
         // Maybe add a force update option later if needed?
@@ -1148,7 +1156,7 @@ export default class Keymaster implements KeymasterInterface {
             return true;
         }
 
-        doc.didDocumentMetadata = {};
+        update.didDocumentMetadata = {};
 
         const block = await this.gatekeeper.getBlock(current.mdip!.registry);
         const blockid = block?.hash;
@@ -1158,7 +1166,7 @@ export default class Keymaster implements KeymasterInterface {
             did,
             previd,
             blockid,
-            doc,
+            doc: update,
         };
 
         let controller;
@@ -2089,7 +2097,9 @@ export default class Keymaster implements KeymasterInterface {
 
         if (credential && data.manifest && credential in data.manifest) {
             delete data.manifest[credential];
-            await this.updateDID(doc);
+            if (!await this.updateDID(doc)) {
+                throw new KeymasterError('update DID failed');
+            }
 
             return `OK credential ${did} removed from manifest`;
         }
@@ -2569,24 +2579,27 @@ export default class Keymaster implements KeymasterInterface {
         return this.createAsset({ group }, options);
     }
 
-    async getGroup(id: string): Promise<Group | null> {
-        const asset = await this.resolveAsset(id);
+    private async resolveGroupDocument(id: string): Promise<{ doc: MdipDocument; group: Group | null }> {
+        const doc = await this.resolveDID(id);
+        const asset = doc.didDocument?.controller && !doc.didDocumentMetadata?.deactivated
+            ? doc.didDocumentData
+            : null;
         if (!asset) {
-            return null;
+            return { doc, group: null };
         }
 
         // TEMP during did:test, return old version groups
         const castOldAsset = asset as Group;
         if (castOldAsset.members) {
-            return castOldAsset;
+            return { doc, group: castOldAsset };
         }
 
         const castAsset = asset as { group?: Group };
-        if (!castAsset.group) {
-            return null;
-        }
+        return { doc, group: castAsset.group ?? null };
+    }
 
-        return castAsset.group;
+    async getGroup(id: string): Promise<Group | null> {
+        return (await this.resolveGroupDocument(id)).group;
     }
 
     async addGroupMember(
@@ -2609,29 +2622,29 @@ export default class Keymaster implements KeymasterInterface {
             throw new InvalidParameterError('memberId');
         }
 
-        const group = await this.getGroup(groupId);
+        const { doc, group } = await this.resolveGroupDocument(groupDID);
 
         if (!group?.members) {
             throw new InvalidParameterError('groupId');
         }
 
-        // If already a member, return immediately
         if (group.members.includes(memberDID)) {
             return true;
         }
 
-        // Can't add a mutual membership relation
-        const isMember = await this.testGroup(memberId, groupId);
-
-        if (isMember) {
+        if (await this.testGroup(memberId, groupId)) {
             throw new InvalidParameterError("can't create mutual membership");
         }
 
-        const members = new Set(group.members);
-        members.add(memberDID);
-        group.members = Array.from(members);
+        group.members = [...new Set([...group.members, memberDID])];
+        doc.didDocumentData = (doc.didDocumentData as Group)?.members
+            ? group
+            : { ...(doc.didDocumentData as Record<string, unknown>), group };
 
-        return this.updateAsset(groupDID, { group });
+        if (!await this.updateDID(doc)) {
+            throw new KeymasterError('DID update was rejected. Please try again.');
+        }
+        return true;
     }
 
     async removeGroupMember(
@@ -2640,12 +2653,6 @@ export default class Keymaster implements KeymasterInterface {
     ): Promise<boolean> {
         const groupDID = await this.lookupDID(groupId);
         const memberDID = await this.lookupDID(memberId);
-        const group = await this.getGroup(groupDID);
-
-        if (!group?.members) {
-            throw new InvalidParameterError('groupId');
-        }
-
         try {
             // test for valid member DID
             await this.resolveDID(memberDID);
@@ -2654,16 +2661,25 @@ export default class Keymaster implements KeymasterInterface {
             throw new InvalidParameterError('memberId');
         }
 
-        // If not already a member, return immediately
+        const { doc, group } = await this.resolveGroupDocument(groupDID);
+
+        if (!group?.members) {
+            throw new InvalidParameterError('groupId');
+        }
+
         if (!group.members.includes(memberDID)) {
             return true;
         }
 
-        const members = new Set(group.members);
-        members.delete(memberDID);
-        group.members = Array.from(members);
+        group.members = group.members.filter(member => member !== memberDID);
+        doc.didDocumentData = (doc.didDocumentData as Group)?.members
+            ? group
+            : { ...(doc.didDocumentData as Record<string, unknown>), group };
 
-        return this.updateAsset(groupDID, { group });
+        if (!await this.updateDID(doc)) {
+            throw new KeymasterError('DID update was rejected. Please try again.');
+        }
+        return true;
     }
 
     async testGroup(
@@ -3390,18 +3406,34 @@ export default class Keymaster implements KeymasterInterface {
 
         if (!groupVault.version) {
             const id = await this.fetchIdInfo(actor);
-            const { privateJwk, members } = await this.decryptGroupVault(groupVault, id.did);
+            const doc = await this.resolveDID(vaultId);
+            const currentVault = doc.didDocument?.controller && !doc.didDocumentMetadata?.deactivated
+                ? (doc.didDocumentData as { groupVault?: GroupVault })?.groupVault
+                : undefined;
 
-            groupVault.version = 1;
-            groupVault.keys = {};
-
-            await this.addMemberKey(groupVault, id.did, privateJwk);
-
-            for (const memberDID of Object.keys(members)) {
-                await this.addMemberKey(groupVault, memberDID, privateJwk);
+            if (!currentVault) {
+                throw new InvalidParameterError('groupVaultId');
+            }
+            if (currentVault.version === 1) {
+                return;
+            }
+            if (currentVault.version) {
+                throw new KeymasterError('Unsupported group vault version');
             }
 
-            await this.updateAsset(vaultId, { groupVault });
+            const { privateJwk, members } = await this.decryptGroupVault(currentVault, id.did);
+            currentVault.version = 1;
+            currentVault.keys = {};
+
+            await this.addMemberKey(currentVault, id.did, privateJwk);
+
+            for (const memberDID of Object.keys(members)) {
+                await this.addMemberKey(currentVault, memberDID, privateJwk);
+            }
+
+            if (!await this.updateDID(doc)) {
+                throw new KeymasterError('DID update was rejected. Please try again.');
+            }
             return;
         }
 

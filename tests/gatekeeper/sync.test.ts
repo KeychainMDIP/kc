@@ -1102,30 +1102,32 @@ describe('processEvents', () => {
         expect(response.added).toBe(4);
     });
 
-    it('should handle processing events with unknown previd property', async () => {
-        const mockPrevid = 'mockPrevid';
-
+    it('should keep an update pending until its preceding update arrives', async () => {
         const keypair = cipher.generateRandomJwk();
         const agentOp = await helper.createAgentOp(keypair);
-        const agentDID = await gatekeeper.createDID(agentOp);
-        const agentDoc = await gatekeeper.resolveDID(agentDID);
-        const updateOp1 = await helper.createUpdateOp(keypair, agentDID, agentDoc, { mockPrevid });
-        await gatekeeper.updateDID(updateOp1);
+        const did = await gatekeeper.createDID(agentOp);
+        const firstDoc = await gatekeeper.resolveDID(did);
+        firstDoc.didDocumentData = { step: 1 };
+        expect(await gatekeeper.updateDID(await helper.createUpdateOp(keypair, did, firstDoc))).toBe(true);
 
-        const assetOp = await helper.createAssetOp(agentDID, keypair);
-        const assetDID = await gatekeeper.createDID(assetOp);
-        const assetDoc = await gatekeeper.resolveDID(assetDID);
-        const updateOp2 = await helper.createUpdateOp(keypair, assetDID, assetDoc, { mockPrevid });
-        await gatekeeper.updateDID(updateOp2);
+        const secondDoc = await gatekeeper.resolveDID(did);
+        secondDoc.didDocumentData = { step: 2 };
+        expect(await gatekeeper.updateDID(await helper.createUpdateOp(keypair, did, secondDoc))).toBe(true);
 
-        const dids = await gatekeeper.exportDIDs();
-        const ops = dids.flat();
+        const events = await gatekeeper.exportDID(did);
+        expect(events[2].operation.previd).toBe(await gatekeeper.generateCID(events[1].operation));
         await gatekeeper.resetDb();
-        await gatekeeper.importBatch(ops);
+        await gatekeeper.importBatch([events[0], events[2]]);
 
-        const response = await gatekeeper.processEvents();
-        expect(response.added).toBe(2);
-        expect(response.pending).toBe(2);
+        const waiting = await gatekeeper.processEvents();
+        expect(waiting.added).toBe(1);
+        expect(waiting.pending).toBe(1);
+
+        await gatekeeper.importBatch([events[1]]);
+        const complete = await gatekeeper.processEvents();
+        expect(complete.added).toBe(2);
+        expect(complete.pending).toBe(0);
+        expect((await gatekeeper.resolveDID(did)).didDocumentData).toEqual({ step: 2 });
     });
 
     it('should reject events with duplicate previd property', async () => {
