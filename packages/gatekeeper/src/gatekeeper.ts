@@ -416,9 +416,6 @@ export default class Gatekeeper implements GatekeeperInterface {
         const invalid = invalidKeys.size;
         const verified = total - expired - invalid;
 
-        // Clear queue of permanently invalid events
-        this.eventsQueue = [];
-
         if (chatty) {
             const durationMs = Date.now() - verifyStart;
             this.log.debug({ durationMs }, 'verifyDb');
