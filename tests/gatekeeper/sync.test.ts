@@ -851,6 +851,63 @@ describe('processEvents', () => {
         ]);
     });
 
+    it('should reject a forged native confirmation that reuses a signature value', async () => {
+        const victim = cipher.generateRandomJwk();
+        const attacker = cipher.generateRandomJwk();
+        const agentOp = await helper.createAgentOp(victim, { registry: 'hyperswarm' });
+        const did = await gatekeeper.createDID(agentOp);
+        const [event] = await gatekeeper.exportDID(did);
+        const opid = await gatekeeper.generateCID(agentOp);
+        const forgedOperation = copyJSON(agentOp);
+        forgedOperation.publicJwk = attacker.publicJwk;
+
+        expect(await gatekeeper.verifyCreateOperation(forgedOperation)).toBe(false);
+
+        await gatekeeper.importBatch([{
+            ...event,
+            registry: 'hyperswarm',
+            opid,
+            operation: forgedOperation,
+        }]);
+        await expect(gatekeeper.processEvents()).resolves.toMatchObject({
+            added: 0,
+            merged: 0,
+            rejected: 1,
+        });
+
+        const [storedEvent] = await gatekeeper.exportDID(did);
+        const resolved = await gatekeeper.resolveDID(did);
+
+        expect(storedEvent.operation).toStrictEqual(agentOp);
+        expect(resolved.didDocument?.verificationMethod?.[0].publicKeyJwk).toStrictEqual(victim.publicJwk);
+    });
+
+    it('should verify an operation before merging native confirmation metadata', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await helper.createAgentOp(keypair, { registry: 'hyperswarm' });
+        const did = await gatekeeper.createDID(agentOp);
+        const [event] = await gatekeeper.exportDID(did);
+        const verify = jest.spyOn(gatekeeper, 'verifyCreateOperation').mockResolvedValueOnce(false);
+
+        try {
+            await gatekeeper.importBatch([{
+                ...event,
+                registry: 'hyperswarm',
+            }]);
+            await expect(gatekeeper.processEvents()).resolves.toMatchObject({
+                added: 0,
+                merged: 0,
+                rejected: 1,
+            });
+
+            const [storedEvent] = await gatekeeper.exportDID(did);
+            expect(storedEvent.registry).toBe('local');
+            expect(verify).toHaveBeenCalledWith(agentOp);
+        } finally {
+            verify.mockRestore();
+        }
+    });
+
     it('should resolve as confirmed when DID is imported from its native registry', async () => {
         const keypair = cipher.generateRandomJwk();
         const agentOp = await helper.createAgentOp(keypair, { version: 1, registry: 'TFTC' });
