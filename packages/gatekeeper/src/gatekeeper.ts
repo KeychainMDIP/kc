@@ -959,19 +959,40 @@ export default class Gatekeeper implements GatekeeperInterface {
                 const lockedDid = did;
                 const currentEvents = await this.db.getEvents(lockedDid);
 
-                for (const e of currentEvents) {
+                const eventOperationCid = await this.generateCID(event.operation);
+                let opMatchIndex = -1;
+
+                for (let i = 0; i < currentEvents.length; i++) {
+                    const e = currentEvents[i];
+                    const operationCid = await this.generateCID(e.operation);
+
                     if (!e.opid) {
-                        e.opid = await this.generateCID(e.operation);
+                        e.opid = operationCid;
+                    }
+
+                    if (opMatchIndex === -1 && operationCid === eventOperationCid) {
+                        opMatchIndex = i;
                     }
                 }
 
                 if (!event.opid) {
-                    event.opid = await this.generateCID(event.operation);
+                    event.opid = eventOperationCid;
                 }
 
-                const opMatch = currentEvents.find(item => item.operation.signature?.value === event.operation.signature?.value);
+                const opMatch = currentEvents[opMatchIndex];
 
                 if (opMatch) {
+                    const valid = event.operation.type === 'create'
+                        ? await this.verifyCreateOperation(event.operation)
+                        : await this.verifyUpdateOperation(
+                            event.operation,
+                            await this.resolveDID(lockedDid, { versionSequence: opMatchIndex })
+                        );
+
+                    if (!valid) {
+                        return ImportStatus.REJECTED;
+                    }
+
                     const first = currentEvents[0];
                     const nativeRegistry = first.operation.mdip?.registry;
 
@@ -981,9 +1002,13 @@ export default class Gatekeeper implements GatekeeperInterface {
                     }
 
                     if (event.registry === nativeRegistry) {
-                        // If this import is on the native registry, replace the current one
-                        const index = currentEvents.indexOf(opMatch);
-                        currentEvents[index] = event;
+                        // If this import is on the native registry, merge its confirmation metadata
+                        currentEvents[opMatchIndex] = {
+                            ...event,
+                            did: lockedDid,
+                            opid: eventOperationCid,
+                            operation: opMatch.operation,
+                        };
                         await this.mutateDID(lockedDid, () => this.db.setEvents(lockedDid, currentEvents));
                         return ImportStatus.ADDED;
                     }
