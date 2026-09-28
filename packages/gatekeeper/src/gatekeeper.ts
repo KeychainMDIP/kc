@@ -591,6 +591,13 @@ export default class Gatekeeper implements GatekeeperInterface {
         }
     }
 
+    private getVerifiedOperationHash(operation: Operation): string | null {
+        const operationCopy = copyJSON(operation);
+        delete operationCopy.signature;
+        const msgHash = this.cipher.hashJSON(operationCopy);
+        return operation.signature?.hash === msgHash ? msgHash : null;
+    }
+
     private operationExceedsMaxBytes(operation: Operation): boolean {
         return Buffer.byteLength(JSON.stringify(operation), 'utf8') > this.maxOpBytes;
     }
@@ -642,10 +649,10 @@ export default class Gatekeeper implements GatekeeperInterface {
                 throw new InvalidOperationError('publicJwk');
             }
 
-            const operationCopy = copyJSON(operation);
-            delete operationCopy.signature;
-
-            const msgHash = this.cipher.hashJSON(operationCopy);
+            const msgHash = this.getVerifiedOperationHash(operation);
+            if (!msgHash) {
+                return false;
+            }
             return this.verifySignature(msgHash, operation.signature!.value, operation.publicJwk);
         }
 
@@ -668,9 +675,10 @@ export default class Gatekeeper implements GatekeeperInterface {
                 throw new InvalidOperationError(`non-local registry=${operation.mdip.registry}`);
             }
 
-            const operationCopy = copyJSON(operation);
-            delete operationCopy.signature;
-            const msgHash = this.cipher.hashJSON(operationCopy);
+            const msgHash = this.getVerifiedOperationHash(operation);
+            if (!msgHash) {
+                return false;
+            }
             if (!doc.didDocument ||
                 !doc.didDocument.verificationMethod ||
                 doc.didDocument.verificationMethod.length === 0 ||
@@ -1233,6 +1241,10 @@ export default class Gatekeeper implements GatekeeperInterface {
         }
 
         if (!this.verifySignatureFormat(operation.signature)) {
+            return false;
+        }
+
+        if (operation.type === 'create' && !this.getVerifiedOperationHash(operation)) {
             return false;
         }
 
