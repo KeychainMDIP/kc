@@ -34,6 +34,40 @@ beforeEach(async () => {
 
 describe('verifyDb', () => {
 
+    it('should preserve deferred events during database verification', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await helper.createAgentOp(keypair);
+        const did = await gatekeeper.createDID(agentOp);
+        const doc = await gatekeeper.resolveDID(did);
+        const updateOp = await helper.createUpdateOp(keypair, did, doc);
+        await gatekeeper.updateDID(updateOp);
+        const events = await gatekeeper.exportDID(did);
+        await gatekeeper.resetDb();
+
+        await gatekeeper.importBatch([events[1]]);
+        await expect(gatekeeper.processEvents()).resolves.toMatchObject({ pending: 1 });
+        await expect(gatekeeper.verifyDb({ chatty: false })).resolves.toStrictEqual({
+            total: 0,
+            verified: 0,
+            expired: 0,
+            invalid: 0,
+        });
+        await expect(gatekeeper.importBatch([events[1]])).resolves.toMatchObject({
+            queued: 0,
+            processed: 1,
+            total: 1,
+        });
+
+        await gatekeeper.importBatch([events[0]]);
+        await expect(gatekeeper.processEvents()).resolves.toMatchObject({
+            added: 2,
+            pending: 0,
+        });
+        await expect(gatekeeper.resolveDID(did)).resolves.toMatchObject({
+            didDocumentMetadata: { version: '2' },
+        });
+    });
+
     it('should verify all DIDs in db', async () => {
         const keypair = cipher.generateRandomJwk();
         const agentOp = await helper.createAgentOp(keypair);
