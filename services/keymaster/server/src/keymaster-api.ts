@@ -184,7 +184,7 @@ else {
 }
 
 app.use(logRequest);
-app.use(express.json());
+app.use(express.json({ limit: config.jsonLimit }));
 
 // Define __dirname in ES module scope
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
