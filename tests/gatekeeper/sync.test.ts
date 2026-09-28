@@ -1,6 +1,7 @@
 import CipherNode from '@mdip/cipher/node';
 import Gatekeeper from '@mdip/gatekeeper';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory.ts';
+import { Operation } from '@mdip/gatekeeper/types';
 import { copyJSON } from '@mdip/common/utils';
 import { ExpectedExceptionError } from '@mdip/common/errors';
 import HeliaClient from '@mdip/ipfs/helia';
@@ -19,6 +20,12 @@ const db = new DbJsonMemory('test');
 const ipfs = new HeliaClient();
 const gatekeeper = new Gatekeeper({ db, ipfs, console: mockConsole, registries: ['local', 'hyperswarm', 'TFTC'] });
 const helper = new TestHelper(gatekeeper, cipher);
+
+function setOperationHash(operation: Operation): void {
+    const operationCopy = copyJSON(operation);
+    delete operationCopy.signature;
+    operation.signature!.hash = cipher.hashJSON(operationCopy);
+}
 
 beforeAll(async () => {
     await ipfs.start();
@@ -489,6 +496,7 @@ describe('importBatch', () => {
         const ops = await gatekeeper.exportDID(did);
 
         delete ops[0].operation.created;
+        setOperationHash(ops[0].operation);
 
         const response = await gatekeeper.importBatch(ops);
 
@@ -502,6 +510,7 @@ describe('importBatch', () => {
         const ops = await gatekeeper.exportDID(did);
 
         delete ops[0].operation.mdip;
+        setOperationHash(ops[0].operation);
 
         const response = await gatekeeper.importBatch(ops);
 
@@ -515,6 +524,7 @@ describe('importBatch', () => {
         const ops = await gatekeeper.exportDID(did);
 
         ops[0].operation.mdip!.version = -1;
+        setOperationHash(ops[0].operation);
 
         const response = await gatekeeper.importBatch(ops);
 
@@ -529,6 +539,7 @@ describe('importBatch', () => {
 
         // @ts-expect-error Testing invalid usage
         ops[0].operation.mdip!.type = 'mock';
+        setOperationHash(ops[0].operation);
 
         const response = await gatekeeper.importBatch(ops);
 
@@ -542,6 +553,7 @@ describe('importBatch', () => {
         const ops = await gatekeeper.exportDID(did);
 
         ops[0].operation.mdip!.registry = 'mock';
+        setOperationHash(ops[0].operation);
 
         const response = await gatekeeper.importBatch(ops);
 
@@ -607,6 +619,7 @@ describe('importBatch', () => {
         const ops = await gatekeeper.exportDID(did);
 
         delete ops[0].operation.publicJwk;
+        setOperationHash(ops[0].operation);
 
         const response = await gatekeeper.importBatch(ops);
 
@@ -622,6 +635,7 @@ describe('importBatch', () => {
         const ops = await gatekeeper.exportDID(assetDID);
 
         ops[0].operation.controller = 'mock';
+        setOperationHash(ops[0].operation);
 
         const response = await gatekeeper.importBatch(ops);
 
@@ -698,6 +712,41 @@ describe('importBatch', () => {
 });
 
 describe('processEvents', () => {
+    it('should reject a create operation that declares another operation hash', async () => {
+        const attacker = cipher.generateRandomJwk();
+        const victim = cipher.generateRandomJwk();
+        const attackerOp = await helper.createAgentOp(attacker, { registry: 'hyperswarm' });
+        const victimOp = await helper.createAgentOp(victim, { registry: 'hyperswarm' });
+        attackerOp.signature!.hash = victimOp.signature!.hash;
+
+        expect(await gatekeeper.verifyCreateOperation(attackerOp)).toBe(false);
+        attackerOp.created = 'invalid';
+
+        const rejected = await gatekeeper.importBatch([{
+            registry: 'hyperswarm',
+            time: victimOp.created!,
+            operation: attackerOp,
+        }]);
+        expect(rejected).toMatchObject({ queued: 0, rejected: 1 });
+
+        const imported = await gatekeeper.importBatch([{
+            registry: 'hyperswarm',
+            time: victimOp.created!,
+            operation: victimOp,
+        }]);
+        expect(imported).toMatchObject({ queued: 1, processed: 0 });
+        await expect(gatekeeper.processEvents()).resolves.toMatchObject({ added: 1 });
+
+        const victimDid = await gatekeeper.generateDID(victimOp);
+        await expect(gatekeeper.resolveDID(victimDid)).resolves.toMatchObject({
+            didDocument: { id: victimDid },
+        });
+
+        const assetOp = await helper.createAssetOp(victimDid, victim, { registry: 'hyperswarm' });
+        assetOp.signature!.hash = victimOp.signature!.hash;
+        expect(await gatekeeper.verifyCreateOperation(assetOp)).toBe(false);
+    });
+
     it('should import a valid agent DID export', async () => {
         const keypair = cipher.generateRandomJwk();
         const agentOp = await helper.createAgentOp(keypair);
