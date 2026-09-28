@@ -6,6 +6,8 @@ import WalletJsonMemory from '@mdip/keymaster/wallet/json-memory';
 import { ExpectedExceptionError, UnknownIDError } from '@mdip/common/errors';
 import HeliaClient from '@mdip/ipfs/helia';
 import { MdipDocument } from "@mdip/gatekeeper/types";
+import { copyJSON } from '@mdip/common/utils';
+import { jest } from '@jest/globals';
 
 let ipfs: HeliaClient;
 let gatekeeper: Gatekeeper;
@@ -194,13 +196,33 @@ describe('updateDID', () => {
 
         const dataUpdated = { name: 'updated' };
         doc.didDocumentData = dataUpdated;
+        const snapshot = copyJSON(doc);
 
         const ok = await keymaster.updateDID(doc);
         const doc2 = await keymaster.resolveDID(dataDid);
 
         expect(ok).toBe(true);
+        expect(doc).toStrictEqual(snapshot);
         expect(doc2.didDocumentData).toStrictEqual(dataUpdated);
         expect(doc2.didDocumentMetadata!.version).toBe("2");
+    });
+
+    it('should preserve the source version after a rejected update', async () => {
+        await keymaster.createId('Bob');
+        const did = await keymaster.createAsset({ value: 0 });
+        const doc = await keymaster.resolveDID(did);
+        doc.didDocumentData = { value: 1 };
+        const snapshot = copyJSON(doc);
+        const update = jest.spyOn(gatekeeper, 'updateDID').mockResolvedValueOnce(false);
+
+        expect(await keymaster.updateDID(doc)).toBe(false);
+        update.mockRestore();
+        expect(doc).toStrictEqual(snapshot);
+
+        expect(await keymaster.updateAsset(did, { value: 2 })).toBe(true);
+        expect(await keymaster.updateDID(doc)).toBe(false);
+        expect(doc).toStrictEqual(snapshot);
+        expect((await keymaster.resolveDID(did)).didDocumentData).toEqual({ value: 2 });
     });
 
     it('should create updates accepted by another gatekeeper', async () => {

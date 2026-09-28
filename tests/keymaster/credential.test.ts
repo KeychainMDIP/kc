@@ -216,6 +216,20 @@ describe('unpublishCredential', () => {
         expect(manifest).toStrictEqual({});
     });
 
+    it('should not report success when the manifest update is rejected', async () => {
+        const bob = await keymaster.createId('Bob');
+        const schema = await keymaster.createSchema(mockSchema);
+        const did = await keymaster.issueCredential(await keymaster.bindCredential(schema, bob));
+        await keymaster.publishCredential(did);
+        const update = jest.spyOn(keymaster, 'updateDID').mockResolvedValueOnce(false);
+
+        await expect(keymaster.unpublishCredential(did)).rejects.toThrow('update DID failed');
+        update.mockRestore();
+        const doc = await keymaster.resolveDID(bob);
+        const manifest = (doc.didDocumentData as { manifest: Record<string, VerifiableCredential> }).manifest;
+        expect(manifest).toHaveProperty(did);
+    });
+
     it('should throw an exception when no current ID', async () => {
         try {
             await keymaster.unpublishCredential('mock');

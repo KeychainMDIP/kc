@@ -824,9 +824,15 @@ export default class Gatekeeper implements GatekeeperInterface {
 
         return this.withDidLock(operation.did, async () => {
             const doc = await this.resolveDID(operation.did);
+
             const updateValid = await this.verifyUpdateOperation(operation, doc);
 
             if (!updateValid) {
+                return false;
+            }
+
+            // Legacy compatibility: updates without previd cannot be checked for staleness.
+            if (operation.previd !== undefined && operation.previd !== doc.didDocumentMetadata?.versionId) {
                 return false;
             }
 

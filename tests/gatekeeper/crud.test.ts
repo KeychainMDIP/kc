@@ -704,6 +704,38 @@ describe('updateDID', () => {
         expect(updatedDoc).toStrictEqual(doc);
     });
 
+    it('should reject an update whose previd is no longer current', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const did = await gatekeeper.createDID(await helper.createAgentOp(keypair));
+        const firstDoc = await gatekeeper.resolveDID(did);
+        const staleDoc = await gatekeeper.resolveDID(did);
+        firstDoc.didDocumentData = { member: 'Alice' };
+        staleDoc.didDocumentData = { member: 'Bob' };
+        const first = await helper.createUpdateOp(keypair, did, firstDoc);
+        const stale = await helper.createUpdateOp(keypair, did, staleDoc);
+
+        expect(await gatekeeper.updateDID(first)).toBe(true);
+        expect(await gatekeeper.updateDID(stale)).toBe(false);
+        expect((await gatekeeper.resolveDID(did)).didDocumentData).toEqual({ member: 'Alice' });
+        expect((await db.getEvents(did))).toHaveLength(2);
+    });
+
+    it('should still update a DID whose earlier operation had no previd', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const did = await gatekeeper.createDID(await helper.createAgentOp(keypair));
+        const legacyDoc = await gatekeeper.resolveDID(did);
+        legacyDoc.didDocumentData = { member: 'Alice' };
+        const legacy = await helper.createUpdateOp(keypair, did, legacyDoc, { excludePrevid: true });
+        expect(await gatekeeper.updateDID(legacy)).toBe(true);
+
+        const current = await gatekeeper.resolveDID(did);
+        current.didDocumentData = { member: 'Bob' };
+        const next = await helper.createUpdateOp(keypair, did, current);
+        expect(next.previd).toBe(current.didDocumentMetadata?.versionId);
+        expect(await gatekeeper.updateDID(next)).toBe(true);
+        expect((await gatekeeper.resolveDID(did, { verify: true })).didDocumentData).toEqual({ member: 'Bob' });
+    });
+
     it('should increment version with each update', async () => {
         const keypair = cipher.generateRandomJwk();
         const agentOp = await helper.createAgentOp(keypair);
