@@ -906,18 +906,21 @@ describe('processEvents', () => {
         const agentOp = await helper.createAgentOp(victim, { registry: 'hyperswarm' });
         const did = await gatekeeper.createDID(agentOp);
         const [event] = await gatekeeper.exportDID(did);
-        const opid = await gatekeeper.generateCID(agentOp);
         const forgedOperation = copyJSON(agentOp);
         forgedOperation.publicJwk = attacker.publicJwk;
+        const unsignedForgedOperation = copyJSON(forgedOperation);
+        delete unsignedForgedOperation.signature;
+        forgedOperation.signature!.hash = cipher.hashJSON(unsignedForgedOperation);
+        const forgedOpid = await gatekeeper.generateCID(forgedOperation);
 
         expect(await gatekeeper.verifyCreateOperation(forgedOperation)).toBe(false);
 
-        await gatekeeper.importBatch([{
+        await expect(gatekeeper.importBatch([{
             ...event,
             registry: 'hyperswarm',
-            opid,
+            opid: forgedOpid,
             operation: forgedOperation,
-        }]);
+        }])).resolves.toMatchObject({ queued: 1, rejected: 0 });
         await expect(gatekeeper.processEvents()).resolves.toMatchObject({
             added: 0,
             merged: 0,
