@@ -117,6 +117,14 @@ export default class Gatekeeper implements GatekeeperInterface {
         return did.split(':').pop() || did;
     }
 
+    private async didMatchesOperation(did: string, operation: Operation): Promise<boolean> {
+        const operationDID = operation.type === 'create'
+            ? await this.generateDID(operation)
+            : operation.did;
+
+        return !!operationDID && this.didKey(did) === this.didKey(operationDID);
+    }
+
     private async readForResolution<T>(read: () => Promise<T>): Promise<T> {
         try {
             return await read();
@@ -826,21 +834,30 @@ export default class Gatekeeper implements GatekeeperInterface {
         );
     }
 
-    async queueOperation(registry: string, operation: Operation) {
-        // Don't distribute local DIDs
+    private publicationRegistries(registry: string): string[] {
         if (registry === 'local') {
+            return [];
+        }
+        return registry === 'hyperswarm'
+            ? ['hyperswarm']
+            : ['hyperswarm', registry];
+    }
+
+    private async checkQueueCapacity(registry: string, queueSize?: number): Promise<void> {
+        if (registry === 'local' || registry === 'hyperswarm') {
             return;
         }
+        const size = queueSize ?? (await this.db.getQueue(registry)).length;
+        if (size >= this.maxQueueSize) {
+            this.supportedRegistries = this.supportedRegistries.filter(reg => reg !== registry);
+        }
+    }
 
-        // Always distribute on hyperswarm
-        await this.db.queueOperation('hyperswarm', operation);
-
-        // Distribute on specified registry
-        if (registry !== 'hyperswarm') {
-            const queueSize = await this.db.queueOperation(registry, operation);
-
-            if (queueSize >= this.maxQueueSize) {
-                this.supportedRegistries = this.supportedRegistries.filter(reg => reg !== registry);
+    async queueOperation(registry: string, operation: Operation) {
+        for (const target of this.publicationRegistries(registry)) {
+            const queueSize = await this.db.queueOperation(target, operation);
+            if (target === registry) {
+                await this.checkQueueCapacity(registry, queueSize);
             }
         }
     }
@@ -872,14 +889,14 @@ export default class Gatekeeper implements GatekeeperInterface {
                 throw new InvalidOperationError('controller cycle');
             }
 
-            await this.mutateDID(did, () => this.db.addEvent(did, {
+            await this.mutateDID(did, () => this.db.addEventAndQueue(did, {
                 registry: 'local',
                 time: operation.created!,
                 ordinal: [0],
                 operation,
                 did
-            }));
-            await this.queueOperation(registry, operation);
+            }, this.publicationRegistries(registry)));
+            await this.checkQueueCapacity(registry);
             return did;
         }));
     }
@@ -943,14 +960,14 @@ export default class Gatekeeper implements GatekeeperInterface {
                 throw new InvalidOperationError(`registry ${registry} not supported`);
             }
 
-            await this.mutateDID(operation.did!, () => this.db.addEvent(operation.did!, {
+            await this.mutateDID(operation.did!, () => this.db.addEventAndQueue(operation.did!, {
                 registry: 'local',
                 time: operation.signature?.signed || '',
                 ordinal: [0],
                 operation,
                 did: operation.did
-            }));
-            await this.queueOperation(registry, operation);
+            }, this.publicationRegistries(registry)));
+            await this.checkQueueCapacity(registry);
 
             return true;
         }));
@@ -1057,7 +1074,7 @@ export default class Gatekeeper implements GatekeeperInterface {
             }
 
             const did = event.did;
-            if (!did) {
+            if (!did || !(await this.didMatchesOperation(did, event.operation))) {
                 return ImportStatus.REJECTED;
             }
 
@@ -1095,7 +1112,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                             await this.resolveDID(lockedDid, { versionSequence: opMatchIndex })
                         );
 
-                    if (!valid) {
+                    if (!valid || !(await this.didMatchesOperation(lockedDid, event.operation))) {
                         return ImportStatus.REJECTED;
                     }
 
@@ -1123,7 +1140,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                 } else {
                     const ok = await this.verifyOperation(event.operation);
 
-                    if (!ok) {
+                    if (!ok || !(await this.didMatchesOperation(lockedDid, event.operation))) {
                         return ImportStatus.REJECTED;
                     }
 
@@ -1395,7 +1412,7 @@ export default class Gatekeeper implements GatekeeperInterface {
             return false;
         }
 
-        return true;
+        return !event.did || this.didMatchesOperation(event.did, event.operation);
     }
 
     async importBatch(batch: GatekeeperEvent[]): Promise<ImportBatchResult> {

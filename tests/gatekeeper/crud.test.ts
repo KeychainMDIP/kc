@@ -42,6 +42,24 @@ describe('createDID', () => {
         expect(did.startsWith('did:test:')).toBe(true);
     });
 
+    it('should not persist a DID when its publication queues cannot be committed', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await helper.createAgentOp(keypair, { registry: 'TFTC' });
+        const did = await gatekeeper.generateDID(agentOp);
+        const addEvent = jest.spyOn(db, 'addEventAndQueue').mockRejectedValueOnce(new Error('queue failure'));
+
+        await expect(gatekeeper.createDID(agentOp)).rejects.toThrow('queue failure');
+        addEvent.mockRestore();
+
+        await expect(gatekeeper.exportDID(did)).resolves.toStrictEqual([]);
+        await expect(gatekeeper.getQueue('hyperswarm')).resolves.toStrictEqual([]);
+        await expect(gatekeeper.getQueue('TFTC')).resolves.toStrictEqual([]);
+
+        await expect(gatekeeper.createDID(agentOp)).resolves.toBe(did);
+        await expect(gatekeeper.getQueue('hyperswarm')).resolves.toStrictEqual([agentOp]);
+        await expect(gatekeeper.getQueue('TFTC')).resolves.toStrictEqual([agentOp]);
+    });
+
     it('should create DID for local registry', async () => {
         const keypair = cipher.generateRandomJwk();
         const agentOp = await helper.createAgentOp(keypair, { version: 1, registry: 'local' });
@@ -817,19 +835,19 @@ describe('updateDID', () => {
         assetBDoc.didDocument!.controller = assetA;
         const updateB = await helper.createUpdateOp(keypair, assetB, assetBDoc);
 
-        const originalAddEvent = db.addEvent.bind(db);
+        const originalAddEventAndQueue = db.addEventAndQueue.bind(db);
         let signalStarted: () => void = () => { };
         let releaseFirst: () => void = () => { };
         const started = new Promise<void>(resolve => (signalStarted = resolve));
         const release = new Promise<void>(resolve => (releaseFirst = resolve));
         let pauseFirst = true;
-        const addEvent = jest.spyOn(db, 'addEvent').mockImplementation(async (did, event) => {
+        const addEvent = jest.spyOn(db, 'addEventAndQueue').mockImplementation(async (did, event, registries) => {
             if (pauseFirst && did === assetA && event.operation.type === 'update') {
                 pauseFirst = false;
                 signalStarted();
                 await release;
             }
-            return originalAddEvent(did, event);
+            return originalAddEventAndQueue(did, event, registries);
         });
 
         try {
@@ -876,6 +894,30 @@ describe('updateDID', () => {
         updateDoc.didDocumentData = { updated: true };
         const update = await helper.createUpdateOp(keypair, assetA, updateDoc);
         expect(await gatekeeper.updateDID(update)).toBe(false);
+    });
+
+    it('should not persist an update when its publication queues cannot be committed', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await helper.createAgentOp(keypair, { registry: 'TFTC' });
+        const did = await gatekeeper.createDID(agentOp);
+        await gatekeeper.clearQueue('hyperswarm', [agentOp]);
+        await gatekeeper.clearQueue('TFTC', [agentOp]);
+        const doc = await gatekeeper.resolveDID(did);
+        doc.didDocumentData = { mock: 1 };
+        const updateOp = await helper.createUpdateOp(keypair, did, doc);
+        const addEvent = jest.spyOn(db, 'addEventAndQueue').mockRejectedValueOnce(new Error('queue failure'));
+
+        await expect(gatekeeper.updateDID(updateOp)).rejects.toThrow('queue failure');
+        addEvent.mockRestore();
+
+        await expect(gatekeeper.exportDID(did)).resolves.toHaveLength(1);
+        await expect(gatekeeper.getQueue('hyperswarm')).resolves.toStrictEqual([]);
+        await expect(gatekeeper.getQueue('TFTC')).resolves.toStrictEqual([]);
+
+        await expect(gatekeeper.updateDID(updateOp)).resolves.toBe(true);
+        await expect(gatekeeper.exportDID(did)).resolves.toHaveLength(2);
+        await expect(gatekeeper.getQueue('hyperswarm')).resolves.toStrictEqual([updateOp]);
+        await expect(gatekeeper.getQueue('TFTC')).resolves.toStrictEqual([updateOp]);
     });
 
     it('should reject an update whose previd is no longer current', async () => {

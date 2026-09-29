@@ -83,6 +83,10 @@ export abstract class AbstractJson implements GatekeeperDb {
     }
 
     async addEvent(did: string, event: GatekeeperEvent): Promise<void> {
+        return this.addEventAndQueue(did, event, []);
+    }
+
+    async addEventAndQueue(did: string, event: GatekeeperEvent, queueRegistries: string[]): Promise<void> {
         const suffix = this.splitSuffix(did);
         return this.runExclusive(async () => {
             const db = this.loadDb();
@@ -96,6 +100,11 @@ export abstract class AbstractJson implements GatekeeperDb {
                 did,
                 event,
             });
+            for (const registry of queueRegistries) {
+                db.queue ??= {};
+                db.queue[registry] ??= [];
+                db.queue[registry].push(event.operation);
+            }
             this.writeDb(db);
         });
     }

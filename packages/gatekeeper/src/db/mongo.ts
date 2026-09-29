@@ -32,6 +32,12 @@ interface QueueDoc {
     ops: Operation[]
 }
 
+interface DuplicateQueueDoc {
+    _id: string
+    operationBatches: Operation[][]
+    count: number
+}
+
 interface CounterDoc {
     id: string;
     value: number;
@@ -55,6 +61,13 @@ function isNamespaceNotFoundError(error: unknown): boolean {
             ('code' in error && error.code === 26)
             || ('codeName' in error && error.codeName === 'NamespaceNotFound')
         );
+}
+
+function isDuplicateKeyError(error: unknown): boolean {
+    return typeof error === 'object'
+        && error !== null
+        && 'code' in error
+        && error.code === 11000;
 }
 
 const MONGO_NOT_STARTED_ERROR = 'Mongo not started. Call start() first.';
@@ -91,6 +104,7 @@ export default class DbMongo implements GatekeeperDb {
             await this.verifyTransactionSupport();
             this.db = this.client.db(this.dbName);
             await this.ensureIndex('dids', { id: 1 }, { name: 'dids_id_unique', unique: true });
+            await this.ensureQueueIndex();
             await this.ensureIndex('blocks', { registry: 1, height: -1 }, { name: 'blocks_registry_height' });  // for latest and height lookups
             await this.ensureIndex('blocks', { registry: 1, hash: 1 }, { name: 'blocks_registry_hash_unique', unique: true });  // for hash lookup
             await this.ensureIndex('counters', { id: 1 }, { name: 'counters_id_unique', unique: true });
@@ -202,6 +216,53 @@ export default class DbMongo implements GatekeeperDb {
         }
 
         await collection.createIndex(key, options);
+    }
+
+    private async ensureQueueIndex(): Promise<void> {
+        try {
+            await this.ensureIndex('queue', { id: 1 }, { name: 'queue_id_unique', unique: true });
+        }
+        catch (error) {
+            if (!isDuplicateKeyError(error)) {
+                throw error;
+            }
+
+            await this.mergeDuplicateQueues();
+            await this.ensureIndex('queue', { id: 1 }, { name: 'queue_id_unique', unique: true });
+        }
+    }
+
+    private async mergeDuplicateQueues(): Promise<void> {
+        if (!this.db) {
+            throw new Error(MONGO_NOT_STARTED_ERROR);
+        }
+
+        const collection = this.db.collection<QueueDoc>('queue');
+        const duplicates = await collection.aggregate<DuplicateQueueDoc>([
+            { $sort: { _id: 1 } },
+            {
+                $group: {
+                    _id: '$id',
+                    operationBatches: { $push: '$ops' },
+                    count: { $sum: 1 },
+                }
+            },
+            { $match: { count: { $gt: 1 } } },
+        ]).toArray();
+
+        if (duplicates.length === 0) {
+            return;
+        }
+
+        await this.withTransaction(async session => {
+            for (const duplicate of duplicates) {
+                await collection.deleteMany({ id: duplicate._id }, { session });
+                await collection.insertOne({
+                    id: duplicate._id,
+                    ops: duplicate.operationBatches.flat(),
+                }, { session });
+            }
+        });
     }
 
     private isValidCounterValue(value: unknown): value is number {
@@ -325,6 +386,10 @@ export default class DbMongo implements GatekeeperDb {
     }
 
     async addEvent(did: string, event: GatekeeperEvent): Promise<number> {
+        return this.addEventAndQueue(did, event, []);
+    }
+
+    async addEventAndQueue(did: string, event: GatekeeperEvent, queueRegistries: string[]): Promise<number> {
         if (!this.db) {
             throw new Error(MONGO_NOT_STARTED_ERROR)
         }
@@ -349,6 +414,13 @@ export default class DbMongo implements GatekeeperDb {
                 did,
                 event,
             }, session);
+            for (const registry of queueRegistries) {
+                await this.db!.collection<QueueDoc>('queue').updateOne(
+                    { id: registry },
+                    { $push: { ops: event.operation } },
+                    { upsert: true, session }
+                );
+            }
             return count
         });
     }

@@ -192,6 +192,10 @@ export default class DbSqlite implements GatekeeperDb {
     }
 
     async addEvent(did: string, event: GatekeeperEvent): Promise<number> {
+        return this.addEventAndQueue(did, event, []);
+    }
+
+    async addEventAndQueue(did: string, event: GatekeeperEvent, queueRegistries: string[]): Promise<number> {
         if (!did) {
             throw new InvalidDIDError();
         }
@@ -207,6 +211,9 @@ export default class DbSqlite implements GatekeeperDb {
                     did,
                     event,
                 });
+                for (const registry of queueRegistries) {
+                    await this.queueOperationStrict(registry, event.operation);
+                }
                 return changes;
             })
         );
@@ -323,22 +330,24 @@ export default class DbSqlite implements GatekeeperDb {
         );
     }
 
-    async queueOperation(registry: string, op: Operation): Promise<number> {
+    private async queueOperationStrict(registry: string, op: Operation): Promise<number> {
         if (!this.db) {
-            throw new Error(SQLITE_NOT_STARTED_ERROR)
+            throw new Error(SQLITE_NOT_STARTED_ERROR);
         }
 
-        return this.runExclusive(async () =>
-            this.withTx(async () => {
-                const ops = await this.getQueueStrict(registry);
-                ops.push(op);
-                await this.db!.run(
-                    `INSERT OR REPLACE INTO queue(id, ops) VALUES(?, ?)`,
-                    registry,
-                    JSON.stringify(ops)
-                );
-                return ops.length;
-            })
+        const ops = await this.getQueueStrict(registry);
+        ops.push(op);
+        await this.db.run(
+            `INSERT OR REPLACE INTO queue(id, ops) VALUES(?, ?)`,
+            registry,
+            JSON.stringify(ops)
+        );
+        return ops.length;
+    }
+
+    async queueOperation(registry: string, op: Operation): Promise<number> {
+        return this.runExclusive(() =>
+            this.withTx(() => this.queueOperationStrict(registry, op))
         );
     }
 

@@ -850,6 +850,120 @@ describe('processEvents', () => {
         expect((await gatekeeper.resolveDID(assetA)).didDocument!.controller).toBe(assetC);
     });
 
+    it('rejects a create event that targets another DID before deduplication', async () => {
+        const attackerOp = await helper.createAgentOp(cipher.generateRandomJwk(), { registry: 'hyperswarm' });
+        const victimOp = await helper.createAgentOp(cipher.generateRandomJwk(), { registry: 'hyperswarm' });
+        const attackerDid = await gatekeeper.generateDID(attackerOp);
+        const victimDid = await gatekeeper.generateDID(victimOp);
+        const event = {
+            registry: 'hyperswarm',
+            time: attackerOp.created!,
+            did: victimDid,
+            operation: attackerOp,
+        };
+
+        await expect(gatekeeper.importBatch([event])).resolves.toMatchObject({
+            queued: 0,
+            rejected: 1,
+            rejectedIndices: [0],
+        });
+        await expect(gatekeeper.importEvent(event)).resolves.toBe('rejected');
+
+        event.did = attackerDid;
+        await expect(gatekeeper.importBatch([event])).resolves.toMatchObject({
+            queued: 1,
+            rejected: 0,
+        });
+    });
+
+    it('rejects update and delete events that target another DID', async () => {
+        const attackerKeys = cipher.generateRandomJwk();
+        const victimKeys = cipher.generateRandomJwk();
+        const attackerDid = await gatekeeper.createDID(await helper.createAgentOp(attackerKeys));
+        const victimDid = await gatekeeper.createDID(await helper.createAgentOp(victimKeys));
+        const attackerDoc = await gatekeeper.resolveDID(attackerDid);
+        const operations = [
+            await helper.createUpdateOp(attackerKeys, attackerDid, attackerDoc),
+            await helper.createDeleteOp(attackerKeys, attackerDid),
+        ];
+
+        for (const operation of operations) {
+            await expect(gatekeeper.importBatch([{
+                registry: 'hyperswarm',
+                time: operation.signature!.signed,
+                did: victimDid,
+                operation,
+            }])).resolves.toMatchObject({
+                queued: 0,
+                rejected: 1,
+                rejectedIndices: [0],
+            });
+        }
+
+        await expect(gatekeeper.exportDID(attackerDid)).resolves.toHaveLength(1);
+        await expect(gatekeeper.exportDID(victimDid)).resolves.toHaveLength(1);
+    });
+
+    it('accepts event DID aliases with the same canonical suffix', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const create = await helper.createAgentOp(keypair, { registry: 'hyperswarm' });
+        const did = await gatekeeper.createDID(create);
+        const doc = await gatekeeper.resolveDID(did);
+        doc.didDocumentData = { mock: 1 };
+        await gatekeeper.updateDID(await helper.createUpdateOp(keypair, did, doc));
+        const events = await gatekeeper.exportDID(did);
+        const alias = `did:mdip:${did.split(':').pop()}`;
+        events.forEach(event => (event.did = alias));
+        await gatekeeper.resetDb();
+
+        await expect(gatekeeper.importBatch(events)).resolves.toMatchObject({
+            queued: 2,
+            rejected: 0,
+        });
+        await expect(gatekeeper.processEvents()).resolves.toMatchObject({
+            added: 2,
+            rejected: 0,
+            pending: 0,
+        });
+        await expect(gatekeeper.exportDID(did)).resolves.toHaveLength(2);
+    });
+
+    it('revalidates the locked event target after operation verification', async () => {
+        const attackerKeys = cipher.generateRandomJwk();
+        const victimKeys = cipher.generateRandomJwk();
+        const attackerDid = await gatekeeper.createDID(await helper.createAgentOp(attackerKeys));
+        const victimDid = await gatekeeper.createDID(await helper.createAgentOp(victimKeys));
+        const attackerDoc = await gatekeeper.resolveDID(attackerDid);
+        const operation = await helper.createUpdateOp(attackerKeys, attackerDid, attackerDoc);
+        const event = {
+            registry: 'hyperswarm',
+            time: operation.signature!.signed,
+            did: attackerDid,
+            operation,
+        };
+        await gatekeeper.importBatch([event]);
+        const originalVerifyOperation = gatekeeper.verifyOperation.bind(gatekeeper);
+        const verifyOperation = jest.spyOn(gatekeeper, 'verifyOperation').mockImplementationOnce(async op => {
+            const valid = await originalVerifyOperation(op);
+            op.did = victimDid;
+            event.did = victimDid;
+            return valid;
+        });
+
+        try {
+            await expect(gatekeeper.processEvents()).resolves.toMatchObject({
+                added: 0,
+                rejected: 1,
+                pending: 0,
+            });
+            await expect(gatekeeper.exportDID(attackerDid)).resolves.toHaveLength(1);
+            await expect(gatekeeper.exportDID(victimDid)).resolves.toHaveLength(1);
+        }
+        finally {
+            verifyOperation.mockRestore();
+        }
+    });
+
     it('should reject a create operation that declares another operation hash', async () => {
         const attacker = cipher.generateRandomJwk();
         const victim = cipher.generateRandomJwk();
@@ -1058,11 +1172,10 @@ describe('processEvents', () => {
             registry: 'hyperswarm',
             opid: forgedOpid,
             operation: forgedOperation,
-        }])).resolves.toMatchObject({ queued: 1, rejected: 0 });
-        await expect(gatekeeper.processEvents()).resolves.toMatchObject({
-            added: 0,
-            merged: 0,
+        }])).resolves.toMatchObject({
+            queued: 0,
             rejected: 1,
+            rejectedIndices: [0],
         });
 
         const [storedEvent] = await gatekeeper.exportDID(did);
