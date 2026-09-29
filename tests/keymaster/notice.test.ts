@@ -654,6 +654,84 @@ describe('searchNotices', () => {
     });
 });
 
+describe('cleanupNotices', () => {
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    it('preserves every notice when resolution fails after finding an invalid notice', async () => {
+        const alice = await keymaster.createId('Alice');
+        const nonNotice = await keymaster.createAsset({});
+        const notice = await keymaster.createNotice({ to: [alice], dids: [alice] });
+        await keymaster.addToNotices(nonNotice, [NoticeTags.CREDENTIAL]);
+        await keymaster.addToNotices(notice, [NoticeTags.CREDENTIAL]);
+        const original = JSON.parse(JSON.stringify((await keymaster.fetchIdInfo()).notices));
+        const stored = await wallet.loadWallet();
+        const resolveDID = gatekeeper.resolveDID.bind(gatekeeper);
+        const failure = Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
+        jest.spyOn(gatekeeper, 'resolveDID').mockImplementation(async (did, options) => {
+            if (did === notice) {
+                throw failure;
+            }
+            return resolveDID(did, options);
+        });
+
+        await expect(keymaster.cleanupNotices()).rejects.toBe(failure);
+        expect((await keymaster.fetchIdInfo()).notices).toStrictEqual(original);
+        expect(await wallet.loadWallet()).toStrictEqual(stored);
+    });
+
+    it('skips a garbage-collected notice and continues cleaning up', async () => {
+        const alice = await keymaster.createId('Alice');
+        const notice = await keymaster.createNotice({ to: [alice], dids: [alice] }, {
+            validUntil: new Date(Date.now() - 60_000).toISOString(),
+        });
+        const nonNotice = await keymaster.createAsset({});
+        await keymaster.addToNotices(notice, [NoticeTags.CREDENTIAL]);
+        await keymaster.addToNotices(nonNotice, [NoticeTags.CREDENTIAL]);
+        await gatekeeper.verifyDb({ chatty: false });
+
+        await expect(keymaster.refreshNotices()).resolves.toBe(true);
+        expect((await keymaster.fetchIdInfo()).notices).toHaveProperty(notice);
+        expect((await keymaster.fetchIdInfo()).notices).not.toHaveProperty(nonNotice);
+    });
+
+    it.each(['resolution error', 'missing document'])('preserves notices on %s', async (failure) => {
+        const alice = await keymaster.createId('Alice');
+        const notice = await keymaster.createNotice({ to: [alice], dids: [alice] });
+        await keymaster.addToNotices(notice, [NoticeTags.CREDENTIAL]);
+        jest.spyOn(gatekeeper, 'resolveDID').mockResolvedValue(failure === 'resolution error'
+            ? { didResolutionMetadata: { error: 'temporarilyUnavailable' } }
+            : { didDocument: {} });
+
+        await expect(keymaster.cleanupNotices()).rejects.toThrow('DID resolution failed');
+        expect((await keymaster.fetchIdInfo()).notices).toHaveProperty(notice);
+    });
+
+    it('removes malformed DID entries and resolved non-notices', async () => {
+        await keymaster.createId('Alice');
+        const nonNotice = await keymaster.createAsset({});
+        await keymaster.addToNotices('not-a-did', [NoticeTags.CREDENTIAL]);
+        await keymaster.addToNotices(nonNotice, [NoticeTags.CREDENTIAL]);
+
+        await expect(keymaster.cleanupNotices()).resolves.toBe(true);
+        expect((await keymaster.fetchIdInfo()).notices).toStrictEqual({});
+    });
+
+    it('removes a notice whose asset no longer has a controller', async () => {
+        const alice = await keymaster.createId('Alice');
+        const notice = await keymaster.createNotice({ to: [alice], dids: [alice] });
+        await keymaster.addToNotices(notice, [NoticeTags.CREDENTIAL]);
+        const doc = await keymaster.resolveDID(notice);
+        delete doc.didDocument!.controller;
+        expect(await keymaster.updateDID(doc)).toBe(true);
+        expect(await keymaster.resolveAsset(notice)).toStrictEqual({});
+
+        await expect(keymaster.cleanupNotices()).resolves.toBe(true);
+        expect((await keymaster.fetchIdInfo()).notices).not.toHaveProperty(notice);
+    });
+});
+
 describe('refreshNotices', () => {
     it('should return true if nothing to do', async () => {
         await keymaster.createId('Alice');
@@ -715,6 +793,7 @@ describe('refreshNotices', () => {
         const ok = await keymaster.refreshNotices();
 
         expect(ok).toBe(true);
+        expect((await keymaster.fetchIdInfo()).notices).not.toHaveProperty(did);
     });
 
     it('should remove expired notices', async () => {
@@ -733,18 +812,17 @@ describe('refreshNotices', () => {
             dids: [dmail],
         };
 
-        const did = await keymaster.createNotice(notice);
+        const did = await keymaster.createNotice(notice, {
+            validUntil: new Date(Date.now() - 60_000).toISOString(),
+        });
 
         await keymaster.setCurrentId('Alice');
         await keymaster.importNotice(did);
 
-        // Simulate expiration by removing the DID
-        await gatekeeper.removeDIDs([did]);
-
-        await keymaster.setCurrentId('Alice');
         const ok = await keymaster.refreshNotices();
 
         expect(ok).toBe(true);
+        expect((await keymaster.fetchIdInfo()).notices).not.toHaveProperty(did);
     });
 
     it('should import notices from search results', async () => {

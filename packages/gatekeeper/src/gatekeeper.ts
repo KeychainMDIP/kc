@@ -416,9 +416,6 @@ export default class Gatekeeper implements GatekeeperInterface {
         const invalid = invalidKeys.size;
         const verified = total - expired - invalid;
 
-        // Clear queue of permanently invalid events
-        this.eventsQueue = [];
-
         if (chatty) {
             const durationMs = Date.now() - verifyStart;
             this.log.debug({ durationMs }, 'verifyDb');
@@ -591,6 +588,13 @@ export default class Gatekeeper implements GatekeeperInterface {
         }
     }
 
+    private getVerifiedOperationHash(operation: Operation): string | null {
+        const operationCopy = copyJSON(operation);
+        delete operationCopy.signature;
+        const msgHash = this.cipher.hashJSON(operationCopy);
+        return operation.signature?.hash === msgHash ? msgHash : null;
+    }
+
     private operationExceedsMaxBytes(operation: Operation): boolean {
         return Buffer.byteLength(JSON.stringify(operation), 'utf8') > this.maxOpBytes;
     }
@@ -642,10 +646,10 @@ export default class Gatekeeper implements GatekeeperInterface {
                 throw new InvalidOperationError('publicJwk');
             }
 
-            const operationCopy = copyJSON(operation);
-            delete operationCopy.signature;
-
-            const msgHash = this.cipher.hashJSON(operationCopy);
+            const msgHash = this.getVerifiedOperationHash(operation);
+            if (!msgHash) {
+                return false;
+            }
             return this.verifySignature(msgHash, operation.signature!.value, operation.publicJwk);
         }
 
@@ -668,9 +672,10 @@ export default class Gatekeeper implements GatekeeperInterface {
                 throw new InvalidOperationError(`non-local registry=${operation.mdip.registry}`);
             }
 
-            const operationCopy = copyJSON(operation);
-            delete operationCopy.signature;
-            const msgHash = this.cipher.hashJSON(operationCopy);
+            const msgHash = this.getVerifiedOperationHash(operation);
+            if (!msgHash) {
+                return false;
+            }
             if (!doc.didDocument ||
                 !doc.didDocument.verificationMethod ||
                 doc.didDocument.verificationMethod.length === 0 ||
@@ -833,9 +838,15 @@ export default class Gatekeeper implements GatekeeperInterface {
 
         return this.withDidLock(operation.did, async () => {
             const doc = await this.resolveDID(operation.did);
+
             const updateValid = await this.verifyUpdateOperation(operation, doc);
 
             if (!updateValid) {
+                return false;
+            }
+
+            // Legacy compatibility: updates without previd cannot be checked for staleness.
+            if (operation.previd !== undefined && operation.previd !== doc.didDocumentMetadata?.versionId) {
                 return false;
             }
 
@@ -968,19 +979,40 @@ export default class Gatekeeper implements GatekeeperInterface {
                 const lockedDid = did;
                 const currentEvents = await this.db.getEvents(lockedDid);
 
-                for (const e of currentEvents) {
+                const eventOperationCid = await this.generateCID(event.operation);
+                if (event.opid !== undefined && event.opid !== eventOperationCid) {
+                    return ImportStatus.REJECTED;
+                }
+                event.opid = eventOperationCid;
+                let opMatchIndex = -1;
+
+                for (let i = 0; i < currentEvents.length; i++) {
+                    const e = currentEvents[i];
+                    const operationCid = await this.generateCID(e.operation);
+
                     if (!e.opid) {
-                        e.opid = await this.generateCID(e.operation);
+                        e.opid = operationCid;
+                    }
+
+                    if (opMatchIndex === -1 && operationCid === eventOperationCid) {
+                        opMatchIndex = i;
                     }
                 }
 
-                if (!event.opid) {
-                    event.opid = await this.generateCID(event.operation);
-                }
-
-                const opMatch = currentEvents.find(item => item.operation.signature?.value === event.operation.signature?.value);
+                const opMatch = currentEvents[opMatchIndex];
 
                 if (opMatch) {
+                    const valid = event.operation.type === 'create'
+                        ? await this.verifyCreateOperation(event.operation)
+                        : await this.verifyUpdateOperation(
+                            event.operation,
+                            await this.resolveDID(lockedDid, { versionSequence: opMatchIndex })
+                        );
+
+                    if (!valid) {
+                        return ImportStatus.REJECTED;
+                    }
+
                     const first = currentEvents[0];
                     const nativeRegistry = first.operation.mdip?.registry;
 
@@ -990,9 +1022,13 @@ export default class Gatekeeper implements GatekeeperInterface {
                     }
 
                     if (event.registry === nativeRegistry) {
-                        // If this import is on the native registry, replace the current one
-                        const index = currentEvents.indexOf(opMatch);
-                        currentEvents[index] = event;
+                        // If this import is on the native registry, merge its confirmation metadata
+                        currentEvents[opMatchIndex] = {
+                            ...event,
+                            did: lockedDid,
+                            opid: eventOperationCid,
+                            operation: opMatch.operation,
+                        };
                         await this.mutateDID(lockedDid, () => this.db.setEvents(lockedDid, currentEvents));
                         return ImportStatus.ADDED;
                     }
@@ -1211,6 +1247,10 @@ export default class Gatekeeper implements GatekeeperInterface {
         }
 
         if (!this.verifySignatureFormat(operation.signature)) {
+            return false;
+        }
+
+        if (operation.type === 'create' && !this.getVerifiedOperationHash(operation)) {
             return false;
         }
 
