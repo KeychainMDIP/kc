@@ -422,10 +422,14 @@ export default class DbPostgres implements GatekeeperDb {
         });
     }
 
-    async addEvent(did: string, event: GatekeeperEvent): Promise<number> {
-        const id = this.splitSuffix(did);
+    private async addEventStrict(
+        executor: Pool | PoolClient,
+        did: string,
+        id: string,
+        event: GatekeeperEvent
+    ): Promise<number> {
         const serializedEvent = JSON.stringify(event);
-        const result = await this.getPool().query<LengthRow>(
+        const result = await executor.query<LengthRow>(
             `WITH inserted_event AS (
                 INSERT INTO gatekeeper_events (namespace, id, seq, event)
                 SELECT $1, $2, COALESCE(MAX(seq), -1) + 1, $3::jsonb
@@ -445,6 +449,32 @@ export default class DbPostgres implements GatekeeperDb {
         );
 
         return this.toNumber(result.rows[0]?.length ?? 0);
+    }
+
+    async addEvent(did: string, event: GatekeeperEvent): Promise<number> {
+        const id = this.splitSuffix(did);
+        return this.addEventStrict(this.getPool(), did, id, event);
+    }
+
+    async addEventAndQueue(did: string, event: GatekeeperEvent, queueRegistries: string[]): Promise<number> {
+        const id = this.splitSuffix(did);
+        if (queueRegistries.length === 0) {
+            return this.addEventStrict(this.getPool(), did, id, event);
+        }
+
+        return this.withTx(async client => {
+            const count = await this.addEventStrict(client, did, id, event);
+            for (const registry of queueRegistries) {
+                await client.query(
+                    `INSERT INTO gatekeeper_queue (namespace, id, ops)
+                     VALUES ($1, $2, $3::jsonb)
+                     ON CONFLICT (namespace, id)
+                     DO UPDATE SET ops = COALESCE(gatekeeper_queue.ops, '[]'::jsonb) || EXCLUDED.ops`,
+                    [this.dbName, registry, JSON.stringify([event.operation])]
+                );
+            }
+            return count;
+        });
     }
 
     async setEvents(did: string, events: GatekeeperEvent[], options?: SetEventsOptions): Promise<number> {

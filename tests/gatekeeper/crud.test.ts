@@ -3,6 +3,7 @@ import Gatekeeper from '@mdip/gatekeeper';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory.ts';
 import { ExpectedExceptionError } from '@mdip/common/errors';
 import HeliaClient from '@mdip/ipfs/helia';
+import { jest } from '@jest/globals';
 import TestHelper from './helper.ts';
 
 const mockConsole = {
@@ -38,6 +39,24 @@ describe('createDID', () => {
         const did = await gatekeeper.createDID(agentOp);
 
         expect(did.startsWith('did:test:')).toBe(true);
+    });
+
+    it('should not persist a DID when its publication queues cannot be committed', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await helper.createAgentOp(keypair, { registry: 'TFTC' });
+        const did = await gatekeeper.generateDID(agentOp);
+        const addEvent = jest.spyOn(db, 'addEventAndQueue').mockRejectedValueOnce(new Error('queue failure'));
+
+        await expect(gatekeeper.createDID(agentOp)).rejects.toThrow('queue failure');
+        addEvent.mockRestore();
+
+        await expect(gatekeeper.exportDID(did)).resolves.toStrictEqual([]);
+        await expect(gatekeeper.getQueue('hyperswarm')).resolves.toStrictEqual([]);
+        await expect(gatekeeper.getQueue('TFTC')).resolves.toStrictEqual([]);
+
+        await expect(gatekeeper.createDID(agentOp)).resolves.toBe(did);
+        await expect(gatekeeper.getQueue('hyperswarm')).resolves.toStrictEqual([agentOp]);
+        await expect(gatekeeper.getQueue('TFTC')).resolves.toStrictEqual([agentOp]);
     });
 
     it('should create DID for local registry', async () => {
@@ -702,6 +721,30 @@ describe('updateDID', () => {
 
         expect(ok).toBe(true);
         expect(updatedDoc).toStrictEqual(doc);
+    });
+
+    it('should not persist an update when its publication queues cannot be committed', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await helper.createAgentOp(keypair, { registry: 'TFTC' });
+        const did = await gatekeeper.createDID(agentOp);
+        await gatekeeper.clearQueue('hyperswarm', [agentOp]);
+        await gatekeeper.clearQueue('TFTC', [agentOp]);
+        const doc = await gatekeeper.resolveDID(did);
+        doc.didDocumentData = { mock: 1 };
+        const updateOp = await helper.createUpdateOp(keypair, did, doc);
+        const addEvent = jest.spyOn(db, 'addEventAndQueue').mockRejectedValueOnce(new Error('queue failure'));
+
+        await expect(gatekeeper.updateDID(updateOp)).rejects.toThrow('queue failure');
+        addEvent.mockRestore();
+
+        await expect(gatekeeper.exportDID(did)).resolves.toHaveLength(1);
+        await expect(gatekeeper.getQueue('hyperswarm')).resolves.toStrictEqual([]);
+        await expect(gatekeeper.getQueue('TFTC')).resolves.toStrictEqual([]);
+
+        await expect(gatekeeper.updateDID(updateOp)).resolves.toBe(true);
+        await expect(gatekeeper.exportDID(did)).resolves.toHaveLength(2);
+        await expect(gatekeeper.getQueue('hyperswarm')).resolves.toStrictEqual([updateOp]);
+        await expect(gatekeeper.getQueue('TFTC')).resolves.toStrictEqual([updateOp]);
     });
 
     it('should reject an update whose previd is no longer current', async () => {

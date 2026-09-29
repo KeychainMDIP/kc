@@ -205,6 +205,7 @@ export interface GatekeeperDb {
     isReady(): Promise<boolean>;
     resetDb(): Promise<void | number | JsonDbFile>;
     addEvent(did: string, event: GatekeeperEvent): Promise<void | number>;
+    addEventAndQueue(did: string, event: GatekeeperEvent, queueRegistries: string[]): Promise<void | number>;
     getEvents(did: string): Promise<GatekeeperEvent[]>;
     setEvents(did: string, events: GatekeeperEvent[], options?: SetEventsOptions): Promise<number | void>;
     deleteEvents(did: string): Promise<void | number>;
