@@ -690,7 +690,29 @@ export default class Gatekeeper implements GatekeeperInterface {
         throw new InvalidOperationError(`mdip.type=${operation.mdip.type}`);
     }
 
-    async verifyUpdateOperation(operation: Operation, doc: MdipDocument): Promise<boolean> {
+    private async controllerChainHasCycle(
+        did: string,
+        versionTime: string,
+        visited: Set<string>
+    ): Promise<boolean> {
+        const key = this.didKey(did);
+        if (visited.has(key)) {
+            return true;
+        }
+        visited.add(key);
+
+        const doc = await this.resolveDID(did, { confirm: true, versionTime });
+        const controller = doc.didDocument?.controller;
+        return controller
+            ? this.controllerChainHasCycle(controller, versionTime, visited)
+            : false;
+    }
+
+    private async verifyUpdateOperationSignature(
+        operation: Operation,
+        doc: MdipDocument,
+        visited: Set<string>
+    ): Promise<boolean> {
         if (this.operationExceedsMaxBytes(operation)) {
             throw new InvalidOperationError('size');
         }
@@ -707,13 +729,22 @@ export default class Gatekeeper implements GatekeeperInterface {
             throw new InvalidOperationError('DID deactivated');
         }
 
+        const did = doc.didDocument.id;
+        if (did) {
+            const key = this.didKey(did);
+            if (visited.has(key)) {
+                return false;
+            }
+            visited.add(key);
+        }
+
         if (doc.didDocument.controller) {
             // This DID is an asset, verify with controller's keys
             const controllerDoc = await this.resolveDID(doc.didDocument.controller, {
                 confirm: true,
                 versionTime: operation.signature!.signed,
             });
-            return this.verifyUpdateOperation(operation, controllerDoc);
+            return this.verifyUpdateOperationSignature(operation, controllerDoc, visited);
         }
 
         if (!doc.didDocument.verificationMethod) {
@@ -737,6 +768,25 @@ export default class Gatekeeper implements GatekeeperInterface {
         // TBD get the right signature, not just the first one
         const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
         return this.verifySignature(msgHash, signature.value, publicJwk);
+    }
+
+    async verifyUpdateOperation(operation: Operation, doc: MdipDocument): Promise<boolean> {
+        // Verify authorization against the existing controller chain.
+        const valid = await this.verifyUpdateOperationSignature(operation, doc, new Set());
+        if (!valid || operation.type !== 'update' || !operation.did) {
+            return valid;
+        }
+
+        const currentController = doc.didDocument?.controller;
+        const nextController = operation.doc?.didDocument?.controller;
+        if (!nextController ||
+            (currentController && this.didKey(currentController) === this.didKey(nextController))) {
+            return true;
+        }
+
+        // Check whether the proposed controller chain would introduce a cycle.
+        const visited = new Set([this.didKey(operation.did)]);
+        return !(await this.controllerChainHasCycle(nextController, operation.signature!.signed, visited));
     }
 
     async queueOperation(registry: string, operation: Operation) {

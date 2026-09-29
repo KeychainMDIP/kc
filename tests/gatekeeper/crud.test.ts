@@ -704,6 +704,41 @@ describe('updateDID', () => {
         expect(updatedDoc).toStrictEqual(doc);
     });
 
+    it('should reject cyclic asset controller chains', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agent = await gatekeeper.createDID(await helper.createAgentOp(keypair));
+        const assetA = await gatekeeper.createDID(await helper.createAssetOp(agent, keypair));
+        const assetB = await gatekeeper.createDID(await helper.createAssetOp(agent, keypair));
+
+        const assetADoc = await gatekeeper.resolveDID(assetA);
+        assetADoc.didDocument!.controller = assetB;
+        expect(await gatekeeper.updateDID(await helper.createUpdateOp(keypair, assetA, assetADoc))).toBe(true);
+
+        const nextAssetADoc = await gatekeeper.resolveDID(assetA);
+        nextAssetADoc.didDocumentData = { updated: true };
+        expect(await gatekeeper.updateDID(await helper.createUpdateOp(keypair, assetA, nextAssetADoc))).toBe(true);
+
+        const assetBDoc = await gatekeeper.resolveDID(assetB);
+        assetBDoc.didDocument!.controller = assetA;
+        const cycle = await helper.createUpdateOp(keypair, assetB, assetBDoc);
+        expect(await gatekeeper.updateDID(cycle)).toBe(false);
+        expect((await gatekeeper.resolveDID(assetB)).didDocument!.controller).toBe(agent);
+
+        const events = await db.getEvents(assetB);
+        events.push({
+            registry: 'local',
+            time: cycle.signature!.signed,
+            operation: cycle,
+            did: assetB,
+        });
+        await db.setEvents(assetB, events);
+
+        const cyclicAssetADoc = await gatekeeper.resolveDID(assetA);
+        cyclicAssetADoc.didDocumentData = { updated: false };
+        const update = await helper.createUpdateOp(keypair, assetA, cyclicAssetADoc);
+        expect(await gatekeeper.updateDID(update)).toBe(false);
+    });
+
     it('should reject an update whose previd is no longer current', async () => {
         const keypair = cipher.generateRandomJwk();
         const did = await gatekeeper.createDID(await helper.createAgentOp(keypair));
