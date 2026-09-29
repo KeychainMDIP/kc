@@ -906,18 +906,21 @@ describe('processEvents', () => {
         const agentOp = await helper.createAgentOp(victim, { registry: 'hyperswarm' });
         const did = await gatekeeper.createDID(agentOp);
         const [event] = await gatekeeper.exportDID(did);
-        const opid = await gatekeeper.generateCID(agentOp);
         const forgedOperation = copyJSON(agentOp);
         forgedOperation.publicJwk = attacker.publicJwk;
+        const unsignedForgedOperation = copyJSON(forgedOperation);
+        delete unsignedForgedOperation.signature;
+        forgedOperation.signature!.hash = cipher.hashJSON(unsignedForgedOperation);
+        const forgedOpid = await gatekeeper.generateCID(forgedOperation);
 
         expect(await gatekeeper.verifyCreateOperation(forgedOperation)).toBe(false);
 
-        await gatekeeper.importBatch([{
+        await expect(gatekeeper.importBatch([{
             ...event,
             registry: 'hyperswarm',
-            opid,
+            opid: forgedOpid,
             operation: forgedOperation,
-        }]);
+        }])).resolves.toMatchObject({ queued: 1, rejected: 0 });
         await expect(gatekeeper.processEvents()).resolves.toMatchObject({
             added: 0,
             merged: 0,
@@ -1057,6 +1060,57 @@ describe('processEvents', () => {
         } finally {
             gatekeeper.generateCID = originalGenerateCid;
         }
+    });
+
+    it('should reject a create event with a non-canonical opid', async () => {
+        const operation = await helper.createAgentOp(cipher.generateRandomJwk());
+        const did = await gatekeeper.generateDID(operation);
+        const opid = await gatekeeper.generateCID(operation);
+        const event = {
+            registry: 'hyperswarm',
+            time: operation.created!,
+            operation,
+            opid: 'attacker-version',
+        };
+
+        await gatekeeper.importBatch([event]);
+        await expect(gatekeeper.processEvents()).resolves.toMatchObject({ added: 0, rejected: 1 });
+        await expect(gatekeeper.exportDID(did)).resolves.toHaveLength(0);
+
+        event.opid = '';
+        await expect(gatekeeper.importEvent(event)).resolves.toBe('rejected');
+
+        event.opid = opid;
+        await gatekeeper.importBatch([event]);
+        await expect(gatekeeper.processEvents()).resolves.toMatchObject({ added: 1, rejected: 0 });
+        await expect(gatekeeper.resolveDID(did)).resolves.toMatchObject({
+            didDocumentMetadata: { versionId: opid },
+        });
+    });
+
+    it('should reject an update event with a non-canonical opid', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const did = await gatekeeper.createDID(await helper.createAgentOp(keypair));
+        const doc = await gatekeeper.resolveDID(did);
+        doc.didDocumentData = { step: 1 };
+        await gatekeeper.updateDID(await helper.createUpdateOp(keypair, did, doc));
+        const events = await gatekeeper.exportDID(did);
+        events[0].opid = await gatekeeper.generateCID(events[0].operation);
+        const updateOpid = await gatekeeper.generateCID(events[1].operation);
+        events[1].opid = 'attacker-version';
+        await gatekeeper.resetDb();
+
+        await gatekeeper.importBatch(events);
+        await expect(gatekeeper.processEvents()).resolves.toMatchObject({ added: 1, rejected: 1 });
+        await expect(gatekeeper.exportDID(did)).resolves.toHaveLength(1);
+
+        events[1].opid = updateOpid;
+        await gatekeeper.importBatch([events[1]]);
+        await expect(gatekeeper.processEvents()).resolves.toMatchObject({ added: 1, rejected: 0 });
+        await expect(gatekeeper.resolveDID(did)).resolves.toMatchObject({
+            didDocumentData: { step: 1 },
+            didDocumentMetadata: { versionId: updateOpid, version: '2' },
+        });
     });
 
     it('should generate missing opids without writing operations to IPFS', async () => {
