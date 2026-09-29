@@ -1021,6 +1021,10 @@ export default class Gatekeeper implements GatekeeperInterface {
                 const currentEvents = await this.db.getEvents(lockedDid);
 
                 const eventOperationCid = await this.generateCID(event.operation);
+                if (event.opid !== undefined && event.opid !== eventOperationCid) {
+                    return ImportStatus.REJECTED;
+                }
+                event.opid = eventOperationCid;
                 let opMatchIndex = -1;
 
                 for (let i = 0; i < currentEvents.length; i++) {
@@ -1034,10 +1038,6 @@ export default class Gatekeeper implements GatekeeperInterface {
                     if (opMatchIndex === -1 && operationCid === eventOperationCid) {
                         opMatchIndex = i;
                     }
-                }
-
-                if (!event.opid) {
-                    event.opid = eventOperationCid;
                 }
 
                 const opMatch = currentEvents[opMatchIndex];
