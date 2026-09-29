@@ -121,6 +121,7 @@ function createPostgresFixture(): AdapterFixture {
         ['z1', [eventA]],
         ['z2', [eventB]],
     ]);
+    const queues = new Map<string, GatekeeperEvent['operation'][]>();
     const changes = createIndexChanges();
     let nextChangeSeq = changes.length;
     let indexEpoch = 'epoch-test';
@@ -208,6 +209,13 @@ function createPostgresFixture(): AdapterFixture {
             return { rows: [], rowCount: 1 };
         }
 
+        if (text.includes('INSERT INTO gatekeeper_queue')) {
+            const registry = String(params[1]);
+            const operations = JSON.parse(String(params[2])) as GatekeeperEvent['operation'][];
+            queues.set(registry, [...(queues.get(registry) ?? []), ...operations]);
+            return { rows: [], rowCount: 1 };
+        }
+
         if (text.includes('INSERT INTO gatekeeper_events')) {
             for (let i = 0; i < params.length; i += 4) {
                 const id = String(params[i + 1]);
@@ -233,6 +241,14 @@ function createPostgresFixture(): AdapterFixture {
             const id = String(params[1]);
             return {
                 rows: (eventsByKey.get(id) ?? []).map(event => ({ event })),
+            };
+        }
+
+        if (text.includes('FROM gatekeeper_queue')) {
+            const operations = queues.get(String(params[1]));
+            return {
+                rows: operations ? [{ ops: operations }] : [],
+                rowCount: operations ? 1 : 0,
             };
         }
 
@@ -438,10 +454,13 @@ function createRedisFixture(): AdapterFixture {
             const keys = values.slice(0, keyCount);
             const args = values.slice(keyCount);
 
-            if (keyCount === 4 && args.length === 3 && !/^\d+$/.test(args[0])) {
+            if (keyCount >= 4 && args.length >= 3 && !/^\d+$/.test(args[0]) && args[1]?.startsWith('{')) {
                 const count = rpush(keys[0], args[0]);
                 recordChange(JSON.parse(args[1]) as Omit<IndexChangeRecord, 'seq'>);
                 zadd(keys[3], 0, args[2]);
+                for (const queueKey of keys.slice(4)) {
+                    rpush(queueKey, args[3]);
+                }
                 return count;
             }
 
@@ -537,6 +556,7 @@ function createMongoFixture(): AdapterFixture {
         ['z1', [eventA]],
         ['z2', [eventB]],
     ]);
+    const queues = new Map<string, GatekeeperEvent['operation'][]>();
     const changes = createIndexChanges();
     let nextChangeSeq = changes.length;
     let indexEpoch = 'epoch-test';
@@ -601,6 +621,22 @@ function createMongoFixture(): AdapterFixture {
             if (name === 'blocks') {
                 return {
                     updateOne: async () => ({ modifiedCount: 1, upsertedCount: 0 }),
+                };
+            }
+
+            if (name === 'queue') {
+                return {
+                    findOne: async ({ id }: { id: string }) => {
+                        const operations = queues.get(id);
+                        return operations ? { id, ops: operations } : null;
+                    },
+                    updateOne: async (
+                        { id }: { id: string },
+                        update: { $push: { ops: GatekeeperEvent['operation'] } }
+                    ) => {
+                        queues.set(id, [...(queues.get(id) ?? []), update.$push.ops]);
+                        return { modifiedCount: 1, upsertedCount: 0 };
+                    },
                 };
             }
 
@@ -1554,6 +1590,17 @@ describe.each(adapterFactories)('Gatekeeper DB index export adapter: %s', (_name
         await fixture.cleanup?.();
     });
 
+    it('commits an event with its publication queues', async () => {
+        const didC = 'did:test:z3';
+        const eventC = createEvent(didC, '2026-01-01T00:00:03.000Z');
+
+        await fixture.db.addEventAndQueue(didC, eventC, ['hyperswarm', 'TFTC']);
+
+        await expect(fixture.db.getEvents(didC)).resolves.toStrictEqual([eventC]);
+        await expect(fixture.db.getQueue('hyperswarm')).resolves.toStrictEqual([eventC.operation]);
+        await expect(fixture.db.getQueue('TFTC')).resolves.toStrictEqual([eventC.operation]);
+    });
+
     it('exports snapshots in stable DID order with cursor paging', async () => {
         const firstPage = await fixture.db.exportIndexSnapshot({ limit: 1 });
 
@@ -2370,10 +2417,14 @@ describe('Gatekeeper DB startup and guard behavior', () => {
         await db.resetDb();
         await db.stop();
 
-        expect(createIndex).toHaveBeenCalledTimes(6);
+        expect(createIndex).toHaveBeenCalledTimes(7);
         expect(createIndex).toHaveBeenCalledWith(
             { id: 1 },
             { name: 'dids_id_unique', unique: true }
+        );
+        expect(createIndex).toHaveBeenCalledWith(
+            { id: 1 },
+            { name: 'queue_id_unique', unique: true }
         );
         expect(createIndex).toHaveBeenCalledWith(
             { id: 1 },
@@ -2393,6 +2444,73 @@ describe('Gatekeeper DB startup and guard behavior', () => {
             'counters',
         ]);
         expect(close).toHaveBeenCalledTimes(1);
+
+        jest.dontMock('mongodb');
+        jest.resetModules();
+    });
+
+    it('merges duplicate Mongo publication queues before creating the unique index', async () => {
+        const session = {
+            withTransaction: async (callback: () => Promise<unknown>) => callback(),
+            endSession: async () => undefined,
+        };
+        const deleteMany = jest.fn(async () => ({ deletedCount: 2 }));
+        const insertOne = jest.fn(async () => ({ acknowledged: true }));
+        let queueIndexAttempts = 0;
+        const appDb = {
+            collection: (name: string) => ({
+                indexes: async () => [],
+                createIndex: async () => {
+                    if (name === 'queue' && queueIndexAttempts++ === 0) {
+                        throw { code: 11000 };
+                    }
+                },
+                aggregate: () => ({
+                    toArray: async () => name === 'queue'
+                        ? [{
+                            _id: 'TFTC',
+                            operationBatches: [[eventA.operation], [eventB.operation]],
+                            count: 2,
+                        }]
+                        : [],
+                }),
+                deleteMany,
+                insertOne,
+                find: () => ({
+                    sort: () => ({
+                        limit: () => ({
+                            next: async () => null,
+                        }),
+                    }),
+                }),
+                findOne: async () => null,
+                updateOne: async () => ({ modifiedCount: 0, upsertedCount: 1 }),
+            }),
+        };
+        const client = {
+            connect: jest.fn(async () => undefined),
+            close: jest.fn(async () => undefined),
+            startSession: jest.fn(() => session),
+            db: jest.fn((name: string) => name === 'admin'
+                ? { command: jest.fn(async () => ({ setName: 'rs0' })) }
+                : appDb),
+        };
+        jest.resetModules();
+        jest.unstable_mockModule('mongodb', () => ({
+            MongoClient: jest.fn(() => client),
+        }));
+        const { default: MockedDbMongo } = await import('@mdip/gatekeeper/db/mongo.ts');
+        const db = new MockedDbMongo('mongo-queue-upgrade');
+
+        await db.start();
+        await db.stop();
+
+        expect(deleteMany).toHaveBeenCalledWith({ id: 'TFTC' }, { session });
+        expect(insertOne).toHaveBeenCalledWith({
+            id: 'TFTC',
+            ops: [eventA.operation, eventB.operation],
+        }, { session });
+        expect(queueIndexAttempts).toBe(2);
 
         jest.dontMock('mongodb');
         jest.resetModules();

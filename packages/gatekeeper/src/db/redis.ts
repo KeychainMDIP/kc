@@ -129,6 +129,10 @@ export default class DbRedis implements GatekeeperDb {
     }
 
     async addEvent(did: string, event: GatekeeperEvent): Promise<number> {
+        return this.addEventAndQueue(did, event, []);
+    }
+
+    async addEventAndQueue(did: string, event: GatekeeperEvent, queueRegistries: string[]): Promise<number> {
         if (!this.redis) {
             throw new Error(REDIS_NOT_STARTED_ERROR)
         }
@@ -141,21 +145,25 @@ export default class DbRedis implements GatekeeperDb {
             did,
             event,
         });
+        const queueKeys = queueRegistries.map(registry => this.queueKey(registry));
         const script = `
-            ${this.checkRedisTypesScript(['list', 'string', 'zset', 'zset'])}
+            ${this.checkRedisTypesScript(['list', 'string', 'zset', 'zset', ...queueKeys.map(() => 'list')])}
             local change = cjson.decode(ARGV[2])
             local seq = redis.call('INCR', KEYS[2])
             local count = redis.call('RPUSH', KEYS[1], ARGV[1])
             change.seq = seq
             redis.call('ZADD', KEYS[3], seq, cjson.encode(change))
             redis.call('ZADD', KEYS[4], 0, ARGV[3])
+            for i = 5, #KEYS do
+                redis.call('RPUSH', KEYS[i], ARGV[4])
+            end
             return count
         `;
 
         const result = await this.evalAtomicMutation(
             script,
-            [key, this.indexSeqKey(), this.indexChangesKey(), this.didIndexKey()],
-            [val, change, id]
+            [key, this.indexSeqKey(), this.indexChangesKey(), this.didIndexKey(), ...queueKeys],
+            [val, change, id, ...(queueKeys.length > 0 ? [JSON.stringify(event.operation)] : [])]
         );
 
         return Number(result ?? 0);

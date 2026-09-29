@@ -760,9 +760,9 @@ describe('verifyDb', () => {
         const agentDoc = await gatekeeper.resolveDID(agentDID);
         agentDoc.mdip!.validUntil = new Date(Date.now() - 1_000).toISOString();
         const updateOp = await helper.createUpdateOp(keypair, agentDID, agentDoc);
-        const originalAddEvent = db.addEvent.bind(db);
-        const addEvent = jest.spyOn(db, 'addEvent').mockImplementationOnce(async (did, event) => {
-            await originalAddEvent(did, event);
+        const originalAddEventAndQueue = db.addEventAndQueue.bind(db);
+        const addEvent = jest.spyOn(db, 'addEventAndQueue').mockImplementationOnce(async (did, event, registries) => {
+            await originalAddEventAndQueue(did, event, registries);
             throw new Error('connection lost after commit');
         });
 
@@ -789,15 +789,15 @@ describe('verifyDb', () => {
         const agentDoc = await gatekeeper.resolveDID(agentDID);
         agentDoc.mdip!.validUntil = new Date(Date.now() - 1_000).toISOString();
         const updateOp = await helper.createUpdateOp(keypair, agentDID, agentDoc);
-        const originalAddEvent = db.addEvent.bind(db);
+        const originalAddEventAndQueue = db.addEventAndQueue.bind(db);
         let signalWrite: () => void = () => { };
         let releaseWrite: () => void = () => { };
         const writeStarted = new Promise<void>(resolve => (signalWrite = resolve));
         const writeRelease = new Promise<void>(resolve => (releaseWrite = resolve));
-        const addEvent = jest.spyOn(db, 'addEvent').mockImplementationOnce(async (did, event) => {
+        const addEvent = jest.spyOn(db, 'addEventAndQueue').mockImplementationOnce(async (did, event, registries) => {
             signalWrite();
             await writeRelease;
-            return originalAddEvent(did, event);
+            return originalAddEventAndQueue(did, event, registries);
         });
 
         const update = gatekeeper.updateDID(updateOp);
