@@ -116,6 +116,14 @@ export default class Gatekeeper implements GatekeeperInterface {
         return did.split(':').pop() || did;
     }
 
+    private async didMatchesOperation(did: string, operation: Operation): Promise<boolean> {
+        const operationDID = operation.type === 'create'
+            ? await this.generateDID(operation)
+            : operation.did;
+
+        return !!operationDID && this.didKey(did) === this.didKey(operationDID);
+    }
+
     private async readForResolution<T>(read: () => Promise<T>): Promise<T> {
         try {
             return await read();
@@ -962,7 +970,7 @@ export default class Gatekeeper implements GatekeeperInterface {
             }
 
             const did = event.did;
-            if (!did) {
+            if (!did || !(await this.didMatchesOperation(did, event.operation))) {
                 return ImportStatus.REJECTED;
             }
 
@@ -1000,7 +1008,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                             await this.resolveDID(lockedDid, { versionSequence: opMatchIndex })
                         );
 
-                    if (!valid) {
+                    if (!valid || !(await this.didMatchesOperation(lockedDid, event.operation))) {
                         return ImportStatus.REJECTED;
                     }
 
@@ -1028,7 +1036,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                 } else {
                     const ok = await this.verifyOperation(event.operation);
 
-                    if (!ok) {
+                    if (!ok || !(await this.didMatchesOperation(lockedDid, event.operation))) {
                         return ImportStatus.REJECTED;
                     }
 
@@ -1300,7 +1308,7 @@ export default class Gatekeeper implements GatekeeperInterface {
             return false;
         }
 
-        return true;
+        return !event.did || this.didMatchesOperation(event.did, event.operation);
     }
 
     async importBatch(batch: GatekeeperEvent[]): Promise<ImportBatchResult> {
