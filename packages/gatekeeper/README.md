@@ -23,6 +23,8 @@ Construct the library with one of the supported database adapters:
 - Redis - @mdip/gatekeeper/db/redis
 - PostgreSQL - @mdip/gatekeeper/db/postgres
 
+The file-backed JSON adapters reject unreadable or malformed existing databases at startup and atomically persist every successful mutation. The cached adapter retains parsed data in memory for reads but writes through to disk before reporting success.
+
 The MongoDB adapter requires a replica set or sharded cluster because DID/block writes and index cursor writes are committed in MongoDB transactions. For local Docker Compose usage, the repository starts MongoDB as a single-node replica set named `rs0`. Standalone MongoDB deployments must be updated before using the adapter.
 
 ```js
