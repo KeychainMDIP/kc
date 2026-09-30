@@ -70,6 +70,28 @@ export async function drainServer(
     }
 }
 
+export async function stopGatekeeper(
+    server: Server | undefined,
+    activeWork: Set<Promise<unknown>>,
+    db: Pick<GatekeeperDb, 'stop'>,
+): Promise<void> {
+    if (server) {
+        try {
+            await drainServer(server, activeWork);
+        }
+        catch (error) {
+            log.error({ error }, 'Error closing Gatekeeper server');
+        }
+    }
+
+    try {
+        await db.stop();
+    }
+    catch (error) {
+        log.error({ error }, 'Error stopping Gatekeeper database');
+    }
+}
+
 export function logRequest(req: Request, res: Response, next: NextFunction): void {
     const startTime = process.hrtime.bigint();
 

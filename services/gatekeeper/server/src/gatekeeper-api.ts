@@ -22,7 +22,6 @@ import ClusterClient from '@mdip/ipfs/cluster';
 import config from './config.js';
 import {
     createWhitelistBlockList,
-    drainServer,
     formatBytes,
     formatDuration,
     DatabaseUnavailableError,
@@ -34,6 +33,7 @@ import {
     parseIndexExportRequest,
     rateLimitWindowUnits,
     shouldSkipRateLimitPath,
+    stopGatekeeper,
 } from './helpers.js';
 
 EventEmitter.defaultMaxListeners = 100;
@@ -49,13 +49,9 @@ const db = (() => {
     case 'postgres': return new DbPostgres(dbName);
     case 'json':
     case 'json-cache': return new DbJsonCache(dbName);
-    default: return null;
+    default: throw new Error(`Unsupported DB type: ${config.db}`);
     }
 })();
-
-if (!db) {
-    throw new Error(`Unsupported DB type: ${config.db}`);
-}
 
 await db.start();
 
@@ -2365,6 +2361,9 @@ app.use('/api', (req, res) => {
 let shuttingDown = false;
 let statusTimer: ReturnType<typeof setInterval> | undefined;
 let gcTimer: ReturnType<typeof setTimeout> | undefined;
+let server: ReturnType<typeof app.listen> | undefined;
+let shutdownPromise: Promise<void> | undefined;
+let shutdownExitCode = 0;
 const activeWork = new Set<Promise<unknown>>();
 
 function trackActiveWork<T>(task: Promise<T>) {
@@ -2381,6 +2380,32 @@ function trackedRoute(
 ): RequestHandler<Record<string, string>> {
     return (req, res, next) =>
         trackActiveWork(Promise.resolve(handler(req, res, next)));
+}
+
+function shutdown(exitCode = 0): Promise<void> {
+    shutdownExitCode = Math.max(shutdownExitCode, exitCode);
+
+    if (shutdownPromise) {
+        return shutdownPromise;
+    }
+
+    serverReady = false;
+    shuttingDown = true;
+
+    if (statusTimer) {
+        clearInterval(statusTimer);
+        statusTimer = undefined;
+    }
+    if (gcTimer) {
+        clearTimeout(gcTimer);
+        gcTimer = undefined;
+    }
+
+    shutdownPromise = stopGatekeeper(server, activeWork, db).finally(() => {
+        process.exit(shutdownExitCode);
+    });
+
+    return shutdownPromise;
 }
 
 function scheduleGc() {
@@ -2474,6 +2499,10 @@ async function main() {
     log.info(`Starting KeychainMDIP Gatekeeper with a db (${config.db}) check...`);
     await reportStatus();
 
+    if (shuttingDown) {
+        return;
+    }
+
     if (config.statusInterval > 0) {
         log.info(`Starting status update every ${config.statusInterval} minutes`);
         statusTimer = setInterval(() => {
@@ -2499,60 +2528,29 @@ async function main() {
     log.info(`DID prefix: ${JSON.stringify(gatekeeper.didPrefix)}`);
     log.info(`Supported registries: ${JSON.stringify(gatekeeper.supportedRegistries)}`);
 
-    const server = app.listen(config.port, () => {
+    server = app.listen(config.port, () => {
         log.info(`Server is running on port ${config.port}`);
         serverReady = true;
     });
-
-    let shutdownPromise: Promise<void> | undefined;
-    const shutdown = () => {
-        if (shutdownPromise) {
-            return shutdownPromise;
-        }
-
-        shutdownPromise = (async () => {
-            serverReady = false;
-            shuttingDown = true;
-
-            if (statusTimer) {
-                clearInterval(statusTimer);
-                statusTimer = undefined;
-            }
-            if (gcTimer) {
-                clearTimeout(gcTimer);
-                gcTimer = undefined;
-            }
-
-            try {
-                await drainServer(server, activeWork);
-            } catch (error: any) {
-                log.error({ error }, 'Error closing Gatekeeper server');
-            }
-
-            try {
-                if (db) {
-                    await db.stop();
-                }
-            } catch (error: any) {
-                log.error({ error }, 'Error stopping Gatekeeper database');
-            }
-        })().finally(() => {
-            process.exit(0);
-        });
-
-        return shutdownPromise;
-    };
-
-    process.on('SIGTERM', shutdown);
-    process.on('SIGINT', shutdown);
 }
 
-main();
+process.on('SIGTERM', () => void shutdown());
+process.on('SIGINT', () => void shutdown());
 
 process.on('uncaughtException', (error) => {
     log.error({ error }, 'Unhandled exception caught');
+    void shutdown(1);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
     log.error({ reason, promise }, 'Unhandled rejection caught');
+    void shutdown(1);
+});
+
+main().catch((error) => {
+    if (shuttingDown) {
+        return;
+    }
+    log.error({ error }, 'Failed to start Gatekeeper server');
+    void shutdown(1);
 });
