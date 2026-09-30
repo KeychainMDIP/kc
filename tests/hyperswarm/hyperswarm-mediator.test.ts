@@ -194,6 +194,17 @@ describe('hyperswarm mediator test harness', () => {
         expect(exit).toHaveBeenCalledWith(0);
     });
 
+    it('cleans up and exits successfully after the quit command', async () => {
+        const node = await createNode('quit-node', 0x43);
+        const exit = jest.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+        const listener = node.run(() => getMediatorNodeContext().listeners.stdinData[0]);
+
+        node.run(() => listener(Buffer.from('q\n')));
+        await node.run(() => node.mediator.__test.shutdown());
+
+        expect(exit).toHaveBeenCalledWith(0);
+    });
+
     it('cleans up and exits non-zero after an uncaught exception', async () => {
         const node = await createNode('fatal-node', 0x45);
         const exit = jest.spyOn(process, 'exit').mockImplementation(() => undefined as never);
@@ -214,6 +225,40 @@ describe('hyperswarm mediator test harness', () => {
         await node.run(() => node.mediator.__test.shutdown(1));
 
         expect(exit).toHaveBeenCalledWith(1);
+    });
+
+    it('cleans up and exits non-zero after startup fails', async () => {
+        const node = await createNode('startup-failure-node', 0x47);
+        const store = new InMemoryOperationSyncStore();
+        const stopSpy = jest.spyOn(store, 'stop');
+        jest.spyOn(store, 'start').mockRejectedValueOnce(new Error('start failed'));
+        const exit = jest.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+        node.run(() => node.mediator.__test.setSyncStore(store));
+
+        await node.run(() => node.mediator.__test.startMediator());
+
+        expect(stopSpy).toHaveBeenCalledTimes(1);
+        expect(exit).toHaveBeenCalledWith(1);
+    });
+
+    it('does not report an interrupted startup as fatal', async () => {
+        const node = await createNode('startup-shutdown-node', 0x48);
+        const store = new InMemoryOperationSyncStore();
+        let rejectStart!: (error: Error) => void;
+        const startingStore = new Promise<void>((_resolve, reject) => {
+            rejectStart = reject;
+        });
+        jest.spyOn(store, 'start').mockReturnValueOnce(startingStore);
+        const exit = jest.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+        node.run(() => node.mediator.__test.setSyncStore(store));
+
+        const starting = node.run(() => node.mediator.__test.startMediator());
+        const cleanup = node.run(() => node.mediator.__test.cleanup());
+        rejectStart(new Error('startup interrupted'));
+        await starting;
+        await cleanup;
+
+        expect(exit).not.toHaveBeenCalled();
     });
 
     it('accepts a real in-memory store and Negentropy adapter through the existing seam', async () => {

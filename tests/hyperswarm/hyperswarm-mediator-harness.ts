@@ -389,7 +389,7 @@ export async function createMediatorNode(options: CreateMediatorNodeOptions): Pr
         ...BASELINE_ENV,
         ...options.env,
         KC_HYPR_DB: 'sqlite',
-        KC_IPFS_ENABLE: 'false',
+        KC_IPFS_ENABLE: options.env?.KC_IPFS_ENABLE ?? 'false',
         KC_NODE_NAME: options.name,
     };
     const previousEnv = new Map<string, string | undefined>();

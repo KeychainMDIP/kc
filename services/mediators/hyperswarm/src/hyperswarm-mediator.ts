@@ -591,6 +591,19 @@ export async function runMediator(options: MediatorMainOptions = {}): Promise<vo
     return main();
 }
 
+async function startMediator(): Promise<void> {
+    try {
+        await runMediator();
+    }
+    catch (error) {
+        if (shuttingDown) {
+            return;
+        }
+        log.error({ error }, 'fatal mediator error');
+        await shutdown(1);
+    }
+}
+
 export const __test = {
     resetState(): void {
         transport.reset();
@@ -718,15 +731,13 @@ export const __test = {
     shutdown(exitCode = 0): Promise<void> {
         return shutdown(exitCode);
     },
+
+    startMediator(): Promise<void> {
+        return startMediator();
+    },
 };
 
 const isDirectRun = !!process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
 if (isDirectRun) {
-    runMediator().catch(error => {
-        if (shuttingDown) {
-            return;
-        }
-        log.error({ error }, 'fatal mediator error');
-        void shutdown(1);
-    });
+    void startMediator();
 }
