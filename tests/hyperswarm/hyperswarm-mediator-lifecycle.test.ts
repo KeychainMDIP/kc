@@ -226,6 +226,42 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         expect(jest.getTimerCount()).toBeGreaterThanOrEqual(2);
     });
 
+    it('cancels the startup retry when shutting down', async () => {
+        const node = await createMediatorNode({
+            name: `lifecycle-node-${++nodeNumber}`,
+            publicKey: Buffer.alloc(32, 0x12),
+            env: { KC_HYPR_EXPORT_INTERVAL: '2' },
+        });
+        nodes.push(node);
+        const store = new InMemoryOperationSyncStore();
+        const stopSpy = jest.spyOn(store, 'stop');
+        node.gatekeeperClient.exportIndex.mockRejectedValue(new Error('gatekeeper unavailable'));
+        node.run(() => {
+            getMediatorNodeContext().syncStore = store;
+        });
+        const systemTime = Date.now();
+        jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+        jest.setSystemTime(systemTime);
+        fakeTimersActive = true;
+
+        const startup = node.run(() => node.mediator.runMediator({ syncStore: store }));
+        await eventually(() => node.gatekeeperClient.exportIndex.mock.calls.length === 1);
+        expect(jest.getTimerCount()).toBe(1);
+
+        const shutdown = node.run(() => getMediatorNodeContext().shutdownHook);
+        if (!shutdown) {
+            throw new Error('expected graceful shutdown callback');
+        }
+        await node.run(() => shutdown());
+        await startup;
+
+        expect(jest.getTimerCount()).toBe(0);
+        expect(stopSpy).toHaveBeenCalledTimes(1);
+        node.run(() => {
+            getMediatorNodeContext().shutdownHook = null;
+        });
+    });
+
     it('removes terminal rejected operations before Gatekeeper bootstrap', async () => {
         const [normalOperation, rejectedOperation] = await makeOperations(2);
         let deleteBySyncOrder!: jest.SpiedFunction<InMemoryOperationSyncStore['deleteBySyncOrder']>;
@@ -1858,6 +1894,9 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
 
         expect(swarm.destroyed).toBe(true);
         expect(running.stopSpy).toHaveBeenCalledTimes(1);
+        expect(jest.getTimerCount()).toBe(0);
+        await running.node.run(() => jest.advanceTimersByTimeAsync(60_000));
+        expect(jest.getTimerCount()).toBe(0);
         running.node.run(() => {
             getMediatorNodeContext().shutdownHook = null;
         });
