@@ -712,6 +712,144 @@ describe('importBatch', () => {
 });
 
 describe('processEvents', () => {
+    it('should reject an imported create that completes a controller cycle', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agent = await gatekeeper.createDID(await helper.createAgentOp(keypair, { registry: 'hyperswarm' }));
+        const assetOp = await helper.createAssetOp(agent, keypair, { registry: 'hyperswarm' });
+        const asset = await gatekeeper.generateDID(assetOp);
+
+        const agentDoc = await gatekeeper.resolveDID(agent);
+        agentDoc.didDocument!.controller = asset;
+        expect(await gatekeeper.updateDID(
+            await helper.createUpdateOp(keypair, agent, agentDoc)
+        )).toBe(true);
+
+        await expect(gatekeeper.importBatch([{
+            registry: 'hyperswarm',
+            time: assetOp.created!,
+            did: asset,
+            operation: assetOp,
+        }])).resolves.toMatchObject({ queued: 1, rejected: 0 });
+        await expect(gatekeeper.processEvents()).resolves.toMatchObject({ added: 0, rejected: 1 });
+        await expect(gatekeeper.exportDID(asset)).resolves.toStrictEqual([]);
+    });
+
+    it('should reject an imported update that would create a controller cycle', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agent = await gatekeeper.createDID(await helper.createAgentOp(keypair, { registry: 'hyperswarm' }));
+        const assetA = await gatekeeper.createDID(
+            await helper.createAssetOp(agent, keypair, { registry: 'hyperswarm' })
+        );
+        const assetB = await gatekeeper.createDID(
+            await helper.createAssetOp(agent, keypair, { registry: 'hyperswarm' })
+        );
+
+        const assetADoc = await gatekeeper.resolveDID(assetA);
+        assetADoc.didDocument!.controller = assetB;
+        expect(await gatekeeper.updateDID(await helper.createUpdateOp(keypair, assetA, assetADoc))).toBe(true);
+
+        const assetBDoc = await gatekeeper.resolveDID(assetB);
+        assetBDoc.didDocument!.controller = assetA;
+        for (const excludePrevid of [true, false]) {
+            const cycle = await helper.createUpdateOp(keypair, assetB, assetBDoc, { excludePrevid });
+            await expect(gatekeeper.importBatch([{
+                registry: 'hyperswarm',
+                time: cycle.signature!.signed,
+                did: assetB,
+                operation: cycle,
+            }])).resolves.toMatchObject({ queued: 1, rejected: 0 });
+            await expect(gatekeeper.processEvents()).resolves.toMatchObject({ added: 0, rejected: 1 });
+        }
+        expect((await gatekeeper.resolveDID(assetB)).didDocument!.controller).toBe(agent);
+    });
+
+    it('should reject a controller cycle introduced by a reorg', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agent = await gatekeeper.createDID(await helper.createAgentOp(keypair, { registry: 'hyperswarm' }));
+        const assetA = await gatekeeper.createDID(
+            await helper.createAssetOp(agent, keypair, { registry: 'hyperswarm' })
+        );
+        const assetB = await gatekeeper.createDID(
+            await helper.createAssetOp(agent, keypair, { registry: 'hyperswarm' })
+        );
+        const assetC = await gatekeeper.createDID(
+            await helper.createAssetOp(agent, keypair, { registry: 'hyperswarm' })
+        );
+
+        const assetADoc = await gatekeeper.resolveDID(assetA);
+        assetADoc.didDocument!.controller = assetB;
+        const updateAtoB = await helper.createUpdateOp(keypair, assetA, assetADoc);
+        expect(await gatekeeper.updateDID(updateAtoB)).toBe(true);
+
+        const nextAssetADoc = await gatekeeper.resolveDID(assetA);
+        nextAssetADoc.didDocument!.controller = assetC;
+        nextAssetADoc.didDocumentData = { updated: true };
+        expect(await gatekeeper.updateDID(
+            await helper.createUpdateOp(keypair, assetA, nextAssetADoc)
+        )).toBe(true);
+
+        const assetBDoc = await gatekeeper.resolveDID(assetB);
+        assetBDoc.didDocument!.controller = assetA;
+        expect(await gatekeeper.updateDID(
+            await helper.createUpdateOp(keypair, assetB, assetBDoc)
+        )).toBe(true);
+
+        const updateAtoBOpid = await gatekeeper.generateCID(updateAtoB);
+        const reorgDoc = await gatekeeper.resolveDID(assetA, { versionSequence: 2 });
+        reorgDoc.didDocumentData = { reorg: true };
+        const cycle = await helper.createUpdateOp(keypair, assetA, reorgDoc, { mockPrevid: updateAtoBOpid });
+
+        await expect(gatekeeper.importBatch([{
+            registry: 'hyperswarm',
+            time: cycle.signature!.signed,
+            did: assetA,
+            operation: cycle,
+        }])).resolves.toMatchObject({ queued: 1, rejected: 0 });
+        await expect(gatekeeper.processEvents()).resolves.toMatchObject({ added: 0, rejected: 1 });
+        expect((await gatekeeper.resolveDID(assetA)).didDocumentData).toEqual({ updated: true });
+        expect((await gatekeeper.resolveDID(assetA)).didDocument!.controller).toBe(assetC);
+    });
+
+    it('should merge confirmation metadata without reapplying the controller update', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agent = await gatekeeper.createDID(await helper.createAgentOp(keypair, { registry: 'hyperswarm' }));
+        const assetA = await gatekeeper.createDID(
+            await helper.createAssetOp(agent, keypair, { registry: 'hyperswarm' })
+        );
+        const assetB = await gatekeeper.createDID(
+            await helper.createAssetOp(agent, keypair, { registry: 'hyperswarm' })
+        );
+        const assetC = await gatekeeper.createDID(
+            await helper.createAssetOp(agent, keypair, { registry: 'hyperswarm' })
+        );
+
+        const assetADoc = await gatekeeper.resolveDID(assetA);
+        assetADoc.didDocument!.controller = assetB;
+        const updateAtoB = await helper.createUpdateOp(keypair, assetA, assetADoc);
+        expect(await gatekeeper.updateDID(updateAtoB)).toBe(true);
+
+        const nextAssetADoc = await gatekeeper.resolveDID(assetA);
+        nextAssetADoc.didDocument!.controller = assetC;
+        expect(await gatekeeper.updateDID(
+            await helper.createUpdateOp(keypair, assetA, nextAssetADoc)
+        )).toBe(true);
+
+        const assetBDoc = await gatekeeper.resolveDID(assetB);
+        assetBDoc.didDocument!.controller = assetA;
+        expect(await gatekeeper.updateDID(
+            await helper.createUpdateOp(keypair, assetB, assetBDoc)
+        )).toBe(true);
+
+        await expect(gatekeeper.importBatch([{
+            registry: 'hyperswarm',
+            time: updateAtoB.signature!.signed,
+            did: assetA,
+            operation: updateAtoB,
+        }])).resolves.toMatchObject({ queued: 1, rejected: 0 });
+        await expect(gatekeeper.processEvents()).resolves.toMatchObject({ added: 1, rejected: 0 });
+        expect((await gatekeeper.resolveDID(assetA)).didDocument!.controller).toBe(assetC);
+    });
+
     it('rejects a create event that targets another DID before deduplication', async () => {
         const attackerOp = await helper.createAgentOp(cipher.generateRandomJwk(), { registry: 'hyperswarm' });
         const victimOp = await helper.createAgentOp(cipher.generateRandomJwk(), { registry: 'hyperswarm' });

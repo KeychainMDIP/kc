@@ -66,6 +66,7 @@ export default class Gatekeeper implements GatekeeperInterface {
     private readonly ipfsEnabled: boolean;
     supportedRegistries: string[];
     private didLocks = new Map<string, Promise<void>>();
+    private controllerGraphLock: Promise<void> = Promise.resolve();
     private activeMutations = new Set<string>();
     private pendingExpiredControllers = new Map<string, string>();
     private verifyDbInFlight?: Promise<VerifyDbResult>;
@@ -170,6 +171,26 @@ export default class Gatekeeper implements GatekeeperInterface {
             release();
             if (this.didLocks.get(key) === current) {
                 this.didLocks.delete(key);
+            }
+        }
+    }
+
+    // Controller edges span DIDs, so validate and persist graph changes serially.
+    private async withControllerGraphLock<T>(fn: () => Promise<T>): Promise<T> {
+        const prev = this.controllerGraphLock;
+        let release: () => void = () => { };
+        const gate = new Promise<void>(r => (release = r));
+        const current = prev.then(() => gate, () => gate);
+
+        this.controllerGraphLock = current;
+
+        try {
+            await prev;
+            return await fn();
+        } finally {
+            release();
+            if (this.controllerGraphLock === current) {
+                this.controllerGraphLock = Promise.resolve();
             }
         }
     }
@@ -537,12 +558,14 @@ export default class Gatekeeper implements GatekeeperInterface {
 
     async verifyOperation(operation: Operation): Promise<boolean> {
         if (operation.type === 'create') {
-            return this.verifyCreateOperation(operation);
+            const valid = await this.verifyCreateOperation(operation);
+            return valid && !(await this.operationIntroducesControllerCycle(operation));
         }
 
         if (operation.type === 'update' || operation.type === 'delete') {
             const doc = await this.resolveDID(operation.did);
-            return this.verifyUpdateOperation(operation, doc);
+            const valid = await this.verifyUpdateOperation(operation, doc);
+            return valid && !(await this.operationIntroducesControllerCycle(operation));
         }
 
         return false;
@@ -698,7 +721,47 @@ export default class Gatekeeper implements GatekeeperInterface {
         throw new InvalidOperationError(`mdip.type=${operation.mdip.type}`);
     }
 
-    async verifyUpdateOperation(operation: Operation, doc: MdipDocument): Promise<boolean> {
+    private async controllerChainHasCycle(
+        did: string,
+        visited: Set<string>
+    ): Promise<boolean> {
+        const key = this.didKey(did);
+        if (visited.has(key)) {
+            return true;
+        }
+        visited.add(key);
+
+        const doc = await this.resolveDID(did);
+        const controller = doc.didDocument?.controller;
+        return controller
+            ? this.controllerChainHasCycle(controller, visited)
+            : false;
+    }
+
+    private async operationIntroducesControllerCycle(operation: Operation): Promise<boolean> {
+        const did = operation.type === 'create'
+            ? await this.generateDID(operation)
+            : operation.did;
+        const nextController = operation.type === 'create' && operation.mdip?.type === 'asset'
+            ? operation.controller
+            : operation.type === 'update'
+                ? operation.doc?.didDocument?.controller
+                : undefined;
+        if (!did || !nextController) {
+            return false;
+        }
+
+        // Check whether the proposed controller chain would introduce a cycle.
+        const visited = new Set([this.didKey(did)]);
+        return this.controllerChainHasCycle(nextController, visited);
+    }
+
+    private async verifyUpdateOperationSignature(
+        operation: Operation,
+        doc: MdipDocument,
+        visited: Set<string>,
+        did?: string
+    ): Promise<boolean> {
         if (this.operationExceedsMaxBytes(operation)) {
             throw new InvalidOperationError('size');
         }
@@ -715,13 +778,27 @@ export default class Gatekeeper implements GatekeeperInterface {
             throw new InvalidOperationError('DID deactivated');
         }
 
+        const currentDid = did ?? doc.didDocument.id;
+        if (currentDid) {
+            const key = this.didKey(currentDid);
+            if (visited.has(key)) {
+                return false;
+            }
+            visited.add(key);
+        }
+
         if (doc.didDocument.controller) {
             // This DID is an asset, verify with controller's keys
             const controllerDoc = await this.resolveDID(doc.didDocument.controller, {
                 confirm: true,
                 versionTime: operation.signature!.signed,
             });
-            return this.verifyUpdateOperation(operation, controllerDoc);
+            return this.verifyUpdateOperationSignature(
+                operation,
+                controllerDoc,
+                visited,
+                doc.didDocument.controller
+            );
         }
 
         if (!doc.didDocument.verificationMethod) {
@@ -745,6 +822,16 @@ export default class Gatekeeper implements GatekeeperInterface {
         // TBD get the right signature, not just the first one
         const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
         return this.verifySignature(msgHash, signature.value, publicJwk);
+    }
+
+    async verifyUpdateOperation(operation: Operation, doc: MdipDocument): Promise<boolean> {
+        // Verify authorization against the existing controller chain.
+        return this.verifyUpdateOperationSignature(
+            operation,
+            doc,
+            new Set(),
+            doc.didDocument?.id ?? operation.did
+        );
     }
 
     private publicationRegistries(registry: string): string[] {
@@ -790,12 +877,16 @@ export default class Gatekeeper implements GatekeeperInterface {
 
         const did = await this.generateDID(operation);
 
-        return this.withDidLock(did, async () => {
+        return this.withDidLock(did, () => this.withControllerGraphLock(async () => {
             const ops = await this.exportDID(did);
 
             // Check to see if we already have this DID in the db
             if (ops.length > 0) {
                 return did;
+            }
+
+            if (await this.operationIntroducesControllerCycle(operation)) {
+                throw new InvalidOperationError('controller cycle');
             }
 
             await this.mutateDID(did, () => this.db.addEventAndQueue(did, {
@@ -807,7 +898,7 @@ export default class Gatekeeper implements GatekeeperInterface {
             }, this.publicationRegistries(registry)));
             await this.checkQueueCapacity(registry);
             return did;
-        });
+        }));
     }
 
     async generateDoc(anchor: Operation, defaultDID?: string): Promise<MdipDocument> {
@@ -844,7 +935,7 @@ export default class Gatekeeper implements GatekeeperInterface {
             throw new InvalidOperationError('missing operation.did')
         }
 
-        return this.withDidLock(operation.did, async () => {
+        return this.withDidLock(operation.did, () => this.withControllerGraphLock(async () => {
             const doc = await this.resolveDID(operation.did);
 
             const updateValid = await this.verifyUpdateOperation(operation, doc);
@@ -855,6 +946,10 @@ export default class Gatekeeper implements GatekeeperInterface {
 
             // Legacy compatibility: updates without previd cannot be checked for staleness.
             if (operation.previd !== undefined && operation.previd !== doc.didDocumentMetadata?.versionId) {
+                return false;
+            }
+
+            if (await this.operationIntroducesControllerCycle(operation)) {
                 return false;
             }
 
@@ -875,7 +970,7 @@ export default class Gatekeeper implements GatekeeperInterface {
             await this.checkQueueCapacity(registry);
 
             return true;
-        });
+        }));
     }
 
     async deleteDID(operation: Operation): Promise<boolean> {
@@ -983,7 +1078,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                 return ImportStatus.REJECTED;
             }
 
-            return await this.withDidLock(did, async () => {
+            return await this.withDidLock(did, () => this.withControllerGraphLock(async () => {
                 const lockedDid = did;
                 const currentEvents = await this.db.getEvents(lockedDid);
 
@@ -1092,7 +1187,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                 }
 
                 return ImportStatus.REJECTED;
-            });
+            }));
         } catch (error: any) {
             if (error.type === 'Invalid operation') {
                 // Could be an event with a controller DID that hasn't been imported yet
