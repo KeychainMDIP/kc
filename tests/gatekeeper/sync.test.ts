@@ -712,6 +712,34 @@ describe('importBatch', () => {
 });
 
 describe('processEvents', () => {
+    it('should reject an imported update that changes its registry', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const did = await gatekeeper.createDID(
+            await helper.createAgentOp(keypair, { registry: 'hyperswarm' })
+        );
+        const doc = await gatekeeper.resolveDID(did);
+        doc.mdip!.registry = 'local';
+        doc.didDocumentData = { updated: true };
+        const operation = await helper.createUpdateOp(keypair, did, doc);
+
+        await expect(gatekeeper.importBatch([{
+            registry: 'hyperswarm',
+            time: operation.signature!.signed,
+            did,
+            operation,
+        }])).resolves.toMatchObject({ queued: 1, rejected: 0 });
+        await expect(gatekeeper.processEvents()).resolves.toMatchObject({
+            added: 0,
+            rejected: 1,
+            pending: 0,
+        });
+        await expect(gatekeeper.exportDID(did)).resolves.toHaveLength(1);
+        await expect(gatekeeper.resolveDID(did)).resolves.toMatchObject({
+            didDocumentData: {},
+            mdip: { registry: 'hyperswarm' },
+        });
+    });
+
     it('should reject an imported create that completes a controller cycle', async () => {
         const keypair = cipher.generateRandomJwk();
         const agent = await gatekeeper.createDID(await helper.createAgentOp(keypair, { registry: 'hyperswarm' }));

@@ -824,7 +824,47 @@ export default class Gatekeeper implements GatekeeperInterface {
         return this.verifySignature(msgHash, signature.value, publicJwk);
     }
 
+    private verifyUpdateOperationStructure(operation: Operation, doc: MdipDocument): boolean {
+        if ((operation.type !== 'update' && operation.type !== 'delete') || !operation.did || !doc.mdip) {
+            return false;
+        }
+
+        const currentDid = doc.didDocument?.id;
+        if (currentDid && this.didKey(currentDid) !== this.didKey(operation.did)) {
+            return false;
+        }
+
+        if (operation.type === 'delete') {
+            return true;
+        }
+
+        const replacement = operation.doc;
+        if (!replacement || typeof replacement !== 'object' || Array.isArray(replacement) ||
+            !replacement.didDocument || typeof replacement.didDocument !== 'object' ||
+            Array.isArray(replacement.didDocument) ||
+            !replacement.mdip || typeof replacement.mdip !== 'object' || Array.isArray(replacement.mdip) ||
+            !ValidVersions.includes(replacement.mdip.version) ||
+            !Object.hasOwn(replacement, 'didDocumentData') || replacement.didDocumentData === undefined) {
+            return false;
+        }
+
+        const replacementDid = replacement.didDocument.id;
+        return typeof replacementDid === 'string' &&
+            isValidDID(replacementDid) &&
+            this.didKey(replacementDid) === this.didKey(operation.did) &&
+            replacement.mdip.type === doc.mdip.type &&
+            replacement.mdip.registry === doc.mdip.registry;
+    }
+
     async verifyUpdateOperation(operation: Operation, doc: MdipDocument): Promise<boolean> {
+        if (!doc?.didDocument || doc.didResolutionMetadata?.error) {
+            throw new InvalidOperationError('doc.didDocument');
+        }
+
+        if (!this.verifyUpdateOperationStructure(operation, doc)) {
+            return false;
+        }
+
         // Verify authorization against the existing controller chain.
         return this.verifyUpdateOperationSignature(
             operation,
