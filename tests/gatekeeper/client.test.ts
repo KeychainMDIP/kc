@@ -110,22 +110,36 @@ describe('isReady', () => {
         expect(gatekeeper != null).toBe(true);
     });
 
-    it('should timeout if not ready', async () => {
+    it('should reject when max retries are exhausted', async () => {
         nock(GatekeeperURL)
             .get(Endpoints.ready)
             .times(3)
             .reply(200, 'false');
 
-        const gatekeeper = await GatekeeperClient.create({
+        await expect(GatekeeperClient.create({
             url: GatekeeperURL,
             waitUntilReady: true,
-            intervalSeconds: 0.1,
+            intervalSeconds: 0,
             maxRetries: 2,
             becomeChattyAfter: 1,
             console: mockConsole
-        });
+        })).rejects.toThrow('Gatekeeper did not become ready after 3 attempts');
+    });
 
-        expect(gatekeeper != null).toBe(true);
+    it('should succeed when ready on the last retry', async () => {
+        nock(GatekeeperURL)
+            .get(Endpoints.ready)
+            .times(2)
+            .reply(200, 'false')
+            .get(Endpoints.ready)
+            .reply(200, 'true');
+
+        await expect(GatekeeperClient.create({
+            url: GatekeeperURL,
+            waitUntilReady: true,
+            intervalSeconds: 0,
+            maxRetries: 2,
+        })).resolves.toBeInstanceOf(GatekeeperClient);
     });
 });
 
