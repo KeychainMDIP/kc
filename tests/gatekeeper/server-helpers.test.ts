@@ -217,6 +217,45 @@ describe('gatekeeper server helpers', () => {
         await expect(drain).rejects.toBe(closeError);
     });
 
+    it('stops the database when the server has not started', async () => {
+        const stop = jest.fn<() => Promise<void>>().mockResolvedValue();
+
+        await helpers.stopGatekeeper(undefined, new Set(), { stop });
+
+        expect(stop).toHaveBeenCalledTimes(1);
+    });
+
+    it('stops the database after a server close failure', async () => {
+        const closeError = new Error('close failed');
+        const server = {
+            close: jest.fn((callback: (error?: Error) => void) => {
+                callback(closeError);
+                return server;
+            }),
+        } as unknown as Server;
+        const stop = jest.fn<() => Promise<void>>().mockResolvedValue();
+
+        await helpers.stopGatekeeper(server, new Set(), { stop });
+
+        expect(mockLogger.error).toHaveBeenCalledWith(
+            { error: closeError },
+            'Error closing Gatekeeper server',
+        );
+        expect(stop).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports a database stop failure', async () => {
+        const stopError = new Error('stop failed');
+        const stop = jest.fn<() => Promise<void>>().mockRejectedValue(stopError);
+
+        await helpers.stopGatekeeper(undefined, new Set(), { stop });
+
+        expect(mockLogger.error).toHaveBeenCalledWith(
+            { error: stopError },
+            'Error stopping Gatekeeper database',
+        );
+    });
+
     it('classifies database connectivity errors', () => {
         expect(helpers.isDatabaseConnectivityError('ECONNREFUSED')).toBe(false);
 
