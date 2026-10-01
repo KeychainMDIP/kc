@@ -10,7 +10,7 @@ export type SatoshiDB = 'json' | 'sqlite' | 'mongodb' | 'redis' | 'postgres';
 export interface AppConfig {
     nodeID?: string;
     gatekeeperURL: string;
-    keymasterURL?: string;
+    keymasterURL: string;
     chain: ChainName;
     host: string;
     port: number;
@@ -105,18 +105,50 @@ function toDB(name: string | undefined): SatoshiDB {
     }
 }
 
+function serviceURL(name: string, value: string | undefined, defaultValue?: string): string {
+    const url = value || defaultValue;
+
+    if (!url) {
+        throw new Error(`${name} is required`);
+    }
+
+    try {
+        const parsed = new URL(url);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+            throw new Error();
+        }
+    }
+    catch {
+        throw new Error(`Invalid ${name}, expected an HTTP(S) URL`);
+    }
+
+    return url;
+}
+
+const nodeID = process.env.KC_NODE_ID;
+const wallet = process.env.KC_SAT_WALLET;
+const exportInterval = parseIntegerEnv('KC_SAT_EXPORT_INTERVAL', 0, { allowZero: true, max: MAX_INTERVAL_MINUTES });
+
+if (exportInterval > 0 && !nodeID?.trim()) {
+    throw new Error('KC_NODE_ID is required when exporting');
+}
+
+if (exportInterval > 0 && !wallet?.trim()) {
+    throw new Error('KC_SAT_WALLET is required when exporting');
+}
+
 const config: AppConfig = {
-    nodeID: process.env.KC_NODE_ID,
-    gatekeeperURL: process.env.KC_GATEKEEPER_URL || 'http://localhost:4224',
-    keymasterURL: process.env.KC_KEYMASTER_URL,
+    nodeID,
+    gatekeeperURL: serviceURL('KC_GATEKEEPER_URL', process.env.KC_GATEKEEPER_URL, 'http://localhost:4224'),
+    keymasterURL: serviceURL('KC_KEYMASTER_URL', process.env.KC_KEYMASTER_URL),
     chain: toChain(process.env.KC_SAT_CHAIN),
     host: process.env.KC_SAT_HOST || 'localhost',
     port: parseIntegerEnv('KC_SAT_PORT', 8332, { max: 65535 }),
-    wallet: process.env.KC_SAT_WALLET,
+    wallet,
     user: process.env.KC_SAT_USER,
     pass: process.env.KC_SAT_PASS,
     importInterval: parseIntegerEnv('KC_SAT_IMPORT_INTERVAL', 0, { allowZero: true, max: MAX_INTERVAL_MINUTES }),
-    exportInterval: parseIntegerEnv('KC_SAT_EXPORT_INTERVAL', 0, { allowZero: true, max: MAX_INTERVAL_MINUTES }),
+    exportInterval,
     feeConf: parseIntegerEnv('KC_SAT_FEE_BLOCK_TARGET', 1),
     feeFallback: parseIntegerEnv('KC_SAT_FEE_FALLBACK_SAT_BYTE', 10),
     feeMax: parsePositiveNumberEnv('KC_SAT_FEE_MAX', 0.00002),

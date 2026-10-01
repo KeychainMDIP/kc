@@ -32,6 +32,7 @@ describe.each(CONFIGS)('%s config', (_name, configPath, usesKeymaster) => {
         process.env = {
             ...ORIGINAL_ENV,
             ...NUMERIC_DEFAULTS,
+            KC_KEYMASTER_URL: 'http://keymaster:4226',
             KC_SAT_CHAIN: 'BTC',
             KC_SAT_NETWORK: 'bitcoin',
             KC_SAT_DB: 'json',
@@ -89,6 +90,7 @@ describe.each(CONFIGS)('%s config', (_name, configPath, usesKeymaster) => {
     it('accepts valid numeric settings', async () => {
         Object.assign(process.env, {
             KC_GATEKEEPER_URL: 'http://gatekeeper',
+            KC_NODE_ID: 'node',
             KC_SAT_HOST: 'bitcoin',
             KC_SAT_PORT: '65535',
             KC_SAT_WALLET: 'mdip',
@@ -180,6 +182,40 @@ describe.each(CONFIGS)('%s config', (_name, configPath, usesKeymaster) => {
     });
 
     if (usesKeymaster) {
+        it('requires a Keymaster URL', async () => {
+            delete process.env.KC_KEYMASTER_URL;
+
+            await expect(importConfigIsolated(configPath)).rejects.toThrow('KC_KEYMASTER_URL is required');
+        });
+
+        it.each([
+            ['KC_GATEKEEPER_URL', 'gatekeeper:4224'],
+            ['KC_KEYMASTER_URL', 'file:///keymaster'],
+        ])('rejects an invalid %s', async (name, value) => {
+            process.env[name] = value;
+
+            await expect(importConfigIsolated(configPath))
+                .rejects
+                .toThrow(`Invalid ${name}, expected an HTTP(S) URL`);
+        });
+
+        it('requires a node ID and wallet when exporting', async () => {
+            process.env.KC_SAT_EXPORT_INTERVAL = '1';
+            process.env.KC_SAT_WALLET = 'mdip';
+            delete process.env.KC_NODE_ID;
+
+            await expect(importConfigIsolated(configPath))
+                .rejects
+                .toThrow('KC_NODE_ID is required when exporting');
+
+            process.env.KC_NODE_ID = 'node';
+            delete process.env.KC_SAT_WALLET;
+
+            await expect(importConfigIsolated(configPath))
+                .rejects
+                .toThrow('KC_SAT_WALLET is required when exporting');
+        });
+
         it.each([
             'BTC',
             'TBTC',

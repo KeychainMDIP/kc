@@ -37,6 +37,7 @@ export interface MediatorDbInterface {
     loadDb(): Promise<MediatorDb | null>;
     saveDb(data: MediatorDb): Promise<boolean>;
     updateDb(mutator: (db: MediatorDb) => void | Promise<void>): Promise<void>;
+    stop(): Promise<void>;
 }
 
 export const BlockVerbosity = {
