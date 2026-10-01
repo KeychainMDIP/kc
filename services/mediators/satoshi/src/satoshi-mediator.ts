@@ -11,9 +11,11 @@ import { isValidDID } from '@mdip/ipfs/utils';
 import { MediatorDb, MediatorDbInterface, DiscoveredItem, BlockVerbosity } from './types.js';
 import { GatekeeperEvent, Operation } from '@mdip/gatekeeper/types';
 import { childLogger } from '@mdip/common/logger';
+import { isRetryableChainError, runService } from './lifecycle.js';
 
 const REGISTRY = config.chain;
 const SMART_FEE_MODE = "CONSERVATIVE";
+const SHUTDOWN_TIMEOUT_MS = 10_000;
 
 const READ_ONLY = config.exportInterval === 0;
 const log = childLogger({ service: 'satoshi-mediator' });
@@ -30,6 +32,52 @@ const btcClient = new BtcClient({
 let jsonPersister: MediatorDbInterface;
 let importRunning = false;
 let exportRunning = false;
+let shuttingDown = false;
+let importTimer: ReturnType<typeof setTimeout> | null = null;
+let exportTimer: ReturnType<typeof setTimeout> | null = null;
+let chainRetryTimer: ReturnType<typeof setTimeout> | null = null;
+let resolveChainRetry: (() => void) | null = null;
+let importTask: Promise<void> | null = null;
+let exportTask: Promise<void> | null = null;
+let cleanupPromise: Promise<void> | null = null;
+
+async function createPersister(): Promise<MediatorDbInterface> {
+    let persister: MediatorDbInterface | undefined;
+
+    try {
+        if (config.db === 'redis') {
+            const db = new JsonRedis(REGISTRY);
+            persister = db;
+            await db.connect();
+        }
+        else if (config.db === 'mongodb') {
+            const db = new JsonMongo(REGISTRY);
+            persister = db;
+            await db.connect();
+        }
+        else if (config.db === 'sqlite') {
+            const db = new JsonSQLite(REGISTRY);
+            persister = db;
+            await db.connect();
+        }
+        else if (config.db === 'postgres') {
+            const db = new JsonPostgres(REGISTRY);
+            persister = db;
+            await db.connect();
+        }
+        else {
+            persister = new JsonFile(REGISTRY);
+        }
+    }
+    catch (error) {
+        if (persister) {
+            await persister.stop().catch(() => {});
+        }
+        throw error;
+    }
+
+    return persister!;
+}
 
 async function loadDb(): Promise<MediatorDb> {
     const newDb: MediatorDb = {
@@ -199,7 +247,7 @@ async function scanBlocks(): Promise<void> {
 
     let start = await resolveScanStart(blockCount);
 
-    for (let height = start; height <= blockCount; height++) {
+    for (let height = start; height <= blockCount && !shuttingDown; height++) {
         log.debug(`${height}/${blockCount} blocks (${(100 * height / blockCount).toFixed(2)}%)`);
         await fetchBlock(height, blockCount);
         blockCount = await btcClient.getBlockCount();
@@ -262,6 +310,10 @@ async function importBatches(): Promise<boolean> {
     const db = await loadDb();
 
     for (const item of db.discovered) {
+        if (shuttingDown) {
+            break;
+        }
+
         try {
             const update = await importBatch(item);
             if (!update) {
@@ -500,8 +552,12 @@ async function anchorBatch(): Promise<void> {
 }
 
 async function importLoop(): Promise<void> {
+    if (shuttingDown) {
+        return;
+    }
+
     if (importRunning) {
-        setTimeout(importLoop, config.importInterval * 60 * 1000);
+        scheduleImportLoop();
         log.debug(`import loop busy, waiting ${config.importInterval} minute(s)...`);
         return;
     }
@@ -515,14 +571,20 @@ async function importLoop(): Promise<void> {
         log.error({ error }, 'Error in importLoop');
     } finally {
         importRunning = false;
-        log.debug(`import loop waiting ${config.importInterval} minute(s)...`);
-        setTimeout(importLoop, config.importInterval * 60 * 1000);
+        if (!shuttingDown) {
+            log.debug(`import loop waiting ${config.importInterval} minute(s)...`);
+            scheduleImportLoop();
+        }
     }
 }
 
 async function exportLoop(): Promise<void> {
+    if (shuttingDown) {
+        return;
+    }
+
     if (exportRunning) {
-        setTimeout(exportLoop, config.exportInterval * 60 * 1000);
+        scheduleExportLoop();
         log.debug(`Export loop busy, waiting ${config.exportInterval} minute(s)...`);
         return;
     }
@@ -535,32 +597,94 @@ async function exportLoop(): Promise<void> {
         log.error({ error }, 'Error in exportLoop');
     } finally {
         exportRunning = false;
-        log.debug(`export loop waiting ${config.exportInterval} minute(s)...`);
-        setTimeout(exportLoop, config.exportInterval * 60 * 1000);
+        if (!shuttingDown) {
+            log.debug(`export loop waiting ${config.exportInterval} minute(s)...`);
+            scheduleExportLoop();
+        }
     }
 }
 
-async function waitForChain() {
-    let isReady = false;
+async function runImportLoop(): Promise<void> {
+    const task = importLoop();
+    importTask = task;
+
+    try {
+        await task;
+    }
+    finally {
+        if (importTask === task) {
+            importTask = null;
+        }
+    }
+}
+
+async function runExportLoop(): Promise<void> {
+    const task = exportLoop();
+    exportTask = task;
+
+    try {
+        await task;
+    }
+    finally {
+        if (exportTask === task) {
+            exportTask = null;
+        }
+    }
+}
+
+function scheduleImportLoop(): void {
+    if (shuttingDown) {
+        return;
+    }
+
+    importTimer = setTimeout(() => {
+        importTimer = null;
+        void runImportLoop();
+    }, config.importInterval * 60 * 1000);
+}
+
+function scheduleExportLoop(): void {
+    if (shuttingDown) {
+        return;
+    }
+
+    exportTimer = setTimeout(() => {
+        exportTimer = null;
+        void runExportLoop();
+    }, config.exportInterval * 60 * 1000);
+}
+
+async function waitForChainRetry(): Promise<void> {
+    await new Promise<void>(resolve => {
+        resolveChainRetry = resolve;
+        chainRetryTimer = setTimeout(() => {
+            chainRetryTimer = null;
+            resolveChainRetry = null;
+            resolve();
+        }, 2000);
+    });
+}
+
+async function waitForChain(): Promise<void> {
 
     log.info(`Connecting to ${config.chain} node on ${config.host}:${config.port} using wallet '${config.wallet}'`);
 
-    while (!isReady) {
+    while (!shuttingDown) {
         try {
             const blockchainInfo = await btcClient.getBlockchainInfo();
             log.debug({ blockchainInfo }, 'Blockchain Info');
-            isReady = true;
-        } catch {
+            break;
+        } catch (error) {
+            if (!isRetryableChainError(error)) {
+                throw error;
+            }
             log.debug(`Waiting for ${config.chain} node...`);
-        }
-
-        if (!isReady) {
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            await waitForChainRetry();
         }
     }
 
-    if (READ_ONLY) {
-        return true;
+    if (shuttingDown || READ_ONLY) {
+        return;
     }
 
     try {
@@ -571,28 +695,15 @@ async function waitForChain() {
         if (error.message.includes("already exists")) {
             log.info(`Wallet '${config.wallet}' already exists.`);
         } else {
-            log.error({ error }, 'Error creating wallet');
-            return false;
+            throw error;
         }
     }
 
-    try {
-        const walletInfo = await btcClient.getWalletInfo();
-        log.debug({ walletInfo }, 'Wallet Info');
-    } catch (error) {
-        log.error({ error }, 'Error fetching wallet info');
-        return false;
-    }
+    const walletInfo = await btcClient.getWalletInfo();
+    log.debug({ walletInfo }, 'Wallet Info');
 
-    try {
-        const address = await btcClient.getNewAddress('funds', 'bech32');
-        log.info(`Send ${config.chain} to address: ${address}`);
-    } catch (error) {
-        log.error({ error }, 'Error generating new address');
-        return false;
-    }
-
-    return true;
+    const address = await btcClient.getNewAddress('funds', 'bech32');
+    log.info(`Send ${config.chain} to address: ${address}`);
 }
 
 async function addBlock(height: number, hash: string, time: number): Promise<void> {
@@ -600,46 +711,26 @@ async function addBlock(height: number, hash: string, time: number): Promise<voi
 }
 
 async function syncBlocks(): Promise<void> {
-    try {
-        const latest = await gatekeeper.getBlock(REGISTRY);
-        const currentMax = latest ? latest.height : config.startBlock;
-        const blockCount = await btcClient.getBlockCount();
+    const latest = await gatekeeper.getBlock(REGISTRY);
+    const currentMax = latest ? latest.height : config.startBlock;
+    const blockCount = await btcClient.getBlockCount();
 
-        log.info(`current block height: ${blockCount}`);
+    log.info(`current block height: ${blockCount}`);
 
-        for (let height = currentMax; height <= blockCount; height++) {
-            const blockHash = await btcClient.getBlockHash(height);
-            const block = await btcClient.getBlock(blockHash) as Block;
-            log.debug(`${height}/${blockCount} blocks (${(100 * height / blockCount).toFixed(2)}%)`);
-            await addBlock(height, blockHash, block.time);
-        }
-    } catch (error) {
-        log.error({ error }, 'Error syncing blocks');
+    for (let height = currentMax; height <= blockCount; height++) {
+        const blockHash = await btcClient.getBlockHash(height);
+        const block = await btcClient.getBlock(blockHash) as Block;
+        log.debug(`${height}/${blockCount} blocks (${(100 * height / blockCount).toFixed(2)}%)`);
+        await addBlock(height, blockHash, block.time);
     }
 }
 
 async function main() {
-    if (!READ_ONLY && !config.nodeID) {
-        log.error('satoshi-mediator must have a KC_NODE_ID configured');
-        return;
-    }
-
     const jsonFile = new JsonFile(REGISTRY);
+    jsonPersister = await createPersister();
 
-    if (config.db === 'redis') {
-        jsonPersister = await JsonRedis.create(REGISTRY);
-    }
-    else if (config.db === 'mongodb') {
-        jsonPersister = await JsonMongo.create(REGISTRY);
-    }
-    else if (config.db === 'sqlite') {
-        jsonPersister = await JsonSQLite.create(REGISTRY);
-    }
-    else if (config.db === 'postgres') {
-        jsonPersister = await JsonPostgres.create(REGISTRY);
-    }
-    else {
-        jsonPersister = jsonFile;
+    if (shuttingDown) {
+        return;
     }
 
     if (config.db !== 'json') {
@@ -647,7 +738,9 @@ async function main() {
         const fileDb = await jsonFile.loadDb();
 
         if (!jsonDb && fileDb) {
-            await jsonPersister.saveDb(fileDb);
+            await jsonPersister.updateDb(db => {
+                Object.assign(db, fileDb);
+            });
             log.info(`Database upgraded to ${config.db}`);
         }
         else {
@@ -656,18 +749,18 @@ async function main() {
     }
 
     if (config.reimport) {
-        const db = await loadDb();
-        for (const item of db.discovered) {
-            delete item.imported;
-            delete item.processed;
-            delete item.error;
-        }
-        await jsonPersister.saveDb(db);
+        await jsonPersister.updateDb(db => {
+            for (const item of db.discovered) {
+                delete item.imported;
+                delete item.processed;
+                delete item.error;
+            }
+        });
     }
 
-    const ok = await waitForChain();
+    await waitForChain();
 
-    if (!ok) {
+    if (shuttingDown) {
         return;
     }
 
@@ -678,6 +771,10 @@ async function main() {
         chatty: true,
     });
 
+    if (shuttingDown) {
+        return;
+    }
+
     await keymaster.connect({
         url: config.keymasterURL,
         waitUntilReady: true,
@@ -685,18 +782,72 @@ async function main() {
         chatty: true,
     });
 
+    if (shuttingDown) {
+        return;
+    }
+
     await syncBlocks();
+
+    if (shuttingDown) {
+        return;
+    }
 
     if (config.importInterval > 0) {
         log.info(`Importing operations every ${config.importInterval} minute(s)`);
-        setTimeout(importLoop, config.importInterval * 60 * 1000);
+        scheduleImportLoop();
     }
 
     if (!READ_ONLY) {
         log.info(`Exporting operations every ${config.exportInterval} minute(s)`);
         log.info(`Txn fees (${config.chain}): conf target: ${config.feeConf}, maximum: ${config.feeMax}, fallback Sat/Byte: ${config.feeFallback}`);
-        setTimeout(exportLoop, config.exportInterval * 60 * 1000);
+        scheduleExportLoop();
     }
 }
 
-main();
+function clearTimers(): void {
+    if (importTimer) {
+        clearTimeout(importTimer);
+        importTimer = null;
+    }
+    if (exportTimer) {
+        clearTimeout(exportTimer);
+        exportTimer = null;
+    }
+    if (chainRetryTimer) {
+        clearTimeout(chainRetryTimer);
+        chainRetryTimer = null;
+    }
+    resolveChainRetry?.();
+    resolveChainRetry = null;
+}
+
+function cleanup(): Promise<void> {
+    if (cleanupPromise) {
+        return cleanupPromise;
+    }
+
+    shuttingDown = true;
+    clearTimers();
+
+    cleanupPromise = (async () => {
+        const results = await Promise.allSettled([importTask, exportTask].filter(Boolean));
+        for (const result of results) {
+            if (result.status === 'rejected') {
+                log.error({ error: result.reason }, 'Mediator loop shutdown error');
+            }
+        }
+
+        if (jsonPersister) {
+            try {
+                await jsonPersister.stop();
+            }
+            catch (error) {
+                log.error({ error }, 'Database shutdown error');
+            }
+        }
+    })();
+
+    return cleanupPromise;
+}
+
+runService({ start: main, cleanup, log, timeoutMs: SHUTDOWN_TIMEOUT_MS });

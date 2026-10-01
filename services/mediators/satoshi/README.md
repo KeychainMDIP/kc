@@ -19,7 +19,7 @@ Gatekeeper currently accepts the plain-chain registries `TBTC`, `Signet`, and `T
 | `KC_SAT_CHAIN`                 | BTC                  | Chain label. Set `TBTC`, `Signet`, or `TFTC` for a Gatekeeper-compatible plain registry |
 | `KC_SAT_HOST`                  | localhost            | Host where blockchain node is running |
 | `KC_SAT_PORT`                  | 8332                 | Port where blockchain node is running |
-| `KC_SAT_WALLET`                | (no default)         | Blockchain node wallet to use  |
+| `KC_SAT_WALLET`                | (no default)         | Blockchain node wallet to use, required for exporting |
 | `KC_SAT_USER`                  | (no default)         | Blockchain node RPC user      |
 | `KC_SAT_PASS`                  | (no default)         | Blockchain node RPC password  |
 | `KC_SAT_IMPORT_INTERVAL`       | 0                    | Minutes between import cycles (0 to disable) |
