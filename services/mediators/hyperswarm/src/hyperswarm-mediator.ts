@@ -1,5 +1,4 @@
 import Hyperswarm, { type HyperswarmConnection } from 'hyperswarm';
-import goodbye from 'graceful-goodbye';
 import b4a from 'b4a';
 import { createHash, randomBytes } from 'crypto';
 import { EventEmitter } from 'events';
@@ -41,7 +40,6 @@ import {
     buildSyncStatsSnapshot,
     createMediatorSyncStats,
 } from './sync-stats.js';
-import { exit } from 'process';
 import path from 'path';
 import { pathToFileURL } from 'url';
 
@@ -213,36 +211,108 @@ function replaceSyncStore(store: OperationSyncStore): void {
 }
 
 let swarm: Hyperswarm | null = null;
+let shuttingDown = false;
+let exportTimer: ReturnType<typeof setTimeout> | null = null;
+let connectionTimer: ReturnType<typeof setTimeout> | null = null;
+let startupRetryTimer: ReturnType<typeof setTimeout> | null = null;
+let resolveStartupRetry: (() => void) | null = null;
+let cleanupPromise: Promise<void> | null = null;
+let shutdownPromise: Promise<void> | null = null;
+let shutdownExitCode = 0;
 
-goodbye(async () => {
-    const peerSyncShutdown = peerSyncCoordinator.shutdown();
-    const negentropyShutdown = negentropyCoordinator.shutdown();
-    const orderedCatchupShutdown = orderedCatchupCoordinator.shutdown();
+function clearLoopTimers(): void {
+    if (exportTimer) {
+        clearTimeout(exportTimer);
+        exportTimer = null;
+    }
+    if (connectionTimer) {
+        clearTimeout(connectionTimer);
+        connectionTimer = null;
+    }
+    if (startupRetryTimer) {
+        clearTimeout(startupRetryTimer);
+        startupRetryTimer = null;
+    }
+    resolveStartupRetry?.();
+    resolveStartupRetry = null;
+}
 
-    if (swarm) {
-        try {
-            await Promise.resolve(swarm.destroy());
-        } catch (error) {
-            log.error({ error }, 'swarm destroy error');
-        } finally {
-            swarm = null;
+function cleanup(): Promise<void> {
+    if (cleanupPromise) {
+        return cleanupPromise;
+    }
+
+    shuttingDown = true;
+    clearLoopTimers();
+
+    cleanupPromise = (async () => {
+        const coordinatorShutdowns = [
+            Promise.resolve().then(() => peerSyncCoordinator.shutdown()),
+            Promise.resolve().then(() => orderedCatchupCoordinator.shutdown()),
+            Promise.resolve().then(() => negentropyCoordinator.shutdown()),
+        ];
+
+        if (swarm) {
+            try {
+                await Promise.resolve(swarm.destroy());
+            }
+            catch (error) {
+                log.error({ error }, 'swarm destroy error');
+            }
+            finally {
+                swarm = null;
+            }
         }
+
+        const results = await Promise.allSettled(coordinatorShutdowns);
+        for (const result of results) {
+            if (result.status === 'rejected') {
+                log.error({ error: result.reason }, 'mediator shutdown error');
+            }
+        }
+
+        try {
+            await importPipeline.shutdown();
+        }
+        catch (error) {
+            log.error({ error }, 'import pipeline shutdown error');
+        }
+
+        try {
+            await syncStore.stop();
+        }
+        catch (error) {
+            log.error({ error }, 'syncStore stop error');
+        }
+    })();
+
+    return cleanupPromise;
+}
+
+function shutdown(exitCode = 0): Promise<void> {
+    shutdownExitCode = Math.max(shutdownExitCode, exitCode);
+
+    if (!shutdownPromise) {
+        shutdownPromise = cleanup().finally(() => {
+            process.exit(shutdownExitCode);
+        });
     }
 
-    try {
-        await peerSyncShutdown;
-        await orderedCatchupShutdown;
-        await negentropyShutdown;
-        await importPipeline.shutdown();
-        await syncStore.stop();
-    } catch (error) {
-        log.error({ error }, 'syncStore stop error');
-    }
-});
+    return shutdownPromise;
+}
 
 async function createSwarm(): Promise<void> {
+    if (shuttingDown) {
+        return;
+    }
+
     if (swarm) {
         await Promise.resolve(swarm.destroy());
+    }
+
+    if (shuttingDown) {
+        swarm = null;
+        return;
     }
 
     swarm = new Hyperswarm();
@@ -287,7 +357,7 @@ function createSessionId(peerKey: string): string {
 }
 
 async function waitForInitialGatekeeperIndexSync(): Promise<void> {
-    while (true) {
+    while (!shuttingDown) {
         try {
             const bootstrap = await importPipeline.refreshIndex('startup');
             log.info({ bootstrap }, 'sync-store bootstrap complete');
@@ -295,12 +365,26 @@ async function waitForInitialGatekeeperIndexSync(): Promise<void> {
         }
         catch (error) {
             log.error({ error }, 'Error in sync-store bootstrap');
-            await new Promise(resolve => setTimeout(resolve, config.exportInterval * 1000));
+            if (shuttingDown) {
+                return;
+            }
+            await new Promise<void>(resolve => {
+                resolveStartupRetry = resolve;
+                startupRetryTimer = setTimeout(() => {
+                    startupRetryTimer = null;
+                    resolveStartupRetry = null;
+                    resolve();
+                }, config.exportInterval * 1000);
+            });
         }
     }
 }
 
 async function exportLoop(): Promise<void> {
+    if (shuttingDown) {
+        return;
+    }
+
     try {
         const sync = await importPipeline.refreshIndex('exportLoop');
         await peerSyncCoordinator.handleIndexRefreshed('exportLoop', sync);
@@ -311,14 +395,24 @@ async function exportLoop(): Promise<void> {
 
     const importQueueLength = importPipeline.queued;
 
+    if (shuttingDown) {
+        return;
+    }
+
     if (importQueueLength > 0) {
         const delay = 60;
         log.debug(`export loop waiting ${delay}s for import queue to clear: ${importQueueLength}...`);
-        setTimeout(exportLoop, delay * 1000);
+        exportTimer = setTimeout(() => {
+            exportTimer = null;
+            void exportLoop();
+        }, delay * 1000);
     }
     else {
         log.debug(`export loop waiting ${config.exportInterval}s...`);
-        setTimeout(exportLoop, config.exportInterval * 1000);
+        exportTimer = setTimeout(() => {
+            exportTimer = null;
+            void exportLoop();
+        }, config.exportInterval * 1000);
     }
 }
 
@@ -335,6 +429,10 @@ async function checkConnections(): Promise<void> {
 }
 
 async function connectionLoop(): Promise<void> {
+    if (shuttingDown) {
+        return;
+    }
+
     try {
         log.debug(`Node info: ${JSON.stringify(nodeInfo, null, 4)}`);
         log.info(`Connected to hyperswarm protocol: ${config.protocol}`);
@@ -360,20 +458,30 @@ async function connectionLoop(): Promise<void> {
     } catch (error) {
         log.error({ error }, 'Error in pingLoop');
     }
-    setTimeout(connectionLoop, 60 * 1000);
+    if (!shuttingDown) {
+        connectionTimer = setTimeout(() => {
+            connectionTimer = null;
+            void connectionLoop();
+        }, 60 * 1000);
+    }
 }
 
 process.on('uncaughtException', (error) => {
     log.error({ error }, 'Unhandled exception caught');
+    void shutdown(1);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
     log.error({ reason, promise }, 'Unhandled rejection at');
+    void shutdown(1);
 });
+
+process.on('SIGTERM', () => void shutdown());
+process.on('SIGINT', () => void shutdown());
 
 process.stdin.on('data', d => {
     if (d.toString().startsWith('q')) {
-        process.exit();
+        void shutdown();
     }
 });
 
@@ -405,6 +513,10 @@ async function main(): Promise<void> {
 
     await waitForInitialGatekeeperIndexSync();
 
+    if (shuttingDown) {
+        return;
+    }
+
     await negentropyCoordinator.initializeAdapter();
 
     if (config.ipfsEnabled) {
@@ -416,22 +528,19 @@ async function main(): Promise<void> {
         });
 
         if (!config.nodeID) {
-            console.log('nodeID is not set. Please set the nodeID in the config file.');
-            exit(1);
+            throw new Error('nodeID is not set. Please set KC_NODE_ID.');
         }
 
         const { didDocument } = await keymaster.resolveDID(config.nodeID);
 
         if (!didDocument) {
-            log.error(`DID document not found for nodeID: ${config.nodeID}`);
-            exit(1);
+            throw new Error(`DID document not found for nodeID: ${config.nodeID}`);
         }
 
         const nodeDID = didDocument.id;
 
         if (!nodeDID) {
-            log.error('nodeID is not set. Please set the nodeID in the config file.');
-            exit(1);
+            throw new Error(`DID document has no ID for nodeID: ${config.nodeID}`);
         }
 
         log.info(`Using nodeID: ${config.nodeID} (${nodeDID})`);
@@ -480,6 +589,19 @@ export async function runMediator(options: MediatorMainOptions = {}): Promise<vo
     }
 
     return main();
+}
+
+async function startMediator(): Promise<void> {
+    try {
+        await runMediator();
+    }
+    catch (error) {
+        if (shuttingDown) {
+            return;
+        }
+        log.error({ error }, 'fatal mediator error');
+        await shutdown(1);
+    }
 }
 
 export const __test = {
@@ -601,12 +723,21 @@ export const __test = {
     getSyncStatsSnapshot(): object {
         return buildSyncStatsSnapshot(syncStats);
     },
+
+    cleanup(): Promise<void> {
+        return cleanup();
+    },
+
+    shutdown(exitCode = 0): Promise<void> {
+        return shutdown(exitCode);
+    },
+
+    startMediator(): Promise<void> {
+        return startMediator();
+    },
 };
 
 const isDirectRun = !!process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
 if (isDirectRun) {
-    runMediator().catch(error => {
-        log.error({ error }, 'fatal mediator error');
-        process.exit(1);
-    });
+    void startMediator();
 }

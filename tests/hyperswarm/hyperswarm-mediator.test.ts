@@ -127,6 +127,8 @@ describe('hyperswarm mediator test harness', () => {
             exit: process.listenerCount('exit'),
             uncaughtException: process.listenerCount('uncaughtException'),
             unhandledRejection: process.listenerCount('unhandledRejection'),
+            sigint: process.listenerCount('SIGINT'),
+            sigterm: process.listenerCount('SIGTERM'),
             stdinData: process.stdin.listenerCount('data'),
         };
         const setTimeoutSpy = jest.spyOn(global, 'setTimeout');
@@ -142,6 +144,8 @@ describe('hyperswarm mediator test harness', () => {
             expect(process.listenerCount('exit')).toBeGreaterThan(before.exit);
             expect(process.listenerCount('uncaughtException')).toBe(before.uncaughtException + 2);
             expect(process.listenerCount('unhandledRejection')).toBe(before.unhandledRejection + 2);
+            expect(process.listenerCount('SIGINT')).toBe(before.sigint + 2);
+            expect(process.listenerCount('SIGTERM')).toBe(before.sigterm + 2);
             expect(process.stdin.listenerCount('data')).toBe(before.stdinData + 2);
             expect(nodeA.swarms).toHaveLength(0);
             expect(nodeB.swarms).toHaveLength(0);
@@ -163,6 +167,8 @@ describe('hyperswarm mediator test harness', () => {
             expect(process.listenerCount('exit')).toBe(before.exit);
             expect(process.listenerCount('uncaughtException')).toBe(before.uncaughtException);
             expect(process.listenerCount('unhandledRejection')).toBe(before.unhandledRejection);
+            expect(process.listenerCount('SIGINT')).toBe(before.sigint);
+            expect(process.listenerCount('SIGTERM')).toBe(before.sigterm);
             expect(process.stdin.listenerCount('data')).toBe(before.stdinData);
         }
         finally {
@@ -175,6 +181,84 @@ describe('hyperswarm mediator test harness', () => {
             }
             await rm(tempDir, { recursive: true, force: true });
         }
+    });
+
+    it('cleans up and exits successfully after SIGTERM', async () => {
+        const node = await createNode('signal-node', 0x44);
+        const exit = jest.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+        const listener = node.run(() => getMediatorNodeContext().listeners.sigterm[0]);
+
+        node.run(() => listener('SIGTERM'));
+        await node.run(() => node.mediator.__test.shutdown());
+
+        expect(exit).toHaveBeenCalledWith(0);
+    });
+
+    it('cleans up and exits successfully after the quit command', async () => {
+        const node = await createNode('quit-node', 0x43);
+        const exit = jest.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+        const listener = node.run(() => getMediatorNodeContext().listeners.stdinData[0]);
+
+        node.run(() => listener(Buffer.from('q\n')));
+        await node.run(() => node.mediator.__test.shutdown());
+
+        expect(exit).toHaveBeenCalledWith(0);
+    });
+
+    it('cleans up and exits non-zero after an uncaught exception', async () => {
+        const node = await createNode('fatal-node', 0x45);
+        const exit = jest.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+        const listener = node.run(() => getMediatorNodeContext().listeners.uncaughtException[0]);
+
+        node.run(() => listener(new Error('fatal'), 'uncaughtException'));
+        await node.run(() => node.mediator.__test.shutdown(1));
+
+        expect(exit).toHaveBeenCalledWith(1);
+    });
+
+    it('cleans up and exits non-zero after an unhandled rejection', async () => {
+        const node = await createNode('rejection-node', 0x46);
+        const exit = jest.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+        const listener = node.run(() => getMediatorNodeContext().listeners.unhandledRejection[0]);
+
+        node.run(() => listener(new Error('fatal'), Promise.resolve()));
+        await node.run(() => node.mediator.__test.shutdown(1));
+
+        expect(exit).toHaveBeenCalledWith(1);
+    });
+
+    it('cleans up and exits non-zero after startup fails', async () => {
+        const node = await createNode('startup-failure-node', 0x47);
+        const store = new InMemoryOperationSyncStore();
+        const stopSpy = jest.spyOn(store, 'stop');
+        jest.spyOn(store, 'start').mockRejectedValueOnce(new Error('start failed'));
+        const exit = jest.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+        node.run(() => node.mediator.__test.setSyncStore(store));
+
+        await node.run(() => node.mediator.__test.startMediator());
+
+        expect(stopSpy).toHaveBeenCalledTimes(1);
+        expect(exit).toHaveBeenCalledWith(1);
+    });
+
+    it('does not report an interrupted startup as fatal', async () => {
+        const node = await createNode('startup-shutdown-node', 0x48);
+        const store = new InMemoryOperationSyncStore();
+        let rejectStart!: (error: Error) => void;
+        const startingStore = new Promise<void>((_resolve, reject) => {
+            rejectStart = reject;
+        });
+        jest.spyOn(store, 'start').mockReturnValueOnce(startingStore);
+        const exit = jest.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+        node.run(() => node.mediator.__test.setSyncStore(store));
+
+        const starting = node.run(() => node.mediator.__test.startMediator());
+        const cleanup = node.run(() => node.mediator.__test.cleanup());
+        rejectStart(new Error('startup interrupted'));
+        await starting;
+        await cleanup;
+
+        expect(exit).not.toHaveBeenCalled();
     });
 
     it('accepts a real in-memory store and Negentropy adapter through the existing seam', async () => {

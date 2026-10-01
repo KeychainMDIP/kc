@@ -67,6 +67,8 @@ export interface MediatorNodeListeners {
     exit: Array<(...args: ProcessEventMap['exit']) => void>;
     uncaughtException: Array<(...args: ProcessEventMap['uncaughtException']) => void>;
     unhandledRejection: Array<(...args: ProcessEventMap['unhandledRejection']) => void>;
+    sigint: Array<(signal: 'SIGINT') => void>;
+    sigterm: Array<(signal: 'SIGTERM') => void>;
     stdinData: Array<(data: Buffer) => void>;
 }
 
@@ -92,7 +94,6 @@ const mediatorRequire = createRequire(new URL(
     import.meta.url,
 ));
 const hyperswarmModulePath = mediatorRequire.resolve('hyperswarm');
-const gracefulGoodbyeModulePath = mediatorRequire.resolve('graceful-goodbye');
 let mocksInstalled = false;
 let isolatedImportActive = false;
 
@@ -174,12 +175,6 @@ export function installMediatorMocks(): void {
     const hyperswarmFactory = () => ({
         default: MockHyperswarm,
     });
-    const gracefulGoodbyeFactory = () => ({
-        default: (handler: () => void | Promise<void>) => {
-            getMediatorNodeContext().shutdownHook = handler;
-        },
-    });
-
     jest.unstable_mockModule('hyperswarm', hyperswarmFactory, { virtual: true });
     // These dependencies may resolve below the mediator, outside the root test resolver.
     jest.unstable_mockModule(hyperswarmModulePath, hyperswarmFactory);
@@ -213,9 +208,6 @@ export function installMediatorMocks(): void {
             }
         },
     }));
-    jest.unstable_mockModule('graceful-goodbye', gracefulGoodbyeFactory, { virtual: true });
-    jest.unstable_mockModule(gracefulGoodbyeModulePath, gracefulGoodbyeFactory);
-
     mocksInstalled = true;
 }
 
@@ -248,6 +240,8 @@ function createMediatorNodeContext(name: string, publicKey: Buffer): MediatorNod
             exit: [],
             uncaughtException: [],
             unhandledRejection: [],
+            sigint: [],
+            sigterm: [],
             stdinData: [],
         },
         mediator: null,
@@ -279,6 +273,8 @@ interface ListenerSnapshot {
     exit: Set<unknown>;
     uncaughtException: Set<unknown>;
     unhandledRejection: Set<unknown>;
+    sigint: Set<unknown>;
+    sigterm: Set<unknown>;
     stdinData: Set<unknown>;
 }
 
@@ -287,6 +283,8 @@ function snapshotListeners(): ListenerSnapshot {
         exit: new Set(process.listeners('exit')),
         uncaughtException: new Set(process.listeners('uncaughtException')),
         unhandledRejection: new Set(process.listeners('unhandledRejection')),
+        sigint: new Set(process.listeners('SIGINT')),
+        sigterm: new Set(process.listeners('SIGTERM')),
         stdinData: new Set(process.stdin.listeners('data')),
     };
 }
@@ -295,6 +293,8 @@ function recordAddedListeners(context: MediatorNodeContext, before: ListenerSnap
     context.listeners.exit.length = 0;
     context.listeners.uncaughtException.length = 0;
     context.listeners.unhandledRejection.length = 0;
+    context.listeners.sigint.length = 0;
+    context.listeners.sigterm.length = 0;
     context.listeners.stdinData.length = 0;
     context.listeners.exit.push(
         ...process.listeners('exit')
@@ -307,6 +307,14 @@ function recordAddedListeners(context: MediatorNodeContext, before: ListenerSnap
     context.listeners.unhandledRejection.push(
         ...process.listeners('unhandledRejection')
             .filter(listener => !before.unhandledRejection.has(listener)),
+    );
+    context.listeners.sigint.push(
+        ...process.listeners('SIGINT')
+            .filter(listener => !before.sigint.has(listener)),
+    );
+    context.listeners.sigterm.push(
+        ...process.listeners('SIGTERM')
+            .filter(listener => !before.sigterm.has(listener)),
     );
     context.listeners.stdinData.push(
         ...process.stdin.listeners('data')
@@ -323,6 +331,12 @@ function removeNodeListeners(context: MediatorNodeContext): void {
     }
     for (const listener of context.listeners.unhandledRejection) {
         process.removeListener('unhandledRejection', listener);
+    }
+    for (const listener of context.listeners.sigint) {
+        process.removeListener('SIGINT', listener);
+    }
+    for (const listener of context.listeners.sigterm) {
+        process.removeListener('SIGTERM', listener);
     }
     for (const listener of context.listeners.stdinData) {
         process.stdin.removeListener('data', listener);
@@ -375,7 +389,7 @@ export async function createMediatorNode(options: CreateMediatorNodeOptions): Pr
         ...BASELINE_ENV,
         ...options.env,
         KC_HYPR_DB: 'sqlite',
-        KC_IPFS_ENABLE: 'false',
+        KC_IPFS_ENABLE: options.env?.KC_IPFS_ENABLE ?? 'false',
         KC_NODE_NAME: options.name,
     };
     const previousEnv = new Map<string, string | undefined>();
@@ -402,6 +416,7 @@ export async function createMediatorNode(options: CreateMediatorNodeOptions): Pr
         }
 
         context.mediator = mediator;
+        context.shutdownHook = () => mediator!.__test.cleanup();
         recordAddedListeners(context, listenersBefore);
         runWithMediatorNodeContext(context, () => {
             mediator!.__test.setNodeKey(context.publicKey.toString('hex'));

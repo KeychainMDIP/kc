@@ -81,6 +81,16 @@ function peerPing(overrides: Record<string, unknown> = {}): Record<string, unkno
     };
 }
 
+function queueMessage(operation: Operation): Record<string, unknown> {
+    return {
+        type: 'queue',
+        time: new Date().toISOString(),
+        node: 'peer',
+        relays: [],
+        data: [operation],
+    };
+}
+
 async function makeOperations(count: number): Promise<Operation[]> {
     const gatekeeper = new Gatekeeper({
         db: new DbJsonMemory('hyperswarm-lifecycle-fixtures'),
@@ -224,6 +234,129 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         expect(swarm.destroyed).toBe(false);
         expect(running.node.run(() => getMediatorNodeContext().shutdownHook)).toEqual(expect.any(Function));
         expect(jest.getTimerCount()).toBeGreaterThanOrEqual(2);
+    });
+
+    it('cancels the startup retry when shutting down', async () => {
+        const node = await createMediatorNode({
+            name: `lifecycle-node-${++nodeNumber}`,
+            publicKey: Buffer.alloc(32, 0x12),
+            env: { KC_HYPR_EXPORT_INTERVAL: '2' },
+        });
+        nodes.push(node);
+        const store = new InMemoryOperationSyncStore();
+        const stopSpy = jest.spyOn(store, 'stop');
+        node.gatekeeperClient.exportIndex.mockRejectedValue(new Error('gatekeeper unavailable'));
+        node.run(() => {
+            getMediatorNodeContext().syncStore = store;
+        });
+        const systemTime = Date.now();
+        jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+        jest.setSystemTime(systemTime);
+        fakeTimersActive = true;
+
+        const startup = node.run(() => node.mediator.runMediator({ syncStore: store }));
+        await eventually(() => node.gatekeeperClient.exportIndex.mock.calls.length === 1);
+        expect(jest.getTimerCount()).toBe(1);
+
+        const shutdown = node.run(() => getMediatorNodeContext().shutdownHook);
+        if (!shutdown) {
+            throw new Error('expected graceful shutdown callback');
+        }
+        await node.run(() => shutdown());
+        await startup;
+
+        expect(jest.getTimerCount()).toBe(0);
+        expect(stopSpy).toHaveBeenCalledTimes(1);
+        node.run(() => {
+            getMediatorNodeContext().shutdownHook = null;
+        });
+    });
+
+    it('stops retrying when an in-flight startup refresh fails during shutdown', async () => {
+        const node = await createMediatorNode({
+            name: `lifecycle-node-${++nodeNumber}`,
+            publicKey: Buffer.alloc(32, 0x16),
+        });
+        nodes.push(node);
+        const store = new InMemoryOperationSyncStore();
+        let rejectRefresh!: (error: Error) => void;
+        const refreshing = new Promise<never>((_resolve, reject) => {
+            rejectRefresh = reject;
+        });
+        node.gatekeeperClient.exportIndex.mockReturnValueOnce(refreshing);
+
+        const startup = node.run(() => node.mediator.runMediator({ syncStore: store }));
+        await eventually(() => node.gatekeeperClient.exportIndex.mock.calls.length === 1);
+        const cleanup = node.run(() => node.mediator.__test.cleanup());
+        rejectRefresh(new Error('refresh interrupted'));
+        await startup;
+        await cleanup;
+
+        expect(node.gatekeeperClient.exportIndex).toHaveBeenCalledTimes(1);
+    });
+
+    it('retries the initial Gatekeeper index sync after the configured delay', async () => {
+        const node = await createMediatorNode({
+            name: `lifecycle-node-${++nodeNumber}`,
+            publicKey: Buffer.alloc(32, 0x13),
+            env: { KC_HYPR_EXPORT_INTERVAL: '2' },
+        });
+        nodes.push(node);
+        const store = new InMemoryOperationSyncStore();
+        node.gatekeeperClient.exportIndex.mockRejectedValueOnce(new Error('gatekeeper unavailable'));
+        const systemTime = Date.now();
+        jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+        jest.setSystemTime(systemTime);
+        fakeTimersActive = true;
+
+        const startup = node.run(() => node.mediator.runMediator({ syncStore: store }));
+        await eventually(() => node.gatekeeperClient.exportIndex.mock.calls.length === 1);
+
+        await node.run(() => jest.advanceTimersByTimeAsync(2_000));
+        await startup;
+
+        expect(node.gatekeeperClient.exportIndex.mock.calls.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it.each([
+        {
+            name: 'without a node ID',
+            nodeID: '',
+            document: {},
+            message: 'nodeID is not set. Please set KC_NODE_ID.',
+        },
+        {
+            name: 'when the node DID cannot be resolved',
+            nodeID: 'did:test:missing',
+            document: {},
+            message: 'DID document not found for nodeID: did:test:missing',
+        },
+        {
+            name: 'when the resolved node document has no ID',
+            nodeID: 'did:test:invalid',
+            document: { didDocument: {} },
+            message: 'DID document has no ID for nodeID: did:test:invalid',
+        },
+    ])('rejects IPFS startup $name', async ({ nodeID, document, message }) => {
+        const node = await createMediatorNode({
+            name: `lifecycle-node-${++nodeNumber}`,
+            publicKey: Buffer.alloc(32, 0x14),
+            env: {
+                KC_IPFS_ENABLE: 'true',
+                KC_NODE_ID: nodeID,
+            },
+        });
+        nodes.push(node);
+        const store = new InMemoryOperationSyncStore();
+        const stopSpy = jest.spyOn(store, 'stop');
+        node.keymasterClient.resolveDID.mockResolvedValue(document);
+
+        await expect(node.run(
+            () => node.mediator.runMediator({ syncStore: store }),
+        )).rejects.toThrow(message);
+        await node.run(() => node.mediator.__test.cleanup());
+
+        expect(stopSpy).toHaveBeenCalledTimes(1);
     });
 
     it('removes terminal rejected operations before Gatekeeper bootstrap', async () => {
@@ -569,6 +702,32 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         expect(running.node.swarms[1].join).toHaveBeenCalledTimes(1);
     });
 
+    it('does not recreate the swarm after shutdown begins', async () => {
+        const running = await createRunningNode({
+            env: { KC_HYPR_EXPORT_INTERVAL: '3600' },
+        });
+        const firstSwarm = running.node.swarms[0];
+        let releaseDestroy!: () => void;
+        const destroying = new Promise<void>(resolve => {
+            releaseDestroy = resolve;
+        });
+        firstSwarm.destroy.mockImplementationOnce(() => destroying as unknown as void);
+
+        const advance = running.node.run(() => jest.advanceTimersByTimeAsync(60_000));
+        await eventually(() => firstSwarm.destroy.mock.calls.length === 1);
+        const shutdown = running.node.run(() => getMediatorNodeContext().shutdownHook);
+        if (!shutdown) {
+            throw new Error('expected graceful shutdown callback');
+        }
+        const stopping = running.node.run(() => shutdown());
+        releaseDestroy();
+        await advance;
+        await stopping;
+
+        expect(running.node.swarms).toHaveLength(1);
+        expect(firstSwarm.destroyed).toBe(true);
+    });
+
     it('starts periodic repair from the recurring connection loop', async () => {
         const running = await createRunningNode({
             env: { KC_HYPR_EXPORT_INTERVAL: '3600' },
@@ -856,6 +1015,49 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         }
     });
 
+    it('backs off the export loop while imports remain queued', async () => {
+        const operations = await makeOperations(2);
+        const running = await createRunningNode();
+        const peer = await attachConnection(running, 0x22);
+        await sendPeerMessage(peer, peerPing({ capabilities: { negentropy: false } }));
+        const processEvents = running.node.gatekeeperClient.processEvents;
+        const processEventsImplementation = processEvents.getMockImplementation();
+        if (!processEventsImplementation) {
+            throw new Error('Gatekeeper processEvents implementation is unavailable');
+        }
+        let markFirstStarted!: () => void;
+        const firstStarted = new Promise<void>(resolve => {
+            markFirstStarted = resolve;
+        });
+        let releaseFirst!: () => void;
+        const firstBlocked = new Promise<void>(resolve => {
+            releaseFirst = resolve;
+        });
+        processEvents.mockImplementationOnce(async () => {
+            markFirstStarted();
+            await firstBlocked;
+            return processEventsImplementation();
+        });
+        const first = running.node.run(
+            () => running.node.mediator.__test.receiveMsg(peer.peerKey, queueMessage(operations[0])),
+        );
+        await firstStarted;
+        const second = running.node.run(
+            () => running.node.mediator.__test.receiveMsg(peer.peerKey, queueMessage(operations[1])),
+        );
+        await running.node.run(() => jest.advanceTimersByTimeAsync(2_000));
+        const refreshesBeforeBackoff = running.node.gatekeeperClient.exportIndex.mock.calls.length;
+        releaseFirst();
+        await first;
+        await second;
+        await running.node.run(() => jest.advanceTimersByTimeAsync(59_000));
+        expect(running.node.gatekeeperClient.exportIndex).toHaveBeenCalledTimes(refreshesBeforeBackoff);
+        await running.node.run(() => jest.advanceTimersByTimeAsync(1_000));
+
+        expect(processEvents).toHaveBeenCalledTimes(2);
+        expect(running.node.gatekeeperClient.exportIndex.mock.calls.length).toBeGreaterThan(refreshesBeforeBackoff);
+    });
+
     it('expires an idle ordered catch-up server session without closing its connection', async () => {
         const operations = await makeOperations(301);
         const running = await createRunningNode({
@@ -1136,14 +1338,6 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
 
         const peer = await attachConnection(running, 0x22);
         await sendPeerMessage(peer, peerPing());
-        const queueMessage = (operation: Operation) => ({
-            type: 'queue',
-            time: new Date().toISOString(),
-            node: 'peer',
-            relays: [],
-            data: [operation],
-        });
-
         await sendPeerMessage(peer, queueMessage(oldestOperation));
         await eventually(() => running.node.gatekeeperClient.processEvents.mock.calls.length >= 1);
         await settle();
@@ -1858,8 +2052,43 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
 
         expect(swarm.destroyed).toBe(true);
         expect(running.stopSpy).toHaveBeenCalledTimes(1);
+        expect(jest.getTimerCount()).toBe(0);
+        await running.node.run(() => jest.advanceTimersByTimeAsync(60_000));
+        expect(jest.getTimerCount()).toBe(0);
         running.node.run(() => {
             getMediatorNodeContext().shutdownHook = null;
         });
+    });
+
+    it('continues shutdown after swarm destruction fails', async () => {
+        const running = await createRunningNode();
+        const swarm = running.node.swarms[0];
+        const destroy = swarm.destroy.getMockImplementation();
+        if (!destroy) {
+            throw new Error('expected mock swarm destroy implementation');
+        }
+        swarm.destroy.mockImplementationOnce(() => {
+            throw new Error('destroy failed');
+        });
+
+        await running.node.run(() => running.node.mediator.__test.cleanup());
+        destroy();
+
+        expect(running.stopSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('resolves cleanup when stopping the sync store fails', async () => {
+        const node = await createMediatorNode({
+            name: `lifecycle-node-${++nodeNumber}`,
+            publicKey: Buffer.alloc(32, 0x15),
+        });
+        nodes.push(node);
+        const store = new InMemoryOperationSyncStore();
+        const stopSpy = jest.spyOn(store, 'stop').mockRejectedValueOnce(new Error('stop failed'));
+        await node.run(() => node.mediator.runMediator({ syncStore: store, startLoops: false }));
+
+        await expect(node.run(() => node.mediator.__test.cleanup())).resolves.toBeUndefined();
+
+        expect(stopSpy).toHaveBeenCalledTimes(1);
     });
 });
