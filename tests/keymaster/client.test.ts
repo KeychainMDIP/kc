@@ -1,9 +1,11 @@
 import nock from 'nock';
 import KeymasterClient from '@mdip/keymaster/client';
+import SearchClient from '../../packages/keymaster/src/search-client.ts';
 import { ExpectedExceptionError } from '@mdip/common/errors';
 import {Seed, WalletEncFile, WalletFile} from "@mdip/keymaster/types";
 
 const KeymasterURL = 'http://keymaster.org';
+const SearchURL = 'http://search.org';
 const ServerError = { message: 'Server error' };
 const Endpoints = {
     ready: '/api/v1/ready',
@@ -126,23 +128,69 @@ describe('isReady', () => {
         expect(keymaster != null).toBe(true);
     });
 
-    it('should timeout if not ready', async () => {
+    it('should reject when max retries are exhausted', async () => {
         nock(KeymasterURL)
             .get(Endpoints.ready)
             .times(3)
             .reply(200, { ready: false });
 
-        const keymaster = await KeymasterClient.create({
+        await expect(KeymasterClient.create({
             url: KeymasterURL,
             waitUntilReady: true,
-            intervalSeconds: 0.1,
+            intervalSeconds: 0,
             maxRetries: 2,
             chatty: false,
             becomeChattyAfter: 1,
             console: mockConsole
-        });
+        })).rejects.toThrow('Keymaster did not become ready after 3 attempts');
+    });
 
-        expect(keymaster != null).toBe(true);
+    it('should succeed when ready on the last retry', async () => {
+        nock(KeymasterURL)
+            .get(Endpoints.ready)
+            .times(2)
+            .reply(200, { ready: false })
+            .get(Endpoints.ready)
+            .reply(200, { ready: true });
+
+        await expect(KeymasterClient.create({
+            url: KeymasterURL,
+            waitUntilReady: true,
+            intervalSeconds: 0,
+            maxRetries: 2,
+        })).resolves.toBeInstanceOf(KeymasterClient);
+    });
+});
+
+describe('SearchClient waitUntilReady', () => {
+    it('should reject when max retries are exhausted', async () => {
+        nock(SearchURL)
+            .get(Endpoints.ready)
+            .times(3)
+            .reply(200, { ready: false });
+
+        await expect(SearchClient.create({
+            url: SearchURL,
+            waitUntilReady: true,
+            intervalSeconds: 0,
+            maxRetries: 2,
+        })).rejects.toThrow('Search Server did not become ready after 3 attempts');
+    });
+
+    it('should succeed when ready on the last retry', async () => {
+        nock(SearchURL)
+            .get(Endpoints.ready)
+            .times(2)
+            .reply(200, { ready: false })
+            .get(Endpoints.ready)
+            .reply(200, { ready: true });
+
+        await expect(SearchClient.create({
+            url: SearchURL,
+            waitUntilReady: true,
+            intervalSeconds: 0,
+            maxRetries: 2,
+        })).resolves.toBeInstanceOf(SearchClient);
     });
 });
 

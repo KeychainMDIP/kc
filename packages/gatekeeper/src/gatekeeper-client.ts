@@ -84,18 +84,18 @@ export default class GatekeeperClient implements GatekeeperInterface {
         while (!ready) {
             ready = await this.isReady();
 
+            retries += 1;
+
+            if (!ready && maxRetries > 0 && retries > maxRetries) {
+                throw new Error(`Gatekeeper did not become ready after ${retries} attempts`);
+            }
+
             if (!ready) {
                 if (chatty) {
                     this.log.debug('Waiting for Gatekeeper to be ready...');
                 }
                 // wait for 1 second before checking again
                 await new Promise(resolve => setTimeout(resolve, intervalSeconds * 1000));
-            }
-
-            retries += 1;
-
-            if (maxRetries > 0 && retries > maxRetries) {
-                return;
             }
 
             if (!chatty && becomeChattyAfter > 0 && retries > becomeChattyAfter) {
