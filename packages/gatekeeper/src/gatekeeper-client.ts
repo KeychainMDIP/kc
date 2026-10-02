@@ -1,5 +1,6 @@
 import axiosModule, { AxiosError, type AxiosInstance, type AxiosStatic } from 'axios';
 import { childLogger, createConsoleLogger, type LoggerLike } from '@mdip/common/logger';
+import { isRetryableHttpError } from '@mdip/common/utils';
 import {
     BlockId,
     BlockInfo,
@@ -144,8 +145,11 @@ export default class GatekeeperClient implements GatekeeperInterface {
             const response = await this.axios.get(`${this.API}/ready`);
             return response.data;
         }
-        catch {
-            return false;
+        catch (error) {
+            if (isRetryableHttpError(error)) {
+                return false;
+            }
+            throw error;
         }
     }
 

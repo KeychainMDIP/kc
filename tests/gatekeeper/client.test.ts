@@ -95,6 +95,40 @@ describe('isReady', () => {
         expect(isReady).toBe(false);
     });
 
+    it('should throw on a permanent readiness error', async () => {
+        nock(GatekeeperURL)
+            .get(Endpoints.ready)
+            .reply(401, { message: 'Unauthorized' });
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+
+        await expect(gatekeeper.isReady()).rejects.toThrow('Request failed with status code 401');
+    });
+
+    it('should throw on an invalid URL without retrying', async () => {
+        await expect(GatekeeperClient.create({
+            url: 'http://[invalid',
+            waitUntilReady: true,
+            intervalSeconds: 0,
+            maxRetries: 1,
+        })).rejects.toMatchObject({ code: 'ERR_INVALID_URL' });
+    });
+
+    it('should retry a transient service failure', async () => {
+        nock(GatekeeperURL)
+            .get(Endpoints.ready)
+            .reply(503, 'false')
+            .get(Endpoints.ready)
+            .reply(200, 'true');
+
+        await expect(GatekeeperClient.create({
+            url: GatekeeperURL,
+            waitUntilReady: true,
+            intervalSeconds: 0,
+            maxRetries: 1,
+        })).resolves.toBeInstanceOf(GatekeeperClient);
+    });
+
     it('should wait until ready', async () => {
         nock(GatekeeperURL)
             .get(Endpoints.ready)

@@ -35,6 +35,7 @@ import {
 import { Buffer } from 'buffer';
 import axiosModule, { AxiosError, type AxiosInstance, type AxiosStatic } from 'axios';
 import { childLogger, createConsoleLogger, type LoggerLike } from '@mdip/common/logger';
+import { isRetryableHttpError } from '@mdip/common/utils';
 
 const axios =
     (axiosModule as AxiosStatic & { default?: AxiosInstance })?.default ??
@@ -119,8 +120,11 @@ export default class KeymasterClient implements KeymasterInterface {
             const response = await axios.get(`${this.API}/ready`);
             return response.data.ready;
         }
-        catch {
-            return false;
+        catch (error) {
+            if (isRetryableHttpError(error)) {
+                return false;
+            }
+            throw error;
         }
     }
 
