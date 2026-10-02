@@ -31,12 +31,13 @@ function Network() {
     useEffect(() => {
         let ignore = false;
         let retryTimer: ReturnType<typeof setTimeout> | undefined;
+        const controller = new AbortController();
 
         setSnapshot(null);
         setMessage("Loading network snapshot...");
 
         function loadSnapshot() {
-            fetchNetworkMetricSnapshot(selectedDate)
+            fetchNetworkMetricSnapshot(selectedDate, controller.signal)
                 .then(result => {
                     if (ignore) {
                         return;
@@ -69,6 +70,7 @@ function Network() {
 
         return () => {
             ignore = true;
+            controller.abort();
             if (retryTimer) {
                 clearTimeout(retryTimer);
             }

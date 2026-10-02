@@ -611,6 +611,7 @@ function ChallengeReceipts() {
 
     useEffect(() => {
         let ignore = false;
+        const controller = new AbortController();
 
         async function fetchAttesterRows() {
             if (attesterDid) {
@@ -632,7 +633,7 @@ function ChallengeReceipts() {
                         updatedBefore,
                         limit: receiptBrowseFetchLimit,
                         offset,
-                    });
+                    }, controller.signal);
 
                     total = result.total;
                     allReceipts.push(...result.receipts);
@@ -660,11 +661,13 @@ function ChallengeReceipts() {
 
         return () => {
             ignore = true;
+            controller.abort();
         };
     }, [attesterDid, setError, updatedAfter, updatedBefore]);
 
     useEffect(() => {
         let ignore = false;
+        const controller = new AbortController();
 
         async function fetchUsageRows() {
             if (!attesterDid) {
@@ -687,7 +690,7 @@ function ChallengeReceipts() {
                         updatedBefore,
                         limit: usageFetchLimit,
                         offset,
-                    });
+                    }, controller.signal);
 
                     total = result.total;
                     allRows.push(...result.usage);
@@ -715,6 +718,7 @@ function ChallengeReceipts() {
 
         return () => {
             ignore = true;
+            controller.abort();
         };
     }, [attesterDid, setError, updatedAfter, updatedBefore]);
 
@@ -729,6 +733,7 @@ function ChallengeReceipts() {
 
     useEffect(() => {
         let ignore = false;
+        const controller = new AbortController();
 
         async function fetchReceiptRows() {
             if (!attesterDid || !selectedSchemaDid || !selectedRequesterDid) {
@@ -752,7 +757,7 @@ function ChallengeReceipts() {
                         updatedBefore,
                         limit: receiptBrowseFetchLimit,
                         offset,
-                    });
+                    }, controller.signal);
 
                     total = result.total;
                     allReceipts.push(...result.receipts);
@@ -785,6 +790,7 @@ function ChallengeReceipts() {
 
         return () => {
             ignore = true;
+            controller.abort();
         };
     }, [
         attesterDid,

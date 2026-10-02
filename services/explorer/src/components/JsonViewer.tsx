@@ -24,6 +24,7 @@ import {
 import { useSnackbar } from "../contexts/SnackbarProvider.js";
 import { handleCopyDID } from "../shared/utilities.js";
 import { useSearchParams } from "react-router-dom";
+import { createLatestRequest } from "../lifecycle.js";
 
 function JsonViewer() {
     const { setError } = useSnackbar();
@@ -37,29 +38,38 @@ function JsonViewer() {
     const [searchPage, setSearchPage] = useState<number>(0);
     const [searchCount, setSearchCount] = useState<number>(50);
     const [searchParams, setSearchParams] = useSearchParams();
+    const [requests] = useState(createLatestRequest);
 
     useEffect(() => {
+        const controller = requests.start();
         const didParam = searchParams.get('did');
         const qParam = searchParams.get('q');
 
         if (didParam) {
-            doResolveDID(didParam);
+            void doResolveDID(didParam, controller);
         } else if (qParam) {
-            doSearch(qParam);
+            void doSearch(qParam, controller);
         } else {
             setSearchResults(null);
             setAliasDocs(undefined);
         }
+
+        return () => {
+            requests.abort();
+        };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [searchParams]);
 
-    async function doResolveDID(did: string) {
+    async function doResolveDID(did: string, controller: AbortController) {
         try {
             setSearchResults(null);
             setAliasDocs(undefined);
             setFormDid(did);
 
-            const docs = await fetchDIDDocument(did);
+            const docs = await fetchDIDDocument(did, {}, controller.signal);
+            if (!requests.isCurrent(controller)) {
+                return;
+            }
             if (!docs) {
                 setError("DID document not found.");
                 return;
@@ -79,20 +89,31 @@ function JsonViewer() {
             }
             setCurrentDid(did);
         } catch (error: any) {
-            setError(error);
+            if (requests.isCurrent(controller)) {
+                setError(error);
+            }
+        } finally {
+            requests.finish(controller);
         }
     }
 
-    async function doSearch(query: string) {
+    async function doSearch(query: string, controller: AbortController) {
         try {
             setAliasDocs(undefined);
             setSearchResults(null);
             setFormDid(query);
             setSearchPage(0);
 
-            setSearchResults(await searchDIDDocuments(query));
+            const results = await searchDIDDocuments(query, controller.signal);
+            if (requests.isCurrent(controller)) {
+                setSearchResults(results);
+            }
         } catch (error: any) {
-            setError(error);
+            if (requests.isCurrent(controller)) {
+                setError(error);
+            }
+        } finally {
+            requests.finish(controller);
         }
     }
 
@@ -110,11 +131,16 @@ function JsonViewer() {
     }
 
     async function selectAliasDocsVersion(version: number) {
+        const controller = requests.start();
+
         try {
             setAliasDocsVersion(version);
             const docs = await fetchDIDDocument(currentDid, {
                 versionSequence: version,
-            });
+            }, controller.signal);
+            if (!requests.isCurrent(controller)) {
+                return;
+            }
             if (!docs) {
                 setError("DID version not found.");
                 return;
@@ -122,7 +148,11 @@ function JsonViewer() {
 
             setAliasDocs(docs);
         } catch (error: any) {
-            setError(error);
+            if (requests.isCurrent(controller)) {
+                setError(error);
+            }
+        } finally {
+            requests.finish(controller);
         }
     }
 
