@@ -1706,7 +1706,7 @@ describe('DidIndexer published credential indexing', () => {
         const indexer = new DidIndexer(gatekeeper as any, db, { intervalMs: 60_000 });
 
         await indexer.startIndexing();
-        indexer.stopIndexing();
+        await indexer.stopIndexing();
 
         expect(gatekeeper.exportIndex).toHaveBeenCalledWith({
             mode: 'snapshot',
@@ -1786,7 +1786,7 @@ describe('DidIndexer published credential indexing', () => {
         const applySpy = jest.spyOn(db, 'applyIndexPage');
 
         await indexer.startIndexing();
-        indexer.stopIndexing();
+        await indexer.stopIndexing();
 
         expect(gatekeeper.exportIndex).toHaveBeenCalledWith({
             mode: 'changes',
@@ -2032,7 +2032,10 @@ describe('DidIndexer published credential indexing', () => {
                 'refreshIndex error'
             );
 
-            indexer.stopIndexing();
+            await indexer.stopIndexing();
+            gatekeeper.isReady.mockClear();
+            await intervalCallback!();
+            expect(gatekeeper.isReady).not.toHaveBeenCalled();
         }
         finally {
             setIntervalSpy.mockRestore();

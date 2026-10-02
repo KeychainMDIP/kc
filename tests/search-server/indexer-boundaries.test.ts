@@ -211,6 +211,40 @@ describe('DidIndexer gatekeeper read boundary', () => {
         expect(gatekeeper.exportIndex).not.toHaveBeenCalled();
     });
 
+    it('does not install an interval after being stopped during the initial refresh', async () => {
+        const db = new DIDsDbMemory();
+        let resolveReady!: (ready: boolean) => void;
+        const gatekeeper = {
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>()
+                .mockReturnValue(new Promise<boolean>(resolve => { resolveReady = resolve; })),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>(),
+        };
+        const setIntervalSpy = jest.spyOn(global, 'setInterval');
+        try {
+            const indexer = new DidIndexer(gatekeeper, db, { intervalMs: 60_000 });
+
+            const starting = indexer.startIndexing();
+            await Promise.resolve();
+
+            let stopped = false;
+            const stopping = indexer.stopIndexing().then(() => { stopped = true; });
+            expect(stopped).toBe(false);
+
+            resolveReady(false);
+            await Promise.all([starting, stopping]);
+
+            expect(stopped).toBe(true);
+            expect(setIntervalSpy).not.toHaveBeenCalled();
+            expect(gatekeeper.exportIndex).not.toHaveBeenCalled();
+
+            await indexer.startIndexing();
+            expect(gatekeeper.isReady).toHaveBeenCalledTimes(1);
+        }
+        finally {
+            setIntervalSpy.mockRestore();
+        }
+    });
+
     it('rejects invalid snapshot continuation state and malformed snapshot responses', async () => {
         const db = new DIDsDbMemory();
         const gatekeeper = {
