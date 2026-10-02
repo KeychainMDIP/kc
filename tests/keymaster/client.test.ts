@@ -113,6 +113,16 @@ describe('isReady', () => {
         expect(isReady).toBe(false);
     });
 
+    it('should throw on a permanent readiness error', async () => {
+        nock(KeymasterURL)
+            .get(Endpoints.ready)
+            .reply(404, { message: 'Not found' });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        await expect(keymaster.isReady()).rejects.toThrow('Request failed with status code 404');
+    });
+
     it('should wait until ready', async () => {
         nock(KeymasterURL)
             .get(Endpoints.ready)
@@ -163,6 +173,17 @@ describe('isReady', () => {
 });
 
 describe('SearchClient waitUntilReady', () => {
+    it('should throw on a permanent readiness error', async () => {
+        nock(SearchURL)
+            .get(Endpoints.ready)
+            .reply(404, { message: 'Not found' });
+
+        await expect(SearchClient.create({
+            url: SearchURL,
+            waitUntilReady: true,
+        })).rejects.toThrow('Request failed with status code 404');
+    });
+
     it('should reject when max retries are exhausted', async () => {
         nock(SearchURL)
             .get(Endpoints.ready)
