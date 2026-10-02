@@ -830,7 +830,7 @@ describe('DidIndexer challenge receipt indexing', () => {
         const indexer = new DidIndexer(gatekeeper as any, db, { intervalMs: 60_000 });
 
         await indexer.startIndexing();
-        indexer.stopIndexing();
+        await indexer.stopIndexing();
 
         expect(gatekeeper.getDIDs).not.toHaveBeenCalled();
         expect(gatekeeper.resolveDID).not.toHaveBeenCalled();

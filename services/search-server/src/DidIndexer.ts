@@ -66,7 +66,9 @@ export default class DidIndexer {
     private readonly metricsRefreshIntervalMs: number | null;
     private readonly didPrefix?: string;
     private timer: NodeJS.Timeout | null;
+    private activeRefresh: Promise<void> | null;
     private refreshInProgress: boolean;
+    private stopped: boolean;
     private initialMetricsQuietRuns: number;
     private log = childLogger({ service: 'search-server', module: 'DidIndexer' });
 
@@ -82,26 +84,54 @@ export default class DidIndexer {
         this.metricsRefreshIntervalMs = options.metricsRefreshIntervalMs ?? null;
         this.didPrefix = options.didPrefix;
         this.timer = null;
+        this.activeRefresh = null;
         this.refreshInProgress = false;
+        this.stopped = false;
         this.initialMetricsQuietRuns = 0;
     }
 
     async startIndexing(): Promise<void> {
-        this.log.info("Starting indexing...");
-        await this.refreshIndex();
+        if (this.stopped) {
+            return;
+        }
 
-        this.timer = setInterval(() => {
-            this.refreshIndex().catch((err) => {
+        this.log.info("Starting indexing...");
+        await this.runRefresh();
+
+        if (this.stopped || this.timer) {
+            return;
+        }
+
+        this.timer = setInterval(() =>
+            this.runRefresh().catch((err) => {
                 this.log.error({ error: err }, "refreshIndex error");
-            });
-        }, this.intervalMs);
+            }),
+        this.intervalMs);
     }
 
-    stopIndexing(): void {
+    async stopIndexing(): Promise<void> {
+        this.stopped = true;
+
         if (this.timer) {
             clearInterval(this.timer);
             this.timer = null;
         }
+
+        await this.activeRefresh;
+    }
+
+    private runRefresh(): Promise<void> {
+        if (this.stopped) {
+            return Promise.resolve();
+        }
+
+        if (!this.activeRefresh) {
+            this.activeRefresh = this.refreshIndex().finally(() => {
+                this.activeRefresh = null;
+            });
+        }
+
+        return this.activeRefresh;
     }
 
     private async refreshIndex(): Promise<void> {

@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
+import type { Server } from 'node:http';
 import { resolveDIDFromEvents } from "@mdip/gatekeeper";
 import type { ResolveDIDOptions } from "@mdip/gatekeeper/types";
 import GatekeeperClient from "@mdip/gatekeeper/client";
@@ -24,10 +25,50 @@ import {
     shouldSkipRateLimitPath,
 } from "./index-helpers.js";
 import { isNetworkMetricsScopeCurrent, parseSnapshotDate } from './network-metrics.js';
+import { runService, type Shutdown } from './lifecycle.js';
 
 const log = childLogger({ service: 'search-server' });
+const SHUTDOWN_TIMEOUT_MS = 10_000;
 
-async function main() {
+let activeDb: DIDsDb | undefined;
+let activeIndexer: DidIndexer | undefined;
+let server: Server | undefined;
+
+async function closeServer(httpServer: Server): Promise<void> {
+    if (!httpServer.listening) {
+        return;
+    }
+
+    await new Promise<void>((resolve, reject) => {
+        httpServer.close(error => error ? reject(error) : resolve());
+    });
+}
+
+async function cleanup(): Promise<void> {
+    const errors: unknown[] = [];
+
+    for (const step of [
+        () => server ? closeServer(server) : Promise.resolve(),
+        () => activeIndexer ? activeIndexer.stopIndexing() : Promise.resolve(),
+        () => activeDb ? activeDb.disconnect() : Promise.resolve(),
+    ]) {
+        try {
+            await step();
+        }
+        catch (error) {
+            errors.push(error);
+        }
+    }
+
+    if (errors.length === 1) {
+        throw errors[0];
+    }
+    if (errors.length > 1) {
+        throw new AggregateError(errors, 'Search Server shutdown failed');
+    }
+}
+
+async function main(shutdown: Shutdown) {
     const app = express();
     const v1router = express.Router();
     const whitelistBlockList = createWhitelistBlockList(config.rateLimitWhitelist);
@@ -91,6 +132,7 @@ async function main() {
     } else {
         didDb = new DIDsDbMemory();
     }
+    activeDb = didDb;
 
     const gatekeeper = new GatekeeperClient();
     await gatekeeper.connect({
@@ -105,10 +147,7 @@ async function main() {
         metricsRefreshIntervalMs: config.metricsRefreshIntervalMs,
         didPrefix: config.didPrefix,
     });
-
-    // Let's not await here, we will continue and start
-    // the app while the indexer is indexing
-    indexer.startIndexing();
+    activeIndexer = indexer;
 
     v1router.get('/ready', async (req, res) => {
         try {
@@ -428,27 +467,31 @@ async function main() {
     app.use('/api/v1', v1router);
 
     const port = config.port;
-    const server = app.listen(port, () => {
-        log.info(`Listening on port ${port}`);
+    await new Promise<void>((resolve, reject) => {
+        const onError = (error: Error) => reject(error);
+        server = app.listen(port, () => {
+            server!.off('error', onError);
+            resolve();
+        });
+        server.once('error', onError);
     });
 
-    const shutdown = async () => {
-        try {
-            server.close();
-            indexer.stopIndexing();
-            await didDb.disconnect();
-        } catch (error: any) {
-            log.error({ error }, 'Error during shutdown');
-        } finally {
-            process.exit(0);
-        }
-    };
+    log.info(`Listening on port ${port}`);
+    server!.on('error', error => {
+        log.error({ error }, 'HTTP server error');
+        void shutdown(1);
+    });
 
-    process.on('SIGTERM', shutdown);
-    process.on('SIGINT', shutdown);
+    // Start indexing without delaying HTTP availability.
+    indexer.startIndexing().catch(error => {
+        log.error({ error }, 'Initial indexing failed');
+        void shutdown(1);
+    });
 }
 
-main().catch((err) => {
-    log.error({ error: err }, '[search-server] Fatal error');
-    process.exit(1);
+runService({
+    start: main,
+    cleanup,
+    log,
+    timeoutMs: SHUTDOWN_TIMEOUT_MS,
 });

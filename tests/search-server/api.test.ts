@@ -17,8 +17,8 @@ const serverEntry = '../../services/search-server/src/index.ts';
 const schemaDid = 'did:mdip:z3v8AuacR4diTuCgtbEfLDo2LzQNEDHgqBSNLMs5Szuq3WHcQdB';
 const logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
 const connect = jest.fn<() => Promise<void>>();
-const startIndexing = jest.fn();
-const stopIndexing = jest.fn();
+const startIndexing = jest.fn<() => Promise<void>>();
+const stopIndexing = jest.fn<() => Promise<void>>();
 const resolveDID = jest.fn<(...args: any[]) => Promise<any>>();
 const sqliteCreate = jest.fn(async () => db);
 const postgresCreate = jest.fn(async () => db);
@@ -28,7 +28,8 @@ let app: ReturnType<typeof express>;
 let server: Server | undefined;
 let base: string;
 let limiter: { skip: (req: any) => boolean };
-let signalListeners: Record<string, ReturnType<typeof process.listeners>>;
+let processListeners: Record<string, ReturnType<typeof process.listeners>>;
+const lifecycleEvents = ['SIGTERM', 'SIGINT', 'uncaughtException', 'unhandledRejection'] as const;
 
 jest.unstable_mockModule(require.resolve('express'), () => ({ default: Object.assign(() => app, express) }));
 jest.unstable_mockModule(require.resolve('express-rate-limit').replace(/\.cjs$/, '.mjs'), () => ({ default: (options: typeof limiter) => {
@@ -66,11 +67,13 @@ beforeEach(() => {
     app = express();
     server = undefined;
     connect.mockResolvedValue(undefined);
+    startIndexing.mockResolvedValue(undefined);
+    stopIndexing.mockResolvedValue(undefined);
     resolveDID.mockImplementation(async ({ did, getBlock }) => {
         await getBlock('local', 1);
         return { didDocument: { id: did } };
     });
-    signalListeners = Object.fromEntries(['SIGTERM', 'SIGINT'].map(signal => [signal, process.listeners(signal)]));
+    processListeners = Object.fromEntries(lifecycleEvents.map(event => [event, process.listeners(event)]));
     jest.spyOn(process, 'exit').mockImplementation(() => undefined as never);
 });
 
@@ -79,9 +82,9 @@ afterEach(async () => {
         server.closeAllConnections();
         await new Promise<void>(resolve => server!.close(() => resolve()));
     }
-    for (const signal of ['SIGTERM', 'SIGINT']) {
-        for (const listener of process.listeners(signal)) {
-            if (!signalListeners[signal].includes(listener)) process.removeListener(signal, listener);
+    for (const event of lifecycleEvents) {
+        for (const listener of process.listeners(event)) {
+            if (!processListeners[event].includes(listener)) process.removeListener(event, listener);
         }
     }
     jest.restoreAllMocks();
@@ -105,6 +108,12 @@ async function request(path: string, body?: unknown) {
     });
     const text = await response.text();
     return { status: response.status, body: response.headers.get('content-type')?.includes('json') ? JSON.parse(text) : text };
+}
+
+async function waitForCall(mock: ReturnType<typeof jest.fn>): Promise<void> {
+    for (let attempt = 0; attempt < 20 && mock.mock.calls.length === 0; attempt += 1) {
+        await new Promise(resolve => setImmediate(resolve));
+    }
 }
 
 describe('Search Server HTTP routes', () => {
@@ -350,19 +359,106 @@ describe('Search Server HTTP routes', () => {
         const disconnect = jest.spyOn(db, 'disconnect');
         if (fail) disconnect.mockRejectedValue(new Error('disconnect failed'));
         await boot();
-        const shutdown = process.listeners('SIGTERM').find(listener => !signalListeners.SIGTERM.includes(listener))!;
+        const shutdown = process.listeners('SIGTERM').find(listener => !processListeners.SIGTERM.includes(listener))!;
         await shutdown('SIGTERM');
         expect(stopIndexing).toHaveBeenCalledTimes(1);
         expect(disconnect).toHaveBeenCalledTimes(1);
-        expect(process.exit).toHaveBeenCalledWith(0);
+        expect(process.exit).toHaveBeenCalledWith(fail ? 1 : 0);
         if (fail) expect(logger.error).toHaveBeenCalledWith({ error: expect.any(Error) }, 'Error during shutdown');
     });
 
+    it('drains active HTTP requests before stopping indexing and disconnecting storage', async () => {
+        let releaseSearch!: () => void;
+        const search = jest.spyOn(db, 'searchDocs').mockReturnValue(new Promise<string[]>(resolve => {
+            releaseSearch = () => resolve([]);
+        }));
+        const disconnect = jest.spyOn(db, 'disconnect');
+        await boot();
+
+        const response = request('/search?q=pending');
+        await waitForCall(search as any);
+        const shutdown = process.listeners('SIGTERM').find(listener => !processListeners.SIGTERM.includes(listener))!;
+        const stopping = shutdown('SIGTERM');
+        await new Promise(resolve => setImmediate(resolve));
+
+        expect(stopIndexing).not.toHaveBeenCalled();
+        expect(disconnect).not.toHaveBeenCalled();
+
+        releaseSearch();
+        await response;
+        await stopping;
+
+        expect(stopIndexing).toHaveBeenCalledTimes(1);
+        expect(disconnect).toHaveBeenCalledTimes(1);
+        expect(process.exit).toHaveBeenCalledWith(0);
+    });
+
+    it('continues cleanup after multiple failures and exits non-zero', async () => {
+        stopIndexing.mockRejectedValue(new Error('indexer failed'));
+        const disconnect = jest.spyOn(db, 'disconnect').mockRejectedValue(new Error('storage failed'));
+        await boot();
+        const shutdown = process.listeners('SIGTERM').find(listener => !processListeners.SIGTERM.includes(listener))!;
+
+        await shutdown('SIGTERM');
+
+        expect(stopIndexing).toHaveBeenCalledTimes(1);
+        expect(disconnect).toHaveBeenCalledTimes(1);
+        expect(process.exit).toHaveBeenCalledWith(1);
+        expect(logger.error).toHaveBeenCalledWith({ error: expect.any(AggregateError) }, 'Error during shutdown');
+    });
+
+    it('routes HTTP listener errors through fatal cleanup', async () => {
+        const disconnect = jest.spyOn(db, 'disconnect');
+        await boot();
+
+        server!.emit('error', new Error('listener failed'));
+        await waitForCall(disconnect as any);
+
+        expect(stopIndexing).toHaveBeenCalledTimes(1);
+        expect(disconnect).toHaveBeenCalledTimes(1);
+        expect(process.exit).toHaveBeenCalledWith(1);
+        expect(logger.error).toHaveBeenCalledWith({ error: expect.any(Error) }, 'HTTP server error');
+    });
+
+    it('routes initial indexing failures through fatal cleanup', async () => {
+        const indexingError = new Error('indexing failed');
+        startIndexing.mockRejectedValue(indexingError);
+        const disconnect = jest.spyOn(db, 'disconnect');
+
+        await boot();
+        await waitForCall(disconnect as any);
+
+        expect(stopIndexing).toHaveBeenCalledTimes(1);
+        expect(disconnect).toHaveBeenCalledTimes(1);
+        expect(process.exit).toHaveBeenCalledWith(1);
+        expect(logger.error).toHaveBeenCalledWith({ error: indexingError }, 'Initial indexing failed');
+    });
+
+    it('routes asynchronous listen failures through startup cleanup', async () => {
+        const disconnect = jest.spyOn(db, 'disconnect');
+        const listenError = Object.assign(new Error('address in use'), { code: 'EADDRINUSE' });
+        jest.spyOn(app, 'listen').mockImplementation(((_port: number) => {
+            server = createServer(app);
+            setImmediate(() => server!.emit('error', listenError));
+            return server;
+        }) as typeof app.listen);
+
+        await import(serverEntry);
+        await waitForCall(disconnect as any);
+
+        expect(stopIndexing).toHaveBeenCalledTimes(1);
+        expect(disconnect).toHaveBeenCalledTimes(1);
+        expect(process.exit).toHaveBeenCalledWith(1);
+        expect(logger.error).toHaveBeenCalledWith({ error: listenError }, '[search-server] Fatal error');
+    });
+
     it('exits on startup failure without starting the HTTP listener', async () => {
+        const disconnect = jest.spyOn(db, 'disconnect');
         connect.mockRejectedValue(new Error('Gatekeeper unavailable'));
         await import(serverEntry);
         await new Promise(resolve => setImmediate(resolve));
         expect(startIndexing).not.toHaveBeenCalled();
+        expect(disconnect).toHaveBeenCalledTimes(1);
         expect(process.exit).toHaveBeenCalledWith(1);
         expect(logger.error).toHaveBeenCalledWith({ error: expect.any(Error) }, '[search-server] Fatal error');
     });
