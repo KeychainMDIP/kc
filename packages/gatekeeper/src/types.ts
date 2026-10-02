@@ -247,6 +247,8 @@ export interface ImportEventsResult {
 export interface GatekeeperClientOptions {
     url?: string;
     console?: typeof console;
+    signal?: AbortSignal;
+    timeoutMs?: number;
     waitUntilReady?: boolean;
     intervalSeconds?: number;
     chatty?: boolean;

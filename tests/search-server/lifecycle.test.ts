@@ -112,6 +112,33 @@ describe('Search Server lifecycle', () => {
         expect(log.error).toHaveBeenCalledWith({ error: expect.any(Error) }, '[search-server] Fatal error');
     });
 
+    it('does not treat an interrupted startup as fatal during shutdown', async () => {
+        let rejectStartup!: (error: Error) => void;
+        const startup = new Promise<void>((_resolve, reject) => {
+            rejectStartup = reject;
+        });
+        const cleanup = jest.fn(async () => {});
+        const shutdown = runService({
+            start: () => startup,
+            cleanup,
+            log,
+            timeoutMs: 10_000,
+        });
+        await new Promise(resolve => setImmediate(resolve));
+
+        const stopping = shutdown();
+        rejectStartup(new Error('aborted'));
+        await stopping;
+        await new Promise(resolve => setImmediate(resolve));
+
+        expect(cleanup).toHaveBeenCalledTimes(1);
+        expect(process.exit).toHaveBeenCalledWith(0);
+        expect(log.error).not.toHaveBeenCalledWith(
+            expect.anything(),
+            '[search-server] Fatal error',
+        );
+    });
+
     it('cleans up after an unhandled rejection', async () => {
         const cleanup = jest.fn(async () => {});
         runService({ start: async () => {}, cleanup, log, timeoutMs: 10_000 });

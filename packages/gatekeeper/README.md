@@ -62,3 +62,7 @@ const did = 'did:test:z3v8AuaTV5VKcT9MJoSHkSTRLpXDoqcgqiKkwGBNSV4nVzb6kLk';
 const docs = await gatekeeper.resolveDID(did);
 console.log(JSON.stringify(docs, null, 4));
 ```
+
+Client requests time out after 60 seconds by default. Set `timeoutMs` to use a
+different positive, finite deadline. Long-running services can pass an `AbortSignal` as
+`signal`. Aborting it cancels active requests and readiness waits.

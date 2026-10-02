@@ -58,3 +58,27 @@ export function isRetryableHttpError(error: unknown): boolean {
 
     return typeof code === 'string' && retryableNetworkCodes.has(code);
 }
+
+export function waitForTimeout(ms: number, signal?: AbortSignal): Promise<void> {
+    return new Promise((resolve, reject) => {
+        let timeout: ReturnType<typeof setTimeout> | undefined;
+        const abort = () => {
+            if (timeout !== undefined) {
+                clearTimeout(timeout);
+            }
+            reject(signal?.reason ?? Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }));
+        };
+
+        if (signal?.aborted) {
+            abort();
+            return;
+        }
+
+        timeout = setTimeout(() => {
+            signal?.removeEventListener('abort', abort);
+            resolve();
+        }, ms);
+
+        signal?.addEventListener('abort', abort, { once: true });
+    });
+}
