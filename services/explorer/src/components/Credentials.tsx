@@ -350,10 +350,11 @@ function Credentials() {
 
     useEffect(() => {
         let ignore = false;
+        const controller = new AbortController();
 
         async function fetchSchemaCounts() {
             try {
-                const schemas = await fetchPublishedSchemaMetrics();
+                const schemas = await fetchPublishedSchemaMetrics(controller.signal);
 
                 if (!ignore) {
                     setSchemaCounts(schemas);
@@ -370,11 +371,13 @@ function Credentials() {
 
         return () => {
             ignore = true;
+            controller.abort();
         };
     }, [setError]);
 
     useEffect(() => {
         let ignore = false;
+        const controller = new AbortController();
 
         async function fetchCredentials() {
             if (!schemaDid) {
@@ -388,7 +391,7 @@ function Credentials() {
                     schemaDid,
                     limit: pageSize,
                     offset: page * pageSize,
-                });
+                }, controller.signal);
 
                 const total = result.total;
 
@@ -413,6 +416,7 @@ function Credentials() {
 
         return () => {
             ignore = true;
+            controller.abort();
         };
     }, [page, pageSize, schemaDid, setError, updateParams]);
 
@@ -442,6 +446,7 @@ function Credentials() {
 
     useEffect(() => {
         let ignore = false;
+        const controller = new AbortController();
 
         async function fetchDetail() {
             if (!selectedDetailDid) {
@@ -464,7 +469,7 @@ function Credentials() {
                         schemaDid: schemaDid || undefined,
                         limit: 1,
                         offset: 0,
-                    });
+                    }, controller.signal);
 
                     const fetchedRow = result.credentials[0];
                     if (fetchedRow) {
@@ -477,7 +482,11 @@ function Credentials() {
                 }
 
                 if (nextDetailRecord) {
-                    const subjectDoc = await fetchDIDDocument(nextDetailRecord.subjectDid);
+                    const subjectDoc = await fetchDIDDocument(
+                        nextDetailRecord.subjectDid,
+                        {},
+                        controller.signal
+                    );
                     const manifestEntry = subjectDoc
                         ? getManifestEntryFromDoc({
                             doc: subjectDoc,
@@ -498,7 +507,7 @@ function Credentials() {
                     return;
                 }
 
-                const response = await fetchDIDDocument(selectedDetailDid);
+                const response = await fetchDIDDocument(selectedDetailDid, {}, controller.signal);
 
                 if (!ignore) {
                     if (!response) {
@@ -535,6 +544,7 @@ function Credentials() {
 
         return () => {
             ignore = true;
+            controller.abort();
         };
     }, [listDetailRecord, schemaDid, selectedDetailDid, setError]);
 
