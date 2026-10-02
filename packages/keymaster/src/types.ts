@@ -275,6 +275,8 @@ export interface PossiblySigned {
 export interface RestClientOptions {
     url?: string;
     console?: any;
+    signal?: AbortSignal;
+    timeoutMs?: number;
     waitUntilReady?: boolean;
     intervalSeconds?: number;
     chatty?: boolean;
@@ -289,6 +291,7 @@ export interface SearchClientOptions extends RestClientOptions {
 }
 
 export interface WaitUntilReadyOptions {
+    signal?: AbortSignal;
     intervalSeconds?: number;
     chatty?: boolean;
     becomeChattyAfter?: number;

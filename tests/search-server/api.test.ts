@@ -16,7 +16,7 @@ const express = require('express') as typeof import('express');
 const serverEntry = '../../services/search-server/src/index.ts';
 const schemaDid = 'did:mdip:z3v8AuacR4diTuCgtbEfLDo2LzQNEDHgqBSNLMs5Szuq3WHcQdB';
 const logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
-const connect = jest.fn<() => Promise<void>>();
+const connect = jest.fn<(options?: { signal?: AbortSignal }) => Promise<void>>();
 const startIndexing = jest.fn<() => Promise<void>>();
 const stopIndexing = jest.fn<() => Promise<void>>();
 const resolveDID = jest.fn<(...args: any[]) => Promise<any>>();
@@ -343,7 +343,13 @@ describe('Search Server HTTP routes', () => {
         expect(app.get('trust proxy')).toBe(true);
         if (name === 'sqlite') expect(sqliteCreate).toHaveBeenCalledWith();
         else expect(postgresCreate).toHaveBeenCalledWith(config.postgresURL);
-        expect(connect).toHaveBeenCalledWith({ url: config.gatekeeperURL, waitUntilReady: true, intervalSeconds: 5, chatty: true });
+        expect(connect).toHaveBeenCalledWith({
+            url: config.gatekeeperURL,
+            signal: expect.any(AbortSignal),
+            waitUntilReady: true,
+            intervalSeconds: 5,
+            chatty: true,
+        });
         expect(startIndexing).toHaveBeenCalledTimes(1);
         expect(await request('/ready')).toEqual({ status: 200, body: { ready: true } });
         expect(limiter.skip({ method: 'OPTIONS' })).toBe(true);
@@ -359,8 +365,11 @@ describe('Search Server HTTP routes', () => {
         const disconnect = jest.spyOn(db, 'disconnect');
         if (fail) disconnect.mockRejectedValue(new Error('disconnect failed'));
         await boot();
+        const signal = connect.mock.calls[0][0]?.signal;
+        expect(signal?.aborted).toBe(false);
         const shutdown = process.listeners('SIGTERM').find(listener => !processListeners.SIGTERM.includes(listener))!;
         await shutdown('SIGTERM');
+        expect(signal?.aborted).toBe(true);
         expect(stopIndexing).toHaveBeenCalledTimes(1);
         expect(disconnect).toHaveBeenCalledTimes(1);
         expect(process.exit).toHaveBeenCalledWith(fail ? 1 : 0);
@@ -432,6 +441,24 @@ describe('Search Server HTTP routes', () => {
         expect(disconnect).toHaveBeenCalledTimes(1);
         expect(process.exit).toHaveBeenCalledWith(1);
         expect(logger.error).toHaveBeenCalledWith({ error: indexingError }, 'Initial indexing failed');
+    });
+
+    it('does not treat index cancellation during shutdown as fatal', async () => {
+        startIndexing.mockImplementation(() => new Promise<void>((_resolve, reject) => {
+            connect.mock.calls[0][0]?.signal?.addEventListener(
+                'abort',
+                () => reject(new Error('canceled')),
+                { once: true },
+            );
+        }));
+        await boot();
+        const shutdown = process.listeners('SIGTERM').find(listener => !processListeners.SIGTERM.includes(listener))!;
+
+        await shutdown('SIGTERM');
+        await new Promise(resolve => setImmediate(resolve));
+
+        expect(process.exit).toHaveBeenCalledWith(0);
+        expect(logger.error).not.toHaveBeenCalledWith({ error: expect.any(Error) }, 'Initial indexing failed');
     });
 
     it('routes asynchronous listen failures through startup cleanup', async () => {

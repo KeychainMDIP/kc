@@ -6,13 +6,10 @@ import {
 
 import axiosModule, { AxiosError, type AxiosInstance, type AxiosStatic } from 'axios';
 import { childLogger, createConsoleLogger, type LoggerLike } from '@mdip/common/logger';
-import { isRetryableHttpError } from '@mdip/common/utils';
-
-const axios =
-    (axiosModule as AxiosStatic & { default?: AxiosInstance })?.default ??
-    (axiosModule as AxiosInstance);
+import { isRetryableHttpError, waitForTimeout } from '@mdip/common/utils';
 
 const VERSION = '/api/v1';
+const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
 
 function throwError(error: AxiosError | any): never {
     if (error.response) {
@@ -24,7 +21,16 @@ function throwError(error: AxiosError | any): never {
 
 export default class SearchClient implements SearchEngine {
     private API: string = "/api/v1";
+    private axios: AxiosInstance;
     private log: LoggerLike = childLogger({ service: 'search-client' });
+
+    constructor() {
+        const axios =
+            (axiosModule as AxiosStatic & { default?: AxiosInstance })?.default ??
+            (axiosModule as AxiosInstance);
+
+        this.axios = axios.create({ timeout: DEFAULT_REQUEST_TIMEOUT_MS });
+    }
 
     // Factory method
     static async create(options: SearchClientOptions): Promise<SearchClient> {
@@ -34,6 +40,14 @@ export default class SearchClient implements SearchEngine {
     }
 
     async connect(options: SearchClientOptions = {}): Promise<void> {
+        const timeoutMs = options.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+        if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+            throw new Error('timeoutMs must be a positive finite number');
+        }
+
+        this.axios.defaults.signal = options.signal;
+        this.axios.defaults.timeout = timeoutMs;
+
         if (options.url) {
             this.API = `${options.url}${VERSION}`;
         }
@@ -59,7 +73,7 @@ export default class SearchClient implements SearchEngine {
         }
 
         while (!ready) {
-            ready = await this.isReady();
+            ready = await this.isReady(options.signal);
 
             retries += 1;
 
@@ -71,8 +85,7 @@ export default class SearchClient implements SearchEngine {
                 if (chatty) {
                     this.log.debug('Waiting for Search-server to be ready...');
                 }
-                // wait for 1 second before checking again
-                await new Promise(resolve => setTimeout(resolve, intervalSeconds * 1000));
+                await waitForTimeout(intervalSeconds * 1000, options.signal);
             }
 
             if (!chatty && becomeChattyAfter > 0 && retries > becomeChattyAfter) {
@@ -86,9 +99,9 @@ export default class SearchClient implements SearchEngine {
         }
     }
 
-    async isReady(): Promise<boolean> {
+    async isReady(signal?: AbortSignal): Promise<boolean> {
         try {
-            const response = await axios.get(`${this.API}/ready`);
+            const response = await this.axios.get(`${this.API}/ready`, signal ? { signal } : undefined);
             return response.data.ready;
         }
         catch (error) {
@@ -101,7 +114,7 @@ export default class SearchClient implements SearchEngine {
 
     async search(where: object): Promise<string[]> {
         try {
-            const response = await axios.post(`${this.API}/query`, where);
+            const response = await this.axios.post(`${this.API}/query`, where);
             return response.data as string[];
         }
         catch (error) {

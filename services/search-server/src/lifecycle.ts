@@ -13,6 +13,7 @@ export function runService({ start, cleanup, log, timeoutMs }: ServiceLifecycleO
     let shutdownPromise: Promise<void> | null = null;
     let exitCode = 0;
     let exited = false;
+    let stopping = false;
 
     const exit = () => {
         if (!exited) {
@@ -23,6 +24,7 @@ export function runService({ start, cleanup, log, timeoutMs }: ServiceLifecycleO
 
     const shutdown: Shutdown = (code = 0) => {
         exitCode = Math.max(exitCode, code);
+        stopping = true;
 
         if (!shutdownPromise) {
             const timeout = setTimeout(() => {
@@ -63,6 +65,9 @@ export function runService({ start, cleanup, log, timeoutMs }: ServiceLifecycleO
     Promise.resolve()
         .then(() => start(shutdown))
         .catch(error => {
+            if (stopping) {
+                return;
+            }
             log.error({ error }, '[search-server] Fatal error');
             return shutdown(1);
         });

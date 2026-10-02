@@ -6313,12 +6313,14 @@ async function initWallet() {
 }
 
 const port = config.keymasterPort;
+const dependencyRequests = new AbortController();
 
 async function initialize() {
     gatekeeper = new GatekeeperClient();
 
     await gatekeeper.connect({
         url: config.gatekeeperURL,
+        signal: dependencyRequests.signal,
         waitUntilReady: true,
         intervalSeconds: 5,
         chatty: true,
@@ -6331,6 +6333,7 @@ async function initialize() {
 
         await search.connect({
             url: config.searchURL,
+            signal: dependencyRequests.signal,
             waitUntilReady: true,
             intervalSeconds: 5,
             chatty: true,
@@ -6353,6 +6356,9 @@ async function initialize() {
 
 const server = app.listen(port, () => {
     initialize().catch((error) => {
+        if (dependencyRequests.signal.aborted) {
+            return;
+        }
         log.error({ error }, 'Failed to initialize Keymaster server');
         server.close();
         process.exit(1);
@@ -6360,6 +6366,7 @@ const server = app.listen(port, () => {
 });
 
 const shutdown = async () => {
+    dependencyRequests.abort();
     try {
         server.close();
     } catch (error: any) {

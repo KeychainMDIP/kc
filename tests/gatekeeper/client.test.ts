@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import nock from 'nock';
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import { ExpectedExceptionError } from '@mdip/common/errors';
@@ -62,6 +63,34 @@ afterAll(() => {
 });
 
 describe('isReady', () => {
+    it('configures a finite request timeout', async () => {
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+
+        expect((gatekeeper as any).axios.defaults.timeout).toBe(60_000);
+    });
+
+    it.each([0, -1, Number.POSITIVE_INFINITY, Number.NaN])(
+        'rejects invalid request timeout %s',
+        async timeoutMs => {
+            await expect(GatekeeperClient.create({ timeoutMs })).rejects.toThrow(
+                'timeoutMs must be a positive finite number',
+            );
+        },
+    );
+
+    it('should time out a stalled request', async () => {
+        nock(GatekeeperURL)
+            .get(Endpoints.version)
+            .delayConnection(100)
+            .reply(200, '1');
+        const gatekeeper = await GatekeeperClient.create({
+            url: GatekeeperURL,
+            timeoutMs: 10,
+        });
+
+        await expect(gatekeeper.getVersion()).rejects.toEqual(expect.stringContaining('timeout'));
+    });
+
     it('should return ready flag', async () => {
         nock(GatekeeperURL)
             .get(Endpoints.ready)
@@ -174,6 +203,56 @@ describe('isReady', () => {
             intervalSeconds: 0,
             maxRetries: 2,
         })).resolves.toBeInstanceOf(GatekeeperClient);
+    });
+
+    it('should cancel the wait between readiness checks', async () => {
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        const isReady = jest.spyOn(gatekeeper, 'isReady').mockResolvedValue(false);
+        const controller = new AbortController();
+        const connecting = gatekeeper.waitUntilReady({
+            signal: controller.signal,
+            intervalSeconds: 60,
+        });
+
+        while (isReady.mock.calls.length === 0) {
+            await new Promise(resolve => setImmediate(resolve));
+        }
+        await new Promise(resolve => setImmediate(resolve));
+        expect(isReady).toHaveBeenCalledWith(controller.signal);
+        controller.abort();
+
+        await expect(connecting).rejects.toMatchObject({ name: 'AbortError' });
+    });
+
+    it('should cancel an active readiness request when waitUntilReady is called directly', async () => {
+        nock(GatekeeperURL)
+            .get(Endpoints.ready)
+            .delay(1_000)
+            .reply(200, 'true');
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        const controller = new AbortController();
+
+        const waiting = gatekeeper.waitUntilReady({ signal: controller.signal });
+        controller.abort();
+
+        await expect(waiting).rejects.toMatchObject({ code: 'ERR_CANCELED' });
+    });
+
+    it('should cancel an active request', async () => {
+        nock(GatekeeperURL)
+            .get(Endpoints.version)
+            .delay(1_000)
+            .reply(200, '1');
+        const controller = new AbortController();
+        const gatekeeper = await GatekeeperClient.create({
+            url: GatekeeperURL,
+            signal: controller.signal,
+        });
+
+        const request = gatekeeper.getVersion();
+        controller.abort();
+
+        await expect(request).rejects.toEqual(expect.stringContaining('canceled'));
     });
 });
 

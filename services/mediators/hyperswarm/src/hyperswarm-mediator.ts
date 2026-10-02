@@ -219,6 +219,7 @@ let resolveStartupRetry: (() => void) | null = null;
 let cleanupPromise: Promise<void> | null = null;
 let shutdownPromise: Promise<void> | null = null;
 let shutdownExitCode = 0;
+const dependencyRequests = new AbortController();
 
 function clearLoopTimers(): void {
     if (exportTimer) {
@@ -243,6 +244,7 @@ function cleanup(): Promise<void> {
     }
 
     shuttingDown = true;
+    dependencyRequests.abort();
     clearLoopTimers();
 
     cleanupPromise = (async () => {
@@ -506,6 +508,7 @@ async function main(): Promise<void> {
 
     await gatekeeper.connect({
         url: config.gatekeeperURL,
+        signal: dependencyRequests.signal,
         waitUntilReady: true,
         intervalSeconds: 5,
         chatty: true,
@@ -522,6 +525,7 @@ async function main(): Promise<void> {
     if (config.ipfsEnabled) {
         await keymaster.connect({
             url: config.keymasterURL,
+            signal: dependencyRequests.signal,
             waitUntilReady: true,
             intervalSeconds: 5,
             chatty: true,

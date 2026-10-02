@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import nock from 'nock';
 import KeymasterClient from '@mdip/keymaster/client';
 import SearchClient from '../../packages/keymaster/src/search-client.ts';
@@ -91,6 +92,34 @@ const mockCredential = {
 };
 
 describe('isReady', () => {
+    it('configures a finite request timeout', async () => {
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        expect((keymaster as any).axios.defaults.timeout).toBe(60_000);
+    });
+
+    it.each([0, -1, Number.POSITIVE_INFINITY, Number.NaN])(
+        'rejects invalid request timeout %s',
+        async timeoutMs => {
+            await expect(KeymasterClient.create({ timeoutMs })).rejects.toThrow(
+                'timeoutMs must be a positive finite number',
+            );
+        },
+    );
+
+    it('should time out a stalled request', async () => {
+        nock(KeymasterURL)
+            .get(Endpoints.wallet)
+            .delayConnection(100)
+            .reply(200, { wallet: {} });
+        const keymaster = await KeymasterClient.create({
+            url: KeymasterURL,
+            timeoutMs: 10,
+        });
+
+        await expect(keymaster.loadWallet()).rejects.toMatchObject({ code: 'ECONNABORTED' });
+    });
+
     it('should return ready flag', async () => {
         nock(KeymasterURL)
             .get(Endpoints.ready)
@@ -170,9 +199,73 @@ describe('isReady', () => {
             maxRetries: 2,
         })).resolves.toBeInstanceOf(KeymasterClient);
     });
+
+    it('should cancel the wait between readiness checks', async () => {
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const isReady = jest.spyOn(keymaster, 'isReady').mockResolvedValue(false);
+        const controller = new AbortController();
+        const connecting = keymaster.waitUntilReady({
+            signal: controller.signal,
+            intervalSeconds: 60,
+        });
+
+        while (isReady.mock.calls.length === 0) {
+            await new Promise(resolve => setImmediate(resolve));
+        }
+        await new Promise(resolve => setImmediate(resolve));
+        expect(isReady).toHaveBeenCalledWith(controller.signal);
+        controller.abort();
+
+        await expect(connecting).rejects.toMatchObject({ name: 'AbortError' });
+    });
+
+    it('should cancel an active request', async () => {
+        nock(KeymasterURL)
+            .get(Endpoints.wallet)
+            .delay(1_000)
+            .reply(200, { wallet: {} });
+        const controller = new AbortController();
+        const keymaster = await KeymasterClient.create({
+            url: KeymasterURL,
+            signal: controller.signal,
+        });
+
+        const request = keymaster.loadWallet();
+        controller.abort();
+
+        await expect(request).rejects.toMatchObject({ code: 'ERR_CANCELED' });
+    });
 });
 
 describe('SearchClient waitUntilReady', () => {
+    it('configures a finite request timeout', async () => {
+        const search = await SearchClient.create({ url: SearchURL });
+
+        expect((search as any).axios.defaults.timeout).toBe(60_000);
+    });
+
+    it.each([0, -1, Number.POSITIVE_INFINITY, Number.NaN])(
+        'rejects invalid request timeout %s',
+        async timeoutMs => {
+            await expect(SearchClient.create({ timeoutMs })).rejects.toThrow(
+                'timeoutMs must be a positive finite number',
+            );
+        },
+    );
+
+    it('should time out a stalled request', async () => {
+        nock(SearchURL)
+            .post('/api/v1/query')
+            .delayConnection(100)
+            .reply(200, []);
+        const search = await SearchClient.create({
+            url: SearchURL,
+            timeoutMs: 10,
+        });
+
+        await expect(search.search({})).rejects.toMatchObject({ code: 'ECONNABORTED' });
+    });
+
     it('should throw on a permanent readiness error', async () => {
         nock(SearchURL)
             .get(Endpoints.ready)
@@ -212,6 +305,42 @@ describe('SearchClient waitUntilReady', () => {
             intervalSeconds: 0,
             maxRetries: 2,
         })).resolves.toBeInstanceOf(SearchClient);
+    });
+
+    it('should cancel the wait between readiness checks', async () => {
+        const search = await SearchClient.create({ url: SearchURL });
+        const isReady = jest.spyOn(search, 'isReady').mockResolvedValue(false);
+        const controller = new AbortController();
+        const connecting = search.waitUntilReady({
+            signal: controller.signal,
+            intervalSeconds: 60,
+        });
+
+        while (isReady.mock.calls.length === 0) {
+            await new Promise(resolve => setImmediate(resolve));
+        }
+        await new Promise(resolve => setImmediate(resolve));
+        expect(isReady).toHaveBeenCalledWith(controller.signal);
+        controller.abort();
+
+        await expect(connecting).rejects.toMatchObject({ name: 'AbortError' });
+    });
+
+    it('should cancel an active request', async () => {
+        nock(SearchURL)
+            .post('/api/v1/query')
+            .delay(1_000)
+            .reply(200, []);
+        const controller = new AbortController();
+        const search = await SearchClient.create({
+            url: SearchURL,
+            signal: controller.signal,
+        });
+
+        const request = search.search({});
+        controller.abort();
+
+        await expect(request).rejects.toMatchObject({ code: 'ERR_CANCELED' });
     });
 });
 

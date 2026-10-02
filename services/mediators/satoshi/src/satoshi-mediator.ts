@@ -40,6 +40,7 @@ let resolveChainRetry: (() => void) | null = null;
 let importTask: Promise<void> | null = null;
 let exportTask: Promise<void> | null = null;
 let cleanupPromise: Promise<void> | null = null;
+const dependencyRequests = new AbortController();
 
 async function createPersister(): Promise<MediatorDbInterface> {
     let persister: MediatorDbInterface | undefined;
@@ -766,6 +767,7 @@ async function main() {
 
     await gatekeeper.connect({
         url: config.gatekeeperURL,
+        signal: dependencyRequests.signal,
         waitUntilReady: true,
         intervalSeconds: 5,
         chatty: true,
@@ -777,6 +779,7 @@ async function main() {
 
     await keymaster.connect({
         url: config.keymasterURL,
+        signal: dependencyRequests.signal,
         waitUntilReady: true,
         intervalSeconds: 5,
         chatty: true,
@@ -827,6 +830,7 @@ function cleanup(): Promise<void> {
     }
 
     shuttingDown = true;
+    dependencyRequests.abort();
     clearTimers();
 
     cleanupPromise = (async () => {

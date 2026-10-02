@@ -1,4 +1,5 @@
-import { isRetryableHttpError } from '@mdip/common/utils';
+import { jest } from '@jest/globals';
+import { isRetryableHttpError, waitForTimeout } from '@mdip/common/utils';
 
 describe('isRetryableHttpError', () => {
     it.each([408, 425, 429, 500, 502, 503, 504])(
@@ -20,4 +21,34 @@ describe('isRetryableHttpError', () => {
         'should classify unknown or invalid configuration errors as permanent',
         error => expect(isRetryableHttpError(error)).toBe(false),
     );
+});
+
+describe('waitForTimeout', () => {
+    it('resolves after the requested delay', async () => {
+        jest.useFakeTimers();
+        const waiting = waitForTimeout(100);
+
+        await jest.advanceTimersByTimeAsync(100);
+
+        await expect(waiting).resolves.toBeUndefined();
+        jest.useRealTimers();
+    });
+
+    it.each([false, true])('rejects when aborted (already aborted: %s)', async alreadyAborted => {
+        const controller = new AbortController();
+        if (alreadyAborted) {
+            controller.abort();
+        }
+
+        const waiting = waitForTimeout(60_000, controller.signal);
+        controller.abort();
+
+        await expect(waiting).rejects.toMatchObject({ name: 'AbortError' });
+    });
+
+    it('creates an abort error when the signal has no reason', async () => {
+        const signal = { aborted: true, reason: undefined } as AbortSignal;
+
+        await expect(waitForTimeout(60_000, signal)).rejects.toMatchObject({ name: 'AbortError' });
+    });
 });

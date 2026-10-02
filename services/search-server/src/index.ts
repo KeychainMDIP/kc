@@ -33,6 +33,7 @@ const SHUTDOWN_TIMEOUT_MS = 10_000;
 let activeDb: DIDsDb | undefined;
 let activeIndexer: DidIndexer | undefined;
 let server: Server | undefined;
+const dependencyRequests = new AbortController();
 
 async function closeServer(httpServer: Server): Promise<void> {
     if (!httpServer.listening) {
@@ -45,6 +46,7 @@ async function closeServer(httpServer: Server): Promise<void> {
 }
 
 async function cleanup(): Promise<void> {
+    dependencyRequests.abort();
     const errors: unknown[] = [];
 
     for (const step of [
@@ -137,6 +139,7 @@ async function main(shutdown: Shutdown) {
     const gatekeeper = new GatekeeperClient();
     await gatekeeper.connect({
         url: config.gatekeeperURL,
+        signal: dependencyRequests.signal,
         waitUntilReady: true,
         intervalSeconds: 5,
         chatty: true,
@@ -484,6 +487,9 @@ async function main(shutdown: Shutdown) {
 
     // Start indexing without delaying HTTP availability.
     indexer.startIndexing().catch(error => {
+        if (dependencyRequests.signal.aborted) {
+            return;
+        }
         log.error({ error }, 'Initial indexing failed');
         void shutdown(1);
     });

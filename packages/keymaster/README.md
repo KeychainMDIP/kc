@@ -101,6 +101,11 @@ await keymaster.connect({
 const newId = await keymaster.createId('Bob');
 ```
 
+`KeymasterClient` and `SearchClient` requests time out after 60 seconds by
+default. Set `timeoutMs` to use a different positive, finite deadline. Long-running
+services can pass an `AbortSignal` as `signal`. Aborting it cancels active
+requests and readiness waits.
+
 ### Wallet cleanup
 
 `fixWallet()` removes malformed DIDs and entries whose resolved DID document is

@@ -236,6 +236,19 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         expect(jest.getTimerCount()).toBeGreaterThanOrEqual(2);
     });
 
+    it('aborts Gatekeeper requests during shutdown', async () => {
+        const running = await createRunningNode();
+        const options = running.node.gatekeeperClient.connect.mock.calls[0][0] as {
+            signal?: AbortSignal;
+        };
+
+        expect(options.signal?.aborted).toBe(false);
+
+        await running.node.run(() => running.node.mediator.__test.cleanup());
+
+        expect(options.signal?.aborted).toBe(true);
+    });
+
     it('cancels the startup retry when shutting down', async () => {
         const node = await createMediatorNode({
             name: `lifecycle-node-${++nodeNumber}`,
