@@ -539,6 +539,9 @@ describe('SQL identity enumeration', () => {
         }
         const db = await TestPostgres.create('postgresql://isolated-test');
         try {
+            connect.mockClear();
+            query.mockClear();
+            client.release.mockClear();
             const options = { schemaDid, fields: ['publicName'] };
             expect(await db.listIdentities(options)).toEqual({
                 total: expected.length,
@@ -573,6 +576,8 @@ describe('SQL identity enumeration', () => {
         const db = await TestPostgres.create('postgresql://isolated-test');
         try {
             poolQuery.mockClear();
+            query.mockClear();
+            client.release.mockClear();
             await expect(db.listIdentities()).rejects.toBe(error);
             expect(poolQuery).not.toHaveBeenCalled();
             expect(query).toHaveBeenLastCalledWith('ROLLBACK');
@@ -682,7 +687,10 @@ describe('SQL identity enumeration', () => {
 
     it('parameterizes PostgreSQL pagination and prefix filtering, and projects JSONB or string documents', async () => {
         const query = jest.fn(async (sql: string, params?: unknown[]) => {
-            if (sql.includes('CREATE TABLE')) return { rows: [] };
+            if (sql.includes('CREATE TABLE') || sql.includes('CREATE EXTENSION') ||
+                sql.includes('pg_advisory_') || sql.includes('FROM pg_class idx') ||
+                sql.includes('CREATE INDEX') ||
+                sql === 'ANALYZE did_docs') return { rows: [] };
             const filtered = sql.includes('AND EXISTS');
             if (sql.includes('COUNT(*)')) return { rows: [{ total: filtered ? 1 : 2 }] };
             expect(sql).toContain('WHERE dc.is_agent = TRUE');

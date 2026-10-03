@@ -65,6 +65,13 @@ interface CountRow {
     total: number;
 }
 
+interface IndexStatusRow {
+    isIndex: boolean;
+    usable: boolean;
+    matchesDefinition: boolean;
+    hasStatistics: boolean;
+}
+
 export default class Postgres implements DIDsDb {
     private readonly url: string;
     private pool: Pool | null = null;
@@ -246,6 +253,86 @@ export default class Postgres implements DIDsDb {
                 rebuilt_at TEXT NOT NULL
             );
         `);
+
+        const client = await this.pool.connect();
+        const lockParams = ['search-server', 'idx_did_docs_doc_trgm'];
+        let locked = false;
+        let failed = true;
+
+        try {
+            await client.query(
+                'SELECT pg_advisory_lock(hashtext($1), hashtext($2))',
+                lockParams
+            );
+            locked = true;
+            await client.query('CREATE EXTENSION IF NOT EXISTS pg_trgm');
+
+            const indexStatus = await client.query<IndexStatusRow>(
+                `SELECT idx.relkind = 'i' AS "isIndex",
+                        COALESCE(i.indisvalid AND i.indisready AND i.indislive, FALSE) AS usable,
+                        COALESCE(i.indrelid = to_regclass($2)
+                            AND am.amname = 'gin'
+                            AND opc.opcname = 'gin_trgm_ops'
+                            AND i.indnkeyatts = 1
+                            AND i.indnatts = 1
+                            AND i.indpred IS NULL
+                            AND pg_get_expr(i.indexprs, i.indrelid) = '(doc)::text', FALSE)
+                            AS "matchesDefinition",
+                        EXISTS (
+                            SELECT 1 FROM pg_stats stats
+                            WHERE stats.schemaname = idx_ns.nspname
+                                AND stats.tablename = idx.relname
+                        ) AS "hasStatistics"
+                 FROM pg_class idx
+                 LEFT JOIN pg_namespace idx_ns ON idx_ns.oid = idx.relnamespace
+                 LEFT JOIN pg_index i ON i.indexrelid = idx.oid
+                 LEFT JOIN pg_am am ON am.oid = idx.relam
+                 LEFT JOIN pg_opclass opc ON opc.oid = i.indclass[0]
+                 WHERE idx.oid = to_regclass($1)`,
+                ['idx_did_docs_doc_trgm', 'did_docs']
+            );
+            const existing = indexStatus.rows[0];
+
+            if (existing && !existing.isIndex) {
+                throw new Error('Database object idx_did_docs_doc_trgm exists but is not an index');
+            }
+
+            if (existing?.usable && existing.matchesDefinition) {
+                if (!existing.hasStatistics) {
+                    await client.query('ANALYZE did_docs');
+                }
+                failed = false;
+                return;
+            }
+
+            if (existing) {
+                await client.query('DROP INDEX CONCURRENTLY IF EXISTS idx_did_docs_doc_trgm');
+            }
+
+            await client.query(`
+                CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_did_docs_doc_trgm
+                    ON did_docs USING gin ((doc::text) gin_trgm_ops)
+            `);
+            await client.query('ANALYZE did_docs');
+            failed = false;
+        }
+        finally {
+            let destroy = failed;
+
+            if (locked) {
+                try {
+                    await client.query(
+                        'SELECT pg_advisory_unlock(hashtext($1), hashtext($2))',
+                        lockParams
+                    );
+                }
+                catch {
+                    destroy = true;
+                }
+            }
+
+            client.release(destroy);
+        }
     }
 
     async disconnect(): Promise<void> {

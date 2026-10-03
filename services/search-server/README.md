@@ -63,6 +63,15 @@ The search database is a rebuildable index and this service does not migrate
 older table layouts. Reset an existing search-server database before deploying
 a release that changes its schema.
 
+PostgreSQL startup installs the `pg_trgm` extension and creates a concurrent
+GIN index for document text searches when it is missing. The first startup on
+an existing database waits for that index build to finish without blocking
+normal table writes. This index addition does not require a database reset.
+Concurrent Search Server startups serialize this setup through PostgreSQL.
+Allow additional database storage and some indexing work when DID documents
+are synchronized. The PostgreSQL user must be permitted to create the extension
+and index.
+
 ### Endpoints
 
 DID resolution, search, query, identity, event, and credential-metric endpoints apply

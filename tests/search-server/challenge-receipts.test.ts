@@ -649,7 +649,7 @@ describe('postgres challenge receipt adapter with mocked pool', () => {
         });
         const mockClient = {
             query: jest.fn<(...args: unknown[]) => Promise<unknown>>()
-                .mockResolvedValue(undefined),
+                .mockResolvedValue({ rowCount: 0, rows: [] }),
             release: jest.fn(),
         };
         const mockPool = {
@@ -788,6 +788,9 @@ describe('postgres challenge receipt adapter with mocked pool', () => {
 
         const db = new TestPostgres('postgresql://example');
         await db.connect();
+        mockClient.query.mockClear();
+        mockClient.release.mockClear();
+        mockPool.connect.mockClear();
 
         await expect(db.applyIndexPage({
             dids: [{
