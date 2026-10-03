@@ -807,6 +807,27 @@ describe.each(adapterFactories)('$name query and utility behavior', ({ create })
         }
     });
 
+    it('treats SQL wildcard characters as literal search text', async () => {
+        const { db, cleanup } = await create();
+        const matchingDid = 'did:test:literal-search';
+
+        try {
+            await seedDID(db, matchingDid, {
+                doc: { didDocumentData: { value: '100%_complete!' } },
+            });
+            await seedDID(db, 'did:test:other-search', {
+                doc: { didDocumentData: { value: 'ordinary text' } },
+            });
+
+            expect(await db.searchDocs('%')).toStrictEqual([matchingDid]);
+            expect(await db.searchDocs('_')).toStrictEqual([matchingDid]);
+            expect(await db.searchDocs('!')).toStrictEqual([matchingDid]);
+        }
+        finally {
+            await cleanup();
+        }
+    });
+
     it('filters indexed results by canonical DID prefix', async () => {
         const { db, cleanup } = await create();
         const testHolder = 'did:test:test-holder';
@@ -1452,15 +1473,18 @@ describe('postgres adapter with mocked pool', () => {
         });
         expect(await db.searchDocs('search')).toStrictEqual(['did:test:search-1']);
         expect(await db.searchDocs('search', 'did:test')).toStrictEqual(['did:test:search-1']);
+        expect(await db.searchDocs('100%_complete!')).toStrictEqual(['did:test:search-1']);
 
         const searchCalls = poolQuery.mock.calls.filter(([sql]) =>
             String(sql).includes('WITH matches AS MATERIALIZED')
         );
-        expect(searchCalls).toHaveLength(2);
+        expect(searchCalls).toHaveLength(3);
+        expect(searchCalls[0][0]).toContain("ESCAPE '!'");
         expect(searchCalls[0][0]).not.toContain('WHERE dc.prefix = $2');
         expect(searchCalls[0][1]).toStrictEqual(['search']);
         expect(searchCalls[1][0]).toContain('WHERE dc.prefix = $2');
         expect(searchCalls[1][1]).toStrictEqual(['search', 'did:test']);
+        expect(searchCalls[2][1]).toStrictEqual(['100!%!_complete!!']);
 
         expect(await db.queryDocs({})).toStrictEqual([]);
         await expect(db.queryDocs({ '$.didDocument.id': {} } as any)).rejects.toThrow('Only {$in:[…]} supported');

@@ -985,13 +985,14 @@ export default class Sqlite implements DIDsDb {
         if (!this.db) {
             throw new Error('DB not connected');
         }
+        const escapedQuery = q.replace(/[!%_]/g, '!$&');
         const rows = await this.db.all<{ did: string }[]>(
             `SELECT dc.prefix || ':' || dc.suffix AS did
              FROM did_docs d
              JOIN did_classifications_effective dc ON dc.did = d.did
-             WHERE d.doc LIKE '%' || ? || '%'
+             WHERE d.doc LIKE '%' || ? || '%' ESCAPE '!'
              ${didPrefix ? 'AND dc.prefix = ?' : ''}`,
-            didPrefix ? [q, didPrefix] : [q]
+            didPrefix ? [escapedQuery, didPrefix] : [escapedQuery]
         );
 
         return rows.map(row => row.did);

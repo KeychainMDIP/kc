@@ -124,6 +124,8 @@ stored alias's prefix.
 - **Description**: Performs a text search across indexed DID documents in the
   configured network scope and returns matching effective DIDs.
 - **Query Param**: q (string)
+- **Notes**: Search terms are literal. SQL wildcard characters `%` and `_` do
+  not broaden the search.
 - **Returns**:
     - 200 OK + [] (empty array) if nothing matches, otherwise an array of DID strings.
 
