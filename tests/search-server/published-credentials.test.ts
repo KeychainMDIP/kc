@@ -204,6 +204,8 @@ const adapterFactories = [
     },
 ] as const;
 
+const completeSearchPage = (dids: string[]) => ({ dids, nextCursor: null });
+
 beforeEach(() => {
     const logger = {
         child: jest.fn(),
@@ -770,7 +772,7 @@ describe.each(adapterFactories)('$name query and utility behavior', ({ create })
             expect((await db.getDID(did1) as any).didDocumentData.profile.name).toBe('Needle Alpha');
             expect(await db.getDID('did:test:missing')).toBeNull();
 
-            expect(await db.searchDocs('Needle')).toStrictEqual([did1]);
+            expect(await db.searchDocs('Needle', { limit: 50 })).toStrictEqual(completeSearchPage([did1]));
             expect(await db.queryDocs({
                 '$.didDocument.id': { $in: [did1] },
             })).toStrictEqual([did1]);
@@ -794,7 +796,7 @@ describe.each(adapterFactories)('$name query and utility behavior', ({ create })
             await db.wipeDb();
 
             expect(await db.loadSyncState('test.cursor')).toBeNull();
-            expect(await db.searchDocs('Needle')).toStrictEqual([]);
+            expect(await db.searchDocs('Needle', { limit: 50 })).toStrictEqual(completeSearchPage([]));
             expect(await db.getDID(did1)).toBeNull();
             expect(await db.getPublishedCredentialCountsBySchema()).toStrictEqual([]);
             expect(await db.listPublishedCredentials({ limit: 10, offset: 0 })).toStrictEqual({
@@ -819,9 +821,31 @@ describe.each(adapterFactories)('$name query and utility behavior', ({ create })
                 doc: { didDocumentData: { value: 'ordinary text' } },
             });
 
-            expect(await db.searchDocs('%')).toStrictEqual([matchingDid]);
-            expect(await db.searchDocs('_')).toStrictEqual([matchingDid]);
-            expect(await db.searchDocs('!')).toStrictEqual([matchingDid]);
+            expect(await db.searchDocs('%', { limit: 50 })).toStrictEqual(completeSearchPage([matchingDid]));
+            expect(await db.searchDocs('_', { limit: 50 })).toStrictEqual(completeSearchPage([matchingDid]));
+            expect(await db.searchDocs('!', { limit: 50 })).toStrictEqual(completeSearchPage([matchingDid]));
+        }
+        finally {
+            await cleanup();
+        }
+    });
+
+    it('returns deterministic cursor-based search pages', async () => {
+        const { db, cleanup } = await create();
+        const dids = ['did:test:page-c', 'did:test:page-a', 'did:test:page-b'];
+
+        try {
+            for (const did of dids) {
+                await seedDID(db, did, { doc: { didDocumentData: { value: 'paged search' } } });
+            }
+
+            const first = await db.searchDocs('paged search', { limit: 2 });
+            expect(first).toStrictEqual({
+                dids: ['did:test:page-a', 'did:test:page-b'],
+                nextCursor: 'did:test:page-b',
+            });
+            expect(await db.searchDocs('paged search', { limit: 2, cursor: first.nextCursor! }))
+                .toStrictEqual(completeSearchPage(['did:test:page-c']));
         }
         finally {
             await cleanup();
@@ -889,7 +913,8 @@ describe.each(adapterFactories)('$name query and utility behavior', ({ create })
                 ],
             });
 
-            expect(await db.searchDocs('shared-network-value', 'did:mdip')).toStrictEqual([mdipHolder]);
+            expect(await db.searchDocs('shared-network-value', { didPrefix: 'did:mdip', limit: 50 }))
+                .toStrictEqual(completeSearchPage([mdipHolder]));
             expect(await db.queryDocs({
                 'didDocumentData.searchable': { $in: ['shared-network-value'] },
             }, 'did:test')).toStrictEqual([testHolder]);
@@ -995,10 +1020,10 @@ describe.each(adapterFactories)('$name query and utility behavior', ({ create })
             });
             expect(await db.findDIDBySuffix('legacy-schema', 'did:mdip')).toBe(storedSchemaDid);
             expect(await db.findDIDBySuffix('legacy-schema', 'did:test')).toBeNull();
-            expect(await db.searchDocs('legacy-network-schema', 'did:mdip')).toStrictEqual([
-                publishedSchemaDid,
-            ]);
-            expect(await db.searchDocs('legacy-network-schema', 'did:test')).toStrictEqual([]);
+            expect(await db.searchDocs('legacy-network-schema', { didPrefix: 'did:mdip', limit: 50 }))
+                .toStrictEqual(completeSearchPage([publishedSchemaDid]));
+            expect(await db.searchDocs('legacy-network-schema', { didPrefix: 'did:test', limit: 50 }))
+                .toStrictEqual(completeSearchPage([]));
             expect(await db.queryDocs({
                 'didDocumentData.searchable': { $in: ['legacy-network-schema'] },
             }, 'did:mdip')).toStrictEqual([publishedSchemaDid]);
@@ -1029,9 +1054,8 @@ describe.each(adapterFactories)('$name query and utility behavior', ({ create })
             expect(await db.getPublishedCredentialCountsBySchema('did:mdip')).toStrictEqual([]);
             expect(await db.findDIDBySuffix('legacy-schema', 'did:mdip')).toBe(storedSchemaDid);
             expect(await db.findDIDBySuffix('legacy-schema', 'did:test')).toBeNull();
-            expect(await db.searchDocs('legacy-network-schema', 'did:mdip')).toStrictEqual([
-                publishedSchemaDid,
-            ]);
+            expect(await db.searchDocs('legacy-network-schema', { didPrefix: 'did:mdip', limit: 50 }))
+                .toStrictEqual(completeSearchPage([publishedSchemaDid]));
         }
         finally {
             await cleanup();
@@ -1076,8 +1100,10 @@ describe.each(adapterFactories)('$name query and utility behavior', ({ create })
 
             expect(await db.findDIDBySuffix('credential-agent', 'did:test')).toBe(credentialDid);
             expect(await db.findDIDBySuffix('credential-agent', 'did:mdip')).toBeNull();
-            expect(await db.searchDocs('credential-agent-collision', 'did:test')).toStrictEqual([credentialDid]);
-            expect(await db.searchDocs('credential-agent-collision', 'did:mdip')).toStrictEqual([]);
+            expect(await db.searchDocs('credential-agent-collision', { didPrefix: 'did:test', limit: 50 }))
+                .toStrictEqual(completeSearchPage([credentialDid]));
+            expect(await db.searchDocs('credential-agent-collision', { didPrefix: 'did:mdip', limit: 50 }))
+                .toStrictEqual(completeSearchPage([]));
             expect(await db.queryDocs({
                 'didDocumentData.searchable': { $in: ['schema-agent-collision'] },
             }, 'did:test')).toStrictEqual([schemaDid]);
@@ -1152,8 +1178,10 @@ describe.each(adapterFactories)('$name query and utility behavior', ({ create })
                 { schemaDid, count: 1 },
             ]);
             expect(await db.getPublishedCredentialCountsBySchema('did:mdip')).toStrictEqual([]);
-            expect(await db.searchDocs('conflicting-prefix-schema', 'did:test')).toStrictEqual([schemaDid]);
-            expect(await db.searchDocs('conflicting-prefix-schema', 'did:mdip')).toStrictEqual([]);
+            expect(await db.searchDocs('conflicting-prefix-schema', { didPrefix: 'did:test', limit: 50 }))
+                .toStrictEqual(completeSearchPage([schemaDid]));
+            expect(await db.searchDocs('conflicting-prefix-schema', { didPrefix: 'did:mdip', limit: 50 }))
+                .toStrictEqual(completeSearchPage([]));
         }
         finally {
             await cleanup();
@@ -1219,7 +1247,7 @@ describe('sqlite adapter disconnected behavior', () => {
             await expect(db.getDID('did:test:doc')).rejects.toThrow('DB not connected');
             await expect(db.getPublishedCredentialCountsBySchema()).rejects.toThrow('DB not connected');
             await expect(db.listPublishedCredentials()).rejects.toThrow('DB not connected');
-            await expect(db.searchDocs('doc')).rejects.toThrow('DB not connected');
+            await expect(db.searchDocs('doc', { limit: 50 })).rejects.toThrow('DB not connected');
             await expect(db.queryDocs({
                 'didDocument.id': { $in: ['did:test:doc'] },
             })).rejects.toThrow('DB not connected');
@@ -1376,7 +1404,10 @@ describe('postgres adapter with mocked pool', () => {
                 };
             }
             if (text.includes("doc::text LIKE '%' || $1 || '%'")) {
-                return { rowCount: 1, rows: [{ did: 'did:test:search-1' }] };
+                const rows = params?.[0] === 'paged'
+                    ? [{ did: 'did:test:search-1' }, { did: 'did:test:search-2' }]
+                    : [{ did: 'did:test:search-1' }];
+                return { rowCount: rows.length, rows };
             }
             if (text.includes('did AS "storedDid", prefix')) {
                 const dids = params?.[0] as string[];
@@ -1471,20 +1502,33 @@ describe('postgres adapter with mocked pool', () => {
                 updatedAt: '2026-04-02T09:05:00.000Z',
             }],
         });
-        expect(await db.searchDocs('search')).toStrictEqual(['did:test:search-1']);
-        expect(await db.searchDocs('search', 'did:test')).toStrictEqual(['did:test:search-1']);
-        expect(await db.searchDocs('100%_complete!')).toStrictEqual(['did:test:search-1']);
+        expect(await db.searchDocs('search', { limit: 50 }))
+            .toStrictEqual(completeSearchPage(['did:test:search-1']));
+        expect(await db.searchDocs('search', {
+            didPrefix: 'did:test',
+            limit: 25,
+            cursor: 'did:test:cursor',
+        })).toStrictEqual(completeSearchPage(['did:test:search-1']));
+        expect(await db.searchDocs('100%_complete!', { limit: 50 }))
+            .toStrictEqual(completeSearchPage(['did:test:search-1']));
+        expect(await db.searchDocs('paged', { limit: 1 })).toStrictEqual({
+            dids: ['did:test:search-1'],
+            nextCursor: 'did:test:search-1',
+        });
 
         const searchCalls = poolQuery.mock.calls.filter(([sql]) =>
             String(sql).includes('WITH matches AS MATERIALIZED')
         );
-        expect(searchCalls).toHaveLength(3);
+        expect(searchCalls).toHaveLength(4);
         expect(searchCalls[0][0]).toContain("ESCAPE '!'");
         expect(searchCalls[0][0]).not.toContain('WHERE dc.prefix = $2');
-        expect(searchCalls[0][1]).toStrictEqual(['search']);
-        expect(searchCalls[1][0]).toContain('WHERE dc.prefix = $2');
-        expect(searchCalls[1][1]).toStrictEqual(['search', 'did:test']);
-        expect(searchCalls[2][1]).toStrictEqual(['100!%!_complete!!']);
+        expect(searchCalls[0][0]).toContain('ORDER BY');
+        expect(searchCalls[0][1]).toStrictEqual(['search', 51]);
+        expect(searchCalls[1][0]).toContain('dc.prefix = $2');
+        expect(searchCalls[1][0]).toContain('> $3');
+        expect(searchCalls[1][1]).toStrictEqual(['search', 'did:test', 'did:test:cursor', 26]);
+        expect(searchCalls[2][1]).toStrictEqual(['100!%!_complete!!', 51]);
+        expect(searchCalls[3][1]).toStrictEqual(['paged', 2]);
 
         expect(await db.queryDocs({})).toStrictEqual([]);
         await expect(db.queryDocs({ '$.didDocument.id': {} } as any)).rejects.toThrow('Only {$in:[…]} supported');

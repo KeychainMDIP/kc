@@ -123,11 +123,18 @@ stored alias's prefix.
 ### `GET /api/v1/search`
 - **Description**: Performs a text search across indexed DID documents in the
   configured network scope and returns matching effective DIDs.
-- **Query Param**: q (string)
+- **Query Params**:
+    - `q` (string)
+    - `limit` (optional, default `50`, maximum `500`)
+    - `cursor` (optional, the `nextCursor` returned by the preceding page)
 - **Notes**: Search terms are literal. SQL wildcard characters `%` and `_` do
-  not broaden the search.
+  not broaden the search. Results are ordered by effective DID. Pagination
+  limits the response size but does not avoid the complete text match performed
+  by PostgreSQL's materialized query.
 - **Returns**:
-    - 200 OK + [] (empty array) if nothing matches, otherwise an array of DID strings.
+    - `200 OK` + `{ "dids": [...], "nextCursor": "did:..." }`.
+      `nextCursor` is `null` on the final page.
+    - `400 Bad Request` for an invalid `limit` or `cursor`.
 
 ### `POST /api/v1/query`
 - **Description**: Queries indexed DID documents in the configured network

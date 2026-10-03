@@ -157,6 +157,17 @@ export interface NetworkMetricSnapshot {
     rebuiltAt: string;
 }
 
+export interface SearchDocsOptions {
+    didPrefix?: string;
+    limit: number;
+    cursor?: string;
+}
+
+export interface SearchDocsResult {
+    dids: string[];
+    nextCursor: string | null;
+}
+
 export interface DIDProjectionUpdate {
     did: string;
     events: GatekeeperEvent[];
@@ -201,7 +212,7 @@ export interface DIDsDb {
     iterateDIDEventHistories(pageSize?: number): AsyncIterable<DIDEventHistory>;
     replaceNetworkMetricSnapshots(snapshots: NetworkMetricSnapshot[]): Promise<void>;
     getNetworkMetricSnapshot(date: string): Promise<NetworkMetricSnapshot | null>;
-    searchDocs(q: string, didPrefix?: string): Promise<string[]>;
+    searchDocs(q: string, options: SearchDocsOptions): Promise<SearchDocsResult>;
     queryDocs(where: Record<string, unknown>, didPrefix?: string): Promise<string[]>;
     wipeDb(): Promise<void>;
 }

@@ -6,7 +6,7 @@ import DIDsDbMemory from '../../services/search-server/src/db/json-memory.ts';
 import { INDEX_SYNC_STATE_KEYS } from '../../services/search-server/src/DidIndexer.ts';
 import { extractPublishedCredentials } from '../../services/search-server/src/published-credentials.ts';
 import { createSeedEvent, seedDID } from './db-seed.ts';
-import type { NetworkMetricSnapshot } from '../../services/search-server/src/types.ts';
+import type { NetworkMetricSnapshot, SearchDocsResult } from '../../services/search-server/src/types.ts';
 
 /* eslint-disable sonarjs/no-hardcoded-ip */
 
@@ -229,14 +229,41 @@ describe('Search Server HTTP routes', () => {
         expect(usage).toHaveBeenLastCalledWith({ didPrefix: 'did:mdip', ...usageFilter, limit: 2, offset: 1 });
     });
 
-    it('forwards search and document queries and rejects missing query objects', async () => {
-        const search = jest.spyOn(db, 'searchDocs').mockResolvedValue([schemaDid]);
+    it('forwards paginated search and document queries and rejects invalid input', async () => {
+        const searchResult = { dids: [schemaDid], nextCursor: schemaDid };
+        const search = jest.spyOn(db, 'searchDocs').mockResolvedValue(searchResult);
         const query = jest.spyOn(db, 'queryDocs').mockResolvedValue([schemaDid]);
         await boot();
-        expect(await request('/search')).toEqual({ status: 200, body: [] });
+        expect(await request('/search')).toEqual({
+            status: 200,
+            body: { dids: [], nextCursor: null },
+        });
         expect(search).not.toHaveBeenCalled();
-        expect(await request('/search?q=Alice')).toEqual({ status: 200, body: [schemaDid] });
-        expect(search).toHaveBeenCalledWith('Alice', 'did:mdip');
+        expect(await request('/search?q=Alice')).toEqual({ status: 200, body: searchResult });
+        expect(search).toHaveBeenLastCalledWith('Alice', {
+            didPrefix: 'did:mdip',
+            limit: 50,
+            cursor: undefined,
+        });
+        const searchParams = new URLSearchParams({ q: 'Alice', limit: '2', cursor: schemaDid });
+        expect(await request(`/search?${searchParams}`)).toEqual({ status: 200, body: searchResult });
+        expect(search).toHaveBeenLastCalledWith('Alice', {
+            didPrefix: 'did:mdip',
+            limit: 2,
+            cursor: schemaDid,
+        });
+        for (const params of [
+            'limit=0',
+            'limit=-1',
+            'limit=1.5',
+            'limit=501',
+            'limit=9007199254740992',
+            'limit=1&limit=2',
+            'cursor=',
+            'cursor=a&cursor=b',
+        ]) {
+            expect((await request(`/search?q=Alice&${params}`)).status).toBe(400);
+        }
         for (const body of [{}, { where: 'invalid' }]) {
             expect((await request('/query', body)).status).toBe(400);
         }
@@ -378,8 +405,8 @@ describe('Search Server HTTP routes', () => {
 
     it('drains active HTTP requests before stopping indexing and disconnecting storage', async () => {
         let releaseSearch!: () => void;
-        const search = jest.spyOn(db, 'searchDocs').mockReturnValue(new Promise<string[]>(resolve => {
-            releaseSearch = () => resolve([]);
+        const search = jest.spyOn(db, 'searchDocs').mockReturnValue(new Promise<SearchDocsResult>(resolve => {
+            releaseSearch = () => resolve({ dids: [], nextCursor: null });
         }));
         const disconnect = jest.spyOn(db, 'disconnect');
         await boot();

@@ -20,6 +20,8 @@ import {
     PublishedCredentialListResult,
     PublishedCredentialRecord,
     PublishedCredentialSchemaCount,
+    SearchDocsOptions,
+    SearchDocsResult,
     GatekeeperEvent,
 } from '../types.js';
 import { getEventDisplayTime, stableStringify } from './db-utils.js';
@@ -1103,9 +1105,22 @@ export default class Postgres implements DIDsDb {
         };
     }
 
-    async searchDocs(q: string, didPrefix?: string): Promise<string[]> {
+    async searchDocs(q: string, options: SearchDocsOptions): Promise<SearchDocsResult> {
         const pool = this.getPool();
+        const { didPrefix, limit, cursor } = options;
         const escapedQuery = q.replace(/[!%_]/g, '!$&');
+        const params: unknown[] = [escapedQuery];
+        const filters: string[] = [];
+        if (didPrefix) {
+            params.push(didPrefix);
+            filters.push(`dc.prefix = $${params.length}`);
+        }
+        if (cursor) {
+            params.push(cursor);
+            filters.push(`(dc.prefix || ':' || dc.suffix) COLLATE "C" > $${params.length}`);
+        }
+        params.push(limit + 1);
+
         const result = await pool.query<DidRow>(
             `WITH matches AS MATERIALIZED (
                 SELECT did
@@ -1115,11 +1130,17 @@ export default class Postgres implements DIDsDb {
              SELECT dc.prefix || ':' || dc.suffix AS did
              FROM matches m
              JOIN did_classifications_effective dc ON dc.did = m.did
-             ${didPrefix ? 'WHERE dc.prefix = $2' : ''}`,
-            didPrefix ? [escapedQuery, didPrefix] : [escapedQuery]
+             ${filters.length ? `WHERE ${filters.join(' AND ')}` : ''}
+             ORDER BY (dc.prefix || ':' || dc.suffix) COLLATE "C"
+             LIMIT $${params.length}`,
+            params
         );
 
-        return result.rows.map(row => row.did);
+        const dids = result.rows.slice(0, limit).map(row => row.did);
+        return {
+            dids,
+            nextCursor: result.rows.length > limit ? dids[dids.length - 1] : null,
+        };
     }
 
     async queryDocs(where: Record<string, unknown>, didPrefix?: string): Promise<string[]> {

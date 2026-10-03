@@ -21,6 +21,8 @@ import {
     PublishedCredentialListResult,
     PublishedCredentialRecord,
     PublishedCredentialSchemaCount,
+    SearchDocsOptions,
+    SearchDocsResult,
     GatekeeperEvent,
 } from "../types.js";
 import { getEventDisplayTime, stableStringify } from './db-utils.js';
@@ -981,21 +983,40 @@ export default class Sqlite implements DIDsDb {
         } : null;
     }
 
-    async searchDocs(q: string, didPrefix?: string): Promise<string[]> {
+    async searchDocs(q: string, options: SearchDocsOptions): Promise<SearchDocsResult> {
         if (!this.db) {
             throw new Error('DB not connected');
         }
+        const { didPrefix, limit, cursor } = options;
         const escapedQuery = q.replace(/[!%_]/g, '!$&');
+        const params: unknown[] = [escapedQuery];
+        const filters: string[] = [];
+        if (didPrefix) {
+            filters.push('dc.prefix = ?');
+            params.push(didPrefix);
+        }
+        if (cursor) {
+            filters.push("(dc.prefix || ':' || dc.suffix) COLLATE BINARY > ?");
+            params.push(cursor);
+        }
+        params.push(limit + 1);
+
         const rows = await this.db.all<{ did: string }[]>(
             `SELECT dc.prefix || ':' || dc.suffix AS did
              FROM did_docs d
              JOIN did_classifications_effective dc ON dc.did = d.did
              WHERE d.doc LIKE '%' || ? || '%' ESCAPE '!'
-             ${didPrefix ? 'AND dc.prefix = ?' : ''}`,
-            didPrefix ? [escapedQuery, didPrefix] : [escapedQuery]
+             ${filters.length ? `AND ${filters.join(' AND ')}` : ''}
+             ORDER BY did COLLATE BINARY
+             LIMIT ?`,
+            params
         );
 
-        return rows.map(row => row.did);
+        const dids = rows.slice(0, limit).map(row => row.did);
+        return {
+            dids,
+            nextCursor: rows.length > limit ? dids[dids.length - 1] : null,
+        };
     }
 
     async queryDocs(where: Record<string, unknown>, didPrefix?: string): Promise<string[]> {

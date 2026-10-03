@@ -29,6 +29,8 @@ import { runService, type Shutdown } from './lifecycle.js';
 
 const log = childLogger({ service: 'search-server' });
 const SHUTDOWN_TIMEOUT_MS = 10_000;
+const DEFAULT_SEARCH_LIMIT = 50;
+const MAX_SEARCH_LIMIT = 500;
 
 let activeDb: DIDsDb | undefined;
 let activeIndexer: DidIndexer | undefined;
@@ -262,14 +264,28 @@ async function main(shutdown: Shutdown) {
     });
 
     v1router.get("/search", async (req, res) => {
+        const rawLimit = req.query.limit;
+        if (rawLimit !== undefined && (typeof rawLimit !== 'string' || !/^\d+$/.test(rawLimit)
+            || !Number.isSafeInteger(Number(rawLimit)) || Number(rawLimit) < 1
+            || Number(rawLimit) > MAX_SEARCH_LIMIT)) {
+            return res.status(400).json({ error: `limit must be an integer from 1 to ${MAX_SEARCH_LIMIT}` });
+        }
+        const cursor = req.query.cursor;
+        if (cursor !== undefined && (typeof cursor !== 'string' || cursor.length === 0)) {
+            return res.status(400).json({ error: 'cursor must be a non-empty string' });
+        }
+
         try {
             const q = req.query.q?.toString() || "";
             if (!q) {
-                return res.json([]);
+                return res.json({ dids: [], nextCursor: null });
             }
 
-            const dids = await didDb.searchDocs(q, config.didPrefix);
-            return res.json(dids);
+            return res.json(await didDb.searchDocs(q, {
+                didPrefix: config.didPrefix,
+                limit: rawLimit === undefined ? DEFAULT_SEARCH_LIMIT : Number(rawLimit),
+                cursor,
+            }));
         } catch (error) {
             log.error({ error }, '/api/search error');
             return res.status(500).json({ error: String(error) });
