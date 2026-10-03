@@ -1834,13 +1834,35 @@ describe('postgres adapter with mocked pool', () => {
         expect(rowsCall?.[1]).toStrictEqual([50, 0]);
     });
 
-    it('constructs a real pool instance in createPool without connecting', async () => {
-        const Postgres = await loadPostgresModule();
-        const db = new Postgres('postgresql://example');
-        const pool = (db as any).createPool();
+    it('configures the PostgreSQL connection timeout', async () => {
+        const previous = process.env.KC_POSTGRES_CONNECTION_TIMEOUT_MS;
 
-        expect(pool).toBeTruthy();
-        await pool.end();
+        try {
+            delete process.env.KC_POSTGRES_CONNECTION_TIMEOUT_MS;
+            const Postgres = await loadPostgresModule();
+            const defaultPool = (new Postgres('postgresql://example') as any).createPool();
+            expect(defaultPool.options.connectionTimeoutMillis).toBe(3_000);
+            await defaultPool.end();
+
+            process.env.KC_POSTGRES_CONNECTION_TIMEOUT_MS = '2000';
+            const configuredPool = (new Postgres('postgresql://example') as any).createPool();
+            expect(configuredPool.options.connectionTimeoutMillis).toBe(2_000);
+            await configuredPool.end();
+
+            for (const invalid of ['', '1.5', '0']) {
+                process.env.KC_POSTGRES_CONNECTION_TIMEOUT_MS = invalid;
+                expect(() => (new Postgres('postgresql://example') as any).createPool())
+                    .toThrow('KC_POSTGRES_CONNECTION_TIMEOUT_MS must be a positive integer');
+            }
+        }
+        finally {
+            if (previous === undefined) {
+                delete process.env.KC_POSTGRES_CONNECTION_TIMEOUT_MS;
+            }
+            else {
+                process.env.KC_POSTGRES_CONNECTION_TIMEOUT_MS = previous;
+            }
+        }
     });
 });
 

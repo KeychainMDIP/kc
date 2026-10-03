@@ -44,6 +44,9 @@ KC_SEARCH_SERVER_DB=sqlite
 # Falls back to KC_POSTGRES_URL when unset
 KC_SEARCH_SERVER_POSTGRES_URL=postgresql://mdip:mdip@localhost:5432/mdip
 
+# Maximum time to establish or obtain a PostgreSQL connection
+KC_POSTGRES_CONNECTION_TIMEOUT_MS=3000
+
 # Trust proxy headers when determining req.ip
 KC_SEARCH_SERVER_TRUST_PROXY=false
 

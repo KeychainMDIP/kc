@@ -32,6 +32,17 @@ import {
     isAgentDID,
 } from '../did-aliases.js';
 
+const DEFAULT_POSTGRES_CONNECTION_TIMEOUT_MS = 3_000;
+
+function readPositiveIntegerEnv(name: string, fallback: number): number {
+    const configured = process.env[name];
+    const value = Number(configured ?? fallback);
+    if (configured?.trim() === '' || !Number.isSafeInteger(value) || value < 1) {
+        throw new Error(`${name} must be a positive integer`);
+    }
+    return value;
+}
+
 interface SyncStateRow {
     value: string;
 }
@@ -1259,7 +1270,13 @@ export default class Postgres implements DIDsDb {
     }
 
     protected createPool(): Pool {
-        return new Pool({ connectionString: this.url });
+        return new Pool({
+            connectionString: this.url,
+            connectionTimeoutMillis: readPositiveIntegerEnv(
+                'KC_POSTGRES_CONNECTION_TIMEOUT_MS',
+                DEFAULT_POSTGRES_CONNECTION_TIMEOUT_MS
+            ),
+        });
     }
 
     private async replacePublishedCredentialsWithClient(
