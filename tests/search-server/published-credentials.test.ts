@@ -1453,6 +1453,15 @@ describe('postgres adapter with mocked pool', () => {
         expect(await db.searchDocs('search')).toStrictEqual(['did:test:search-1']);
         expect(await db.searchDocs('search', 'did:test')).toStrictEqual(['did:test:search-1']);
 
+        const searchCalls = poolQuery.mock.calls.filter(([sql]) =>
+            String(sql).includes('WITH matches AS MATERIALIZED')
+        );
+        expect(searchCalls).toHaveLength(2);
+        expect(searchCalls[0][0]).not.toContain('WHERE dc.prefix = $2');
+        expect(searchCalls[0][1]).toStrictEqual(['search']);
+        expect(searchCalls[1][0]).toContain('WHERE dc.prefix = $2');
+        expect(searchCalls[1][1]).toStrictEqual(['search', 'did:test']);
+
         expect(await db.queryDocs({})).toStrictEqual([]);
         await expect(db.queryDocs({ '$.didDocument.id': {} } as any)).rejects.toThrow('Only {$in:[…]} supported');
         expect(await db.queryDocs({ '$.didDocument.id': { $in: [] } })).toStrictEqual([]);

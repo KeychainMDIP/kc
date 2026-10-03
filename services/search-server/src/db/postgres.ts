@@ -1106,11 +1106,15 @@ export default class Postgres implements DIDsDb {
     async searchDocs(q: string, didPrefix?: string): Promise<string[]> {
         const pool = this.getPool();
         const result = await pool.query<DidRow>(
-            `SELECT dc.prefix || ':' || dc.suffix AS did
-             FROM did_docs d
-             JOIN did_classifications_effective dc ON dc.did = d.did
-             WHERE d.doc::text LIKE '%' || $1 || '%'
-             ${didPrefix ? 'AND dc.prefix = $2' : ''}`,
+            `WITH matches AS MATERIALIZED (
+                SELECT did
+                FROM did_docs
+                WHERE doc::text LIKE '%' || $1 || '%'
+             )
+             SELECT dc.prefix || ':' || dc.suffix AS did
+             FROM matches m
+             JOIN did_classifications_effective dc ON dc.did = m.did
+             ${didPrefix ? 'WHERE dc.prefix = $2' : ''}`,
             didPrefix ? [q, didPrefix] : [q]
         );
 
