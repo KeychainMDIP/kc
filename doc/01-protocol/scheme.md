@@ -18,7 +18,7 @@ mdip-did        = "did:mdip:" mdip-identifier
 mdip-identifier = CID encoded with base58btc
 ```
 
-Deployments can configure another DID prefix, such as `did:test` for a test network. The signed create operation can carry that prefix in `mdip.prefix`. Otherwise, the receiving Gatekeeper applies its configured fallback.
+Deployments can configure another DID prefix, such as `did:test` for a test network. The signed create operation can carry that prefix in `mdip.prefix`, which must use the form `did:<method>` with a method containing only lowercase letters and digits. Otherwise, the receiving Gatekeeper applies its configured fallback.
 
 ### Example: MDIP DID
 

@@ -140,6 +140,15 @@ describe('createDID', () => {
         }
     });
 
+    it('should reject an operation prefix that is not a DID method prefix', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await helper.createAgentOp(keypair, { prefix: 'invalid' });
+
+        await expect(gatekeeper.createDID(agentOp))
+            .rejects.toThrow('Invalid operation: mdip.prefix=invalid');
+        await expect(gatekeeper.getDIDs()).resolves.toStrictEqual([]);
+    });
+
     it('should throw exception on invalid create agent operation', async () => {
         try {
             // @ts-expect-error Testing invalid usage

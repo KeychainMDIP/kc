@@ -459,6 +459,19 @@ describe('importBatch', () => {
         expect(response.rejected).toBe(1);
     });
 
+    it('should reject an imported create operation with an invalid prefix', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const operation = await helper.createAgentOp(keypair, { prefix: 'invalid' });
+
+        const response = await gatekeeper.importBatch([{
+            registry: 'local',
+            time: operation.created!,
+            operation,
+        }]);
+
+        expect(response).toMatchObject({ queued: 0, rejected: 1, rejectedIndices: [0] });
+    });
+
     it('should reject operations exceeding the UTF-8 byte limit', async () => {
         const keypair = cipher.generateRandomJwk();
         const operation = await helper.createAgentOp(keypair, { prefix: 'did:tést' });

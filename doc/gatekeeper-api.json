@@ -250,7 +250,8 @@
                           },
                           "prefix": {
                             "type": "string",
-                            "description": "Optional DID prefix override. If omitted, the server default is used."
+                            "pattern": "^did:[a-z0-9]+$",
+                            "description": "Optional `did:<method>` prefix override using lowercase letters and digits. If omitted, the server default is used."
                           },
                           "validUntil": {
                             "type": "string",
@@ -521,7 +522,8 @@
                       },
                       "prefix": {
                         "type": "string",
-                        "description": "Optional DID prefix override. If omitted, server default is used.",
+                        "pattern": "^did:[a-z0-9]+$",
+                        "description": "Optional `did:<method>` prefix override using lowercase letters and digits. If omitted, server default is used.",
                         "example": "did:test"
                       },
                       "validUntil": {
@@ -793,7 +795,8 @@
                         },
                         "prefix": {
                           "type": "string",
-                          "description": "DID prefix embedded in the operation."
+                          "pattern": "^did:[a-z0-9]+$",
+                          "description": "DID prefix embedded in the operation, using `did:<method>` with lowercase letters and digits."
                         },
                         "validUntil": {
                           "type": "string",

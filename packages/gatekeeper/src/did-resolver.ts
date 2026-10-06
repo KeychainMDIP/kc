@@ -27,6 +27,10 @@ export const ValidRegistries = [
 
 const cipher = new CipherNode();
 
+export function isValidDIDPrefix(prefix: unknown): prefix is string {
+    return typeof prefix === 'string' && /^did:[a-z0-9]+$/.test(prefix);
+}
+
 export async function generateOperationCID(operation: unknown): Promise<string> {
     const canonical = cipher.canonicalizeJSON(operation);
     return generateCID(JSON.parse(canonical));
@@ -39,6 +43,10 @@ export async function generateDIDFromOperation(
         generateCID?: GenerateCID;
     }
 ): Promise<string> {
+    if (operation.mdip?.prefix !== undefined && !isValidDIDPrefix(operation.mdip.prefix)) {
+        throw new InvalidOperationError(`mdip.prefix=${operation.mdip.prefix}`);
+    }
+
     const generateOperationCIDForDID = options?.generateCID ?? generateOperationCID;
     const cid = await generateOperationCIDForDID(operation);
     const prefix = operation.mdip?.prefix || options?.didPrefix || 'did:test';

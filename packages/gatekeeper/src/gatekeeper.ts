@@ -27,7 +27,9 @@ import {
     Signature,
 } from './types.js';
 import {
+    generateDIDFromOperation,
     generateDocFromOperation,
+    isValidDIDPrefix,
     resolveDIDFromEvents,
     ValidRegistries,
     ValidTypes,
@@ -551,9 +553,10 @@ export default class Gatekeeper implements GatekeeperInterface {
     }
 
     async generateDID(operation: Operation): Promise<string> {
-        const cid = await this.generateCID(operation);
-        const prefix = operation.mdip?.prefix || this.didPrefix;
-        return `${prefix}:${cid}`;
+        return generateDIDFromOperation(operation, {
+            didPrefix: this.didPrefix,
+            generateCID: (operation) => this.generateCID(operation),
+        });
     }
 
     async verifyOperation(operation: Operation): Promise<boolean> {
@@ -670,6 +673,10 @@ export default class Gatekeeper implements GatekeeperInterface {
 
         if (!ValidRegistries.includes(operation.mdip.registry)) {
             throw new InvalidOperationError(`mdip.registry=${operation.mdip.registry}`);
+        }
+
+        if (operation.mdip.prefix !== undefined && !isValidDIDPrefix(operation.mdip.prefix)) {
+            throw new InvalidOperationError(`mdip.prefix=${operation.mdip.prefix}`);
         }
 
         if (!this.verifySignatureFormat(operation.signature)) {
@@ -1426,6 +1433,10 @@ export default class Gatekeeper implements GatekeeperInterface {
             }
 
             if (!ValidRegistries.includes(operation.mdip.registry)) {
+                return false;
+            }
+
+            if (operation.mdip.prefix !== undefined && !isValidDIDPrefix(operation.mdip.prefix)) {
                 return false;
             }
 

@@ -350,7 +350,8 @@ v1router.get('/status', trackedRoute(async (req, res) => {
  *                         description: Registry where the DID is created.
  *                       prefix:
  *                         type: string
- *                         description: Optional DID prefix override. If omitted, the server default is used.
+ *                         pattern: '^did:[a-z0-9]+$'
+ *                         description: Optional `did:<method>` prefix override using lowercase letters and digits. If omitted, the server default is used.
  *                       validUntil:
  *                         type: string
  *                         format: date-time
@@ -541,7 +542,8 @@ v1router.post('/did', trackedRoute(async (req, res) => {
  *                     example: local
  *                   prefix:
  *                     type: string
- *                     description: Optional DID prefix override. If omitted, server default is used.
+ *                     pattern: '^did:[a-z0-9]+$'
+ *                     description: Optional `did:<method>` prefix override using lowercase letters and digits. If omitted, server default is used.
  *                     example: did:test
  *                   validUntil:
  *                     type: string
@@ -752,7 +754,8 @@ v1router.post("/did/generate", trackedRoute(async (req, res) => {
  *                       description: Supported MDIP version.
  *                     prefix:
  *                       type: string
- *                       description: DID prefix embedded in the operation.
+ *                       pattern: '^did:[a-z0-9]+$'
+ *                       description: DID prefix embedded in the operation, using `did:<method>` with lowercase letters and digits.
  *                     validUntil:
  *                       type: string
  *                       format: date-time
