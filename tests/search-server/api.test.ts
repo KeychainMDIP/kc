@@ -273,6 +273,18 @@ describe('Search Server HTTP routes', () => {
         expect(query).toHaveBeenCalledWith(where, 'did:mdip');
     });
 
+    it('reports PostgreSQL search timeouts as unavailable', async () => {
+        const error = Object.assign(new Error('canceling statement due to statement timeout'), { code: '57014' });
+        jest.spyOn(db, 'searchDocs').mockRejectedValue(error);
+        await boot();
+
+        expect(await request('/search?q=Alice')).toEqual({
+            status: 503,
+            body: { error: 'Search timed out' },
+        });
+        expect(logger.warn).toHaveBeenCalledWith({ error }, '/api/search timed out');
+    });
+
     it('resolves event histories and forwards version options, returning 404 for unresolved documents', async () => {
         const event = createSeedEvent(schemaDid);
         event.operation.mdip!.prefix = 'did:mdip';

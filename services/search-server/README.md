@@ -47,6 +47,9 @@ KC_SEARCH_SERVER_POSTGRES_URL=postgresql://mdip:mdip@localhost:5432/mdip
 # Maximum time to establish or obtain a PostgreSQL connection
 KC_POSTGRES_CONNECTION_TIMEOUT_MS=3000
 
+# Maximum execution time for each PostgreSQL text search
+KC_SEARCH_SERVER_SEARCH_TIMEOUT_MS=5000
+
 # Trust proxy headers when determining req.ip
 KC_SEARCH_SERVER_TRUST_PROXY=false
 
@@ -135,6 +138,8 @@ stored alias's prefix.
     - `200 OK` + `{ "dids": [...], "nextCursor": "did:..." }`.
       `nextCursor` is `null` on the final page.
     - `400 Bad Request` for an invalid `limit` or `cursor`.
+    - `503 Service Unavailable` when a PostgreSQL search exceeds
+      `KC_SEARCH_SERVER_SEARCH_TIMEOUT_MS`.
 
 ### `POST /api/v1/query`
 - **Description**: Queries indexed DID documents in the configured network

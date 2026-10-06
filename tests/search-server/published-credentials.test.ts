@@ -1443,8 +1443,9 @@ describe('postgres adapter with mocked pool', () => {
 
             return { rowCount: 0, rows: [] };
         });
+        const clientQuery = jest.fn((sql: string, params?: unknown[]) => poolQuery(sql, params));
         const mockClient = {
-            query: jest.fn(),
+            query: clientQuery,
             release: jest.fn(),
         };
         const mockPool = {
@@ -1529,6 +1530,9 @@ describe('postgres adapter with mocked pool', () => {
         expect(searchCalls[1][1]).toStrictEqual(['search', 'did:test', 'did:test:cursor', 26]);
         expect(searchCalls[2][1]).toStrictEqual(['100!%!_complete!!', 51]);
         expect(searchCalls[3][1]).toStrictEqual(['paged', 2]);
+        expect(clientQuery.mock.calls.filter(([sql]) => sql === 'BEGIN READ ONLY')).toHaveLength(4);
+        expect(clientQuery.mock.calls.filter(([sql]) => sql === "SET LOCAL statement_timeout = '5000ms'"))
+            .toHaveLength(4);
 
         expect(await db.queryDocs({})).toStrictEqual([]);
         await expect(db.queryDocs({ '$.didDocument.id': {} } as any)).rejects.toThrow('Only {$in:[…]} supported');
@@ -1940,6 +1944,66 @@ describe('postgres adapter with mocked pool', () => {
                 process.env.KC_POSTGRES_CONNECTION_TIMEOUT_MS = previous;
             }
         }
+    });
+
+    it('configures the PostgreSQL search timeout', async () => {
+        const previous = process.env.KC_SEARCH_SERVER_SEARCH_TIMEOUT_MS;
+
+        try {
+            process.env.KC_SEARCH_SERVER_SEARCH_TIMEOUT_MS = '2000';
+            const Postgres = await loadPostgresModule();
+            const query = jest.fn(async (_sql: string) => ({ rowCount: 0, rows: [] }));
+            const client = { query, release: jest.fn() };
+            const db = new Postgres('postgresql://example');
+            (db as any).pool = { connect: jest.fn(async () => client) };
+
+            await expect(db.searchDocs('search', { limit: 50 })).resolves.toStrictEqual({
+                dids: [],
+                nextCursor: null,
+            });
+            expect(query).toHaveBeenCalledWith("SET LOCAL statement_timeout = '2000ms'");
+            expect(query.mock.calls.map(([sql]) => sql)).toStrictEqual([
+                'BEGIN READ ONLY',
+                "SET LOCAL statement_timeout = '2000ms'",
+                expect.stringContaining('WITH matches AS MATERIALIZED'),
+                'COMMIT',
+            ]);
+            expect(client.release).toHaveBeenCalledWith(false);
+
+            for (const invalid of ['', '1.5', '0']) {
+                process.env.KC_SEARCH_SERVER_SEARCH_TIMEOUT_MS = invalid;
+                expect(() => new Postgres('postgresql://example'))
+                    .toThrow('KC_SEARCH_SERVER_SEARCH_TIMEOUT_MS must be a positive integer');
+            }
+        }
+        finally {
+            if (previous === undefined) {
+                delete process.env.KC_SEARCH_SERVER_SEARCH_TIMEOUT_MS;
+            }
+            else {
+                process.env.KC_SEARCH_SERVER_SEARCH_TIMEOUT_MS = previous;
+            }
+        }
+    });
+
+    it.each([false, true])('rolls back failed PostgreSQL searches (rollback failure: %s)', async rollbackFails => {
+        const failure = Object.assign(new Error('search timed out'), { code: '57014' });
+        const rollbackFailure = new Error('rollback failed');
+        const client = {
+            query: jest.fn(async (sql: string) => {
+                if (sql.includes('WITH matches AS MATERIALIZED')) throw failure;
+                if (sql === 'ROLLBACK' && rollbackFails) throw rollbackFailure;
+                return { rowCount: 0, rows: [] };
+            }),
+            release: jest.fn(),
+        };
+        const Postgres = await loadPostgresModule();
+        const db = new Postgres('postgresql://example');
+        (db as any).pool = { connect: jest.fn(async () => client) };
+
+        await expect(db.searchDocs('search', { limit: 50 })).rejects.toBe(failure);
+        expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+        expect(client.release).toHaveBeenCalledWith(rollbackFails);
     });
 });
 

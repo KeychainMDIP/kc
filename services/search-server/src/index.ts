@@ -287,6 +287,10 @@ async function main(shutdown: Shutdown) {
                 cursor,
             }));
         } catch (error) {
+            if (error && typeof error === 'object' && 'code' in error && error.code === '57014') {
+                log.warn({ error }, '/api/search timed out');
+                return res.status(503).json({ error: 'Search timed out' });
+            }
             log.error({ error }, '/api/search error');
             return res.status(500).json({ error: String(error) });
         }

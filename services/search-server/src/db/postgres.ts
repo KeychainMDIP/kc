@@ -35,6 +35,7 @@ import {
 } from '../did-aliases.js';
 
 const DEFAULT_POSTGRES_CONNECTION_TIMEOUT_MS = 3_000;
+const DEFAULT_SEARCH_TIMEOUT_MS = 5_000;
 
 function readPositiveIntegerEnv(name: string, fallback: number): number {
     const configured = process.env[name];
@@ -87,6 +88,7 @@ interface IndexStatusRow {
 
 export default class Postgres implements DIDsDb {
     private readonly url: string;
+    private readonly searchTimeoutMs: number;
     private pool: Pool | null = null;
     private static readonly ARRAY_WILDCARD_END = /\[\*]$/;
     private static readonly ARRAY_WILDCARD_MID = /\[\*]\./;
@@ -102,6 +104,10 @@ export default class Postgres implements DIDsDb {
 
     constructor(url: string) {
         this.url = url;
+        this.searchTimeoutMs = readPositiveIntegerEnv(
+            'KC_SEARCH_SERVER_SEARCH_TIMEOUT_MS',
+            DEFAULT_SEARCH_TIMEOUT_MS
+        );
     }
 
     async connect(): Promise<void> {
@@ -1121,26 +1127,45 @@ export default class Postgres implements DIDsDb {
         }
         params.push(limit + 1);
 
-        const result = await pool.query<DidRow>(
-            `WITH matches AS MATERIALIZED (
-                SELECT did
-                FROM did_docs
-                WHERE doc::text LIKE '%' || $1 || '%' ESCAPE '!'
-             )
-             SELECT dc.prefix || ':' || dc.suffix AS did
-             FROM matches m
-             JOIN did_classifications_effective dc ON dc.did = m.did
-             ${filters.length ? `WHERE ${filters.join(' AND ')}` : ''}
-             ORDER BY (dc.prefix || ':' || dc.suffix) COLLATE "C"
-             LIMIT $${params.length}`,
-            params
-        );
+        const client = await pool.connect();
+        let discardClient = false;
+        try {
+            await client.query('BEGIN READ ONLY');
+            await client.query(`SET LOCAL statement_timeout = '${this.searchTimeoutMs}ms'`);
+            const result = await client.query<DidRow>(
+                `WITH matches AS MATERIALIZED (
+                    SELECT did
+                    FROM did_docs
+                    WHERE doc::text LIKE '%' || $1 || '%' ESCAPE '!'
+                 )
+                 SELECT dc.prefix || ':' || dc.suffix AS did
+                 FROM matches m
+                 JOIN did_classifications_effective dc ON dc.did = m.did
+                 ${filters.length ? `WHERE ${filters.join(' AND ')}` : ''}
+                 ORDER BY (dc.prefix || ':' || dc.suffix) COLLATE "C"
+                 LIMIT $${params.length}`,
+                params
+            );
+            await client.query('COMMIT');
 
-        const dids = result.rows.slice(0, limit).map(row => row.did);
-        return {
-            dids,
-            nextCursor: result.rows.length > limit ? dids[dids.length - 1] : null,
-        };
+            const dids = result.rows.slice(0, limit).map(row => row.did);
+            return {
+                dids,
+                nextCursor: result.rows.length > limit ? dids[dids.length - 1] : null,
+            };
+        }
+        catch (error) {
+            try {
+                await client.query('ROLLBACK');
+            }
+            catch {
+                discardClient = true;
+            }
+            throw error;
+        }
+        finally {
+            client.release(discardClient);
+        }
     }
 
     async queryDocs(where: Record<string, unknown>, didPrefix?: string): Promise<string[]> {
