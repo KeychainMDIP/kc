@@ -44,6 +44,12 @@ KC_SEARCH_SERVER_DB=sqlite
 # Falls back to KC_POSTGRES_URL when unset
 KC_SEARCH_SERVER_POSTGRES_URL=postgresql://mdip:mdip@localhost:5432/mdip
 
+# Maximum time to establish or obtain a PostgreSQL connection
+KC_POSTGRES_CONNECTION_TIMEOUT_MS=3000
+
+# Maximum execution time for each PostgreSQL text search
+KC_SEARCH_SERVER_SEARCH_TIMEOUT_MS=5000
+
 # Trust proxy headers when determining req.ip
 KC_SEARCH_SERVER_TRUST_PROXY=false
 
@@ -62,6 +68,15 @@ KC_LOG_LEVEL=info
 The search database is a rebuildable index and this service does not migrate
 older table layouts. Reset an existing search-server database before deploying
 a release that changes its schema.
+
+PostgreSQL startup installs the `pg_trgm` extension and creates a concurrent
+GIN index for document text searches when it is missing. The first startup on
+an existing database waits for that index build to finish without blocking
+normal table writes. This index addition does not require a database reset.
+Concurrent Search Server startups serialize this setup through PostgreSQL.
+Allow additional database storage and some indexing work when DID documents
+are synchronized. The PostgreSQL user must be permitted to create the extension
+and index.
 
 ### Endpoints
 
@@ -111,9 +126,23 @@ stored alias's prefix.
 ### `GET /api/v1/search`
 - **Description**: Performs a text search across indexed DID documents in the
   configured network scope and returns matching effective DIDs.
-- **Query Param**: q (string)
+- **Query Params**:
+    - `q` (string containing at least three Unicode characters)
+    - `limit` (optional, default `50`, maximum `500`)
+    - `cursor` (optional, the `nextCursor` returned by the preceding page)
+- **Notes**: Search terms are literal. SQL wildcard characters `%` and `_` do
+  not broaden the search. Terms shorter than three Unicode characters are
+  rejected because PostgreSQL's trigram index cannot serve them efficiently.
+  Use structured endpoints for short values. Results are ordered by effective
+  DID. Pagination limits the response size but does not avoid the complete text
+  match performed by PostgreSQL's materialized query.
 - **Returns**:
-    - 200 OK + [] (empty array) if nothing matches, otherwise an array of DID strings.
+    - `200 OK` + `{ "dids": [...], "nextCursor": "did:..." }`.
+      `nextCursor` is `null` on the final page.
+    - `400 Bad Request` for a supplied `q` shorter than three Unicode
+      characters, or an invalid `limit` or `cursor`.
+    - `503 Service Unavailable` when a PostgreSQL search exceeds
+      `KC_SEARCH_SERVER_SEARCH_TIMEOUT_MS`.
 
 ### `POST /api/v1/query`
 - **Description**: Queries indexed DID documents in the configured network

@@ -20,6 +20,8 @@ import {
     PublishedCredentialListResult,
     PublishedCredentialRecord,
     PublishedCredentialSchemaCount,
+    SearchDocsOptions,
+    SearchDocsResult,
     GatekeeperEvent,
 } from "../types.js";
 import { copyJSON, getEventDisplayTime, stableStringify } from "./db-utils.js";
@@ -438,15 +440,23 @@ export default class DIDsDbMemory implements DIDsDb {
         return snapshot ? copyJSON(snapshot) : null;
     }
 
-    async searchDocs(q: string, didPrefix?: string): Promise<string[]> {
+    async searchDocs(q: string, options: SearchDocsOptions): Promise<SearchDocsResult> {
+        const { didPrefix, limit, cursor } = options;
         const out: string[] = [];
         const publishedPrefixes = this.publishedReferencePrefixes();
         for (const [did, doc] of this.docs.entries()) {
             const effectiveDid = this.effectiveDID(did, publishedPrefixes);
             if (didPrefix && getDIDPrefix(effectiveDid) !== didPrefix) continue;
+            if (cursor && effectiveDid <= cursor) continue;
             if (JSON.stringify(doc).includes(q)) out.push(effectiveDid);
         }
-        return out;
+        out.sort();
+
+        const dids = out.slice(0, limit);
+        return {
+            dids,
+            nextCursor: out.length > limit ? dids[dids.length - 1] : null,
+        };
     }
 
     async queryDocs(where: Record<string, unknown>, didPrefix?: string): Promise<string[]> {

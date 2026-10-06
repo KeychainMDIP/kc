@@ -47,6 +47,16 @@ export interface SearchServerEventListResult {
     events: SearchServerEventRecord[];
 }
 
+export interface SearchDocumentsOptions {
+    limit?: number;
+    cursor?: string;
+}
+
+export interface SearchDocumentsResult {
+    dids: string[];
+    nextCursor: string | null;
+}
+
 export type FetchDIDDocumentOptions = Pick<ResolveDIDOptions, "versionSequence" | "versionTime">;
 
 export interface FetchEventsOptions {
@@ -248,13 +258,17 @@ export async function fetchSearchServerEvents(
     return response.data as SearchServerEventListResult;
 }
 
-export async function searchDIDDocuments(query: string, signal?: AbortSignal): Promise<string[]> {
+export async function searchDIDDocuments(
+    query: string,
+    options: SearchDocumentsOptions = {},
+    signal?: AbortSignal
+): Promise<SearchDocumentsResult> {
     const response = await api.get("/search", {
-        params: { q: query },
+        params: { q: query, ...options },
         signal,
     });
 
-    return response.data as string[];
+    return response.data as SearchDocumentsResult;
 }
 
 export async function fetchPublishedSchemaMetrics(signal?: AbortSignal): Promise<PublishedSchemaMetric[]> {

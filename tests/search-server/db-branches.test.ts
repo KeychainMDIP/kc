@@ -438,7 +438,7 @@ describe('search DB branch behavior', () => {
         });
         const mockPool = {
             query: poolQuery,
-            connect: jest.fn(),
+            connect: jest.fn().mockResolvedValue({ query: poolQuery, release: jest.fn() } as never),
             end: jest.fn().mockResolvedValue(undefined as never),
         };
 
@@ -519,7 +519,10 @@ describe('search DB branch behavior', () => {
         const query = jest.fn(async (sql: string, params: unknown[] = []) => {
             const text = String(sql);
 
-            if (text.includes('CREATE TABLE') || text.includes('CREATE INDEX') ||
+            if (text.includes('CREATE TABLE') || text.includes('CREATE EXTENSION') ||
+                text.includes('CREATE INDEX') || text.includes('pg_advisory_') ||
+                text.includes('FROM pg_class idx') ||
+                text === 'ANALYZE did_docs' ||
                 text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK') {
                 return { rowCount: 0, rows: [] };
             }

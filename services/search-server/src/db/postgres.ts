@@ -20,6 +20,8 @@ import {
     PublishedCredentialListResult,
     PublishedCredentialRecord,
     PublishedCredentialSchemaCount,
+    SearchDocsOptions,
+    SearchDocsResult,
     GatekeeperEvent,
 } from '../types.js';
 import { getEventDisplayTime, stableStringify } from './db-utils.js';
@@ -31,6 +33,18 @@ import {
     getDIDSuffix,
     isAgentDID,
 } from '../did-aliases.js';
+
+const DEFAULT_POSTGRES_CONNECTION_TIMEOUT_MS = 3_000;
+const DEFAULT_SEARCH_TIMEOUT_MS = 5_000;
+
+function readPositiveIntegerEnv(name: string, fallback: number): number {
+    const configured = process.env[name];
+    const value = Number(configured ?? fallback);
+    if (configured?.trim() === '' || !Number.isSafeInteger(value) || value < 1) {
+        throw new Error(`${name} must be a positive integer`);
+    }
+    return value;
+}
 
 interface SyncStateRow {
     value: string;
@@ -65,8 +79,16 @@ interface CountRow {
     total: number;
 }
 
+interface IndexStatusRow {
+    isIndex: boolean;
+    usable: boolean;
+    matchesDefinition: boolean;
+    hasStatistics: boolean;
+}
+
 export default class Postgres implements DIDsDb {
     private readonly url: string;
+    private readonly searchTimeoutMs: number;
     private pool: Pool | null = null;
     private static readonly ARRAY_WILDCARD_END = /\[\*]$/;
     private static readonly ARRAY_WILDCARD_MID = /\[\*]\./;
@@ -82,6 +104,10 @@ export default class Postgres implements DIDsDb {
 
     constructor(url: string) {
         this.url = url;
+        this.searchTimeoutMs = readPositiveIntegerEnv(
+            'KC_SEARCH_SERVER_SEARCH_TIMEOUT_MS',
+            DEFAULT_SEARCH_TIMEOUT_MS
+        );
     }
 
     async connect(): Promise<void> {
@@ -246,6 +272,86 @@ export default class Postgres implements DIDsDb {
                 rebuilt_at TEXT NOT NULL
             );
         `);
+
+        const client = await this.pool.connect();
+        const lockParams = ['search-server', 'idx_did_docs_doc_trgm'];
+        let locked = false;
+        let failed = true;
+
+        try {
+            await client.query(
+                'SELECT pg_advisory_lock(hashtext($1), hashtext($2))',
+                lockParams
+            );
+            locked = true;
+            await client.query('CREATE EXTENSION IF NOT EXISTS pg_trgm');
+
+            const indexStatus = await client.query<IndexStatusRow>(
+                `SELECT idx.relkind = 'i' AS "isIndex",
+                        COALESCE(i.indisvalid AND i.indisready AND i.indislive, FALSE) AS usable,
+                        COALESCE(i.indrelid = to_regclass($2)
+                            AND am.amname = 'gin'
+                            AND opc.opcname = 'gin_trgm_ops'
+                            AND i.indnkeyatts = 1
+                            AND i.indnatts = 1
+                            AND i.indpred IS NULL
+                            AND pg_get_expr(i.indexprs, i.indrelid) = '(doc)::text', FALSE)
+                            AS "matchesDefinition",
+                        EXISTS (
+                            SELECT 1 FROM pg_stats stats
+                            WHERE stats.schemaname = idx_ns.nspname
+                                AND stats.tablename = idx.relname
+                        ) AS "hasStatistics"
+                 FROM pg_class idx
+                 LEFT JOIN pg_namespace idx_ns ON idx_ns.oid = idx.relnamespace
+                 LEFT JOIN pg_index i ON i.indexrelid = idx.oid
+                 LEFT JOIN pg_am am ON am.oid = idx.relam
+                 LEFT JOIN pg_opclass opc ON opc.oid = i.indclass[0]
+                 WHERE idx.oid = to_regclass($1)`,
+                ['idx_did_docs_doc_trgm', 'did_docs']
+            );
+            const existing = indexStatus.rows[0];
+
+            if (existing && !existing.isIndex) {
+                throw new Error('Database object idx_did_docs_doc_trgm exists but is not an index');
+            }
+
+            if (existing?.usable && existing.matchesDefinition) {
+                if (!existing.hasStatistics) {
+                    await client.query('ANALYZE did_docs');
+                }
+                failed = false;
+                return;
+            }
+
+            if (existing) {
+                await client.query('DROP INDEX CONCURRENTLY IF EXISTS idx_did_docs_doc_trgm');
+            }
+
+            await client.query(`
+                CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_did_docs_doc_trgm
+                    ON did_docs USING gin ((doc::text) gin_trgm_ops)
+            `);
+            await client.query('ANALYZE did_docs');
+            failed = false;
+        }
+        finally {
+            let destroy = failed;
+
+            if (locked) {
+                try {
+                    await client.query(
+                        'SELECT pg_advisory_unlock(hashtext($1), hashtext($2))',
+                        lockParams
+                    );
+                }
+                catch {
+                    destroy = true;
+                }
+            }
+
+            client.release(destroy);
+        }
     }
 
     async disconnect(): Promise<void> {
@@ -1005,18 +1111,61 @@ export default class Postgres implements DIDsDb {
         };
     }
 
-    async searchDocs(q: string, didPrefix?: string): Promise<string[]> {
+    async searchDocs(q: string, options: SearchDocsOptions): Promise<SearchDocsResult> {
         const pool = this.getPool();
-        const result = await pool.query<DidRow>(
-            `SELECT dc.prefix || ':' || dc.suffix AS did
-             FROM did_docs d
-             JOIN did_classifications_effective dc ON dc.did = d.did
-             WHERE d.doc::text LIKE '%' || $1 || '%'
-             ${didPrefix ? 'AND dc.prefix = $2' : ''}`,
-            didPrefix ? [q, didPrefix] : [q]
-        );
+        const { didPrefix, limit, cursor } = options;
+        const escapedQuery = q.replace(/[!%_]/g, '!$&');
+        const params: unknown[] = [escapedQuery];
+        const filters: string[] = [];
+        if (didPrefix) {
+            params.push(didPrefix);
+            filters.push(`dc.prefix = $${params.length}`);
+        }
+        if (cursor) {
+            params.push(cursor);
+            filters.push(`(dc.prefix || ':' || dc.suffix) COLLATE "C" > $${params.length}`);
+        }
+        params.push(limit + 1);
 
-        return result.rows.map(row => row.did);
+        const client = await pool.connect();
+        let discardClient = false;
+        try {
+            await client.query('BEGIN READ ONLY');
+            await client.query(`SET LOCAL statement_timeout = '${this.searchTimeoutMs}ms'`);
+            const result = await client.query<DidRow>(
+                `WITH matches AS MATERIALIZED (
+                    SELECT did
+                    FROM did_docs
+                    WHERE doc::text LIKE '%' || $1 || '%' ESCAPE '!'
+                 )
+                 SELECT dc.prefix || ':' || dc.suffix AS did
+                 FROM matches m
+                 JOIN did_classifications_effective dc ON dc.did = m.did
+                 ${filters.length ? `WHERE ${filters.join(' AND ')}` : ''}
+                 ORDER BY (dc.prefix || ':' || dc.suffix) COLLATE "C"
+                 LIMIT $${params.length}`,
+                params
+            );
+            await client.query('COMMIT');
+
+            const dids = result.rows.slice(0, limit).map(row => row.did);
+            return {
+                dids,
+                nextCursor: result.rows.length > limit ? dids[dids.length - 1] : null,
+            };
+        }
+        catch (error) {
+            try {
+                await client.query('ROLLBACK');
+            }
+            catch {
+                discardClient = true;
+            }
+            throw error;
+        }
+        finally {
+            client.release(discardClient);
+        }
     }
 
     async queryDocs(where: Record<string, unknown>, didPrefix?: string): Promise<string[]> {
@@ -1172,7 +1321,13 @@ export default class Postgres implements DIDsDb {
     }
 
     protected createPool(): Pool {
-        return new Pool({ connectionString: this.url });
+        return new Pool({
+            connectionString: this.url,
+            connectionTimeoutMillis: readPositiveIntegerEnv(
+                'KC_POSTGRES_CONNECTION_TIMEOUT_MS',
+                DEFAULT_POSTGRES_CONNECTION_TIMEOUT_MS
+            ),
+        });
     }
 
     private async replacePublishedCredentialsWithClient(

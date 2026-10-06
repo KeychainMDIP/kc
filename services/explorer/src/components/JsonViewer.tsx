@@ -37,6 +37,8 @@ function JsonViewer() {
     const [searchResults, setSearchResults] = useState<string[] | null>(null);
     const [searchPage, setSearchPage] = useState<number>(0);
     const [searchCount, setSearchCount] = useState<number>(50);
+    const [searchCursors, setSearchCursors] = useState<(string | undefined)[]>([undefined]);
+    const [searchNextCursor, setSearchNextCursor] = useState<string | null>(null);
     const [searchParams, setSearchParams] = useSearchParams();
     const [requests] = useState(createLatestRequest);
 
@@ -48,7 +50,7 @@ function JsonViewer() {
         if (didParam) {
             void doResolveDID(didParam, controller);
         } else if (qParam) {
-            void doSearch(qParam, controller);
+            void doSearch(qParam, controller, undefined, 0);
         } else {
             setSearchResults(null);
             setAliasDocs(undefined);
@@ -97,16 +99,26 @@ function JsonViewer() {
         }
     }
 
-    async function doSearch(query: string, controller: AbortController) {
+    async function doSearch(
+        query: string,
+        controller: AbortController,
+        cursor: string | undefined,
+        page: number,
+        limit = searchCount
+    ) {
         try {
             setAliasDocs(undefined);
             setSearchResults(null);
             setFormDid(query);
-            setSearchPage(0);
+            if (page === 0) {
+                setSearchCursors([undefined]);
+            }
 
-            const results = await searchDIDDocuments(query, controller.signal);
+            const results = await searchDIDDocuments(query, { limit, cursor }, controller.signal);
             if (requests.isCurrent(controller)) {
-                setSearchResults(results);
+                setSearchResults(results.dids);
+                setSearchNextCursor(results.nextCursor);
+                setSearchPage(page);
             }
         } catch (error: any) {
             if (requests.isCurrent(controller)) {
@@ -177,22 +189,35 @@ function JsonViewer() {
         setSearchParams({ q: query });
     }
 
-    let displayedResults: string[] = [];
-    let total = 0;
-    let totalPages = 1;
+    function loadSearchPage(page: number, cursor: string | undefined, limit = searchCount) {
+        const query = searchParams.get('q');
+        if (!query) {
+            return;
+        }
 
-    if (searchResults) {
-        total = searchResults.length;
-        totalPages = Math.ceil(total / searchCount);
-
-        const from = searchPage * searchCount;
-        const to = from + searchCount;
-        displayedResults = searchResults.slice(from, to);
+        const controller = requests.start();
+        void doSearch(query, controller, cursor, page, limit);
     }
 
     function handleSearchCountChange(e: any) {
-        setSearchCount(e.target.value);
-        setSearchPage(0);
+        const limit = Number(e.target.value);
+        setSearchCount(limit);
+        loadSearchPage(0, undefined, limit);
+    }
+
+    function handlePreviousSearchPage() {
+        const page = searchPage - 1;
+        loadSearchPage(page, searchCursors[page]);
+    }
+
+    function handleNextSearchPage() {
+        if (!searchNextCursor) {
+            return;
+        }
+
+        const page = searchPage + 1;
+        setSearchCursors(cursors => [...cursors.slice(0, page), searchNextCursor]);
+        loadSearchPage(page, searchNextCursor);
     }
 
     return (
@@ -267,18 +292,18 @@ function JsonViewer() {
                                 variant="outlined"
                                 size="small"
                                 disabled={searchPage === 0}
-                                onClick={() => setSearchPage((p) => p - 1)}
+                                onClick={handlePreviousSearchPage}
                             >
                                 Prev
                             </Button>
                             <Typography>
-                                Page {searchPage + 1} / {totalPages === 0 ? 1 : totalPages}
+                                Page {searchPage + 1}
                             </Typography>
                             <Button
                                 variant="outlined"
                                 size="small"
-                                disabled={searchPage + 1 >= totalPages}
-                                onClick={() => setSearchPage((p) => p + 1)}
+                                disabled={!searchNextCursor}
+                                onClick={handleNextSearchPage}
                             >
                                 Next
                             </Button>
@@ -289,7 +314,7 @@ function JsonViewer() {
                         <Typography>No results found.</Typography>
                     ) : (
                         <Box>
-                            {displayedResults.map((did) => (
+                            {searchResults.map((did) => (
                                 <Box
                                     key={did}
                                     display="flex"
