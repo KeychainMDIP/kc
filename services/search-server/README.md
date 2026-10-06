@@ -127,17 +127,20 @@ stored alias's prefix.
 - **Description**: Performs a text search across indexed DID documents in the
   configured network scope and returns matching effective DIDs.
 - **Query Params**:
-    - `q` (string)
+    - `q` (string containing at least three Unicode characters)
     - `limit` (optional, default `50`, maximum `500`)
     - `cursor` (optional, the `nextCursor` returned by the preceding page)
 - **Notes**: Search terms are literal. SQL wildcard characters `%` and `_` do
-  not broaden the search. Results are ordered by effective DID. Pagination
-  limits the response size but does not avoid the complete text match performed
-  by PostgreSQL's materialized query.
+  not broaden the search. Terms shorter than three Unicode characters are
+  rejected because PostgreSQL's trigram index cannot serve them efficiently.
+  Use structured endpoints for short values. Results are ordered by effective
+  DID. Pagination limits the response size but does not avoid the complete text
+  match performed by PostgreSQL's materialized query.
 - **Returns**:
     - `200 OK` + `{ "dids": [...], "nextCursor": "did:..." }`.
       `nextCursor` is `null` on the final page.
-    - `400 Bad Request` for an invalid `limit` or `cursor`.
+    - `400 Bad Request` for a supplied `q` shorter than three Unicode
+      characters, or an invalid `limit` or `cursor`.
     - `503 Service Unavailable` when a PostgreSQL search exceeds
       `KC_SEARCH_SERVER_SEARCH_TIMEOUT_MS`.
 

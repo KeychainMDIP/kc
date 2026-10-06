@@ -31,6 +31,7 @@ const log = childLogger({ service: 'search-server' });
 const SHUTDOWN_TIMEOUT_MS = 10_000;
 const DEFAULT_SEARCH_LIMIT = 50;
 const MAX_SEARCH_LIMIT = 500;
+const MIN_SEARCH_QUERY_LENGTH = 3;
 
 let activeDb: DIDsDb | undefined;
 let activeIndexer: DidIndexer | undefined;
@@ -264,6 +265,13 @@ async function main(shutdown: Shutdown) {
     });
 
     v1router.get("/search", async (req, res) => {
+        const rawQuery = req.query.q;
+        if (rawQuery !== undefined && (typeof rawQuery !== 'string'
+            || [...rawQuery].length < MIN_SEARCH_QUERY_LENGTH)) {
+            return res.status(400).json({
+                error: `q must contain at least ${MIN_SEARCH_QUERY_LENGTH} Unicode characters`,
+            });
+        }
         const rawLimit = req.query.limit;
         if (rawLimit !== undefined && (typeof rawLimit !== 'string' || !/^\d+$/.test(rawLimit)
             || !Number.isSafeInteger(Number(rawLimit)) || Number(rawLimit) < 1
@@ -276,7 +284,7 @@ async function main(shutdown: Shutdown) {
         }
 
         try {
-            const q = req.query.q?.toString() || "";
+            const q = rawQuery ?? "";
             if (!q) {
                 return res.json({ dids: [], nextCursor: null });
             }

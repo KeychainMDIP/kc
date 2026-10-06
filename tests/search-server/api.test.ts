@@ -239,6 +239,15 @@ describe('Search Server HTTP routes', () => {
             body: { dids: [], nextCursor: null },
         });
         expect(search).not.toHaveBeenCalled();
+        for (const q of ['', 'a', 'id', '😀😀']) {
+            expect(await request(`/search?${new URLSearchParams({ q })}`)).toEqual({
+                status: 400,
+                body: { error: 'q must contain at least 3 Unicode characters' },
+            });
+        }
+        expect((await request('/search?q=id&q=Alice')).status).toBe(400);
+        expect(await request(`/search?${new URLSearchParams({ q: '😀😀😀' })}`))
+            .toEqual({ status: 200, body: searchResult });
         expect(await request('/search?q=Alice')).toEqual({ status: 200, body: searchResult });
         expect(search).toHaveBeenLastCalledWith('Alice', {
             didPrefix: 'did:mdip',
