@@ -220,7 +220,7 @@ async function makeLargeAssetOperations(count: number, payloadBytes: number): Pr
         const hashValue = cipher.hashJSON(unsigned);
         operation.signature = {
             signer: controllerDid,
-            signed: new Date(Date.now() - ((count - index + 1) * 60_000)).toISOString(),
+            signed: new Date(Date.parse(operation.created!) + index + 1).toISOString(),
             hash: hashValue,
             value: cipher.signHash(hashValue, keys.privateJwk),
         };

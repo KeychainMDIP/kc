@@ -740,6 +740,7 @@ v1router.get('/export/wallet/encrypted', async (req, res) => {
  *           format: date-time
  *         description: >
  *           Timestamp to return the state of the DID as of this specific time (RFC3339/ISO8601 format).
+ *           A time before the create operation resolves as `notFound`.
  *       - in: query
  *         name: versionSequence
  *         required: false
@@ -753,7 +754,8 @@ v1router.get('/export/wallet/encrypted', async (req, res) => {
  *         schema:
  *           type: boolean
  *         description: >
- *           If true, excludes later events until they are confirmed by the DID's native registry.
+ *           If true, requires the create and all applied later events to be confirmed by the DID's native registry.
+ *           An unconfirmed create resolves as `notFound`.
  *       - in: query
  *         name: verify
  *         required: false
@@ -3753,7 +3755,7 @@ v1router.get('/assets', async (req, res) => {
  *         required: false
  *         schema:
  *           type: boolean
- *         description: Whether to exclude later events until confirmed by the asset's native registry.
+ *         description: Whether to require the create and all applied later events to be confirmed by the asset's native registry.
  *       - in: query
  *         name: verify
  *         required: false

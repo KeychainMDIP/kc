@@ -630,6 +630,14 @@ export default class Gatekeeper implements GatekeeperInterface {
         return Buffer.byteLength(JSON.stringify(operation), 'utf8') > this.maxOpBytes;
     }
 
+    private async resolveControllerForVerification(did: string, versionTime: string): Promise<MdipDocument> {
+        const confirmed = await this.resolveDID(did, { confirm: true, versionTime });
+        // The immutable create key remains usable locally while registry confirmation is pending.
+        return confirmed.didResolutionMetadata?.error === 'notFound'
+            ? this.resolveDID(did, { versionSequence: 1, versionTime })
+            : confirmed;
+    }
+
     async verifyCreateOperation(operation: Operation): Promise<boolean> {
         if (!operation) {
             throw new InvalidOperationError('missing');
@@ -694,10 +702,10 @@ export default class Gatekeeper implements GatekeeperInterface {
                 throw new InvalidOperationError('signer is not controller');
             }
 
-            const doc = await this.resolveDID(controllerDid, {
-                confirm: true,
-                versionTime: operation.signature!.signed,
-            });
+            const doc = await this.resolveControllerForVerification(
+                controllerDid,
+                operation.signature!.signed
+            );
 
             if (doc.mdip && doc.mdip.registry === 'local' && operation.mdip.registry !== 'local') {
                 throw new InvalidOperationError(`non-local registry=${operation.mdip.registry}`);
@@ -789,10 +797,10 @@ export default class Gatekeeper implements GatekeeperInterface {
 
         if (doc.didDocument.controller) {
             // This DID is an asset, verify with controller's keys
-            const controllerDoc = await this.resolveDID(doc.didDocument.controller, {
-                confirm: true,
-                versionTime: operation.signature!.signed,
-            });
+            const controllerDoc = await this.resolveControllerForVerification(
+                doc.didDocument.controller,
+                operation.signature!.signed
+            );
             return this.verifyUpdateOperationSignature(
                 operation,
                 controllerDoc,
@@ -1033,6 +1041,9 @@ export default class Gatekeeper implements GatekeeperInterface {
             for (const did of dids) {
                 try {
                     const doc = await this.resolveDID(did, { confirm, verify });
+                    if (confirm && doc.didResolutionMetadata?.error === 'notFound') {
+                        continue;
+                    }
                     const updatedStr = doc.didDocumentMetadata?.updated ?? doc.didDocumentMetadata?.created ?? 0;
                     const updated = new Date(updatedStr);
 

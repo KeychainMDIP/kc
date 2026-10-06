@@ -385,23 +385,13 @@ describe('resolveDID', () => {
         expect(updatedDoc).toStrictEqual(expected);
     });
 
-    it('should resolve confirmed version when specified', async () => {
-
+    it('should not resolve an unconfirmed create when confirmation is specified', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await helper.createAgentOp(keypair, { version: 1, registry: 'hyperswarm' }); // Specify hyperswarm registry for this agent
+        const agentOp = await helper.createAgentOp(keypair, { version: 1, registry: 'hyperswarm' });
         const did = await gatekeeper.createDID(agentOp);
-        const expected = await gatekeeper.resolveDID(did);
-        const update = await gatekeeper.resolveDID(did);
-        update.didDocumentData = { mock: 1 };
-        const updateOp = await helper.createUpdateOp(keypair, did, update);
-        const ok = await gatekeeper.updateDID(updateOp);
         const confirmedDoc = await gatekeeper.resolveDID(did, { confirm: true });
 
-        // Update expected to match the new retrieved timestamp
-        expected!.didResolutionMetadata!.retrieved = expect.any(String);
-
-        expect(ok).toBe(true);
-        expect(confirmedDoc).toStrictEqual(expected);
+        expect(confirmedDoc.didResolutionMetadata?.error).toBe('notFound');
     });
 
     it('should resolve verified version after an update', async () => {
@@ -870,6 +860,11 @@ describe('updateDID', () => {
         const assetB = await gatekeeper.createDID(
             await helper.createAssetOp(agent, keypair, { registry: 'hyperswarm' })
         );
+        const creates = (await gatekeeper.exportDIDs([agent, assetA, assetB]))
+            .flat()
+            .map(event => ({ ...event, registry: 'hyperswarm' }));
+        await gatekeeper.importBatch(creates);
+        await gatekeeper.processEvents();
 
         const assetADoc = await gatekeeper.resolveDID(assetA);
         assetADoc.didDocument!.controller = assetB;
