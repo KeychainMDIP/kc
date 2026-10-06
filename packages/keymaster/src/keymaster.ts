@@ -676,11 +676,24 @@ export default class Keymaster implements KeymasterInterface {
         return publicKeyJwk;
     }
 
+    private async resolveIdentityForCryptography(did: string, versionTime?: string): Promise<MdipDocument> {
+        try {
+            return await this.resolveDID(did, { confirm: true, versionTime });
+        }
+        catch (error) {
+            if (!(error instanceof InvalidDIDError) || error.detail !== 'unknown') {
+                throw error;
+            }
+            // The immutable create key remains usable locally while registry confirmation is pending.
+            return this.resolveDID(did, { versionSequence: 1, versionTime });
+        }
+    }
+
     async fetchKeyPair(name?: string): Promise<EcdsaJwkPair | null> {
         const wallet = await this.loadWallet();
         const id = await this.fetchIdInfo(name, wallet);
         const hdkey = await this.getHDKeyFromCacheOrMnemonic(wallet);
-        const doc = await this.resolveDID(id.did, { confirm: true });
+        const doc = await this.resolveIdentityForCryptography(id.did);
         const confirmedPublicKeyJwk = this.getPublicKeyJwk(doc);
 
         for (let i = id.index; i >= 0; i--) {
@@ -958,7 +971,7 @@ export default class Keymaster implements KeymasterInterface {
             throw new KeymasterError('No valid sender keypair');
         }
 
-        const doc = await this.resolveDID(receiver, { confirm: true });
+        const doc = await this.resolveIdentityForCryptography(receiver);
         const receivePublicJwk = this.getPublicKeyJwk(doc);
 
         const cipher_sender = encryptForSender ? this.cipher.encryptMessage(senderKeypair.publicJwk, senderKeypair.privateJwk, msg) : null;
@@ -1017,7 +1030,7 @@ export default class Keymaster implements KeymasterInterface {
 
         const crypt = (castAsset.encrypted ? castAsset.encrypted : castAsset) as EncryptedMessage;
 
-        const doc = await this.resolveDID(crypt.sender, { confirm: true, versionTime: crypt.created });
+        const doc = await this.resolveIdentityForCryptography(crypt.sender, crypt.created);
         const senderPublicJwk = this.getPublicKeyJwk(doc);
 
         const ciphertext = (crypt.sender === id.did && crypt.cipher_sender) ? crypt.cipher_sender : crypt.cipher_receiver;
@@ -1665,7 +1678,8 @@ export default class Keymaster implements KeymasterInterface {
 
             const doc = await this.resolveDID(id.did);
 
-            if (!doc.didDocumentMetadata?.confirmed) {
+            // The immutable create key may rotate before registry confirmation.
+            if (!doc.didDocumentMetadata?.confirmed && doc.didDocumentMetadata?.version !== '1') {
                 throw new KeymasterError('Cannot rotate keys');
             }
             if (!doc.didDocument?.verificationMethod) {
@@ -1994,7 +2008,7 @@ export default class Keymaster implements KeymasterInterface {
         }
 
         const holder = credential.credentialSubject.id;
-        const holderDoc = await this.resolveDID(holder, { confirm: true });
+        const holderDoc = await this.resolveIdentityForCryptography(holder);
         const receivePublicJwk = this.getPublicKeyJwk(holderDoc);
         const cipher_sender = this.cipher.encryptMessage(senderKeypair.publicJwk, senderKeypair.privateJwk, msg);
         const cipher_receiver = this.cipher.encryptMessage(receivePublicJwk, senderKeypair.privateJwk, msg);
@@ -2377,7 +2391,7 @@ export default class Keymaster implements KeymasterInterface {
         // Decrypt the same response version whose controller and sender were checked.
         const wallet = await this.loadWallet();
         const id = await this.fetchIdInfo(verifier, wallet);
-        const senderDoc = await this.resolveDID(crypt.sender, { confirm: true, versionTime: crypt.created });
+        const senderDoc = await this.resolveIdentityForCryptography(crypt.sender, crypt.created);
         const senderPublicJwk = this.getPublicKeyJwk(senderDoc);
         const ciphertext = (crypt.sender === id.did && crypt.cipher_sender) ? crypt.cipher_sender : crypt.cipher_receiver;
         const plaintext = await this.decryptWithDerivedKeys(wallet, id, senderPublicJwk, ciphertext!);
@@ -3444,7 +3458,7 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     private async addMemberKey(groupVault: GroupVault, memberDID: string, privateJwk: EcdsaJwkPrivate): Promise<void> {
-        const memberDoc = await this.resolveDID(memberDID, { confirm: true });
+        const memberDoc = await this.resolveIdentityForCryptography(memberDID);
         const memberPublicJwk = this.getPublicKeyJwk(memberDoc);
         const memberKey = this.cipher.encryptMessage(memberPublicJwk, privateJwk, JSON.stringify(privateJwk));
         const memberKeyId = this.generateSaltedId(groupVault, memberDID);
@@ -3517,7 +3531,7 @@ export default class Keymaster implements KeymasterInterface {
         const idKeypair = await this.fetchKeyPair(actor);
         const groupVault = await this.getGroupVault(vaultId);
         const { privateJwk, config, members } = await this.decryptGroupVault(groupVault, actor);
-        const memberDoc = await this.resolveDID(memberId, { confirm: true });
+        const memberDoc = await this.resolveIdentityForCryptography(memberId);
         const memberDID = this.getAgentDID(memberDoc);
 
         // Don't allow adding the vault owner
@@ -3544,7 +3558,7 @@ export default class Keymaster implements KeymasterInterface {
         const idKeypair = await this.fetchKeyPair(actor);
         const groupVault = await this.getGroupVault(vaultId);
         const { privateJwk, config, members } = await this.decryptGroupVault(groupVault, actor);
-        const memberDoc = await this.resolveDID(memberId, { confirm: true });
+        const memberDoc = await this.resolveIdentityForCryptography(memberId);
         const memberDID = this.getAgentDID(memberDoc);
 
         // Don't allow removing the vault owner

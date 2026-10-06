@@ -1031,8 +1031,8 @@ describe('checkDIDs', () => {
         expect(check.total).toBe(2);
         expect(check.byType.agents).toBe(1);
         expect(check.byType.assets).toBe(1);
-        expect(check.byType.confirmed).toBe(1);
-        expect(check.byType.unconfirmed).toBe(1);
+        expect(check.byType.confirmed).toBe(0);
+        expect(check.byType.unconfirmed).toBe(2);
         expect(check.byType.ephemeral).toBe(0);
         expect(check.byType.invalid).toBe(0);
         expect(check.byRegistry['hyperswarm']).toBe(2);

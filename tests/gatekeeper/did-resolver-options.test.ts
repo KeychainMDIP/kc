@@ -61,6 +61,53 @@ describe('DID resolver injectable generation and verification options', () => {
         expect(doc.didDocumentData).toStrictEqual({ name: 'resolver-options' });
     });
 
+    it('returns notFound when versionTime precedes creation', async () => {
+        const doc = await resolveDIDFromEvents({
+            did,
+            events: [createEvent],
+            options: { versionTime: '2026-04-01T09:59:59.999Z' },
+            generateCID: async () => cid,
+        });
+
+        expect(doc.didResolutionMetadata?.error).toBe('notFound');
+    });
+
+    it('requires native-registry confirmation of the create event', async () => {
+        const operation = {
+            ...createOperation,
+            mdip: {
+                ...createOperation.mdip!,
+                registry: 'hyperswarm',
+            },
+        } satisfies Operation;
+        const unconfirmedEvent = {
+            ...createEvent,
+            operation,
+        };
+
+        const unconfirmed = await resolveDIDFromEvents({
+            did,
+            events: [unconfirmedEvent],
+            generateCID: async () => cid,
+        });
+        const confirmedOnly = await resolveDIDFromEvents({
+            did,
+            events: [unconfirmedEvent],
+            options: { confirm: true },
+            generateCID: async () => cid,
+        });
+        const confirmed = await resolveDIDFromEvents({
+            did,
+            events: [{ ...unconfirmedEvent, registry: 'hyperswarm' }],
+            options: { confirm: true },
+            generateCID: async () => cid,
+        });
+
+        expect(unconfirmed.didDocumentMetadata?.confirmed).toBe(false);
+        expect(confirmedOnly.didResolutionMetadata?.error).toBe('notFound');
+        expect(confirmed.didDocumentMetadata?.confirmed).toBe(true);
+    });
+
     it('requires create and update verifiers when verify mode is enabled', async () => {
         await expect(resolveDIDFromEvents({
             did,

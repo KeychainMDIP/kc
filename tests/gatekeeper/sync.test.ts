@@ -1618,6 +1618,9 @@ describe('processEvents', () => {
         const agentOp = await helper.createAgentOp(keypair, { registry: 'TFTC' });
         const agentDID = await gatekeeper.createDID(agentOp);
         const agentDoc1 = await gatekeeper.resolveDID(agentDID);
+        const [createEvent] = await gatekeeper.exportDID(agentDID);
+        await gatekeeper.importBatch([{ ...createEvent, registry: 'TFTC' }]);
+        await gatekeeper.processEvents();
 
         // Simulate a double-spend scenario where a bad actor creates a pair of inconsistent operations
         // Only one of the pair can be confirmed and it depends on the order of operations
@@ -2053,13 +2056,11 @@ describe('getDids', () => {
 
         const allDocs = await gatekeeper.getDIDs({ confirm: true, resolve: true });
 
-        // Update the retrieved timestamps to match any value
-        agentDoc.didResolutionMetadata!.retrieved = expect.any(String);
+        // Update the retrieved timestamp to match any value
         assetDoc.didResolutionMetadata!.retrieved = expect.any(String);
 
-        expect(allDocs.length).toBe(2);
-        expect(allDocs[0]).toStrictEqual(agentDoc); // version 1
-        expect(allDocs[1]).toStrictEqual(assetDoc);
+        expect(allDocs.length).toBe(1);
+        expect(allDocs[0]).toStrictEqual(assetDoc);
     });
 
     it('should return all DIDs unconfirmed and resolved', async () => {

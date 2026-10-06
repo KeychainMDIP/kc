@@ -614,6 +614,7 @@ v1router.post("/did/generate", trackedRoute(async (req, res) => {
  *           format: date-time
  *         description: >
  *           Timestamp to return the state of the DID as of this specific time.
+ *           A time before the create operation resolves as `notFound`.
  *       - in: query
  *         name: versionSequence
  *         required: false
@@ -627,7 +628,8 @@ v1router.post("/did/generate", trackedRoute(async (req, res) => {
  *         schema:
  *           type: boolean
  *         description: >
- *           If `true`, excludes later events until they are confirmed by the DID's native registry.
+ *           If `true`, requires the create and all applied later events to be confirmed by the DID's native registry.
+ *           An unconfirmed create resolves as `notFound`.
  *       - in: query
  *         name: verify
  *         required: false

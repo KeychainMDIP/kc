@@ -183,14 +183,19 @@ export async function resolveDIDFromEvents(params: ResolveDIDFromEventsParams): 
         generateDID: generateDIDForDoc,
     });
 
-    if (versionTime && doc.mdip?.created && new Date(doc.mdip.created) > new Date(versionTime)) {
-        // TBD What to return if DID was created after specified time?
+    if (versionTime && doc.didDocumentMetadata?.created &&
+        new Date(doc.didDocumentMetadata.created) > new Date(versionTime)) {
+        return notFoundDIDDocument();
     }
 
     const created = generateStandardDatetime(doc.didDocumentMetadata?.created);
     const canonicalId = doc.didDocumentMetadata?.canonicalId;
     let versionNum = 1;
-    let confirmed = true;
+    let confirmed = doc.mdip?.registry === anchor.registry;
+
+    if (confirm && !confirmed) {
+        return notFoundDIDDocument();
+    }
 
     for (const { time, operation, registry, blockchain, opid } of events) {
         const versionId = opid || await generateOperationCIDForVersion(operation);

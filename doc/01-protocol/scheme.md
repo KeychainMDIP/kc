@@ -287,7 +287,7 @@ Resolution is the operation of responding to a DID with a DID Document. If you t
 
 The resolver validates the DID, retrieves its ordered events from the local Gatekeeper database, and generates the initial document from the create operation. An agent document contains its public key, while an asset document references its controller and places the asset data in `didDocumentData`.
 
-The resolver then applies update and delete events in order. Resolution can stop at a requested `versionTime` or `versionSequence`. With confirmation enabled, it stops before later events that have not been confirmed by the DID's native registry. With verification enabled, it verifies create, update, and delete signatures and checks `previd` against the preceding operation CID.
+The resolver then applies update and delete events in order. Resolution can stop at a requested `versionTime` or `versionSequence`. With confirmation enabled, the create event and every applied later event must be confirmed by the DID's native registry. An unconfirmed create returns `notFound`. With verification enabled, it verifies create, update, and delete signatures and checks `previd` against the preceding operation CID.
 
 Blockchain-backed events can add lower and upper timestamp bounds to the returned version metadata. A DID absent from the local event database returns `notFound`. Resolution does not forward requests to a fallback node.
 
@@ -299,6 +299,8 @@ function resolveDid(did, versionTime=now):
     if events are empty:
         return notFound
     generate initial document from the create event
+    if confirmation is requested and the create is unconfirmed:
+        return notFound
     for each later event until versionTime:
         when verification is requested, verify signature and previd
         stop before unconfirmed events when confirmation is requested
