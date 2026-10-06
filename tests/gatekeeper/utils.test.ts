@@ -104,6 +104,24 @@ describe('generateDID', () => {
         expect(did.startsWith('did:custom:')).toBe(true);
     });
 
+    it.each(['invalid', 'did:UPPER', 'did:hyphen-name', 'did:test:extra', ''])(
+        'should reject invalid operation prefix %j',
+        async (prefix) => {
+            const operation: Operation = {
+                type: 'create',
+                mdip: {
+                    version: 1,
+                    type: 'asset',
+                    registry: 'mockRegistry',
+                    prefix,
+                },
+            };
+
+            await expect(gatekeeper.generateDID(operation))
+                .rejects.toThrow(`Invalid operation: mdip.prefix=${prefix}`);
+        }
+    );
+
     it('should create same DID from same operation with date included', async () => {
         const mockTxn: Operation = {
             type: "create",
@@ -532,7 +550,7 @@ describe('Test operation validation errors', () => {
     it('create error with invalid signature', async () => {
         const keypair = cipher.generateRandomJwk();
         let agentOp = await helper.createAgentOp(keypair);
-        agentOp.mdip!.prefix = "dummy";
+        agentOp.mdip!.prefix = "did:dummy";
 
         try {
             await gatekeeper.createDID(agentOp);
