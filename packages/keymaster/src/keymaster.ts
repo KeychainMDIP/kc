@@ -66,6 +66,9 @@ import {
 import { isValidDID } from '@mdip/ipfs/utils';
 import { copyJSON } from '@mdip/common/utils';
 import { decMnemonic, encMnemonic } from "./encryption.js";
+import {encode, RemoteDocument} from '@digitalbazaar/cborld';
+import { contexts as credentialContexts } from '@digitalbazaar/credentials-context';
+import { keccak256 } from 'viem';
 
 const DefaultSchema = {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -1815,6 +1818,121 @@ export default class Keymaster implements KeymasterInterface {
         };
     }
 
+    convertSchemaToContext(did:string, topSchema:Record<string, any>) : Record<string, unknown> {
+        const toTermDef = (name:string, schema:Record<string, any>) : Record<string,any> => {
+            const id = `${did}#${name}`;
+            const XSD = 'http://www.w3.org/2001/XMLSchema#'
+            let termDef = {'@id': id} as Record<string,any>;
+            if (schema.format === 'uri' ) {
+                termDef['@type'] = '@id';
+            } else if (schema.format === 'date-time') {
+                termDef['@type'] = XSD + 'dateTime';
+            }
+
+            return termDef
+        }
+
+        const terms = new Map<string, any>();
+
+        const collect = (schema:Record<string,any>) => {
+            for (const [name, sub] of Object.entries(schema.properties ?? {})) {
+                const subSchema = sub as Record<string, any>;
+                terms.set(name, toTermDef(name, subSchema))
+                collect(subSchema)
+            } 
+
+            const others = [
+                ...(Array.isArray(schema.items) ? schema.items : schema.items ? [schema.items] : []),
+                ...(typeof schema.additionalProperties === 'object' ? [schema.additionalProperties] : []),
+                ...(schema.allOf ?? []),
+                ...(schema.anyOf ?? []),
+                ...(schema.oneOf ?? []),
+                ...(Object.values(schema.$defs ?? {})),
+            ];
+            others.forEach(other => collect(other));
+        }
+
+        collect(topSchema)
+
+        return {
+            "@context" : Object.fromEntries(terms)
+        }
+    }
+
+    async addEvmCredentialSignature(
+        credential: Partial<VerifiableCredential>,
+        controller: string
+    ): Promise<Partial<VerifiableCredential>> {
+        // Fetches current ID if name is missing
+        const id = await this.fetchIdInfo(controller);
+        const keypair = await this.fetchKeyPair(id.did);
+
+        if (!keypair) {
+            throw new KeymasterError('addSignature: no keypair');
+        }
+
+        try {
+            const documentLoader = async (url:string) : Promise<RemoteDocument>=> {
+                const [protocol] = url.split(':');
+                // Check if this protocol has a custom handler installed
+                if (credentialContexts.has(url)) {
+                    return {
+                        contextUrl: null,
+                        document: credentialContexts.get(url)!,
+                        documentUrl: url
+                    }
+                } else if(protocol.startsWith('http')) {
+                    const response = await fetch(url, {
+                        method: 'GET',
+                        headers: {
+                            'Accept': 'application/ld+json'
+                        }
+                    });
+
+                    const document = await response.json() as object;
+
+                    return {
+                        contextUrl: null,
+                        document,
+                        documentUrl: url
+                    }
+                } else if (protocol.startsWith('did')) {
+                    const schema = await this.getSchema(url);
+                    const document =  this.convertSchemaToContext(url, schema as Record<string,any>);
+                    return {
+                        contextUrl: null,
+                        document,
+                        documentUrl: url
+                    }
+                }
+
+                throw new InvalidParameterError('url'); 
+            }
+
+            const cborldBytes = await encode({
+                jsonldDocument : credential,
+                documentLoader,
+            });
+
+            const digest = keccak256(cborldBytes, 'bytes');
+            const msgHash = Buffer.from(digest).toString('hex');
+            const signature = this.cipher.signHash(msgHash, keypair.privateJwk);
+
+            return {
+                ...credential,
+                evmSignature: {
+                    signer: id.did,
+                    signed: new Date().toISOString(),
+                    hash: msgHash,
+                    value: signature,
+                }
+            };
+        }
+        catch {
+            throw new InvalidParameterError('credential');
+        }
+    }
+
     async issueCredential(
         credential: Partial<VerifiableCredential>,
         options: IssueCredentialsOptions = {}
@@ -1831,10 +1949,14 @@ export default class Keymaster implements KeymasterInterface {
 
         const unsigned = { ...credential };
         delete unsigned.signature;
-        const signed = await this.addSignature(unsigned, id.did);
+        const firstSigned = await this.addSignature(unsigned, id.did);
+        delete unsigned.evmSignature;
+        const signed = await this.addEvmCredentialSignature(firstSigned, id.did)
         if (!this.isVerifiableCredential(signed)) {
             throw new InvalidParameterError('credential');
         }
+
+        console.log(JSON.stringify(signed, null, 2));
 
         return this.encryptJSONFor(signed, credential.credentialSubject!.id, id.did, { ...options, includeHash: true });
     }

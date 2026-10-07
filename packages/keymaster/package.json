@@ -145,6 +145,8 @@
   "author": "David McFadzean <davidmc@gmail.com>",
   "license": "MIT",
   "dependencies": {
+    "@digitalbazaar/cborld": "^8.1.0",
+    "@digitalbazaar/credentials-context": "^3.2.0",
     "@mdip/common": "*",
     "axios": "^1.13.6",
     "file-type": "^21.3.0",
@@ -153,14 +155,15 @@
     "mongodb": "^7.1.0",
     "pg": "^8.16.3",
     "sqlite": "^5.1.1",
-    "sqlite3": "^5.1.7"
+    "sqlite3": "^5.1.7",
+    "viem": "^2.57.3"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/KeychainMDIP/kc.git"
   },
   "devDependencies": {
-    "@types/pg": "^8.15.5",
-    "@rollup/plugin-json": "^6.1.0"
+    "@rollup/plugin-json": "^6.1.0",
+    "@types/pg": "^8.15.5"
   }
 }

@@ -102,6 +102,7 @@ export interface VerifiableCredential {
     };
     credential?: Record<string, unknown> | null;
     signature?: Signature;
+    evmSignature?: Signature;
 }
 
 export interface IssueCredentialsOptions extends EncryptOptions {
