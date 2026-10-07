@@ -20,14 +20,15 @@ globalThis.Buffer = Buffer;
 
 const gatekeeper = new GatekeeperClient();
 const cipher = new CipherWeb();
-const DID_PREFIX = 'did:test';
+const DID_PREFIX = import.meta.env.VITE_GATEKEEPER_DID_PREFIX || 'did:test';
+const SEARCH_PORT = import.meta.env.VITE_SEARCH_PORT || '4002';
 
 type ModalAction = 'set-passphrase' | 'decrypt' | null;
 type UploadAction = 'upload-plain-v0' | 'upload-enc-v1' | null;
 
 async function createSearchClient(): Promise<SearchClient> {
     const { protocol, hostname } = window.location;
-    return SearchClient.create({ url: `${protocol}//${hostname}:4002` });
+    return SearchClient.create({ url: `${protocol}//${hostname}:${SEARCH_PORT}` });
 }
 
 function App() {

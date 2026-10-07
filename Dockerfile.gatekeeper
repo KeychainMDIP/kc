@@ -19,6 +19,10 @@ COPY services/gatekeeper ./gatekeeper/
 
 RUN npm rebuild sqlite3
 RUN npm run build
+
+ARG VITE_GATEKEEPER_DID_PREFIX
+ARG VITE_SEARCH_PORT
+
 RUN cd gatekeeper/client && npm run build
 RUN cd gatekeeper/server && npm run build
 
