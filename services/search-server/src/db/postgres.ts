@@ -36,6 +36,25 @@ import {
 
 const DEFAULT_POSTGRES_CONNECTION_TIMEOUT_MS = 3_000;
 const DEFAULT_SEARCH_TIMEOUT_MS = 5_000;
+const INSERT_BATCH_SIZE = 500;
+
+async function insertRows(
+    client: PoolClient,
+    statement: string,
+    rows: unknown[][],
+    casts: string[] = [],
+    suffix = ''
+): Promise<void> {
+    for (let offset = 0; offset < rows.length; offset += INSERT_BATCH_SIZE) {
+        const batch = rows.slice(offset, offset + INSERT_BATCH_SIZE);
+        const params: unknown[] = [];
+        const values = batch.map(row => `(${row.map((value, column) => {
+            params.push(value);
+            return `$${params.length}${casts[column] ?? ''}`;
+        }).join(', ')})`);
+        await client.query(`${statement} VALUES ${values.join(', ')}${suffix}`, params);
+    }
+}
 
 function readPositiveIntegerEnv(name: string, fallback: number): number {
     const configured = process.env[name];
@@ -468,6 +487,16 @@ export default class Postgres implements DIDsDb {
 
         try {
             await client.query('BEGIN');
+            const blockRows: unknown[][] = [];
+            const classificationRows: unknown[][] = [];
+            const eventRows: unknown[][] = [];
+            const docRows: unknown[][] = [];
+            const credentialRows = new Map<string, unknown[]>();
+            const schemaRows: unknown[][] = [];
+            const fieldRows: unknown[][] = [];
+            const referenceRows: unknown[][] = [];
+            const receiptRows: unknown[][] = [];
+            const syncStateRows: unknown[][] = [];
 
             for (const { registry, block, removed } of page.blocks) {
                 if (removed) {
@@ -481,15 +510,7 @@ export default class Postgres implements DIDsDb {
                     continue;
                 }
 
-                await client.query(
-                    `INSERT INTO blocks (registry, hash, height, time, block)
-                     VALUES ($1, $2, $3, $4, $5::jsonb)
-                     ON CONFLICT (registry, hash) DO UPDATE SET
-                        height = EXCLUDED.height,
-                        time = EXCLUDED.time,
-                        block = EXCLUDED.block`,
-                    [registry, block.hash, block.height, block.time, JSON.stringify(block)]
-                );
+                blockRows.push([registry, block.hash, block.height, block.time, JSON.stringify(block)]);
                 result.storedBlocks += 1;
             }
 
@@ -533,57 +554,72 @@ export default class Postgres implements DIDsDb {
                 }
 
                 const classification = classifyDIDPrefix(record.events);
-                await client.query(
-                    `INSERT INTO did_classifications (suffix, did, prefix, prefix_authoritative, is_agent) VALUES ($1, $2, $3, $4, $5)
-                     ON CONFLICT (suffix) DO UPDATE SET
-                        did = EXCLUDED.did,
-                        prefix = EXCLUDED.prefix,
-                        prefix_authoritative = EXCLUDED.prefix_authoritative,
-                        is_agent = EXCLUDED.is_agent`,
-                    [suffix, record.did, classification.prefix, classification.authoritative, isAgentDID(record.events)]
-                );
+                classificationRows.push([
+                    suffix,
+                    record.did,
+                    classification.prefix,
+                    classification.authoritative,
+                    isAgentDID(record.events),
+                ]);
 
                 for (const [index, event] of record.events.entries()) {
-                    await client.query(
-                        'INSERT INTO did_events (did, event_index, registry, time, event) VALUES ($1, $2, $3, $4, $5::jsonb)',
-                        [record.did, index, event.registry, getEventDisplayTime(event), JSON.stringify(event)]
-                    );
+                    eventRows.push([
+                        record.did,
+                        index,
+                        event.registry,
+                        getEventDisplayTime(event),
+                        JSON.stringify(event),
+                    ]);
                 }
 
                 if (record.doc) {
-                    await client.query(
-                        `INSERT INTO did_docs (did, doc) VALUES ($1, $2::jsonb)
-                         ON CONFLICT (did) DO UPDATE SET doc = EXCLUDED.doc`,
-                        [record.did, JSON.stringify(record.doc)]
-                    );
+                    docRows.push([record.did, JSON.stringify(record.doc)]);
                 }
 
-                await this.replacePublishedCredentialsWithClient(
-                    client,
-                    record.did,
-                    record.publishedCredentials ?? []
-                );
+                await client.query('DELETE FROM published_credentials WHERE holder_did = $1', [record.did]);
+                for (const credential of record.publishedCredentials ?? []) {
+                    const credentialSuffix = getDIDSuffix(credential.credentialDid);
+                    credentialRows.set(`${credential.holderDid}\0${credentialSuffix}`, [
+                        credential.holderDid,
+                        credentialSuffix,
+                        getDIDSuffix(credential.schemaDid),
+                        credential.issuerDid,
+                        credential.subjectDid,
+                        credential.revealed,
+                        credential.updatedAt,
+                    ]);
+                }
                 await client.query('DELETE FROM identity_schemas WHERE did = $1', [record.did]);
                 for (const schemaSuffix of new Set((record.publishedCredentials ?? []).map(item => getDIDSuffix(item.schemaDid)))) {
-                    await client.query('INSERT INTO identity_schemas (did, schema_suffix) VALUES ($1, $2)', [record.did, schemaSuffix]);
+                    schemaRows.push([record.did, schemaSuffix]);
                 }
                 await client.query('DELETE FROM identity_fields WHERE did = $1', [record.did]);
                 for (const [suffix, fields] of extractIdentityFields(record.doc ?? {}, record.publishedCredentials ?? [])) {
                     for (const field of fields) {
-                        await client.query('INSERT INTO identity_fields (did, field, schema_suffix) VALUES ($1, $2, $3)', [record.did, field, suffix]);
+                        fieldRows.push([record.did, field, suffix]);
                     }
                 }
-                await this.replaceDIDPrefixReferencesWithClient(
-                    client,
-                    record.did,
+                await client.query('DELETE FROM did_prefix_references WHERE source_did = $1', [record.did]);
+                for (const did of deduplicateDIDPrefixReferences(
                     record.didPrefixReferences ?? [],
                     record.publishedCredentials ?? []
-                );
-                await this.replaceChallengeReceiptsWithClient(
-                    client,
-                    record.did,
-                    record.challengeReceipts ?? []
-                );
+                )) {
+                    referenceRows.push([record.did, getDIDSuffix(did), getDIDPrefix(did)]);
+                }
+                await client.query('DELETE FROM challenge_receipts WHERE receipt_did = $1', [record.did]);
+                for (const receipt of record.challengeReceipts ?? []) {
+                    receiptRows.push([
+                        receipt.receiptDid,
+                        receipt.attesterDid,
+                        getDIDSuffix(receipt.attesterDid),
+                        receipt.schemaDid,
+                        getDIDSuffix(receipt.schemaDid),
+                        receipt.requesterDid,
+                        getDIDSuffix(receipt.requesterDid),
+                        receipt.responseCommitment,
+                        receipt.updatedAt,
+                    ]);
+                }
             }
 
             for (const [key, value] of Object.entries(page.syncStateUpdates ?? {})) {
@@ -592,12 +628,110 @@ export default class Postgres implements DIDsDb {
                     continue;
                 }
 
-                await client.query(
-                    `INSERT INTO sync_state (key, value) VALUES ($1, $2)
-                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
-                    [key, value]
-                );
+                syncStateRows.push([key, value]);
             }
+
+            await insertRows(
+                client,
+                'INSERT INTO blocks (registry, hash, height, time, block)',
+                blockRows,
+                ['', '', '', '', '::jsonb'],
+                ` ON CONFLICT (registry, hash) DO UPDATE SET
+                    height = EXCLUDED.height,
+                    time = EXCLUDED.time,
+                    block = EXCLUDED.block`
+            );
+            await insertRows(
+                client,
+                'INSERT INTO did_classifications (suffix, did, prefix, prefix_authoritative, is_agent)',
+                classificationRows,
+                [],
+                ` ON CONFLICT (suffix) DO UPDATE SET
+                    did = EXCLUDED.did,
+                    prefix = EXCLUDED.prefix,
+                    prefix_authoritative = EXCLUDED.prefix_authoritative,
+                    is_agent = EXCLUDED.is_agent`
+            );
+            await insertRows(
+                client,
+                'INSERT INTO did_events (did, event_index, registry, time, event)',
+                eventRows,
+                ['', '', '', '', '::jsonb']
+            );
+            await insertRows(
+                client,
+                'INSERT INTO did_docs (did, doc)',
+                docRows,
+                ['', '::jsonb'],
+                ' ON CONFLICT (did) DO UPDATE SET doc = EXCLUDED.doc'
+            );
+            await insertRows(
+                client,
+                `INSERT INTO published_credentials (
+                    holder_did,
+                    credential_suffix,
+                    schema_suffix,
+                    issuer_did,
+                    subject_did,
+                    revealed,
+                    updated_at
+                )`,
+                Array.from(credentialRows.values()),
+                [],
+                ` ON CONFLICT (holder_did, credential_suffix) DO UPDATE SET
+                    schema_suffix = EXCLUDED.schema_suffix,
+                    issuer_did = EXCLUDED.issuer_did,
+                    subject_did = EXCLUDED.subject_did,
+                    revealed = EXCLUDED.revealed,
+                    updated_at = EXCLUDED.updated_at`
+            );
+            await insertRows(
+                client,
+                'INSERT INTO identity_schemas (did, schema_suffix)',
+                schemaRows
+            );
+            await insertRows(
+                client,
+                'INSERT INTO identity_fields (did, field, schema_suffix)',
+                fieldRows
+            );
+            await insertRows(
+                client,
+                'INSERT INTO did_prefix_references (source_did, suffix, prefix)',
+                referenceRows
+            );
+            await insertRows(
+                client,
+                `INSERT INTO challenge_receipts (
+                    receipt_did,
+                    attester_did,
+                    attester_suffix,
+                    schema_did,
+                    schema_suffix,
+                    requester_did,
+                    requester_suffix,
+                    response_commitment,
+                    updated_at
+                )`,
+                receiptRows,
+                [],
+                ` ON CONFLICT (receipt_did) DO UPDATE SET
+                    attester_did = EXCLUDED.attester_did,
+                    attester_suffix = EXCLUDED.attester_suffix,
+                    schema_did = EXCLUDED.schema_did,
+                    schema_suffix = EXCLUDED.schema_suffix,
+                    requester_did = EXCLUDED.requester_did,
+                    requester_suffix = EXCLUDED.requester_suffix,
+                    response_commitment = EXCLUDED.response_commitment,
+                    updated_at = EXCLUDED.updated_at`
+            );
+            await insertRows(
+                client,
+                'INSERT INTO sync_state (key, value)',
+                syncStateRows,
+                [],
+                ' ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value'
+            );
 
             await client.query('COMMIT');
             return result;
@@ -1328,109 +1462,6 @@ export default class Postgres implements DIDsDb {
                 DEFAULT_POSTGRES_CONNECTION_TIMEOUT_MS
             ),
         });
-    }
-
-    private async replacePublishedCredentialsWithClient(
-        client: PoolClient,
-        holderDid: string,
-        records: PublishedCredentialRecord[]
-    ): Promise<void> {
-        await client.query(
-            'DELETE FROM published_credentials WHERE holder_did = $1',
-            [holderDid]
-        );
-
-        for (const record of records) {
-            await client.query(
-                `INSERT INTO published_credentials (
-                    holder_did,
-                    credential_suffix,
-                    schema_suffix,
-                    issuer_did,
-                    subject_did,
-                    revealed,
-                    updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-                ON CONFLICT (holder_did, credential_suffix) DO UPDATE SET
-                    schema_suffix = EXCLUDED.schema_suffix,
-                    issuer_did = EXCLUDED.issuer_did,
-                    subject_did = EXCLUDED.subject_did,
-                    revealed = EXCLUDED.revealed,
-                    updated_at = EXCLUDED.updated_at`,
-                [
-                    record.holderDid,
-                    getDIDSuffix(record.credentialDid),
-                    getDIDSuffix(record.schemaDid),
-                    record.issuerDid,
-                    record.subjectDid,
-                    record.revealed,
-                    record.updatedAt,
-                ]
-            );
-        }
-    }
-
-    private async replaceDIDPrefixReferencesWithClient(
-        client: PoolClient,
-        sourceDid: string,
-        references: string[],
-        publishedCredentials: PublishedCredentialRecord[]
-    ): Promise<void> {
-        await client.query('DELETE FROM did_prefix_references WHERE source_did = $1', [sourceDid]);
-
-        for (const did of deduplicateDIDPrefixReferences(references, publishedCredentials)) {
-            await client.query(
-                'INSERT INTO did_prefix_references (source_did, suffix, prefix) VALUES ($1, $2, $3)',
-                [sourceDid, getDIDSuffix(did), getDIDPrefix(did)]
-            );
-        }
-    }
-
-    private async replaceChallengeReceiptsWithClient(
-        client: PoolClient,
-        receiptDid: string,
-        records: ChallengeReceiptRecord[]
-    ): Promise<void> {
-        await client.query(
-            'DELETE FROM challenge_receipts WHERE receipt_did = $1',
-            [receiptDid]
-        );
-
-        for (const record of records) {
-            await client.query(
-                `INSERT INTO challenge_receipts (
-                    receipt_did,
-                    attester_did,
-                    attester_suffix,
-                    schema_did,
-                    schema_suffix,
-                    requester_did,
-                    requester_suffix,
-                    response_commitment,
-                    updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                ON CONFLICT (receipt_did) DO UPDATE SET
-                    attester_did = EXCLUDED.attester_did,
-                    attester_suffix = EXCLUDED.attester_suffix,
-                    schema_did = EXCLUDED.schema_did,
-                    schema_suffix = EXCLUDED.schema_suffix,
-                    requester_did = EXCLUDED.requester_did,
-                    requester_suffix = EXCLUDED.requester_suffix,
-                    response_commitment = EXCLUDED.response_commitment,
-                    updated_at = EXCLUDED.updated_at`,
-                [
-                    record.receiptDid,
-                    record.attesterDid,
-                    getDIDSuffix(record.attesterDid),
-                    record.schemaDid,
-                    getDIDSuffix(record.schemaDid),
-                    record.requesterDid,
-                    getDIDSuffix(record.requesterDid),
-                    record.responseCommitment,
-                    record.updatedAt,
-                ]
-            );
-        }
     }
 
     private buildChallengeReceiptWhere(
