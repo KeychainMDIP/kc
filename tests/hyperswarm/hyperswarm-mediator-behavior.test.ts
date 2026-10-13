@@ -47,6 +47,7 @@ interface WireBody {
     type: string;
     sessionId?: string;
     windowId?: string;
+    round?: number;
     reason?: string;
     window?: WireWindow;
     windowProgress?: {
@@ -1042,8 +1043,12 @@ describe('hyperswarm mediator behavior', () => {
         const lookupCount = getByIds.mock.calls.length;
         driver.transport.connectionA.write(encodeFramedMessage(JSON.stringify({
             type: 'ops_push',
+            time: new Date().toISOString(),
+            node: 'node-a',
+            relays: [],
             sessionId: continuationOpen!.body.sessionId,
             windowId: continuationOpen!.body.windowId,
+            round: continuationOpen!.body.round ?? 0,
             data: [firstOperation],
         })));
         expect(await driver.transport.deliverNext()).toBe(true);

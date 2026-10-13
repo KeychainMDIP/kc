@@ -644,6 +644,7 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
                             orderedCatchup: false,
                         }),
                         syncMode: 'negentropy',
+                        initialPingReceived: true,
                     }
                     : {};
                 nodeA!.run(() => nodeA!.mediator.__test.addConnection(peerKeyB, {

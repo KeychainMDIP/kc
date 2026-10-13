@@ -3,6 +3,7 @@ import type GatekeeperClient from '@mdip/gatekeeper/client';
 import type { Operation } from '@mdip/gatekeeper/types';
 
 import type { ImportPipeline } from './import-pipeline.js';
+import type { ConnectionInfo } from './mediator-state.js';
 import {
     addAggregateSample,
     collectQueueDelaySamples,
@@ -11,9 +12,17 @@ import type { QueueMessage } from './protocol-messages.js';
 import type { MediatorSyncStats } from './sync-stats.js';
 import { hasContentVerifiedOperationId } from './sync-persistence.js';
 import { mapOperationToSyncKey } from './sync-mapping.js';
+import {
+    chunkOperationsForPush,
+    validateOperationPage,
+} from './negentropy/transfer.js';
+import { MAX_RELAY_HINTS } from './protocol-limits.js';
+import { validateOperationContentIds } from './protocol-validation.js';
 
 interface QueueCoordinatorOptions {
     registry: string;
+    maxOpsPerPage: number;
+    maxBytesPerPage: number;
     gatekeeper: Pick<GatekeeperClient, 'getQueue' | 'clearQueue'>;
     cipher: Pick<CipherNode, 'hashJSON'>;
     syncStats: MediatorSyncStats;
@@ -21,6 +30,7 @@ interface QueueCoordinatorOptions {
     getNodeKey(): string;
     createQueueMessage(): Omit<QueueMessage, 'data'>;
     relay(message: QueueMessage): Promise<void>;
+    onProtocolViolation(peerKey: string, reason: string, connection: ConnectionInfo): void;
 }
 
 export function createQueueCoordinator(options: QueueCoordinatorOptions) {
@@ -35,11 +45,25 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
         return hash;
     }
 
-    async function handleMessage(peerKey: string, message: QueueMessage): Promise<void> {
-        if (!Array.isArray(message.data)) {
+    async function handleMessage(
+        peerKey: string,
+        message: QueueMessage,
+        connection: ConnectionInfo,
+    ): Promise<void> {
+        const page = validateOperationPage(message.data, {
+            maxOpsPerPush: options.maxOpsPerPage,
+            maxBytesPerPush: options.maxBytesPerPage,
+        });
+        if (!page.ok) {
+            options.onProtocolViolation(peerKey, `invalid_queue_payload: ${page.reason}`, connection);
             return;
         }
-        const batchHash = reserveBatch(message.data);
+        const content = validateOperationContentIds(page.value.operations, options.cipher);
+        if (!content.ok) {
+            options.onProtocolViolation(peerKey, `invalid_queue_operation: ${content.reason}`, connection);
+            return;
+        }
+        const batchHash = reserveBatch(page.value.operations);
         if (!batchHash) {
             return;
         }
@@ -72,11 +96,13 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
             batchesSeen.delete(batchHash);
             return;
         }
-        if (!Array.isArray(message.relays)) {
-            message.relays = [];
-        }
-        message.relays.push(peerKey);
-        await options.relay(message);
+        const relays = (Array.isArray(message.relays) ? message.relays : [])
+            .filter(relay => relay !== peerKey)
+            .slice(-(MAX_RELAY_HINTS - 1));
+        await options.relay({
+            ...message,
+            relays: [...relays, peerKey],
+        });
     }
 
     async function flush(): Promise<void> {
@@ -112,15 +138,20 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
             addAggregateSample(options.syncStats.queueDelayMs, sample);
         }
 
-        const message: QueueMessage = {
-            ...options.createQueueMessage(),
-            data: batch,
-        };
+        const pages = chunkOperationsForPush(batch, {
+            maxOpsPerPush: options.maxOpsPerPage,
+            maxBytesPerPush: options.maxBytesPerPage,
+        });
         const hashes = batch
             .map(operation => operation.signature?.hash)
             .filter((hash): hash is string => !!hash);
         await options.gatekeeper.clearQueue(options.registry, hashes);
-        await options.relay(message);
+        for (const page of pages) {
+            await options.relay({
+                ...options.createQueueMessage(),
+                data: page,
+            });
+        }
     }
 
     return { flush, handleMessage };

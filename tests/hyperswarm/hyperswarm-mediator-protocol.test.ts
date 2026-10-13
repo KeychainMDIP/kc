@@ -21,7 +21,7 @@ import {
 import { estimateOperationBytes } from '../../services/mediators/hyperswarm/src/negentropy/transfer.ts';
 import {
     decodeFramedMessages,
-    encodeFramedMessage,
+    encodeFramedMessage as encodeTransportFrame,
 } from '../../services/mediators/hyperswarm/src/transport-framing.ts';
 import TestHelper from '../gatekeeper/helper.ts';
 import {
@@ -79,6 +79,7 @@ function peerPing(overrides: Record<string, unknown> = {}): Record<string, unkno
         type: 'ping',
         time: new Date().toISOString(),
         node: 'peer',
+        relays: [],
         peers: [],
         capabilities: {
             negentropy: true,
@@ -87,6 +88,30 @@ function peerPing(overrides: Record<string, unknown> = {}): Record<string, unkno
         transportFramingVersion: 1,
         ...overrides,
     };
+}
+
+function encodeFramedMessage(payload: string | Uint8Array): Buffer {
+    if (typeof payload !== 'string') {
+        return encodeTransportFrame(payload);
+    }
+    let value: unknown;
+    try {
+        value = JSON.parse(payload);
+    }
+    catch {
+        return encodeTransportFrame(payload);
+    }
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return encodeTransportFrame(payload);
+    }
+    const message = value as Record<string, unknown>;
+    return encodeTransportFrame(JSON.stringify({
+        time: new Date().toISOString(),
+        node: 'peer',
+        relays: [],
+        round: 0,
+        ...message,
+    }));
 }
 
 function decodeWrites(pair: RecordingDuplexPair): Array<Record<string, unknown>> {
@@ -293,6 +318,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         protocolNode.node.run(() => protocolNode.node.mediator.__test.addConnection(peerKey, {
             connection: pair.connectionA,
             capabilities: compatibleCapabilities(),
+            initialPingReceived: true,
             ...options.overrides,
         }));
         return { peerKey, pair };
@@ -568,13 +594,14 @@ describe('hyperswarm mediator protocol characterization', () => {
     });
 
     it.each([
-        ['raw ping without a framing version', false, undefined],
-        ['framed ping without a framing version', true, undefined],
-        ['framed ping with an unsupported framing version', true, 2],
-    ])('quarantines a %s without starting synchronization', async (
+        ['raw ping without a framing version', false, undefined, true],
+        ['framed ping without a framing version', true, undefined, false],
+        ['framed ping with an unsupported framing version', true, 2, false],
+    ])('closes a %s without starting synchronization', async (
         _case,
         framed,
         transportFramingVersion,
+        punitive,
     ) => {
         const protocolNode = await createNode();
         const { peerKey, pair } = attachPeer(protocolNode);
@@ -589,23 +616,17 @@ describe('hyperswarm mediator protocol characterization', () => {
             ),
         );
 
-        expect(destroySpy).not.toHaveBeenCalled();
+        expect(destroySpy).toHaveBeenCalledTimes(1);
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
-        )).toMatchObject({
-            syncMode: 'unknown',
-            syncStarted: false,
-            activeSession: null,
-            peerTransportFramingVersion: transportFramingVersion ?? null,
-            legacyTransportQuarantined: true,
-        });
+        )).toBeNull();
         expect(pair.transcript.some(entry => entry.messageType === 'neg_open')).toBe(false);
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getSyncStatsSnapshot(),
         )).toMatchObject({
             transport: {
-                malformedPeerCooldowns: 0,
-                legacyTransportConnectionsQuarantined: 1,
+                protocolViolationCooldowns: punitive ? 1 : 0,
+                transportFramingIncompatibilityClosures: punitive ? 0 : 1,
             },
         });
     });
@@ -613,7 +634,7 @@ describe('hyperswarm mediator protocol characterization', () => {
     it('quarantines framed protocol traffic received before a compatible ping', async () => {
         const protocolNode = await createNode();
         const { peerKey, pair } = attachPeer(protocolNode, {
-            overrides: { peerTransportFramingVersion: null },
+            overrides: { peerTransportFramingVersion: null, initialPingReceived: false },
         });
 
         await protocolNode.node.run(
@@ -629,12 +650,11 @@ describe('hyperswarm mediator protocol characterization', () => {
 
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
-        )).toMatchObject({
-            activeSession: null,
-            peerTransportFramingVersion: null,
-            legacyTransportQuarantined: true,
-        });
+        )).toBeNull();
         expect(pair.transcript).toHaveLength(0);
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getSyncStatsSnapshot(),
+        )).toMatchObject({ transport: { protocolViolationCooldowns: 1 } });
     });
 
     it('ignores frames coalesced after an incompatible ping', async () => {
@@ -653,16 +673,14 @@ describe('hyperswarm mediator protocol characterization', () => {
 
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
-        )).toMatchObject({
-            syncMode: 'unknown',
-            activeSession: null,
-            peerTransportFramingVersion: null,
-            legacyTransportQuarantined: true,
-        });
+        )).toBeNull();
         expect(pair.transcript).toHaveLength(0);
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getSyncStatsSnapshot(),
+        )).toMatchObject({ transport: { transportFramingIncompatibilityClosures: 1 } });
     });
 
-    it('quarantines a peer that continues using raw transport after its compatibility ping', async () => {
+    it('terminates a peer that sends a fragmented raw ping', async () => {
         const protocolNode = await createNode();
         const { peerKey, pair } = attachPeer(protocolNode);
         const destroySpy = jest.spyOn(pair.connectionA, 'destroy');
@@ -683,49 +701,17 @@ describe('hyperswarm mediator protocol characterization', () => {
             ),
         );
 
-        expect(destroySpy).not.toHaveBeenCalled();
+        expect(destroySpy).toHaveBeenCalledTimes(1);
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
-        )).toMatchObject({ syncMode: 'negentropy', activeSession: { mode: 'negentropy' } });
-        const writesBeforeQuarantine = pair.transcript.length;
-
-        await protocolNode.node.run(
-            () => protocolNode.node.mediator.__test.processInboundPeerData(
-                peerKey,
-                Buffer.from(JSON.stringify({ type: 'sync', node: 'legacy-peer' })),
-            ),
-        );
-
-        expect(destroySpy).not.toHaveBeenCalled();
-        expect(protocolNode.node.run(
-            () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
-        )).toMatchObject({
-            syncMode: 'unknown',
-            syncStarted: false,
-            activeSession: null,
-            legacyTransportQuarantined: true,
-        });
+        )).toBeNull();
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getSyncStatsSnapshot(),
         )).toMatchObject({
             transport: {
-                malformedPeerCooldowns: 0,
-                legacyTransportConnectionsQuarantined: 1,
+                protocolViolationCooldowns: 1,
             },
         });
-
-        await protocolNode.node.run(
-            () => protocolNode.node.mediator.__test.processInboundPeerData(
-                peerKey,
-                encodeFramedMessage(JSON.stringify(peerPing())),
-            ),
-        );
-        await protocolNode.node.run(() => protocolNode.node.mediator.__test.sendPingToPeer(peerKey));
-        await protocolNode.node.run(
-            () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey, 'periodic'),
-        );
-
-        expect(pair.transcript).toHaveLength(writesBeforeQuarantine);
     });
 
     it('rejects an unframed non-ping as the initial message', async () => {
@@ -755,7 +741,7 @@ describe('hyperswarm mediator protocol characterization', () => {
 
         expect(destroySpy).toHaveBeenCalled();
         expect(protocolNode.node.run(
-            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
         )).toBeNull();
     });
 
@@ -776,39 +762,126 @@ describe('hyperswarm mediator protocol characterization', () => {
         )).not.toBeNull();
     });
 
-    it('rejects invalid framed neg_open windows and window IDs', async () => {
+    it.each([
+        ['window range', (open: Record<string, unknown>) => ({
+            ...open,
+            sessionId: 'invalid-window',
+            window: { ...(open.window as Record<string, unknown>), fromTs: 2, toTs: 1 },
+        })],
+        ['window ID', (open: Record<string, unknown>) => ({
+            ...open,
+            sessionId: 'invalid-window-id',
+            windowId: '',
+        })],
+    ])('rejects an invalid framed neg_open %s', async (_case, makeInvalidMessage) => {
         const open = await createRemoteOpen();
         const protocolNode = await createNode({ keyByte: 0x33 });
         const { peerKey, pair } = attachPeer(protocolNode, {});
         const destroySpy = jest.spyOn(pair.connectionA, 'destroy');
         const buildSnapshot = jest.spyOn(protocolNode.adapter, 'buildSnapshotForWindow');
-        const window = open.window as Record<string, unknown>;
-        const invalidMessages = [
-            {
-                ...open,
-                sessionId: 'invalid-window',
-                window: { ...window, fromTs: 2, toTs: 1 },
-            },
-            {
-                ...open,
-                sessionId: 'invalid-window-id',
-                windowId: '',
-            },
-        ];
-
-        for (const message of invalidMessages) {
-            await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
-                peerKey,
-                encodeFramedMessage(JSON.stringify(message)),
-            ));
-        }
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
+            peerKey,
+            encodeFramedMessage(JSON.stringify(makeInvalidMessage(open))),
+        ));
 
         expect(buildSnapshot).not.toHaveBeenCalled();
         expect(pair.transcript).toHaveLength(0);
-        expect(destroySpy).not.toHaveBeenCalled();
+        expect(destroySpy).toHaveBeenCalledTimes(1);
         expect(protocolNode.node.run(
-            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
         )).toBeNull();
+    });
+
+    it.each([
+        ['neg_msg frame', (open: Record<string, unknown>) => ({
+            type: 'neg_msg', sessionId: open.sessionId, windowId: open.windowId,
+            frame: { encoding: 'unsupported', data: '' },
+        })],
+        ['ops_req IDs', (open: Record<string, unknown>) => ({
+            type: 'ops_req', sessionId: open.sessionId, windowId: open.windowId, ids: ['invalid'],
+        })],
+        ['ops_push page', (open: Record<string, unknown>) => ({
+            type: 'ops_push', sessionId: open.sessionId, windowId: open.windowId, data: 'invalid',
+        })],
+        ['neg_close progress', (open: Record<string, unknown>) => ({
+            type: 'neg_close', sessionId: open.sessionId, windowId: open.windowId,
+            windowProgress: { cappedByRecords: 'true' },
+        })],
+    ])('rejects an invalid current %s', async (_case, makeInvalidMessage) => {
+        const protocolNode = await createNode();
+        const { peerKey, pair } = attachPeer(protocolNode, {});
+        await protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey),
+        );
+        const open = decodeWrites(pair).find(message => message.type === 'neg_open');
+        if (!open) {
+            throw new Error('expected local neg_open');
+        }
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(
+            peerKey,
+            makeInvalidMessage(open),
+        ));
+
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
+        )).toBeNull();
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getSyncStatsSnapshot(),
+        )).toMatchObject({ transport: { protocolViolationCooldowns: 1 } });
+    });
+
+    it('quarantines a peer whose bounded Negentropy frame cannot be decoded', async () => {
+        const protocolNode = await createNode();
+        const { peerKey, pair } = attachPeer(protocolNode, {});
+        const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
+        jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementation(snapshot => {
+            const engine = createEngine(snapshot);
+            jest.spyOn(engine, 'reconcile').mockRejectedValueOnce(new Error('invalid frame'));
+            return engine;
+        });
+        await protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey),
+        );
+        const open = decodeWrites(pair).find(message => message.type === 'neg_open');
+        if (!open) {
+            throw new Error('expected local neg_open');
+        }
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'neg_msg',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            round: 1,
+            frame: { encoding: 'utf8', data: 'malformed-negentropy-frame' },
+        }));
+
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
+        )).toBeNull();
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getSyncStatsSnapshot(),
+        )).toMatchObject({ transport: { protocolViolationCooldowns: 1 } });
+    });
+
+    it('rejects queue gossip whose operation ID does not match its content', async () => {
+        const [operation] = await makeOperations(1);
+        const forged = {
+            ...operation,
+            signature: { ...operation.signature!, hash: 'f'.repeat(64) },
+        };
+        const protocolNode = await createNode();
+        const { peerKey } = attachPeer(protocolNode, {});
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'queue',
+            data: [forged],
+        }));
+
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
+        )).toBeNull();
+        expect(await protocolNode.store.has(forged.signature.hash)).toBe(false);
     });
 
     it('rejects framed neg_open while ordered catch-up is active', async () => {
@@ -977,7 +1050,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         )).toEqual(firstSession);
     });
 
-    it('ignores an unknown framed message type without disconnecting the peer', async () => {
+    it('disconnects a peer that sends an unknown framed message type', async () => {
         const protocolNode = await createNode();
         const { peerKey, pair } = attachPeer(protocolNode, {});
         const destroySpy = jest.spyOn(pair.connectionA, 'destroy');
@@ -988,11 +1061,14 @@ describe('hyperswarm mediator protocol characterization', () => {
         ));
 
         expect(pair.transcript).toHaveLength(0);
-        expect(destroySpy).not.toHaveBeenCalled();
+        expect(destroySpy).toHaveBeenCalledTimes(1);
         expect(protocolNode.node.gatekeeperClient.importBatch).not.toHaveBeenCalled();
         expect(protocolNode.node.run(
-            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
         )).toBeNull();
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getSyncStatsSnapshot(),
+        )).toMatchObject({ transport: { protocolViolationCooldowns: 1 } });
     });
 
     it('replaces Negentropy sessions and ignores stale sessions and windows', async () => {
@@ -1493,16 +1569,24 @@ describe('hyperswarm mediator protocol characterization', () => {
     });
 
     it('keeps rejected push lookups linear', async () => {
-        const requestedIds = Array.from(
-            { length: 1_001 },
-            (_, index) => index.toString(16).padStart(64, '0'),
-        );
-        const operations = requestedIds.map(id => ({
-            signature: {
-                hash: id,
-                signed: '2026-01-01T00:00:00.000Z',
-            },
-        } as Operation));
+        const cipher = new CipherNode();
+        const operations = Array.from({ length: 1_001 }, (_, index) => {
+            const unsigned = {
+                type: 'create' as const,
+                created: '2026-01-01T00:00:00.000Z',
+                mdip: { version: 1, type: 'agent' as const, registry: 'hyperswarm' },
+                data: index,
+            };
+            return {
+                ...unsigned,
+                signature: {
+                    hash: cipher.hashJSON(unsigned),
+                    signed: '2026-01-01T00:00:00.000Z',
+                    value: 'signature',
+                },
+            } as Operation;
+        });
+        const requestedIds = operations.map(operation => operation.signature!.hash);
         const protocolNode = await createNode({ maxRecords: requestedIds.length });
         const { peerKey, pair } = attachPeer(protocolNode, {});
         const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
@@ -2181,31 +2265,14 @@ describe('hyperswarm mediator protocol characterization', () => {
         }));
 
         expect(await protocolNode.store.has(legitimateId)).toBe(false);
-        expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
-            type: 'neg_close',
-            sessionId: open.sessionId,
-            windowId: open.windowId,
-            reason: 'unresolved_operations',
-        }));
-        expect(decodeWrites(pair)).not.toContainEqual(expect.objectContaining({
-            type: 'neg_close',
-            sessionId: open.sessionId,
-            windowId: open.windowId,
-            reason: 'complete',
-        }));
-
-        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'queue',
-            time: new Date().toISOString(),
-            node: 'peer',
-            relays: [],
-            data: [legitimateOperation],
-        }));
-        await eventually(() => protocolNode.store.has(legitimateId));
-
-        const [stored] = await protocolNode.store.getByIds([legitimateId]);
-        expect(stored.operation).toStrictEqual(legitimateOperation);
-        expect(await protocolNode.node.gatekeeper.getDIDs()).toHaveLength(1);
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
+        )).toBeNull();
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getSyncStatsSnapshot(),
+        )).toMatchObject({ transport: { protocolViolationCooldowns: 1 } });
+        expect(decodeWrites(pair)).not.toContainEqual(expect.objectContaining({ type: 'neg_close' }));
+        expect(await protocolNode.node.gatekeeper.getDIDs()).toHaveLength(0);
     });
 
     it('advances past a terminal structural rejection across capped windows', async () => {
@@ -5032,18 +5099,10 @@ describe('hyperswarm mediator protocol characterization', () => {
             data: [],
         }));
         expect(protocolNode.node.run(
-            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
         )).toBeNull();
-
-        protocolNode.node.run(
-            () => protocolNode.node.mediator.__test.createOrderedCatchupClientSession(peerKey, 'done-session'),
-        );
-        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'ordered_catchup_done',
-            sessionId: 'done-session',
-        }));
         expect(protocolNode.node.run(
-            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
-        )).toBeNull();
+            () => protocolNode.node.mediator.__test.getSyncStatsSnapshot(),
+        )).toMatchObject({ transport: { protocolViolationCooldowns: 1 } });
     });
 });

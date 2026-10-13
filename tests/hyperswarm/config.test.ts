@@ -72,6 +72,22 @@ describe('hyperswarm config', () => {
         expect(config.protocol).toBe('/MDIP/v1.0-test');
     });
 
+    it('accepts a node name at the UTF-8 byte limit', async () => {
+        process.env.KC_NODE_NAME = 'é'.repeat(128);
+
+        const config = await importConfigIsolated();
+
+        expect(config.nodeName).toBe(process.env.KC_NODE_NAME);
+    });
+
+    it('rejects a node name above the UTF-8 byte limit', async () => {
+        process.env.KC_NODE_NAME = `${'é'.repeat(128)}a`;
+
+        await expect(importConfigIsolated())
+            .rejects
+            .toThrow('KC_NODE_NAME must be <= 256 UTF-8 bytes');
+    });
+
     it('treats KC_IPFS_ENABLE=false as disabled', async () => {
         process.env.KC_IPFS_ENABLE = 'false';
 

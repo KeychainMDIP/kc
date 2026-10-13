@@ -1,5 +1,4 @@
 import {
-    decodeLegacyJsonMessages,
     decodeFramedMessages,
     DEFAULT_MAX_FRAMED_MESSAGE_BYTES,
     encodeFramedMessage,
@@ -49,24 +48,6 @@ describe('hyperswarm transport framing', () => {
     it('rejects invalid framed decoder arguments', () => {
         expect(() => decodeFramedMessages('bad' as any)).toThrow('buffer must be a Buffer');
         expect(() => decodeFramedMessages(Buffer.alloc(0), 0)).toThrow('maxMessageBytes must be a positive integer');
-    });
-
-    it('decodes one raw compatibility ping and leaves following framed bytes untouched', () => {
-        const ping = JSON.stringify({
-            type: 'ping',
-            node: 'old-node',
-            transportFramingVersion: 1,
-        });
-        const framed = encodeFramedMessage(JSON.stringify({ type: 'neg_close' }));
-        const decoded = decodeLegacyJsonMessages(
-            Buffer.concat([Buffer.from(ping), framed]),
-            DEFAULT_MAX_FRAMED_MESSAGE_BYTES,
-            1,
-        );
-
-        expect(decoded.error).toBeUndefined();
-        expect(decoded.messages.map(message => message.toString('utf8'))).toStrictEqual([ping]);
-        expect(decoded.remaining).toStrictEqual(framed);
     });
 
     it('buffers a message split across multiple chunks', () => {

@@ -1,4 +1,5 @@
 import { jest } from '@jest/globals';
+import CipherNode from '@mdip/cipher/node';
 
 import InMemoryOperationSyncStore from '../../services/mediators/hyperswarm/src/db/memory.ts';
 import type { ImportPipeline } from '../../services/mediators/hyperswarm/src/import-pipeline.ts';
@@ -32,7 +33,7 @@ function nextTurn(): Promise<void> {
 
 function createCoordinator(overrides: Partial<Pick<
     OrderedCatchupCoordinatorOptions,
-    'importPipeline' | 'onFailure' | 'onIndexRefreshed'
+    'importPipeline' | 'onFailure' | 'onIndexRefreshed' | 'onProtocolViolation'
 >> = {}) {
     const connection = {
         capabilities: normalizePeerCapabilities({
@@ -52,6 +53,7 @@ function createCoordinator(overrides: Partial<Pick<
         syncStore: new InMemoryOperationSyncStore(),
         importPipeline: overrides.importPipeline ?? importPipeline,
         syncStats: createMediatorSyncStats(),
+        cipher: new CipherNode(),
         getConnection: key => key === peerKey ? connection : undefined,
         createSessionId: () => 'session',
         createBaseMessage: type => ({ type, time: '', node: '', relays: [] }),
@@ -60,6 +62,7 @@ function createCoordinator(overrides: Partial<Pick<
         onComplete: jest.fn(async () => false),
         onHandoffDeferred: jest.fn(async () => undefined),
         onFailure: overrides.onFailure ?? jest.fn(async () => undefined),
+        onProtocolViolation: overrides.onProtocolViolation ?? jest.fn(),
     });
 }
 
@@ -152,13 +155,16 @@ describe('ordered catch-up coordinator shutdown', () => {
             refreshIndex: jest.fn(async () => bootstrapResult),
         } as unknown as ImportPipeline;
         const coordinator = createCoordinator({ importPipeline, onFailure });
-        const operation = {
+        const unsigned = {
             type: 'create' as const,
             created: '2026-08-01T12:00:00.000Z',
             mdip: { version: 1, type: 'agent' as const, registry: 'hyperswarm' },
+        };
+        const operation = {
+            ...unsigned,
             signature: {
                 signed: '2026-08-01T12:00:00.000Z',
-                hash: 'b'.repeat(64),
+                hash: new CipherNode().hashJSON(unsigned),
                 value: 'signature',
             },
         };
@@ -179,6 +185,91 @@ describe('ordered catch-up coordinator shutdown', () => {
         expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({
             reason: 'ordered_catchup_import_retryable',
         }));
+        await coordinator.shutdown();
+    });
+
+    it('rejects a current page whose operation ID does not match its content', async () => {
+        const onProtocolViolation = jest.fn();
+        const coordinator = createCoordinator({ onProtocolViolation });
+        const operation = {
+            type: 'create' as const,
+            created: '2026-08-01T12:00:00.000Z',
+            mdip: { version: 1, type: 'agent' as const, registry: 'hyperswarm' },
+            signature: {
+                signed: '2026-08-01T12:00:00.000Z',
+                hash: 'f'.repeat(64),
+                value: 'signature',
+            },
+        };
+
+        expect(coordinator.createClientSession(peerKey, 'forged-page')).toBe(true);
+        await coordinator.handleMessage(peerKey, {
+            type: 'ordered_catchup_push',
+            time: '',
+            node: '',
+            relays: [],
+            sessionId: 'forged-page',
+            cursor: { syncOrder: 1, id: operation.signature.hash },
+            hasMore: false,
+            data: [operation],
+        });
+
+        expect(onProtocolViolation).toHaveBeenCalledWith(
+            peerKey,
+            expect.stringContaining('content ID mismatch'),
+            expect.any(Object),
+        );
+        await coordinator.shutdown();
+    });
+
+    it('cancels queued page imports when the peer disconnects', async () => {
+        let request: { cancelled?: () => boolean } | undefined;
+        let releaseImport!: () => void;
+        const importPipeline = {
+            enqueue: jest.fn((queued: { cancelled?: () => boolean }) => {
+                request = queued;
+                return new Promise(resolve => {
+                    releaseImport = () => resolve({
+                        knownIds: [], persistedIds: [], pendingIds: [],
+                        capacityDeferredIds: [], retryable: false,
+                    });
+                });
+            }),
+            waitForIdle: jest.fn(async () => undefined),
+            refreshIndex: jest.fn(async () => bootstrapResult),
+        } as unknown as ImportPipeline;
+        const coordinator = createCoordinator({ importPipeline });
+        const unsigned = {
+            type: 'create' as const,
+            created: '2026-08-01T12:00:00.000Z',
+            mdip: { version: 1, type: 'agent' as const, registry: 'hyperswarm' },
+        };
+        const operation = {
+            ...unsigned,
+            signature: {
+                signed: unsigned.created,
+                hash: new CipherNode().hashJSON(unsigned),
+                value: 'signature',
+            },
+        };
+
+        expect(coordinator.createClientSession(peerKey, 'disconnect-import')).toBe(true);
+        await coordinator.handleMessage(peerKey, {
+            type: 'ordered_catchup_push',
+            time: '',
+            node: '',
+            relays: [],
+            sessionId: 'disconnect-import',
+            cursor: { syncOrder: 1, id: operation.signature.hash },
+            hasMore: false,
+            data: [operation],
+        });
+
+        expect(request?.cancelled?.()).toBe(false);
+        coordinator.removePeer(peerKey, 'disconnect');
+        expect(request?.cancelled?.()).toBe(true);
+
+        releaseImport();
         await coordinator.shutdown();
     });
 });
