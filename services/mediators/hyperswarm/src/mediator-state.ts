@@ -28,9 +28,11 @@ export interface ConnectionInfo {
     orderedCatchupAttempted: boolean;
     initialPingSent: boolean;
     initialPingPromise: Promise<void>;
-    initialInboundMessageReceived: boolean;
+    initialPingReceived: boolean;
+    lastProcessedPingAt: number;
     peerTransportFramingVersion: number | null;
-    legacyTransportQuarantined: boolean;
+    protocolViolationReported: boolean;
+    terminationStarted: boolean;
     inboundBuffer: Buffer;
     inboundReceiveChain: Promise<void>;
 }
@@ -69,9 +71,11 @@ export function createConnectionInfo(options: ConnectionInfoOptions): Connection
         orderedCatchupAttempted: false,
         initialPingSent: options.requireInitialPing !== true,
         initialPingPromise: Promise.resolve(),
-        initialInboundMessageReceived: false,
+        initialPingReceived: false,
+        lastProcessedPingAt: 0,
         peerTransportFramingVersion: null,
-        legacyTransportQuarantined: false,
+        protocolViolationReported: false,
+        terminationStarted: false,
         inboundBuffer: Buffer.alloc(0),
         inboundReceiveChain: Promise.resolve(),
     };

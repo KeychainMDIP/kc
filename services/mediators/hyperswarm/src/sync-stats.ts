@@ -37,9 +37,10 @@ export interface MediatorSyncStats {
     opsRejected: number;
     bytesSent: number;
     bytesReceived: number;
-    malformedPeerCooldowns: number;
-    malformedPeerConnectionsRejected: number;
-    legacyTransportConnectionsQuarantined: number;
+    protocolViolationCooldowns: number;
+    protocolViolationConnectionsRejected: number;
+    transportFramingIncompatibilityClosures: number;
+    compatibilityConnectionsRejected: number;
     syncDurationMs: AggregateMetric;
 }
 
@@ -77,9 +78,10 @@ export function createMediatorSyncStats(): MediatorSyncStats {
         opsRejected: 0,
         bytesSent: 0,
         bytesReceived: 0,
-        malformedPeerCooldowns: 0,
-        malformedPeerConnectionsRejected: 0,
-        legacyTransportConnectionsQuarantined: 0,
+        protocolViolationCooldowns: 0,
+        protocolViolationConnectionsRejected: 0,
+        transportFramingIncompatibilityClosures: 0,
+        compatibilityConnectionsRejected: 0,
         syncDurationMs: createAggregateMetric(),
     };
 }
@@ -137,9 +139,10 @@ export function buildSyncStatsSnapshot(syncStats: MediatorSyncStats): object {
         transport: {
             bytesSent: syncStats.bytesSent,
             bytesReceived: syncStats.bytesReceived,
-            malformedPeerCooldowns: syncStats.malformedPeerCooldowns,
-            malformedPeerConnectionsRejected: syncStats.malformedPeerConnectionsRejected,
-            legacyTransportConnectionsQuarantined: syncStats.legacyTransportConnectionsQuarantined,
+            protocolViolationCooldowns: syncStats.protocolViolationCooldowns,
+            protocolViolationConnectionsRejected: syncStats.protocolViolationConnectionsRejected,
+            transportFramingIncompatibilityClosures: syncStats.transportFramingIncompatibilityClosures,
+            compatibilityConnectionsRejected: syncStats.compatibilityConnectionsRejected,
         },
         syncDurationMs: {
             avg: averageAggregate(syncStats.syncDurationMs),

@@ -1,4 +1,8 @@
 import { loadEnv } from '@mdip/common/env';
+import {
+    MAX_NEGENTROPY_WINDOW_RECORDS,
+    MAX_PROTOCOL_STRING_BYTES,
+} from './protocol-limits.js';
 
 loadEnv();
 
@@ -41,10 +45,13 @@ function parseSyncDbEnv() {
     throw new Error('Invalid KC_HYPR_DB; expected sqlite or postgres');
 }
 
-const MAX_NEGENTROPY_RECORDS_PER_WINDOW = 25000;
 const negentropyMaxRecordsPerWindow = parsePositiveIntEnv('KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW', 25000);
-if (negentropyMaxRecordsPerWindow > MAX_NEGENTROPY_RECORDS_PER_WINDOW) {
-    throw new Error(`KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW must be <= ${MAX_NEGENTROPY_RECORDS_PER_WINDOW}`);
+if (negentropyMaxRecordsPerWindow > MAX_NEGENTROPY_WINDOW_RECORDS) {
+    throw new Error(`KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW must be <= ${MAX_NEGENTROPY_WINDOW_RECORDS}`);
+}
+const nodeName = process.env.KC_NODE_NAME || 'anon';
+if (Buffer.byteLength(nodeName, 'utf8') > MAX_PROTOCOL_STRING_BYTES) {
+    throw new Error(`KC_NODE_NAME must be <= ${MAX_PROTOCOL_STRING_BYTES} UTF-8 bytes`);
 }
 
 const config = {
@@ -53,7 +60,7 @@ const config = {
     ipfsURL: process.env.KC_IPFS_URL || 'http://localhost:5001/api/v0',
     ipfsEnabled: process.env.KC_IPFS_ENABLE ? process.env.KC_IPFS_ENABLE.toLowerCase() !== 'false' : true,
     nodeID: process.env.KC_NODE_ID || '',
-    nodeName: process.env.KC_NODE_NAME || 'anon',
+    nodeName,
     protocol: process.env.KC_MDIP_PROTOCOL || '/MDIP/v1.0-public',
     exportInterval: parsePositiveIntEnv('KC_HYPR_EXPORT_INTERVAL', 2),
     negentropyFrameSizeLimit: parseFrameSizeLimit(),

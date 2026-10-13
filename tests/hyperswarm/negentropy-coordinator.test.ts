@@ -1,4 +1,5 @@
 import { jest } from '@jest/globals';
+import CipherNode from '@mdip/cipher/node';
 
 import type { ImportPipeline } from '../../services/mediators/hyperswarm/src/import-pipeline.ts';
 
@@ -73,6 +74,7 @@ describe('Negentropy coordinator', () => {
             syncStore: store,
             importPipeline,
             syncStats: createMediatorSyncStats(),
+            cipher: new CipherNode(),
             getConnection: key => key === peerKey ? connection : undefined,
             createSessionId: () => 'test-session',
             createBaseMessage: type => ({
@@ -84,6 +86,7 @@ describe('Negentropy coordinator', () => {
             sendToPeer: () => true,
             canStartBackgroundPrebuild: () => true,
             terminatePeerConnection: () => undefined,
+            onProtocolViolation: () => undefined,
             onSessionClosed,
         });
 
@@ -175,6 +178,7 @@ describe('Negentropy coordinator', () => {
             syncStore: store,
             importPipeline,
             syncStats: createMediatorSyncStats(),
+            cipher: new CipherNode(),
             getConnection: key => key === peerKey ? connection : undefined,
             createSessionId: () => `test-session-${buildSnapshot.mock.calls.length}`,
             createBaseMessage: type => ({
@@ -186,6 +190,7 @@ describe('Negentropy coordinator', () => {
             sendToPeer: () => true,
             canStartBackgroundPrebuild: () => false,
             terminatePeerConnection: () => undefined,
+            onProtocolViolation: () => undefined,
             onSessionClosed: () => undefined,
         });
         coordinator.setAdapter(adapter);
