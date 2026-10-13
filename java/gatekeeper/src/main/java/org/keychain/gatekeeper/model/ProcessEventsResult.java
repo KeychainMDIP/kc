@@ -6,6 +6,9 @@ public class ProcessEventsResult {
     public Integer merged;
     public Integer rejected;
     public Integer pending;
+    public Boolean hasMore;
+    public Integer capacityDeferred;
+    public String[] capacityDeferredHashes;
 
     public ProcessEventsResult() {}
 }

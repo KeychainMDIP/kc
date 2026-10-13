@@ -45,7 +45,9 @@ describe('Negentropy coordinator', () => {
                 return 0;
             },
             async enqueue() {
-                return { knownIds: [], persistedIds: [], retryable: false };
+                return {
+                    knownIds: [], persistedIds: [], pendingIds: [], capacityDeferredIds: [], retryable: false,
+                };
             },
             async waitForIdle() {},
             async refreshIndex() {
@@ -150,7 +152,11 @@ describe('Negentropy coordinator', () => {
         const importPipeline: ImportPipeline = {
             get queued() { return 0; },
             get running() { return 0; },
-            async enqueue() { return { knownIds: [], persistedIds: [], retryable: false }; },
+            async enqueue() {
+                return {
+                    knownIds: [], persistedIds: [], pendingIds: [], capacityDeferredIds: [], retryable: false,
+                };
+            },
             async waitForIdle() {},
             async refreshIndex() { throw new Error('unexpected index refresh'); },
             async shutdown() {},
