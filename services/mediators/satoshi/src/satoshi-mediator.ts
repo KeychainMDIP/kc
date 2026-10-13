@@ -13,6 +13,7 @@ import { GatekeeperEvent, Operation } from '@mdip/gatekeeper/types';
 import { childLogger } from '@mdip/common/logger';
 import { isRetryableChainError, runService } from './lifecycle.js';
 import { resolveAnchoredBatchAsset } from './batch-import.js';
+import { importEventBatch } from './import-batch.js';
 
 const REGISTRY = config.chain;
 const SMART_FEE_MODE = "CONSERVATIVE";
@@ -256,7 +257,10 @@ async function scanBlocks(): Promise<void> {
     }
 }
 
-async function importBatch(item: DiscoveredItem) {
+async function importBatch(item: DiscoveredItem): Promise<{
+    update: DiscoveredItem;
+    capacityDeferred: boolean;
+} | undefined> {
     if (item.error) {
         return;
     }
@@ -292,16 +296,21 @@ async function importBatch(item: DiscoveredItem) {
     }
 
     let update: DiscoveredItem = { ...item };
+    let capacityDeferred = false;
 
     try {
-        update.imported = await gatekeeper.importBatch(batch);
-        update.processed = await gatekeeper.processEvents();
+        const result = await importEventBatch(gatekeeper, batch);
+        update.imported = result.imported;
+        capacityDeferred = result.capacityDeferred;
+        if (result.complete) {
+            update.processed = result.processed;
+        }
     } catch (error) {
         update.error = JSON.stringify(error);
     }
 
     log.debug({ update }, 'importBatch update');
-    return update;
+    return { update, capacityDeferred };
 }
 
 function sameItem(a: DiscoveredItem, b: DiscoveredItem) {
@@ -317,10 +326,11 @@ async function importBatches(): Promise<boolean> {
         }
 
         try {
-            const update = await importBatch(item);
-            if (!update) {
+            const result = await importBatch(item);
+            if (!result) {
                 continue;
             }
+            const { update } = result;
 
             await jsonPersister.updateDb((db) => {
                 const list = db.discovered ?? [];
@@ -329,6 +339,9 @@ async function importBatches(): Promise<boolean> {
                     list[idx] = update;
                 }
             });
+            if (result.capacityDeferred) {
+                break;
+            }
         }
         catch (error: any) {
             // OK if DID not found, we'll just try again later

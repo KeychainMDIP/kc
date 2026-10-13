@@ -87,20 +87,57 @@ export async function prunePersistedSyncRecords(
 export function partitionImportBatchOperations(
     batch: Operation[],
     rejectedIndices: number[] = [],
-): { processCandidates: Operation[]; rejectedOperations: Operation[] } {
+    capacityDeferredIndices: number[] = [],
+    processedIndices: number[] = [],
+): {
+    processCandidates: Operation[];
+    rejectedOperations: Operation[];
+    capacityDeferredOperations: Operation[];
+    processedOperations: Operation[];
+} {
     const rejectedSet = new Set<number>();
+    const capacityDeferredSet = new Set<number>();
+    const processedSet = new Set<number>();
     for (const index of rejectedIndices) {
         if (Number.isInteger(index) && index >= 0 && index < batch.length) {
             rejectedSet.add(index);
         }
     }
+    for (const index of capacityDeferredIndices) {
+        if (Number.isInteger(index) && index >= 0 && index < batch.length) {
+            capacityDeferredSet.add(index);
+        }
+    }
+    for (const index of processedIndices) {
+        if (Number.isInteger(index) && index >= 0 && index < batch.length) {
+            processedSet.add(index);
+        }
+    }
 
     const processCandidates: Operation[] = [];
     const rejectedOperations: Operation[] = [];
+    const capacityDeferredOperations: Operation[] = [];
+    const processedOperations: Operation[] = [];
     batch.forEach((operation, index) => {
-        (rejectedSet.has(index) ? rejectedOperations : processCandidates).push(operation);
+        if (rejectedSet.has(index)) {
+            rejectedOperations.push(operation);
+        }
+        else if (capacityDeferredSet.has(index)) {
+            capacityDeferredOperations.push(operation);
+        }
+        else if (processedSet.has(index)) {
+            processedOperations.push(operation);
+        }
+        else {
+            processCandidates.push(operation);
+        }
     });
-    return { processCandidates, rejectedOperations };
+    return {
+        processCandidates,
+        rejectedOperations,
+        capacityDeferredOperations,
+        processedOperations,
+    };
 }
 
 export function filterOperationsByAcceptedHashes(

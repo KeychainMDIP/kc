@@ -250,19 +250,28 @@ program
             let batch = JSON.parse(contents);
             let chunk = [];
 
+            const importChunk = async () => {
+                if (chunk.length === 0) {
+                    return true;
+                }
+                const response = await gatekeeper.importBatch(chunk);
+                console.log(response);
+                chunk = [];
+                return !response.capacityDeferred;
+            };
+
             for (const event of batch) {
                 event.registry = registry;
 
                 chunk.push(event);
 
                 if (chunk.length >= 100) {
-                    const response = await gatekeeper.importBatch(chunk);
-                    console.log(response);
-                    chunk = [];
+                    if (!await importChunk()) {
+                        return;
+                    }
                 }
             }
-            const response = await gatekeeper.importBatch(chunk);
-            console.log(response);
+            await importChunk();
         }
         catch (error) {
             console.error(error);
@@ -346,8 +355,16 @@ program
     .description('Process events queue')
     .action(async () => {
         try {
-            const response = await gatekeeper.processEvents();
-            console.log(JSON.stringify(response, null, 4));
+            while (true) {
+                const response = await gatekeeper.processEvents();
+                console.log(JSON.stringify(response, null, 4));
+                if (response.busy) {
+                    throw new Error('Gatekeeper is already processing events');
+                }
+                if (!response.hasMore) {
+                    break;
+                }
+            }
         }
         catch (error) {
             console.error(error);

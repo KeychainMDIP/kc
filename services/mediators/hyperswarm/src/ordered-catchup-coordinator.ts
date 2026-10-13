@@ -3,7 +3,7 @@ import { childLogger } from '@mdip/common/logger';
 
 import type { OperationSyncStore, SyncStoreOrderedCursor } from './db/types.js';
 import type { BootstrapResult } from './bootstrap.js';
-import type { ImportPipeline } from './import-pipeline.js';
+import type { ImportPipeline, ImportQueueResult } from './import-pipeline.js';
 import type { ConnectionInfo } from './mediator-state.js';
 import { addAggregateSample } from './negentropy/observability.js';
 import { chunkOperationsForPush } from './negentropy/transfer.js';
@@ -286,16 +286,23 @@ export function createOrderedCatchupCoordinator(
         void trackWork(finishClient(session));
     }
 
-    function settleImport(session: ClientSession, retryable: boolean): void {
+    function settleImport(session: ClientSession, imported: ImportQueueResult): void {
         session.pendingImports = Math.max(0, session.pendingImports - 1);
-        if (retryable) {
+        const incomplete = imported.retryable
+            || (imported.capacityDeferredIds?.length ?? 0) > 0;
+        if (incomplete) {
             session.importsAborted = true;
         }
         if (clients.get(session.peerKey) !== session) {
             return;
         }
-        if (retryable) {
-            failClient(session.peerKey, 'ordered_catchup_import_retryable');
+        if (incomplete) {
+            failClient(
+                session.peerKey,
+                imported.retryable
+                    ? 'ordered_catchup_import_retryable'
+                    : 'ordered_catchup_import_incomplete',
+            );
             return;
         }
         touchClient(session);
@@ -317,7 +324,7 @@ export function createOrderedCatchupCoordinator(
             },
             imported => {
                 try {
-                    settleImport(session, imported.retryable);
+                    settleImport(session, imported);
                 }
                 catch (error) {
                     log.error({ error, peer: shortName(session.peerKey), sessionId: session.sessionId }, 'ordered catch-up import completion failed');
@@ -325,7 +332,13 @@ export function createOrderedCatchupCoordinator(
             },
         ).catch(error => {
             log.error({ error, peer: shortName(session.peerKey), sessionId: session.sessionId }, 'ordered catch-up import failed');
-            settleImport(session, true);
+            settleImport(session, {
+                knownIds: [],
+                persistedIds: [],
+                pendingIds: [],
+                capacityDeferredIds: [],
+                retryable: true,
+            });
         });
     }
 

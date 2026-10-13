@@ -1570,6 +1570,24 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                 session.unresolvedNeedIds.delete(id);
                 session.unresolvedOperations.delete(id);
             }
+            const capacityDeferredIds = new Set(imported.capacityDeferredIds ?? []);
+            if (capacityDeferredIds.size > 0) {
+                for (const id of capacityDeferredIds) {
+                    session.pendingNeedIds.delete(id);
+                    session.unresolvedNeedIds.delete(id);
+                    session.unresolvedOperations.delete(id);
+                }
+                log.info(
+                    { peer: shortName(peerKey), deferred: capacityDeferredIds.size },
+                    'closing incomplete negentropy session after Gatekeeper backpressure',
+                );
+                if (!sendNegClose(peerKey, session, 'gatekeeper_backpressure')) {
+                    closePeerSession(peerKey, 'send_neg_close_failed');
+                    return;
+                }
+                closePeerSession(peerKey, 'gatekeeper_backpressure');
+                return;
+            }
             if (imported.retryable) {
                 for (const operation of unprovenBatch) {
                     const mapped = mapOperationToSyncKey(operation);
@@ -1578,6 +1596,8 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                         session.unresolvedOperations.delete(mapped.value.idHex);
                     }
                 }
+                touchPeerSession(peerKey);
+                return;
             }
             else {
                 for (const operation of unprovenBatch) {

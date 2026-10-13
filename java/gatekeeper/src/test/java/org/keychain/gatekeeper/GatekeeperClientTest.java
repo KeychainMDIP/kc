@@ -207,6 +207,37 @@ class GatekeeperClientTest {
     }
 
     @Test
+    void importBatchReadsBoundedAdmissionFields() throws Exception {
+        server.enqueue(new MockResponse().setBody(
+            "{\"queued\":0,\"processed\":1,\"rejected\":0,\"total\":1,"
+                + "\"rejectedIndices\":[],\"processedIndices\":[0],"
+                + "\"capacityDeferred\":1,\"capacityDeferredIndices\":[1]}"
+        ).setResponseCode(200));
+
+        ImportBatchResult result = client.importBatch(List.of(new GatekeeperEvent()));
+
+        assertEquals(1, result.processed);
+        assertEquals(0, result.processedIndices[0]);
+        assertEquals(1, result.capacityDeferred);
+        assertEquals(1, result.capacityDeferredIndices[0]);
+    }
+
+    @Test
+    void processEventsReadsBoundedPageFields() throws Exception {
+        server.enqueue(new MockResponse().setBody(
+            "{\"added\":0,\"merged\":0,\"rejected\":0,\"pending\":1,"
+                + "\"hasMore\":true,\"capacityDeferred\":1,"
+                + "\"capacityDeferredHashes\":[\"abc\"]}"
+        ).setResponseCode(200));
+
+        ProcessEventsResult result = client.processEvents();
+
+        assertTrue(result.hasMore);
+        assertEquals(1, result.capacityDeferred);
+        assertEquals("abc", result.capacityDeferredHashes[0]);
+    }
+
+    @Test
     void baseUrlStripsApiSuffix() throws Exception {
         server.enqueue(new MockResponse().setBody("{}").setResponseCode(200));
 

@@ -11,6 +11,9 @@ public class ProcessEventsResult {
     public List<String> acceptedHashes;
     public List<GatekeeperEvent> acceptedEvents;
     public List<Operation> rejectedOperations;
+    public Boolean hasMore;
+    public Integer capacityDeferred;
+    public String[] capacityDeferredHashes;
 
     public ProcessEventsResult() {}
 }

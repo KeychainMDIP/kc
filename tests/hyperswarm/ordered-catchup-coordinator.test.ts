@@ -32,7 +32,7 @@ function nextTurn(): Promise<void> {
 
 function createCoordinator(overrides: Partial<Pick<
     OrderedCatchupCoordinatorOptions,
-    'onFailure' | 'onIndexRefreshed'
+    'importPipeline' | 'onFailure' | 'onIndexRefreshed'
 >> = {}) {
     const connection = {
         capabilities: normalizePeerCapabilities({
@@ -50,7 +50,7 @@ function createCoordinator(overrides: Partial<Pick<
         maxBytesPerPage: 1_000_000,
         idleTimeoutMs: 120_000,
         syncStore: new InMemoryOperationSyncStore(),
-        importPipeline,
+        importPipeline: overrides.importPipeline ?? importPipeline,
         syncStats: createMediatorSyncStats(),
         getConnection: key => key === peerKey ? connection : undefined,
         createSessionId: () => 'session',
@@ -142,5 +142,43 @@ describe('ordered catch-up coordinator shutdown', () => {
         expect(coordinator.createClientSession(peerKey, 'failed-session')).toBe(true);
         coordinator.removePeer(peerKey, 'disconnect');
         await expect(coordinator.shutdown()).resolves.toBeUndefined();
+    });
+
+    it('fails a client session when an admitted import rejects', async () => {
+        const onFailure = jest.fn(async () => undefined);
+        const importPipeline = {
+            enqueue: jest.fn(async () => { throw new Error('import failed'); }),
+            waitForIdle: jest.fn(async () => undefined),
+            refreshIndex: jest.fn(async () => bootstrapResult),
+        } as unknown as ImportPipeline;
+        const coordinator = createCoordinator({ importPipeline, onFailure });
+        const operation = {
+            type: 'create' as const,
+            created: '2026-08-01T12:00:00.000Z',
+            mdip: { version: 1, type: 'agent' as const, registry: 'hyperswarm' },
+            signature: {
+                signed: '2026-08-01T12:00:00.000Z',
+                hash: 'b'.repeat(64),
+                value: 'signature',
+            },
+        };
+
+        expect(coordinator.createClientSession(peerKey, 'failed-import')).toBe(true);
+        await coordinator.handleMessage(peerKey, {
+            type: 'ordered_catchup_push',
+            time: '',
+            node: '',
+            relays: [],
+            sessionId: 'failed-import',
+            cursor: { syncOrder: 1, id: operation.signature.hash },
+            hasMore: false,
+            data: [operation],
+        });
+        await nextTurn();
+
+        expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({
+            reason: 'ordered_catchup_import_retryable',
+        }));
+        await coordinator.shutdown();
     });
 });
