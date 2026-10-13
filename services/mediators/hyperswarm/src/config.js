@@ -41,7 +41,11 @@ function parseSyncDbEnv() {
     throw new Error('Invalid KC_HYPR_DB; expected sqlite or postgres');
 }
 
+const MAX_NEGENTROPY_RECORDS_PER_WINDOW = 25000;
 const negentropyMaxRecordsPerWindow = parsePositiveIntEnv('KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW', 25000);
+if (negentropyMaxRecordsPerWindow > MAX_NEGENTROPY_RECORDS_PER_WINDOW) {
+    throw new Error(`KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW must be <= ${MAX_NEGENTROPY_RECORDS_PER_WINDOW}`);
+}
 
 const config = {
     gatekeeperURL: process.env.KC_GATEKEEPER_URL || 'http://localhost:4224',
