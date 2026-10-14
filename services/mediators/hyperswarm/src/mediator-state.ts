@@ -26,6 +26,7 @@ export interface ConnectionInfo {
     lastNegentropyAttemptAt: number;
     negentropySynced: boolean;
     orderedCatchupAttempted: boolean;
+    orderedCatchupRetryAfter: number;
     initialPingSent: boolean;
     initialPingPromise: Promise<void>;
     initialPingReceived: boolean;
@@ -69,6 +70,7 @@ export function createConnectionInfo(options: ConnectionInfoOptions): Connection
         lastNegentropyAttemptAt: 0,
         negentropySynced: false,
         orderedCatchupAttempted: false,
+        orderedCatchupRetryAfter: 0,
         initialPingSent: options.requireInitialPing !== true,
         initialPingPromise: Promise.resolve(),
         initialPingReceived: false,

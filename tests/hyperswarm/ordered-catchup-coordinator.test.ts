@@ -31,9 +31,40 @@ function nextTurn(): Promise<void> {
     return new Promise(resolve => setImmediate(resolve));
 }
 
+function makeOperation(index = 0) {
+    const cipher = new CipherNode();
+    const unsigned = {
+        type: 'create' as const,
+        created: new Date(Date.UTC(2026, 7, 1, 12, 0, 0, index)).toISOString(),
+        mdip: { version: 1, type: 'agent' as const, registry: 'hyperswarm' },
+    };
+    return {
+        ...unsigned,
+        signature: {
+            signed: unsigned.created,
+            hash: cipher.hashJSON(unsigned),
+            value: 'signature',
+        },
+    };
+}
+
+const importResult = {
+    knownIds: [],
+    persistedIds: [],
+    pendingIds: [],
+    capacityDeferredIds: [],
+    retryable: false,
+};
+
 function createCoordinator(overrides: Partial<Pick<
     OrderedCatchupCoordinatorOptions,
-    'importPipeline' | 'onFailure' | 'onIndexRefreshed' | 'onProtocolViolation'
+    | 'getConnection'
+    | 'importPipeline'
+    | 'onFailure'
+    | 'onIndexRefreshed'
+    | 'onProtocolViolation'
+    | 'sendToPeer'
+    | 'syncStore'
 >> = {}) {
     const connection = {
         capabilities: normalizePeerCapabilities({
@@ -50,14 +81,14 @@ function createCoordinator(overrides: Partial<Pick<
         maxOpsPerPage: 256,
         maxBytesPerPage: 1_000_000,
         idleTimeoutMs: 120_000,
-        syncStore: new InMemoryOperationSyncStore(),
+        syncStore: overrides.syncStore ?? new InMemoryOperationSyncStore(),
         importPipeline: overrides.importPipeline ?? importPipeline,
         syncStats: createMediatorSyncStats(),
         cipher: new CipherNode(),
-        getConnection: key => key === peerKey ? connection : undefined,
+        getConnection: overrides.getConnection ?? (key => key === peerKey ? connection : undefined),
         createSessionId: () => 'session',
         createBaseMessage: type => ({ type, time: '', node: '', relays: [] }),
-        sendToPeer: () => true,
+        sendToPeer: overrides.sendToPeer ?? (() => true),
         onIndexRefreshed: overrides.onIndexRefreshed ?? jest.fn(async () => undefined),
         onComplete: jest.fn(async () => false),
         onHandoffDeferred: jest.fn(async () => undefined),
@@ -270,6 +301,335 @@ describe('ordered catch-up coordinator shutdown', () => {
         expect(request?.cancelled?.()).toBe(true);
 
         releaseImport();
+        await coordinator.shutdown();
+    });
+});
+
+describe('ordered catch-up request authorization', () => {
+    it.each(['ordered_catchup_push', 'ordered_catchup_done'] as const)(
+        'rejects unsolicited %s messages for a live session',
+        async type => {
+            const onProtocolViolation = jest.fn();
+            const enqueue = jest.fn(async () => importResult);
+            const coordinator = createCoordinator({
+                importPipeline: {
+                    enqueue,
+                    waitForIdle: jest.fn(async () => undefined),
+                    refreshIndex: jest.fn(async () => bootstrapResult),
+                } as unknown as ImportPipeline,
+                onProtocolViolation,
+            });
+            const operation = makeOperation();
+
+            expect(coordinator.createClientSession(peerKey, 'unsolicited', false)).toBe(true);
+            await coordinator.handleMessage(peerKey, type === 'ordered_catchup_push'
+                ? {
+                    type,
+                    time: '',
+                    node: '',
+                    relays: [],
+                    sessionId: 'unsolicited',
+                    cursor: { syncOrder: 1, id: operation.signature.hash },
+                    hasMore: true,
+                    data: [operation],
+                }
+                : {
+                    type,
+                    time: '',
+                    node: '',
+                    relays: [],
+                    sessionId: 'unsolicited',
+                });
+
+            expect(onProtocolViolation).toHaveBeenCalledWith(
+                peerKey,
+                `unsolicited_${type}`,
+                expect.any(Object),
+            );
+            expect(enqueue).not.toHaveBeenCalled();
+            expect(coordinator.getActiveSessionId(peerKey)).toBeNull();
+            await coordinator.shutdown();
+        },
+    );
+
+    it('rejects an empty push without consuming it as a terminal response', async () => {
+        const onProtocolViolation = jest.fn();
+        const coordinator = createCoordinator({ onProtocolViolation });
+
+        expect(coordinator.createClientSession(peerKey, 'empty-page')).toBe(true);
+        await coordinator.handleMessage(peerKey, {
+            type: 'ordered_catchup_push',
+            time: '',
+            node: '',
+            relays: [],
+            sessionId: 'empty-page',
+            cursor: { syncOrder: 1, id: 'a'.repeat(64) },
+            hasMore: false,
+            data: [],
+        });
+
+        expect(onProtocolViolation).toHaveBeenCalledWith(
+            peerKey,
+            'empty_ordered_catchup_push',
+            expect.any(Object),
+        );
+        expect(coordinator.getActiveSessionId(peerKey)).toBeNull();
+        await coordinator.shutdown();
+    });
+
+    it('rejects a duplicate page while the next request is outstanding', async () => {
+        const onProtocolViolation = jest.fn();
+        const importPipeline = {
+            enqueue: jest.fn(async () => importResult),
+            waitForIdle: jest.fn(async () => undefined),
+            refreshIndex: jest.fn(async () => bootstrapResult),
+        } as unknown as ImportPipeline;
+        const coordinator = createCoordinator({ importPipeline, onProtocolViolation });
+        const operation = makeOperation();
+        const page = {
+            type: 'ordered_catchup_push' as const,
+            time: '',
+            node: '',
+            relays: [],
+            sessionId: 'duplicate-page',
+            cursor: { syncOrder: 1, id: operation.signature.hash },
+            hasMore: true,
+            data: [operation],
+        };
+
+        expect(coordinator.createClientSession(peerKey, page.sessionId)).toBe(true);
+        await coordinator.handleMessage(peerKey, page);
+        await coordinator.handleMessage(peerKey, page);
+
+        expect(onProtocolViolation).toHaveBeenCalledWith(
+            peerKey,
+            'non_advancing_ordered_catchup_cursor',
+            expect.any(Object),
+        );
+        expect(importPipeline.enqueue).toHaveBeenCalledTimes(1);
+        await coordinator.shutdown();
+    });
+});
+
+describe('ordered catch-up server cursors and scheduling', () => {
+    function createServerStore() {
+        const operations = Array.from({ length: 257 }, (_, index) => makeOperation(index));
+        const rows = operations.map((operation, index) => ({
+            id: operation.signature.hash,
+            ts: index,
+            syncOrder: index + 1,
+            operation,
+        }));
+        return {
+            operations,
+            store: {
+                count: jest.fn(async () => rows.length),
+                countOrdered: jest.fn(async () => rows.length),
+                iterateOrdered: jest.fn(async ({ after }: { after?: { syncOrder: number } | null }) => (
+                    after ? rows.filter(row => row.syncOrder > after.syncOrder) : rows
+                )),
+            } as unknown as InMemoryOperationSyncStore,
+        };
+    }
+
+    it('requires the exact cursor from the preceding server page', async () => {
+        const { operations, store } = createServerStore();
+        const sent: Array<Record<string, unknown>> = [];
+        const coordinator = createCoordinator({
+            syncStore: store,
+            sendToPeer: (_key, message) => {
+                sent.push(message as unknown as Record<string, unknown>);
+                return true;
+            },
+        });
+
+        await coordinator.handleMessage(peerKey, {
+            type: 'ordered_catchup_req', time: '', node: '', relays: [], sessionId: 'server',
+        });
+        expect(sent[0]).toMatchObject({
+            type: 'ordered_catchup_push',
+            hasMore: true,
+            cursor: { syncOrder: 256, id: operations[255].signature.hash },
+        });
+
+        await coordinator.handleMessage(peerKey, {
+            type: 'ordered_catchup_req',
+            time: '',
+            node: '',
+            relays: [],
+            sessionId: 'server',
+            cursor: sent[0].cursor as { syncOrder: number; id: string },
+        });
+        expect(sent[1]).toMatchObject({
+            type: 'ordered_catchup_push',
+            hasMore: false,
+            cursor: { syncOrder: 257, id: operations[256].signature.hash },
+        });
+        expect(coordinator.getActiveSessionId(peerKey)).toBeNull();
+        await coordinator.shutdown();
+    });
+
+    it.each([
+        ['missing', undefined],
+        ['regressing', { syncOrder: 255, id: makeOperation(254).signature.hash }],
+        ['skipped', { syncOrder: 257, id: makeOperation(256).signature.hash }],
+    ])('rejects a %s continuation cursor', async (_case, cursor) => {
+        const { store } = createServerStore();
+        const onProtocolViolation = jest.fn();
+        const coordinator = createCoordinator({ syncStore: store, onProtocolViolation });
+
+        await coordinator.handleMessage(peerKey, {
+            type: 'ordered_catchup_req', time: '', node: '', relays: [], sessionId: 'server',
+        });
+        await coordinator.handleMessage(peerKey, {
+            type: 'ordered_catchup_req',
+            time: '',
+            node: '',
+            relays: [],
+            sessionId: 'server',
+            ...(cursor ? { cursor } : {}),
+        });
+
+        expect(onProtocolViolation).toHaveBeenCalledWith(
+            peerKey,
+            'unexpected_ordered_catchup_req_cursor',
+            expect.any(Object),
+        );
+        await coordinator.shutdown();
+    });
+
+    it('rejects a cursor on the first request of a new session', async () => {
+        const { operations, store } = createServerStore();
+        const onProtocolViolation = jest.fn();
+        const coordinator = createCoordinator({ syncStore: store, onProtocolViolation });
+
+        await coordinator.handleMessage(peerKey, {
+            type: 'ordered_catchup_req',
+            time: '',
+            node: '',
+            relays: [],
+            sessionId: 'server',
+            cursor: { syncOrder: 1, id: operations[0].signature.hash },
+        });
+
+        expect(onProtocolViolation).toHaveBeenCalledWith(
+            peerKey,
+            'unexpected_initial_ordered_catchup_cursor',
+            expect.any(Object),
+        );
+        await coordinator.shutdown();
+    });
+
+    it('runs no more than two ordered page reads across peers', async () => {
+        const peerKeys = ['a'.repeat(64), 'b'.repeat(64), 'c'.repeat(64)];
+        const connection = {
+            capabilities: normalizePeerCapabilities({
+                orderedCatchup: true,
+                orderedCatchupVersion: 1,
+            }),
+        } as ConnectionInfo;
+        const releases: Array<() => void> = [];
+        let active = 0;
+        let peak = 0;
+        const starts: string[] = [];
+        const store = {
+            count: jest.fn(async () => 1),
+            countOrdered: jest.fn(async () => 1),
+            iterateOrdered: jest.fn(async () => {
+                const index = starts.length;
+                starts.push(peerKeys[index]);
+                active += 1;
+                peak = Math.max(peak, active);
+                await new Promise<void>(resolve => releases.push(resolve));
+                active -= 1;
+                return [];
+            }),
+        } as unknown as InMemoryOperationSyncStore;
+        const coordinator = createCoordinator({
+            syncStore: store,
+            getConnection: key => peerKeys.includes(key) ? connection : undefined,
+        });
+
+        const requests = peerKeys.map((key, index) => coordinator.handleMessage(key, {
+            type: 'ordered_catchup_req',
+            time: '',
+            node: '',
+            relays: [],
+            sessionId: `server-${index}`,
+        }));
+        await nextTurn();
+        expect(starts).toHaveLength(2);
+        expect(peak).toBe(2);
+
+        releases.shift()?.();
+        await nextTurn();
+        await nextTurn();
+        expect(starts).toHaveLength(3);
+        for (const release of releases) {
+            release();
+        }
+        await Promise.all(requests);
+        expect(peak).toBe(2);
+        await coordinator.shutdown();
+    });
+
+    it('allows a replacement connection while a stale page read is still active', async () => {
+        const makeConnection = () => ({
+            capabilities: normalizePeerCapabilities({
+                orderedCatchup: true,
+                orderedCatchupVersion: 1,
+            }),
+        } as ConnectionInfo);
+        let connection = makeConnection();
+        let releaseFirstRead!: () => void;
+        let markFirstReadStarted!: () => void;
+        const firstReadStarted = new Promise<void>(resolve => {
+            markFirstReadStarted = resolve;
+        });
+        let reads = 0;
+        const store = {
+            count: jest.fn(async () => 1),
+            countOrdered: jest.fn(async () => 1),
+            iterateOrdered: jest.fn(async () => {
+                reads += 1;
+                if (reads === 1) {
+                    markFirstReadStarted();
+                    await new Promise<void>(resolve => {
+                        releaseFirstRead = resolve;
+                    });
+                }
+                return [];
+            }),
+        } as unknown as InMemoryOperationSyncStore;
+        const sent: Array<Record<string, unknown>> = [];
+        const coordinator = createCoordinator({
+            syncStore: store,
+            getConnection: key => key === peerKey ? connection : undefined,
+            sendToPeer: (_key, message) => {
+                sent.push(message as unknown as Record<string, unknown>);
+                return true;
+            },
+        });
+
+        const staleRequest = coordinator.handleMessage(peerKey, {
+            type: 'ordered_catchup_req', time: '', node: '', relays: [], sessionId: 'stale',
+        });
+        await firstReadStarted;
+        coordinator.removePeer(peerKey, 'disconnect');
+        connection = makeConnection();
+
+        await coordinator.handleMessage(peerKey, {
+            type: 'ordered_catchup_req', time: '', node: '', relays: [], sessionId: 'replacement',
+        });
+        expect(reads).toBe(2);
+        expect(sent).toContainEqual(expect.objectContaining({
+            type: 'ordered_catchup_done',
+            sessionId: 'replacement',
+        }));
+
+        releaseFirstRead();
+        await staleRequest;
+        expect(sent).not.toContainEqual(expect.objectContaining({ sessionId: 'stale' }));
         await coordinator.shutdown();
     });
 });
