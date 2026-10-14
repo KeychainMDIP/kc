@@ -196,6 +196,11 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
         if (!conn || !await options.waitForInitialPing(peerKey, conn) || !accepting) {
             return;
         }
+        if (conn.orderedCatchupRetryAfter > 0
+            && conn.orderedCatchupRetryAfter <= Date.now()) {
+            conn.orderedCatchupRetryAfter = 0;
+            conn.orderedCatchupAttempted = false;
+        }
 
         let mode: SyncMode | 'unknown' | null;
         let modeReason: ConnectSyncModeReason | null = null;
@@ -416,6 +421,21 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
         return startPostOrderedCatchupNegentropy(outcome.peerKey, outcome.reason);
     }
 
+    async function handleOrderedCatchupFailure(outcome: OrderedCatchupOutcome): Promise<void> {
+        if (!accepting) {
+            return;
+        }
+        const conn = options.getConnection(outcome.peerKey);
+        if (!conn || outcome.reason !== 'ordered_catchup_import_capacity') {
+            return;
+        }
+        conn.orderedCatchupRetryAfter = Date.now() + options.repairIntervalMs;
+        await options.getImportPipeline().waitForIdle();
+        if (accepting) {
+            await schedulePreferredSyncs();
+        }
+    }
+
     async function handleNegentropySessionClosed(peerKey: string, reason: string): Promise<void> {
         options.getOrderedCatchupCoordinator().finishTransition(peerKey);
         if (accepting && reason !== 'ordered_catchup_active') {
@@ -494,6 +514,7 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
         conn.lastNegentropyAttemptAt = 0;
         conn.negentropySynced = false;
         conn.orderedCatchupAttempted = false;
+        conn.orderedCatchupRetryAfter = 0;
     }
 
     function resetAfterGatekeeperReset(sync: BootstrapResult): void {
@@ -606,8 +627,8 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
         handleOrderedCatchupComplete(outcome: OrderedCatchupOutcome): Promise<boolean> {
             return tracked(() => handleOrderedCatchupComplete(outcome), false);
         },
-        handleOrderedCatchupFailure(): void {
-            // Periodic scheduling retries failed handoffs.
+        handleOrderedCatchupFailure(outcome: OrderedCatchupOutcome): Promise<void> {
+            return tracked(() => handleOrderedCatchupFailure(outcome), undefined);
         },
         handleNegentropySessionClosed(peerKey: string, reason: string): Promise<void> {
             return tracked(() => handleNegentropySessionClosed(peerKey, reason), undefined);

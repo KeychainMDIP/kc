@@ -128,7 +128,7 @@ function buildOrderedCatchupCoordinator(
         onIndexRefreshed: (source, sync) => peerSyncCoordinator.handleIndexRefreshed(source, sync),
         onComplete: outcome => peerSyncCoordinator.handleOrderedCatchupComplete(outcome),
         onHandoffDeferred: () => peerSyncCoordinator.schedulePreferredSyncs(),
-        onFailure: () => peerSyncCoordinator.handleOrderedCatchupFailure(),
+        onFailure: outcome => peerSyncCoordinator.handleOrderedCatchupFailure(outcome),
         onProtocolViolation: (peerKey, reason, connection) =>
             transport.reportProtocolViolation(peerKey, reason, connection),
     });
@@ -690,12 +690,17 @@ export const __test = {
         return orderedCatchupCoordinator.expireServerExpectation(peerKey, now);
     },
 
-    createOrderedCatchupClientSession(peerKey: string, sessionId: string): void {
-        if (orderedCatchupCoordinator.createClientSession(peerKey, sessionId)) {
+    createOrderedCatchupClientSession(
+        peerKey: string,
+        sessionId: string,
+        requestOutstanding = true,
+    ): void {
+        if (orderedCatchupCoordinator.createClientSession(peerKey, sessionId, requestOutstanding)) {
             const conn = transport.getConnection(peerKey);
             if (conn) {
                 conn.syncMode = 'negentropy';
                 conn.syncStarted = true;
+                conn.orderedCatchupAttempted = true;
             }
         }
     },
@@ -744,6 +749,7 @@ export const __test = {
             orderedCatchupServerPendingUntil: orderedState.serverPendingUntil,
             orderedCatchupServerPendingReason: orderedState.serverPendingReason,
             orderedCatchupServerPendingGap: orderedState.serverPendingGap,
+            orderedCatchupRetryAfter: conn.orderedCatchupRetryAfter,
             initialPingSent: conn.initialPingSent,
             initialPingReceived: conn.initialPingReceived,
             peerTransportFramingVersion: conn.peerTransportFramingVersion,
