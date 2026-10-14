@@ -260,6 +260,35 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         expect(jest.getTimerCount()).toBeGreaterThanOrEqual(2);
     });
 
+    it('preserves pre-existing Kubo peering entries during IPFS startup', async () => {
+        const existingPeers = [{ ID: 'operator-peer', Addrs: ['/ip4/203.0.113.1/tcp/4001'] }];
+        const running = await createRunningNode({
+            env: {
+                KC_IPFS_ENABLE: 'true',
+                KC_NODE_ID: 'node',
+            },
+            beforeStart: async node => {
+                node.keymasterClient.resolveDID.mockResolvedValue({
+                    didDocument: { id: 'did:test:node' },
+                });
+                node.kuboClient.getPeerID.mockResolvedValue('local-peer');
+                node.kuboClient.getAddresses.mockResolvedValue(['/ip4/203.0.113.2/tcp/4001']);
+                node.kuboClient.getPeeringPeers.mockResolvedValue(existingPeers);
+            },
+        });
+
+        expect(running.node.kuboClient.connect).toHaveBeenCalledTimes(1);
+        expect(running.node.kuboClient.getPeeringPeers).toHaveBeenCalled();
+        expect(running.node.kuboClient.resetPeeringPeers).not.toHaveBeenCalled();
+        expect(running.node.kuboClient.removePeeringPeer).not.toHaveBeenCalled();
+        expect(running.node.keymasterClient.updateAsset).toHaveBeenCalledWith(
+            'did:test:node',
+            expect.objectContaining({
+                node: expect.objectContaining({ name: expect.any(String) }),
+            }),
+        );
+    });
+
     it('aborts Gatekeeper requests during shutdown', async () => {
         const running = await createRunningNode();
         const options = running.node.gatekeeperClient.connect.mock.calls[0][0] as {
