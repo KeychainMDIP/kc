@@ -24,7 +24,10 @@ import { createPeerSyncCoordinator } from './peer-sync-coordinator.js';
 import { createHyperswarmTransport } from './hyperswarm-transport.js';
 import { createPeerDirectory } from './peer-directory.js';
 import { createQueueCoordinator } from './queue-coordinator.js';
+import { createBulkWorkScheduler } from './bulk-work-scheduler.js';
+import { createOperationPageBudget } from './operation-page-budget.js';
 import {
+    MAX_APPLICATION_CONNECTIONS,
     MAX_NEGENTROPY_WINDOW_RECORDS,
 } from './protocol-limits.js';
 import type {
@@ -78,6 +81,8 @@ const NEG_MAX_OPS_PER_PUSH = 300;
 const NEG_MAX_BYTES_PER_PUSH = 512 * 1024;
 const NEG_REPAIR_INTERVAL_MS = config.negentropyIntervalSeconds * 1000;
 const syncStats = createMediatorSyncStats();
+const bulkReads = createBulkWorkScheduler(2);
+const operationPages = createOperationPageBudget(5, 5 * NEG_MAX_BYTES_PER_PUSH);
 let nodeKey = '';
 let nodeInfo: NodeInfo;
 const peerDirectory = createPeerDirectory({
@@ -121,10 +126,13 @@ function buildOrderedCatchupCoordinator(
         importPipeline: pipeline,
         syncStats,
         cipher,
+        bulkReads,
+        operationPages,
         getConnection: peerKey => transport.getConnection(peerKey),
         createSessionId,
         createBaseMessage,
         sendToPeer: (peerKey, message) => transport.sendToPeer(peerKey, message),
+        sendBulkToPeer: (peerKey, message) => transport.sendBulkToPeer(peerKey, message),
         onIndexRefreshed: (source, sync) => peerSyncCoordinator.handleIndexRefreshed(source, sync),
         onComplete: outcome => peerSyncCoordinator.handleOrderedCatchupComplete(outcome),
         onHandoffDeferred: () => peerSyncCoordinator.schedulePreferredSyncs(),
@@ -156,10 +164,13 @@ function buildNegentropyCoordinator(
         importPipeline: pipeline,
         syncStats,
         cipher,
+        bulkReads,
+        operationPages,
         getConnection: peerKey => transport.getConnection(peerKey),
         createSessionId,
         createBaseMessage,
         sendToPeer: (peerKey, message) => transport.sendToPeer(peerKey, message),
+        sendBulkToPeer: (peerKey, message) => transport.sendBulkToPeer(peerKey, message),
         canStartBackgroundPrebuild: () => peerSyncCoordinator.canStartBackgroundPrebuild(),
         onProtocolViolation: (peerKey, reason, connection) =>
             transport.reportProtocolViolation(peerKey, reason, connection),
@@ -194,6 +205,8 @@ const queueCoordinator = createQueueCoordinator({
     gatekeeper,
     cipher,
     syncStats,
+    bulkReads,
+    operationPages,
     getImportPipeline: () => importPipeline,
     getNodeKey: () => nodeKey,
     createQueueMessage: () => createBaseMessage('queue'),
@@ -268,13 +281,17 @@ function cleanup(): Promise<void> {
     shuttingDown = true;
     dependencyRequests.abort();
     clearLoopTimers();
+    transport.stopAdmission();
+    operationPages.shutdown();
 
     cleanupPromise = (async () => {
         const coordinatorShutdowns = [
             Promise.resolve().then(() => peerSyncCoordinator.shutdown()),
             Promise.resolve().then(() => orderedCatchupCoordinator.shutdown()),
             Promise.resolve().then(() => negentropyCoordinator.shutdown()),
+            Promise.resolve().then(() => queueCoordinator.shutdown()),
             Promise.resolve().then(() => peerDirectory.shutdown()),
+            Promise.resolve().then(() => bulkReads.shutdown()),
         ];
 
         if (swarm) {
@@ -289,7 +306,10 @@ function cleanup(): Promise<void> {
             }
         }
 
-        const results = await Promise.allSettled(coordinatorShutdowns);
+        const results = await Promise.allSettled([
+            ...coordinatorShutdowns,
+            transport.shutdown(),
+        ]);
         for (const result of results) {
             if (result.status === 'rejected') {
                 log.error({ error: result.reason }, 'mediator shutdown error');
@@ -340,7 +360,7 @@ async function createSwarm(): Promise<void> {
         return;
     }
 
-    swarm = new Hyperswarm();
+    swarm = new Hyperswarm({ maxPeers: MAX_APPLICATION_CONNECTIONS });
     nodeKey = b4a.toString(swarm.keyPair.publicKey, 'hex');
 
     swarm.on('connection', conn => transport.addConnection(conn));
@@ -656,7 +676,8 @@ export const __test = {
 
     addConnection(peerKey: string, overrides: Record<string, unknown> = {}): void {
         const connection = (overrides.connection as HyperswarmConnection | undefined) ?? ({
-            write: () => undefined,
+            write: () => true,
+            flush: async () => true,
             destroy: () => undefined,
             once: () => undefined,
             on: () => undefined,
@@ -682,14 +703,17 @@ export const __test = {
 
     async sendOrderedCatchupPage(peerKey: string, msg: OrderedCatchupReqMessage): Promise<void> {
         await orderedCatchupCoordinator.handleMessage(peerKey, msg);
+        await transport.waitForIdleWrites();
     },
 
     async maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic' = 'connect'): Promise<void> {
         await peerSyncCoordinator.maybeStartPeerSync(peerKey, source);
+        await transport.waitForIdleWrites();
     },
 
     async schedulePreferredSyncs(): Promise<void> {
         await peerSyncCoordinator.schedulePreferredSyncs();
+        await transport.waitForIdleWrites();
     },
 
     clearExpiredOrderedCatchupServerExpectation(peerKey: string, now = Date.now()): boolean {
@@ -718,10 +742,12 @@ export const __test = {
             round: negentropyCoordinator.getExpectedInboundRound(peerKey, type),
             ...msg,
         });
+        await transport.waitForIdleWrites();
     },
 
     async processInboundPeerData(peerKey: string, chunk: Buffer | string): Promise<void> {
         await transport.processInboundPeerData(peerKey, chunk);
+        await transport.waitForIdleWrites();
     },
 
     async sendPingToPeer(peerKey: string): Promise<void> {

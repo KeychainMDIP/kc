@@ -432,31 +432,24 @@ describe('hyperswarm mediator protocol characterization', () => {
     async function expectFailedNegentropySessionCanRetry(
         protocolNode: ProtocolNode,
         peerKey: string,
-        pair: RecordingDuplexPair,
         failedSessionId: unknown,
     ): Promise<void> {
-        const opensBefore = decodeWrites(pair).filter(message => message.type === 'neg_open');
         expect(protocolNode.node.run(
-            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
         )).toBeNull();
+        const replacement = attachPeer(protocolNode, {});
+        expect(replacement.peerKey).toBe(peerKey);
 
-        const now = Date.now();
-        const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(now + 301_000);
-        try {
-            await protocolNode.node.run(
-                () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey, 'periodic'),
-            );
-        }
-        finally {
-            nowSpy.mockRestore();
-        }
+        await protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey),
+        );
 
-        const opensAfter = decodeWrites(pair).filter(message => message.type === 'neg_open');
-        expect(opensAfter).toHaveLength(opensBefore.length + 1);
-        expect(opensAfter.at(-1)?.sessionId).not.toBe(failedSessionId);
+        const opensAfter = decodeWrites(replacement.pair).filter(message => message.type === 'neg_open');
+        expect(opensAfter).toHaveLength(1);
+        expect(opensAfter[0]?.sessionId).not.toBe(failedSessionId);
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
-        )).toEqual({ mode: 'negentropy', sessionId: opensAfter.at(-1)?.sessionId });
+        )).toEqual({ mode: 'negentropy', sessionId: opensAfter[0]?.sessionId });
     }
 
     afterEach(async () => {
@@ -2613,6 +2606,74 @@ describe('hyperswarm mediator protocol characterization', () => {
         },
     );
 
+    it('does not let a stale ops_push write failure close a replacement session', async () => {
+        const [operation] = await makeOperations(1);
+        const protocolNode = await createNode();
+        await protocolNode.store.upsertMany([{
+            id: operation.signature!.hash,
+            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            operation,
+        }]);
+        const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
+        jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
+            const engine = createEngine(snapshot);
+            jest.spyOn(engine, 'reconcile').mockResolvedValueOnce({
+                nextMsg: null,
+                haveIds: [operation.signature!.hash],
+                needIds: [],
+            });
+            return engine;
+        });
+        const initialPeer = attachPeer(protocolNode, {});
+        await protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.maybeStartPeerSync(initialPeer.peerKey),
+        );
+        const open = decodeWrites(initialPeer.pair).find(message => message.type === 'neg_open');
+        if (!open) {
+            throw new Error('expected local neg_open');
+        }
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(initialPeer.peerKey, {
+            type: 'neg_msg',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            frame: encodeNegentropyFrame('offer-operation'),
+        }));
+        const offer = decodeWrites(initialPeer.pair).find(message => message.type === 'ops_offer');
+        if (!offer) {
+            throw new Error('expected local ops_offer');
+        }
+
+        let markWriteStarted!: () => void;
+        const writeStarted = new Promise<void>(resolve => {
+            markWriteStarted = resolve;
+        });
+        jest.spyOn(initialPeer.pair.connectionA, 'write').mockImplementation((() => {
+            markWriteStarted();
+            return true;
+        }) as typeof initialPeer.pair.connectionA.write);
+
+        const request = protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(
+            initialPeer.peerKey,
+            {
+                type: 'ops_req',
+                sessionId: open.sessionId,
+                windowId: open.windowId,
+                round: offer.round,
+                requestId: 0,
+                offerId: offer.offerId,
+                ids: [operation.signature!.hash],
+            },
+        ));
+        await writeStarted;
+        const replacement = replaceWithOrderedSession(protocolNode, initialPeer.peerKey);
+        await request;
+
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(replacement.peerKey)?.activeSession,
+        )).toEqual({ mode: 'ordered_catchup', sessionId: 'replacement-session' });
+        expect(decodeWrites(replacement.pair).some(message => message.sessionId === open.sessionId)).toBe(false);
+    });
+
     it('keeps rejected push lookups linear', async () => {
         const cipher = new CipherNode();
         const operations = Array.from({ length: 1_001 }, (_, index) => {
@@ -3391,7 +3452,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         await deliverAuthorizedPush(protocolNode, peerKey, pair, open, [operation]);
 
         expect(protocolNode.node.run(
-            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
         )).toBeNull();
     });
 
@@ -3844,7 +3905,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         );
 
         expect(protocolNode.node.run(
-            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
         )).toBeNull();
     });
 
@@ -3899,7 +3960,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             expect(JSON.parse(
                 decodeFramedMessages(Buffer.from(attemptedChunk)).messages[0].toString('utf8'),
             )).toMatchObject({ type: failedType, sessionId: open.sessionId });
-            await expectFailedNegentropySessionCanRetry(protocolNode, peerKey, pair, open.sessionId);
+            await expectFailedNegentropySessionCanRetry(protocolNode, peerKey, open.sessionId);
         },
     );
 
@@ -3921,7 +3982,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(JSON.parse(
             decodeFramedMessages(Buffer.from(attemptedChunk)).messages[0].toString('utf8'),
         )).toMatchObject({ type: 'neg_msg', sessionId: open.sessionId });
-        await expectFailedNegentropySessionCanRetry(protocolNode, peerKey, pair, open.sessionId);
+        await expectFailedNegentropySessionCanRetry(protocolNode, peerKey, open.sessionId);
     });
 
     it('closes an incomplete session when sending ops_push fails and permits repair', async () => {
@@ -3978,7 +4039,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(JSON.parse(
             decodeFramedMessages(Buffer.from(attemptedChunk)).messages[0].toString('utf8'),
         )).toMatchObject({ type: 'ops_push', sessionId: open.sessionId });
-        await expectFailedNegentropySessionCanRetry(protocolNode, peerKey, pair, open.sessionId);
+        await expectFailedNegentropySessionCanRetry(protocolNode, peerKey, open.sessionId);
     });
 
     it('starts eligible periodic repair without requiring a timer loop', async () => {
@@ -5594,10 +5655,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(initialWrite).toHaveBeenCalledTimes(1);
         expect(initialNode.node.run(
             () => initialNode.node.mediator.__test.getConnectionState(initialPeer.peerKey),
-        )).toMatchObject({
-            activeSession: null,
-            orderedCatchupClientSessionId: null,
-        });
+        )).toBeNull();
 
         const continuationNode = await createNode({
             keyByte: 0x33,
@@ -5626,13 +5684,9 @@ describe('hyperswarm mediator protocol characterization', () => {
             })),
         ));
         expect(continuationWrite).toHaveBeenCalledTimes(1);
-        await eventually(() => continuationNode.store.has(continuationOperation.signature!.hash));
         expect(continuationNode.node.run(
             () => continuationNode.node.mediator.__test.getConnectionState(continuationPeer.peerKey),
-        )).toMatchObject({
-            activeSession: null,
-            orderedCatchupClientSessionId: null,
-        });
+        )).toBeNull();
         await nextTurn();
         expect(initialNode.node.gatekeeperClient.exportIndex).not.toHaveBeenCalled();
         expect(continuationNode.node.gatekeeperClient.exportIndex).not.toHaveBeenCalled();
@@ -5679,11 +5733,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             )).toMatchObject({ type: failedType, sessionId: 'send-failure-session' });
             expect(protocolNode.node.run(
                 () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
-            )).toMatchObject({
-                activeSession: null,
-                orderedCatchupServerSessionId: null,
-                orderedCatchupServerLastActivity: 0,
-            });
+            )).toBeNull();
             await nextTurn();
             expect(protocolNode.node.gatekeeperClient.exportIndex).not.toHaveBeenCalled();
         },
@@ -6245,6 +6295,11 @@ describe('hyperswarm mediator protocol characterization', () => {
                     })),
                 ));
                 await eventually(() => reset.mock.calls.length === 1);
+                await eventually(() => protocolNode.node.run(
+                    () => protocolNode.node.mediator.__test.getConnectionState(
+                        serverPeer.peerKey,
+                    )?.orderedCatchupServerSessionId,
+                ) === null);
                 release();
                 await staleRequest;
             }

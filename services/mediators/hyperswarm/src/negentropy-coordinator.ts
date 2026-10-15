@@ -32,6 +32,7 @@ import {
     chunkIds,
     chunkOperationsForPush,
     estimateOperationBytes,
+    validateOperationPage,
 } from './negentropy/transfer.js';
 import {
     normalizeInboundOpsPushBatch,
@@ -73,6 +74,8 @@ import type {
     OpsReqMessage,
 } from './protocol-messages.js';
 import type { MediatorSyncStats } from './sync-stats.js';
+import type { BulkWorkScheduler } from './bulk-work-scheduler.js';
+import type { OperationPageBudget } from './operation-page-budget.js';
 
 const log = childLogger({ service: 'hyperswarm-mediator' });
 const MAX_UNRESOLVED_OPERATIONS = 1_000;
@@ -177,12 +180,15 @@ interface NegentropyCoordinatorOptions {
     importPipeline: ImportPipeline;
     syncStats: MediatorSyncStats;
     cipher: { hashJSON(value: unknown): string };
+    bulkReads: BulkWorkScheduler;
+    operationPages: OperationPageBudget;
     getConnection(peerKey: string): ConnectionInfo | undefined;
     createSessionId(peerKey: string): string;
     createBaseMessage<T extends NegentropyMessage['type']>(
         type: T,
     ): Omit<HyperMessageBase, 'type'> & { type: T };
     sendToPeer(peerKey: string, message: HyperMessage): boolean;
+    sendBulkToPeer(peerKey: string, message: HyperMessage): Promise<boolean>;
     canStartBackgroundPrebuild(): boolean;
     onProtocolViolation(peerKey: string, reason: string, connection: ConnectionInfo): void;
     terminatePeerConnection(peerKey: string, reason: string): void;
@@ -1228,84 +1234,101 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
     }
 
     async function sendNextOpsPage(peerKey: string, session: PeerSyncSession): Promise<void> {
-        const request = session.receivedRequest;
-        if (!request || request.awaitingAck || peerSessions.get(peerKey) !== session) {
-            return;
-        }
-
-        const requestedIds = new Set(request.remainingIds);
-        const availableIds = new Set<string>();
-        let rows: SyncOperationRecord[] = [];
-        for (const ids of chunkIds(request.remainingIds, options.maxIdsPerLookup)) {
-            const fetched = await options.syncStore.getByIds(ids);
-            if (peerSessions.get(peerKey) !== session || session.receivedRequest !== request) {
+        return options.bulkReads.run(peerKey, async () => {
+            const request = session.receivedRequest;
+            if (!request || request.awaitingAck || peerSessions.get(peerKey) !== session) {
                 return;
             }
-            const content = validateOperationContentIds(fetched.map(row => row.operation), options.cipher);
-            if (!content.ok) {
-                throw new Error(content.reason);
+            const outboundReservation = options.operationPages.reserve(options.maxBytesPerPush);
+            if (!outboundReservation) {
+                sendNegClose(peerKey, session, 'ops_push_output_capacity');
+                closePeerSession(peerKey, 'ops_push_output_capacity');
+                return;
             }
-            for (const row of fetched) {
-                const mapped = mapOperationToSyncKey(row.operation);
-                const rowId = row.id.toLowerCase();
-                if (!mapped.ok || mapped.value.idHex !== rowId || !requestedIds.has(rowId)
+            try {
+                const requestedIds = new Set(request.remainingIds);
+                const availableIds = new Set<string>();
+                let rows: SyncOperationRecord[] = [];
+                for (const ids of chunkIds(request.remainingIds, options.maxIdsPerLookup)) {
+                    const fetched = await options.syncStore.getByIds(ids);
+                    if (peerSessions.get(peerKey) !== session || session.receivedRequest !== request) {
+                        return;
+                    }
+                    const content = validateOperationContentIds(fetched.map(row => row.operation), options.cipher);
+                    if (!content.ok) {
+                        throw new Error(content.reason);
+                    }
+                    for (const row of fetched) {
+                        const mapped = mapOperationToSyncKey(row.operation);
+                        const rowId = row.id.toLowerCase();
+                        if (!mapped.ok || mapped.value.idHex !== rowId || !requestedIds.has(rowId)
                     || availableIds.has(rowId)) {
-                    throw new Error(`invalid requested operation record ${row.id}`);
+                            throw new Error(`invalid requested operation record ${row.id}`);
+                        }
+                        availableIds.add(rowId);
+                    }
+                    const orderedRows = orderSyncRecordsForPush([...rows, ...fetched]);
+                    const pages = chunkOperationsForPush(
+                        orderedRows.map(row => row.operation),
+                        {
+                            maxOpsPerPush: options.maxOpsPerPush,
+                            maxBytesPerPush: options.maxBytesPerPush,
+                        },
+                    );
+                    const firstPageIds = new Set((pages[0] ?? []).map(operation => {
+                        const mapped = mapOperationToSyncKey(operation);
+                        if (!mapped.ok) {
+                            throw new Error(mapped.reason);
+                        }
+                        return mapped.value.idHex;
+                    }));
+                    rows = orderedRows
+                        .filter(row => firstPageIds.has(row.id.toLowerCase()));
                 }
-                availableIds.add(rowId);
-            }
-            const orderedRows = orderSyncRecordsForPush([...rows, ...fetched]);
-            const pages = chunkOperationsForPush(
-                orderedRows.map(row => row.operation),
-                {
-                    maxOpsPerPush: options.maxOpsPerPush,
-                    maxBytesPerPush: options.maxBytesPerPush,
-                },
-            );
-            const firstPageIds = new Set((pages[0] ?? []).map(operation => {
-                const mapped = mapOperationToSyncKey(operation);
-                if (!mapped.ok) {
-                    throw new Error(mapped.reason);
+                const data = orderSyncRecordsForPush(rows).map(row => row.operation);
+                const deliveredIds = new Set<string>();
+                for (const operation of data) {
+                    const mapped = mapOperationToSyncKey(operation);
+                    if (mapped.ok) {
+                        deliveredIds.add(mapped.value.idHex);
+                    }
                 }
-                return mapped.value.idHex;
-            }));
-            rows = orderedRows
-                .filter(row => firstPageIds.has(row.id.toLowerCase()));
-        }
-        const data = orderSyncRecordsForPush(rows).map(row => row.operation);
-        const deliveredIds = new Set<string>();
-        for (const operation of data) {
-            const mapped = mapOperationToSyncKey(operation);
-            if (mapped.ok) {
-                deliveredIds.add(mapped.value.idHex);
+                for (const row of rows) {
+                    const cursor = { ts: row.ts, id: row.id.toLowerCase() };
+                    if (!session.sentPushMaxCursor || compareSyncCursor(cursor, session.sentPushMaxCursor) > 0) {
+                        session.sentPushMaxCursor = cursor;
+                    }
+                }
+                request.remainingIds = request.remainingIds.filter(id => availableIds.has(id) && !deliveredIds.has(id));
+                const hasMore = request.remainingIds.length > 0;
+                const msg: OpsPushMessage = {
+                    ...options.createBaseMessage('ops_push'),
+                    sessionId: session.sessionId,
+                    windowId: getExpectedWindowId(session),
+                    round: request.round,
+                    requestId: request.requestId,
+                    page: request.page,
+                    hasMore,
+                    data,
+                };
+                if (!await options.sendBulkToPeer(peerKey, msg)) {
+                    if (peerSessions.get(peerKey) === session) {
+                        closePeerSession(peerKey, 'send_ops_push_failed');
+                    }
+                    return;
+                }
+                if (peerSessions.get(peerKey) !== session || session.receivedRequest !== request) {
+                    return;
+                }
+                session.sentPushCount += data.length;
+                request.awaitingAck = true;
+                touchPeerSession(peerKey);
+                options.syncStats.negentropyOpsPushSent += data.length;
             }
-        }
-        for (const row of rows) {
-            const cursor = { ts: row.ts, id: row.id.toLowerCase() };
-            if (!session.sentPushMaxCursor || compareSyncCursor(cursor, session.sentPushMaxCursor) > 0) {
-                session.sentPushMaxCursor = cursor;
+            finally {
+                outboundReservation.release();
             }
-        }
-        request.remainingIds = request.remainingIds.filter(id => availableIds.has(id) && !deliveredIds.has(id));
-        const hasMore = request.remainingIds.length > 0;
-        const msg: OpsPushMessage = {
-            ...options.createBaseMessage('ops_push'),
-            sessionId: session.sessionId,
-            windowId: getExpectedWindowId(session),
-            round: request.round,
-            requestId: request.requestId,
-            page: request.page,
-            hasMore,
-            data,
-        };
-        if (!options.sendToPeer(peerKey, msg)) {
-            closePeerSession(peerKey, 'send_ops_push_failed');
-            return;
-        }
-        session.sentPushCount += data.length;
-        request.awaitingAck = true;
-        touchPeerSession(peerKey);
-        options.syncStats.negentropyOpsPushSent += data.length;
+        });
     }
 
     function sendNegMsg(peerKey: string, session: PeerSyncSession, frame: string | Uint8Array): boolean {
@@ -2023,16 +2046,18 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
     }
 
     async function findKnownIds(peerKey: string, session: PeerSyncSession, ids: string[]): Promise<Set<string> | null> {
-        const known = new Set<string>();
-        for (const batch of chunkIds(ids, options.maxIdsPerLookup)) {
-            for (const row of await options.syncStore.getByIds(batch)) {
-                known.add(row.id);
+        return options.bulkReads.run(peerKey, async () => {
+            const known = new Set<string>();
+            for (const batch of chunkIds(ids, options.maxIdsPerLookup)) {
+                for (const row of await options.syncStore.getByIds(batch)) {
+                    known.add(row.id);
+                }
+                if (peerSessions.get(peerKey) !== session) {
+                    return null;
+                }
             }
-            if (peerSessions.get(peerKey) !== session) {
-                return null;
-            }
-        }
-        return known;
+            return known;
+        });
     }
 
     async function handleOpsOfferMessage(peerKey: string, msg: OpsOfferMessage): Promise<void> {
@@ -2163,113 +2188,132 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             reportProtocolViolation(peerKey, 'ops_push contains duplicate operations');
             return;
         }
-        const pageIds: string[] = [];
-        for (const operation of batch) {
-            const mapped = mapOperationToSyncKey(operation);
-            if (!mapped.ok || !request.expectedIds.has(mapped.value.idHex)
+        const page = validateOperationPage(msg.data, {
+            maxOpsPerPush: options.maxOpsPerPush,
+            maxBytesPerPush: options.maxBytesPerPush,
+        });
+        if (!page.ok) {
+            reportProtocolViolation(peerKey, `invalid_ops_push: ${page.reason}`);
+            return;
+        }
+        const reservation = options.operationPages.reserve(page.value.bytes);
+        if (!reservation) {
+            sendNegClose(peerKey, session, 'ops_push_import_capacity');
+            closePeerSession(peerKey, 'ops_push_import_capacity');
+            return;
+        }
+        try {
+            const pageIds: string[] = [];
+            for (const operation of batch) {
+                const mapped = mapOperationToSyncKey(operation);
+                if (!mapped.ok || !request.expectedIds.has(mapped.value.idHex)
                 || request.deliveredIds.has(mapped.value.idHex)) {
-                reportProtocolViolation(peerKey, 'ops_push contains an unsolicited or duplicate operation');
-                return;
-            }
-            pageIds.push(mapped.value.idHex);
-        }
-        const delivered = new Set([...request.deliveredIds, ...pageIds]);
-        if (msg.hasMore && delivered.size === request.expectedIds.size) {
-            reportProtocolViolation(peerKey, 'a non-final ops_push delivered every requested operation');
-            return;
-        }
-        if (!msg.hasMore) {
-            if (delivered.size !== request.expectedIds.size) {
-                if (!sendNegClose(peerKey, session, 'missing_requested_operations')) {
-                    closePeerSession(peerKey, 'send_neg_close_failed');
+                    reportProtocolViolation(peerKey, 'ops_push contains an unsolicited or duplicate operation');
                     return;
                 }
-                closePeerSession(peerKey, 'missing_requested_operations');
+                pageIds.push(mapped.value.idHex);
+            }
+            const delivered = new Set([...request.deliveredIds, ...pageIds]);
+            if (msg.hasMore && delivered.size === request.expectedIds.size) {
+                reportProtocolViolation(peerKey, 'a non-final ops_push delivered every requested operation');
                 return;
             }
-        }
-
-        let imported = {
-            knownIds: [] as string[],
-            persistedIds: [] as string[],
-            pendingIds: [] as string[],
-            capacityDeferredIds: [] as string[],
-            retryable: false,
-        };
-        if (batch.length > 0) {
-            options.syncStats.negentropyOpsPushReceived += batch.length;
-            trackReceivedWindowOperations(session, batch);
-            const unprovenBatch = filterUnprovenPushOperations(session, batch);
-            if (unprovenBatch.length > 0) {
-                imported = await options.importPipeline.enqueue({
-                    kind: 'remote',
-                    name: peerKey,
-                    data: unprovenBatch,
-                    cancelled: () => peerSessions.get(peerKey) !== session,
-                });
-            } else {
-                imported.knownIds = pageIds;
+            if (!msg.hasMore) {
+                if (delivered.size !== request.expectedIds.size) {
+                    if (!sendNegClose(peerKey, session, 'missing_requested_operations')) {
+                        closePeerSession(peerKey, 'send_neg_close_failed');
+                        return;
+                    }
+                    closePeerSession(peerKey, 'missing_requested_operations');
+                    return;
+                }
             }
-        }
-        if (peerSessions.get(peerKey) !== session) {
-            return;
-        }
-        if (imported.retryable) {
-            sendNegClose(peerKey, session, 'ops_push_import_retryable');
-            closePeerSession(peerKey, 'ops_push_import_retryable');
-            return;
-        }
 
-        const settledIds = new Set([
-            ...imported.knownIds,
-            ...imported.persistedIds,
-            ...imported.capacityDeferredIds,
-        ]);
-        for (const [index, id] of pageIds.entries()) {
-            request.deliveredIds.add(id);
-            if (!settledIds.has(id) && !session.provenStoredPushIds.has(id)
+            let imported = {
+                knownIds: [] as string[],
+                persistedIds: [] as string[],
+                pendingIds: [] as string[],
+                capacityDeferredIds: [] as string[],
+                retryable: false,
+            };
+            if (batch.length > 0) {
+                options.syncStats.negentropyOpsPushReceived += batch.length;
+                trackReceivedWindowOperations(session, batch);
+                const unprovenBatch = filterUnprovenPushOperations(session, batch);
+                if (unprovenBatch.length > 0) {
+                    imported = await options.importPipeline.enqueue({
+                        kind: 'remote',
+                        name: peerKey,
+                        data: unprovenBatch,
+                        cancelled: () => peerSessions.get(peerKey) !== session,
+                    });
+                } else {
+                    imported.knownIds = pageIds;
+                }
+            }
+            if (peerSessions.get(peerKey) !== session) {
+                return;
+            }
+            if (imported.retryable) {
+                sendNegClose(peerKey, session, 'ops_push_import_retryable');
+                closePeerSession(peerKey, 'ops_push_import_retryable');
+                return;
+            }
+
+            const settledIds = new Set([
+                ...imported.knownIds,
+                ...imported.persistedIds,
+                ...imported.capacityDeferredIds,
+            ]);
+            for (const [index, id] of pageIds.entries()) {
+                request.deliveredIds.add(id);
+                if (!settledIds.has(id) && !session.provenStoredPushIds.has(id)
                 && !retainUnresolvedOperation(session, id, batch[index])) {
-                if (!sendNegClose(peerKey, session, 'unresolved_limit_exceeded')) {
-                    closePeerSession(peerKey, 'send_neg_close_failed');
+                    if (!sendNegClose(peerKey, session, 'unresolved_limit_exceeded')) {
+                        closePeerSession(peerKey, 'send_neg_close_failed');
+                        return;
+                    }
+                    closePeerSession(peerKey, 'unresolved_limit_exceeded');
                     return;
                 }
-                closePeerSession(peerKey, 'unresolved_limit_exceeded');
+            }
+            for (const id of imported.knownIds) {
+                session.receivedKnownPushIds.add(id);
+            }
+            for (const id of [...imported.knownIds, ...imported.persistedIds]) {
+                request.satisfiedIds.add(id);
+                session.provenStoredPushIds.add(id);
+                session.pendingNeedIds.delete(id);
+                clearUnresolvedOperation(session, id);
+            }
+            for (const id of imported.capacityDeferredIds) {
+                session.windowIncomplete = true;
+                session.pendingNeedIds.delete(id);
+                clearUnresolvedOperation(session, id);
+            }
+
+            const ack: OpsAckMessage = {
+                ...options.createBaseMessage('ops_ack'),
+                sessionId: session.sessionId,
+                windowId: getExpectedWindowId(session),
+                round: msg.round,
+                requestId: msg.requestId,
+                page: msg.page,
+                ...(imported.capacityDeferredIds.length > 0 ? { deferred: true } : {}),
+            };
+            if (!options.sendToPeer(peerKey, ack)) {
+                closePeerSession(peerKey, 'send_ops_ack_failed');
                 return;
             }
+            request.nextPage += 1;
+            touchPeerSession(peerKey);
+            if (!msg.hasMore) {
+                session.localRequest = null;
+                await driveInitiatorTransfers(peerKey, session);
+            }
         }
-        for (const id of imported.knownIds) {
-            session.receivedKnownPushIds.add(id);
-        }
-        for (const id of [...imported.knownIds, ...imported.persistedIds]) {
-            request.satisfiedIds.add(id);
-            session.provenStoredPushIds.add(id);
-            session.pendingNeedIds.delete(id);
-            clearUnresolvedOperation(session, id);
-        }
-        for (const id of imported.capacityDeferredIds) {
-            session.windowIncomplete = true;
-            session.pendingNeedIds.delete(id);
-            clearUnresolvedOperation(session, id);
-        }
-
-        const ack: OpsAckMessage = {
-            ...options.createBaseMessage('ops_ack'),
-            sessionId: session.sessionId,
-            windowId: getExpectedWindowId(session),
-            round: msg.round,
-            requestId: msg.requestId,
-            page: msg.page,
-            ...(imported.capacityDeferredIds.length > 0 ? { deferred: true } : {}),
-        };
-        if (!options.sendToPeer(peerKey, ack)) {
-            closePeerSession(peerKey, 'send_ops_ack_failed');
-            return;
-        }
-        request.nextPage += 1;
-        touchPeerSession(peerKey);
-        if (!msg.hasMore) {
-            session.localRequest = null;
-            await driveInitiatorTransfers(peerKey, session);
+        finally {
+            reservation.release();
         }
     }
 
@@ -2501,9 +2545,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
 
     async function processIndexRefresh(source: string, sync: BootstrapResult): Promise<void> {
         if (sync.resetReason) {
-            peerSessions.clear();
-            activeSlot = null;
-            invalidateNegentropyAdapterCache();
+            reset();
         }
         else if (sync.inserted > 0 || sync.updated > 0 || sync.deleted > 0) {
             markNegentropyAdapterDirty();
@@ -2522,6 +2564,9 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
     }
 
     function reset(): void {
+        for (const peerKey of peerSessions.keys()) {
+            options.bulkReads.cancel(peerKey);
+        }
         peerSessions.clear();
         activeSlot = null;
         invalidateNegentropyAdapterCache();
@@ -2533,6 +2578,9 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         }
         shutdownStarted = true;
         backgroundPrebuildQueued = false;
+        for (const peerKey of peerSessions.keys()) {
+            options.bulkReads.cancel(peerKey);
+        }
         peerSessions.clear();
         activeSlot = null;
         shutdownPromise = (async () => {
@@ -2610,6 +2658,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             }
         },
         removePeer(peerKey: string, reason: string): void {
+            options.bulkReads.cancel(peerKey);
             closePeerSession(peerKey, reason);
         },
         reset,
