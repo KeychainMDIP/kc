@@ -495,12 +495,25 @@ describe('import pipeline', () => {
             capacityDeferredIds: [deferred.signature!.hash],
             retryable: false,
         });
+        expect(pipeline.filterRetryDelayedIds([
+            deferred.signature!.hash,
+            'a'.repeat(64),
+        ])).toEqual({
+            eligibleIds: ['a'.repeat(64)],
+            pendingIds: [],
+            capacityDeferredIds: [deferred.signature!.hash],
+        });
         await jest.advanceTimersByTimeAsync(299_000);
         const repeated = await pipeline.enqueue({ kind: 'remote', name: 'peer-a', data: [deferred] });
         expect(repeated.capacityDeferredIds).toEqual([deferred.signature!.hash]);
         expect(importBatch).toHaveBeenCalledTimes(1);
 
         await jest.advanceTimersByTimeAsync(1_000);
+        expect(pipeline.filterRetryDelayedIds([deferred.signature!.hash])).toEqual({
+            eligibleIds: [deferred.signature!.hash],
+            pendingIds: [],
+            capacityDeferredIds: [],
+        });
         await pipeline.enqueue({ kind: 'remote', name: 'peer-a', data: [deferred] });
         expect(importBatch).toHaveBeenCalledTimes(2);
         await pipeline.shutdown();
@@ -545,6 +558,11 @@ describe('import pipeline', () => {
                 capacityDeferredIds: [],
                 retryable: false,
             });
+        expect(pipeline.filterRetryDelayedIds([pending.signature!.hash])).toEqual({
+            eligibleIds: [],
+            pendingIds: [pending.signature!.hash],
+            capacityDeferredIds: [],
+        });
         await pipeline.enqueue({ kind: 'remote', name: 'peer-a', data: [pending] });
 
         expect(importBatch).toHaveBeenCalledTimes(1);

@@ -73,24 +73,79 @@ describe('hyperswarm protocol validation', () => {
             ...base('ordered_catchup_push'), sessionId: 's', hasMore: 1, data: [],
         })).toMatchObject({ ok: false });
         expect(validateHyperMessageEnvelope({
-            ...base('ops_req'), sessionId: '', windowId: 'w', round: 0, ids: [],
+            ...base('ops_req'), sessionId: '', windowId: 'w', round: 0, requestId: 0, ids: [],
         })).toMatchObject({ ok: false });
         expect(validateHyperMessageEnvelope({
-            ...base('ops_req'), sessionId: 1, windowId: 'w', round: 0, ids: [],
+            ...base('ops_req'), sessionId: 1, windowId: 'w', round: 0, requestId: 0, ids: [],
         })).toMatchObject({ ok: false });
         expect(validateHyperMessageEnvelope({
-            ...base('ops_req'), sessionId: 's', windowId: 'w', round: 0, ids: [],
+            ...base('ops_req'), sessionId: 's', windowId: 'w', round: 0,
+            requestId: 0, offerId: 0, ids: [],
         }).ok).toBe(true);
+        for (const value of [
+            {
+                ...base('ops_offer'), sessionId: 's', windowId: 'w', round: 0,
+                offerId: -1, ids: ['a'.repeat(64)],
+            },
+            {
+                ...base('ops_req'), sessionId: 's', windowId: 'w', round: 0,
+                requestId: '0', ids: ['a'.repeat(64)],
+            },
+            {
+                ...base('ops_push'), sessionId: 's', windowId: 'w', round: 0,
+                requestId: 0, page: -1, hasMore: false, data: [],
+            },
+            { ...base('ops_ack'), sessionId: 's', windowId: 'w', round: 0, requestId: 0, page: -1 },
+        ]) {
+            expect(validateHyperMessageEnvelope(value)).toMatchObject({ ok: false });
+        }
     });
 
     it('validates operation, ID, cursor, window, and frame payload bounds', () => {
         const { value } = operation();
         expect(validateHyperMessagePayload({
-            ...base('ops_push'), sessionId: 's', windowId: 'w', round: 0, data: [value],
+            ...base('ops_push'), sessionId: 's', windowId: 'w', round: 0,
+            requestId: 0, page: 0, hasMore: false, data: [value],
         } as never, limits).ok).toBe(true);
         expect(validateHyperMessagePayload({
-            ...base('ops_req'), sessionId: 's', windowId: 'w', round: 0,
+            ...base('ops_req'), sessionId: 's', windowId: 'w', round: 0, requestId: 0,
             ids: ['a'.repeat(64), 'b'.repeat(64), 'c'.repeat(64)],
+        } as never, limits)).toMatchObject({ ok: false });
+        expect(validateHyperMessagePayload({
+            ...base('ops_offer'), sessionId: 's', windowId: 'w', round: 0,
+            offerId: 0, ids: [],
+        } as never, limits)).toMatchObject({ ok: false });
+        expect(validateHyperMessagePayload({
+            ...base('ops_req'), sessionId: 's', windowId: 'w', round: 0,
+            requestId: 0, ids: [],
+        } as never, limits)).toMatchObject({ ok: false });
+        expect(validateHyperMessagePayload({
+            ...base('ops_push'), sessionId: 's', windowId: 'w', round: 0,
+            requestId: 0, page: 0, hasMore: true, data: [],
+        } as never, limits)).toMatchObject({ ok: false });
+        expect(validateHyperMessagePayload({
+            ...base('ops_push'), sessionId: 's', windowId: 'w', round: 0,
+            requestId: 0, page: 0, hasMore: true,
+        } as never, limits)).toMatchObject({ ok: false });
+        expect(validateHyperMessagePayload({
+            ...base('ops_push'), sessionId: 's', windowId: 'w', round: 0,
+            requestId: 0, page: 0, hasMore: 1, data: [],
+        } as never, limits)).toMatchObject({ ok: false });
+        expect(validateHyperMessagePayload({
+            ...base('ops_offer'), sessionId: 's', windowId: 'w', round: 0,
+            offerId: 0, ids: ['invalid'],
+        } as never, limits)).toMatchObject({ ok: false });
+        expect(validateHyperMessagePayload({
+            ...base('ops_req'), sessionId: 's', windowId: 'w', round: 0,
+            requestId: 0, offerId: -1, ids: [],
+        } as never, limits)).toMatchObject({ ok: false });
+        expect(validateHyperMessagePayload({
+            ...base('ops_req'), sessionId: 's', windowId: 'w', round: 0,
+            requestId: 0, offerId: 0, ids: [], deferred: 'true',
+        } as never, limits)).toMatchObject({ ok: false });
+        expect(validateHyperMessagePayload({
+            ...base('ops_ack'), sessionId: 's', windowId: 'w', round: 0,
+            requestId: 0, page: 0, deferred: 'true',
         } as never, limits)).toMatchObject({ ok: false });
         expect(validateHyperMessagePayload({
             ...base('ordered_catchup_req'), sessionId: 's', cursor: { syncOrder: '1', id: 'a'.repeat(64) },
@@ -111,6 +166,19 @@ describe('hyperswarm protocol validation', () => {
             frame: { encoding: 'utf8', data: '' },
         } as never, limits)).toMatchObject({ ok: false });
         const validWindow = { name: 'w', fromTs: 0, toTs: 1, order: 0, maxRecords: 1 };
+        expect(validateHyperMessagePayload({
+            ...base('neg_open'), sessionId: 's', windowId: 'w', round: 0,
+            window: validWindow, frame: { encoding: 'utf8', data: '' },
+            previousWindowProgress: { cappedByRecords: 'true' },
+        } as never, limits)).toMatchObject({ ok: false });
+        expect(validateHyperMessagePayload({
+            ...base('neg_open'), sessionId: 's', windowId: 'w', round: 0,
+            window: validWindow, frame: { encoding: 'utf8', data: '' },
+            previousWindowProgress: {
+                cappedByRecords: true,
+                lastCursor: { ts: 1, id: 'a'.repeat(64) },
+            },
+        } as never, limits).ok).toBe(true);
         for (const window of [
             null,
             { ...validWindow, name: '' },

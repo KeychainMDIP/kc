@@ -51,6 +51,9 @@ describe('Negentropy coordinator', () => {
                 };
             },
             async waitForIdle() {},
+            filterRetryDelayedIds(ids) {
+                return { eligibleIds: ids, pendingIds: [], capacityDeferredIds: [] };
+            },
             async refreshIndex() {
                 throw new Error('unexpected index refresh');
             },
@@ -61,7 +64,7 @@ describe('Negentropy coordinator', () => {
             throw callbackError;
         });
         const coordinator = createNegentropyCoordinator({
-            version: 1,
+            version: 2,
             transportFramingVersion: 1,
             frameSizeLimit: 0,
             maxRecordsPerWindow: 16,
@@ -71,6 +74,7 @@ describe('Negentropy coordinator', () => {
             maxOpsPerPush: 300,
             maxBytesPerPush: 512 * 1024,
             idleTimeoutMs: 120_000,
+            repairIntervalMs: 60_000,
             syncStore: store,
             importPipeline,
             syncStats: createMediatorSyncStats(),
@@ -161,11 +165,14 @@ describe('Negentropy coordinator', () => {
                 };
             },
             async waitForIdle() {},
+            filterRetryDelayedIds(ids) {
+                return { eligibleIds: ids, pendingIds: [], capacityDeferredIds: [] };
+            },
             async refreshIndex() { throw new Error('unexpected index refresh'); },
             async shutdown() {},
         };
         const coordinator = createNegentropyCoordinator({
-            version: 1,
+            version: 2,
             transportFramingVersion: 1,
             frameSizeLimit: 0,
             maxRecordsPerWindow: 2,
@@ -175,6 +182,7 @@ describe('Negentropy coordinator', () => {
             maxOpsPerPush: 300,
             maxBytesPerPush: 512 * 1024,
             idleTimeoutMs: 120_000,
+            repairIntervalMs: 60_000,
             syncStore: store,
             importPipeline,
             syncStats: createMediatorSyncStats(),

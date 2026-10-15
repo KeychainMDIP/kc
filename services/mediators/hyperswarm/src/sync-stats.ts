@@ -40,6 +40,7 @@ export interface MediatorSyncStats {
     protocolViolationCooldowns: number;
     protocolViolationConnectionsRejected: number;
     transportFramingIncompatibilityClosures: number;
+    negentropyVersionIncompatibilityClosures: number;
     compatibilityConnectionsRejected: number;
     syncDurationMs: AggregateMetric;
 }
@@ -81,6 +82,7 @@ export function createMediatorSyncStats(): MediatorSyncStats {
         protocolViolationCooldowns: 0,
         protocolViolationConnectionsRejected: 0,
         transportFramingIncompatibilityClosures: 0,
+        negentropyVersionIncompatibilityClosures: 0,
         compatibilityConnectionsRejected: 0,
         syncDurationMs: createAggregateMetric(),
     };
@@ -142,6 +144,7 @@ export function buildSyncStatsSnapshot(syncStats: MediatorSyncStats): object {
             protocolViolationCooldowns: syncStats.protocolViolationCooldowns,
             protocolViolationConnectionsRejected: syncStats.protocolViolationConnectionsRejected,
             transportFramingIncompatibilityClosures: syncStats.transportFramingIncompatibilityClosures,
+            negentropyVersionIncompatibilityClosures: syncStats.negentropyVersionIncompatibilityClosures,
             compatibilityConnectionsRejected: syncStats.compatibilityConnectionsRejected,
         },
         syncDurationMs: {
