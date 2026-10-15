@@ -8,12 +8,14 @@ import type { ConnectionInfo } from '../../services/mediators/hyperswarm/src/med
 import type { QueueMessage } from '../../services/mediators/hyperswarm/src/protocol-messages.ts';
 import { createQueueCoordinator } from '../../services/mediators/hyperswarm/src/queue-coordinator.ts';
 import { createMediatorSyncStats } from '../../services/mediators/hyperswarm/src/sync-stats.ts';
+import { createOperationPageBudget } from '../../services/mediators/hyperswarm/src/operation-page-budget.ts';
+import { createBulkWorkScheduler } from '../../services/mediators/hyperswarm/src/bulk-work-scheduler.ts';
 
-function makeOperation(): { cipher: CipherNode; operation: Operation } {
+function makeOperation(created = '2026-08-01T12:00:00.000Z'): { cipher: CipherNode; operation: Operation } {
     const cipher = new CipherNode();
     const unsigned = {
         type: 'create' as const,
-        created: '2026-08-01T12:00:00.000Z',
+        created,
         mdip: { version: 1, type: 'agent' as const, registry: 'hyperswarm' },
     };
     return {
@@ -57,6 +59,8 @@ describe('queue coordinator', () => {
             } as unknown as Pick<GatekeeperClient, 'getQueue' | 'clearQueue'>,
             cipher,
             syncStats: createMediatorSyncStats(),
+            bulkReads: createBulkWorkScheduler(2),
+            operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getImportPipeline: () => ({ enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
             createQueueMessage: () => ({
@@ -107,6 +111,8 @@ describe('queue coordinator', () => {
             } as unknown as Pick<GatekeeperClient, 'getQueue' | 'clearQueue'>,
             cipher,
             syncStats: createMediatorSyncStats(),
+            bulkReads: createBulkWorkScheduler(2),
+            operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getImportPipeline: () => ({ enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
             createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
@@ -122,6 +128,108 @@ describe('queue coordinator', () => {
         expect(relay).toHaveBeenCalledTimes(1);
     });
 
+    it('drops gossip on local page pressure without penalizing the peer and permits retry', async () => {
+        const { cipher, operation } = makeOperation();
+        const operationPages = createOperationPageBudget(1, 512 * 1024);
+        const held = operationPages.reserve(1)!;
+        const enqueue = jest.fn(async () => ({
+            knownIds: [],
+            persistedIds: [operation.signature!.hash],
+            pendingIds: [],
+            capacityDeferredIds: [],
+            retryable: false,
+        }));
+        const relay = jest.fn(async () => undefined);
+        const onProtocolViolation = jest.fn();
+        const coordinator = createQueueCoordinator({
+            registry: 'hyperswarm',
+            maxOpsPerPage: 300,
+            maxBytesPerPage: 512 * 1024,
+            gatekeeper: {
+                getQueue: jest.fn(async () => []),
+                clearQueue: jest.fn(async () => true),
+            } as unknown as Pick<GatekeeperClient, 'getQueue' | 'clearQueue'>,
+            cipher,
+            syncStats: createMediatorSyncStats(),
+            bulkReads: createBulkWorkScheduler(2),
+            operationPages,
+            getImportPipeline: () => ({ enqueue } as unknown as ImportPipeline),
+            getNodeKey: () => 'local-key',
+            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            relay,
+            onProtocolViolation,
+        });
+        const message = {
+            type: 'queue' as const,
+            time: '',
+            node: 'peer',
+            relays: [],
+            data: [operation],
+        };
+
+        await coordinator.handleMessage('peer-key', message, connection);
+        expect(enqueue).not.toHaveBeenCalled();
+        expect(onProtocolViolation).not.toHaveBeenCalled();
+
+        held.release();
+        await coordinator.handleMessage('peer-key', message, connection);
+        expect(enqueue).toHaveBeenCalledTimes(1);
+        expect(relay).toHaveBeenCalledTimes(1);
+        expect(operationPages.pages).toBe(0);
+    });
+
+    it('admits at most one active and one waiting gossip batch', async () => {
+        const first = makeOperation('2026-08-01T12:00:00.000Z');
+        const second = makeOperation('2026-08-01T12:00:01.000Z');
+        const third = makeOperation('2026-08-01T12:00:02.000Z');
+        const completions: Array<() => void> = [];
+        const enqueue = jest.fn((request: { data: Operation[] }) => new Promise(resolve => {
+            completions.push(() => resolve({
+                knownIds: [],
+                persistedIds: request.data.map(operation => operation.signature!.hash),
+                pendingIds: [],
+                capacityDeferredIds: [],
+                retryable: false,
+            }));
+        }));
+        const relay = jest.fn(async () => undefined);
+        const coordinator = createQueueCoordinator({
+            registry: 'hyperswarm',
+            maxOpsPerPage: 300,
+            maxBytesPerPage: 512 * 1024,
+            gatekeeper: {
+                getQueue: jest.fn(async () => []),
+                clearQueue: jest.fn(async () => true),
+            } as unknown as Pick<GatekeeperClient, 'getQueue' | 'clearQueue'>,
+            cipher: first.cipher,
+            syncStats: createMediatorSyncStats(),
+            bulkReads: createBulkWorkScheduler(2),
+            operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
+            getImportPipeline: () => ({ enqueue } as unknown as ImportPipeline),
+            getNodeKey: () => 'local-key',
+            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            relay,
+            onProtocolViolation: jest.fn(),
+        });
+        const message = (operation: Operation): QueueMessage => ({
+            type: 'queue', time: '', node: 'peer', relays: [], data: [operation],
+        });
+
+        const firstWork = coordinator.handleMessage('first-peer', message(first.operation), connection);
+        const secondWork = coordinator.handleMessage('second-peer', message(second.operation), connection);
+        await coordinator.handleMessage('third-peer', message(third.operation), connection);
+        expect(enqueue).toHaveBeenCalledTimes(2);
+
+        completions[0]();
+        await firstWork;
+        const thirdWork = coordinator.handleMessage('third-peer', message(third.operation), connection);
+        expect(enqueue).toHaveBeenCalledTimes(3);
+        completions[1]();
+        completions[2]();
+        await Promise.all([secondWork, thirdWork]);
+        expect(relay).toHaveBeenCalledTimes(3);
+    });
+
     it('keeps forwarded relay hints within the protocol limit', async () => {
         const { cipher, operation } = makeOperation();
         const relay = jest.fn(async (_message: QueueMessage) => undefined);
@@ -135,6 +243,8 @@ describe('queue coordinator', () => {
             } as unknown as Pick<GatekeeperClient, 'getQueue' | 'clearQueue'>,
             cipher,
             syncStats: createMediatorSyncStats(),
+            bulkReads: createBulkWorkScheduler(2),
+            operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getImportPipeline: () => ({
                 enqueue: jest.fn(async () => ({
                     knownIds: [],
@@ -182,6 +292,8 @@ describe('queue coordinator', () => {
             } as unknown as Pick<GatekeeperClient, 'getQueue' | 'clearQueue'>,
             cipher,
             syncStats: createMediatorSyncStats(),
+            bulkReads: createBulkWorkScheduler(2),
+            operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getImportPipeline: () => ({ enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
             createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
@@ -233,6 +345,8 @@ describe('queue coordinator', () => {
             } as unknown as Pick<GatekeeperClient, 'getQueue' | 'clearQueue'>,
             cipher,
             syncStats: createMediatorSyncStats(),
+            bulkReads: createBulkWorkScheduler(2),
+            operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getImportPipeline: () => ({ enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
             createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
@@ -242,6 +356,37 @@ describe('queue coordinator', () => {
 
         await expect(coordinator.flush()).rejects.toThrow('failed to merge local Gatekeeper queue');
         expect(clearQueue).not.toHaveBeenCalled();
+    });
+
+    it('leaves the local queue untouched when page capacity is unavailable', async () => {
+        const { cipher } = makeOperation();
+        const operationPages = createOperationPageBudget(1, 512 * 1024);
+        const held = operationPages.reserve(1)!;
+        const getQueue = jest.fn(async () => []);
+        const coordinator = createQueueCoordinator({
+            registry: 'hyperswarm',
+            maxOpsPerPage: 300,
+            maxBytesPerPage: 512 * 1024,
+            gatekeeper: {
+                getQueue,
+                clearQueue: jest.fn(async () => true),
+            } as unknown as Pick<GatekeeperClient, 'getQueue' | 'clearQueue'>,
+            cipher,
+            syncStats: createMediatorSyncStats(),
+            bulkReads: createBulkWorkScheduler(2),
+            operationPages,
+            getImportPipeline: () => ({ enqueue: jest.fn() } as unknown as ImportPipeline),
+            getNodeKey: () => 'local-key',
+            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            relay: jest.fn(async () => undefined),
+            onProtocolViolation: jest.fn(),
+        });
+
+        await coordinator.flush();
+        expect(getQueue).not.toHaveBeenCalled();
+        held.release();
+        await coordinator.flush();
+        expect(getQueue).toHaveBeenCalledTimes(1);
     });
 
     it('relays a local queue in protocol-bounded pages', async () => {
@@ -271,6 +416,8 @@ describe('queue coordinator', () => {
             } as unknown as Pick<GatekeeperClient, 'getQueue' | 'clearQueue'>,
             cipher: first.cipher,
             syncStats: createMediatorSyncStats(),
+            bulkReads: createBulkWorkScheduler(2),
+            operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getImportPipeline: () => ({
                 enqueue: jest.fn(async () => ({
                     knownIds: [],

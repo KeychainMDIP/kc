@@ -12,13 +12,22 @@ export class BulkWorkCancelledError extends Error {
     }
 }
 
-export function createBulkWorkScheduler(concurrency = 2) {
+export interface BulkWorkScheduler {
+    run<T>(key: string, work: () => Promise<T>): Promise<T>;
+    cancel(key: string): void;
+    cancelPending(): void;
+    waitForIdle(): Promise<void>;
+    shutdown(): Promise<void>;
+}
+
+export function createBulkWorkScheduler(concurrency = 2): BulkWorkScheduler {
     if (!Number.isSafeInteger(concurrency) || concurrency < 1) {
         throw new Error('bulk work concurrency must be a positive safe integer');
     }
 
     const pending: BulkWork<unknown>[] = [];
-    const admittedKeys = new Set<string>();
+    const activeKeys = new Set<string>();
+    const pendingKeys = new Set<string>();
     const idleWaiters = new Set<() => void>();
     let active = 0;
     let accepting = true;
@@ -36,14 +45,20 @@ export function createBulkWorkScheduler(concurrency = 2) {
 
     function runNext(): void {
         while (accepting && active < concurrency && pending.length > 0) {
-            const work = pending.shift()!;
+            const index = pending.findIndex(work => !activeKeys.has(work.key));
+            if (index < 0) {
+                break;
+            }
+            const [work] = pending.splice(index, 1);
+            pendingKeys.delete(work.key);
+            activeKeys.add(work.key);
             active += 1;
             Promise.resolve()
                 .then(work.run)
                 .then(work.resolve, work.reject)
                 .then(() => {
                     active -= 1;
-                    admittedKeys.delete(work.key);
+                    activeKeys.delete(work.key);
                     runNext();
                     settleIdle();
                 });
@@ -58,7 +73,7 @@ export function createBulkWorkScheduler(concurrency = 2) {
                 continue;
             }
             pending.splice(index, 1);
-            admittedKeys.delete(work.key);
+            pendingKeys.delete(work.key);
             work.reject(new BulkWorkCancelledError());
         }
         settleIdle();
@@ -76,10 +91,10 @@ export function createBulkWorkScheduler(concurrency = 2) {
             if (!accepting) {
                 return Promise.reject(new BulkWorkCancelledError('bulk work scheduler is shutting down'));
             }
-            if (admittedKeys.has(key)) {
+            if (pendingKeys.has(key)) {
                 return Promise.reject(new Error(`bulk work already admitted for ${key}`));
             }
-            admittedKeys.add(key);
+            pendingKeys.add(key);
             return new Promise<T>((resolve, reject) => {
                 pending.push({
                     key,

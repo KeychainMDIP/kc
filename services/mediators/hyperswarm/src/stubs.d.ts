@@ -1,9 +1,12 @@
 declare module 'hyperswarm' {
     export interface HyperswarmConnection {
         remotePublicKey: Buffer;
-        write(data: string | Buffer): void;
+        write(data: string | Buffer): boolean;
+        flush?(): Promise<boolean>;
         once(event: string, callback: (...args: any[]) => void): void;
         on(event: string, callback: (...args: any[]) => void): void;
+        pause?(): void;
+        resume?(): void;
         end?(): void;
         destroy?(): void;
     }

@@ -6,7 +6,10 @@ import type { BootstrapResult } from './bootstrap.js';
 import type { ImportPipeline, ImportQueueResult } from './import-pipeline.js';
 import type { ConnectionInfo } from './mediator-state.js';
 import { addAggregateSample } from './negentropy/observability.js';
-import { chunkOperationsForPush } from './negentropy/transfer.js';
+import {
+    chunkOperationsForPush,
+    validateOperationPage,
+} from './negentropy/transfer.js';
 import { normalizeInboundOpsPushBatch } from './operation-order.js';
 import {
     getOrderedCursorFromRow,
@@ -27,8 +30,12 @@ import {
 } from './protocol-validation.js';
 import {
     BulkWorkCancelledError,
-    createBulkWorkScheduler,
+    type BulkWorkScheduler,
 } from './bulk-work-scheduler.js';
+import type {
+    OperationPageBudget,
+    OperationPageReservation,
+} from './operation-page-budget.js';
 
 const log = childLogger({ service: 'hyperswarm-mediator' });
 const PREFETCH_BATCHES = 2;
@@ -93,10 +100,13 @@ export interface OrderedCatchupCoordinatorOptions {
     importPipeline: ImportPipeline;
     syncStats: MediatorSyncStats;
     cipher: { hashJSON(value: unknown): string };
+    bulkReads: BulkWorkScheduler;
+    operationPages: OperationPageBudget;
     getConnection(peerKey: string): ConnectionInfo | undefined;
     createSessionId(peerKey: string): string;
     createBaseMessage: CreateBaseMessage;
     sendToPeer(peerKey: string, message: HyperMessage): boolean;
+    sendBulkToPeer(peerKey: string, message: HyperMessage): Promise<boolean>;
     onIndexRefreshed(source: string, result: BootstrapResult): Promise<void>;
     onComplete(outcome: OrderedCatchupOutcome): boolean | Promise<boolean>;
     onHandoffDeferred(): void | Promise<void>;
@@ -116,10 +126,8 @@ export function createOrderedCatchupCoordinator(
     const expectations = new Map<string, ServerExpectation>();
     const transitions = new Map<string, ClientTransition>();
     const activeWork = new Set<Promise<unknown>>();
-    const bulkReads = createBulkWorkScheduler(2);
     let accepting = true;
     let generation = 0;
-    let nextServerWorkId = 0;
     let shutdownPromise: Promise<void> | null = null;
 
     function validateCurrentPayload(
@@ -174,13 +182,18 @@ export function createOrderedCatchupCoordinator(
         log.debug({ peer: shortName(peerKey), ...expectation, clearReason: reason }, 'ordered catch-up server request expectation cleared');
     }
 
-    function clearServer(peerKey: string, sessionId: string, reason: string): void {
+    function clearServer(
+        peerKey: string,
+        sessionId: string,
+        reason: string,
+        expectedServer?: ServerSession,
+    ): void {
         const server = servers.get(peerKey);
-        if (!server || server.sessionId !== sessionId) {
+        if (!server || server.sessionId !== sessionId
+            || (expectedServer && server !== expectedServer)) {
             return;
         }
         servers.delete(peerKey);
-        bulkReads.cancel(server.workKey);
         log.debug({ peer: shortName(peerKey), sessionId, reason }, 'ordered catch-up server state cleared');
     }
 
@@ -366,7 +379,11 @@ export function createOrderedCatchupCoordinator(
         maybeFinishClient(session);
     }
 
-    function queueImport(session: ClientSession, batch: Operation[]): void {
+    function queueImport(
+        session: ClientSession,
+        batch: Operation[],
+        reservation: OperationPageReservation,
+    ): void {
         session.pendingImports += 1;
         options.importPipeline.enqueue(
             {
@@ -382,8 +399,12 @@ export function createOrderedCatchupCoordinator(
                 catch (error) {
                     log.error({ error, peer: shortName(session.peerKey), sessionId: session.sessionId }, 'ordered catch-up import completion failed');
                 }
+                finally {
+                    reservation.release();
+                }
             },
         ).catch(error => {
+            reservation.release();
             log.error({ error, peer: shortName(session.peerKey), sessionId: session.sessionId }, 'ordered catch-up import failed');
             settleImport(session, {
                 knownIds: [],
@@ -436,7 +457,7 @@ export function createOrderedCatchupCoordinator(
             }
             servers.set(peerKey, {
                 sessionId: message.sessionId,
-                workKey: `${peerKey}:${nextServerWorkId++}`,
+                workKey: peerKey,
                 lastActivity: Date.now(),
                 expectedCursor: null,
                 requestInProgress: true,
@@ -452,7 +473,12 @@ export function createOrderedCatchupCoordinator(
                 status = await readLocalStatus();
             }
             catch (error) {
-                clearServer(peerKey, message.sessionId, 'ordered_catchup_status_read_failed');
+                clearServer(
+                    peerKey,
+                    message.sessionId,
+                    'ordered_catchup_status_read_failed',
+                    admittedServer,
+                );
                 throw error;
             }
             if (!accepting
@@ -468,16 +494,104 @@ export function createOrderedCatchupCoordinator(
             }
         }
 
-        let rows;
         try {
-            rows = await bulkReads.run(admittedServer.workKey, () => options.syncStore.iterateOrdered({
-                after: cursor,
-                limit: options.maxOpsPerPage + 1,
-            }));
+            await options.bulkReads.run(admittedServer.workKey, async () => {
+                if (!accepting
+                    || generation !== requestGeneration
+                    || options.getConnection(peerKey) !== connection
+                    || servers.get(peerKey) !== admittedServer
+                    || !admittedServer.requestInProgress) {
+                    return;
+                }
+                const outboundReservation = options.operationPages.reserve(options.maxBytesPerPage);
+                if (!outboundReservation) {
+                    clearServer(
+                        peerKey,
+                        message.sessionId,
+                        'ordered_catchup_output_capacity',
+                        admittedServer,
+                    );
+                    return;
+                }
+
+                try {
+                    const rows = await options.syncStore.iterateOrdered({
+                        after: cursor,
+                        limit: options.maxOpsPerPage + 1,
+                    });
+                    const server = servers.get(peerKey);
+                    if (!accepting
+                        || generation !== requestGeneration
+                        || options.getConnection(peerKey) !== connection
+                        || server !== admittedServer
+                        || !server.requestInProgress) {
+                        return;
+                    }
+                    const candidates = rows.slice(0, options.maxOpsPerPage);
+                    const [batch = []] = chunkOperationsForPush(candidates.map(row => row.operation), {
+                        maxOpsPerPush: options.maxOpsPerPage,
+                        maxBytesPerPush: options.maxBytesPerPage,
+                    });
+                    const pageRows = candidates.slice(0, batch.length);
+                    const lastRow = pageRows[pageRows.length - 1];
+                    const nextCursor = lastRow ? getOrderedCursorFromRow(lastRow) : null;
+                    if (pageRows.length === 0 || !nextCursor) {
+                        sendDone(peerKey, message.sessionId);
+                        return;
+                    }
+
+                    const push: OrderedCatchupPushMessage = {
+                        ...options.createBaseMessage('ordered_catchup_push'),
+                        sessionId: message.sessionId,
+                        cursor: nextCursor,
+                        hasMore: rows.length > pageRows.length,
+                        data: batch,
+                    };
+                    if (!await options.sendBulkToPeer(peerKey, push)) {
+                        clearServer(
+                            peerKey,
+                            message.sessionId,
+                            'send_ordered_catchup_push_failed',
+                            admittedServer,
+                        );
+                        return;
+                    }
+                    if (!accepting
+                        || generation !== requestGeneration
+                        || options.getConnection(peerKey) !== connection
+                        || servers.get(peerKey) !== admittedServer
+                        || !admittedServer.requestInProgress) {
+                        return;
+                    }
+                    options.syncStats.orderedCatchupPagesSent += 1;
+                    options.syncStats.orderedCatchupOpsSent += batch.length;
+                    if (push.hasMore) {
+                        server.expectedCursor = nextCursor;
+                        server.requestInProgress = false;
+                        server.lastActivity = Date.now();
+                    }
+                    else {
+                        clearServer(
+                            peerKey,
+                            message.sessionId,
+                            'ordered_catchup_final_page_sent',
+                            admittedServer,
+                        );
+                    }
+                }
+                finally {
+                    outboundReservation.release();
+                }
+            });
         }
         catch (error) {
             const serverStillCurrent = servers.get(peerKey) === admittedServer;
-            clearServer(peerKey, message.sessionId, 'ordered_catchup_page_read_failed');
+            clearServer(
+                peerKey,
+                message.sessionId,
+                'ordered_catchup_page_read_failed',
+                admittedServer,
+            );
             if (error instanceof BulkWorkCancelledError
                 && (!accepting
                     || generation !== requestGeneration
@@ -486,48 +600,6 @@ export function createOrderedCatchupCoordinator(
                 return;
             }
             throw error;
-        }
-        const server = servers.get(peerKey);
-        if (!accepting
-            || generation !== requestGeneration
-            || options.getConnection(peerKey) !== connection
-            || server !== admittedServer
-            || !server.requestInProgress) {
-            return;
-        }
-        const candidates = rows.slice(0, options.maxOpsPerPage);
-        const [batch = []] = chunkOperationsForPush(candidates.map(row => row.operation), {
-            maxOpsPerPush: options.maxOpsPerPage,
-            maxBytesPerPush: options.maxBytesPerPage,
-        });
-        const pageRows = candidates.slice(0, batch.length);
-        const lastRow = pageRows[pageRows.length - 1];
-        const nextCursor = lastRow ? getOrderedCursorFromRow(lastRow) : null;
-        if (pageRows.length === 0 || !nextCursor) {
-            sendDone(peerKey, message.sessionId);
-            return;
-        }
-
-        const push: OrderedCatchupPushMessage = {
-            ...options.createBaseMessage('ordered_catchup_push'),
-            sessionId: message.sessionId,
-            cursor: nextCursor,
-            hasMore: rows.length > pageRows.length,
-            data: batch,
-        };
-        if (!sendMessage(peerKey, push)) {
-            clearServer(peerKey, message.sessionId, 'send_ordered_catchup_push_failed');
-            return;
-        }
-        options.syncStats.orderedCatchupPagesSent += 1;
-        options.syncStats.orderedCatchupOpsSent += batch.length;
-        if (push.hasMore) {
-            server.expectedCursor = nextCursor;
-            server.requestInProgress = false;
-            server.lastActivity = Date.now();
-        }
-        else {
-            clearServer(peerKey, message.sessionId, 'ordered_catchup_final_page_sent');
         }
     }
 
@@ -563,6 +635,21 @@ export function createOrderedCatchupCoordinator(
             return;
         }
 
+        const page = validateOperationPage(message.data, {
+            maxOpsPerPush: options.maxOpsPerPage,
+            maxBytesPerPush: options.maxBytesPerPage,
+        });
+        if (!page.ok) {
+            rejectProtocolMessage(peerKey, session, connection, `invalid_ordered_catchup_push: ${page.reason}`);
+            return;
+        }
+        const reservation = options.operationPages.reserve(page.value.bytes);
+        if (!reservation) {
+            session.importsAborted = true;
+            failClient(peerKey, 'ordered_catchup_import_capacity');
+            return;
+        }
+
         session.requestOutstanding = false;
         const batch = normalizeInboundOpsPushBatch(message.data);
         options.syncStats.orderedCatchupPagesReceived += 1;
@@ -570,7 +657,10 @@ export function createOrderedCatchupCoordinator(
         touchClient(session);
         session.cursor = cursor;
         if (batch.length > 0) {
-            queueImport(session, batch);
+            queueImport(session, batch, reservation);
+        }
+        else {
+            reservation.release();
         }
         if (message.hasMore === true) {
             if (!refillPrefetch(session)) {
@@ -639,7 +729,9 @@ export function createOrderedCatchupCoordinator(
         for (const session of clients.values()) {
             session.importsAborted = true;
         }
-        bulkReads.cancelPending();
+        for (const server of servers.values()) {
+            options.bulkReads.cancel(server.workKey);
+        }
         clients.clear();
         servers.clear();
         expectations.clear();
@@ -766,11 +858,13 @@ export function createOrderedCatchupCoordinator(
             }
             for (const [peerKey, server] of servers) {
                 if (now - server.lastActivity > options.idleTimeoutMs) {
+                    options.bulkReads.cancel(peerKey);
                     clearServer(peerKey, server.sessionId, 'server_idle_timeout');
                 }
             }
         },
         removePeer(peerKey: string, reason: string): void {
+            options.bulkReads.cancel(peerKey);
             clearExpectation(peerKey, reason);
             const server = servers.get(peerKey);
             if (server) {
@@ -792,8 +886,7 @@ export function createOrderedCatchupCoordinator(
             if (!shutdownPromise) {
                 accepting = false;
                 reset();
-                shutdownPromise = bulkReads.shutdown()
-                    .then(() => Promise.allSettled([...activeWork]))
+                shutdownPromise = Promise.allSettled([...activeWork])
                     .then(() => undefined);
             }
             return shutdownPromise;

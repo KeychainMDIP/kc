@@ -10,6 +10,8 @@ import {
     type OrderedCatchupCoordinatorOptions,
 } from '../../services/mediators/hyperswarm/src/ordered-catchup-coordinator.ts';
 import { createMediatorSyncStats } from '../../services/mediators/hyperswarm/src/sync-stats.ts';
+import { createBulkWorkScheduler } from '../../services/mediators/hyperswarm/src/bulk-work-scheduler.ts';
+import { createOperationPageBudget } from '../../services/mediators/hyperswarm/src/operation-page-budget.ts';
 
 const peerKey = 'a'.repeat(64);
 const bootstrapResult = {
@@ -63,6 +65,9 @@ function createCoordinator(overrides: Partial<Pick<
     | 'onFailure'
     | 'onIndexRefreshed'
     | 'onProtocolViolation'
+    | 'bulkReads'
+    | 'operationPages'
+    | 'sendBulkToPeer'
     | 'sendToPeer'
     | 'syncStore'
 >> = {}) {
@@ -76,6 +81,7 @@ function createCoordinator(overrides: Partial<Pick<
         waitForIdle: jest.fn(async () => undefined),
         refreshIndex: jest.fn(async () => bootstrapResult),
     } as unknown as ImportPipeline;
+    const sendToPeer = overrides.sendToPeer ?? (() => true);
     return createOrderedCatchupCoordinator({
         version: 1,
         maxOpsPerPage: 256,
@@ -85,10 +91,13 @@ function createCoordinator(overrides: Partial<Pick<
         importPipeline: overrides.importPipeline ?? importPipeline,
         syncStats: createMediatorSyncStats(),
         cipher: new CipherNode(),
+        bulkReads: overrides.bulkReads ?? createBulkWorkScheduler(2),
+        operationPages: overrides.operationPages ?? createOperationPageBudget(5, 5_000_000),
         getConnection: overrides.getConnection ?? (key => key === peerKey ? connection : undefined),
         createSessionId: () => 'session',
         createBaseMessage: type => ({ type, time: '', node: '', relays: [] }),
-        sendToPeer: overrides.sendToPeer ?? (() => true),
+        sendToPeer,
+        sendBulkToPeer: overrides.sendBulkToPeer ?? (async (key, message) => sendToPeer(key, message)),
         onIndexRefreshed: overrides.onIndexRefreshed ?? jest.fn(async () => undefined),
         onComplete: jest.fn(async () => false),
         onHandoffDeferred: jest.fn(async () => undefined),
@@ -216,6 +225,46 @@ describe('ordered catch-up coordinator shutdown', () => {
         expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({
             reason: 'ordered_catchup_import_retryable',
         }));
+        await coordinator.shutdown();
+    });
+
+    it('fails a requested page without penalizing the peer when import capacity is unavailable', async () => {
+        const operationPages = createOperationPageBudget(1, 1_000_000);
+        const held = operationPages.reserve(1)!;
+        const enqueue = jest.fn();
+        const onFailure = jest.fn(async () => undefined);
+        const onProtocolViolation = jest.fn();
+        const coordinator = createCoordinator({
+            importPipeline: {
+                enqueue,
+                waitForIdle: jest.fn(async () => undefined),
+                refreshIndex: jest.fn(async () => bootstrapResult),
+            } as unknown as ImportPipeline,
+            onFailure,
+            onProtocolViolation,
+            operationPages,
+        });
+        const operation = makeOperation();
+
+        expect(coordinator.createClientSession(peerKey, 'capacity')).toBe(true);
+        await coordinator.handleMessage(peerKey, {
+            type: 'ordered_catchup_push',
+            time: '',
+            node: '',
+            relays: [],
+            sessionId: 'capacity',
+            cursor: { syncOrder: 1, id: operation.signature.hash },
+            hasMore: false,
+            data: [operation],
+        });
+        await nextTurn();
+
+        expect(enqueue).not.toHaveBeenCalled();
+        expect(onProtocolViolation).not.toHaveBeenCalled();
+        expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({
+            reason: 'ordered_catchup_import_capacity',
+        }));
+        held.release();
         await coordinator.shutdown();
     });
 
@@ -412,6 +461,15 @@ describe('ordered catch-up request authorization', () => {
 });
 
 describe('ordered catch-up server cursors and scheduling', () => {
+    function makeCompatibleConnection(): ConnectionInfo {
+        return {
+            capabilities: normalizePeerCapabilities({
+                orderedCatchup: true,
+                orderedCatchupVersion: 1,
+            }),
+        } as ConnectionInfo;
+    }
+
     function createServerStore() {
         const operations = Array.from({ length: 257 }, (_, index) => makeOperation(index));
         const rows = operations.map((operation, index) => ({
@@ -431,6 +489,21 @@ describe('ordered catch-up server cursors and scheduling', () => {
             } as unknown as InMemoryOperationSyncStore,
         };
     }
+
+    it('does not materialize an outbound page when page capacity is unavailable', async () => {
+        const operationPages = createOperationPageBudget(1, 1_000_000);
+        const held = operationPages.reserve(1)!;
+        const { store } = createServerStore();
+        const coordinator = createCoordinator({ operationPages, syncStore: store });
+
+        await coordinator.handleMessage(peerKey, {
+            type: 'ordered_catchup_req', time: '', node: '', relays: [], sessionId: 'capacity',
+        });
+
+        expect(store.iterateOrdered).not.toHaveBeenCalled();
+        held.release();
+        await coordinator.shutdown();
+    });
 
     it('requires the exact cursor from the preceding server page', async () => {
         const { operations, store } = createServerStore();
@@ -574,13 +647,7 @@ describe('ordered catch-up server cursors and scheduling', () => {
     });
 
     it('allows a replacement connection while a stale page read is still active', async () => {
-        const makeConnection = () => ({
-            capabilities: normalizePeerCapabilities({
-                orderedCatchup: true,
-                orderedCatchupVersion: 1,
-            }),
-        } as ConnectionInfo);
-        let connection = makeConnection();
+        let connection = makeCompatibleConnection();
         let releaseFirstRead!: () => void;
         let markFirstReadStarted!: () => void;
         const firstReadStarted = new Promise<void>(resolve => {
@@ -616,20 +683,132 @@ describe('ordered catch-up server cursors and scheduling', () => {
         });
         await firstReadStarted;
         coordinator.removePeer(peerKey, 'disconnect');
-        connection = makeConnection();
+        connection = makeCompatibleConnection();
 
-        await coordinator.handleMessage(peerKey, {
+        const replacementRequest = coordinator.handleMessage(peerKey, {
             type: 'ordered_catchup_req', time: '', node: '', relays: [], sessionId: 'replacement',
         });
+        await nextTurn();
+        expect(reads).toBe(1);
+
+        releaseFirstRead();
+        await staleRequest;
+        await replacementRequest;
         expect(reads).toBe(2);
         expect(sent).toContainEqual(expect.objectContaining({
             type: 'ordered_catchup_done',
             sessionId: 'replacement',
         }));
 
-        releaseFirstRead();
-        await staleRequest;
         expect(sent).not.toContainEqual(expect.objectContaining({ sessionId: 'stale' }));
         await coordinator.shutdown();
+    });
+
+    it('does not let a failed stale send clear a replacement session with the same ID', async () => {
+        const { store } = createServerStore();
+        let connection = makeCompatibleConnection();
+        let releaseFirstSend!: (sent: boolean) => void;
+        let markFirstSendStarted!: () => void;
+        const firstSendStarted = new Promise<void>(resolve => {
+            markFirstSendStarted = resolve;
+        });
+        let sends = 0;
+        const coordinator = createCoordinator({
+            syncStore: store,
+            getConnection: key => key === peerKey ? connection : undefined,
+            sendBulkToPeer: async () => {
+                sends += 1;
+                if (sends === 1) {
+                    markFirstSendStarted();
+                    return new Promise<boolean>(resolve => {
+                        releaseFirstSend = resolve;
+                    });
+                }
+                return true;
+            },
+        });
+
+        const staleRequest = coordinator.handleMessage(peerKey, {
+            type: 'ordered_catchup_req', time: '', node: '', relays: [], sessionId: 'shared-session',
+        });
+        await firstSendStarted;
+        coordinator.removePeer(peerKey, 'disconnect');
+        connection = makeCompatibleConnection();
+        const replacementRequest = coordinator.handleMessage(peerKey, {
+            type: 'ordered_catchup_req', time: '', node: '', relays: [], sessionId: 'shared-session',
+        });
+
+        releaseFirstSend(false);
+        await Promise.all([staleRequest, replacementRequest]);
+
+        expect(sends).toBe(2);
+        expect(coordinator.getPeerState(peerKey).serverSessionId).toBe('shared-session');
+        await coordinator.shutdown();
+    });
+
+    it('does not cancel another pending bulk job when a server session completes', async () => {
+        const { operations, store } = createServerStore();
+        jest.spyOn(store, 'iterateOrdered').mockResolvedValue([{
+            id: operations[0].signature!.hash,
+            ts: 1,
+            signedTs: 1,
+            syncOrder: 1,
+            operation: operations[0],
+            insertedAt: 1,
+        }]);
+        const bulkReads = createBulkWorkScheduler(1);
+        let releaseSend!: () => void;
+        let markSendStarted!: () => void;
+        const sendStarted = new Promise<void>(resolve => {
+            markSendStarted = resolve;
+        });
+        const coordinator = createCoordinator({
+            bulkReads,
+            syncStore: store,
+            sendBulkToPeer: async () => {
+                markSendStarted();
+                await new Promise<void>(resolve => { releaseSend = resolve; });
+                return true;
+            },
+        });
+
+        const request = coordinator.handleMessage(peerKey, {
+            type: 'ordered_catchup_req', time: '', node: '', relays: [], sessionId: 'complete',
+        });
+        await sendStarted;
+        const pending = bulkReads.run(peerKey, async () => 'next');
+
+        releaseSend();
+        await request;
+        await expect(pending).resolves.toBe('next');
+        await coordinator.shutdown();
+        await bulkReads.shutdown();
+    });
+
+    it('cancels an expired pending page read so the peer can retry', async () => {
+        const { store } = createServerStore();
+        const bulkReads = createBulkWorkScheduler(1);
+        let releaseBlocker!: () => void;
+        const blocker = bulkReads.run('other-peer', () => new Promise<void>(resolve => {
+            releaseBlocker = resolve;
+        }));
+        const coordinator = createCoordinator({ bulkReads, syncStore: store });
+
+        const expired = coordinator.handleMessage(peerKey, {
+            type: 'ordered_catchup_req', time: '', node: '', relays: [], sessionId: 'expired',
+        });
+        await nextTurn();
+        expect(coordinator.getPeerState(peerKey).serverSessionId).toBe('expired');
+
+        coordinator.expire(Date.now() + 120_001);
+        await expect(expired).resolves.toBeUndefined();
+        releaseBlocker();
+        await blocker;
+
+        await expect(coordinator.handleMessage(peerKey, {
+            type: 'ordered_catchup_req', time: '', node: '', relays: [], sessionId: 'retry',
+        })).resolves.toBeUndefined();
+        await coordinator.shutdown();
+        await bulkReads.shutdown();
     });
 });
