@@ -31,6 +31,7 @@ const DEFAULT_PING_INTERVAL_MS = 10 * 1_000;
 
 export interface HyperswarmTransportOptions {
     framingVersion: number;
+    requiredNegentropyVersion: number;
     payloadLimits: ProtocolPayloadLimits;
     syncStats: MediatorSyncStats;
     buildInitialPing(): Promise<PingMessage>;
@@ -185,10 +186,15 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
         peerKey: string,
         reason: string,
         expectedConnection: ConnectionInfo,
+        kind: 'transport_framing' | 'negentropy_version',
         details: Record<string, unknown> = {},
     ): void {
         const restriction = admission.noteCompatibilityMismatch(peerKey, reason);
-        options.syncStats.transportFramingIncompatibilityClosures += 1;
+        if (kind === 'transport_framing') {
+            options.syncStats.transportFramingIncompatibilityClosures += 1;
+        } else {
+            options.syncStats.negentropyVersionIncompatibilityClosures += 1;
+        }
         log.warn({
             peer: shortName(peerKey),
             reason,
@@ -267,9 +273,30 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
                     ? 'missing_transport_framing_version'
                     : 'unsupported_transport_framing_version',
                 connection,
+                'transport_framing',
                 {
                     peerTransportFramingVersion,
                     requiredTransportFramingVersion: options.framingVersion,
+                },
+            );
+            return;
+        }
+
+        const peerNegentropyVersion = Number.isInteger(message.capabilities?.negentropyVersion)
+            ? Number(message.capabilities?.negentropyVersion)
+            : null;
+        if (message.capabilities?.negentropy !== true
+            || peerNegentropyVersion !== options.requiredNegentropyVersion) {
+            closeIncompatiblePeer(
+                peerKey,
+                peerNegentropyVersion === null
+                    ? 'missing_negentropy_version'
+                    : 'unsupported_negentropy_version',
+                connection,
+                'negentropy_version',
+                {
+                    peerNegentropyVersion,
+                    requiredNegentropyVersion: options.requiredNegentropyVersion,
                 },
             );
             return;

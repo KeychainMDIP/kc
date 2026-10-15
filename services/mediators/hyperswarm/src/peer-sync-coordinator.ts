@@ -66,6 +66,7 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
     let outboundStartInProgress = false;
     let accepting = true;
     let shutdownPromise: Promise<void> | null = null;
+    let lastStartOpportunityPeerKey: string | null = null;
 
     function trackWork<T>(task: Promise<T>): Promise<T> {
         activeWork.add(task);
@@ -200,6 +201,9 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
             && conn.orderedCatchupRetryAfter <= Date.now()) {
             conn.orderedCatchupRetryAfter = 0;
             conn.orderedCatchupAttempted = false;
+        }
+        if (conn.negentropyRetryAfter > Date.now()) {
+            return;
         }
 
         let mode: SyncMode | 'unknown' | null;
@@ -345,8 +349,26 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
         if (negentropy.getActiveSessionCount() !== 0) {
             return;
         }
-        for (const peerKey of options.getPeerKeys()) {
-            await maybeStartPeerSync(peerKey, 'periodic');
+        const peerKeys = [...options.getPeerKeys()].sort();
+        if (peerKeys.length === 0) {
+            return;
+        }
+        const previousPeerKey = lastStartOpportunityPeerKey;
+        const startIndex = previousPeerKey === null
+            ? 0
+            : Math.max(0, peerKeys.findIndex(key => key > previousPeerKey));
+        const orderedPeerKeys = [
+            ...peerKeys.slice(startIndex),
+            ...peerKeys.slice(0, startIndex),
+        ];
+        for (const peerKey of orderedPeerKeys) {
+            lastStartOpportunityPeerKey = peerKey;
+            try {
+                await maybeStartPeerSync(peerKey, 'periodic');
+            }
+            catch (error) {
+                log.error({ error, peer: shortName(peerKey) }, 'periodic negentropy repair error');
+            }
             if (!accepting || negentropy.getActiveSessionCount() > 0) {
                 return;
             }
@@ -354,16 +376,6 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
     }
 
     async function runPeriodicRepairs(): Promise<void> {
-        for (const peerKey of options.getPeerKeys()) {
-            try {
-                await maybeStartPeerSync(peerKey, 'periodic');
-            } catch (error) {
-                log.error({ error, peer: shortName(peerKey) }, 'periodic negentropy repair error');
-            }
-            if (!accepting) {
-                return;
-            }
-        }
         await schedulePreferredSyncs();
     }
 
@@ -438,7 +450,7 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
 
     async function handleNegentropySessionClosed(peerKey: string, reason: string): Promise<void> {
         options.getOrderedCatchupCoordinator().finishTransition(peerKey);
-        if (accepting && reason !== 'ordered_catchup_active') {
+        if (accepting && reason !== 'ordered_catchup_active' && reason !== 'sync_busy') {
             await schedulePreferredSyncs();
         }
     }
@@ -455,8 +467,10 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
         }
         if (message.type !== 'neg_open'
             && message.type !== 'neg_msg'
+            && message.type !== 'ops_offer'
             && message.type !== 'ops_req'
             && message.type !== 'ops_push'
+            && message.type !== 'ops_ack'
             && message.type !== 'neg_close') {
             return;
         }
@@ -512,6 +526,9 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
         conn.syncMode = 'unknown';
         conn.syncStarted = false;
         conn.lastNegentropyAttemptAt = 0;
+        conn.negentropyRetryAfter = 0;
+        conn.negentropyBusyGeneration = -1;
+        conn.negentropyBusyRetryAfter = 0;
         conn.negentropySynced = false;
         conn.orderedCatchupAttempted = false;
         conn.orderedCatchupRetryAfter = 0;
@@ -638,6 +655,7 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
         },
         reset(): void {
             outboundStartInProgress = false;
+            lastStartOpportunityPeerKey = null;
         },
         shutdown,
     };

@@ -24,6 +24,9 @@ export interface ConnectionInfo {
     syncMode: SyncMode | 'unknown';
     syncStarted: boolean;
     lastNegentropyAttemptAt: number;
+    negentropyRetryAfter: number;
+    negentropyBusyGeneration: number;
+    negentropyBusyRetryAfter: number;
     negentropySynced: boolean;
     orderedCatchupAttempted: boolean;
     orderedCatchupRetryAfter: number;
@@ -68,6 +71,9 @@ export function createConnectionInfo(options: ConnectionInfoOptions): Connection
         syncMode: 'unknown',
         syncStarted: false,
         lastNegentropyAttemptAt: 0,
+        negentropyRetryAfter: 0,
+        negentropyBusyGeneration: -1,
+        negentropyBusyRetryAfter: 0,
         negentropySynced: false,
         orderedCatchupAttempted: false,
         orderedCatchupRetryAfter: 0,

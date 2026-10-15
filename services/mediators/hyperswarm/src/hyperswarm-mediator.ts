@@ -68,12 +68,12 @@ let syncStore: OperationSyncStore = createConfiguredSyncStore();
 EventEmitter.defaultMaxListeners = 100;
 
 const REGISTRY = 'hyperswarm';
-const NEGENTROPY_VERSION = 1;
+const NEGENTROPY_VERSION = 2;
 const ORDERED_CATCHUP_VERSION = 1;
 const TRANSPORT_FRAMING_VERSION = 1;
 const NEG_SESSION_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
 const NEG_MAX_IDS_PER_OPS_REQ = 1_000;
-const NEG_MAX_IDS_PER_LOOKUP = 1_000;
+const NEG_MAX_IDS_PER_LOOKUP = 32;
 const NEG_MAX_OPS_PER_PUSH = 300;
 const NEG_MAX_BYTES_PER_PUSH = 512 * 1024;
 const NEG_REPAIR_INTERVAL_MS = config.negentropyIntervalSeconds * 1000;
@@ -151,6 +151,7 @@ function buildNegentropyCoordinator(
         maxOpsPerPush: NEG_MAX_OPS_PER_PUSH,
         maxBytesPerPush: NEG_MAX_BYTES_PER_PUSH,
         idleTimeoutMs: NEG_SESSION_IDLE_TIMEOUT_MS,
+        repairIntervalMs: NEG_REPAIR_INTERVAL_MS,
         syncStore: store,
         importPipeline: pipeline,
         syncStats,
@@ -203,6 +204,7 @@ const queueCoordinator = createQueueCoordinator({
 
 transport = createHyperswarmTransport({
     framingVersion: TRANSPORT_FRAMING_VERSION,
+    requiredNegentropyVersion: NEGENTROPY_VERSION,
     payloadLimits: {
         maxIdsPerRequest: NEG_MAX_IDS_PER_OPS_REQ,
         maxOpsPerPush: NEG_MAX_OPS_PER_PUSH,
@@ -686,6 +688,10 @@ export const __test = {
         await peerSyncCoordinator.maybeStartPeerSync(peerKey, source);
     },
 
+    async schedulePreferredSyncs(): Promise<void> {
+        await peerSyncCoordinator.schedulePreferredSyncs();
+    },
+
     clearExpiredOrderedCatchupServerExpectation(peerKey: string, now = Date.now()): boolean {
         return orderedCatchupCoordinator.expireServerExpectation(peerKey, now);
     },
@@ -709,7 +715,7 @@ export const __test = {
         const type = typeof msg.type === 'string' ? msg.type : 'unknown';
         await transport.receiveMessage(peerKey, {
             ...createBaseMessage(type as HyperMessage['type']),
-            round: 0,
+            round: negentropyCoordinator.getExpectedInboundRound(peerKey, type),
             ...msg,
         });
     },

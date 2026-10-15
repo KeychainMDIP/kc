@@ -4,6 +4,11 @@ The Hyperswarm mediator is responsible for distributing unconfirmed MDIP operati
 
 The mediator uses Negentropy for full-history windowed synchronization on connect, with periodic retry only until the peer reaches a completed sync. Ordered catch-up can transfer ordered pages before handing off to Negentropy.
 
+The current wire contract requires Negentropy v2 over framed transport v1. V2
+authorizes operation transfer through offers and requests, then sends one bounded
+page at a time and waits for an import acknowledgement. All network nodes must
+upgrade together because Negentropy v1 peers are intentionally incompatible.
+
 Realtime propagation is always handled by the Gatekeeper queue gossip path:
 
 - mediator polls `gatekeeper.getQueue('hyperswarm')`
