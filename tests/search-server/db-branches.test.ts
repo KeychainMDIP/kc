@@ -493,7 +493,7 @@ describe('search DB branch behavior', () => {
 
                     if (sql.includes('dc.prefix =')) {
                         const prefix = String(params[paramIndex++]);
-                        if (!row.did.startsWith(`${prefix}:`)) {
+                        if (!sql.includes('OR dc.prefix_ambiguous') && !row.did.startsWith(`${prefix}:`)) {
                             return false;
                         }
                     }
@@ -764,6 +764,7 @@ describe('search DB branch behavior', () => {
                             registry: row.registry,
                             time: row.time,
                             event: params.length === 2 ? row.event : JSON.stringify(row.event),
+                            prefixAmbiguous: text.includes('OR dc.prefix_ambiguous'),
                         })),
                 };
             }
@@ -862,6 +863,10 @@ describe('search DB branch behavior', () => {
                 event: didEventB,
             }],
         });
+        expect((await db.listEvents({
+            didPrefix: 'did:mdip',
+            includeAmbiguous: true,
+        })).events.every(event => event.did === 'did:mdip:event-storage')).toBe(true);
 
         expect(await db.applyIndexPage({
             dids: [{ did: eventDid, events: [didEventA, didEventB] }],

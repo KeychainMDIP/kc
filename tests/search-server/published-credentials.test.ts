@@ -1131,6 +1131,12 @@ describe.each(adapterFactories)('$name query and utility behavior', ({ create })
             expect(await db.searchDocs('credential-agent-collision', {
                 didPrefix: 'did:mdip', includeAmbiguous: true, limit: 50,
             })).toStrictEqual(completeSearchPage([mdipCredentialDid]));
+            expect(await db.searchDocs('credential-agent-collision', {
+                didPrefix: 'did:mdip',
+                includeAmbiguous: true,
+                limit: 50,
+                cursor: 'did:mdip:before-credential-agent',
+            })).toStrictEqual(completeSearchPage([mdipCredentialDid]));
             expect(await db.queryDocs({
                 'didDocumentData.searchable': { $in: ['schema-agent-collision'] },
             }, 'did:test')).toStrictEqual([schemaDid]);
@@ -1572,6 +1578,8 @@ describe('postgres adapter with mocked pool', () => {
         });
         expect(await db.searchDocs('search', { limit: 50 }))
             .toStrictEqual(completeSearchPage(['did:test:search-1']));
+        expect(await db.searchDocs('search', { limit: 50, cursor: 'did:test:cursor' }))
+            .toStrictEqual(completeSearchPage(['did:test:search-1']));
         expect(await db.searchDocs('search', {
             didPrefix: 'did:test',
             limit: 25,
@@ -1590,21 +1598,23 @@ describe('postgres adapter with mocked pool', () => {
         const searchCalls = poolQuery.mock.calls.filter(([sql]) =>
             String(sql).includes('WITH matches AS MATERIALIZED')
         );
-        expect(searchCalls).toHaveLength(5);
+        expect(searchCalls).toHaveLength(6);
         expect(searchCalls[0][0]).toContain("ESCAPE '!'");
         expect(searchCalls[0][0]).not.toContain('WHERE dc.prefix = $2');
         expect(searchCalls[0][0]).toContain('ORDER BY');
         expect(searchCalls[0][1]).toStrictEqual(['search', 51]);
-        expect(searchCalls[1][0]).toContain('dc.prefix = $2');
-        expect(searchCalls[1][0]).toContain('> $3');
-        expect(searchCalls[1][1]).toStrictEqual(['search', 'did:test', 'cursor', 26]);
-        expect(searchCalls[2][0]).toContain('OR dc.prefix_ambiguous');
-        expect(searchCalls[2][1]).toStrictEqual(['search', 'did:mdip', 26]);
-        expect(searchCalls[3][1]).toStrictEqual(['100!%!_complete!!', 51]);
-        expect(searchCalls[4][1]).toStrictEqual(['paged', 2]);
-        expect(clientQuery.mock.calls.filter(([sql]) => sql === 'BEGIN READ ONLY')).toHaveLength(5);
+        expect(searchCalls[1][0]).not.toContain('WHERE dc.prefix');
+        expect(searchCalls[1][1]).toStrictEqual(['search', 'did:test:cursor', 51]);
+        expect(searchCalls[2][0]).toContain('dc.prefix = $2');
+        expect(searchCalls[2][0]).toContain('> $3');
+        expect(searchCalls[2][1]).toStrictEqual(['search', 'did:test', 'cursor', 26]);
+        expect(searchCalls[3][0]).toContain('OR dc.prefix_ambiguous');
+        expect(searchCalls[3][1]).toStrictEqual(['search', 'did:mdip', 26]);
+        expect(searchCalls[4][1]).toStrictEqual(['100!%!_complete!!', 51]);
+        expect(searchCalls[5][1]).toStrictEqual(['paged', 2]);
+        expect(clientQuery.mock.calls.filter(([sql]) => sql === 'BEGIN READ ONLY')).toHaveLength(6);
         expect(clientQuery.mock.calls.filter(([sql]) => sql === "SET LOCAL statement_timeout = '5000ms'"))
-            .toHaveLength(5);
+            .toHaveLength(6);
 
         expect(await db.queryDocs({})).toStrictEqual([]);
         await expect(db.queryDocs({ '$.didDocument.id': {} } as any)).rejects.toThrow('Only {$in:[…]} supported');

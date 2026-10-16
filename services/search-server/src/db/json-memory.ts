@@ -625,8 +625,8 @@ export default class DIDsDbMemory implements DIDsDb {
     }
 
     private canonicalPublishedCredentials(
-        didPrefix?: string,
-        includeAmbiguous = false
+        didPrefix: string | undefined,
+        includeAmbiguous: boolean
     ): PublishedCredentialRecord[] {
         const credentials = new Map<string, PublishedCredentialRecord>();
         const prefixes = this.publishedReferencePrefixes();

@@ -719,6 +719,13 @@ describe('SQL identity enumeration', () => {
                 : 'ORDER BY dc.prefix COLLATE "C", dc.suffix COLLATE "C"');
             expect(sql).not.toContain('jsonb');
             expect(sql).toContain(`LIMIT $${params!.length - 1} OFFSET $${params!.length}`);
+            if (sql.includes('OR NOT dc.prefix_authoritative')) {
+                return { rows: [{
+                    did: 'did:test:legacy-agent',
+                    prefixAmbiguous: true,
+                    doc: JSON.stringify(document()),
+                }] };
+            }
             return { rows: [
                 { did: alice, doc: document({ 'did:mdip:vc': credential() }) },
                 ...(filtered ? [] : [{ did: bob, doc: JSON.stringify(document()) }]),
@@ -744,7 +751,8 @@ describe('SQL identity enumeration', () => {
             expect(query).toHaveBeenLastCalledWith(expect.stringContaining('AND dc.prefix COLLATE "C" = $1'), [prefix, 50, 0]);
             expect(query).toHaveBeenLastCalledWith(expect.not.stringContaining(prefix), [prefix, 50, 0]);
             query.mockClear();
-            await db.listIdentities({ didPrefix: 'did:mdip', includeAmbiguous: true });
+            expect(await db.listIdentities({ didPrefix: 'did:mdip', includeAmbiguous: true }))
+                .toMatchObject({ identities: [{ did: 'did:mdip:legacy-agent' }] });
             for (const [sql] of query.mock.calls) {
                 expect(sql).toContain('(dc.prefix COLLATE "C" = $1 OR NOT dc.prefix_authoritative)');
             }

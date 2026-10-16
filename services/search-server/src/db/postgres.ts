@@ -1540,8 +1540,8 @@ export default class Postgres implements DIDsDb {
 
     private async effectiveDIDs(
         dids: string[],
-        didPrefix?: string,
-        includeAmbiguous = false
+        didPrefix: string | undefined,
+        includeAmbiguous: boolean
     ): Promise<string[]> {
         const result = await this.getPool().query<EffectiveDidRow>(
             `SELECT did AS "storedDid",
