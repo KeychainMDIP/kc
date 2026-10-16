@@ -233,12 +233,120 @@ describe('import pipeline', () => {
             phase: 'persist',
             name: 'local',
             data: [operation],
-        })).resolves.toMatchObject({ persistedIds: [], retryable: true });
+        })).resolves.toMatchObject({
+            persistedIds: [],
+            acceptedOperations: [],
+            portableTerminalOperations: [],
+            retryable: true,
+        });
 
         await expect(store.has(operation.signature!.hash)).resolves.toBe(true);
         expect(finishStoreMutation).toHaveBeenCalledTimes(1);
         expect(onStoreChanged).not.toHaveBeenCalled();
         await pipeline.shutdown();
+    });
+
+    it('returns accepted operations only after their sync records persist', async () => {
+        const accepted = makeValidOperation(1);
+        const store = new InMemoryOperationSyncStore();
+        const upsertMany = store.upsertMany.bind(store);
+        let releaseWrite!: () => void;
+        const writeBlocked = new Promise<void>(resolve => { releaseWrite = resolve; });
+        let markWriteStarted!: () => void;
+        const writeStarted = new Promise<void>(resolve => { markWriteStarted = resolve; });
+        jest.spyOn(store, 'upsertMany').mockImplementationOnce(async records => {
+            markWriteStarted();
+            await writeBlocked;
+            return upsertMany(records);
+        });
+        const pipeline = createPipeline(jest.fn(async () => true), store, {
+            importBatch: jest.fn(async () => ({
+                queued: 1, processed: 0, rejected: 0, total: 1,
+                rejectedIndices: [], capacityDeferredIndices: [], processedIndices: [],
+            })),
+            processEvents: jest.fn(async () => ({
+                added: 1, merged: 0, rejected: 0, pending: 0,
+                acceptedHashes: [accepted.signature!.hash],
+                acceptedEvents: [{ registry: 'hyperswarm', time: accepted.created!, operation: accepted }],
+                hasMore: false,
+            })),
+        });
+
+        let completed = false;
+        const importing = pipeline.enqueue({ kind: 'remote', name: 'peer-a', data: [accepted] })
+            .then(result => {
+                completed = true;
+                return result;
+            });
+        await writeStarted;
+        expect(completed).toBe(false);
+
+        releaseWrite();
+        await expect(importing).resolves.toMatchObject({
+            acceptedOperations: [accepted],
+            portableTerminalOperations: [],
+            retryable: false,
+        });
+        await pipeline.shutdown();
+    });
+
+    it('returns content-verified Gatekeeper rejections as portable terminal operations', async () => {
+        const rejected = makeValidOperation(1);
+        const store = new InMemoryOperationSyncStore();
+        const pipeline = createPipeline(jest.fn(async () => true), store, {
+            importBatch: jest.fn(async () => ({
+                queued: 0, processed: 0, rejected: 1, total: 1,
+                rejectedIndices: [0], capacityDeferredIndices: [], processedIndices: [],
+            })),
+        });
+
+        await expect(pipeline.enqueue({ kind: 'remote', name: 'peer-a', data: [rejected] }))
+            .resolves.toMatchObject({
+                persistedIds: [rejected.signature!.hash],
+                acceptedOperations: [],
+                portableTerminalOperations: [rejected],
+                unaddressableOperations: [],
+                retryable: false,
+            });
+        expect((await store.getByIds([rejected.signature!.hash]))[0].syncOrder)
+            .toBe(Number.MAX_SAFE_INTEGER);
+        await pipeline.shutdown();
+    });
+
+    it('lets another node independently accept a portable terminal operation', async () => {
+        const candidate = makeValidOperation(1);
+        const rejecting = createPipeline(jest.fn(async () => true), new InMemoryOperationSyncStore(), {
+            importBatch: jest.fn(async () => ({
+                queued: 0, processed: 0, rejected: 1, total: 1,
+                rejectedIndices: [0], capacityDeferredIndices: [], processedIndices: [],
+            })),
+        });
+        const rejected = await rejecting.enqueue({ kind: 'remote', name: 'peer-a', data: [candidate] });
+        const accepting = createPipeline(jest.fn(async () => true), new InMemoryOperationSyncStore(), {
+            importBatch: jest.fn(async () => ({
+                queued: 1, processed: 0, rejected: 0, total: 1,
+                rejectedIndices: [], capacityDeferredIndices: [], processedIndices: [],
+            })),
+            processEvents: jest.fn(async () => ({
+                added: 1, merged: 0, rejected: 0, pending: 0,
+                acceptedHashes: [candidate.signature!.hash],
+                acceptedEvents: [{ registry: 'hyperswarm', time: candidate.created!, operation: candidate }],
+                hasMore: false,
+            })),
+        });
+
+        expect(rejected.portableTerminalOperations).toEqual([candidate]);
+        await expect(accepting.enqueue({
+            kind: 'remote',
+            name: 'peer-b',
+            data: rejected.portableTerminalOperations,
+        })).resolves.toMatchObject({
+            acceptedOperations: [candidate],
+            portableTerminalOperations: [],
+        });
+
+        await rejecting.shutdown();
+        await accepting.shutdown();
     });
 
     it('does not remember a normally persisted operation as a terminal root', async () => {
@@ -298,12 +406,18 @@ describe('import pipeline', () => {
             kind: 'terminal',
             name: 'peer-a',
             data: [root],
-        })).resolves.toMatchObject({ persistedIds: [root.signature!.hash] });
+        })).resolves.toMatchObject({
+            persistedIds: [root.signature!.hash],
+            portableTerminalOperations: [root],
+        });
         await expect(first.enqueue({
             kind: 'terminal',
             name: 'peer-a',
             data: [child],
-        })).resolves.toMatchObject({ persistedIds: [child.signature!.hash] });
+        })).resolves.toMatchObject({
+            persistedIds: [child.signature!.hash],
+            portableTerminalOperations: [child],
+        });
         await first.shutdown();
         await expect(store.deleteBySyncOrder(Number.MAX_SAFE_INTEGER)).resolves.toBe(2);
 
@@ -471,7 +585,8 @@ describe('import pipeline', () => {
         await expect(pipeline.enqueue({ kind: 'remote', name: 'peer-a', data: operations }))
             .resolves.toMatchObject({
                 capacityDeferredIds: operations.slice(0, 100).map(item => item.signature!.hash),
-                retryable: true,
+                unaddressableOperations: [operations[100]],
+                retryable: false,
             });
         expect(importBatch).toHaveBeenCalledTimes(1);
         await pipeline.shutdown();
@@ -533,9 +648,48 @@ describe('import pipeline', () => {
         });
 
         await expect(pipeline.enqueue({ kind: 'remote', name: 'peer-a', data: [invalid] }))
-            .resolves.toMatchObject({ capacityDeferredIds: [], retryable: true });
+            .resolves.toMatchObject({
+                capacityDeferredIds: [],
+                unaddressableOperations: [invalid],
+                retryable: false,
+            });
         await pipeline.enqueue({ kind: 'remote', name: 'peer-a', data: [invalid] });
-        expect(importBatch).toHaveBeenCalledTimes(2);
+        expect(importBatch).not.toHaveBeenCalled();
+        await pipeline.shutdown();
+    });
+
+    it('does not let an unaddressable operation suppress genuine content with the claimed ID', async () => {
+        const genuine = makeValidOperation(1);
+        const forged = {
+            ...genuine,
+            mdip: { ...genuine.mdip, registry: 'local' },
+        } as Operation;
+        const importBatch = jest.fn<GatekeeperClient['importBatch']>(async () => ({
+            queued: 1, processed: 0, rejected: 0, total: 1,
+            rejectedIndices: [], capacityDeferredIndices: [], processedIndices: [],
+        }));
+        const pipeline = createPipeline(jest.fn(async () => true), new InMemoryOperationSyncStore(), {
+            importBatch,
+            processEvents: jest.fn(async () => ({
+                added: 1, merged: 0, rejected: 0, pending: 0,
+                acceptedHashes: [genuine.signature!.hash],
+                acceptedEvents: [{ registry: 'hyperswarm', time: genuine.created!, operation: genuine }],
+                hasMore: false,
+            })),
+        });
+
+        await expect(pipeline.enqueue({ kind: 'remote', name: 'peer-a', data: [forged] }))
+            .resolves.toMatchObject({
+                knownIds: [],
+                persistedIds: [],
+                unaddressableOperations: [forged],
+            });
+        await expect(pipeline.enqueue({ kind: 'remote', name: 'peer-a', data: [genuine] }))
+            .resolves.toMatchObject({
+                persistedIds: [genuine.signature!.hash],
+                acceptedOperations: [genuine],
+            });
+        expect(importBatch).toHaveBeenCalledTimes(1);
         await pipeline.shutdown();
     });
 
@@ -613,6 +767,7 @@ describe('import pipeline', () => {
                 pending.signature!.hash,
                 dependency.signature!.hash,
             ]),
+            acceptedOperations: expect.arrayContaining([pending, dependency]),
             pendingIds: [],
             capacityDeferredIds: [],
             retryable: false,

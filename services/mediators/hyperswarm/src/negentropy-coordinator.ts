@@ -2234,6 +2234,9 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                 persistedIds: [] as string[],
                 pendingIds: [] as string[],
                 capacityDeferredIds: [] as string[],
+                acceptedOperations: [] as Operation[],
+                portableTerminalOperations: [] as Operation[],
+                unaddressableOperations: [] as Operation[],
                 retryable: false,
             };
             if (batch.length > 0) {

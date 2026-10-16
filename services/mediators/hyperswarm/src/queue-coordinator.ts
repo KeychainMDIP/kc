@@ -10,13 +10,15 @@ import {
 } from './negentropy/observability.js';
 import type { QueueMessage } from './protocol-messages.js';
 import type { MediatorSyncStats } from './sync-stats.js';
-import { hasContentVerifiedOperationId } from './sync-persistence.js';
+import {
+    dedupeOperationsByHash,
+    hasContentVerifiedOperationId,
+} from './sync-persistence.js';
 import { mapOperationToSyncKey } from './sync-mapping.js';
 import {
     chunkOperationsForPush,
     validateOperationPage,
 } from './negentropy/transfer.js';
-import { MAX_RELAY_HINTS } from './protocol-limits.js';
 import { validateOperationContentIds } from './protocol-validation.js';
 import type { OperationPageBudget } from './operation-page-budget.js';
 import type { BulkWorkScheduler } from './bulk-work-scheduler.js';
@@ -108,10 +110,14 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
                 batchesSeen.delete(batchHash);
                 throw error;
             }
+            if (imported.retryable) {
+                batchesSeen.delete(batchHash);
+                return;
+            }
             const handledIds = new Set([...imported.knownIds, ...imported.persistedIds]);
-            const complete = !imported.retryable
-            && (imported.pendingIds?.length ?? 0) === 0
-            && (imported.capacityDeferredIds?.length ?? 0) === 0
+            const complete = imported.pendingIds.length === 0
+            && imported.capacityDeferredIds.length === 0
+            && imported.unaddressableOperations.length === 0
             && message.data.every(operation => {
                 const mapped = mapOperationToSyncKey(operation);
                 return mapped.ok
@@ -120,15 +126,21 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
             });
             if (!complete) {
                 batchesSeen.delete(batchHash);
-                return;
             }
-            const relays = (Array.isArray(message.relays) ? message.relays : [])
-                .filter(relay => relay !== peerKey)
-                .slice(-(MAX_RELAY_HINTS - 1));
-            await options.relay({
-                ...message,
-                relays: [...relays, peerKey],
-            });
+            const shareable = dedupeOperationsByHash([
+                ...imported.acceptedOperations,
+                ...imported.portableTerminalOperations,
+            ]);
+            for (const data of chunkOperationsForPush(shareable, {
+                maxOpsPerPush: options.maxOpsPerPage,
+                maxBytesPerPush: options.maxBytesPerPage,
+            })) {
+                await options.relay({
+                    ...options.createQueueMessage(),
+                    relays: [peerKey],
+                    data,
+                });
+            }
         }
         finally {
             admittedGossip -= 1;
@@ -165,8 +177,8 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
                 data: batch,
             });
             if (merged.retryable
-            || (merged.pendingIds?.length ?? 0) > 0
-            || (merged.capacityDeferredIds?.length ?? 0) > 0) {
+            || merged.pendingIds.length > 0
+            || merged.capacityDeferredIds.length > 0) {
                 throw new Error('failed to merge local Gatekeeper queue');
             }
 
