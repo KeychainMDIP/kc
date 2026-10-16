@@ -5018,7 +5018,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(replacement).not.toBeNull();
     });
 
-    it('imports queue gossip, suppresses relays, and filters known operations', async () => {
+    it('imports queue gossip, ignores forged relay hints, and filters known operations', async () => {
         const [knownOperation, newOperation] = await makeOperations(2);
         const protocolNode = await createNode({ keyByte: 0x44 });
         const source = attachPeer(protocolNode, { peerKeyByte: 0x11 });
@@ -5036,12 +5036,17 @@ describe('hyperswarm mediator protocol characterization', () => {
         await eventually(async () => await protocolNode.store.has(knownOperation.signature!.hash));
 
         expect(source.pair.transcript).toHaveLength(0);
-        expect(excluded.pair.transcript).toHaveLength(0);
+        expect(excluded.pair.transcript.map(entry => entry.messageType)).toEqual(['queue']);
         expect(recipient.pair.transcript.map(entry => entry.messageType)).toEqual(['queue']);
+        expect(decodeWrites(excluded.pair)[0]).toMatchObject({
+            relays: [source.peerKey],
+            data: [knownOperation],
+        });
 
         await protocolNode.node.run(
             () => protocolNode.node.mediator.__test.receiveMsg(source.peerKey, queueMessage),
         );
+        expect(excluded.pair.transcript).toHaveLength(1);
         expect(recipient.pair.transcript).toHaveLength(1);
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(source.peerKey, {
@@ -5054,6 +5059,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const lastImport = protocolNode.node.gatekeeperClient.importBatch.mock.calls.at(-1)?.[0] ?? [];
         expect(lastImport.map(event => event.operation.signature?.hash)).toEqual([newOperation.signature!.hash]);
         expect(await protocolNode.store.count()).toBe(2);
+        expect(decodeWrites(recipient.pair).at(-1)).toMatchObject({ data: [newOperation] });
     });
 
     it('serves ordered catch-up pages and validates request cursors', async () => {

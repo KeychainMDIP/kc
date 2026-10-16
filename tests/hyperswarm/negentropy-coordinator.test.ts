@@ -49,7 +49,9 @@ describe('Negentropy coordinator', () => {
             },
             async enqueue() {
                 return {
-                    knownIds: [], persistedIds: [], pendingIds: [], capacityDeferredIds: [], retryable: false,
+                    knownIds: [], persistedIds: [], pendingIds: [], capacityDeferredIds: [],
+                    acceptedOperations: [], portableTerminalOperations: [], unaddressableOperations: [],
+                    retryable: false,
                 };
             },
             async waitForIdle() {},
@@ -182,7 +184,9 @@ describe('Negentropy coordinator', () => {
             get running() { return 0; },
             async enqueue() {
                 return {
-                    knownIds: [], persistedIds: [], pendingIds: [], capacityDeferredIds: [], retryable: false,
+                    knownIds: [], persistedIds: [], pendingIds: [], capacityDeferredIds: [],
+                    acceptedOperations: [], portableTerminalOperations: [], unaddressableOperations: [],
+                    retryable: false,
                 };
             },
             async waitForIdle() {},

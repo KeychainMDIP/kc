@@ -55,6 +55,9 @@ const importResult = {
     persistedIds: [],
     pendingIds: [],
     capacityDeferredIds: [],
+    acceptedOperations: [],
+    portableTerminalOperations: [],
+    unaddressableOperations: [],
     retryable: false,
 };
 
