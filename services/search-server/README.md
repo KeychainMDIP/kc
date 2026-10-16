@@ -99,8 +99,11 @@ stored alias's prefix.
     - `versionSequence` (optional, positive integer)
     - `versionTime` (optional, timestamp accepted by Gatekeeper resolution)
 - **Notes**: Prefix aliases are matched by final CID suffix. A configured
-  network scope must match the DID's effective classification. An existing
-  storage alias cannot bypass that scope.
+  network scope must match the DID's effective classification. For direct
+  lookup only, a legacy DID without conclusive operation or manifest prefix
+  evidence can be resolved in the configured scope by its CID suffix. This
+  does not reclassify the stored DID or include it in scoped listings, search,
+  or metrics.
 - **Returns**:
     - `200 OK` + JSON DID Document if present.
     - `400 Bad Request` for an invalid `versionSequence`.
@@ -109,7 +112,8 @@ stored alias's prefix.
 ### `GET /api/v1/did/:did/events`
 - **Description**: Returns all indexed events for the DID in operation order.
 - **Notes**: DID prefix aliases are matched by final CID suffix and validated
-  against the configured network scope.
+  against the configured network scope. The direct legacy fallback described
+  above also applies, without changing the stored events or classification.
 - **Returns**:
     - `200 OK` + an array of Gatekeeper events.
     - `200 OK` + `[]` if the DID has no indexed events.

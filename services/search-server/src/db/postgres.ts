@@ -434,6 +434,22 @@ export default class Postgres implements DIDsDb {
         return result.rows[0]?.did ?? null;
     }
 
+    async findAmbiguousDIDBySuffix(suffix: string): Promise<string | null> {
+        const result = await this.getPool().query<DidRow>(
+            `SELECT dc.did FROM did_classifications dc
+             WHERE dc.suffix = $1
+               AND NOT dc.prefix_authoritative
+               AND (dc.is_agent OR (
+                   SELECT COUNT(DISTINCT dpr.prefix)
+                   FROM did_prefix_references dpr
+                   WHERE dpr.suffix = dc.suffix
+               ) <> 1)
+             LIMIT 1`,
+            [suffix]
+        );
+        return result.rows[0]?.did ?? null;
+    }
+
     async getBlock(registry: string, blockId?: BlockId): Promise<BlockInfo | null> {
         const pool = this.getPool();
         let result;

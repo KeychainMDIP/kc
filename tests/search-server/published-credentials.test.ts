@@ -923,6 +923,8 @@ describe.each(adapterFactories)('$name query and utility behavior', ({ create })
             )).toBe(true);
             expect(await db.findDIDBySuffix('mdip-holder', 'did:test')).toBeNull();
             expect(await db.findDIDBySuffix('mdip-holder', 'did:mdip')).toBe(mdipHolder);
+            expect(await db.findAmbiguousDIDBySuffix('test-holder')).toBeNull();
+            expect(await db.findAmbiguousDIDBySuffix('mdip-holder')).toBeNull();
             expect(await db.listPublishedCredentials({ didPrefix: 'did:test', limit: 1, offset: 1 }))
                 .toStrictEqual({ total: 1, credentials: [] });
             expect(await db.getPublishedCredentialCountsBySchema('did:test')).toStrictEqual([
@@ -995,6 +997,19 @@ describe.each(adapterFactories)('$name query and utility behavior', ({ create })
             await seedDID(db, storedSchemaDid, {
                 doc: { didDocumentData: { searchable: 'legacy-network-schema' } },
             });
+            expect(await db.findAmbiguousDIDBySuffix('legacy-credential')).toBe(storedCredentialDid);
+            expect(await db.findAmbiguousDIDBySuffix('legacy-schema')).toBe(storedSchemaDid);
+            expect(await db.findAmbiguousDIDBySuffix('missing')).toBeNull();
+            await seedDID(db, 'did:test:uniquely-referenced-test');
+            await seedDID(db, 'did:test:uniquely-referenced-other');
+            await seedDID(db, 'did:test:reference-source', {
+                didPrefixReferences: [
+                    'did:test:uniquely-referenced-test',
+                    'did:other:uniquely-referenced-other',
+                ],
+            });
+            expect(await db.findAmbiguousDIDBySuffix('uniquely-referenced-test')).toBeNull();
+            expect(await db.findAmbiguousDIDBySuffix('uniquely-referenced-other')).toBeNull();
             await seedDID(db, holderDid, {
                 events: holderEvents,
                 publishedCredentials: [{
@@ -1020,6 +1035,8 @@ describe.each(adapterFactories)('$name query and utility behavior', ({ create })
             });
             expect(await db.findDIDBySuffix('legacy-schema', 'did:mdip')).toBe(storedSchemaDid);
             expect(await db.findDIDBySuffix('legacy-schema', 'did:test')).toBeNull();
+            expect(await db.findAmbiguousDIDBySuffix('legacy-credential')).toBeNull();
+            expect(await db.findAmbiguousDIDBySuffix('legacy-schema')).toBeNull();
             expect(await db.searchDocs('legacy-network-schema', { didPrefix: 'did:mdip', limit: 50 }))
                 .toStrictEqual(completeSearchPage([publishedSchemaDid]));
             expect(await db.searchDocs('legacy-network-schema', { didPrefix: 'did:test', limit: 50 }))
@@ -1056,6 +1073,11 @@ describe.each(adapterFactories)('$name query and utility behavior', ({ create })
             expect(await db.findDIDBySuffix('legacy-schema', 'did:test')).toBeNull();
             expect(await db.searchDocs('legacy-network-schema', { didPrefix: 'did:mdip', limit: 50 }))
                 .toStrictEqual(completeSearchPage([publishedSchemaDid]));
+
+            await seedDID(db, 'did:test:conflicting-reference-holder', {
+                didPrefixReferences: ['did:test:legacy-schema'],
+            });
+            expect(await db.findAmbiguousDIDBySuffix('legacy-schema')).toBe(storedSchemaDid);
         }
         finally {
             await cleanup();
@@ -1100,6 +1122,8 @@ describe.each(adapterFactories)('$name query and utility behavior', ({ create })
 
             expect(await db.findDIDBySuffix('credential-agent', 'did:test')).toBe(credentialDid);
             expect(await db.findDIDBySuffix('credential-agent', 'did:mdip')).toBeNull();
+            expect(await db.findAmbiguousDIDBySuffix('credential-agent')).toBe(credentialDid);
+            expect(await db.findAmbiguousDIDBySuffix('schema-agent')).toBe(schemaDid);
             expect(await db.searchDocs('credential-agent-collision', { didPrefix: 'did:test', limit: 50 }))
                 .toStrictEqual(completeSearchPage([credentialDid]));
             expect(await db.searchDocs('credential-agent-collision', { didPrefix: 'did:mdip', limit: 50 }))
@@ -1169,6 +1193,7 @@ describe.each(adapterFactories)('$name query and utility behavior', ({ create })
 
             expect(await db.findDIDBySuffix('conflicting-credential', 'did:test')).toBe(credentialDid);
             expect(await db.findDIDBySuffix('conflicting-credential', 'did:mdip')).toBeNull();
+            expect(await db.findAmbiguousDIDBySuffix('conflicting-credential')).toBeNull();
             expect(await db.listPublishedCredentials({ didPrefix: 'did:test' })).toMatchObject({
                 total: 1,
                 credentials: [{ credentialDid, schemaDid }],

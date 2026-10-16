@@ -368,6 +368,8 @@ describe('search DB branch behavior', () => {
             const disconnected = new Sqlite();
             await expect(disconnected.getDIDEvents(eventDid)).rejects.toThrow('DB not connected');
             await expect(disconnected.findDIDBySuffix('event-storage')).rejects.toThrow('DB not connected');
+            await expect(disconnected.findAmbiguousDIDBySuffix('event-storage'))
+                .rejects.toThrow('DB not connected');
             await expect(disconnected.getBlock('TFTC')).rejects.toThrow('DB not connected');
             await expect(disconnected.listEvents()).rejects.toThrow('DB not connected');
         }
@@ -540,6 +542,11 @@ describe('search DB branch behavior', () => {
             if (text.includes('INSERT INTO sync_state')) {
                 syncState.set(String(params[0]), String(params[1]));
                 return { rowCount: 1, rows: [] };
+            }
+
+            if (text.includes('COUNT(DISTINCT dpr.prefix)')) {
+                const did = classifications.get(String(params[0]));
+                return did ? { rowCount: 1, rows: [{ did }] } : { rowCount: 0, rows: [] };
             }
 
             if (text.includes('SELECT did FROM did_classifications')) {
@@ -812,6 +819,8 @@ describe('search DB branch behavior', () => {
         expect(identityFields.get(eventDid)).toEqual(new Set(['["publicName","schema-a"]']));
         expect(await db.findDIDBySuffix('event-storage')).toBe(eventDid);
         expect(await db.findDIDBySuffix('missing')).toBeNull();
+        expect(await db.findAmbiguousDIDBySuffix('event-storage')).toBe(eventDid);
+        expect(await db.findAmbiguousDIDBySuffix('missing')).toBeNull();
         expect(await db.getDIDEvents(eventDid)).toStrictEqual([didEventA, didEventB]);
         expect(await db.getDIDEvents('did:test:object-event')).toStrictEqual([didEventA]);
         expect(await db.getBlock('TFTC')).toStrictEqual(blockA);

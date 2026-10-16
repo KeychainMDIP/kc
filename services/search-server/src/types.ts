@@ -200,6 +200,7 @@ export interface DIDsDb {
 
     getDIDEvents(did: string): Promise<GatekeeperEvent[]>;
     findDIDBySuffix(suffix: string, didPrefix?: string): Promise<string | null>;
+    findAmbiguousDIDBySuffix(suffix: string): Promise<string | null>;
     getBlock(registry: string, block?: BlockId): Promise<BlockInfo | null>;
     applyIndexPage(page: ApplyIndexPageOptions): Promise<ApplyIndexPageResult>;
     getDID(did: string): Promise<object | null>;

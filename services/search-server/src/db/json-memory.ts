@@ -82,6 +82,16 @@ export default class DIDsDbMemory implements DIDsDb {
         return prefix === didPrefix ? did : null;
     }
 
+    async findAmbiguousDIDBySuffix(suffix: string): Promise<string | null> {
+        const did = this.didsBySuffix.get(suffix);
+        if (!did || this.authoritativeDIDPrefixes.has(suffix)) {
+            return null;
+        }
+
+        const referenceCount = this.publishedReferencePrefixes().get(suffix)?.size ?? 0;
+        return this.agentDIDSuffixes.has(suffix) || referenceCount !== 1 ? did : null;
+    }
+
     async getBlock(registry: string, blockId?: BlockId): Promise<BlockInfo | null> {
         const registryBlocks = this.blocks.get(registry);
 

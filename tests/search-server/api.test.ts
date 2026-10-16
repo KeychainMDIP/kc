@@ -312,6 +312,35 @@ describe('Search Server HTTP routes', () => {
         expect((await request(`/did/${schemaDid}`)).status).toBe(404);
     });
 
+    it('resolves ambiguous legacy DIDs through the configured scope', async () => {
+        const storedDid = schemaDid.replace('did:mdip:', 'did:test:');
+        const event = createSeedEvent(storedDid);
+        await seedDID(db, storedDid, { events: [event] });
+        await boot();
+
+        expect(await request(`/did/${schemaDid}/events`)).toEqual({ status: 200, body: [event] });
+        expect(await request(`/did/${schemaDid}`)).toEqual({
+            status: 200,
+            body: { didDocument: { id: schemaDid } },
+        });
+        expect(resolveDID).toHaveBeenLastCalledWith(expect.objectContaining({
+            did: schemaDid,
+            events: [event],
+        }));
+    });
+
+    it('does not resolve authoritative test DIDs through the configured mdip scope', async () => {
+        const storedDid = schemaDid.replace('did:mdip:', 'did:test:');
+        const event = createSeedEvent(storedDid);
+        event.operation.mdip!.prefix = 'did:test';
+        await seedDID(db, storedDid, { events: [event] });
+        await boot();
+
+        expect(await request(`/did/${schemaDid}/events`)).toEqual({ status: 200, body: [] });
+        expect((await request(`/did/${schemaDid}`)).status).toBe(404);
+        expect(resolveDID).not.toHaveBeenCalled();
+    });
+
     it('uses cached documents only for unversioned, in-scope requests', async () => {
         const cached = { didDocument: { id: 'did:mdip:cached' } };
         const getDoc = jest.spyOn(db, 'getDID').mockResolvedValue(cached);

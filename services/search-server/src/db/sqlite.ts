@@ -298,6 +298,26 @@ export default class Sqlite implements DIDsDb {
         return row?.did ?? null;
     }
 
+    async findAmbiguousDIDBySuffix(suffix: string): Promise<string | null> {
+        if (!this.db) {
+            throw new Error('DB not connected');
+        }
+
+        const row = await this.db.get<{ did: string }>(
+            `SELECT dc.did FROM did_classifications dc
+             WHERE dc.suffix = ?
+               AND dc.prefix_authoritative = 0
+               AND (dc.is_agent = 1 OR (
+                   SELECT COUNT(DISTINCT dpr.prefix)
+                   FROM did_prefix_references dpr
+                   WHERE dpr.suffix = dc.suffix
+               ) <> 1)
+             LIMIT 1`,
+            [suffix]
+        );
+        return row?.did ?? null;
+    }
+
     async getBlock(registry: string, blockId?: BlockId): Promise<BlockInfo | null> {
         if (!this.db) {
             throw new Error('DB not connected');
