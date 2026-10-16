@@ -298,6 +298,33 @@ describe('DidIndexer gatekeeper read boundary', () => {
         expect(await db.loadSyncState('index.lastSyncError')).toBeNull();
     });
 
+    it('retains non-cancellation index errors during shutdown', async () => {
+        const db = new DIDsDbMemory();
+        let rejectExport!: (error: unknown) => void;
+        let markExportStarted!: () => void;
+        const exportStarted = new Promise<void>(resolve => { markExportStarted = resolve; });
+        const gatekeeper = {
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>().mockImplementation(() => {
+                markExportStarted();
+                return new Promise<IndexExportResponse>((_resolve, reject) => { rejectExport = reject; });
+            }),
+        };
+        const indexer = new DidIndexer(gatekeeper, db, { intervalMs: 60_000 });
+        const starting = indexer.startIndexing();
+        await exportStarted;
+
+        indexer.beginStopping();
+        rejectExport('connection reset');
+
+        await expect(Promise.all([starting, indexer.stopIndexing()])).resolves.toBeDefined();
+        expect(logger.error).toHaveBeenCalledWith(
+            { error: 'connection reset' },
+            'Error in refreshIndex'
+        );
+        expect(await db.loadSyncState('index.lastSyncError')).toBe('connection reset');
+    });
+
     it('rejects invalid snapshot continuation state and malformed snapshot responses', async () => {
         const db = new DIDsDbMemory();
         const gatekeeper = {
