@@ -1828,6 +1828,120 @@ describe('hyperswarm mediator protocol characterization', () => {
         }));
     });
 
+    it('closes a Negentropy session as incomplete after Gatekeeper backpressure', async () => {
+        const [operation] = await makeOperations(1);
+        const operationId = operation.signature!.hash;
+        const protocolNode = await createNode();
+        const { peerKey, pair } = attachPeer(protocolNode, {});
+        const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
+        jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
+            const engine = createEngine(snapshot);
+            jest.spyOn(engine, 'reconcile').mockResolvedValueOnce({
+                nextMsg: null,
+                haveIds: [],
+                needIds: [operationId],
+            });
+            return engine;
+        });
+        protocolNode.node.gatekeeperClient.importBatch.mockResolvedValueOnce({
+            queued: 0,
+            processed: 0,
+            rejected: 0,
+            total: 0,
+            rejectedIndices: [],
+            processedIndices: [],
+            capacityDeferred: 1,
+            capacityDeferredIndices: [0],
+        });
+        const processEvents = protocolNode.node.gatekeeperClient.processEvents;
+
+        await protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey),
+        );
+        const open = decodeWrites(pair).find(message => message.type === 'neg_open');
+        if (!open) {
+            throw new Error('expected local neg_open');
+        }
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'neg_msg',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            frame: encodeNegentropyFrame('capacity-backpressure'),
+        }));
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'ops_push',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            data: [operation],
+        }));
+
+        expect(processEvents).not.toHaveBeenCalled();
+        expect(await protocolNode.store.has(operationId)).toBe(false);
+        expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
+            type: 'neg_close',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            reason: 'gatekeeper_backpressure',
+        }));
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+        )).toBeNull();
+    });
+
+    it('closes a backpressured Negentropy session when its close message cannot be sent', async () => {
+        const [operation] = await makeOperations(1);
+        const operationId = operation.signature!.hash;
+        const protocolNode = await createNode();
+        const { peerKey, pair } = attachPeer(protocolNode, {});
+        const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
+        jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
+            const engine = createEngine(snapshot);
+            jest.spyOn(engine, 'reconcile').mockResolvedValueOnce({
+                nextMsg: null,
+                haveIds: [],
+                needIds: [operationId],
+            });
+            return engine;
+        });
+        protocolNode.node.gatekeeperClient.importBatch.mockResolvedValueOnce({
+            queued: 0,
+            processed: 0,
+            rejected: 0,
+            total: 0,
+            rejectedIndices: [],
+            processedIndices: [],
+            capacityDeferred: 1,
+            capacityDeferredIndices: [0],
+        });
+
+        await protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey),
+        );
+        const open = decodeWrites(pair).find(message => message.type === 'neg_open');
+        if (!open) {
+            throw new Error('expected local neg_open');
+        }
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'neg_msg',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            frame: encodeNegentropyFrame('capacity-backpressure-send-failure'),
+        }));
+        jest.spyOn(pair.connectionA, 'write').mockImplementation(() => {
+            throw new Error('write failed');
+        });
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'ops_push',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            data: [operation],
+        }));
+
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+        )).toBeNull();
+    });
+
     it('uses a previously deferred operation rejected by a later batch as a terminal fork root', async () => {
         const [trigger, , root, child] = await makeDependencyChain();
         const rootId = root.signature!.hash;
@@ -3374,6 +3488,54 @@ describe('hyperswarm mediator protocol characterization', () => {
             release();
             await delivery.catch(() => undefined);
         }
+    });
+
+    it('stops ordered catch-up after Gatekeeper backpressure', async () => {
+        const [operation] = await makeOperations(1);
+        const protocolNode = await createNode({ keyByte: 0x33 });
+        const { peerKey, pair } = attachPeer(protocolNode, {
+            peerKeyByte: 0x22,
+            overrides: {
+                capabilities: compatibleCapabilities({ negentropy: false }),
+            },
+        });
+        protocolNode.node.gatekeeperClient.importBatch.mockResolvedValueOnce({
+            queued: 0,
+            processed: 0,
+            rejected: 0,
+            total: 0,
+            rejectedIndices: [],
+            processedIndices: [],
+            capacityDeferred: 1,
+            capacityDeferredIndices: [0],
+        });
+        const processEvents = protocolNode.node.gatekeeperClient.processEvents;
+        protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.createOrderedCatchupClientSession(peerKey, 'capacity-session'),
+        );
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
+            peerKey,
+            encodeFramedMessage(JSON.stringify({
+                type: 'ordered_catchup_push',
+                sessionId: 'capacity-session',
+                cursor: { syncOrder: 1, id: operation.signature!.hash },
+                hasMore: true,
+                data: [operation],
+            })),
+        ));
+        await eventually(() => protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession === null,
+        ));
+
+        expect(processEvents).not.toHaveBeenCalled();
+        expect(await protocolNode.store.has(operation.signature!.hash)).toBe(false);
+        expect(decodeWrites(pair).filter(message => message.type === 'ordered_catchup_req')).toEqual([
+            expect.objectContaining({
+                sessionId: 'capacity-session',
+                cursor: { syncOrder: 1, id: operation.signature!.hash },
+            }),
+        ]);
     });
 
     it('ignores ordered catch-up pushes after a terminal page while its import drains', async () => {

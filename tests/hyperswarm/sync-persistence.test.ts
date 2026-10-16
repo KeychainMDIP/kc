@@ -104,6 +104,8 @@ describe('sync-persistence helpers', () => {
         expect(partitionImportBatchOperations([], [0, 1])).toStrictEqual({
             processCandidates: [],
             rejectedOperations: [],
+            capacityDeferredOperations: [],
+            processedOperations: [],
         });
     });
 
@@ -119,6 +121,8 @@ describe('sync-persistence helpers', () => {
         expect(partitioned).toStrictEqual({
             processCandidates: [c],
             rejectedOperations: [a, b],
+            capacityDeferredOperations: [],
+            processedOperations: [],
         });
     });
 
@@ -129,6 +133,21 @@ describe('sync-persistence helpers', () => {
         expect(partitionImportBatchOperations([a, b], undefined)).toStrictEqual({
             processCandidates: [a, b],
             rejectedOperations: [],
+            capacityDeferredOperations: [],
+            processedOperations: [],
+        });
+    });
+
+    it('partitions capacity-deferred and already-pending operations', () => {
+        const a = makeCreateOp('a', '2026-02-10T10:00:00.000Z');
+        const b = makeCreateOp('b', '2026-02-10T11:00:00.000Z');
+        const c = makeCreateOp('c', '2026-02-10T12:00:00.000Z');
+
+        expect(partitionImportBatchOperations([a, b, c], [], [2], [1])).toStrictEqual({
+            processCandidates: [a],
+            rejectedOperations: [],
+            capacityDeferredOperations: [c],
+            processedOperations: [b],
         });
     });
 

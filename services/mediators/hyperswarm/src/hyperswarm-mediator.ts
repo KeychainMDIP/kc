@@ -93,6 +93,7 @@ function buildImportPipeline(store: OperationSyncStore): ImportPipeline {
         syncStore: store,
         cipher,
         syncStats,
+        retryDelayMs: NEG_REPAIR_INTERVAL_MS,
         beginStoreMutation() {
             return negentropyCoordinator.beginStoreMutation();
         },
