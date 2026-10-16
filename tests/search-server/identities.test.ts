@@ -82,6 +82,24 @@ describe.each(['memory', 'sqlite'])('%s identities', adapter => {
         expect((await db.listIdentities({ offset: -1, limit: -1 })).identities).toEqual([]);
     });
 
+    it('optionally includes legacy agents without an authoritative prefix', async () => {
+        const legacyDid = 'did:test:legacy-agent';
+        const scopedLegacyDid = 'did:mdip:legacy-agent';
+        const legacyEvent = createSeedEvent(legacyDid);
+        legacyEvent.operation.mdip!.type = 'agent';
+
+        await seedDID(db, legacyDid, { events: [legacyEvent], doc: document() });
+        await seedAgent(db, 'did:mdip:mdip-agent');
+        await seedAgent(db, 'did:test:test-agent', {}, 'did:test');
+
+        expect((await db.listIdentities({ didPrefix: 'did:mdip' })).identities.map(({ did }) => did))
+            .toEqual(['did:mdip:mdip-agent']);
+        expect((await db.listIdentities({
+            didPrefix: 'did:mdip',
+            includeAmbiguous: true,
+        })).identities.map(({ did }) => did)).toEqual([scopedLegacyDid, 'did:mdip:mdip-agent']);
+    });
+
     it('returns schema DIDs without claims unless explicitly requested', async () => {
         await seedAgent(db, alice, {
             'did:mdip:credential-b': credential(),
@@ -692,9 +710,13 @@ describe('SQL identity enumeration', () => {
                 sql.includes('CREATE INDEX') ||
                 sql === 'ANALYZE did_docs') return { rows: [] };
             const filtered = sql.includes('AND EXISTS');
+            const scoped = sql.includes('AND dc.prefix COLLATE "C" = $1')
+                || sql.includes('AND (dc.prefix COLLATE "C" = $1');
             if (sql.includes('COUNT(*)')) return { rows: [{ total: filtered ? 1 : 2 }] };
             expect(sql).toContain('WHERE dc.is_agent = TRUE');
-            expect(sql).toContain('ORDER BY dc.prefix COLLATE "C", dc.suffix COLLATE "C"');
+            expect(sql).toContain(scoped
+                ? 'ORDER BY dc.suffix COLLATE "C"'
+                : 'ORDER BY dc.prefix COLLATE "C", dc.suffix COLLATE "C"');
             expect(sql).not.toContain('jsonb');
             expect(sql).toContain(`LIMIT $${params!.length - 1} OFFSET $${params!.length}`);
             return { rows: [
@@ -721,6 +743,11 @@ describe('SQL identity enumeration', () => {
             await db.listIdentities({ didPrefix: prefix });
             expect(query).toHaveBeenLastCalledWith(expect.stringContaining('AND dc.prefix COLLATE "C" = $1'), [prefix, 50, 0]);
             expect(query).toHaveBeenLastCalledWith(expect.not.stringContaining(prefix), [prefix, 50, 0]);
+            query.mockClear();
+            await db.listIdentities({ didPrefix: 'did:mdip', includeAmbiguous: true });
+            for (const [sql] of query.mock.calls) {
+                expect(sql).toContain('(dc.prefix COLLATE "C" = $1 OR NOT dc.prefix_authoritative)');
+            }
             query.mockClear();
             const field = "faveFood') OR TRUE --";
             const result = await db.listIdentities({ didPrefix: prefix, schemaDid, fields: ['publicName', field], limit: 2, offset: 4 });

@@ -29,6 +29,7 @@ export interface PublishedCredentialSchemaCount {
 
 export interface PublishedCredentialListOptions {
     didPrefix?: string;
+    includeAmbiguous?: boolean;
     credentialDid?: string;
     schemaDid?: string;
     issuerDid?: string;
@@ -45,6 +46,7 @@ export interface PublishedCredentialListResult {
 
 export interface IdentityListOptions {
     didPrefix?: string;
+    includeAmbiguous?: boolean;
     schemaDid?: string;
     fields?: string[];
     limit?: number;
@@ -78,6 +80,7 @@ export interface ChallengeReceiptRecord {
 
 export interface ChallengeReceiptListOptions {
     didPrefix?: string;
+    includeAmbiguous?: boolean;
     receiptDid?: string;
     attesterDid?: string;
     schemaDid?: string;
@@ -96,6 +99,7 @@ export interface ChallengeReceiptListResult {
 
 export interface ChallengeReceiptUsageOptions {
     didPrefix?: string;
+    includeAmbiguous?: boolean;
     attesterDid?: string;
     schemaDid?: string;
     requesterDid?: string;
@@ -128,6 +132,7 @@ export interface DIDEventRecord {
 
 export interface DIDEventListOptions {
     didPrefix?: string;
+    includeAmbiguous?: boolean;
     registry?: string;
     updatedAfter?: string;
     updatedBefore?: string;
@@ -159,6 +164,7 @@ export interface NetworkMetricSnapshot {
 
 export interface SearchDocsOptions {
     didPrefix?: string;
+    includeAmbiguous?: boolean;
     limit: number;
     cursor?: string;
 }
@@ -205,7 +211,10 @@ export interface DIDsDb {
     applyIndexPage(page: ApplyIndexPageOptions): Promise<ApplyIndexPageResult>;
     getDID(did: string): Promise<object | null>;
     listIdentities(options?: IdentityListOptions): Promise<IdentityListResult>;
-    getPublishedCredentialCountsBySchema(didPrefix?: string): Promise<PublishedCredentialSchemaCount[]>;
+    getPublishedCredentialCountsBySchema(
+        didPrefix?: string,
+        includeAmbiguous?: boolean
+    ): Promise<PublishedCredentialSchemaCount[]>;
     listPublishedCredentials(options?: PublishedCredentialListOptions): Promise<PublishedCredentialListResult>;
     listChallengeReceipts(options?: ChallengeReceiptListOptions): Promise<ChallengeReceiptListResult>;
     getChallengeReceiptUsage(options?: ChallengeReceiptUsageOptions): Promise<ChallengeReceiptUsageResult>;
@@ -214,6 +223,6 @@ export interface DIDsDb {
     replaceNetworkMetricSnapshots(snapshots: NetworkMetricSnapshot[]): Promise<void>;
     getNetworkMetricSnapshot(date: string): Promise<NetworkMetricSnapshot | null>;
     searchDocs(q: string, options: SearchDocsOptions): Promise<SearchDocsResult>;
-    queryDocs(where: Record<string, unknown>, didPrefix?: string): Promise<string[]>;
+    queryDocs(where: Record<string, unknown>, didPrefix?: string, includeAmbiguous?: boolean): Promise<string[]>;
     wipeDb(): Promise<void>;
 }

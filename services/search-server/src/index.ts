@@ -246,11 +246,13 @@ async function main(shutdown: Shutdown) {
             const registry = req.query.registry?.toString();
             const updatedAfter = req.query.updatedAfter?.toString();
             const updatedBefore = req.query.updatedBefore?.toString();
+            const includeAmbiguous = parseOptionalBoolean(req.query.includeAmbiguous);
             const limit = parseNonNegativeInteger(req.query.limit, 50);
             const offset = parseNonNegativeInteger(req.query.offset, 0);
 
             const result = await didDb.listEvents({
                 didPrefix: config.didPrefix,
+                includeAmbiguous,
                 registry,
                 updatedAfter,
                 updatedBefore,
@@ -292,6 +294,7 @@ async function main(shutdown: Shutdown) {
 
             return res.json(await didDb.searchDocs(q, {
                 didPrefix: config.didPrefix,
+                includeAmbiguous: parseOptionalBoolean(req.query.includeAmbiguous),
                 limit: rawLimit === undefined ? DEFAULT_SEARCH_LIMIT : Number(rawLimit),
                 cursor,
             }));
@@ -312,7 +315,11 @@ async function main(shutdown: Shutdown) {
                 return res.status(400).json({ error: "`where` must be an object" });
             }
 
-            const dids = await didDb.queryDocs(where, config.didPrefix);
+            const dids = await didDb.queryDocs(
+                where,
+                config.didPrefix,
+                parseOptionalBoolean(req.query.includeAmbiguous)
+            );
             return res.json(dids);
         } catch (err) {
             log.error({ error: err }, '/query error');
@@ -330,7 +337,11 @@ async function main(shutdown: Shutdown) {
         }
 
         try {
-            return res.json(await didDb.listIdentities({ ...options, didPrefix: config.didPrefix }));
+            return res.json(await didDb.listIdentities({
+                ...options,
+                didPrefix: config.didPrefix,
+                includeAmbiguous: parseOptionalBoolean(req.query.includeAmbiguous),
+            }));
         }
         catch (error) {
             log.error({ error }, '/identities error');
@@ -346,7 +357,10 @@ async function main(shutdown: Shutdown) {
                 });
             }
 
-            const schemas = await didDb.getPublishedCredentialCountsBySchema(config.didPrefix);
+            const schemas = await didDb.getPublishedCredentialCountsBySchema(
+                config.didPrefix,
+                parseOptionalBoolean(req.query.includeAmbiguous)
+            );
             return res.json({ schemas });
         } catch (error) {
             log.error({ error }, '/metrics/schemas/published error');
@@ -410,10 +424,12 @@ async function main(shutdown: Shutdown) {
             const issuerDid = req.query.issuerDid?.toString();
             const subjectDid = req.query.subjectDid?.toString();
             const revealed = parseOptionalBoolean(req.query.revealed);
+            const includeAmbiguous = parseOptionalBoolean(req.query.includeAmbiguous);
             const limit = Math.min(parseNonNegativeInteger(req.query.limit, 50), 500);
             const offset = parseNonNegativeInteger(req.query.offset, 0);
             const result = await didDb.listPublishedCredentials({
                 didPrefix: config.didPrefix,
+                includeAmbiguous,
                 credentialDid,
                 schemaDid,
                 issuerDid,
@@ -439,10 +455,12 @@ async function main(shutdown: Shutdown) {
             const responseCommitment = req.query.responseCommitment?.toString();
             const updatedAfter = req.query.updatedAfter?.toString();
             const updatedBefore = req.query.updatedBefore?.toString();
+            const includeAmbiguous = parseOptionalBoolean(req.query.includeAmbiguous);
             const limit = parseNonNegativeInteger(req.query.limit, 50);
             const offset = parseNonNegativeInteger(req.query.offset, 0);
             const result = await didDb.listChallengeReceipts({
                 didPrefix: config.didPrefix,
+                includeAmbiguous,
                 receiptDid,
                 attesterDid,
                 schemaDid,
@@ -472,10 +490,12 @@ async function main(shutdown: Shutdown) {
             const requesterDid = req.query.requesterDid?.toString();
             const updatedAfter = req.query.updatedAfter?.toString();
             const updatedBefore = req.query.updatedBefore?.toString();
+            const includeAmbiguous = parseOptionalBoolean(req.query.includeAmbiguous);
             const limit = parseNonNegativeInteger(req.query.limit, 50);
             const offset = parseNonNegativeInteger(req.query.offset, 0);
             const result = await didDb.getChallengeReceiptUsage({
                 didPrefix: config.didPrefix,
+                includeAmbiguous,
                 attesterDid,
                 schemaDid,
                 requesterDid,
