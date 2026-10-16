@@ -58,6 +58,19 @@ interface SyncRunStats {
 
 const INITIAL_METRICS_QUIET_RUNS = 2;
 
+function isCancellationError(error: unknown): boolean {
+    if (error === 'canceled') {
+        return true;
+    }
+
+    if (!error || typeof error !== 'object') {
+        return false;
+    }
+
+    const { code, name } = error as { code?: unknown; name?: unknown };
+    return code === 'ERR_CANCELED' || name === 'AbortError' || name === 'CanceledError';
+}
+
 export default class DidIndexer {
     private gatekeeper: GatekeeperIndexClient;
     private db: DIDsDb;
@@ -109,13 +122,17 @@ export default class DidIndexer {
         this.intervalMs);
     }
 
-    async stopIndexing(): Promise<void> {
+    beginStopping(): void {
         this.stopped = true;
 
         if (this.timer) {
             clearInterval(this.timer);
             this.timer = null;
         }
+    }
+
+    async stopIndexing(): Promise<void> {
+        this.beginStopping();
 
         await this.activeRefresh;
     }
@@ -126,9 +143,15 @@ export default class DidIndexer {
         }
 
         if (!this.activeRefresh) {
-            this.activeRefresh = this.refreshIndex().finally(() => {
-                this.activeRefresh = null;
-            });
+            this.activeRefresh = this.refreshIndex()
+                .catch(error => {
+                    if (!this.stopped || !isCancellationError(error)) {
+                        throw error;
+                    }
+                })
+                .finally(() => {
+                    this.activeRefresh = null;
+                });
         }
 
         return this.activeRefresh;
@@ -158,6 +181,10 @@ export default class DidIndexer {
                 `Stored ${stats.storedBlocks} block(s).`
             );
         } catch (err) {
+            if (this.stopped && isCancellationError(err)) {
+                return;
+            }
+
             try {
                 await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.lastSyncError, String(err));
             }

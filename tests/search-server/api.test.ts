@@ -18,6 +18,7 @@ const schemaDid = 'did:mdip:z3v8AuacR4diTuCgtbEfLDo2LzQNEDHgqBSNLMs5Szuq3WHcQdB'
 const logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
 const connect = jest.fn<(options?: { signal?: AbortSignal }) => Promise<void>>();
 const startIndexing = jest.fn<() => Promise<void>>();
+const beginStopping = jest.fn<() => void>();
 const stopIndexing = jest.fn<() => Promise<void>>();
 const resolveDID = jest.fn<(...args: any[]) => Promise<any>>();
 const sqliteCreate = jest.fn(async () => db);
@@ -49,6 +50,7 @@ jest.unstable_mockModule('../../services/search-server/src/DidIndexer.ts', () =>
     INDEX_SYNC_STATE_KEYS,
     default: class {
         startIndexing = startIndexing;
+        beginStopping = beginStopping;
         stopIndexing = stopIndexing;
     },
 }));
@@ -444,9 +446,15 @@ describe('Search Server HTTP routes', () => {
         await boot();
         const signal = connect.mock.calls[0][0]?.signal;
         expect(signal?.aborted).toBe(false);
+        let beganBeforeAbort = false;
+        signal?.addEventListener('abort', () => {
+            beganBeforeAbort = beginStopping.mock.calls.length > 0;
+        });
         const shutdown = process.listeners('SIGTERM').find(listener => !processListeners.SIGTERM.includes(listener))!;
         await shutdown('SIGTERM');
         expect(signal?.aborted).toBe(true);
+        expect(beganBeforeAbort).toBe(true);
+        expect(beginStopping).toHaveBeenCalledTimes(1);
         expect(stopIndexing).toHaveBeenCalledTimes(1);
         expect(disconnect).toHaveBeenCalledTimes(1);
         expect(process.exit).toHaveBeenCalledWith(fail ? 1 : 0);
@@ -467,6 +475,7 @@ describe('Search Server HTTP routes', () => {
         const stopping = shutdown('SIGTERM');
         await new Promise(resolve => setImmediate(resolve));
 
+        expect(beginStopping).toHaveBeenCalledTimes(1);
         expect(stopIndexing).not.toHaveBeenCalled();
         expect(disconnect).not.toHaveBeenCalled();
 

@@ -49,6 +49,7 @@ async function closeServer(httpServer: Server): Promise<void> {
 }
 
 async function cleanup(): Promise<void> {
+    activeIndexer?.beginStopping();
     dependencyRequests.abort();
     const errors: unknown[] = [];
 
