@@ -31,6 +31,10 @@ export interface ProofOfWork {
     nonce: string,
 }
 
+export interface SignatureOptions {
+    recoverable?: boolean
+}
+
 export interface Cipher {
     generateMnemonic(): string,
 
@@ -44,7 +48,7 @@ export interface Cipher {
     hashMessage(msg: string | Uint8Array): string,
     hashJSON(obj: unknown): string,
 
-    signHash(msgHash: string, privateJwk: EcdsaJwkPrivate): string,
+    signHash(msgHash: string, privateJwk: EcdsaJwkPrivate, opts?:SignatureOptions): string,
     verifySig(msgHash: string, sigHex: string, publicJwk: EcdsaJwkPublic): boolean,
 
     encryptBytes(

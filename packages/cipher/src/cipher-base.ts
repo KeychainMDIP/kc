@@ -5,7 +5,7 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { xchacha20poly1305 } from '@noble/ciphers/chacha.js';
 import { bytesToUtf8, managedNonce, utf8ToBytes } from '@noble/ciphers/utils.js';
 import { base64url } from 'multiformats/bases/base64';
-import { Cipher, HDKeyJSON, EcdsaJwkPublic, EcdsaJwkPrivate, EcdsaJwkPair } from './types.js';
+import { Cipher, HDKeyJSON, EcdsaJwkPublic, EcdsaJwkPrivate, EcdsaJwkPair, SignatureOptions } from './types.js';
 import canonicalizeModule from 'canonicalize';
 const canonicalize = canonicalizeModule as unknown as (input: unknown) => string;
 
@@ -67,9 +67,10 @@ export default abstract class CipherBase implements Cipher {
         return this.hashMessage(this.canonicalizeJSON(json));
     }
 
-    signHash(msgHash: string, privateJwk: EcdsaJwkPrivate): string {
+    signHash(msgHash: string, privateJwk: EcdsaJwkPrivate, opts?: SignatureOptions): string {
+        const recoverable = (opts || {})?.recoverable || false;
         const privKey = base64url.baseDecode(privateJwk.d);
-        const signature = secp.sign(secp.etc.hexToBytes(msgHash), privKey, { prehash: false });
+        const signature = secp.sign(secp.etc.hexToBytes(msgHash), privKey, { prehash: false, format: recoverable ? 'recovered' : 'compact' });
         return secp.etc.bytesToHex(signature);
     }
 
