@@ -71,7 +71,7 @@ export interface HyperswarmTransportOptions {
     onPing(peerKey: string, message: PingMessage, connection: ConnectionInfo): void | Promise<void>;
     onQueue(peerKey: string, message: QueueMessage, connection: ConnectionInfo): void | Promise<void>;
     onSyncMessage(peerKey: string, message: SyncMessage, connection: ConnectionInfo): void | Promise<void>;
-    onDisconnected(peerKey: string, reason: string): void;
+    onDisconnected(peerKey: string, reason: string, connection: ConnectionInfo): void;
     maxMessageBytes?: number;
     maxPeerStates?: number;
     now?: () => number;
@@ -208,9 +208,13 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
         return true;
     }
 
-    function notifyDisconnected(peerKey: string, reason: string): void {
+    function notifyDisconnected(
+        peerKey: string,
+        reason: string,
+        connection: ConnectionInfo,
+    ): void {
         try {
-            options.onDisconnected(peerKey, reason);
+            options.onDisconnected(peerKey, reason, connection);
         } catch (error) {
             log.error({ error, peer: shortName(peerKey), reason }, 'peer disconnect callback failed');
         }
@@ -386,7 +390,7 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
             delete connections[peerKey];
         }
         cleanupConnection(peerKey, connection, reason);
-        notifyDisconnected(peerKey, reason);
+        notifyDisconnected(peerKey, reason, connection);
         log.info(`* connection closed with: ${connection.peerName} (${connection.nodeName}) *`);
     }
 
@@ -407,7 +411,7 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
             delete connections[peerKey];
         }
         cleanupConnection(peerKey, connection, reason);
-        notifyDisconnected(peerKey, reason);
+        notifyDisconnected(peerKey, reason, connection);
         try {
             if (typeof connection.connection.destroy === 'function') {
                 connection.connection.destroy();

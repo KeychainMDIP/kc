@@ -202,6 +202,7 @@ const queueCoordinator = createQueueCoordinator({
     registry: REGISTRY,
     maxOpsPerPage: NEG_MAX_OPS_PER_PUSH,
     maxBytesPerPage: NEG_MAX_BYTES_PER_PUSH,
+    repairIntervalMs: NEG_REPAIR_INTERVAL_MS,
     gatekeeper,
     cipher,
     syncStats,
@@ -209,6 +210,9 @@ const queueCoordinator = createQueueCoordinator({
     operationPages,
     getImportPipeline: () => importPipeline,
     getNodeKey: () => nodeKey,
+    getConnection: peerKey => transport.getConnection(peerKey),
+    requestRepair: (peerKey, connection) =>
+        peerSyncCoordinator.requestRepair(peerKey, connection),
     createQueueMessage: () => createBaseMessage('queue'),
     relay: message => transport.relay(message),
     onProtocolViolation: (peerKey, reason, connection) =>
@@ -230,7 +234,10 @@ transport = createHyperswarmTransport({
     onPing: (peerKey, message, connection) => peerSyncCoordinator.handlePing(peerKey, message, connection),
     onQueue: (peerKey, message, connection) => queueCoordinator.handleMessage(peerKey, message, connection),
     onSyncMessage: (peerKey, message) => peerSyncCoordinator.handleMessage(peerKey, message),
-    onDisconnected: (peerKey, reason) => peerSyncCoordinator.handleDisconnected(peerKey, reason),
+    onDisconnected: (peerKey, reason, connection) => {
+        peerSyncCoordinator.handleDisconnected(peerKey, reason);
+        queueCoordinator.handleDisconnected(peerKey, reason, connection);
+    },
 });
 
 function replaceSyncStore(store: OperationSyncStore): void {
@@ -487,6 +494,7 @@ async function connectionLoop(): Promise<void> {
         const msg = await buildPingMessage();
 
         await transport.relay(msg);
+        await queueCoordinator.runRepairs();
         await peerSyncCoordinator.runPeriodicRepairs();
 
         log.debug({ syncStats: buildSyncStatsSnapshot(syncStats) }, 'hyperswarm sync stats');
