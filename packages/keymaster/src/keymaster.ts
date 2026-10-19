@@ -69,6 +69,7 @@ import { decMnemonic, encMnemonic } from "./encryption.js";
 import {encode, RemoteDocument} from '@digitalbazaar/cborld';
 import { contexts as credentialContexts } from '@digitalbazaar/credentials-context';
 import { keccak256 } from 'viem';
+import { publicKeyToAddress } from 'viem/accounts';
 
 const DefaultSchema = {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -1854,9 +1855,35 @@ export default class Keymaster implements KeymasterInterface {
 
         collect(topSchema)
 
-        return {
+        terms.set('credential', `${did}#credential`)
+        terms.set(did, `${did}#id`)
+
+        const result =  {
             "@context" : Object.fromEntries(terms)
         }
+
+        console.log(JSON.stringify(result, null, 2));
+        return result
+    }
+
+    jwkToEthereumAddress(jwk: EcdsaJwkPublic): `0x${string}` {
+        if (jwk.kty !== 'EC' || jwk.crv !== 'secp256k1') {
+            throw new Error('Unsupported JWK type. Key must be an EC key using the secp256k1 curve.');
+        }
+
+        // 1. Decode x and y coordinates from Base64URL to raw Buffers
+        const xBuffer = Buffer.from(jwk.x, 'base64url');
+        const yBuffer = Buffer.from(jwk.y, 'base64url');
+
+        // 2. Convert coordinates to hex strings
+        const xHex = xBuffer.toString('hex');
+        const yHex = yBuffer.toString('hex');
+
+        // 3. Construct the uncompressed public key prefixed with '0x04'
+        const uncompressedPublicKey = `0x04${xHex}${yHex}` as const;
+
+        // 4. Derive the Ethereum address using Viem
+        return publicKeyToAddress(uncompressedPublicKey);
     }
 
     async addEvmCredentialSignature(
@@ -1867,70 +1894,92 @@ export default class Keymaster implements KeymasterInterface {
         const id = await this.fetchIdInfo(controller);
         const keypair = await this.fetchKeyPair(id.did);
 
+        const contextTable = new Map<string, number>([
+            ["https://www.w3.org/ns/credentials/v2", 16],
+            ["https://www.w3.org/ns/credentials/examples/v2",17],
+            [(credential['@context']![2]) as string, 256]
+        ])
+
+        const issuerTable = new Map<string, number>([
+            [controller, 67]
+        ])
+
+        const typeTable = new Map([
+            ["context", contextTable],
+            ["none", issuerTable],
+            ["url", issuerTable]
+        ])
+
         if (!keypair) {
             throw new KeymasterError('addSignature: no keypair');
         }
 
-        try {
-            const documentLoader = async (url:string) : Promise<RemoteDocument>=> {
-                const [protocol] = url.split(':');
-                // Check if this protocol has a custom handler installed
-                if (credentialContexts.has(url)) {
-                    return {
-                        contextUrl: null,
-                        document: credentialContexts.get(url)!,
-                        documentUrl: url
-                    }
-                } else if(protocol.startsWith('http')) {
-                    const response = await fetch(url, {
-                        method: 'GET',
-                        headers: {
-                            'Accept': 'application/ld+json'
-                        }
-                    });
-
-                    const document = await response.json() as object;
-
-                    return {
-                        contextUrl: null,
-                        document,
-                        documentUrl: url
-                    }
-                } else if (protocol.startsWith('did')) {
-                    const schema = await this.getSchema(url);
-                    const document =  this.convertSchemaToContext(url, schema as Record<string,any>);
-                    return {
-                        contextUrl: null,
-                        document,
-                        documentUrl: url
-                    }
+        const documentLoader = async (url:string) : Promise<RemoteDocument>=> {
+            const [protocol] = url.split(':');
+            // Check if this protocol has a custom handler installed
+            if (credentialContexts.has(url)) {
+                return {
+                    contextUrl: null,
+                    document: credentialContexts.get(url)!,
+                    documentUrl: url
                 }
+            } else if(protocol.startsWith('http')) {
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/ld+json'
+                    }
+                });
 
-                throw new InvalidParameterError('url'); 
+                const document = await response.json() as object;
+
+                return {
+                    contextUrl: null,
+                    document,
+                    documentUrl: url
+                }
+            } else if (protocol.startsWith('did')) {
+                const schema = await this.getSchema(url);
+                const document =  this.convertSchemaToContext(url, schema as Record<string,any>);
+                return {
+                    contextUrl: null,
+                    document,
+                    documentUrl: url
+                }
             }
 
-            const cborldBytes = await encode({
-                jsonldDocument : credential,
-                documentLoader,
-            });
-
-            const digest = keccak256(cborldBytes, 'bytes');
-            const msgHash = Buffer.from(digest).toString('hex');
-            const signature = this.cipher.signHash(msgHash, keypair.privateJwk);
-
-            return {
-                ...credential,
-                evmSignature: {
-                    signer: id.did,
-                    signed: new Date().toISOString(),
-                    hash: msgHash,
-                    value: signature,
-                }
-            };
+            throw new InvalidParameterError('url'); 
         }
-        catch {
-            throw new InvalidParameterError('credential');
-        }
+        console.log(`credential:${JSON.stringify(credential, null, 2)}`)
+        const credCopy = {...credential}
+        delete credCopy['signature']
+        delete credCopy['issuer'] // recovered from sig
+        console.log(`credential:${JSON.stringify(credCopy, null, 2)}`)
+    
+        const cborldBytes = await encode({
+            jsonldDocument : credCopy,
+            documentLoader,            
+            registryEntryId: 9999,
+            typeTableLoader: async (_) => { return typeTable }
+        });
+
+        console.log(`cbor: ${Buffer.from(cborldBytes).toString('hex')}`)
+
+        const digest = keccak256(cborldBytes, 'bytes');
+        const msgHash = Buffer.from(digest).toString('hex');
+        const signature = this.cipher.signHash(msgHash, keypair.privateJwk, {recoverable:true});
+
+        console.log(`address: ${this.jwkToEthereumAddress(keypair.publicJwk)}`)
+
+        return {
+            ...credential,
+            evmSignature: {
+                signer: id.did,
+                signed: new Date().toISOString(),
+                hash: msgHash,
+                value: signature,
+            }
+        };
     }
 
     async issueCredential(
@@ -2000,8 +2049,12 @@ export default class Keymaster implements KeymasterInterface {
             && vc["@context"][0] === 'https://www.w3.org/ns/credentials/v2'
             && vc["@context"].every(context => {
                 if (typeof context !== 'string') return false;
-                const match = contextURL.exec(context);
-                return !!match && (!match[1] || Number(match[1]) <= 65535);
+                if (context.startsWith('http')) {
+                    const match = contextURL.exec(context);
+                    return !!match && (!match[1] || Number(match[1]) <= 65535);
+                } else if (context.startsWith('did')) {
+                    return isValidDID(context)
+                }
             })
             && Array.isArray(vc.type)
             && vc.type.includes('VerifiableCredential')

@@ -11,6 +11,10 @@ declare module "@digitalbazaar/cborld" {
 
     export type DiagnosticFunction = (message: string) => unknown;
 
+    export type TypeTable = Map<string, Map<string,number>>
+
+    export type TypeTableLoader = ( registryId: number ) => Promise<TypeTable | undefined>
+
     /**
      * Encodes a given JSON-LD document into a CBOR-LD byte array.
      *
@@ -40,6 +44,8 @@ declare module "@digitalbazaar/cborld" {
         appContextMap?: Map<string, number>;
         compressionModeUndefinedTermAllowed?: boolean;
         diagnose?: DiagnosticFunction;
+        registryEntryId?: number;
+        typeTableLoader?: TypeTableLoader
     }): Promise<Uint8Array>;
 
     /**
@@ -69,6 +75,5 @@ declare module "@digitalbazaar/cborld" {
         appContextMap?: Map<string, number>;
         compressionModeUndefinedTermAllowed?: boolean;
         diagnose?: DiagnosticFunction;
-        registryEntryId?: number;
     }): Promise<object>;
 }
