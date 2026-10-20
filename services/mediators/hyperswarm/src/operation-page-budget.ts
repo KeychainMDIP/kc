@@ -7,6 +7,7 @@ export interface OperationPageBudget {
     readonly pages: number;
     readonly bytes: number;
     reserve(bytes: number): OperationPageReservation | null;
+    getMetrics(): { pages: number; bytes: number; admissionFailures: number };
     shutdown(): void;
 }
 
@@ -24,6 +25,7 @@ export function createOperationPageBudget(
     let pages = 0;
     let bytes = 0;
     let accepting = true;
+    let admissionFailures = 0;
 
     return {
         get pages(): number {
@@ -37,6 +39,7 @@ export function createOperationPageBudget(
                 throw new Error('operation page bytes must be a non-negative safe integer');
             }
             if (!accepting || pages >= maxPages || bytes + requestedBytes > maxBytes) {
+                admissionFailures += 1;
                 return null;
             }
 
@@ -54,6 +57,9 @@ export function createOperationPageBudget(
                     bytes -= requestedBytes;
                 },
             };
+        },
+        getMetrics() {
+            return { pages, bytes, admissionFailures };
         },
         shutdown(): void {
             accepting = false;

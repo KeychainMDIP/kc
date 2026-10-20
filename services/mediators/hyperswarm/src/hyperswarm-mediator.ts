@@ -497,7 +497,17 @@ async function connectionLoop(): Promise<void> {
         await queueCoordinator.runRepairs();
         await peerSyncCoordinator.runPeriodicRepairs();
 
-        log.debug({ syncStats: buildSyncStatsSnapshot(syncStats) }, 'hyperswarm sync stats');
+        log.debug({ syncStats: {
+            ...buildSyncStatsSnapshot(syncStats),
+            resources: {
+                transport: transport.getAccounting(),
+                peerAdmission: transport.getSecurityMetrics(),
+                operationPages: operationPages.getMetrics(),
+                gossip: queueCoordinator.getMetrics(),
+                imports: importPipeline.getMetrics(),
+                peerDirectory: peerDirectory.getMetrics(),
+            },
+        } }, 'hyperswarm sync stats');
 
         if (config.ipfsEnabled) {
             const peeringPeers = await ipfs.getPeeringPeers();
@@ -549,6 +559,7 @@ async function main(): Promise<void> {
     await orderedCatchupCoordinator.shutdown();
     await importPipeline.shutdown();
     const deletedRejectedOperations = await syncStore.deleteBySyncOrder(TERMINAL_REJECTED_SYNC_ORDER);
+    syncStats.hardening.terminalRecordsRemovedAtStartup += deletedRejectedOperations;
     importPipeline = buildImportPipeline(syncStore);
     orderedCatchupCoordinator = buildOrderedCatchupCoordinator(syncStore, importPipeline);
     negentropyCoordinator.replaceStore(syncStore, importPipeline);
