@@ -31,7 +31,7 @@ function createPipeline(
     isReady: jest.Mock<() => Promise<boolean>>,
     syncStore = new InMemoryOperationSyncStore(),
     gatekeeperOverrides: Partial<ImportPipelineOptions['gatekeeper']> = {},
-    callbackOverrides: Partial<Pick<ImportPipelineOptions, 'beginStoreMutation' | 'onStoreChanged'>> = {},
+    callbackOverrides: Partial<Pick<ImportPipelineOptions, 'beginStoreMutation' | 'onStoreChanged' | 'syncStats'>> = {},
 ) {
     const gatekeeper = {
         exportIndex: jest.fn(),
@@ -596,6 +596,7 @@ describe('import pipeline', () => {
         jest.useFakeTimers();
         jest.setSystemTime(new Date('2026-08-01T12:00:00.000Z'));
         const deferred = makeValidOperation(1);
+        const syncStats = createMediatorSyncStats();
         const importBatch = jest.fn(async () => ({
             queued: 0, processed: 0, rejected: 0, total: 0,
             rejectedIndices: [], capacityDeferred: 1, capacityDeferredIndices: [0], processedIndices: [],
@@ -603,13 +604,15 @@ describe('import pipeline', () => {
         const pipeline = createPipeline(jest.fn(async () => true), new InMemoryOperationSyncStore(), {
             importBatch,
             processEvents: jest.fn<GatekeeperClient['processEvents']>(),
-        });
+        }, { syncStats });
 
         const first = await pipeline.enqueue({ kind: 'remote', name: 'peer-a', data: [deferred] });
         expect(first).toMatchObject({
             capacityDeferredIds: [deferred.signature!.hash],
             retryable: false,
         });
+        expect(pipeline.getMetrics()).toEqual({ activeRetryDelayedIds: 1, persistenceRetries: 0 });
+        expect(syncStats.hardening.gatekeeperCapacityOutcomes).toBe(1);
         expect(pipeline.filterRetryDelayedIds([
             deferred.signature!.hash,
             'a'.repeat(64),
@@ -624,6 +627,7 @@ describe('import pipeline', () => {
         expect(importBatch).toHaveBeenCalledTimes(1);
 
         await jest.advanceTimersByTimeAsync(1_000);
+        expect(pipeline.getMetrics().activeRetryDelayedIds).toBe(0);
         expect(pipeline.filterRetryDelayedIds([deferred.signature!.hash])).toEqual({
             eligibleIds: [deferred.signature!.hash],
             pendingIds: [],
@@ -818,6 +822,7 @@ describe('import pipeline', () => {
     });
 
     it('bounds retry delays with FIFO eviction', async () => {
+        const syncStats = createMediatorSyncStats();
         const operations = Array.from({ length: 25_001 }, (_, index) => makeValidOperation(index));
         const importBatch = jest.fn(async (events: GatekeeperEvent[]) => ({
             queued: 0, processed: 0, rejected: 0, total: 0,
@@ -827,9 +832,11 @@ describe('import pipeline', () => {
         const pipeline = createPipeline(jest.fn(async () => true), new InMemoryOperationSyncStore(), {
             importBatch,
             processEvents: jest.fn<GatekeeperClient['processEvents']>(),
-        });
+        }, { syncStats });
 
         await pipeline.enqueue({ kind: 'remote', name: 'peer-a', data: operations });
+        expect(pipeline.getMetrics().activeRetryDelayedIds).toBe(25_000);
+        expect(syncStats.hardening.retryDelayEvictions).toBe(1);
         await pipeline.enqueue({
             kind: 'remote',
             name: 'peer-a',

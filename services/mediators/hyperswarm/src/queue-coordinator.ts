@@ -138,6 +138,9 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
         repairNeeded.set(connected.peerKey, {
             connection: connected.connection,
         });
+        if (!existing) {
+            options.syncStats.hardening.gossipRepairsScheduled += 1;
+        }
         return !existing;
     }
 
@@ -165,6 +168,7 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
                 recorded.connection = connection;
             }
             if (await options.requestRepair(peerKey, connection)) {
+                options.syncStats.hardening.gossipRepairsStarted += 1;
                 if (repairNeeded.get(peerKey) === recorded) {
                     repairNeeded.delete(peerKey);
                 }
@@ -201,6 +205,7 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
     }
 
     function noteAdmissionDrop(hash: string, source: GossipSource): void {
+        options.syncStats.hardening.gossipOverloadDrops += 1;
         if (!rememberRetry(hash, source)) {
             return;
         }
@@ -247,6 +252,7 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
             return;
         }
         if (recent?.kind === 'retry') {
+            options.syncStats.hardening.gossipRetriesSuppressed += 1;
             return;
         }
         const existing = inFlight.get(batchHash);
@@ -311,6 +317,7 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
                 ...imported.acceptedOperations,
                 ...imported.portableTerminalOperations,
             ]);
+            options.syncStats.hardening.gossipShareableOperations += shareable.length;
             for (const data of chunkOperationsForPush(shareable, {
                 maxOpsPerPush: options.maxOpsPerPage,
                 maxBytesPerPush: options.maxBytesPerPage,
@@ -426,6 +433,14 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
         },
         runRepairs(): Promise<void> {
             return accepting ? startRepairOpportunity() : Promise.resolve();
+        },
+        getMetrics() {
+            return {
+                admitted: admittedGossip,
+                inFlight: inFlight.size,
+                recentOutcomes: recentOutcomes.size,
+                repairsPending: repairNeeded.size,
+            };
         },
         shutdown(): Promise<void> {
             if (!shutdownPromise) {

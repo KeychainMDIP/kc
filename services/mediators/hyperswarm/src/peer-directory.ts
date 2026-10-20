@@ -110,6 +110,15 @@ export function createPeerDirectory(options: PeerDirectoryOptions) {
     let localKey: string | null = null;
     let stopping = false;
     let mutationTail = Promise.resolve();
+    const metrics = {
+        admissionDrops: 0,
+        recordEvictions: 0,
+        kuboPeerEvictions: 0,
+        kuboCapacityRefusals: 0,
+        kuboUnknownCapacityRefusals: 0,
+        negativeCacheHits: 0,
+        negativeCacheEvictions: 0,
+    };
 
     function kuboOptions() {
         return {
@@ -140,6 +149,7 @@ export function createPeerDirectory(options: PeerDirectoryOptions) {
         while (failed.size > limits.maxFailures) {
             const oldest = failed.keys().next().value as string;
             failed.delete(oldest);
+            metrics.negativeCacheEvictions += 1;
         }
     }
 
@@ -149,6 +159,7 @@ export function createPeerDirectory(options: PeerDirectoryOptions) {
             return false;
         }
         if (retryAt > now()) {
+            metrics.negativeCacheHits += 1;
             return true;
         }
         failed.delete(key);
@@ -249,6 +260,7 @@ export function createPeerDirectory(options: PeerDirectoryOptions) {
         const references = peerKeys.get(record.peerId);
         if ((references?.size ?? 0) > 1 || record.ownership !== 'mediator') {
             detachRecord(key);
+            metrics.recordEvictions += 1;
             return true;
         }
 
@@ -273,6 +285,8 @@ export function createPeerDirectory(options: PeerDirectoryOptions) {
 
         mediatorPeerIds.delete(record.peerId);
         detachRecord(key);
+        metrics.recordEvictions += 1;
+        metrics.kuboPeerEvictions += 1;
         return true;
     }
 
@@ -283,6 +297,7 @@ export function createPeerDirectory(options: PeerDirectoryOptions) {
         const oldest = records.keys().next().value as string | undefined;
         if (oldest !== undefined && records.get(oldest)?.peerId === replacementPeerId) {
             detachRecord(oldest);
+            metrics.recordEvictions += 1;
             return true;
         }
         return oldest !== undefined && removeForEviction(oldest);
@@ -317,6 +332,7 @@ export function createPeerDirectory(options: PeerDirectoryOptions) {
         peer: { name: string; id: string; addresses: string[] },
     ): Promise<boolean> {
         if (!await ensureBaseline()) {
+            metrics.kuboUnknownCapacityRefusals += 1;
             return false;
         }
 
@@ -359,6 +375,7 @@ export function createPeerDirectory(options: PeerDirectoryOptions) {
         }
         catch (error) {
             log.error({ error }, 'Unable to inspect Kubo peering configuration');
+            metrics.kuboUnknownCapacityRefusals += 1;
             return false;
         }
         if (peers.some(existing => existing.ID === peer.id)) {
@@ -378,6 +395,7 @@ export function createPeerDirectory(options: PeerDirectoryOptions) {
 
         const accountedPeers = peers.length + provisionalPeersMissingFrom(peers) + reservedPeerIds.size;
         if (accountedPeers >= limits.maxKuboPeers) {
+            metrics.kuboCapacityRefusals += 1;
             return false;
         }
         if (!await makeRecordRoom()) {
@@ -494,6 +512,7 @@ export function createPeerDirectory(options: PeerDirectoryOptions) {
                 continue;
             }
             if (queue.length >= limits.maxQueued) {
+                metrics.admissionDrops += 1;
                 continue;
             }
             queue.push({ key, did });
@@ -503,6 +522,16 @@ export function createPeerDirectory(options: PeerDirectoryOptions) {
     }
 
     return {
+        getMetrics() {
+            return {
+                ...metrics,
+                queued: queue.length,
+                active: activeWorkers.size,
+                records: records.size,
+                failed: failed.size,
+                mediatorKuboPeers: mediatorPeerIds.size,
+            };
+        },
         async initialize(): Promise<void> {
             if (!options.enabled || stopping) {
                 return;

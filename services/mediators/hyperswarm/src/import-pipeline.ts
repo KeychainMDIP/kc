@@ -90,6 +90,7 @@ export interface ImportPipelineOptions {
 export interface ImportPipeline {
     readonly queued: number;
     readonly running: number;
+    getMetrics(): { activeRetryDelayedIds: number; persistenceRetries: number };
     enqueue(
         request: ImportPipelineRequest,
         onComplete?: (result: ImportQueueResult) => void,
@@ -159,6 +160,7 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
             while (retryDelays.size > MAX_RETRY_DELAY_IDS) {
                 const oldestId = retryDelays.keys().next().value!;
                 retryDelays.delete(oldestId);
+                syncStats.hardening.retryDelayEvictions += 1;
             }
         }
     }
@@ -246,6 +248,8 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
         log.debug({ durationMs: Date.now() - importStart }, 'importBatch');
         log.debug(`* ${JSON.stringify(response)}`);
         syncStats.opsRejected += response.rejected ?? 0;
+        syncStats.hardening.gatekeeperCapacityOutcomes += response.capacityDeferred
+            ?? response.capacityDeferredIndices?.length ?? 0;
 
         return {
             response,
@@ -382,6 +386,7 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
             .filter(record => record.syncOrder !== TERMINAL_REJECTED_SYNC_ORDER)
             .map(record => record.operation);
         await recordTerminalOperationCids(portableTerminalOperations, source);
+        syncStats.hardening.terminalRecordsPersisted += portableTerminalOperations.length;
 
         if (result.inserted > 0 || result.updated > 0) {
             onStoreChanged(storeChangeSource);
@@ -491,6 +496,8 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
                             }
                         }
                         const pageCapacityHashes = response.capacityDeferredHashes ?? [];
+                        syncStats.hardening.gatekeeperCapacityOutcomes += response.capacityDeferred
+                            ?? pageCapacityHashes.length;
                         let chunkCapacityReported = false;
                         for (const hash of pageCapacityHashes) {
                             const id = hash.toLowerCase();
@@ -820,6 +827,16 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
     }
 
     return {
+        getMetrics() {
+            let activeRetryDelayedIds = 0;
+            const at = Date.now();
+            for (const delayed of retryDelays.values()) {
+                if (delayed.deadline > at) {
+                    activeRetryDelayedIds += 1;
+                }
+            }
+            return { activeRetryDelayedIds, persistenceRetries: pendingSyncRecords.size };
+        },
         get queued(): number {
             return queue.length();
         },

@@ -13,7 +13,7 @@ import {
     type QueueMessage,
     type SyncMessage,
 } from './protocol-messages.js';
-import type { MediatorSyncStats } from './sync-stats.js';
+import { recordProtocolStrike, type MediatorSyncStats } from './sync-stats.js';
 import {
     DEFAULT_MAX_FRAMED_MESSAGE_BYTES,
     decodeFramedMessages,
@@ -438,6 +438,8 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
         }
 
         connection.protocolViolationReported = true;
+        recordProtocolStrike(options.syncStats, reason,
+            typeof details.validationError === 'string' ? details.validationError : '');
         const restriction = admission.noteViolation(peerKey, reason);
         options.syncStats.protocolViolationCooldowns += 1;
         log.warn({
@@ -555,6 +557,9 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
             if (state.closed
                 || state.reservedBytes + framed.length > maxOutboundBytesPerConnection
                 || totalOutboundBytes + framed.length > maxOutboundBytesTotal) {
+                if (!state.closed) {
+                    options.syncStats.hardening.outboundBudgetRefusals += 1;
+                }
                 return { accepted: false };
             }
             state.reservedBytes += framed.length;
@@ -609,6 +614,9 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
         }
         try {
             await queued.completion;
+            if (message.type === 'queue') {
+                options.syncStats.hardening.gossipOperationsRelayed += message.data.length;
+            }
             return true;
         }
         catch (error) {
@@ -685,6 +693,7 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
         connection.lastSeen = receivedAt;
         if (connection.initialPingReceived
             && (receivedAt - connection.lastProcessedPingAt) < pingIntervalMs) {
+            options.syncStats.hardening.pingsSkipped += 1;
             return;
         }
         connection.initialPingReceived = true;
@@ -781,6 +790,7 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
         }
         state.partialFrameTimer = setTimeout(() => {
             state.partialFrameTimer = null;
+            options.syncStats.hardening.frameAssemblyTimeouts += 1;
             terminatePeer(peerKey, 'partial_frame_timeout', connection);
         }, frameAssemblyTimeoutMs);
     }
@@ -860,6 +870,7 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
         const state = getInboundState(connection);
         if (state.reservedBytes + bytes > maxInboundBytesPerConnection
             || totalInboundBytes + bytes > maxInboundBytesTotal) {
+            options.syncStats.hardening.inboundBudgetTerminations += 1;
             terminatePeer(peerKey, 'inbound_capacity_exceeded', connection);
             return Promise.resolve();
         }
@@ -901,10 +912,12 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
             return;
         }
         if (trackedConnections.size >= maxTrackedConnections) {
+            options.syncStats.hardening.connectionCapacityRefusals += 1;
             destroyUnadmitted(connection, 'connection_drain_capacity');
             return;
         }
         if (!previous && Object.keys(connections).length >= maxConnections) {
+            options.syncStats.hardening.connectionCapacityRefusals += 1;
             destroyUnadmitted(connection, 'connection_capacity');
             return;
         }
@@ -1032,6 +1045,9 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
             };
         },
         getAdmissionCounts: admission.counts,
+        getSecurityMetrics() {
+            return { ...admission.counts(), evictions: admission.evictions, trackedConnections: trackedConnections.size };
+        },
         reportProtocolViolation,
         terminatePeer,
         waitForIdleWrites,

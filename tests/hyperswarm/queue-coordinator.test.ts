@@ -784,8 +784,8 @@ describe('queue coordinator', () => {
             peerKey: string,
             connection: ConnectionInfo,
         ) => Promise<boolean>>(() => new Promise(resolve => {
-            finishRepair = resolve;
-        }));
+                finishRepair = resolve;
+            }));
         const coordinator = createQueueCoordinator({
             registry: 'hyperswarm',
             maxOpsPerPage: 300,
