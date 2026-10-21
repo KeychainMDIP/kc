@@ -9,6 +9,21 @@ const snapshotDid = 'did:test:z3v8AuabRMo7rU27NZxRvJL9nCzJdXCsBcuGwrr1mbYHobp4jG
 const changesDid = 'did:test:z3v8AuahDNjhQ81fEAGPPkiz7JbkwBsM4UmN9bnL99wjVvC5dGp';
 const snapshotCursor = 'opaque-snapshot-page-token';
 
+function createLogger() {
+    const logger = {
+        child: jest.fn(),
+        debug: jest.fn(),
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+    };
+
+    logger.child.mockReturnValue(logger);
+    return logger;
+}
+
+let logger: ReturnType<typeof createLogger>;
+
 function createEvent(did: string, data: unknown, time: string): GatekeeperEvent {
     return {
         registry: 'local',
@@ -64,15 +79,7 @@ function createChangesResponse(): IndexExportResponse {
 }
 
 beforeEach(() => {
-    const logger = {
-        child: jest.fn(),
-        debug: jest.fn(),
-        info: jest.fn(),
-        warn: jest.fn(),
-        error: jest.fn(),
-    };
-
-    logger.child.mockReturnValue(logger);
+    logger = createLogger();
     setLogger(logger as any);
 });
 
@@ -243,6 +250,79 @@ describe('DidIndexer gatekeeper read boundary', () => {
         finally {
             setIntervalSpy.mockRestore();
         }
+    });
+
+    it('treats a canceled readiness check as expected during shutdown', async () => {
+        const db = new DIDsDbMemory();
+        let rejectReady!: (error: Error) => void;
+        const gatekeeper = {
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>()
+                .mockReturnValue(new Promise<boolean>((_resolve, reject) => { rejectReady = reject; })),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>(),
+        };
+        const indexer = new DidIndexer(gatekeeper, db, { intervalMs: 60_000 });
+        const starting = indexer.startIndexing();
+        await Promise.resolve();
+
+        indexer.beginStopping();
+        rejectReady(Object.assign(new Error('canceled'), { name: 'CanceledError', code: 'ERR_CANCELED' }));
+
+        await expect(Promise.all([starting, indexer.stopIndexing()])).resolves.toBeDefined();
+        expect(logger.error).not.toHaveBeenCalled();
+        expect(await db.loadSyncState('index.lastSyncError')).toBeNull();
+        expect(gatekeeper.exportIndex).not.toHaveBeenCalled();
+    });
+
+    it('treats a canceled index export as expected during shutdown', async () => {
+        const db = new DIDsDbMemory();
+        let rejectExport!: (error: unknown) => void;
+        let markExportStarted!: () => void;
+        const exportStarted = new Promise<void>(resolve => { markExportStarted = resolve; });
+        const gatekeeper = {
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>().mockImplementation(() => {
+                markExportStarted();
+                return new Promise<IndexExportResponse>((_resolve, reject) => { rejectExport = reject; });
+            }),
+        };
+        const indexer = new DidIndexer(gatekeeper, db, { intervalMs: 60_000 });
+        const starting = indexer.startIndexing();
+        await exportStarted;
+
+        indexer.beginStopping();
+        // GatekeeperClient normalizes non-readiness request failures to their message.
+        rejectExport('canceled');
+
+        await expect(Promise.all([starting, indexer.stopIndexing()])).resolves.toBeDefined();
+        expect(logger.error).not.toHaveBeenCalled();
+        expect(await db.loadSyncState('index.lastSyncError')).toBeNull();
+    });
+
+    it('retains non-cancellation index errors during shutdown', async () => {
+        const db = new DIDsDbMemory();
+        let rejectExport!: (error: unknown) => void;
+        let markExportStarted!: () => void;
+        const exportStarted = new Promise<void>(resolve => { markExportStarted = resolve; });
+        const gatekeeper = {
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>().mockImplementation(() => {
+                markExportStarted();
+                return new Promise<IndexExportResponse>((_resolve, reject) => { rejectExport = reject; });
+            }),
+        };
+        const indexer = new DidIndexer(gatekeeper, db, { intervalMs: 60_000 });
+        const starting = indexer.startIndexing();
+        await exportStarted;
+
+        indexer.beginStopping();
+        rejectExport('connection reset');
+
+        await expect(Promise.all([starting, indexer.stopIndexing()])).resolves.toBeDefined();
+        expect(logger.error).toHaveBeenCalledWith(
+            { error: 'connection reset' },
+            'Error in refreshIndex'
+        );
+        expect(await db.loadSyncState('index.lastSyncError')).toBe('connection reset');
     });
 
     it('rejects invalid snapshot continuation state and malformed snapshot responses', async () => {

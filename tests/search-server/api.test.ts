@@ -18,6 +18,7 @@ const schemaDid = 'did:mdip:z3v8AuacR4diTuCgtbEfLDo2LzQNEDHgqBSNLMs5Szuq3WHcQdB'
 const logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
 const connect = jest.fn<(options?: { signal?: AbortSignal }) => Promise<void>>();
 const startIndexing = jest.fn<() => Promise<void>>();
+const beginStopping = jest.fn<() => void>();
 const stopIndexing = jest.fn<() => Promise<void>>();
 const resolveDID = jest.fn<(...args: any[]) => Promise<any>>();
 const sqliteCreate = jest.fn(async () => db);
@@ -49,6 +50,7 @@ jest.unstable_mockModule('../../services/search-server/src/DidIndexer.ts', () =>
     INDEX_SYNC_STATE_KEYS,
     default: class {
         startIndexing = startIndexing;
+        beginStopping = beginStopping;
         stopIndexing = stopIndexing;
     },
 }));
@@ -132,7 +134,14 @@ describe('Search Server HTTP routes', () => {
         expect(await request('/identities')).toEqual({ status: 200, body: { total: 1, identities: [
             { did: schemaDid, manifestSchemaDids: [schemaDid] },
         ] } });
-        expect(list).toHaveBeenLastCalledWith({ didPrefix: 'did:mdip', schemaDid: undefined, fields: [], limit: 50, offset: 0 });
+        expect(list).toHaveBeenLastCalledWith({
+            didPrefix: 'did:mdip',
+            includeAmbiguous: undefined,
+            schemaDid: undefined,
+            fields: [],
+            limit: 50,
+            offset: 0,
+        });
         const query = new URLSearchParams({ schemaDid, limit: '501', offset: '0' });
         query.append('fields', 'label');
         query.append('fields', 'score');
@@ -141,7 +150,14 @@ describe('Search Server HTTP routes', () => {
         expect(result.body.identities[0].credentials).toEqual([
             { credentialDid: 'did:mdip:credential', issuerDid: schemaDid, updatedAt: '2026-09-18T12:00:00.000Z', fields: { label: 'Alice', score: 0 } },
         ]);
-        expect(list).toHaveBeenLastCalledWith({ didPrefix: 'did:mdip', schemaDid, fields: ['label', 'score'], limit: 500, offset: 0 });
+        expect(list).toHaveBeenLastCalledWith({
+            didPrefix: 'did:mdip',
+            includeAmbiguous: undefined,
+            schemaDid,
+            fields: ['label', 'score'],
+            limit: 500,
+            offset: 0,
+        });
         query.delete('schemaDid');
         expect(await request(`/identities?${query}`)).toEqual(result);
         expect(await request('/identities?fields=missing')).toEqual({ status: 200, body: { total: 0, identities: [] } });
@@ -211,22 +227,61 @@ describe('Search Server HTTP routes', () => {
         const bounds = { updatedAfter: '2026-01-01', updatedBefore: '2026-02-01' };
         const pagination = { limit: '2', offset: '1' };
         expect((await request(`/events?${new URLSearchParams({ registry: 'local', ...bounds, ...pagination })}`)).status).toBe(200);
-        expect(events).toHaveBeenLastCalledWith({ didPrefix: 'did:mdip', registry: 'local', ...bounds, limit: 2, offset: 1 });
+        expect(events).toHaveBeenLastCalledWith({
+            didPrefix: 'did:mdip', includeAmbiguous: undefined, registry: 'local', ...bounds, limit: 2, offset: 1,
+        });
 
         const credentialFilter = { credentialDid: 'credential', schemaDid, issuerDid: 'issuer', subjectDid: 'subject' };
         expect((await request(`/metrics/credentials/published?${new URLSearchParams({ ...credentialFilter, revealed: 'true', limit: '999' })}`)).status).toBe(200);
-        expect(credentials).toHaveBeenLastCalledWith({ didPrefix: 'did:mdip', ...credentialFilter, revealed: true, limit: 500, offset: 0 });
+        expect(credentials).toHaveBeenLastCalledWith({
+            didPrefix: 'did:mdip', includeAmbiguous: undefined, ...credentialFilter, revealed: true, limit: 500, offset: 0,
+        });
 
         const usageFilter = { attesterDid: 'attester', schemaDid, requesterDid: 'requester', ...bounds };
         const receiptFilter = { receiptDid: 'receipt', responseCommitment: 'commitment', ...usageFilter };
         expect((await request(`/metrics/challenge-receipts?${new URLSearchParams({ ...receiptFilter, ...pagination })}`)).status).toBe(200);
-        expect(receipts).toHaveBeenLastCalledWith({ didPrefix: 'did:mdip', ...receiptFilter, limit: 2, offset: 1 });
+        expect(receipts).toHaveBeenLastCalledWith({
+            didPrefix: 'did:mdip', includeAmbiguous: undefined, ...receiptFilter, limit: 2, offset: 1,
+        });
         expect((await request('/metrics/challenge-receipts/usage')).status).toBe(400);
         expect(usage).not.toHaveBeenCalled();
         expect((await request('/metrics/challenge-receipts/usage?attesterDid=attester')).status).toBe(200);
         expect(usage).toHaveBeenLastCalledWith(expect.objectContaining({ attesterDid: 'attester', limit: 50, offset: 0 }));
         expect((await request(`/metrics/challenge-receipts/usage?${new URLSearchParams({ ...usageFilter, ...pagination })}`)).status).toBe(200);
-        expect(usage).toHaveBeenLastCalledWith({ didPrefix: 'did:mdip', ...usageFilter, limit: 2, offset: 1 });
+        expect(usage).toHaveBeenLastCalledWith({
+            didPrefix: 'did:mdip', includeAmbiguous: undefined, ...usageFilter, limit: 2, offset: 1,
+        });
+    });
+
+    it('forwards includeAmbiguous to every supported endpoint', async () => {
+        const identities = jest.spyOn(db, 'listIdentities');
+        const events = jest.spyOn(db, 'listEvents');
+        const search = jest.spyOn(db, 'searchDocs');
+        const query = jest.spyOn(db, 'queryDocs');
+        const schemas = jest.spyOn(db, 'getPublishedCredentialCountsBySchema');
+        const credentials = jest.spyOn(db, 'listPublishedCredentials');
+        const receipts = jest.spyOn(db, 'listChallengeReceipts');
+        const usage = jest.spyOn(db, 'getChallengeReceiptUsage');
+        const where = { 'didDocumentData.kind': { $in: ['agent'] } };
+        await boot();
+
+        expect((await request('/identities?includeAmbiguous=true')).status).toBe(200);
+        expect((await request('/events?includeAmbiguous=true')).status).toBe(200);
+        expect((await request('/search?q=agent&includeAmbiguous=true')).status).toBe(200);
+        expect((await request('/query?includeAmbiguous=true', { where })).status).toBe(200);
+        expect((await request('/metrics/schemas/published?includeAmbiguous=true')).status).toBe(200);
+        expect((await request('/metrics/credentials/published?includeAmbiguous=true')).status).toBe(200);
+        expect((await request('/metrics/challenge-receipts?includeAmbiguous=true')).status).toBe(200);
+        expect((await request('/metrics/challenge-receipts/usage?attesterDid=attester&includeAmbiguous=true')).status).toBe(200);
+
+        expect(identities).toHaveBeenCalledWith(expect.objectContaining({ includeAmbiguous: true }));
+        expect(events).toHaveBeenCalledWith(expect.objectContaining({ includeAmbiguous: true }));
+        expect(search).toHaveBeenCalledWith('agent', expect.objectContaining({ includeAmbiguous: true }));
+        expect(query).toHaveBeenCalledWith(where, 'did:mdip', true);
+        expect(schemas).toHaveBeenCalledWith('did:mdip', true);
+        expect(credentials).toHaveBeenCalledWith(expect.objectContaining({ includeAmbiguous: true }));
+        expect(receipts).toHaveBeenCalledWith(expect.objectContaining({ includeAmbiguous: true }));
+        expect(usage).toHaveBeenCalledWith(expect.objectContaining({ includeAmbiguous: true }));
     });
 
     it('forwards paginated search and document queries and rejects invalid input', async () => {
@@ -251,6 +306,7 @@ describe('Search Server HTTP routes', () => {
         expect(await request('/search?q=Alice')).toEqual({ status: 200, body: searchResult });
         expect(search).toHaveBeenLastCalledWith('Alice', {
             didPrefix: 'did:mdip',
+            includeAmbiguous: undefined,
             limit: 50,
             cursor: undefined,
         });
@@ -258,6 +314,7 @@ describe('Search Server HTTP routes', () => {
         expect(await request(`/search?${searchParams}`)).toEqual({ status: 200, body: searchResult });
         expect(search).toHaveBeenLastCalledWith('Alice', {
             didPrefix: 'did:mdip',
+            includeAmbiguous: undefined,
             limit: 2,
             cursor: schemaDid,
         });
@@ -279,7 +336,7 @@ describe('Search Server HTTP routes', () => {
         expect(query).not.toHaveBeenCalled();
         const where = { 'mdip.type': 'agent' };
         expect(await request('/query', { where })).toEqual({ status: 200, body: [schemaDid] });
-        expect(query).toHaveBeenCalledWith(where, 'did:mdip');
+        expect(query).toHaveBeenCalledWith(where, 'did:mdip', undefined);
     });
 
     it('reports PostgreSQL search timeouts as unavailable', async () => {
@@ -312,6 +369,35 @@ describe('Search Server HTTP routes', () => {
         expect((await request(`/did/${schemaDid}`)).status).toBe(404);
     });
 
+    it('resolves ambiguous legacy DIDs through the configured scope', async () => {
+        const storedDid = schemaDid.replace('did:mdip:', 'did:test:');
+        const event = createSeedEvent(storedDid);
+        await seedDID(db, storedDid, { events: [event] });
+        await boot();
+
+        expect(await request(`/did/${schemaDid}/events`)).toEqual({ status: 200, body: [event] });
+        expect(await request(`/did/${schemaDid}`)).toEqual({
+            status: 200,
+            body: { didDocument: { id: schemaDid } },
+        });
+        expect(resolveDID).toHaveBeenLastCalledWith(expect.objectContaining({
+            did: schemaDid,
+            events: [event],
+        }));
+    });
+
+    it('does not resolve authoritative test DIDs through the configured mdip scope', async () => {
+        const storedDid = schemaDid.replace('did:mdip:', 'did:test:');
+        const event = createSeedEvent(storedDid);
+        event.operation.mdip!.prefix = 'did:test';
+        await seedDID(db, storedDid, { events: [event] });
+        await boot();
+
+        expect(await request(`/did/${schemaDid}/events`)).toEqual({ status: 200, body: [] });
+        expect((await request(`/did/${schemaDid}`)).status).toBe(404);
+        expect(resolveDID).not.toHaveBeenCalled();
+    });
+
     it('uses cached documents only for unversioned, in-scope requests', async () => {
         const cached = { didDocument: { id: 'did:mdip:cached' } };
         const getDoc = jest.spyOn(db, 'getDID').mockResolvedValue(cached);
@@ -332,7 +418,7 @@ describe('Search Server HTTP routes', () => {
         expect((await request('/metrics/schemas/published?date=2026-01-01')).status).toBe(400);
         expect(counts).not.toHaveBeenCalled();
         expect(await request('/metrics/schemas/published')).toEqual({ status: 200, body: { schemas } });
-        expect(counts).toHaveBeenCalledWith('did:mdip');
+        expect(counts).toHaveBeenCalledWith('did:mdip', undefined);
     });
 
     it('serves each snapshot projection only when the date and configured scope are valid', async () => {
@@ -415,9 +501,15 @@ describe('Search Server HTTP routes', () => {
         await boot();
         const signal = connect.mock.calls[0][0]?.signal;
         expect(signal?.aborted).toBe(false);
+        let beganBeforeAbort = false;
+        signal?.addEventListener('abort', () => {
+            beganBeforeAbort = beginStopping.mock.calls.length > 0;
+        });
         const shutdown = process.listeners('SIGTERM').find(listener => !processListeners.SIGTERM.includes(listener))!;
         await shutdown('SIGTERM');
         expect(signal?.aborted).toBe(true);
+        expect(beganBeforeAbort).toBe(true);
+        expect(beginStopping).toHaveBeenCalledTimes(1);
         expect(stopIndexing).toHaveBeenCalledTimes(1);
         expect(disconnect).toHaveBeenCalledTimes(1);
         expect(process.exit).toHaveBeenCalledWith(fail ? 1 : 0);
@@ -438,6 +530,7 @@ describe('Search Server HTTP routes', () => {
         const stopping = shutdown('SIGTERM');
         await new Promise(resolve => setImmediate(resolve));
 
+        expect(beginStopping).toHaveBeenCalledTimes(1);
         expect(stopIndexing).not.toHaveBeenCalled();
         expect(disconnect).not.toHaveBeenCalled();
 

@@ -71,12 +71,25 @@ export async function findDIDReadTarget(didDb: DIDsDb, did: string, didPrefix?: 
         return { storedDid: did, resolutionDid: did, events: await didDb.getDIDEvents(did) };
     }
 
-    const requestedDid = didPrefix ? `${didPrefix}:${getDIDSuffix(did)}` : did;
+    const suffix = getDIDSuffix(did);
+    const requestedDid = didPrefix ? `${didPrefix}:${suffix}` : did;
     if (didPrefix) {
-        const storedDid = await didDb.findDIDBySuffix(getDIDSuffix(did), didPrefix);
-        return storedDid
-            ? { storedDid, resolutionDid: requestedDid, events: await didDb.getDIDEvents(storedDid) }
-            : { storedDid: requestedDid, resolutionDid: requestedDid, events: [], scopeRejected: true };
+        const storedDid = await didDb.findDIDBySuffix(suffix, didPrefix);
+        if (storedDid) {
+            return { storedDid, resolutionDid: requestedDid, events: await didDb.getDIDEvents(storedDid) };
+        }
+
+        if (didPrefix !== AMBIGUOUS_DID_PREFIX) {
+            const ambiguousDid = await didDb.findAmbiguousDIDBySuffix(suffix);
+            if (ambiguousDid) {
+                const events = await didDb.getDIDEvents(ambiguousDid);
+                if (events.length > 0 && !classifyDIDPrefix(events).authoritative) {
+                    return { storedDid: ambiguousDid, resolutionDid: requestedDid, events };
+                }
+            }
+        }
+
+        return { storedDid: requestedDid, resolutionDid: requestedDid, events: [], scopeRejected: true };
     }
 
     const events = await didDb.getDIDEvents(requestedDid);
@@ -84,7 +97,7 @@ export async function findDIDReadTarget(didDb: DIDsDb, did: string, didPrefix?: 
         return { storedDid: requestedDid, resolutionDid: requestedDid, events };
     }
 
-    const storedDid = await didDb.findDIDBySuffix(getDIDSuffix(did), didPrefix);
+    const storedDid = await didDb.findDIDBySuffix(suffix, didPrefix);
     return storedDid
         ? { storedDid, resolutionDid: requestedDid, events: await didDb.getDIDEvents(storedDid) }
         : { storedDid: requestedDid, resolutionDid: requestedDid, events };

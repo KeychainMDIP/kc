@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import { resolveDIDFromEvents } from '@mdip/gatekeeper';
 import {
     canonicalDID,
@@ -13,13 +14,14 @@ const did = 'did:test:z3v8AuacR4diTuCgtbEfLDo2LzQNEDHgqBSNLMs5Szuq3WHcQdB';
 function createEvent(
     time: string,
     data: Record<string, unknown>,
-    registry = 'local'
+    registry = 'local',
+    eventDid = did
 ): GatekeeperEvent {
     return {
         registry,
         time,
         ordinal: [0],
-        did,
+        did: eventDid,
         operation: {
             type: 'create',
             created: '2026-04-01T10:00:00.000Z',
@@ -28,25 +30,25 @@ function createEvent(
                 type: 'asset',
                 registry,
             },
-            controller: did,
+            controller: eventDid,
             data,
         },
     };
 }
 
-function updateEvent(time: string, data: Record<string, unknown>): GatekeeperEvent {
+function updateEvent(time: string, data: Record<string, unknown>, eventDid = did): GatekeeperEvent {
     return {
         registry: 'local',
         time,
         ordinal: [1],
-        did,
+        did: eventDid,
         operation: {
             type: 'update',
-            did,
+            did: eventDid,
             doc: {
                 didDocument: {
-                    id: did,
-                    controller: did,
+                    id: eventDid,
+                    controller: eventDid,
                 },
                 didDocumentData: data,
                 mdip: {
@@ -110,10 +112,9 @@ describe('search-server DID read model', () => {
             events: [event],
         });
         expect(await findDIDReadTarget(db, did, 'did:mdip')).toStrictEqual({
-            storedDid: alias,
+            storedDid: did,
             resolutionDid: alias,
-            events: [],
-            scopeRejected: true,
+            events: [event],
         });
 
         const holderDid = 'did:test:holder';
@@ -132,11 +133,13 @@ describe('search-server DID read model', () => {
             events: [],
             scopeRejected: true,
         });
+        const ambiguousLookup = jest.spyOn(db, 'findAmbiguousDIDBySuffix');
         expect(await findDIDReadTarget(db, did, 'did:mdip')).toStrictEqual({
             storedDid: did,
             resolutionDid: alias,
             events: [event],
         });
+        expect(ambiguousLookup).not.toHaveBeenCalled();
 
         const doc = await resolveDIDFromEvents({
             did: alias,
@@ -153,6 +156,31 @@ describe('search-server DID read model', () => {
             storedDid: 'did:mdip:not-a-cid',
             resolutionDid: 'did:mdip:not-a-cid',
             events: [],
+        });
+    });
+
+    it('falls back for ambiguous agents but not authoritative test histories', async () => {
+        const db = new DIDsDbMemory();
+        const storedDid = 'did:test:z3v8AuaZxKbN4T6CQTAnjH4T3mR5EmUq4yFW3pMjPyiUefFd63M';
+        const alias = storedDid.replace('did:test:', 'did:mdip:');
+        const event = createEvent('2026-04-01T10:00:00.000Z', {}, 'local', storedDid);
+        event.operation.mdip!.type = 'agent';
+        await seedDID(db, storedDid, { events: [event] });
+
+        expect(await findDIDReadTarget(db, alias, 'did:mdip')).toStrictEqual({
+            storedDid,
+            resolutionDid: alias,
+            events: [event],
+        });
+
+        event.operation.mdip!.prefix = 'did:test';
+        await seedDID(db, storedDid, { events: [event] });
+        jest.spyOn(db, 'findAmbiguousDIDBySuffix').mockResolvedValue(storedDid);
+        expect(await findDIDReadTarget(db, alias, 'did:mdip')).toStrictEqual({
+            storedDid: alias,
+            resolutionDid: alias,
+            events: [],
+            scopeRejected: true,
         });
     });
 
