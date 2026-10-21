@@ -49,7 +49,8 @@ jobs:
       - name: Grab logs
         if: always()
         run: |
-          docker compose logs --no-color keymaster cli gatekeeper redis search-server > docker-compose-logs.txt
+          docker compose ps -a > docker-compose-logs.txt
+          docker compose logs --no-color >> docker-compose-logs.txt
           cat docker-compose-logs.txt
       
 
