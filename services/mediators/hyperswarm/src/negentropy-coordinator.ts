@@ -317,9 +317,11 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         void trackWork(callback);
         maybeStartBackgroundPrebuild('session_closed');
 
-        log.debug({
+        log.info({
             peer: shortName(peerKey),
             mode: 'negentropy',
+            sessionId: session.sessionId,
+            durationMs: Date.now() - session.startedAt,
             rounds: session.rounds,
             pendingHave: session.pendingHaveIds.size,
             pendingNeed: session.pendingNeedIds.size,

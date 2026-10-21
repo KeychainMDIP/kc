@@ -2042,6 +2042,8 @@ describe('processEvents', () => {
     });
 
     it('should retain an event after a transient database failure', async () => {
+        const logError = jest.fn();
+        const gatekeeper = new Gatekeeper({ db, ipfs, console: { ...mockConsole, error: logError } });
         const operation = await helper.createAgentOp(cipher.generateRandomJwk());
         const event = {
             registry: 'hyperswarm',
@@ -2050,11 +2052,25 @@ describe('processEvents', () => {
             operation,
         };
         await gatekeeper.importBatch([event]);
+        const error = new Error('temporary database failure');
         const addEvent = jest.spyOn(db, 'addEvent')
-            .mockRejectedValueOnce(new Error('temporary database failure'));
+            .mockRejectedValueOnce(error);
 
-        await expect(gatekeeper.processEvents()).rejects.toThrow('temporary database failure');
-        addEvent.mockRestore();
+        try {
+            await expect(gatekeeper.processEvents()).rejects.toThrow('temporary database failure');
+            expect(logError).toHaveBeenCalledWith({
+                error,
+                eventKey: expect.stringMatching(/^hyperswarm\//),
+                did: await gatekeeper.generateDID(operation),
+                operationType: 'create',
+                previd: undefined,
+                staged: 1,
+                pending: 0,
+            }, 'processEvents error');
+        }
+        finally {
+            addEvent.mockRestore();
+        }
 
         await expect(gatekeeper.importBatch([event])).resolves.toMatchObject({
             queued: 0,

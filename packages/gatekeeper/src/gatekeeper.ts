@@ -269,6 +269,7 @@ export default class Gatekeeper implements GatekeeperInterface {
             invalid: boolean;
             notFound?: boolean;
             retryable?: boolean;
+            error?: unknown;
         }> => {
             try {
                 const doc = await this.resolveDID(did);
@@ -276,6 +277,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                     return {
                         invalid: true,
                         notFound: doc.didResolutionMetadata.error === 'notFound',
+                        error: doc.didResolutionMetadata.error,
                     };
                 }
 
@@ -293,7 +295,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                 const retryable = typeof error === 'object'
                     && error !== null
                     && retryableResolutionErrors.has(error);
-                return { invalid: !retryable, retryable };
+                return { invalid: !retryable, retryable, error };
             }
         };
 
@@ -302,9 +304,9 @@ export default class Gatekeeper implements GatekeeperInterface {
             const key = this.didKey(did);
             const revision = this.mutationRevision;
             try {
-                const { doc, expiresAt, invalid, retryable } = await resolveCurrent(did);
+                const { doc, expiresAt, invalid, retryable, error } = await resolveCurrent(did);
                 if (invalid || retryable || !doc) {
-                    throw new InvalidOperationError('DID resolution failed');
+                    throw error ?? new InvalidOperationError('DID resolution failed');
                 }
 
                 const controller = doc.didDocument?.controller;
@@ -339,9 +341,9 @@ export default class Gatekeeper implements GatekeeperInterface {
                     this.verifiedDIDs[key] = true;
                 }
             }
-            catch {
+            catch (error) {
                 if (chatty) {
-                    this.log.warn(`${n}/${total} ${did} invalid`);
+                    this.log.warn({ error, did }, `${n}/${total} ${did} invalid`);
                 }
                 failedDIDs.add(did);
             }
@@ -496,7 +498,7 @@ export default class Gatekeeper implements GatekeeperInterface {
 
         if (chatty) {
             const durationMs = Date.now() - verifyStart;
-            this.log.debug({ durationMs }, 'verifyDb');
+            this.log.info({ durationMs }, 'verifyDb');
         }
 
         return { total, verified, expired, invalid };
@@ -1324,6 +1326,7 @@ export default class Gatekeeper implements GatekeeperInterface {
             entry: QueuedGatekeeperEvent;
             lane: 'staged' | 'pending';
         }> = [];
+        let processingEntry: QueuedGatekeeperEvent | undefined;
         let snapshot: {
             stagedEvents: QueuedGatekeeperEvent[];
             pendingEvents: QueuedGatekeeperEvent[];
@@ -1410,6 +1413,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                     }
                 }
 
+                processingEntry = entry;
                 const record = this.eventStates.get(entry.key);
                 if (!record) {
                     throw new Error(`missing queued event state for ${entry.key}`);
@@ -1420,6 +1424,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                 preferStaged = lane !== 'staged';
 
                 const status = await this.importEvent(entry.event);
+                processingEntry = undefined;
                 if (status === ImportStatus.ADDED || status === ImportStatus.MERGED) {
                     terminalEntries.push({
                         entry,
@@ -1579,7 +1584,15 @@ export default class Gatekeeper implements GatekeeperInterface {
                 this.pendingPassProgress = snapshot.pendingPassProgress;
                 this.preferStagedEvents = snapshot.preferStagedEvents;
             }
-            this.log.error({ error }, 'processEvents error');
+            this.log.error({
+                error,
+                eventKey: processingEntry?.key,
+                did: processingEntry?.event.did,
+                operationType: processingEntry?.event.operation.type,
+                previd: processingEntry?.event.operation.previd,
+                staged: this.transientEventCount,
+                pending: this.pendingEventCount,
+            }, 'processEvents error');
             throw error;
         }
         finally {

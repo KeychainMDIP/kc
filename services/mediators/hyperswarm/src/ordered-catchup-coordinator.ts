@@ -164,7 +164,7 @@ export function createOrderedCatchupCoordinator(
         const failure = outcome(session, reason);
         options.syncStats.orderedCatchupSessionsFailed += 1;
         addAggregateSample(options.syncStats.syncDurationMs, failure.durationMs);
-        log.debug({ peer: shortName(session.peerKey), sessionId: session.sessionId, reason }, 'ordered catch-up client failed');
+        log.info({ peer: shortName(session.peerKey), sessionId: session.sessionId, reason, durationMs: failure.durationMs }, 'ordered catch-up client failed');
         try {
             await options.onFailure(failure);
         }

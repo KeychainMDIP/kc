@@ -682,7 +682,12 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
         }
         catch (error) {
             result.retryable = true;
-            log.error({ error }, 'mergeBatch error');
+            log.error({
+                error,
+                kind: request.kind,
+                peer: shortName(request.name),
+                operations: request.data.length,
+            }, 'mergeBatch error');
         }
         return result;
     }

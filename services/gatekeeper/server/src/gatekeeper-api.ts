@@ -2478,7 +2478,7 @@ async function checkDids() {
     const startTimeMs = Date.now();
     didCheck = await gatekeeper.checkDIDs();
     const durationMs = Date.now() - startTimeMs;
-    log.debug({ durationMs }, 'checkDIDs');
+    log.info({ durationMs }, 'checkDIDs');
 }
 
 async function getStatus() {

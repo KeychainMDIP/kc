@@ -4,6 +4,7 @@ import CipherNode from '@mdip/cipher/node';
 import type GatekeeperClient from '@mdip/gatekeeper/client';
 import type { GatekeeperEvent, Operation } from '@mdip/gatekeeper/types';
 import { generateCID } from '@mdip/ipfs/utils';
+import { logger } from '@mdip/common/logger';
 import InMemoryOperationSyncStore from '../../services/mediators/hyperswarm/src/db/memory.ts';
 import {
     createImportPipeline,
@@ -106,6 +107,26 @@ function makeValidOperation(index: number): Operation {
 }
 
 describe('import pipeline', () => {
+    it('logs the failed batch peer without logging its operations and keeps it retryable', async () => {
+        const error = new Error('Gatekeeper unavailable');
+        const pipeline = createPipeline(jest.fn(async () => { throw error; }));
+        const child = logger.child as jest.MockedFunction<typeof logger.child>;
+        const index = child.mock.calls.findIndex(([bindings]) => bindings.service === 'hyperswarm-mediator');
+        const log = child.mock.results[index].value as ReturnType<typeof logger.child>;
+
+        try {
+            await expect(pipeline.enqueue({
+                kind: 'remote', name: '0123456789abcdef', data: [operation],
+            })).resolves.toMatchObject({ retryable: true });
+            expect(log.error).toHaveBeenCalledWith({
+                error, kind: 'remote', peer: '0123-cdef', operations: 1,
+            }, 'mergeBatch error');
+        }
+        finally {
+            await pipeline.shutdown();
+        }
+    });
+
     it('runs completion before starting the next queued import', async () => {
         const isReady = jest.fn(async () => false);
         const pipeline = createPipeline(isReady);

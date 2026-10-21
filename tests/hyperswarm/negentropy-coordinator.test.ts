@@ -102,6 +102,12 @@ describe('Negentropy coordinator', () => {
             { error: callbackError, peer: '2222-2222', reason: 'test_close' },
             'negentropy session-close callback failed',
         );
+        expect(mockLogger.info).toHaveBeenCalledWith(expect.objectContaining({
+            peer: '2222-2222',
+            sessionId: 'test-session',
+            durationMs: expect.any(Number),
+            reason: 'test_close',
+        }), 'peer sync session closed');
         await store.stop();
     });
 

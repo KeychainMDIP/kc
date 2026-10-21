@@ -12,6 +12,9 @@ const createMockLogger = (options?: unknown): any => {
     return logger;
 };
 
-const pinoMock = jest.fn((options?: unknown, _stream?: unknown) => createMockLogger(options));
+const pinoMock = Object.assign(
+    jest.fn((options?: unknown, _stream?: unknown) => createMockLogger(options)),
+    { stdSerializers: jest.requireActual<typeof import('pino')>('pino/pino.js').stdSerializers },
+);
 
 export default pinoMock;
