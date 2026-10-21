@@ -2401,7 +2401,6 @@ app.use('/api', (req, res) => {
 });
 
 let shuttingDown = false;
-let statusTimer: ReturnType<typeof setInterval> | undefined;
 let gcTimer: ReturnType<typeof setTimeout> | undefined;
 let server: ReturnType<typeof app.listen> | undefined;
 let shutdownPromise: Promise<void> | undefined;
@@ -2434,10 +2433,6 @@ function shutdown(exitCode = 0): Promise<void> {
     serverReady = false;
     shuttingDown = true;
 
-    if (statusTimer) {
-        clearInterval(statusTimer);
-        statusTimer = undefined;
-    }
     if (gcTimer) {
         clearTimeout(gcTimer);
         gcTimer = undefined;
@@ -2543,20 +2538,6 @@ async function main() {
 
     if (shuttingDown) {
         return;
-    }
-
-    if (config.statusInterval > 0) {
-        log.info(`Starting status update every ${config.statusInterval} minutes`);
-        statusTimer = setInterval(() => {
-            if (!shuttingDown) {
-                trackActiveWork(reportStatus()).catch((error: any) => {
-                    log.error({ error }, 'Error reporting status');
-                });
-            }
-        }, config.statusInterval * 60 * 1000);
-    }
-    else {
-        log.info(`Status update disabled`);
     }
 
     if (config.gcInterval > 0) {
