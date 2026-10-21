@@ -63,7 +63,8 @@ jobs:
       - name: Grab logs
         if: always()
         run: |
-          docker compose logs --no-color keymaster > docker-services-logs.txt || true
+          docker compose ps -a > docker-services-logs.txt
+          docker compose logs --no-color >> docker-services-logs.txt
           cat docker-services-logs.txt
 
       - name: Teardown Docker
