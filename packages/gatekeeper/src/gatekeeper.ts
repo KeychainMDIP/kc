@@ -717,13 +717,19 @@ export default class Gatekeeper implements GatekeeperInterface {
     }
 
     async verifyOperation(operation: Operation): Promise<boolean> {
+        return this.verifyOperationWithHistory(operation);
+    }
+
+    private async verifyOperationWithHistory(operation: Operation, events?: GatekeeperEvent[]): Promise<boolean> {
         if (operation.type === 'create') {
             const valid = await this.verifyCreateOperation(operation);
             return valid && !(await this.operationIntroducesControllerCycle(operation));
         }
 
         if (operation.type === 'update' || operation.type === 'delete') {
-            const doc = await this.resolveDID(operation.did);
+            const doc = events === undefined
+                ? await this.resolveDID(operation.did)
+                : await this.resolveHistory(operation.did, copyJSON(events));
             const valid = await this.verifyUpdateOperation(operation, doc);
             return valid && !(await this.operationIntroducesControllerCycle(operation));
         }
@@ -1129,6 +1135,14 @@ export default class Gatekeeper implements GatekeeperInterface {
             ? await this.readForResolution(() => this.db.getEvents(did))
             : [];
 
+        return this.resolveHistory(did, events, options);
+    }
+
+    private async resolveHistory(
+        did: string | undefined,
+        events: GatekeeperEvent[],
+        options?: ResolveDIDOptions,
+    ): Promise<MdipDocument> {
         return resolveDIDFromEvents({
             did,
             events,
@@ -1325,7 +1339,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                         ? await this.verifyCreateOperation(event.operation)
                         : await this.verifyUpdateOperation(
                             event.operation,
-                            await this.resolveDID(lockedDid, { versionSequence: opMatchIndex })
+                            await this.resolveHistory(lockedDid, copyJSON(currentEvents), { versionSequence: opMatchIndex })
                         );
 
                     if (!valid || !(await this.didMatchesOperation(lockedDid, event.operation))) {
@@ -1354,7 +1368,7 @@ export default class Gatekeeper implements GatekeeperInterface {
 
                     return ImportStatus.MERGED;
                 } else {
-                    const ok = await this.verifyOperation(event.operation);
+                    const ok = await this.verifyOperationWithHistory(event.operation, currentEvents);
 
                     if (!ok || !(await this.didMatchesOperation(lockedDid, event.operation))) {
                         return ImportStatus.REJECTED;

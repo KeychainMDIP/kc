@@ -210,6 +210,100 @@ describe('historical operation CID cache', () => {
     });
 });
 
+describe('import history reuse', () => {
+    it.each(['update', 'delete'] as const)('reads the target history once when importing an aliased %s', async type => {
+        const keypair = cipher.generateRandomJwk();
+        const did = await gatekeeper.createDID(await helper.createAgentOp(keypair));
+        const doc = await gatekeeper.resolveDID(did);
+        doc.didDocumentData = { changed: true };
+        const operation = type === 'delete'
+            ? await helper.createDeleteOp(keypair, did)
+            : await helper.createUpdateOp(keypair, did, doc);
+        const alias = `did:mdip:${did.split(':').pop()}`;
+        const read = jest.spyOn(db, 'getEvents');
+        try {
+            await expect(gatekeeper.importEvent({
+                registry: 'hyperswarm', time: operation.signature!.signed, did: alias, operation,
+            })).resolves.toBe('added');
+            expect(read).toHaveBeenCalledTimes(1);
+            expect(read).toHaveBeenCalledWith(alias);
+        }
+        finally {
+            read.mockRestore();
+        }
+        const resolved = await gatekeeper.resolveDID(did);
+        expect(resolved.didDocumentMetadata?.version).toBe('2');
+        if (type === 'delete') {
+            expect(resolved.didDocumentMetadata?.deactivated).toBe(true);
+        }
+        else {
+            expect(resolved.didDocumentData).toEqual({ changed: true });
+        }
+    });
+
+    it('reuses the asset history but still resolves and verifies its controller', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const controller = await gatekeeper.createDID(await helper.createAgentOp(keypair));
+        const did = await gatekeeper.createDID(await helper.createAssetOp(controller, keypair));
+        const doc = await gatekeeper.resolveDID(did);
+        doc.didDocumentData = { changed: true };
+        const operation = await helper.createUpdateOp(keypair, did, doc);
+        const read = jest.spyOn(db, 'getEvents');
+        try {
+            await expect(gatekeeper.importEvent({
+                registry: 'hyperswarm', time: operation.signature!.signed, operation,
+            })).resolves.toBe('added');
+            expect(read.mock.calls.filter(([target]) => target === did)).toHaveLength(1);
+            expect(read).toHaveBeenCalledWith(controller);
+        }
+        finally {
+            read.mockRestore();
+        }
+        const replacement = await gatekeeper.resolveDID(did);
+        replacement.didDocumentData = { forged: true };
+        const forged = await helper.createUpdateOp(cipher.generateRandomJwk(), did, replacement);
+        await expect(gatekeeper.importEvent({
+            registry: 'hyperswarm', time: forged.signature!.signed, operation: forged,
+        })).resolves.toBe('rejected');
+    });
+
+    it('verifies duplicate rotations against their predecessor without modifying stored signed documents', async () => {
+        const oldKeys = cipher.generateRandomJwk();
+        const newKeys = cipher.generateRandomJwk();
+        const newestKeys = cipher.generateRandomJwk();
+        const create = await helper.createAgentOp(oldKeys, { registry: 'hyperswarm' });
+        const did = await gatekeeper.generateDID(create);
+        await gatekeeper.importEvent({ registry: 'hyperswarm', time: create.created!, operation: create });
+        const doc = await gatekeeper.resolveDID(did);
+        doc.didDocument!.verificationMethod![0].publicKeyJwk = newKeys.publicJwk;
+        delete doc.didDocumentMetadata;
+        delete doc.didResolutionMetadata;
+        const rotation = await helper.createUpdateOp(oldKeys, did, doc);
+        await expect(gatekeeper.updateDID(rotation)).resolves.toBe(true);
+        const nextDoc = await gatekeeper.resolveDID(did);
+        nextDoc.didDocument!.verificationMethod![0].publicKeyJwk = newestKeys.publicJwk;
+        const nextRotation = await helper.createUpdateOp(newKeys, did, nextDoc);
+        await expect(gatekeeper.updateDID(nextRotation)).resolves.toBe(true);
+        const before = await gatekeeper.exportDID(did);
+        const read = jest.spyOn(db, 'getEvents');
+        try {
+            await expect(gatekeeper.importEvent({
+                ...before[2], registry: 'hyperswarm', ordinal: [2],
+            })).resolves.toBe('added');
+            expect(read).toHaveBeenCalledTimes(1);
+        }
+        finally {
+            read.mockRestore();
+        }
+        const after = await gatekeeper.exportDID(did);
+        expect(after.map(event => event.operation)).toEqual(before.map(event => event.operation));
+        await expect(gatekeeper.resolveDID(did)).resolves.toMatchObject({
+            didDocument: { verificationMethod: [{ publicKeyJwk: newestKeys.publicJwk }] },
+            didDocumentMetadata: { version: '3', confirmed: false },
+        });
+    });
+});
+
 describe('exportDIDs', () => {
     it('should export valid DIDs', async () => {
         const keypair = cipher.generateRandomJwk();
@@ -1399,9 +1493,9 @@ describe('processEvents', () => {
             operation,
         };
         await gatekeeper.importBatch([event]);
-        const originalVerifyOperation = gatekeeper.verifyOperation.bind(gatekeeper);
-        const verifyOperation = jest.spyOn(gatekeeper, 'verifyOperation').mockImplementationOnce(async op => {
-            const valid = await originalVerifyOperation(op);
+        const originalVerifyUpdate = gatekeeper.verifyUpdateOperation.bind(gatekeeper);
+        const verifyOperation = jest.spyOn(gatekeeper, 'verifyUpdateOperation').mockImplementationOnce(async (op, doc) => {
+            const valid = await originalVerifyUpdate(op, doc);
             op.did = victimDid;
             event.did = victimDid;
             return valid;
