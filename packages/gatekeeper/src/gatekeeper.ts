@@ -57,6 +57,8 @@ const MAX_EVENT_PAGE_BYTES = 512 * 1024;
 const MAX_TRANSIENT_EVENT_BYTES = 1280 * 1024;
 // Longer controller chains stay valid but use one conservative mutation watch.
 const MAX_PENDING_DEPENDENCIES = 32;
+const MAX_HISTORY_CID_CACHE_ENTRIES = 10_000;
+const MAX_HISTORY_CID_CACHE_BYTES = 64 * 1024 * 1024;
 
 interface QueuedGatekeeperEvent {
     event: GatekeeperEvent;
@@ -117,6 +119,10 @@ export default class Gatekeeper implements GatekeeperInterface {
     private pendingRetryStates = new Map<string, PendingEventRetry>();
     private pendingDependents = new Map<string, Set<string>>();
     private deferredDependencies = new WeakMap<GatekeeperEvent, string[]>();
+    private historicalOperationCids = new Map<string, string>();
+    private historicalOperationCidBytes = 0;
+    private maxHistoryCidCacheEntries = MAX_HISTORY_CID_CACHE_ENTRIES;
+    private maxHistoryCidCacheBytes = MAX_HISTORY_CID_CACHE_BYTES;
     constructor(options: GatekeeperOptions) {
         if (!options || !options.db) {
             throw new InvalidParameterError('missing options.db');
@@ -663,6 +669,8 @@ export default class Gatekeeper implements GatekeeperInterface {
                 this.mutationRevision += 1;
                 this.verifiedDIDs = {};
                 await this.db.resetDb();
+                this.historicalOperationCids.clear();
+                this.historicalOperationCidBytes = 0;
                 this.pendingExpiredControllers.clear();
                 this.clearEventQueues();
                 return true;
@@ -674,6 +682,31 @@ export default class Gatekeeper implements GatekeeperInterface {
     async generateCID(operation: unknown): Promise<string> {
         const canonical = this.cipher.canonicalizeJSON(operation);
         return generateCID(JSON.parse(canonical));
+    }
+
+    private async historicalOperationCID(operation: Operation): Promise<string> {
+        // Key by contents, never by an unverified stored opid or mutable object identity.
+        const contents = JSON.stringify(operation);
+        const cached = this.historicalOperationCids.get(contents);
+        if (cached !== undefined) {
+            this.historicalOperationCids.delete(contents);
+            this.historicalOperationCids.set(contents, cached);
+            return cached;
+        }
+
+        const cid = await this.generateCID(operation);
+        const bytes = 2 * (contents.length + cid.length);
+        if (bytes <= this.maxHistoryCidCacheBytes) {
+            while (this.historicalOperationCids.size >= this.maxHistoryCidCacheEntries
+                || this.historicalOperationCidBytes + bytes > this.maxHistoryCidCacheBytes) {
+                const [oldContents, oldCid] = this.historicalOperationCids.entries().next().value!;
+                this.historicalOperationCids.delete(oldContents);
+                this.historicalOperationCidBytes -= 2 * (oldContents.length + oldCid.length);
+            }
+            this.historicalOperationCids.set(contents, cid);
+            this.historicalOperationCidBytes += bytes;
+        }
+        return cid;
     }
 
     async generateDID(operation: Operation): Promise<string> {
@@ -1274,7 +1307,7 @@ export default class Gatekeeper implements GatekeeperInterface {
 
                 for (let i = 0; i < currentEvents.length; i++) {
                     const e = currentEvents[i];
-                    const operationCid = await this.generateCID(e.operation);
+                    const operationCid = await this.historicalOperationCID(e.operation);
 
                     if (!e.opid) {
                         e.opid = operationCid;
