@@ -51,6 +51,10 @@ through `processedIndices`. Callers must retry capacity-deferred inputs later.
 true, handling each result before requesting the next page. A false `hasMore`
 with a non-zero `pending` count means the retained events are waiting for a
 missing controller or predecessor and should not be retried immediately.
+Retained events are retried when their target or a traversed controller changes,
+including local submissions and DID-prefix aliases. Unidentified or unusually
+large dependency sets are conservatively retried after any DID mutation.
+Unrelated arrivals do not repeatedly revalidate known, unchanged dependencies.
 
 ### Client
 

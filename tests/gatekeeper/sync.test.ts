@@ -2579,11 +2579,6 @@ describe('processEvents', () => {
         await gk.importBatch([history[0]]);
 
         await expect(gk.processEvents()).resolves.toMatchObject({
-            added: 0,
-            pending: 1,
-            hasMore: true,
-        });
-        await expect(gk.processEvents()).resolves.toMatchObject({
             added: 1,
             pending: 1,
             hasMore: true,
@@ -2595,7 +2590,7 @@ describe('processEvents', () => {
         });
     });
 
-    it('should schedule one retry when progress follows a new deferred event', async () => {
+    it('should not retry a new deferred event after unrelated progress', async () => {
         const localDb = new DbJsonMemory('deferred-after-progress');
         const gk = new Gatekeeper({ db: localDb, ipfs, console: mockConsole });
         const localHelper = new TestHelper(gk, cipher);
@@ -2619,13 +2614,198 @@ describe('processEvents', () => {
         await expect(gk.processEvents()).resolves.toMatchObject({
             added: 1,
             pending: 1,
-            hasMore: true,
+            hasMore: false,
         });
         await expect(gk.processEvents()).resolves.toMatchObject({
             added: 0,
             pending: 1,
             hasMore: false,
         });
+    });
+
+    it('should skip unchanged pending dependencies and wake them through a DID-prefix alias', async () => {
+        const localDb = new DbJsonMemory('pending-dependency-retry');
+        const gk = new Gatekeeper({ db: localDb, ipfs, console: mockConsole });
+        const localHelper = new TestHelper(gk, cipher);
+        const keys = cipher.generateRandomJwk();
+        const did = await gk.createDID(await localHelper.createAgentOp(keys));
+        const doc = await gk.resolveDID(did);
+        doc.didDocumentData = { updated: true };
+        await gk.updateDID(await localHelper.createUpdateOp(keys, did, doc));
+        const history = await gk.exportDID(did);
+        await gk.resetDb();
+        await gk.importBatch([history[1]]);
+        await expect(gk.processEvents()).resolves.toMatchObject({ pending: 1, hasMore: false });
+        const importEvent = jest.spyOn(gk, 'importEvent');
+
+        try {
+            await gk.processEvents();
+            await gk.processEvents();
+            expect(importEvent).not.toHaveBeenCalled();
+
+            const unrelated = await localHelper.createAgentOp(cipher.generateRandomJwk());
+            await gk.importBatch([{ registry: 'hyperswarm', time: unrelated.created!, operation: unrelated }]);
+            await expect(gk.processEvents()).resolves.toMatchObject({ added: 1, pending: 1, hasMore: false });
+            expect(importEvent).toHaveBeenCalledTimes(1);
+
+            await gk.importBatch([{ ...history[0], did: did.replace('did:test:', 'did:alias:') }]);
+            await expect(gk.processEvents()).resolves.toMatchObject({ added: 2, pending: 0, hasMore: false });
+            expect(importEvent).toHaveBeenCalledTimes(3);
+            await expect(gk.resolveDID(did)).resolves.toMatchObject({ didDocumentData: { updated: true } });
+            // @ts-expect-error Completed events must not retain dependency metadata.
+            expect(gk.pendingRetryStates.size).toBe(0);
+            // @ts-expect-error Completed events must not retain dependency metadata.
+            expect(gk.pendingDependents.size).toBe(0);
+        }
+        finally {
+            importEvent.mockRestore();
+        }
+    });
+
+    it('should wake an update when its missing nested controller is created locally', async () => {
+        const localDb = new DbJsonMemory('nested-pending-dependency');
+        const gk = new Gatekeeper({ db: localDb, ipfs, console: mockConsole });
+        const localHelper = new TestHelper(gk, cipher);
+        const keys = cipher.generateRandomJwk();
+        const root = await gk.createDID(await localHelper.createAgentOp(keys));
+        const controllerCreate = await localHelper.createAssetOp(root, keys);
+        controllerCreate.data = 'future controller';
+        const unsigned = copyJSON(controllerCreate);
+        delete unsigned.signature;
+        controllerCreate.signature!.hash = cipher.hashJSON(unsigned);
+        controllerCreate.signature!.value = cipher.signHash(controllerCreate.signature!.hash, keys.privateJwk);
+        const controllerDid = await gk.generateDID(controllerCreate);
+        const did = await gk.createDID(await localHelper.createAssetOp(root, keys));
+        const doc = await gk.resolveDID(did);
+        doc.didDocument!.controller = controllerDid;
+        await expect(gk.updateDID(await localHelper.createUpdateOp(keys, did, doc))).resolves.toBe(true);
+        const replacement = await gk.resolveDID(did);
+        replacement.didDocumentData = { updated: true };
+        const update = await localHelper.createUpdateOp(keys, did, replacement);
+        await gk.importBatch([{ registry: 'hyperswarm', time: update.signature!.signed, operation: update }]);
+        await expect(gk.processEvents()).resolves.toMatchObject({ pending: 1, hasMore: false });
+        const importEvent = jest.spyOn(gk, 'importEvent');
+
+        try {
+            await gk.processEvents();
+            expect(importEvent).not.toHaveBeenCalled();
+            await gk.createDID(controllerCreate);
+            await expect(gk.processEvents()).resolves.toMatchObject({ added: 1, pending: 0, hasMore: false });
+            expect(importEvent).toHaveBeenCalledTimes(1);
+            await expect(gk.resolveDID(did)).resolves.toMatchObject({ didDocumentData: { updated: true } });
+        }
+        finally {
+            importEvent.mockRestore();
+        }
+    });
+
+    it('should wake a pending update when an intermediate controller history changes', async () => {
+        const localDb = new DbJsonMemory('changed-pending-controller');
+        const gk = new Gatekeeper({ db: localDb, ipfs, console: mockConsole });
+        const localHelper = new TestHelper(gk, cipher);
+        const keys = cipher.generateRandomJwk();
+        const root = await gk.createDID(await localHelper.createAgentOp(keys));
+        const controllerCreate = await localHelper.createAssetOp(root, keys);
+        const controllerDid = await gk.createDID(controllerCreate);
+        const missingController = await gk.generateDID(await localHelper.createAgentOp(cipher.generateRandomJwk()));
+        const controller = await gk.resolveDID(controllerDid);
+        controller.didDocument!.controller = missingController;
+        await gk.updateDID(await localHelper.createUpdateOp(keys, controllerDid, controller));
+        const assetCreate = await localHelper.createAssetOp(root, keys);
+        assetCreate.data = 'target asset';
+        setOperationHash(assetCreate);
+        assetCreate.signature!.value = cipher.signHash(assetCreate.signature!.hash, keys.privateJwk);
+        const did = await gk.createDID(assetCreate);
+        const doc = await gk.resolveDID(did);
+        doc.didDocument!.controller = controllerDid;
+        await gk.updateDID(await localHelper.createUpdateOp(keys, did, doc));
+        const replacement = await gk.resolveDID(did);
+        replacement.didDocumentData = { updated: true };
+        const update = await localHelper.createUpdateOp(keys, did, replacement);
+        await gk.importBatch([{ registry: 'hyperswarm', time: update.signature!.signed, operation: update }]);
+        await expect(gk.processEvents()).resolves.toMatchObject({ pending: 1, hasMore: false });
+
+        await gk.removeDIDs([controllerDid]);
+        await gk.createDID(controllerCreate);
+        await expect(gk.processEvents()).resolves.toMatchObject({ added: 1, pending: 0, hasMore: false });
+        await expect(gk.resolveDID(did)).resolves.toMatchObject({ didDocumentData: { updated: true } });
+        // @ts-expect-error Completed events must release every controller watch.
+        expect(gk.pendingDependents.size).toBe(0);
+    });
+
+    it('should wake retained dependencies after a partially persisted page rolls back', async () => {
+        const localDb = new DbJsonMemory('pending-partial-persistence');
+        const gk = new Gatekeeper({ db: localDb, ipfs, console: mockConsole });
+        const localHelper = new TestHelper(gk, cipher);
+        const keys = cipher.generateRandomJwk();
+        const did = await gk.createDID(await localHelper.createAgentOp(keys));
+        const doc = await gk.resolveDID(did);
+        doc.didDocumentData = { updated: true };
+        await gk.updateDID(await localHelper.createUpdateOp(keys, did, doc));
+        const history = await gk.exportDID(did);
+        await gk.resetDb();
+        await gk.importBatch([history[1]]);
+        await expect(gk.processEvents()).resolves.toMatchObject({ pending: 1, hasMore: false });
+        await gk.importBatch([history[0]]);
+        const originalAddEvent = localDb.addEvent.bind(localDb);
+        const addEvent = jest.spyOn(localDb, 'addEvent').mockImplementationOnce(async (target, event) => {
+            await originalAddEvent(target, event);
+            throw new Error('failed after persistence');
+        });
+        try {
+            await expect(gk.processEvents()).rejects.toThrow('failed after persistence');
+        }
+        finally {
+            addEvent.mockRestore();
+        }
+
+        await expect(gk.processEvents()).resolves.toMatchObject({ added: 1, merged: 1, pending: 0, hasMore: false });
+        await expect(gk.resolveDID(did)).resolves.toMatchObject({ didDocumentData: { updated: true } });
+        // @ts-expect-error Rolled-back watches must be released when their events finish.
+        expect(gk.pendingDependents.size).toBe(0);
+    });
+
+    it('should bound controller watches without rejecting long chains', async () => {
+        const localDb = new DbJsonMemory('bounded-pending-controller-watches');
+        const gk = new Gatekeeper({ db: localDb, ipfs, console: mockConsole });
+        const localHelper = new TestHelper(gk, cipher);
+        const keys = cipher.generateRandomJwk();
+        const root = await gk.createDID(await localHelper.createAgentOp(keys));
+        let controller = await gk.generateDID(await localHelper.createAgentOp(cipher.generateRandomJwk()));
+
+        for (let index = 0; index < 33; index += 1) {
+            const create = await localHelper.createAssetOp(root, keys);
+            create.data = { index };
+            setOperationHash(create);
+            create.signature!.value = cipher.signHash(create.signature!.hash, keys.privateJwk);
+            const did = await gk.createDID(create);
+            const doc = await gk.resolveDID(did);
+            doc.didDocument!.controller = controller;
+            await expect(gk.updateDID(await localHelper.createUpdateOp(keys, did, doc))).resolves.toBe(true);
+            controller = did;
+        }
+
+        const replacement = await gk.resolveDID(controller);
+        replacement.didDocumentData = { updated: true };
+        const update = await localHelper.createUpdateOp(keys, controller, replacement);
+        await gk.importBatch([{ registry: 'hyperswarm', time: update.signature!.signed, operation: update }]);
+        await expect(gk.processEvents()).resolves.toMatchObject({ pending: 1, rejected: 0, hasMore: false });
+        // @ts-expect-error Long chains retain a single conservative mutation watch.
+        expect(Array.from(gk.pendingRetryStates.values())).toEqual([{ dependencies: ['*'], ready: false }]);
+        const importEvent = jest.spyOn(gk, 'importEvent');
+        try {
+            await gk.processEvents();
+            expect(importEvent).not.toHaveBeenCalled();
+            await gk.createDID(await localHelper.createAgentOp(cipher.generateRandomJwk()));
+            await expect(gk.processEvents()).resolves.toMatchObject({ pending: 1, hasMore: false });
+            expect(importEvent).toHaveBeenCalledTimes(1);
+            await gk.resetDb();
+            // @ts-expect-error Reset must release conservative watches as well.
+            expect(gk.pendingDependents.size).toBe(0);
+        }
+        finally {
+            importEvent.mockRestore();
+        }
     });
 
     it('should retain old pending events and report new overflow as retryable capacity', async () => {
@@ -2660,6 +2840,10 @@ describe('processEvents', () => {
             capacityDeferredHashes: [histories[1][1].operation.signature!.hash.toLowerCase()],
             hasMore: false,
         });
+        // @ts-expect-error Capacity-deferred events must not retain retry metadata.
+        expect(gk.pendingRetryStates.size).toBe(1);
+        // @ts-expect-error Only the retained event may hold a dependency watch.
+        expect(gk.pendingDependents.size).toBe(1);
         await expect(gk.importBatch([histories[0][1]])).resolves.toMatchObject({
             queued: 0,
             processed: 1,

@@ -55,6 +55,8 @@ const MAX_EVENT_PAGE_COUNT = 300;
 const MAX_EVENT_PAGE_BYTES = 512 * 1024;
 // A full operation page needs bounded headroom for canonical DID/opid envelope fields.
 const MAX_TRANSIENT_EVENT_BYTES = 1280 * 1024;
+// Longer controller chains stay valid but use one conservative mutation watch.
+const MAX_PENDING_DEPENDENCIES = 32;
 
 interface QueuedGatekeeperEvent {
     event: GatekeeperEvent;
@@ -69,7 +71,13 @@ interface EventQueueRecord {
     state: EventQueueState;
 }
 
+interface PendingEventRetry {
+    dependencies: string[];
+    ready: boolean;
+}
+
 const retryableResolutionErrors = new WeakSet<object>();
+const resolutionDependencies = new WeakMap<object, string[]>();
 
 export default class Gatekeeper implements GatekeeperInterface {
     private db: GatekeeperDb;
@@ -106,6 +114,9 @@ export default class Gatekeeper implements GatekeeperInterface {
     private verifyDbInFlight?: Promise<VerifyDbResult>;
     private eventQueueBarrier: Promise<void> = Promise.resolve();
     private eventQueueWork = new Set<Promise<unknown>>();
+    private pendingRetryStates = new Map<string, PendingEventRetry>();
+    private pendingDependents = new Map<string, Set<string>>();
+    private deferredDependencies = new WeakMap<GatekeeperEvent, string[]>();
     constructor(options: GatekeeperOptions) {
         if (!options || !options.db) {
             throw new InvalidParameterError('missing options.db');
@@ -162,6 +173,47 @@ export default class Gatekeeper implements GatekeeperInterface {
         this.pendingPassRemaining = 0;
         this.pendingPassProgress = false;
         this.preferStagedEvents = true;
+        this.pendingRetryStates.clear();
+        this.pendingDependents.clear();
+    }
+
+    private clearPendingRetry(key: string): void {
+        const retry = this.pendingRetryStates.get(key);
+        if (retry) {
+            for (const dependency of retry.dependencies) {
+                const dependents = this.pendingDependents.get(dependency)!;
+                dependents.delete(key);
+                if (dependents.size === 0) {
+                    this.pendingDependents.delete(dependency);
+                }
+            }
+            this.pendingRetryStates.delete(key);
+        }
+    }
+
+    private setPendingRetry(key: string, dependencies: string[], ready: boolean): void {
+        this.clearPendingRetry(key);
+        this.pendingRetryStates.set(key, { dependencies, ready });
+        for (const dependency of dependencies) {
+            const dependents = this.pendingDependents.get(dependency) ?? new Set<string>();
+            dependents.add(key);
+            this.pendingDependents.set(dependency, dependents);
+        }
+        this.pendingPassProgress ||= ready;
+    }
+
+    private dependencyError(detail: string, did?: string, visited?: Set<string>): InvalidOperationError {
+        const error = new InvalidOperationError(detail);
+        if (did) {
+            const dependencies = visited && visited.size > MAX_PENDING_DEPENDENCIES
+                ? new Set(['*'])
+                : new Set(visited);
+            dependencies.add(this.didKey(did));
+            resolutionDependencies.set(error, dependencies.has('*') || dependencies.size > MAX_PENDING_DEPENDENCIES
+                ? ['*']
+                : Array.from(dependencies));
+        }
+        return error;
     }
 
     private withEventQueueWork<T>(fn: () => Promise<T>): Promise<T> {
@@ -211,6 +263,14 @@ export default class Gatekeeper implements GatekeeperInterface {
         finally {
             this.invalidateVerifiedDID(did);
             this.activeMutations.delete(key);
+            for (const dependency of [key, '*']) {
+                for (const eventKey of this.pendingDependents.get(dependency) ?? []) {
+                    if (this.eventStates.get(eventKey)?.state === 'pending') {
+                        this.pendingRetryStates.get(eventKey)!.ready = true;
+                        this.pendingPassProgress = true;
+                    }
+                }
+            }
         }
     }
 
@@ -790,7 +850,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                 !doc.didDocument.verificationMethod ||
                 doc.didDocument.verificationMethod.length === 0 ||
                 !doc.didDocument.verificationMethod[0].publicKeyJwk) {
-                throw new InvalidOperationError('didDocument missing verificationMethod');
+                throw this.dependencyError('didDocument missing verificationMethod', controllerDid);
             }
             // TBD select the right key here, not just the first one
             const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
@@ -841,6 +901,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         visited: Set<string>,
         did?: string
     ): Promise<boolean> {
+        const currentDid = did ?? doc?.didDocument?.id;
         if (this.operationExceedsMaxBytes(operation)) {
             throw new InvalidOperationError('size');
         }
@@ -850,14 +911,13 @@ export default class Gatekeeper implements GatekeeperInterface {
         }
 
         if (!doc?.didDocument) {
-            throw new InvalidOperationError('doc.didDocument');
+            throw this.dependencyError('doc.didDocument', currentDid, visited);
         }
 
         if (doc.didDocumentMetadata?.deactivated) {
-            throw new InvalidOperationError('DID deactivated');
+            throw this.dependencyError('DID deactivated', currentDid, visited);
         }
 
-        const currentDid = did ?? doc.didDocument.id;
         if (currentDid) {
             const key = this.didKey(currentDid);
             if (visited.has(key)) {
@@ -881,7 +941,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         }
 
         if (!doc.didDocument.verificationMethod) {
-            throw new InvalidOperationError('doc.didDocument.verificationMethod');
+            throw this.dependencyError('doc.didDocument.verificationMethod', currentDid, visited);
         }
 
         const signature = operation.signature!;
@@ -895,7 +955,7 @@ export default class Gatekeeper implements GatekeeperInterface {
 
         if (doc.didDocument.verificationMethod.length === 0 ||
             !doc.didDocument.verificationMethod[0].publicKeyJwk) {
-            throw new InvalidOperationError('didDocument missing verificationMethod');
+            throw this.dependencyError('didDocument missing verificationMethod', currentDid, visited);
         }
 
         // TBD get the right signature, not just the first one
@@ -937,7 +997,7 @@ export default class Gatekeeper implements GatekeeperInterface {
 
     async verifyUpdateOperation(operation: Operation, doc: MdipDocument): Promise<boolean> {
         if (!doc?.didDocument || doc.didResolutionMetadata?.error) {
-            throw new InvalidOperationError('doc.didDocument');
+            throw this.dependencyError('doc.didDocument', operation.did);
         }
 
         if (!this.verifyUpdateOperationStructure(operation, doc)) {
@@ -1185,6 +1245,7 @@ export default class Gatekeeper implements GatekeeperInterface {
     }
 
     async importEvent(event: GatekeeperEvent): Promise<ImportStatus> {
+        this.deferredDependencies.delete(event);
         try {
             if (!event.did) {
                 if (event.operation.did) {
@@ -1280,6 +1341,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                     const idMatch = currentEvents.find(item => item.opid === event.operation.previd);
 
                     if (!idMatch) {
+                        this.deferredDependencies.set(event, [this.didKey(lockedDid)]);
                         return ImportStatus.DEFERRED;
                     }
 
@@ -1313,6 +1375,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         } catch (error: any) {
             if (error.type === 'Invalid operation') {
                 // Could be an event with a controller DID that hasn't been imported yet
+                this.deferredDependencies.set(event, resolutionDependencies.get(error) ?? ['*']);
                 return ImportStatus.DEFERRED;
             }
             throw error;
@@ -1339,9 +1402,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         const newlyDeferred = new Map<string, {
             entry: QueuedGatekeeperEvent;
             hash: string;
-            progressAtDeferral: number;
         }>();
-        const attemptedNewlyDeferred = new Set<string>();
         const terminalEntries: Array<{
             entry: QueuedGatekeeperEvent;
             lane: 'staged' | 'pending';
@@ -1358,6 +1419,7 @@ export default class Gatekeeper implements GatekeeperInterface {
             pendingPassRemaining: number;
             pendingPassProgress: boolean;
             preferStagedEvents: boolean;
+            pendingRetryStates: Map<string, PendingEventRetry>;
         } | undefined;
 
         try {
@@ -1377,6 +1439,9 @@ export default class Gatekeeper implements GatekeeperInterface {
                 pendingPassRemaining: this.pendingPassRemaining,
                 pendingPassProgress: this.pendingPassProgress,
                 preferStagedEvents: this.preferStagedEvents,
+                pendingRetryStates: new Map(Array.from(this.pendingRetryStates, ([key, retry]) => [
+                    key, { ...retry },
+                ])),
             };
 
             let stagedRemaining = this.stagedEvents.length;
@@ -1388,7 +1453,6 @@ export default class Gatekeeper implements GatekeeperInterface {
             let attempted = 0;
             let attemptedBytes = 0;
             let preferStaged = this.preferStagedEvents;
-            let progressCount = 0;
 
             while (attempted < this.maxEventPageCount) {
                 if (this.pendingPassRemaining === 0 && this.pendingPassProgress) {
@@ -1428,21 +1492,24 @@ export default class Gatekeeper implements GatekeeperInterface {
                 }
                 else {
                     this.pendingPassRemaining -= 1;
-                    if (newlyDeferred.has(entry.key)) {
-                        attemptedNewlyDeferred.add(entry.key);
-                    }
                 }
+                preferStaged = lane !== 'staged';
 
                 processingEntry = entry;
                 const record = this.eventStates.get(entry.key);
                 if (!record) {
                     throw new Error(`missing queued event state for ${entry.key}`);
                 }
+                if (lane === 'pending' && this.pendingRetryStates.get(entry.key)?.ready === false) {
+                    this.pendingEvents.push(entry);
+                    processingEntry = undefined;
+                    continue;
+                }
                 record.state = 'processing';
                 attempted += 1;
                 attemptedBytes += entry.bytes;
-                preferStaged = lane !== 'staged';
 
+                const attemptRevision = this.mutationRevision;
                 const status = await this.importEvent(entry.event);
                 processingEntry = undefined;
                 if (status === ImportStatus.ADDED || status === ImportStatus.MERGED) {
@@ -1451,8 +1518,6 @@ export default class Gatekeeper implements GatekeeperInterface {
                         lane: newlyDeferred.has(entry.key) ? 'staged' : lane,
                     });
                     newlyDeferred.delete(entry.key);
-                    this.pendingPassProgress = true;
-                    progressCount += 1;
                     const hash = entry.event.operation.signature?.hash?.toLowerCase();
                     if (hash) {
                         acceptedHashes.add(hash);
@@ -1489,12 +1554,15 @@ export default class Gatekeeper implements GatekeeperInterface {
                     newlyDeferred.set(entry.key, {
                         entry,
                         hash: verifiedHash.toLowerCase(),
-                        progressAtDeferral: progressCount,
                     });
+                    this.setPendingRetry(entry.key, this.deferredDependencies.get(entry.event) ?? ['*'],
+                        this.mutationRevision !== attemptRevision);
                     record.state = 'pending';
                     this.pendingEvents.push(entry);
                 }
                 else {
+                    this.setPendingRetry(entry.key, this.deferredDependencies.get(entry.event) ?? ['*'],
+                        this.mutationRevision !== attemptRevision);
                     record.state = 'pending';
                     this.pendingEvents.push(entry);
                     this.log.debug(`import ${attempted}: deferred event for ${entry.event.did}`);
@@ -1512,11 +1580,12 @@ export default class Gatekeeper implements GatekeeperInterface {
                     this.pendingEventBytes -= entry.bytes;
                 }
                 this.eventStates.delete(entry.key);
+                this.clearPendingRetry(entry.key);
             }
 
             let unattemptedDeferredAdmitted = false;
             const capacityDeferredEntries = new Set<QueuedGatekeeperEvent>();
-            for (const { entry, hash, progressAtDeferral } of newlyDeferred.values()) {
+            for (const { entry, hash } of newlyDeferred.values()) {
                 const pendingFits = this.pendingEventCount < this.maxPendingEventCount
                     && this.pendingEventBytes + entry.bytes <= this.maxPendingEventBytes;
                 this.transientEventCount -= 1;
@@ -1526,12 +1595,12 @@ export default class Gatekeeper implements GatekeeperInterface {
                     record.state = 'pending';
                     this.pendingEventCount += 1;
                     this.pendingEventBytes += entry.bytes;
-                    unattemptedDeferredAdmitted ||= !attemptedNewlyDeferred.has(entry.key)
-                        && progressCount > progressAtDeferral;
+                    unattemptedDeferredAdmitted ||= this.pendingRetryStates.get(entry.key)!.ready;
                 }
                 else {
                     capacityDeferredEntries.add(entry);
                     this.eventStates.delete(entry.key);
+                    this.clearPendingRetry(entry.key);
                     capacityDeferred += 1;
                     capacityDeferredHashes.add(hash);
                 }
@@ -1603,6 +1672,12 @@ export default class Gatekeeper implements GatekeeperInterface {
                 this.pendingPassRemaining = snapshot.pendingPassRemaining;
                 this.pendingPassProgress = snapshot.pendingPassProgress;
                 this.preferStagedEvents = snapshot.preferStagedEvents;
+                this.pendingRetryStates.clear();
+                this.pendingDependents.clear();
+                // A failed page may have persisted dependencies before rollback.
+                for (const [key, retry] of snapshot.pendingRetryStates) {
+                    this.setPendingRetry(key, retry.dependencies, true);
+                }
             }
             this.log.error({
                 error,
