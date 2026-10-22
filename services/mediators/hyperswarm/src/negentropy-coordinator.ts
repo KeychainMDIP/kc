@@ -1862,6 +1862,12 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                 }
             }
         },
+        interruptForOrderedCatchup(): void {
+            for (const [peerKey, session] of peerSessions) {
+                sendNegClose(peerKey, session, 'ordered_catchup_active');
+                closePeerSession(peerKey, 'ordered_catchup_active');
+            }
+        },
         removePeer(peerKey: string, reason: string): void {
             closePeerSession(peerKey, reason);
         },
