@@ -597,7 +597,7 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         ]);
     });
 
-    it('clears retained accepted operations when the sync store is replaced', async () => {
+    it('retries accepted operations after the sync store is replaced', async () => {
         const operations = await createIndependentOperations(1);
         const expectedIds = operationIds(operations);
         driver = await createMediatorDriver({
@@ -625,15 +625,8 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         driver.transport.connectionA.write(push.raw);
         expect(await driver.transport.deliverNext()).toBe(true);
 
-        expect(upsertMany).toHaveBeenCalledTimes(1);
-        expect(await driver.storeB.count()).toBe(0);
-        expect(decodeWire(driver.transport).some(message => (
-            message.body.type === 'neg_close' && message.body.reason === 'complete'
-        ))).toBe(false);
-
-        await driver.storeB.upsertMany(mapAcceptedOperationsToSyncRecords(operations).records);
-        driver.transport.connectionA.write(push.raw);
-        expect(await driver.transport.deliverNext()).toBe(true);
+        expect(upsertMany).toHaveBeenCalledTimes(2);
+        expect(await driver.storeB.count()).toBe(1);
         await driver.driveUntilQuiescent(expectedIds);
     });
 

@@ -22,7 +22,6 @@ Operations come from Keymaster clients such as end-user wallets and network medi
 | `KC_IPFS_CLUSTER_URL` | (no default) | Optional IPFS Cluster API URL |
 | `KC_IPFS_CLUSTER_AUTH_HEADER` | (no default) | Optional authorization header sent to IPFS Cluster |
 | `KC_GATEKEEPER_GC_INTERVAL` | 15 | The number of minutes between garbage collection cycles (0 to disable) |
-| `KC_GATEKEEPER_STATUS_INTERVAL` | 5 | The number of minutes between logging status updates (0 to disable) |
 | `KC_GATEKEEPER_TRUST_PROXY` | false | If true, trust upstream proxy headers when determining client IP (`req.ip`) |
 | `KC_GATEKEEPER_RATE_LIMIT_ENABLED` | false | Enable API rate limiting |
 | `KC_GATEKEEPER_RATE_LIMIT_WINDOW_VALUE` | 1 | Time window size for rate limiting |

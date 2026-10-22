@@ -73,6 +73,237 @@ describe('exportDID', () => {
     });
 });
 
+describe('historical operation CID cache', () => {
+    async function storedAgent() {
+        const keypair = cipher.generateRandomJwk();
+        const operation = await helper.createAgentOp(keypair, { registry: 'hyperswarm' });
+        const event = { registry: 'hyperswarm', time: operation.created!, ordinal: [1], operation };
+        await expect(gatekeeper.importEvent(event)).resolves.toBe('added');
+        return { keypair, operation, event, did: await gatekeeper.generateDID(operation) };
+    }
+
+    it('calculates historical CIDs once across 500 successive updates', async () => {
+        const { keypair, operation, did } = await storedAgent();
+        const generate = jest.spyOn(gatekeeper, 'generateCID');
+        try {
+            for (let step = 0; step < 500; step += 1) {
+                const doc = await gatekeeper.resolveDID(did);
+                doc.didDocumentData = { step };
+                const update = await helper.createUpdateOp(keypair, did, doc);
+                await expect(gatekeeper.importEvent({
+                    registry: 'hyperswarm', time: update.signature!.signed, ordinal: [step + 2], operation: update,
+                })).resolves.toBe('added');
+            }
+            expect(generate).toHaveBeenCalledTimes(1000);
+            expect(generate.mock.calls.filter(([op]) => (op as Operation).signature?.hash === operation.signature!.hash))
+                .toHaveLength(1);
+            await expect(gatekeeper.resolveDID(did)).resolves.toMatchObject({
+                didDocumentData: { step: 499 }, didDocumentMetadata: { version: '501' },
+            });
+        }
+        finally {
+            generate.mockRestore();
+        }
+    });
+
+    it('does not reuse a cached CID when stored contents change but opid does not', async () => {
+        const { keypair, did } = await storedAgent();
+        const doc = await gatekeeper.resolveDID(did);
+        doc.didDocumentData = { original: true };
+        const operation = await helper.createUpdateOp(keypair, did, doc);
+        const event = { registry: 'hyperswarm', time: operation.signature!.signed, ordinal: [2], operation };
+        await expect(gatekeeper.importEvent(event)).resolves.toBe('added');
+        await expect(gatekeeper.importEvent(copyJSON(event))).resolves.toBe('merged');
+        const events = await gatekeeper.exportDID(did);
+        events[1].operation.doc!.didDocumentData = { changed: true };
+        await db.setEvents(did, events);
+
+        const generate = jest.spyOn(gatekeeper, 'generateCID');
+        try {
+            await expect(gatekeeper.importEvent(copyJSON(event))).resolves.toBe('rejected');
+            expect(generate).toHaveBeenCalledWith(events[1].operation);
+        }
+        finally {
+            generate.mockRestore();
+        }
+    });
+
+    it('still verifies incoming signatures and rejects forged opids after warming the cache', async () => {
+        const { operation, event, did } = await storedAgent();
+        await expect(gatekeeper.importEvent(copyJSON(event))).resolves.toBe('merged');
+        const verify = jest.spyOn(gatekeeper, 'verifyCreateOperation').mockResolvedValueOnce(false);
+        try {
+            await expect(gatekeeper.importEvent(copyJSON(event))).resolves.toBe('rejected');
+            expect(verify).toHaveBeenCalledWith(operation);
+        }
+        finally {
+            verify.mockRestore();
+        }
+        await expect(gatekeeper.importEvent({ ...event, opid: 'forged-version' })).resolves.toBe('rejected');
+        await expect(gatekeeper.exportDID(did)).resolves.toHaveLength(1);
+    });
+
+    it('recomputes missing legacy opids once and continues matching predecessors', async () => {
+        const { keypair, did, event } = await storedAgent();
+        const events = await gatekeeper.exportDID(did);
+        delete events[0].opid;
+        await db.setEvents(did, events);
+        await expect(gatekeeper.importEvent(copyJSON(event))).resolves.toBe('merged');
+        const doc = await gatekeeper.resolveDID(did);
+        doc.didDocumentData = { legacy: true };
+        const operation = await helper.createUpdateOp(keypair, did, doc);
+        await expect(gatekeeper.importEvent({
+            registry: 'hyperswarm', time: operation.signature!.signed, ordinal: [2], operation,
+        })).resolves.toBe('added');
+        await expect(gatekeeper.resolveDID(did)).resolves.toMatchObject({ didDocumentData: { legacy: true } });
+    });
+
+    it('evicts the least recently used contents at the entry limit', async () => {
+        // @ts-expect-error Use a small internal bound to exercise eviction without thousands of identities.
+        gatekeeper.maxHistoryCidCacheEntries = 2;
+        try {
+            const first = await storedAgent();
+            const second = await storedAgent();
+            const third = await storedAgent();
+            for (const { event } of [first, second, first, third]) {
+                await expect(gatekeeper.importEvent(copyJSON(event))).resolves.toBe('merged');
+            }
+            // @ts-expect-error Inspect retained contents to verify the memory bound and LRU order.
+            expect([...gatekeeper.historicalOperationCids.keys()]).toEqual([
+                JSON.stringify(first.operation), JSON.stringify(third.operation),
+            ]);
+        }
+        finally {
+            // @ts-expect-error Restore the production bound.
+            gatekeeper.maxHistoryCidCacheEntries = 10_000;
+        }
+    });
+
+    it('bounds retained string bytes and does not retain oversized contents', async () => {
+        const first = await storedAgent();
+        const second = await storedAgent();
+        await gatekeeper.importEvent(copyJSON(first.event));
+        // @ts-expect-error Read the accounted UTF-16 content/CID bytes for a small test bound.
+        const firstBytes = gatekeeper.historicalOperationCidBytes;
+        // @ts-expect-error Exercise the byte bound independently of the entry bound.
+        gatekeeper.maxHistoryCidCacheBytes = firstBytes;
+        try {
+            await gatekeeper.importEvent(copyJSON(second.event));
+            // @ts-expect-error Only one same-sized operation fits in this byte bound.
+            expect(gatekeeper.historicalOperationCids.size).toBe(1);
+            // @ts-expect-error Retained strings stay within the byte bound.
+            expect(gatekeeper.historicalOperationCidBytes).toBeLessThanOrEqual(firstBytes);
+            await gatekeeper.resetDb();
+            // @ts-expect-error An operation larger than the cache remains importable, but is not cached.
+            gatekeeper.maxHistoryCidCacheBytes = 1;
+            const third = await storedAgent();
+            await expect(gatekeeper.importEvent(copyJSON(third.event))).resolves.toBe('merged');
+            // @ts-expect-error Oversized entries are not retained.
+            expect(gatekeeper.historicalOperationCids.size).toBe(0);
+            // @ts-expect-error Successful reset also clears byte accounting.
+            expect(gatekeeper.historicalOperationCidBytes).toBe(0);
+        }
+        finally {
+            // @ts-expect-error Restore the production bound.
+            gatekeeper.maxHistoryCidCacheBytes = 64 * 1024 * 1024;
+        }
+    });
+});
+
+describe('import history reuse', () => {
+    it.each(['update', 'delete'] as const)('reads the target history once when importing an aliased %s', async type => {
+        const keypair = cipher.generateRandomJwk();
+        const did = await gatekeeper.createDID(await helper.createAgentOp(keypair));
+        const doc = await gatekeeper.resolveDID(did);
+        doc.didDocumentData = { changed: true };
+        const operation = type === 'delete'
+            ? await helper.createDeleteOp(keypair, did)
+            : await helper.createUpdateOp(keypair, did, doc);
+        const alias = `did:mdip:${did.split(':').pop()}`;
+        const read = jest.spyOn(db, 'getEvents');
+        try {
+            await expect(gatekeeper.importEvent({
+                registry: 'hyperswarm', time: operation.signature!.signed, did: alias, operation,
+            })).resolves.toBe('added');
+            expect(read).toHaveBeenCalledTimes(1);
+            expect(read).toHaveBeenCalledWith(alias);
+        }
+        finally {
+            read.mockRestore();
+        }
+        const resolved = await gatekeeper.resolveDID(did);
+        expect(resolved.didDocumentMetadata?.version).toBe('2');
+        if (type === 'delete') {
+            expect(resolved.didDocumentMetadata?.deactivated).toBe(true);
+        }
+        else {
+            expect(resolved.didDocumentData).toEqual({ changed: true });
+        }
+    });
+
+    it('reuses the asset history but still resolves and verifies its controller', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const controller = await gatekeeper.createDID(await helper.createAgentOp(keypair));
+        const did = await gatekeeper.createDID(await helper.createAssetOp(controller, keypair));
+        const doc = await gatekeeper.resolveDID(did);
+        doc.didDocumentData = { changed: true };
+        const operation = await helper.createUpdateOp(keypair, did, doc);
+        const read = jest.spyOn(db, 'getEvents');
+        try {
+            await expect(gatekeeper.importEvent({
+                registry: 'hyperswarm', time: operation.signature!.signed, operation,
+            })).resolves.toBe('added');
+            expect(read.mock.calls.filter(([target]) => target === did)).toHaveLength(1);
+            expect(read).toHaveBeenCalledWith(controller);
+        }
+        finally {
+            read.mockRestore();
+        }
+        const replacement = await gatekeeper.resolveDID(did);
+        replacement.didDocumentData = { forged: true };
+        const forged = await helper.createUpdateOp(cipher.generateRandomJwk(), did, replacement);
+        await expect(gatekeeper.importEvent({
+            registry: 'hyperswarm', time: forged.signature!.signed, operation: forged,
+        })).resolves.toBe('rejected');
+    });
+
+    it('verifies duplicate rotations against their predecessor without modifying stored signed documents', async () => {
+        const oldKeys = cipher.generateRandomJwk();
+        const newKeys = cipher.generateRandomJwk();
+        const newestKeys = cipher.generateRandomJwk();
+        const create = await helper.createAgentOp(oldKeys, { registry: 'hyperswarm' });
+        const did = await gatekeeper.generateDID(create);
+        await gatekeeper.importEvent({ registry: 'hyperswarm', time: create.created!, operation: create });
+        const doc = await gatekeeper.resolveDID(did);
+        doc.didDocument!.verificationMethod![0].publicKeyJwk = newKeys.publicJwk;
+        delete doc.didDocumentMetadata;
+        delete doc.didResolutionMetadata;
+        const rotation = await helper.createUpdateOp(oldKeys, did, doc);
+        await expect(gatekeeper.updateDID(rotation)).resolves.toBe(true);
+        const nextDoc = await gatekeeper.resolveDID(did);
+        nextDoc.didDocument!.verificationMethod![0].publicKeyJwk = newestKeys.publicJwk;
+        const nextRotation = await helper.createUpdateOp(newKeys, did, nextDoc);
+        await expect(gatekeeper.updateDID(nextRotation)).resolves.toBe(true);
+        const before = await gatekeeper.exportDID(did);
+        const read = jest.spyOn(db, 'getEvents');
+        try {
+            await expect(gatekeeper.importEvent({
+                ...before[2], registry: 'hyperswarm', ordinal: [2],
+            })).resolves.toBe('added');
+            expect(read).toHaveBeenCalledTimes(1);
+        }
+        finally {
+            read.mockRestore();
+        }
+        const after = await gatekeeper.exportDID(did);
+        expect(after.map(event => event.operation)).toEqual(before.map(event => event.operation));
+        await expect(gatekeeper.resolveDID(did)).resolves.toMatchObject({
+            didDocument: { verificationMethod: [{ publicKeyJwk: newestKeys.publicJwk }] },
+            didDocumentMetadata: { version: '3', confirmed: false },
+        });
+    });
+});
+
 describe('exportDIDs', () => {
     it('should export valid DIDs', async () => {
         const keypair = cipher.generateRandomJwk();
@@ -364,7 +595,7 @@ describe('importBatch', () => {
         });
     });
 
-    it('should report when event already processed', async () => {
+    it('should requeue an event after its earlier processing completed', async () => {
         const keypair = cipher.generateRandomJwk();
         const agentOp = await helper.createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
@@ -374,8 +605,186 @@ describe('importBatch', () => {
         await gatekeeper.processEvents();
         const response = await gatekeeper.importBatch(ops);
 
-        expect(response.queued).toBe(0);
-        expect(response.processed).toBe(1);
+        expect(response.queued).toBe(1);
+        expect(response.processed).toBe(0);
+        await expect(gatekeeper.processEvents()).resolves.toMatchObject({ merged: 1 });
+    });
+
+    it('should report exact capacity-deferred and processed indexes', async () => {
+        const localDb = new DbJsonMemory('bounded-import');
+        const gk = new Gatekeeper({ db: localDb, ipfs, console: mockConsole });
+        const operations = await Promise.all([
+            helper.createAgentOp(cipher.generateRandomJwk()),
+            helper.createAgentOp(cipher.generateRandomJwk()),
+            helper.createAgentOp(cipher.generateRandomJwk()),
+        ]);
+        const events = operations.map((operation, index) => ({
+            registry: 'hyperswarm',
+            time: operation.created!,
+            ordinal: [index],
+            operation,
+        }));
+        // @ts-expect-error Testing bounded private state with small fixtures
+        gk.maxEventPageCount = 2;
+
+        await expect(gk.importBatch(events)).resolves.toMatchObject({
+            queued: 2,
+            processed: 0,
+            processedIndices: [],
+            capacityDeferred: 1,
+            capacityDeferredIndices: [2],
+            total: 2,
+        });
+        await expect(gk.importBatch([events[0]])).resolves.toMatchObject({
+            queued: 0,
+            processed: 1,
+            processedIndices: [0],
+            capacityDeferred: 0,
+            capacityDeferredIndices: [],
+        });
+    });
+
+    it('should reject an event larger than the bounded event page', async () => {
+        const localDb = new DbJsonMemory('oversized-event');
+        const gk = new Gatekeeper({ db: localDb, ipfs, console: mockConsole });
+        const operation = await helper.createAgentOp(cipher.generateRandomJwk());
+        const event = {
+            registry: 'hyperswarm',
+            time: operation.created!,
+            metadata: 'x'.repeat(256),
+            operation,
+        } as any;
+        // @ts-expect-error Testing bounded private state with small fixtures
+        gk.maxEventPageBytes = Buffer.byteLength(JSON.stringify(event), 'utf8') - 1;
+
+        await expect(gk.importBatch([event])).resolves.toMatchObject({
+            queued: 0,
+            rejected: 1,
+            rejectedIndices: [0],
+            capacityDeferred: 0,
+        });
+    });
+
+    it('should reject an event that cannot be serialized for admission', async () => {
+        const operation = await helper.createAgentOp(cipher.generateRandomJwk());
+        const metadata: Record<string, unknown> = {};
+        metadata.self = metadata;
+
+        await expect(gatekeeper.importBatch([{
+            registry: 'hyperswarm',
+            time: operation.created!,
+            operation,
+            metadata,
+        } as any])).resolves.toMatchObject({
+            queued: 0,
+            rejected: 1,
+            rejectedIndices: [0],
+        });
+    });
+
+    it('should reject an event whose canonical queue key cannot be generated', async () => {
+        const operation = await helper.createAgentOp(cipher.generateRandomJwk());
+        const generateCID = jest.spyOn(gatekeeper, 'generateCID')
+            .mockRejectedValueOnce(new Error('CID unavailable'));
+
+        try {
+            await expect(gatekeeper.importBatch([{
+                registry: 'hyperswarm',
+                time: operation.created!,
+                operation,
+            }])).resolves.toMatchObject({
+                queued: 0,
+                rejected: 1,
+                rejectedIndices: [0],
+            });
+        } finally {
+            generateCID.mockRestore();
+        }
+    });
+
+    it('should reject an event whose normalized DID cannot be generated', async () => {
+        const operation = await helper.createAgentOp(cipher.generateRandomJwk());
+        const generateDID = jest.spyOn(gatekeeper, 'generateDID')
+            .mockRejectedValueOnce(new Error('DID unavailable'));
+
+        try {
+            await expect(gatekeeper.importBatch([{
+                registry: 'hyperswarm',
+                time: operation.created!,
+                operation,
+            }])).resolves.toMatchObject({
+                queued: 0,
+                rejected: 1,
+                rejectedIndices: [0],
+            });
+        } finally {
+            generateDID.mockRestore();
+        }
+    });
+
+    it('should account for generated DID and opid fields at admission', async () => {
+        const localDb = new DbJsonMemory('normalized-event-size');
+        const gk = new Gatekeeper({ db: localDb, ipfs, console: mockConsole });
+        const operation = await helper.createAgentOp(cipher.generateRandomJwk());
+        const event = {
+            registry: 'hyperswarm',
+            time: operation.created!,
+            operation,
+        };
+        // The submitted shape fits exactly, but the retained event also needs its canonical DID and opid.
+        // @ts-expect-error Testing bounded private state with a small fixture
+        gk.maxEventPageBytes = Buffer.byteLength(JSON.stringify(event), 'utf8');
+
+        await expect(gk.importBatch([event])).resolves.toMatchObject({
+            queued: 0,
+            rejected: 1,
+            rejectedIndices: [0],
+            capacityDeferred: 0,
+        });
+    });
+
+    it('should reserve a concurrent create event only once', async () => {
+        const localDb = new DbJsonMemory('concurrent-duplicate-import');
+        const gk = new Gatekeeper({ db: localDb, ipfs, console: mockConsole });
+        const operation = await helper.createAgentOp(cipher.generateRandomJwk());
+        const event = {
+            registry: 'hyperswarm',
+            time: operation.created!,
+            operation,
+        };
+        const originalGenerateDID = gk.generateDID.bind(gk);
+        const generateDID = jest.spyOn(gk, 'generateDID');
+        let arrivals = 0;
+        let release!: () => void;
+        const bothArrived = new Promise<void>(resolve => {
+            release = resolve;
+        });
+        generateDID.mockImplementation(async op => {
+            arrivals += 1;
+            if (arrivals === 2) {
+                release();
+            }
+            await bothArrived;
+            return originalGenerateDID(op);
+        });
+
+        try {
+            const results = await Promise.all([
+                gk.importBatch([event]),
+                gk.importBatch([event]),
+            ]);
+
+            expect(results.reduce((total, result) => total + result.queued, 0)).toBe(1);
+            expect(results.reduce((total, result) => total + result.processed, 0)).toBe(1);
+            expect(results.every(result => result.total === 1)).toBe(true);
+            await expect(gk.processEvents()).resolves.toMatchObject({
+                added: 1,
+                merged: 0,
+                pending: 0,
+            });
+        } finally {
+            generateDID.mockRestore();
+        }
     });
 
     it('should queue an already-seen event again after resetDb', async () => {
@@ -392,6 +801,107 @@ describe('importBatch', () => {
 
         expect(response.queued).toBe(1);
         expect(response.processed).toBe(0);
+    });
+
+    it('should drain processing before reset and admit the same event after reset', async () => {
+        const localDb = new DbJsonMemory('reset-processing');
+        const gk = new Gatekeeper({ db: localDb, ipfs, console: mockConsole });
+        const operation = await helper.createAgentOp(cipher.generateRandomJwk());
+        const event = { registry: 'hyperswarm', time: operation.created!, operation };
+        await gk.importBatch([event]);
+
+        let writing!: () => void;
+        let resume!: () => void;
+        const started = new Promise<void>(resolve => { writing = resolve; });
+        const released = new Promise<void>(resolve => { resume = resolve; });
+        const originalAddEvent = localDb.addEvent.bind(localDb);
+        const addEvent = jest.spyOn(localDb, 'addEvent').mockImplementationOnce(async (did, queued) => {
+            writing();
+            await released;
+            return originalAddEvent(did, queued);
+        });
+        const resetDb = jest.spyOn(localDb, 'resetDb');
+
+        try {
+            const processing = gk.processEvents();
+            await started;
+            const reset = gk.resetDb();
+            let admitted = false;
+            const admission = gk.importBatch([event]).then(result => {
+                admitted = true;
+                return result;
+            });
+            await Promise.resolve();
+            expect(resetDb).not.toHaveBeenCalled();
+            expect(admitted).toBe(false);
+
+            resume();
+            await expect(processing).resolves.toMatchObject({ added: 1 });
+            await expect(reset).resolves.toBe(true);
+            await expect(admission).resolves.toMatchObject({ queued: 1, processed: 0 });
+            await expect(localDb.getAllKeys()).resolves.toHaveLength(0);
+            await expect(gk.processEvents()).resolves.toMatchObject({ added: 1, pending: 0 });
+            await expect(localDb.getAllKeys()).resolves.toHaveLength(1);
+        }
+        finally {
+            resume();
+            addEvent.mockRestore();
+            resetDb.mockRestore();
+        }
+    });
+
+    it('should wait for an in-flight admission before clearing the queues', async () => {
+        const localDb = new DbJsonMemory('reset-admission');
+        const gk = new Gatekeeper({ db: localDb, ipfs, console: mockConsole });
+        const operation = await helper.createAgentOp(cipher.generateRandomJwk());
+        const event = { registry: 'hyperswarm', time: operation.created!, operation };
+        let verifying!: () => void;
+        let resume!: () => void;
+        const started = new Promise<void>(resolve => { verifying = resolve; });
+        const released = new Promise<void>(resolve => { resume = resolve; });
+        const originalVerify = gk.verifyEvent.bind(gk);
+        const verifyEvent = jest.spyOn(gk, 'verifyEvent').mockImplementationOnce(async queued => {
+            verifying();
+            await released;
+            return originalVerify(queued);
+        });
+        const resetDb = jest.spyOn(localDb, 'resetDb');
+
+        try {
+            const admission = gk.importBatch([event]);
+            await started;
+            const reset = gk.resetDb();
+            await Promise.resolve();
+            expect(resetDb).not.toHaveBeenCalled();
+            resume();
+            await expect(admission).resolves.toMatchObject({ queued: 1 });
+            await expect(reset).resolves.toBe(true);
+            await expect(gk.processEvents()).resolves.toMatchObject({ added: 0, pending: 0 });
+            await expect(gk.importBatch([event])).resolves.toMatchObject({ queued: 1, processed: 0 });
+        }
+        finally {
+            resume();
+            verifyEvent.mockRestore();
+            resetDb.mockRestore();
+        }
+    });
+
+    it('should preserve queued work and release the boundary after a failed reset', async () => {
+        const localDb = new DbJsonMemory('failed-reset');
+        const gk = new Gatekeeper({ db: localDb, ipfs, console: mockConsole });
+        const operation = await helper.createAgentOp(cipher.generateRandomJwk());
+        const event = { registry: 'hyperswarm', time: operation.created!, operation };
+        await gk.importBatch([event]);
+        const resetDb = jest.spyOn(localDb, 'resetDb').mockRejectedValueOnce(new Error('reset failed'));
+
+        try {
+            await expect(gk.resetDb()).rejects.toThrow('reset failed');
+            await expect(gk.importBatch([event])).resolves.toMatchObject({ processed: 1 });
+            await expect(gk.processEvents()).resolves.toMatchObject({ added: 1, pending: 0 });
+        }
+        finally {
+            resetDb.mockRestore();
+        }
     });
 
     it('should throw an exception on undefined', async () => {
@@ -983,9 +1493,9 @@ describe('processEvents', () => {
             operation,
         };
         await gatekeeper.importBatch([event]);
-        const originalVerifyOperation = gatekeeper.verifyOperation.bind(gatekeeper);
-        const verifyOperation = jest.spyOn(gatekeeper, 'verifyOperation').mockImplementationOnce(async op => {
-            const valid = await originalVerifyOperation(op);
+        const originalVerifyUpdate = gatekeeper.verifyUpdateOperation.bind(gatekeeper);
+        const verifyOperation = jest.spyOn(gatekeeper, 'verifyUpdateOperation').mockImplementationOnce(async (op, doc) => {
+            const valid = await originalVerifyUpdate(op, doc);
             op.did = victimDid;
             event.did = victimDid;
             return valid;
@@ -1864,6 +2374,8 @@ describe('processEvents', () => {
     });
 
     it('should retain an event after a transient database failure', async () => {
+        const logError = jest.fn();
+        const gatekeeper = new Gatekeeper({ db, ipfs, console: { ...mockConsole, error: logError } });
         const operation = await helper.createAgentOp(cipher.generateRandomJwk());
         const event = {
             registry: 'hyperswarm',
@@ -1872,11 +2384,25 @@ describe('processEvents', () => {
             operation,
         };
         await gatekeeper.importBatch([event]);
+        const error = new Error('temporary database failure');
         const addEvent = jest.spyOn(db, 'addEvent')
-            .mockRejectedValueOnce(new Error('temporary database failure'));
+            .mockRejectedValueOnce(error);
 
-        await expect(gatekeeper.processEvents()).rejects.toThrow('temporary database failure');
-        addEvent.mockRestore();
+        try {
+            await expect(gatekeeper.processEvents()).rejects.toThrow('temporary database failure');
+            expect(logError).toHaveBeenCalledWith({
+                error,
+                eventKey: expect.stringMatching(/^hyperswarm\//),
+                did: await gatekeeper.generateDID(operation),
+                operationType: 'create',
+                previd: undefined,
+                staged: 1,
+                pending: 0,
+            }, 'processEvents error');
+        }
+        finally {
+            addEvent.mockRestore();
+        }
 
         await expect(gatekeeper.importBatch([event])).resolves.toMatchObject({
             queued: 0,
@@ -1926,7 +2452,11 @@ describe('processEvents', () => {
 
         const processing = gatekeeper.processEvents();
         await failureStarted;
-        await gatekeeper.importBatch([events[2]]);
+        await expect(gatekeeper.importBatch([events[0], events[2]])).resolves.toMatchObject({
+            queued: 1,
+            processed: 1,
+            processedIndices: [0],
+        });
         releaseFailure();
         await expect(processing).rejects.toThrow('second event database failure');
         addEvent.mockRestore();
@@ -1945,6 +2475,105 @@ describe('processEvents', () => {
         expect(retried.acceptedHashes).toStrictEqual(
             operations.map(operation => operation.signature!.hash.toLowerCase())
         );
+    });
+
+    it('should not free transient capacity before a deferred page commits', async () => {
+        const localDb = new DbJsonMemory('deferred-page-rollback');
+        const gk = new Gatekeeper({ db: localDb, ipfs, console: mockConsole });
+        const localHelper = new TestHelper(gk, cipher);
+        const keys = cipher.generateRandomJwk();
+        const did = await gk.createDID(await localHelper.createAgentOp(keys));
+        const doc = await gk.resolveDID(did);
+        doc.didDocumentData = { updated: true };
+        await gk.updateDID(await localHelper.createUpdateOp(keys, did, doc));
+        const history = await gk.exportDID(did);
+        await gk.resetDb();
+
+        const creates = await Promise.all([
+            helper.createAgentOp(cipher.generateRandomJwk()),
+            helper.createAgentOp(cipher.generateRandomJwk()),
+        ]);
+        const events = [history[1], ...creates.map((operation, index) => ({
+            registry: 'hyperswarm',
+            time: operation.created!,
+            ordinal: [index],
+            operation,
+        }))];
+        // @ts-expect-error Testing bounded private state with small fixtures
+        gk.maxEventPageCount = 2;
+        await gk.importBatch(events.slice(0, 2));
+
+        let markWriteStarted!: () => void;
+        const writeStarted = new Promise<void>(resolve => {
+            markWriteStarted = resolve;
+        });
+        let releaseWrite!: () => void;
+        const writeBlocked = new Promise<void>(resolve => {
+            releaseWrite = resolve;
+        });
+        const addEvent = jest.spyOn(localDb, 'addEvent').mockImplementationOnce(async () => {
+            markWriteStarted();
+            await writeBlocked;
+            throw new Error('page database failure');
+        });
+
+        const processing = gk.processEvents();
+        await writeStarted;
+        await expect(gk.importBatch([events[2]])).resolves.toMatchObject({
+            queued: 0,
+            capacityDeferred: 1,
+            capacityDeferredIndices: [0],
+        });
+        releaseWrite();
+        await expect(processing).rejects.toThrow('page database failure');
+        addEvent.mockRestore();
+
+        await expect(gk.importBatch(events.slice(0, 2))).resolves.toMatchObject({
+            queued: 0,
+            processed: 2,
+        });
+    });
+
+    it('should report work admitted while a page is processing', async () => {
+        const operations = await Promise.all([
+            helper.createAgentOp(cipher.generateRandomJwk()),
+            helper.createAgentOp(cipher.generateRandomJwk()),
+        ]);
+        const events = operations.map((operation, index) => ({
+            registry: 'hyperswarm',
+            time: operation.created!,
+            ordinal: [index],
+            operation,
+        }));
+        await gatekeeper.importBatch([events[0]]);
+
+        const originalAddEvent = db.addEvent.bind(db);
+        let markWriteStarted!: () => void;
+        const writeStarted = new Promise<void>(resolve => {
+            markWriteStarted = resolve;
+        });
+        let releaseWrite!: () => void;
+        const writeBlocked = new Promise<void>(resolve => {
+            releaseWrite = resolve;
+        });
+        const addEvent = jest.spyOn(db, 'addEvent').mockImplementationOnce(async (did, event) => {
+            markWriteStarted();
+            await writeBlocked;
+            return originalAddEvent(did, event);
+        });
+
+        const processing = gatekeeper.processEvents();
+        await writeStarted;
+        await gatekeeper.importBatch([events[1]]);
+        releaseWrite();
+
+        await expect(processing).resolves.toMatchObject({ added: 1, hasMore: true });
+        addEvent.mockRestore();
+        await expect(gatekeeper.processEvents()).resolves.toMatchObject({
+            added: 1,
+            pending: 0,
+            hasMore: false,
+        });
     });
 
     it('should replay successful earlier passes after a later dependency write fails', async () => {
@@ -2005,10 +2634,546 @@ describe('processEvents', () => {
         }
     });
 
+    it('should page processing without omitting staged events', async () => {
+        const localDb = new DbJsonMemory('paged-events');
+        const gk = new Gatekeeper({ db: localDb, ipfs, console: mockConsole });
+        const operations = await Promise.all([
+            helper.createAgentOp(cipher.generateRandomJwk()),
+            helper.createAgentOp(cipher.generateRandomJwk()),
+            helper.createAgentOp(cipher.generateRandomJwk()),
+            helper.createAgentOp(cipher.generateRandomJwk()),
+        ]);
+        const events = operations.map((operation, index) => ({
+            registry: 'hyperswarm',
+            time: operation.created!,
+            ordinal: [index],
+            operation,
+        }));
+        // @ts-expect-error Testing bounded private state with small fixtures
+        gk.maxEventPageCount = events.length;
+        await gk.importBatch(events);
+        // @ts-expect-error Testing bounded private state with small fixtures
+        gk.maxEventPageCount = 2;
+
+        await expect(gk.processEvents()).resolves.toMatchObject({
+            added: 2,
+            pending: 0,
+            hasMore: true,
+        });
+        await expect(gk.processEvents()).resolves.toMatchObject({
+            added: 2,
+            pending: 0,
+            hasMore: false,
+        });
+        await expect(localDb.getAllKeys()).resolves.toHaveLength(4);
+    });
+
+    it('should enforce byte limits during admission and processing', async () => {
+        const localDb = new DbJsonMemory('byte-bounded-events');
+        const gk = new Gatekeeper({ db: localDb, ipfs, console: mockConsole });
+        const operations = await Promise.all([
+            helper.createAgentOp(cipher.generateRandomJwk()),
+            helper.createAgentOp(cipher.generateRandomJwk()),
+            helper.createAgentOp(cipher.generateRandomJwk()),
+        ]);
+        const events = operations.map((operation, index) => ({
+            registry: 'hyperswarm',
+            time: operation.created!,
+            ordinal: [index],
+            operation,
+        }));
+        const queuedEvents = await Promise.all(events.map(async event => ({
+            ...event,
+            did: await gk.generateDID(event.operation),
+            opid: await gk.generateCID(event.operation),
+        })));
+        const eventBytes = queuedEvents.map(event => Buffer.byteLength(JSON.stringify(event), 'utf8'));
+        // @ts-expect-error Testing bounded private state with small fixtures
+        gk.maxEventPageCount = events.length;
+        // @ts-expect-error Testing bounded private state with small fixtures
+        gk.maxTransientEventBytes = eventBytes[0] + eventBytes[1];
+
+        await expect(gk.importBatch(events)).resolves.toMatchObject({
+            queued: 2,
+            capacityDeferred: 1,
+            capacityDeferredIndices: [2],
+        });
+        // @ts-expect-error Testing bounded private state with small fixtures
+        gk.maxEventPageBytes = Math.max(eventBytes[0], eventBytes[1]);
+        await expect(gk.processEvents()).resolves.toMatchObject({
+            added: 1,
+            acceptedHashes: [operations[0].signature!.hash.toLowerCase()],
+            hasMore: true,
+        });
+        await expect(gk.processEvents()).resolves.toMatchObject({
+            added: 1,
+            acceptedHashes: [operations[1].signature!.hash.toLowerCase()],
+            hasMore: false,
+        });
+    });
+
+    it('should admit envelope headroom while processing byte-bounded pages', async () => {
+        const localDb = new DbJsonMemory('transient-envelope-headroom');
+        const gk = new Gatekeeper({ db: localDb, ipfs, console: mockConsole });
+        const operations = await Promise.all([
+            helper.createAgentOp(cipher.generateRandomJwk()),
+            helper.createAgentOp(cipher.generateRandomJwk()),
+            helper.createAgentOp(cipher.generateRandomJwk()),
+        ]);
+        const events = operations.map((operation, index) => ({
+            registry: 'hyperswarm',
+            time: operation.created!,
+            ordinal: [index],
+            operation,
+        }));
+        const queuedEvents = await Promise.all(events.map(async event => ({
+            ...event,
+            did: await gk.generateDID(event.operation),
+            opid: await gk.generateCID(event.operation),
+        })));
+        const eventBytes = queuedEvents.map(event => Buffer.byteLength(JSON.stringify(event), 'utf8'));
+        // @ts-expect-error Testing separate admission and processing bounds with small fixtures
+        gk.maxTransientEventBytes = eventBytes.reduce((total, bytes) => total + bytes, 0);
+        // @ts-expect-error Testing separate admission and processing bounds with small fixtures
+        gk.maxEventPageBytes = eventBytes[0] + eventBytes[1];
+
+        await expect(gk.importBatch(events)).resolves.toMatchObject({
+            queued: 3,
+            capacityDeferred: 0,
+        });
+        await expect(gk.processEvents()).resolves.toMatchObject({
+            added: 2,
+            hasMore: true,
+        });
+        await expect(gk.processEvents()).resolves.toMatchObject({
+            added: 1,
+            hasMore: false,
+        });
+    });
+
+    it('should reuse pending capacity freed during the same page', async () => {
+        const localDb = new DbJsonMemory('reuse-pending-capacity');
+        const gk = new Gatekeeper({ db: localDb, ipfs, console: mockConsole });
+        const localHelper = new TestHelper(gk, cipher);
+        const histories = [];
+
+        for (let index = 0; index < 2; index += 1) {
+            const keys = cipher.generateRandomJwk();
+            const did = await gk.createDID(await localHelper.createAgentOp(keys));
+            const doc = await gk.resolveDID(did);
+            doc.didDocumentData = { index };
+            await gk.updateDID(await localHelper.createUpdateOp(keys, did, doc));
+            histories.push(await gk.exportDID(did));
+        }
+        await gk.resetDb();
+        // @ts-expect-error Testing bounded private state with small fixtures
+        gk.maxPendingEventCount = 1;
+
+        await gk.importBatch([histories[0][1]]);
+        await expect(gk.processEvents()).resolves.toMatchObject({ pending: 1, hasMore: false });
+        await gk.createDID(histories[0][0].operation);
+        await gk.importBatch([histories[1][1]]);
+
+        await expect(gk.processEvents()).resolves.toMatchObject({
+            added: 1,
+            pending: 1,
+            capacityDeferred: 0,
+            hasMore: false,
+        });
+        await expect(gk.importBatch([histories[1][1]])).resolves.toMatchObject({
+            processed: 1,
+            processedIndices: [0],
+        });
+    });
+
+    it('should give retained work a turn while staged work remains', async () => {
+        const localDb = new DbJsonMemory('pending-fairness');
+        const gk = new Gatekeeper({ db: localDb, ipfs, console: mockConsole });
+        const localHelper = new TestHelper(gk, cipher);
+        const keys = cipher.generateRandomJwk();
+        const did = await gk.createDID(await localHelper.createAgentOp(keys));
+        const doc = await gk.resolveDID(did);
+        doc.didDocumentData = { updated: true };
+        const update = await localHelper.createUpdateOp(keys, did, doc);
+        const history = await gk.exportDID(did);
+        history.push({
+            registry: 'hyperswarm',
+            time: update.signature!.signed,
+            operation: update,
+        });
+        await gk.resetDb();
+        // @ts-expect-error Testing bounded private state with small fixtures
+        gk.maxEventPageCount = 1;
+
+        await gk.importBatch([history[1]]);
+        await expect(gk.processEvents()).resolves.toMatchObject({ pending: 1, hasMore: false });
+        await gk.importBatch([history[0]]);
+
+        await expect(gk.processEvents()).resolves.toMatchObject({
+            added: 1,
+            pending: 1,
+            hasMore: true,
+        });
+        await expect(gk.processEvents()).resolves.toMatchObject({
+            added: 1,
+            pending: 0,
+            hasMore: false,
+        });
+    });
+
+    it('should not retry a new deferred event after unrelated progress', async () => {
+        const localDb = new DbJsonMemory('deferred-after-progress');
+        const gk = new Gatekeeper({ db: localDb, ipfs, console: mockConsole });
+        const localHelper = new TestHelper(gk, cipher);
+        const keys = cipher.generateRandomJwk();
+        const did = await gk.createDID(await localHelper.createAgentOp(keys));
+        const doc = await gk.resolveDID(did);
+        doc.didDocumentData = { updated: true };
+        await gk.updateDID(await localHelper.createUpdateOp(keys, did, doc));
+        const history = await gk.exportDID(did);
+        await gk.resetDb();
+
+        const accepted = await localHelper.createAgentOp(cipher.generateRandomJwk());
+        // @ts-expect-error Testing bounded private state with small fixtures
+        gk.maxEventPageCount = 2;
+        await gk.importBatch([history[1], {
+            registry: 'hyperswarm',
+            time: accepted.created!,
+            operation: accepted,
+        }]);
+
+        await expect(gk.processEvents()).resolves.toMatchObject({
+            added: 1,
+            pending: 1,
+            hasMore: false,
+        });
+        await expect(gk.processEvents()).resolves.toMatchObject({
+            added: 0,
+            pending: 1,
+            hasMore: false,
+        });
+    });
+
+    it('should skip unchanged pending dependencies and wake them through a DID-prefix alias', async () => {
+        const localDb = new DbJsonMemory('pending-dependency-retry');
+        const gk = new Gatekeeper({ db: localDb, ipfs, console: mockConsole });
+        const localHelper = new TestHelper(gk, cipher);
+        const keys = cipher.generateRandomJwk();
+        const did = await gk.createDID(await localHelper.createAgentOp(keys));
+        const doc = await gk.resolveDID(did);
+        doc.didDocumentData = { updated: true };
+        await gk.updateDID(await localHelper.createUpdateOp(keys, did, doc));
+        const history = await gk.exportDID(did);
+        await gk.resetDb();
+        await gk.importBatch([history[1]]);
+        await expect(gk.processEvents()).resolves.toMatchObject({ pending: 1, hasMore: false });
+        const importEvent = jest.spyOn(gk, 'importEvent');
+
+        try {
+            await gk.processEvents();
+            await gk.processEvents();
+            expect(importEvent).not.toHaveBeenCalled();
+
+            const unrelated = await localHelper.createAgentOp(cipher.generateRandomJwk());
+            await gk.importBatch([{ registry: 'hyperswarm', time: unrelated.created!, operation: unrelated }]);
+            await expect(gk.processEvents()).resolves.toMatchObject({ added: 1, pending: 1, hasMore: false });
+            expect(importEvent).toHaveBeenCalledTimes(1);
+
+            await gk.importBatch([{ ...history[0], did: did.replace('did:test:', 'did:alias:') }]);
+            await expect(gk.processEvents()).resolves.toMatchObject({ added: 2, pending: 0, hasMore: false });
+            expect(importEvent).toHaveBeenCalledTimes(3);
+            await expect(gk.resolveDID(did)).resolves.toMatchObject({ didDocumentData: { updated: true } });
+            // @ts-expect-error Completed events must not retain dependency metadata.
+            expect(gk.pendingRetryStates.size).toBe(0);
+            // @ts-expect-error Completed events must not retain dependency metadata.
+            expect(gk.pendingDependents.size).toBe(0);
+        }
+        finally {
+            importEvent.mockRestore();
+        }
+    });
+
+    it('should wake an update when its missing nested controller is created locally', async () => {
+        const localDb = new DbJsonMemory('nested-pending-dependency');
+        const gk = new Gatekeeper({ db: localDb, ipfs, console: mockConsole });
+        const localHelper = new TestHelper(gk, cipher);
+        const keys = cipher.generateRandomJwk();
+        const root = await gk.createDID(await localHelper.createAgentOp(keys));
+        const controllerCreate = await localHelper.createAssetOp(root, keys);
+        controllerCreate.data = 'future controller';
+        const unsigned = copyJSON(controllerCreate);
+        delete unsigned.signature;
+        controllerCreate.signature!.hash = cipher.hashJSON(unsigned);
+        controllerCreate.signature!.value = cipher.signHash(controllerCreate.signature!.hash, keys.privateJwk);
+        const controllerDid = await gk.generateDID(controllerCreate);
+        const did = await gk.createDID(await localHelper.createAssetOp(root, keys));
+        const doc = await gk.resolveDID(did);
+        doc.didDocument!.controller = controllerDid;
+        await expect(gk.updateDID(await localHelper.createUpdateOp(keys, did, doc))).resolves.toBe(true);
+        const replacement = await gk.resolveDID(did);
+        replacement.didDocumentData = { updated: true };
+        const update = await localHelper.createUpdateOp(keys, did, replacement);
+        await gk.importBatch([{ registry: 'hyperswarm', time: update.signature!.signed, operation: update }]);
+        await expect(gk.processEvents()).resolves.toMatchObject({ pending: 1, hasMore: false });
+        const importEvent = jest.spyOn(gk, 'importEvent');
+
+        try {
+            await gk.processEvents();
+            expect(importEvent).not.toHaveBeenCalled();
+            await gk.createDID(controllerCreate);
+            await expect(gk.processEvents()).resolves.toMatchObject({ added: 1, pending: 0, hasMore: false });
+            expect(importEvent).toHaveBeenCalledTimes(1);
+            await expect(gk.resolveDID(did)).resolves.toMatchObject({ didDocumentData: { updated: true } });
+        }
+        finally {
+            importEvent.mockRestore();
+        }
+    });
+
+    it('should wake a pending update when an intermediate controller history changes', async () => {
+        const localDb = new DbJsonMemory('changed-pending-controller');
+        const gk = new Gatekeeper({ db: localDb, ipfs, console: mockConsole });
+        const localHelper = new TestHelper(gk, cipher);
+        const keys = cipher.generateRandomJwk();
+        const root = await gk.createDID(await localHelper.createAgentOp(keys));
+        const controllerCreate = await localHelper.createAssetOp(root, keys);
+        const controllerDid = await gk.createDID(controllerCreate);
+        const missingController = await gk.generateDID(await localHelper.createAgentOp(cipher.generateRandomJwk()));
+        const controller = await gk.resolveDID(controllerDid);
+        controller.didDocument!.controller = missingController;
+        await gk.updateDID(await localHelper.createUpdateOp(keys, controllerDid, controller));
+        const assetCreate = await localHelper.createAssetOp(root, keys);
+        assetCreate.data = 'target asset';
+        setOperationHash(assetCreate);
+        assetCreate.signature!.value = cipher.signHash(assetCreate.signature!.hash, keys.privateJwk);
+        const did = await gk.createDID(assetCreate);
+        const doc = await gk.resolveDID(did);
+        doc.didDocument!.controller = controllerDid;
+        await gk.updateDID(await localHelper.createUpdateOp(keys, did, doc));
+        const replacement = await gk.resolveDID(did);
+        replacement.didDocumentData = { updated: true };
+        const update = await localHelper.createUpdateOp(keys, did, replacement);
+        await gk.importBatch([{ registry: 'hyperswarm', time: update.signature!.signed, operation: update }]);
+        await expect(gk.processEvents()).resolves.toMatchObject({ pending: 1, hasMore: false });
+
+        await gk.removeDIDs([controllerDid]);
+        await gk.createDID(controllerCreate);
+        await expect(gk.processEvents()).resolves.toMatchObject({ added: 1, pending: 0, hasMore: false });
+        await expect(gk.resolveDID(did)).resolves.toMatchObject({ didDocumentData: { updated: true } });
+        // @ts-expect-error Completed events must release every controller watch.
+        expect(gk.pendingDependents.size).toBe(0);
+    });
+
+    it('should wake retained dependencies after a partially persisted page rolls back', async () => {
+        const localDb = new DbJsonMemory('pending-partial-persistence');
+        const gk = new Gatekeeper({ db: localDb, ipfs, console: mockConsole });
+        const localHelper = new TestHelper(gk, cipher);
+        const keys = cipher.generateRandomJwk();
+        const did = await gk.createDID(await localHelper.createAgentOp(keys));
+        const doc = await gk.resolveDID(did);
+        doc.didDocumentData = { updated: true };
+        await gk.updateDID(await localHelper.createUpdateOp(keys, did, doc));
+        const history = await gk.exportDID(did);
+        await gk.resetDb();
+        await gk.importBatch([history[1]]);
+        await expect(gk.processEvents()).resolves.toMatchObject({ pending: 1, hasMore: false });
+        await gk.importBatch([history[0]]);
+        const originalAddEvent = localDb.addEvent.bind(localDb);
+        const addEvent = jest.spyOn(localDb, 'addEvent').mockImplementationOnce(async (target, event) => {
+            await originalAddEvent(target, event);
+            throw new Error('failed after persistence');
+        });
+        try {
+            await expect(gk.processEvents()).rejects.toThrow('failed after persistence');
+        }
+        finally {
+            addEvent.mockRestore();
+        }
+
+        await expect(gk.processEvents()).resolves.toMatchObject({ added: 1, merged: 1, pending: 0, hasMore: false });
+        await expect(gk.resolveDID(did)).resolves.toMatchObject({ didDocumentData: { updated: true } });
+        // @ts-expect-error Rolled-back watches must be released when their events finish.
+        expect(gk.pendingDependents.size).toBe(0);
+    });
+
+    it('should bound controller watches without rejecting long chains', async () => {
+        const localDb = new DbJsonMemory('bounded-pending-controller-watches');
+        const gk = new Gatekeeper({ db: localDb, ipfs, console: mockConsole });
+        const localHelper = new TestHelper(gk, cipher);
+        const keys = cipher.generateRandomJwk();
+        const root = await gk.createDID(await localHelper.createAgentOp(keys));
+        let controller = await gk.generateDID(await localHelper.createAgentOp(cipher.generateRandomJwk()));
+
+        for (let index = 0; index < 33; index += 1) {
+            const create = await localHelper.createAssetOp(root, keys);
+            create.data = { index };
+            setOperationHash(create);
+            create.signature!.value = cipher.signHash(create.signature!.hash, keys.privateJwk);
+            const did = await gk.createDID(create);
+            const doc = await gk.resolveDID(did);
+            doc.didDocument!.controller = controller;
+            await expect(gk.updateDID(await localHelper.createUpdateOp(keys, did, doc))).resolves.toBe(true);
+            controller = did;
+        }
+
+        const replacement = await gk.resolveDID(controller);
+        replacement.didDocumentData = { updated: true };
+        const update = await localHelper.createUpdateOp(keys, controller, replacement);
+        await gk.importBatch([{ registry: 'hyperswarm', time: update.signature!.signed, operation: update }]);
+        await expect(gk.processEvents()).resolves.toMatchObject({ pending: 1, rejected: 0, hasMore: false });
+        // @ts-expect-error Long chains retain a single conservative mutation watch.
+        expect(Array.from(gk.pendingRetryStates.values())).toEqual([{ dependencies: ['*'], ready: false }]);
+        const importEvent = jest.spyOn(gk, 'importEvent');
+        try {
+            await gk.processEvents();
+            expect(importEvent).not.toHaveBeenCalled();
+            await gk.createDID(await localHelper.createAgentOp(cipher.generateRandomJwk()));
+            await expect(gk.processEvents()).resolves.toMatchObject({ pending: 1, hasMore: false });
+            expect(importEvent).toHaveBeenCalledTimes(1);
+            await gk.resetDb();
+            // @ts-expect-error Reset must release conservative watches as well.
+            expect(gk.pendingDependents.size).toBe(0);
+        }
+        finally {
+            importEvent.mockRestore();
+        }
+    });
+
+    it('should retain old pending events and report new overflow as retryable capacity', async () => {
+        const localDb = new DbJsonMemory('pending-capacity');
+        const gk = new Gatekeeper({ db: localDb, ipfs, console: mockConsole });
+        const localHelper = new TestHelper(gk, cipher);
+        const histories = [];
+
+        for (let index = 0; index < 2; index += 1) {
+            const keys = cipher.generateRandomJwk();
+            const did = await gk.createDID(await localHelper.createAgentOp(keys));
+            const doc = await gk.resolveDID(did);
+            doc.didDocumentData = { index };
+            await gk.updateDID(await localHelper.createUpdateOp(keys, did, doc));
+            histories.push(await gk.exportDID(did));
+        }
+        await gk.resetDb();
+        // @ts-expect-error Testing bounded private state with small fixtures
+        gk.maxPendingEventCount = 1;
+
+        await gk.importBatch([histories[0][1]]);
+        await expect(gk.processEvents()).resolves.toMatchObject({
+            pending: 1,
+            capacityDeferred: 0,
+            hasMore: false,
+        });
+
+        await gk.importBatch([histories[1][1]]);
+        await expect(gk.processEvents()).resolves.toMatchObject({
+            pending: 1,
+            capacityDeferred: 1,
+            capacityDeferredHashes: [histories[1][1].operation.signature!.hash.toLowerCase()],
+            hasMore: false,
+        });
+        // @ts-expect-error Capacity-deferred events must not retain retry metadata.
+        expect(gk.pendingRetryStates.size).toBe(1);
+        // @ts-expect-error Only the retained event may hold a dependency watch.
+        expect(gk.pendingDependents.size).toBe(1);
+        await expect(gk.importBatch([histories[0][1]])).resolves.toMatchObject({
+            queued: 0,
+            processed: 1,
+            processedIndices: [0],
+        });
+
+        await gk.importBatch([histories[0][0]]);
+        await expect(gk.processEvents()).resolves.toMatchObject({
+            added: 2,
+            pending: 0,
+            capacityDeferred: 0,
+        });
+    });
+
+    it('should remove capacity-deferred events from the current pending pass', async () => {
+        const localDb = new DbJsonMemory('pending-pass-capacity');
+        const gk = new Gatekeeper({ db: localDb, ipfs, console: mockConsole });
+        const localHelper = new TestHelper(gk, cipher);
+        const histories = [];
+
+        for (let index = 0; index < 2; index += 1) {
+            const keys = cipher.generateRandomJwk();
+            const did = await gk.createDID(await localHelper.createAgentOp(keys));
+            const doc = await gk.resolveDID(did);
+            doc.didDocumentData = { index };
+            await gk.updateDID(await localHelper.createUpdateOp(keys, did, doc));
+            histories.push(await gk.exportDID(did));
+        }
+        await gk.resetDb();
+
+        const accepted = await localHelper.createAgentOp(cipher.generateRandomJwk());
+        const acceptedEvent = {
+            registry: 'hyperswarm',
+            time: accepted.created!,
+            operation: accepted,
+        };
+        // @ts-expect-error Testing bounded private state with small fixtures
+        gk.maxPendingEventCount = 0;
+        // @ts-expect-error Testing bounded private state with small fixtures
+        gk.maxEventPageCount = 4;
+        await gk.importBatch([histories[0][1], histories[1][1], acceptedEvent]);
+
+        await expect(gk.processEvents()).resolves.toMatchObject({
+            added: 1,
+            pending: 0,
+            capacityDeferred: 2,
+            capacityDeferredHashes: [
+                histories[0][1].operation.signature!.hash.toLowerCase(),
+                histories[1][1].operation.signature!.hash.toLowerCase(),
+            ],
+            hasMore: false,
+        });
+    });
+
+    it('should reject a deferred staged event whose verified hash is lost', async () => {
+        const localDb = new DbJsonMemory('invalid-deferred-event');
+        const gk = new Gatekeeper({ db: localDb, ipfs, console: mockConsole });
+        const localHelper = new TestHelper(gk, cipher);
+        const keys = cipher.generateRandomJwk();
+        const did = await gk.createDID(await localHelper.createAgentOp(keys));
+        const doc = await gk.resolveDID(did);
+        doc.didDocumentData = { updated: true };
+        await gk.updateDID(await localHelper.createUpdateOp(keys, did, doc));
+        const history = await gk.exportDID(did);
+        await gk.resetDb();
+
+        await expect(gk.importBatch([history[1]])).resolves.toMatchObject({ queued: 1 });
+        const getVerifiedOperationHash = jest.spyOn(
+            gk as unknown as { getVerifiedOperationHash(operation: Operation): string | undefined },
+            'getVerifiedOperationHash',
+        ).mockReturnValueOnce(undefined);
+
+        await expect(gk.processEvents()).resolves.toMatchObject({
+            rejected: 1,
+            rejectedOperations: [history[1].operation],
+            pending: 0,
+        });
+        getVerifiedOperationHash.mockRestore();
+    });
+
+    it('should fail if queued event state is missing', async () => {
+        const localDb = new DbJsonMemory('missing-event-state');
+        const gk = new Gatekeeper({ db: localDb, ipfs, console: mockConsole });
+        const operation = await helper.createAgentOp(cipher.generateRandomJwk());
+        await gk.importBatch([{
+            registry: 'hyperswarm',
+            time: operation.created!,
+            operation,
+        }]);
+        // @ts-expect-error Simulating corrupted private queue state
+        gk.eventStates.clear();
+
+        await expect(gk.processEvents()).rejects.toThrow('missing queued event state');
+    });
+
     it('should propagate unexpected processing exceptions', async () => {
         const gk = new Gatekeeper({ db, ipfs, console: mockConsole });
         // @ts-expect-error Testing private state
-        gk.eventsQueue = null;
+        gk.stagedEvents = null;
 
         await expect(gk.processEvents()).rejects.toThrow();
         // @ts-expect-error Testing private state
