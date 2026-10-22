@@ -104,6 +104,8 @@ export default class Gatekeeper implements GatekeeperInterface {
     private activeMutations = new Set<string>();
     private pendingExpiredControllers = new Map<string, string>();
     private verifyDbInFlight?: Promise<VerifyDbResult>;
+    private eventQueueBarrier: Promise<void> = Promise.resolve();
+    private eventQueueWork = new Set<Promise<unknown>>();
     constructor(options: GatekeeperOptions) {
         if (!options || !options.db) {
             throw new InvalidParameterError('missing options.db');
@@ -160,6 +162,14 @@ export default class Gatekeeper implements GatekeeperInterface {
         this.pendingPassRemaining = 0;
         this.pendingPassProgress = false;
         this.preferStagedEvents = true;
+    }
+
+    private withEventQueueWork<T>(fn: () => Promise<T>): Promise<T> {
+        const work = this.eventQueueBarrier.then(fn).finally(() => {
+            this.eventQueueWork.delete(work);
+        });
+        this.eventQueueWork.add(work);
+        return work;
     }
 
     private didKey(did: string): string {
@@ -587,12 +597,18 @@ export default class Gatekeeper implements GatekeeperInterface {
 
     // For testing purposes
     async resetDb(): Promise<boolean> {
-        this.mutationRevision += 1;
-        this.verifiedDIDs = {};
-        await this.db.resetDb();
-        this.pendingExpiredControllers.clear();
-        this.clearEventQueues();
-        return true;
+        // Drain admitted work and keep new admissions behind the reset boundary.
+        const reset = Promise.allSettled([this.eventQueueBarrier, ...this.eventQueueWork])
+            .then(() => this.withControllerGraphLock(async () => {
+                this.mutationRevision += 1;
+                this.verifiedDIDs = {};
+                await this.db.resetDb();
+                this.pendingExpiredControllers.clear();
+                this.clearEventQueues();
+                return true;
+            }));
+        this.eventQueueBarrier = reset.then(() => {}, () => {});
+        return reset;
     }
 
     async generateCID(operation: unknown): Promise<string> {
@@ -1304,6 +1320,10 @@ export default class Gatekeeper implements GatekeeperInterface {
     }
 
     async processEvents(): Promise<ProcessEventsResult> {
+        return this.withEventQueueWork(() => this.processQueuedEvents());
+    }
+
+    private async processQueuedEvents(): Promise<ProcessEventsResult> {
         if (this.isProcessingEvents) {
             return { busy: true };
         }
@@ -1688,6 +1708,10 @@ export default class Gatekeeper implements GatekeeperInterface {
     }
 
     async importBatch(batch: GatekeeperEvent[]): Promise<ImportBatchResult> {
+        return this.withEventQueueWork(() => this.queueBatch(batch));
+    }
+
+    private async queueBatch(batch: GatekeeperEvent[]): Promise<ImportBatchResult> {
         if (!batch || !Array.isArray(batch) || batch.length < 1) {
             throw new InvalidParameterError('batch');
         }
