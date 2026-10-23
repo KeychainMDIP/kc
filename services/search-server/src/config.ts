@@ -2,7 +2,7 @@ import { loadEnv } from "@mdip/common/env";
 
 loadEnv();
 
-const DEFAULT_RATE_LIMIT_SKIP_PATHS = ['/api/v1/ready', '/api/v1/status'];
+const DEFAULT_RATE_LIMIT_SKIP_PATHS = ['/api/v1/ready'];
 export type SearchDb = 'sqlite' | 'postgres' | 'memory';
 
 function parseBoolean(value: string | undefined, defaultValue: boolean): boolean {
@@ -91,6 +91,7 @@ const config = {
     ),
     didPrefix: parseDidPrefix(process.env.KC_SEARCH_SERVER_DID_PREFIX),
     db: parseSearchDb(process.env.KC_SEARCH_SERVER_DB),
+    resetDb: parseBoolean(process.env.KC_SEARCH_SERVER_RESET_DB, false),
     postgresURL: process.env.KC_SEARCH_SERVER_POSTGRES_URL
         || process.env.KC_POSTGRES_URL
         || 'postgresql://mdip:mdip@localhost:5432/mdip',

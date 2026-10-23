@@ -23,8 +23,11 @@ import {
     SearchDocsOptions,
     SearchDocsResult,
     GatekeeperEvent,
+    SearchStatsOptions,
+    SearchStoredStatistics,
 } from '../types.js';
-import { getEventDisplayTime, stableStringify } from './db-utils.js';
+import { projectStatistics, summarizeStatistics, type StatisticsGroup } from '../statistics.js';
+import { getEventDisplayTime, stableStringify, RESET_SEARCH_SCHEMA_SQL } from './db-utils.js';
 import { deduplicateDIDPrefixReferences, extractIdentity, extractIdentityFields } from '../published-credentials.js';
 import {
     AMBIGUOUS_DID_PREFIX,
@@ -115,10 +118,17 @@ export default class Postgres implements DIDsDb {
 
     static async create<T extends DIDsDb>(
         this: new (url: string) => T,
-        url: string
+        url: string,
+        resetDb = false,
     ): Promise<T> {
         const db = new this(url);
-        await db.connect();
+        try {
+            await db.connect(resetDb);
+        }
+        catch (error) {
+            await db.disconnect().catch(() => {});
+            throw error;
+        }
         return db;
     }
 
@@ -130,12 +140,17 @@ export default class Postgres implements DIDsDb {
         );
     }
 
-    async connect(): Promise<void> {
+    async connect(resetDb = false): Promise<void> {
         if (this.pool) {
             return;
         }
 
         this.pool = this.createPool();
+
+        if (resetDb) {
+            // One query keeps all drops in PostgreSQL's implicit transaction.
+            await this.pool.query(RESET_SEARCH_SCHEMA_SQL);
+        }
 
         await this.pool.query(`
             CREATE TABLE IF NOT EXISTS did_events (
@@ -158,7 +173,13 @@ export default class Postgres implements DIDsDb {
                 did TEXT NOT NULL UNIQUE,
                 prefix TEXT NOT NULL,
                 prefix_authoritative BOOLEAN NOT NULL,
-                is_agent BOOLEAN NOT NULL
+                is_agent BOOLEAN NOT NULL,
+                stats_type TEXT,
+                stats_registry TEXT,
+                stats_version TEXT,
+                stats_confirmed BOOLEAN NOT NULL,
+                stats_ephemeral BOOLEAN NOT NULL,
+                stats_invalid BOOLEAN NOT NULL
             );
 
             CREATE INDEX IF NOT EXISTS idx_did_classifications_prefix
@@ -560,7 +581,7 @@ export default class Postgres implements DIDsDb {
                     await client.query('DELETE FROM did_classifications WHERE suffix = $1', [suffix]);
                 }
 
-                const changed = eventChanges.get(record.did) === true;
+                const changed = !previousDid || previousDid !== record.did || eventChanges.get(record.did) === true;
 
                 if (!changed && !record.removed) {
                     continue;
@@ -582,12 +603,15 @@ export default class Postgres implements DIDsDb {
                 }
 
                 const classification = classifyDIDPrefix(record.events);
+                const statistics = projectStatistics(record.doc);
                 classificationRows.push([
                     suffix,
                     record.did,
                     classification.prefix,
                     classification.authoritative,
                     isAgentDID(record.events),
+                    statistics.type, statistics.registry, statistics.version,
+                    statistics.confirmed, statistics.ephemeral, statistics.invalid,
                 ]);
 
                 for (const [index, event] of record.events.entries()) {
@@ -671,14 +695,21 @@ export default class Postgres implements DIDsDb {
             );
             await insertRows(
                 client,
-                'INSERT INTO did_classifications (suffix, did, prefix, prefix_authoritative, is_agent)',
+                `INSERT INTO did_classifications (suffix, did, prefix, prefix_authoritative, is_agent,
+                    stats_type, stats_registry, stats_version, stats_confirmed, stats_ephemeral, stats_invalid)`,
                 classificationRows,
                 [],
                 ` ON CONFLICT (suffix) DO UPDATE SET
                     did = EXCLUDED.did,
                     prefix = EXCLUDED.prefix,
                     prefix_authoritative = EXCLUDED.prefix_authoritative,
-                    is_agent = EXCLUDED.is_agent`
+                    is_agent = EXCLUDED.is_agent,
+                    stats_type = EXCLUDED.stats_type,
+                    stats_registry = EXCLUDED.stats_registry,
+                    stats_version = EXCLUDED.stats_version,
+                    stats_confirmed = EXCLUDED.stats_confirmed,
+                    stats_ephemeral = EXCLUDED.stats_ephemeral,
+                    stats_invalid = EXCLUDED.stats_invalid`
             );
             await insertRows(
                 client,
@@ -761,6 +792,34 @@ export default class Postgres implements DIDsDb {
                 ' ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value'
             );
 
+            await client.query('COMMIT');
+            return result;
+        }
+        catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        }
+        finally {
+            client.release();
+        }
+    }
+
+    async getStats(options: SearchStatsOptions = {}): Promise<SearchStoredStatistics> {
+        const client = await this.getPool().connect();
+        try {
+            await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+            const groups = await client.query<StatisticsGroup>(`
+                SELECT dc.stats_type AS type, dc.stats_registry AS registry, dc.stats_version AS version,
+                       dc.stats_confirmed AS confirmed, dc.stats_ephemeral AS ephemeral,
+                       dc.stats_invalid AS invalid, COUNT(*) AS count
+                FROM did_classifications dc
+                JOIN did_classifications_effective effective ON effective.suffix = dc.suffix
+                WHERE ($1::text IS NULL OR effective.prefix = $1 OR ($2 AND effective.prefix_ambiguous))
+                GROUP BY dc.stats_type, dc.stats_registry, dc.stats_version,
+                         dc.stats_confirmed, dc.stats_ephemeral, dc.stats_invalid`,
+            [options.didPrefix || null, options.includeAmbiguous ?? false]);
+            const state = await client.query<{ key: string; value: string }>('SELECT key, value FROM sync_state');
+            const result = summarizeStatistics(groups.rows, Object.fromEntries(state.rows.map(row => [row.key, row.value])));
             await client.query('COMMIT');
             return result;
         }
@@ -1516,18 +1575,23 @@ export default class Postgres implements DIDsDb {
     }
 
     async wipeDb(): Promise<void> {
-        const pool = this.getPool();
-        await pool.query('DELETE FROM did_docs');
-        await pool.query('DELETE FROM did_events');
-        await pool.query('DELETE FROM did_classifications');
-        await pool.query('DELETE FROM blocks');
-        await pool.query('DELETE FROM published_credentials');
-        await pool.query('DELETE FROM identity_schemas');
-        await pool.query('DELETE FROM identity_fields');
-        await pool.query('DELETE FROM did_prefix_references');
-        await pool.query('DELETE FROM challenge_receipts');
-        await pool.query('DELETE FROM network_metric_snapshots');
-        await pool.query('DELETE FROM sync_state');
+        const client = await this.getPool().connect();
+        try {
+            await client.query('BEGIN');
+            for (const table of ['did_docs', 'did_events', 'did_classifications', 'blocks',
+                'published_credentials', 'identity_schemas', 'identity_fields', 'did_prefix_references',
+                'challenge_receipts', 'network_metric_snapshots', 'sync_state']) {
+                await client.query(`DELETE FROM ${table}`);
+            }
+            await client.query('COMMIT');
+        }
+        catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        }
+        finally {
+            client.release();
+        }
     }
 
     private getPool(): Pool {

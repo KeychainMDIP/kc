@@ -238,6 +238,15 @@ describe('isReady', () => {
 });
 
 describe('SearchClient waitUntilReady', () => {
+    it('returns statistics from the existing status endpoint', async () => {
+        const search = await SearchClient.create({ url: SearchURL });
+        const result = { ready: true, db: 'memory', sync: { snapshotComplete: true }, metrics: {},
+            dids: { total: 3 }, index: { state: 'catching_up' }, gatekeeper: { available: false } };
+        nock(SearchURL).get('/api/v1/status').query({ includeAmbiguous: true }).reply(200, result);
+        await expect(search.getStatus({ includeAmbiguous: true })).resolves.toEqual(result);
+        nock(SearchURL).get('/api/v1/status').reply(500, { error: 'storage failure' });
+        await expect(search.getStatus()).rejects.toEqual({ error: 'storage failure' });
+    });
     it('configures a finite request timeout', async () => {
         const search = await SearchClient.create({ url: SearchURL });
 

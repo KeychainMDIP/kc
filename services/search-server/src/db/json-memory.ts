@@ -23,7 +23,10 @@ import {
     SearchDocsOptions,
     SearchDocsResult,
     GatekeeperEvent,
+    SearchStatsOptions,
+    SearchStoredStatistics,
 } from "../types.js";
+import { projectStatistics, summarizeStatistics, type DIDStatisticsMetadata } from '../statistics.js';
 import { copyJSON, getEventDisplayTime, stableStringify } from "./db-utils.js";
 import { deduplicateDIDPrefixReferences, extractIdentity, extractIdentityFields } from '../published-credentials.js';
 import {
@@ -38,6 +41,7 @@ type JSONObject = Record<string, unknown>;
 
 export default class DIDsDbMemory implements DIDsDb {
     private docs = new Map<string, JSONObject>();
+    private statistics = new Map<string, DIDStatisticsMetadata>();
     private didsBySuffix = new Map<string, string>();
     private authoritativeDIDPrefixes = new Map<string, string>();
     private agentDIDSuffixes = new Set<string>();
@@ -66,6 +70,19 @@ export default class DIDsDbMemory implements DIDsDb {
         }
 
         this.syncState.set(key, value);
+    }
+
+    async getStats(options: SearchStatsOptions = {}): Promise<SearchStoredStatistics> {
+        const references = this.publishedReferencePrefixes();
+        const groups = [];
+        for (const [suffix, metadata] of this.statistics) {
+            const prefix = this.effectiveDIDPrefix(suffix, references);
+            const ambiguous = !this.authoritativeDIDPrefixes.has(suffix)
+                && (this.agentDIDSuffixes.has(suffix) || (references.get(suffix)?.size ?? 0) !== 1);
+            if (options.didPrefix && prefix !== options.didPrefix && !(options.includeAmbiguous && ambiguous)) continue;
+            groups.push({ ...metadata, count: 1 });
+        }
+        return summarizeStatistics(groups, Object.fromEntries(this.syncState));
     }
 
     async getDIDEvents(did: string): Promise<GatekeeperEvent[]> {
@@ -148,6 +165,7 @@ export default class DIDsDbMemory implements DIDsDb {
             const suffix = getDIDSuffix(record.did);
             const previousDid = this.didsBySuffix.get(suffix);
             if (previousDid && previousDid !== record.did) {
+                this.statistics.delete(suffix);
                 this.events.delete(previousDid);
                 this.docs.delete(previousDid);
                 this.publishedCredentials.delete(previousDid);
@@ -160,7 +178,8 @@ export default class DIDsDbMemory implements DIDsDb {
             }
 
             const oldEvents = this.events.get(record.did) ?? [];
-            const changed = stableStringify(oldEvents) !== stableStringify(record.events);
+            const changed = !this.didsBySuffix.has(suffix)
+                || stableStringify(oldEvents) !== stableStringify(record.events);
 
             if (!changed && !record.removed) {
                 continue;
@@ -169,6 +188,7 @@ export default class DIDsDbMemory implements DIDsDb {
             result.changedDids.push(record.did);
 
             if (record.removed) {
+                this.statistics.delete(suffix);
                 this.events.delete(record.did);
                 this.docs.delete(record.did);
                 this.publishedCredentials.delete(record.did);
@@ -185,6 +205,7 @@ export default class DIDsDbMemory implements DIDsDb {
             }
 
             this.didsBySuffix.set(suffix, record.did);
+            this.statistics.set(suffix, projectStatistics(record.doc));
             const classification = classifyDIDPrefix(record.events);
             if (classification.authoritative) {
                 this.authoritativeDIDPrefixes.set(suffix, classification.prefix);
@@ -220,7 +241,8 @@ export default class DIDsDbMemory implements DIDsDb {
         }
 
         for (const [key, value] of Object.entries(page.syncStateUpdates ?? {})) {
-            await this.saveSyncState(key, value);
+            if (value === null) this.syncState.delete(key);
+            else this.syncState.set(key, value);
         }
 
         return result;
@@ -545,6 +567,7 @@ export default class DIDsDbMemory implements DIDsDb {
     }
 
     async wipeDb(): Promise<void> {
+        this.statistics.clear();
         this.docs.clear();
         this.didsBySuffix.clear();
         this.authoritativeDIDPrefixes.clear();

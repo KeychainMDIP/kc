@@ -4,6 +4,9 @@ import type {
     GatekeeperEvent,
     IndexExportBlockRecord,
 } from '@mdip/gatekeeper/types';
+import type { SearchStatsOptions, SearchStoredStatistics } from '@mdip/keymaster/types';
+
+export type { SearchStatsOptions, SearchStoredStatistics };
 
 export type {
     BlockId,
@@ -198,11 +201,12 @@ export interface ApplyIndexPageResult {
 }
 
 export interface DIDsDb {
-    connect(): Promise<void>;
+    connect(resetDb?: boolean): Promise<void>;
     disconnect(): Promise<void>;
 
     loadSyncState(key: string): Promise<string | null>;
     saveSyncState(key: string, value: string | null): Promise<void>;
+    getStats(options?: SearchStatsOptions): Promise<SearchStoredStatistics>;
 
     getDIDEvents(did: string): Promise<GatekeeperEvent[]>;
     findDIDBySuffix(suffix: string, didPrefix?: string): Promise<string | null>;

@@ -55,6 +55,8 @@ const retryableResolutionErrors = new WeakSet<object>();
 export default class Gatekeeper implements GatekeeperInterface {
     private db: GatekeeperDb;
     private eventsQueue: GatekeeperEvent[];
+    private deferredEvents = new WeakSet<GatekeeperEvent>();
+    private processingEventCount = 0;
     private readonly eventsSeen: Record<string, boolean>;
     private verifiedDIDs: Record<string, boolean>;
     private mutationRevision: number;
@@ -532,6 +534,20 @@ export default class Gatekeeper implements GatekeeperInterface {
         return { total, byType, byRegistry, byVersion, eventsQueue };
     }
 
+    getQueueStatus() {
+        let pending = 0;
+        for (const event of this.eventsQueue) {
+            if (this.deferredEvents.has(event)) pending += 1;
+        }
+        return {
+            staged: this.eventsQueue.length - pending,
+            pending,
+            processing: this.processingEventCount,
+            total: this.eventsQueue.length + this.processingEventCount,
+            active: this.isProcessingEvents || this.processingEventCount > 0,
+        };
+    }
+
     async listRegistries(): Promise<string[]> {
         return this.supportedRegistries;
     }
@@ -544,6 +560,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         this.pendingExpiredControllers.clear();
         this.clearEventsSeen();
         this.eventsQueue = [];
+        this.deferredEvents = new WeakSet();
         return true;
     }
 
@@ -1259,6 +1276,8 @@ export default class Gatekeeper implements GatekeeperInterface {
         const passQueue = this.eventsQueue;
         const passEvents = new Set(passQueue);
         const total = passQueue.length;
+        let remaining = total;
+        this.processingEventCount += total;
         let i = 0;
         let added = 0;
         let merged = 0;
@@ -1274,6 +1293,8 @@ export default class Gatekeeper implements GatekeeperInterface {
                 i += 1;
 
                 const status = await this.importEvent(event);
+
+                if (status !== ImportStatus.DEFERRED) this.deferredEvents.delete(event);
 
                 if (status === ImportStatus.ADDED) {
                     added += 1;
@@ -1298,15 +1319,21 @@ export default class Gatekeeper implements GatekeeperInterface {
                     this.log.debug(`import ${i}/${total}: rejected event for ${event.did}`);
                 }
                 else if (status === ImportStatus.DEFERRED) {
+                    this.deferredEvents.add(event);
                     this.eventsQueue.push(event);
                     this.log.debug(`import ${i}/${total}: deferred event for ${event.did}`);
                 }
+                remaining -= 1;
+                this.processingEventCount -= 1;
             }
         }
         catch (error) {
             const concurrentlyQueued = this.eventsQueue.filter(event => !passEvents.has(event));
             this.eventsQueue = [...passQueue, ...concurrentlyQueued];
             throw error;
+        }
+        finally {
+            this.processingEventCount -= remaining;
         }
 
         return { added, merged, rejected, acceptedHashes, acceptedEvents, rejectedOperations };

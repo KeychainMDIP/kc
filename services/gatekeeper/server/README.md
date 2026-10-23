@@ -22,7 +22,6 @@ Operations come from Keymaster clients such as end-user wallets and network medi
 | `KC_IPFS_CLUSTER_URL` | (no default) | Optional IPFS Cluster API URL |
 | `KC_IPFS_CLUSTER_AUTH_HEADER` | (no default) | Optional authorization header sent to IPFS Cluster |
 | `KC_GATEKEEPER_GC_INTERVAL` | 15 | The number of minutes between garbage collection cycles (0 to disable) |
-| `KC_GATEKEEPER_STATUS_INTERVAL` | 5 | The number of minutes between logging status updates (0 to disable) |
 | `KC_GATEKEEPER_TRUST_PROXY` | false | If true, trust upstream proxy headers when determining client IP (`req.ip`) |
 | `KC_GATEKEEPER_RATE_LIMIT_ENABLED` | false | Enable API rate limiting |
 | `KC_GATEKEEPER_RATE_LIMIT_WINDOW_VALUE` | 1 | Time window size for rate limiting |
@@ -46,6 +45,24 @@ Operations come from Keymaster clients such as end-user wallets and network medi
 When `KC_GATEKEEPER_DB=mongodb`, Gatekeeper requires MongoDB transactions so DID/block mutations and search-index cursor records commit atomically. MongoDB transactions require a replica set or sharded cluster. A standalone `mongod` is not supported and Gatekeeper will fail during startup.
 
 The repository `docker-compose.yml` starts MongoDB as a single-node replica set named `rs0` and uses `KC_MONGODB_URL=mongodb://mongodb:27017/?replicaSet=rs0` for containers. Its healthcheck waits until the replica set has a writable primary before starting dependent services. Existing Mongo-backed deployments must use a replica set with a reachable primary, or a managed replica-set/sharded MongoDB deployment, before starting Gatekeeper with this adapter.
+
+## Lightweight status and DID statistics
+
+`GET /api/v1/status` reports Gatekeeper uptime, process memory, and live queue
+counts.
+
+```json
+{
+  "uptimeSeconds": 120,
+  "eventsQueue": { "staged": 2, "pending": 3, "processing": 1, "total": 6, "active": true },
+  "memoryUsage": { "rss": 100000000, "heapTotal": 80000000, "heapUsed": 60000000, "external": 10000000, "arrayBuffers": 5000000 }
+}
+```
+
+Queue categories are disjoint. `staged` means queued work not last classified
+as deferred, `pending` means queued work waiting after a deferred import, and
+`processing` means work remaining in active import passes. `total` is their
+sum. Raw operation bodies are not included. Memory counters are byte counts.
 
 ## Index export limitation
 

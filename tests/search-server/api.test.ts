@@ -17,6 +17,7 @@ const serverEntry = '../../services/search-server/src/index.ts';
 const schemaDid = 'did:mdip:z3v8AuacR4diTuCgtbEfLDo2LzQNEDHgqBSNLMs5Szuq3WHcQdB';
 const logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
 const connect = jest.fn<(options?: { signal?: AbortSignal }) => Promise<void>>();
+const getStatus = jest.fn<() => Promise<unknown>>();
 const startIndexing = jest.fn<() => Promise<void>>();
 const beginStopping = jest.fn<() => void>();
 const stopIndexing = jest.fn<() => Promise<void>>();
@@ -39,7 +40,7 @@ jest.unstable_mockModule(require.resolve('express-rate-limit').replace(/\.cjs$/,
 } }));
 jest.unstable_mockModule('@mdip/common/logger', () => ({ childLogger: () => logger }));
 jest.unstable_mockModule('@mdip/gatekeeper', () => ({ resolveDIDFromEvents: resolveDID }));
-jest.unstable_mockModule('@mdip/gatekeeper/client', () => ({ default: class { connect = connect; } }));
+jest.unstable_mockModule('@mdip/gatekeeper/client', () => ({ default: class { connect = connect; getStatus = getStatus; } }));
 jest.unstable_mockModule('./db/sqlite.js', () => ({ default: { create: sqliteCreate } }));
 jest.unstable_mockModule('./db/postgres.js', () => ({ default: { create: postgresCreate } }));
 jest.unstable_mockModule('../../services/search-server/src/db/json-memory.ts', () => ({
@@ -60,7 +61,7 @@ beforeEach(() => {
     jest.clearAllMocks();
     db = new DIDsDbMemory();
     config = {
-        db: 'memory', port: 0, didPrefix: 'did:mdip', postgresURL: 'postgresql://fixture',
+        db: 'memory', resetDb: false, port: 0, didPrefix: 'did:mdip', postgresURL: 'postgresql://fixture',
         gatekeeperURL: 'http://fixture.invalid', refreshIntervalMs: 5000, metricsRefreshIntervalMs: 60000,
         rateLimitEnabled: false, rateLimitWhitelist: [], rateLimitSkipPaths: ['/api/v1/ready'],
         rateLimitWindowValue: 1, rateLimitWindowUnit: 'minute', rateLimitMaxRequests: 10,
@@ -69,6 +70,10 @@ beforeEach(() => {
     app = express();
     server = undefined;
     connect.mockResolvedValue(undefined);
+    getStatus.mockResolvedValue({
+        uptimeSeconds: 10, eventsQueue: { staged: 1, pending: 2, processing: 0, total: 3, active: false },
+        memoryUsage: { rss: 10, heapTotal: 9, heapUsed: 8, external: 2, arrayBuffers: 1 },
+    });
     startIndexing.mockResolvedValue(undefined);
     stopIndexing.mockResolvedValue(undefined);
     resolveDID.mockImplementation(async ({ did, getBlock }) => {
@@ -119,6 +124,37 @@ async function waitForCall(mock: ReturnType<typeof jest.fn>): Promise<void> {
 }
 
 describe('Search Server HTTP routes', () => {
+    it('adds scoped statistics to status while preserving synchronization and metrics fields', async () => {
+        await db.saveSyncState(INDEX_SYNC_STATE_KEYS.changesCursor, '42');
+        await db.saveSyncState(INDEX_SYNC_STATE_KEYS.metricsLastRebuiltAt, '2026-10-23T10:00:00.000Z');
+        await boot();
+        const response = await request('/status');
+        expect(response.status).toBe(200);
+        expect(response.body).toMatchObject({
+            ready: true, db: 'memory',
+            sync: { snapshotComplete: false, changesCursor: '42', lastPagesProcessed: 0 },
+            metrics: { lastRebuiltAt: '2026-10-23T10:00:00.000Z', lastError: null },
+            dids: { total: 0 }, scope: { didPrefix: 'did:mdip', includeAmbiguous: false },
+            index: { state: 'snapshot', changesCursor: '42' },
+            gatekeeper: { available: true, status: { uptimeSeconds: 10, eventsQueue: { total: 3 } } },
+        });
+        expect(getStatus).toHaveBeenCalledWith({ timeoutMs: 5000, maxResponseBytes: 65536, signal: expect.any(AbortSignal) });
+        expect((await request('/status?includeAmbiguous=nonsense')).status).toBe(400);
+        expect((await request('/status?includeAmbiguous=true&includeAmbiguous=false')).status).toBe(400);
+        const stats = jest.spyOn(db, 'getStats');
+        expect((await request('/status?includeAmbiguous=true')).body.scope.includeAmbiguous).toBe(true);
+        expect(stats).toHaveBeenLastCalledWith({ didPrefix: 'did:mdip', includeAmbiguous: true });
+        expect((await request('/stats')).status).toBe(404);
+        getStatus.mockRejectedValue(new Error('private dependency configuration'));
+        const unavailable = await request('/status');
+        expect(unavailable.body).toMatchObject({
+            dids: { total: 0 }, sync: { changesCursor: '42' },
+            gatekeeper: { available: false, reason: 'unavailable' },
+        });
+        expect(JSON.stringify(unavailable.body)).not.toContain('private dependency configuration');
+        stats.mockRejectedValue(new TypeError('database failure'));
+        expect((await request('/status')).status).toBe(500);
+    });
     it('returns identities with defaults and projects repeated field parameters within the configured scope', async () => {
         const event = createSeedEvent(schemaDid);
         event.operation.mdip!.type = 'agent';
@@ -450,7 +486,7 @@ describe('Search Server HTTP routes', () => {
     });
 
     it.each([
-        ['/status', 'loadSyncState', undefined],
+        ['/status', 'getStats', undefined],
         ['/did/did:mdip:fixture/events', 'getDIDEvents', undefined],
         ['/did/did:mdip:fixture', 'getDIDEvents', undefined],
         ['/events', 'listEvents', undefined],
@@ -475,8 +511,8 @@ describe('Search Server HTTP routes', () => {
         config.rateLimitWhitelist = ['127.0.0.1'];
         await boot();
         expect(app.get('trust proxy')).toBe(true);
-        if (name === 'sqlite') expect(sqliteCreate).toHaveBeenCalledWith();
-        else expect(postgresCreate).toHaveBeenCalledWith(config.postgresURL);
+        if (name === 'sqlite') expect(sqliteCreate).toHaveBeenCalledWith(undefined, undefined, false);
+        else expect(postgresCreate).toHaveBeenCalledWith(config.postgresURL, false);
         expect(connect).toHaveBeenCalledWith({
             url: config.gatekeeperURL,
             signal: expect.any(AbortSignal),
@@ -493,6 +529,30 @@ describe('Search Server HTTP routes', () => {
         expect(limiter.skip({ ...req, ip: '192.0.2.1' })).toBe(false);
         config.rateLimitWhitelist = [];
         expect(limiter.skip(req)).toBe(false);
+    });
+
+    it.each(['sqlite', 'postgres'])('passes an enabled startup reset to the %s adapter', async name => {
+        config.db = name;
+        config.resetDb = true;
+        await boot();
+        if (name === 'sqlite') expect(sqliteCreate).toHaveBeenCalledWith(undefined, undefined, true);
+        else expect(postgresCreate).toHaveBeenCalledWith(config.postgresURL, true);
+        expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('KC_SEARCH_SERVER_RESET_DB'));
+    });
+
+    it('does not listen or start indexing after a startup reset failure', async () => {
+        config.db = 'postgres';
+        config.resetDb = true;
+        const failure = new Error('reset failed');
+        postgresCreate.mockRejectedValueOnce(failure);
+        const listen = jest.spyOn(app, 'listen');
+        await import(serverEntry);
+        await waitForCall(process.exit as any);
+        expect(listen).not.toHaveBeenCalled();
+        expect(connect).not.toHaveBeenCalled();
+        expect(startIndexing).not.toHaveBeenCalled();
+        expect(process.exit).toHaveBeenCalledWith(1);
+        expect(logger.error).toHaveBeenCalledWith({ error: failure }, '[search-server] Fatal error');
     });
 
     it.each([false, true])('stops indexing and closes storage on shutdown (storage failure: %s)', async fail => {

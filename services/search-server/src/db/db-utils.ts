@@ -1,5 +1,22 @@
 import type { GatekeeperEvent } from '../types.js';
 
+export const RESET_SEARCH_SCHEMA_SQL = `
+    DROP VIEW IF EXISTS published_credentials_classified;
+    DROP VIEW IF EXISTS did_classifications_effective;
+    DROP VIEW IF EXISTS did_reference_prefixes;
+    DROP TABLE IF EXISTS network_metric_snapshots;
+    DROP TABLE IF EXISTS sync_state;
+    DROP TABLE IF EXISTS challenge_receipts;
+    DROP TABLE IF EXISTS did_prefix_references;
+    DROP TABLE IF EXISTS identity_fields;
+    DROP TABLE IF EXISTS identity_schemas;
+    DROP TABLE IF EXISTS published_credentials;
+    DROP TABLE IF EXISTS did_classifications;
+    DROP TABLE IF EXISTS did_docs;
+    DROP TABLE IF EXISTS did_events;
+    DROP TABLE IF EXISTS blocks;
+`;
+
 export function copyJSON<T>(value: T): T {
     return JSON.parse(JSON.stringify(value)) as T;
 }

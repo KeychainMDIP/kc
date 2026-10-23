@@ -26,6 +26,7 @@ import {
 } from "./index-helpers.js";
 import { isNetworkMetricsScopeCurrent, parseSnapshotDate } from './network-metrics.js';
 import { runService, type Shutdown } from './lifecycle.js';
+import { sampleGatekeeperStatus } from './statistics.js';
 
 const log = childLogger({ service: 'search-server' });
 const SHUTDOWN_TIMEOUT_MS = 10_000;
@@ -131,10 +132,13 @@ async function main(shutdown: Shutdown) {
     let didDb: DIDsDb;
     log.info(`Search Server persisting to ${config.db}`);
 
+    if (config.resetDb) {
+        log.warn('KC_SEARCH_SERVER_RESET_DB is enabled. Rebuilding the Search Server database before indexing.');
+    }
     if (config.db === 'sqlite') {
-        didDb = await DIDsSQLite.create();
+        didDb = await DIDsSQLite.create(undefined, undefined, config.resetDb);
     } else if (config.db === 'postgres') {
-        didDb = await DIDsPostgres.create(config.postgresURL);
+        didDb = await DIDsPostgres.create(config.postgresURL, config.resetDb);
     } else {
         didDb = new DIDsDbMemory();
     }
@@ -165,11 +169,24 @@ async function main(shutdown: Shutdown) {
     });
 
     v1router.get('/status', async (req, res) => {
+        const parsed = parseOptionalBoolean(req.query.includeAmbiguous);
+        if (req.query.includeAmbiguous !== undefined && parsed === undefined) {
+            res.status(400).json({ error: 'Invalid includeAmbiguous' });
+            return;
+        }
         try {
-            res.json(await getSearchStatus(didDb, config.db));
-        } catch (error: any) {
+            const includeAmbiguous = parsed ?? false;
+            const status = await getSearchStatus(didDb, config.db, { didPrefix: config.didPrefix, includeAmbiguous });
+            const operational = await sampleGatekeeperStatus(gatekeeper, dependencyRequests.signal);
+            res.json({
+                ...status,
+                scope: { didPrefix: config.didPrefix || null, includeAmbiguous },
+                gatekeeper: operational,
+            });
+        }
+        catch (error) {
             log.error({ error }, 'Status error');
-            res.status(500).send({ error: error.toString() });
+            res.status(500).json({ error: String(error) });
         }
     });
 

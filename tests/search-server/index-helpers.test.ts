@@ -81,7 +81,7 @@ describe('Search Server request helpers', () => {
 
     it('reports empty and populated synchronization state without modifying it', async () => {
         const db = new DIDsDbMemory();
-        expect(await getSearchStatus(db, 'memory')).toEqual({
+        expect(await getSearchStatus(db, 'memory')).toMatchObject({
             ready: true,
             db: 'memory',
             sync: {
@@ -109,7 +109,7 @@ describe('Search Server request helpers', () => {
             await db.saveSyncState(INDEX_SYNC_STATE_KEYS[name as keyof typeof state], value);
         }
         const { metricsLastRebuiltAt, metricsLastError, ...sync } = state;
-        expect(await getSearchStatus(db, 'memory')).toEqual({
+        expect(await getSearchStatus(db, 'memory')).toMatchObject({
             ready: true,
             db: 'memory',
             sync: { ...sync, snapshotComplete: true, lastPagesProcessed: 2, lastDidsChanged: 3, lastBlocksStored: 4 },
@@ -120,7 +120,7 @@ describe('Search Server request helpers', () => {
 
     it('propagates status storage failures rather than reporting success', async () => {
         const db = new DIDsDbMemory();
-        jest.spyOn(db, 'loadSyncState').mockRejectedValue(new Error('database unavailable'));
+        jest.spyOn(db, 'getStats').mockRejectedValue(new Error('database unavailable'));
         await expect(getSearchStatus(db, 'memory')).rejects.toThrow('database unavailable');
     });
 });

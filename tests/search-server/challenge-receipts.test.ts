@@ -794,7 +794,7 @@ describe('postgres challenge receipt adapter with mocked pool', () => {
                 record.updatedAt,
             ]
         );
-        expect(poolQuery).toHaveBeenCalledWith('DELETE FROM challenge_receipts');
+        expect(mockClient.query).toHaveBeenCalledWith('DELETE FROM challenge_receipts');
         expect(poolQuery).toHaveBeenCalledWith(
             expect.stringContaining("dc.prefix || ':' || dc.suffix AS \"receiptDid\""),
             [
