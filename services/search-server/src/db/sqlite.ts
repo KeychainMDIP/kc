@@ -24,7 +24,10 @@ import {
     SearchDocsOptions,
     SearchDocsResult,
     GatekeeperEvent,
+    SearchStatsOptions,
+    SearchStoredStatistics,
 } from "../types.js";
+import { projectStatistics, summarizeStatistics, type StatisticsGroup } from '../statistics.js';
 import { getEventDisplayTime, stableStringify } from './db-utils.js';
 import { deduplicateDIDPrefixReferences, extractIdentity, extractIdentityFields } from '../published-credentials.js';
 import {
@@ -96,7 +99,13 @@ export default class Sqlite implements DIDsDb {
                 did TEXT NOT NULL UNIQUE,
                 prefix TEXT NOT NULL,
                 prefix_authoritative INTEGER NOT NULL,
-                is_agent INTEGER NOT NULL
+                is_agent INTEGER NOT NULL,
+                stats_type TEXT,
+                stats_registry TEXT,
+                stats_version TEXT,
+                stats_confirmed INTEGER NOT NULL,
+                stats_ephemeral INTEGER NOT NULL,
+                stats_invalid INTEGER NOT NULL
             );
 
             CREATE INDEX IF NOT EXISTS idx_did_classifications_prefix
@@ -274,6 +283,10 @@ export default class Sqlite implements DIDsDb {
     }
 
     async saveSyncState(key: string, value: string | null): Promise<void> {
+        return this.runExclusive(() => this.saveSyncStateUnlocked(key, value));
+    }
+
+    private async saveSyncStateUnlocked(key: string, value: string | null): Promise<void> {
         if (!this.db) {
             throw new Error('DB not connected');
         }
@@ -435,7 +448,7 @@ export default class Sqlite implements DIDsDb {
                     await this.db.run('DELETE FROM did_classifications WHERE suffix = ?', [suffix]);
                 }
 
-                const changed = eventChanges.get(record.did) === true;
+                const changed = !previous || previous.did !== record.did || eventChanges.get(record.did) === true;
 
                 if (!changed && !record.removed) {
                     continue;
@@ -457,14 +470,25 @@ export default class Sqlite implements DIDsDb {
                 }
 
                 const classification = classifyDIDPrefix(record.events);
+                const statistics = projectStatistics(record.doc);
                 await this.db.run(`
-                    INSERT INTO did_classifications (suffix, did, prefix, prefix_authoritative, is_agent) VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO did_classifications (suffix, did, prefix, prefix_authoritative, is_agent,
+                        stats_type, stats_registry, stats_version, stats_confirmed, stats_ephemeral, stats_invalid)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(suffix) DO UPDATE SET
                         did=excluded.did,
                         prefix=excluded.prefix,
                         prefix_authoritative=excluded.prefix_authoritative,
-                        is_agent=excluded.is_agent
-                `, [suffix, record.did, classification.prefix, classification.authoritative ? 1 : 0, isAgentDID(record.events) ? 1 : 0]);
+                        is_agent=excluded.is_agent,
+                        stats_type=excluded.stats_type,
+                        stats_registry=excluded.stats_registry,
+                        stats_version=excluded.stats_version,
+                        stats_confirmed=excluded.stats_confirmed,
+                        stats_ephemeral=excluded.stats_ephemeral,
+                        stats_invalid=excluded.stats_invalid
+                `, [suffix, record.did, classification.prefix, classification.authoritative ? 1 : 0, isAgentDID(record.events) ? 1 : 0,
+                    statistics.type, statistics.registry, statistics.version,
+                    statistics.confirmed ? 1 : 0, statistics.ephemeral ? 1 : 0, statistics.invalid ? 1 : 0]);
 
                 for (const [index, event] of record.events.entries()) {
                     await this.db.run(
@@ -518,6 +542,33 @@ export default class Sqlite implements DIDsDb {
             await this.db.exec('ROLLBACK');
             throw error;
         }
+    }
+
+    async getStats(options: SearchStatsOptions = {}): Promise<SearchStoredStatistics> {
+        return this.runExclusive(async () => {
+            if (!this.db) throw new Error('DB not connected');
+            await this.db.exec('BEGIN');
+            try {
+                const groups = await this.db.all<StatisticsGroup[]>(`
+                    SELECT dc.stats_type AS type, dc.stats_registry AS registry, dc.stats_version AS version,
+                           dc.stats_confirmed AS confirmed, dc.stats_ephemeral AS ephemeral,
+                           dc.stats_invalid AS invalid, COUNT(*) AS count
+                    FROM did_classifications dc
+                    JOIN did_classifications_effective effective ON effective.suffix = dc.suffix
+                    WHERE (? IS NULL OR effective.prefix = ? OR (? AND effective.prefix_ambiguous))
+                    GROUP BY dc.stats_type, dc.stats_registry, dc.stats_version,
+                             dc.stats_confirmed, dc.stats_ephemeral, dc.stats_invalid`,
+                [options.didPrefix || null, options.didPrefix || null, options.includeAmbiguous ? 1 : 0]);
+                const state = await this.db.all<Array<{ key: string; value: string }>>('SELECT key, value FROM sync_state');
+                const result = summarizeStatistics(groups, Object.fromEntries(state.map(row => [row.key, row.value])));
+                await this.db.exec('COMMIT');
+                return result;
+            }
+            catch (error) {
+                await this.db.exec('ROLLBACK');
+                throw error;
+            }
+        });
     }
 
     async getDID(did: string): Promise<object | null> {
@@ -986,6 +1037,10 @@ export default class Sqlite implements DIDsDb {
     }
 
     async replaceNetworkMetricSnapshots(snapshots: NetworkMetricSnapshot[]): Promise<void> {
+        return this.runExclusive(() => this.replaceNetworkMetricSnapshotsUnlocked(snapshots));
+    }
+
+    private async replaceNetworkMetricSnapshotsUnlocked(snapshots: NetworkMetricSnapshot[]): Promise<void> {
         if (!this.db) {
             throw new Error('DB not connected');
         }
@@ -1219,7 +1274,9 @@ export default class Sqlite implements DIDsDb {
             if (!this.db) {
                 throw new Error('DB not connected');
             }
-            await this.db.exec(`
+            await this.db.exec('BEGIN');
+            try {
+                await this.db.exec(`
                 DELETE FROM did_docs;
                 DELETE FROM did_events;
                 DELETE FROM did_classifications;
@@ -1231,7 +1288,13 @@ export default class Sqlite implements DIDsDb {
                 DELETE FROM challenge_receipts;
                 DELETE FROM network_metric_snapshots;
                 DELETE FROM sync_state;
-            `);
+                `);
+                await this.db.exec('COMMIT');
+            }
+            catch (error) {
+                await this.db.exec('ROLLBACK');
+                throw error;
+            }
         });
     }
 

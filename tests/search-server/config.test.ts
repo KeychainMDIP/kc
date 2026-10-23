@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import { parseDidPrefix, parseSearchDb } from '../../services/search-server/src/config.ts';
 
 describe('search-server DID prefix configuration', () => {
@@ -27,5 +28,24 @@ describe('search-server database configuration', () => {
         expect(() => parseSearchDb('postres')).toThrow(
             'Unsupported KC_SEARCH_SERVER_DB "postres", expected sqlite, postgres, or memory'
         );
+    });
+});
+
+describe('search-server status rate limiting', () => {
+    it('exempts readiness but keeps status subject to the configured rate limit by default', async () => {
+        const previous = process.env.KC_SEARCH_SERVER_RATE_LIMIT_SKIP_PATHS;
+        jest.unstable_mockModule('@mdip/common/env', () => ({ loadEnv: jest.fn() }));
+        try {
+            delete process.env.KC_SEARCH_SERVER_RATE_LIMIT_SKIP_PATHS;
+            await jest.isolateModulesAsync(async () => {
+                const { default: config } = await import('../../services/search-server/src/config.ts');
+                expect(config.rateLimitSkipPaths).toEqual(['/api/v1/ready']);
+            });
+        }
+        finally {
+            if (previous === undefined) delete process.env.KC_SEARCH_SERVER_RATE_LIMIT_SKIP_PATHS;
+            else process.env.KC_SEARCH_SERVER_RATE_LIMIT_SKIP_PATHS = previous;
+            jest.unstable_unmockModule('@mdip/common/env');
+        }
     });
 });

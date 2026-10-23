@@ -960,7 +960,7 @@ describe('search DB branch behavior', () => {
         expect(eventInserts).toHaveLength(2);
         expect(eventInserts.map(([, params]) => (params as unknown[]).length)).toStrictEqual([2500, 5]);
         expect(classificationInserts).toHaveLength(1);
-        expect(classificationInserts[0][1]).toHaveLength(10);
+        expect(classificationInserts[0][1]).toHaveLength(22);
         expect(docInserts).toHaveLength(1);
         expect(docInserts[0][1]).toHaveLength(4);
         expect(clientQuery).toHaveBeenCalledWith('COMMIT');

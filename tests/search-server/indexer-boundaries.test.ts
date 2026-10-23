@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals';
 import { setLogger } from '../../packages/common/src/logger.ts';
-import DidIndexer, { type GatekeeperIndexClient } from '../../services/search-server/src/DidIndexer.ts';
+import DidIndexer, { INDEX_SYNC_STATE_KEYS, type GatekeeperIndexClient } from '../../services/search-server/src/DidIndexer.ts';
 import DIDsDbMemory from '../../services/search-server/src/db/json-memory.ts';
 import type { BlockInfo, IndexExportResponse } from '@mdip/gatekeeper/types';
 import type { GatekeeperEvent } from '../../services/search-server/src/types.ts';
@@ -84,6 +84,111 @@ beforeEach(() => {
 });
 
 describe('DidIndexer gatekeeper read boundary', () => {
+    it('uses the applied changes cursor for freshness when an empty final page omits a new cursor', async () => {
+        const db = new DIDsDbMemory();
+        await db.saveSyncState(INDEX_SYNC_STATE_KEYS.snapshotComplete, 'true');
+        await db.saveSyncState(INDEX_SYNC_STATE_KEYS.epoch, 'epoch-test');
+        await db.saveSyncState(INDEX_SYNC_STATE_KEYS.changesCursor, '7');
+        const gatekeeper = {
+            isReady: jest.fn(async () => true),
+            exportIndex: jest.fn(async () => ({ ...createChangesResponse(), cursor: null, dids: [] })),
+        };
+        const indexer = new DidIndexer(gatekeeper, db, { intervalMs: 60_000 });
+
+        await (indexer as any).refreshIndex();
+
+        expect(await db.getStats()).toMatchObject({
+            sync: { changesCursor: '7' },
+            index: { changesCursor: '7', caughtUpCursor: '7', state: 'caught_up' },
+        });
+    });
+
+    it.each([
+        { dids: null },
+        { dids: [null] },
+        { blocks: [{ registry: 'local', block: null }] },
+        { blocks: [{ registry: 'local', block: [] }] },
+    ])('does not erase the current projection on a malformed replacement-epoch response: %j', async invalid => {
+        const db = new DIDsDbMemory();
+        const gatekeeper = {
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>()
+                .mockResolvedValueOnce(createSnapshotResponse())
+                .mockResolvedValueOnce({ ...createChangesResponse(), indexEpoch: 'replacement', ...invalid } as any),
+        };
+        const indexer = new DidIndexer(gatekeeper, db, { intervalMs: 60_000 });
+        await (indexer as any).refreshIndex();
+        const wipe = jest.spyOn(db, 'wipeDb');
+        await (indexer as any).refreshIndex();
+        expect(wipe).not.toHaveBeenCalled();
+        expect(await db.getStats()).toMatchObject({
+            dids: { total: 1 }, index: { epoch: 'epoch-test', lastError: 'Error: Invalid index export response' },
+        });
+    });
+
+    it('rebuilds warm rows with an unknown source epoch instead of stamping them with a new one', async () => {
+        const db = new DIDsDbMemory();
+        const oldDid = 'did:test:old-without-epoch';
+        await db.applyIndexPage({
+            dids: [{ did: oldDid, events: [createEvent(oldDid, {}, '2026-04-01T10:00:00.000Z')], doc: {} }],
+            blocks: [],
+            syncStateUpdates: { [INDEX_SYNC_STATE_KEYS.snapshotComplete]: 'true' },
+        });
+        const gatekeeper = {
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>()
+                .mockResolvedValueOnce(createChangesResponse()).mockResolvedValueOnce(createSnapshotResponse()),
+        };
+        const indexer = new DidIndexer(gatekeeper, db, { intervalMs: 60_000 });
+        const wipe = jest.spyOn(db, 'wipeDb');
+        await (indexer as any).refreshIndex();
+        expect(wipe).toHaveBeenCalledTimes(1);
+        expect(await db.getDID(oldDid)).toBeNull();
+        expect(await db.getStats()).toMatchObject({
+            dids: { total: 1 }, index: { epoch: 'epoch-test', state: 'catching_up' },
+        });
+    });
+
+    it('distinguishes completed snapshots from caught-up changes and rebuilds after a source reset', async () => {
+        const db = new DIDsDbMemory();
+        const gatekeeper = {
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>()
+                .mockResolvedValueOnce(createSnapshotResponse())
+                .mockResolvedValueOnce(createChangesResponse())
+                .mockResolvedValueOnce({ ...createChangesResponse(), indexEpoch: 'replacement' })
+                .mockResolvedValueOnce({
+                    ...createSnapshotResponse(), indexEpoch: 'replacement',
+                    dids: [{ did: changesDid, events: [createEvent(changesDid, {}, '2026-04-01T12:00:00.000Z')] }],
+                }),
+        };
+        const indexer = new DidIndexer(gatekeeper, db, { intervalMs: 60_000 });
+        await (indexer as any).refreshIndex();
+        expect(await db.getStats()).toMatchObject({ index: { snapshotComplete: true, state: 'catching_up' } });
+        await (indexer as any).refreshIndex();
+        expect(await db.getStats()).toMatchObject({ index: { epoch: 'epoch-test', state: 'caught_up', changesCursor: '7' } });
+        const wipe = jest.spyOn(db, 'wipeDb');
+        await (indexer as any).refreshIndex();
+        expect(wipe).toHaveBeenCalledTimes(1);
+        expect(await db.getDID(snapshotDid)).toBeNull();
+        expect(await db.getStats()).toMatchObject({ dids: { total: 1 }, index: { epoch: 'replacement', state: 'catching_up' } });
+    });
+
+    it('does not advance counts or the watermark after an index page fails', async () => {
+        const db = new DIDsDbMemory();
+        const gatekeeper = {
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>()
+                .mockResolvedValueOnce(createSnapshotResponse()).mockResolvedValueOnce(createChangesResponse()),
+        };
+        const indexer = new DidIndexer(gatekeeper, db, { intervalMs: 60_000 });
+        await (indexer as any).refreshIndex();
+        jest.spyOn(db, 'applyIndexPage').mockRejectedValueOnce(new Error('page failed'));
+        await (indexer as any).refreshIndex();
+        expect(await db.getStats()).toMatchObject({
+            dids: { total: 1 }, index: { changesCursor: '4', caughtUpAt: null, lastError: 'Error: page failed' },
+        });
+    });
     it('moves an ambiguous projection when a later signed update establishes its prefix', async () => {
         const db = new DIDsDbMemory();
         const create = createEvent(snapshotDid, { name: 'ambiguous' }, '2026-04-01T10:00:00.000Z');
@@ -334,6 +439,7 @@ describe('DidIndexer gatekeeper read boundary', () => {
         const indexer = new DidIndexer(gatekeeper as any, db, { intervalMs: 60_000 });
 
         await db.saveSyncState('index.snapshot.cursor', 'page-1');
+        await db.saveSyncState('index.epoch', 'epoch-test');
         await expect((indexer as any).syncSnapshot())
             .rejects.toThrow('Snapshot cursor found without checkpointCursor');
 
@@ -358,6 +464,7 @@ describe('DidIndexer gatekeeper read boundary', () => {
 
     it('rejects snapshot pages that change checkpoint or do not advance cursor', async () => {
         const db = new DIDsDbMemory();
+        await db.saveSyncState('index.epoch', 'epoch-test');
         const gatekeeper = {
             isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
             exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>(),
@@ -397,6 +504,7 @@ describe('DidIndexer gatekeeper read boundary', () => {
             .rejects.toThrow('Expected changes export response, got snapshot');
 
         await db.saveSyncState('index.changes.cursor', '7');
+        await db.saveSyncState('index.epoch', 'epoch-test');
         gatekeeper.exportIndex.mockResolvedValueOnce({
             ...createChangesResponse(),
             cursor: '7',
@@ -409,6 +517,7 @@ describe('DidIndexer gatekeeper read boundary', () => {
 
     it('continues through multiple changes pages while advancing the cursor', async () => {
         const db = new DIDsDbMemory();
+        await db.saveSyncState('index.epoch', 'epoch-test');
         await db.saveSyncState('index.snapshot.complete', 'true');
         await db.saveSyncState('index.changes.cursor', '7');
         const gatekeeper = {
@@ -448,6 +557,7 @@ describe('DidIndexer gatekeeper read boundary', () => {
         const db = new DIDsDbMemory();
         const applyIndexPage = jest.spyOn(db, 'applyIndexPage');
         await db.saveSyncState('index.snapshot.complete', 'true');
+        await db.saveSyncState('index.epoch', 'epoch-test');
 
         const operationsOnlyDid = 'did:test:z3v8AuapxSfMXs4gozSR8pPJWYWSqmhaYmX2MLFQQiQBy1aCNU9';
         const operationsOnlyEvent = createEvent(

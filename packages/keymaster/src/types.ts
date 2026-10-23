@@ -3,6 +3,8 @@ import {
     GatekeeperInterface,
     MdipDocument,
     ResolveDIDOptions,
+    GetStatusResult,
+    CheckDIDsResultByType,
 } from '@mdip/gatekeeper/types';
 
 export interface HDKey {
@@ -247,6 +249,60 @@ export interface WalletBase {
 
 export interface SearchEngine {
     search(query: object): Promise<string[]>;
+}
+
+export interface SearchStatsOptions {
+    didPrefix?: string;
+    includeAmbiguous?: boolean;
+}
+
+export interface SearchDIDStatistics {
+    total: number;
+    byType: CheckDIDsResultByType;
+    byRegistry: Record<string, number>;
+    byVersion: Record<string, number>;
+}
+
+export interface SearchIndexStatistics {
+    epoch: string | null;
+    snapshotComplete: boolean;
+    snapshotCursor: string | null;
+    changesCursor: string | null;
+    appliedAt: string | null;
+    caughtUpCursor: string | null;
+    caughtUpAt: string | null;
+    state: 'snapshot' | 'catching_up' | 'caught_up';
+    lastError: string | null;
+}
+
+export interface SearchStoredStatistics {
+    dids: SearchDIDStatistics;
+    index: SearchIndexStatistics;
+    sync: {
+        snapshotComplete: boolean;
+        snapshotCursor: string | null;
+        snapshotCheckpointCursor: string | null;
+        changesCursor: string | null;
+        lastSyncStartedAt: string | null;
+        lastSyncCompletedAt: string | null;
+        lastSyncError: string | null;
+        lastSyncMode: string | null;
+        lastPagesProcessed: number;
+        lastDidsChanged: number;
+        lastBlocksStored: number;
+    };
+    metrics: { lastRebuiltAt: string | null; lastError: string | null };
+}
+
+export type GatekeeperStatusSample =
+    | { available: true; sampledAt: string; status: GetStatusResult }
+    | { available: false; sampledAt: string; reason: 'unsupported_status' | 'unavailable' };
+
+export interface SearchStatusResult extends SearchStoredStatistics {
+    ready: boolean;
+    db: string;
+    scope: { didPrefix: string | null; includeAmbiguous: boolean };
+    gatekeeper: GatekeeperStatusSample;
 }
 
 export interface KeymasterOptions {

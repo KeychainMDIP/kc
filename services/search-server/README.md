@@ -59,15 +59,17 @@ KC_SEARCH_SERVER_RATE_LIMIT_WINDOW_VALUE=1
 KC_SEARCH_SERVER_RATE_LIMIT_WINDOW_UNIT=minute
 KC_SEARCH_SERVER_RATE_LIMIT_MAX_REQUESTS=600
 KC_SEARCH_SERVER_RATE_LIMIT_WHITELIST=
-KC_SEARCH_SERVER_RATE_LIMIT_SKIP_PATHS=/api/v1/ready,/api/v1/status
+KC_SEARCH_SERVER_RATE_LIMIT_SKIP_PATHS=/api/v1/ready
 
 # Logging
 KC_LOG_LEVEL=info
 ```
 
 The search database is a rebuildable index and this service does not migrate
-older table layouts. Reset an existing search-server database before deploying
-a release that changes its schema.
+older table layouts. Before deploying a release that changes its schema, stop
+Search Server and recreate its database tables, use a fresh Search database, or
+remove its SQLite database file. Clearing rows with `wipeDb()` does not update
+the table layout. Do not reset Gatekeeper or delete its data.
 
 PostgreSQL startup installs the `pg_trgm` extension and creates a concurrent
 GIN index for document text searches when it is missing. The first startup on
@@ -94,8 +96,102 @@ reclassify stored DIDs and does not apply to historical metric snapshots.
 - **Description**: Returns `{ "ready": true }` once the HTTP service is available.
 
 ### `GET /api/v1/status`
-- **Description**: Returns the database adapter, index synchronization state,
-  and the last network-metrics rebuild time or error.
+
+Returns the existing `ready`, `db`, `sync`, and `metrics` fields, extended with
+current indexed DID statistics, index freshness, scope, and a bounded live sample
+of Gatekeeper operational status. It does not enumerate or resolve Gatekeeper
+DIDs, replay histories, or start a metrics rebuild.
+
+The `dids` section contains `total`, `byType` (agents, assets, confirmed,
+unconfirmed, ephemeral, invalid), `byRegistry`, and `byVersion`. Counts cover
+current stored histories, including deactivated DIDs, deduplicated by CID
+suffix. Physical removals reduce these counts once indexed. These are not the
+cumulative totals returned by the historical snapshot endpoints. `ephemeral`
+means MDIP expiration is set, not that a credential has a signed validity date.
+`invalid` counts indexed resolution-error documents, not failed signatures.
+
+The configured network scope applies. `includeAmbiguous=true` also includes
+ambiguous legacy DIDs under that scope, as on other live listing endpoints.
+Invalid or repeated `includeAmbiguous` values return `400`.
+
+For example:
+
+```json
+{
+  "ready": true,
+  "db": "postgres",
+  "sync": {
+    "snapshotComplete": true,
+    "snapshotCursor": "last-snapshot-cursor",
+    "snapshotCheckpointCursor": "40",
+    "changesCursor": "42",
+    "lastSyncStartedAt": "2026-10-23T09:59:59.000Z",
+    "lastSyncCompletedAt": "2026-10-23T10:00:00.000Z",
+    "lastSyncError": null,
+    "lastSyncMode": "changes",
+    "lastPagesProcessed": 1,
+    "lastDidsChanged": 3,
+    "lastBlocksStored": 0
+  },
+  "metrics": { "lastRebuiltAt": "2026-10-23T09:00:00.000Z", "lastError": null },
+  "dids": {
+    "total": 3,
+    "byType": { "agents": 1, "assets": 2, "confirmed": 2, "unconfirmed": 1, "ephemeral": 1, "invalid": 0 },
+    "byRegistry": { "hyperswarm": 3 },
+    "byVersion": { "1": 2, "2": 1 }
+  },
+  "index": {
+    "epoch": "source-epoch",
+    "snapshotComplete": true,
+    "snapshotCursor": "last-snapshot-cursor",
+    "changesCursor": "42",
+    "appliedAt": "2026-10-23T10:00:00.000Z",
+    "caughtUpCursor": "42",
+    "caughtUpAt": "2026-10-23T10:00:00.000Z",
+    "state": "caught_up",
+    "lastError": null
+  },
+  "scope": { "didPrefix": "did:test", "includeAmbiguous": false },
+  "gatekeeper": {
+    "available": true,
+    "sampledAt": "2026-10-23T10:00:01.000Z",
+    "status": {
+      "uptimeSeconds": 120,
+      "eventsQueue": { "staged": 2, "pending": 3, "processing": 1, "total": 6, "active": true },
+      "memoryUsage": { "rss": 100000000, "heapTotal": 80000000, "heapUsed": 60000000, "external": 10000000, "arrayBuffers": 5000000 }
+    }
+  }
+}
+```
+
+The index state is `snapshot` during initial indexing, `catching_up` after the
+snapshot or during paged changes, and `caught_up` after a final changes page.
+The last state describes the recorded checkpoint and time, not a promise that
+Gatekeeper has not changed since. DID counts and their cursor are read from one
+database snapshot. The live Gatekeeper sample has a separate timestamp and
+contains Gatekeeper memory in bytes, not Search Server memory.
+
+Operational sampling has a five-second deadline and a 64-KiB response limit.
+It does not change indexing request limits. An unavailable sample returns
+`gatekeeper.available=false` with reason `unavailable` or `unsupported_status`,
+without removing the indexed DID counts or inventing zero-valued measurements.
+Old Gatekeeper status responses are unsupported until Gatekeeper is upgraded.
+Only allowed counters are relayed, not queued operation bodies or internal
+errors. Database failures return `500`. The endpoint uses normal rate limiting.
+Only `/ready` is exempt by default. If an existing deployment explicitly lists
+`/api/v1/status` in `KC_SEARCH_SERVER_RATE_LIMIT_SKIP_PATHS`, remove it to apply
+the configured rate limit to status requests.
+
+This update adds columns to `did_classifications`. Before first deployment,
+recreate the disposable Search Server database tables or use a fresh Search
+database as described above, then restart Search Server to reindex all metadata.
+Do not reset Gatekeeper. Later changes to Gatekeeper's source epoch automatically
+clear and rebuild the Search index within the existing schema instead of
+attaching a new cursor to stale totals. An existing Search cursor without a
+recorded epoch also requires a fresh snapshot.
+
+From TypeScript, use `SearchClient.getStatus({ includeAmbiguous: true })`. From
+the command line, use `curl http://localhost:4002/api/v1/status`.
 
 ### `GET /api/v1/did/:did`
 - **Description**: Returns the DID Document

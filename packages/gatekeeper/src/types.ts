@@ -258,8 +258,22 @@ export interface GatekeeperClientOptions {
 
 export interface GetStatusResult {
     uptimeSeconds: number;
-    dids: CheckDIDsResult;
+    eventsQueue: EventQueueStatus;
     memoryUsage: NodeJS.MemoryUsage;
+}
+
+export interface EventQueueStatus {
+    staged: number;
+    pending: number;
+    processing: number;
+    total: number;
+    active: boolean;
+}
+
+export interface StatusRequestOptions {
+    timeoutMs?: number;
+    maxResponseBytes?: number;
+    signal?: AbortSignal;
 }
 
 export interface GatekeeperInterface {

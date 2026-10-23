@@ -344,6 +344,17 @@ describe('verifyDb', () => {
 });
 
 describe('getStatus', () => {
+    it('applies per-status request limits without changing the client deadline', async () => {
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL, timeoutMs: 1000 });
+        nock(GatekeeperURL).get(Endpoints.status).delay(50).reply(200, { uptimeSeconds: 1 });
+        await expect(gatekeeper.getStatus({ timeoutMs: 10 })).rejects.toContain('timeout');
+        nock(GatekeeperURL).get(Endpoints.status).reply(200, { uptimeSeconds: 2, padding: 'x'.repeat(100) });
+        await expect(gatekeeper.getStatus({ maxResponseBytes: 20 })).rejects.toContain('maxContentLength');
+        nock(GatekeeperURL).get(Endpoints.status).delay(30).reply(200, { uptimeSeconds: 3 });
+        await expect(gatekeeper.getStatus()).resolves.toMatchObject({ uptimeSeconds: 3 });
+        await expect(gatekeeper.getStatus({ timeoutMs: 0 })).rejects.toThrow('positive safe integers');
+        await expect(gatekeeper.getStatus({ maxResponseBytes: Infinity })).rejects.toThrow('positive safe integers');
+    });
     it('should return server status', async () => {
         nock(GatekeeperURL)
             .get(Endpoints.status)

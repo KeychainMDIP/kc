@@ -17,6 +17,8 @@ import {
 } from "./projections.js";
 import { buildNetworkMetricSnapshots } from './network-metrics.js';
 import { canonicalDID, getDIDSuffix } from './did-aliases.js';
+import { INDEX_SYNC_STATE_KEYS } from './sync-state.js';
+export { INDEX_SYNC_STATE_KEYS } from './sync-state.js';
 
 export interface GatekeeperIndexClient {
     isReady(): Promise<boolean>;
@@ -29,23 +31,6 @@ export interface DidIndexerOptions {
     metricsRefreshIntervalMs?: number;
     didPrefix?: string;
 }
-
-export const INDEX_SYNC_STATE_KEYS = {
-    snapshotComplete: 'index.snapshot.complete',
-    snapshotCursor: 'index.snapshot.cursor',
-    snapshotCheckpointCursor: 'index.snapshot.checkpointCursor',
-    changesCursor: 'index.changes.cursor',
-    lastSyncStartedAt: 'index.lastSyncStartedAt',
-    lastSyncCompletedAt: 'index.lastSyncCompletedAt',
-    lastSyncError: 'index.lastSyncError',
-    lastSyncMode: 'index.lastSyncMode',
-    lastPagesProcessed: 'index.lastPagesProcessed',
-    lastDidsChanged: 'index.lastDidsChanged',
-    lastBlocksStored: 'index.lastBlocksStored',
-    metricsLastRebuiltAt: 'metrics.lastRebuiltAt',
-    metricsLastError: 'metrics.lastError',
-    metricsDidPrefix: 'metrics.didPrefix',
-} as const;
 
 interface SyncRunStats {
     mode: 'snapshot' | 'changes';
@@ -228,6 +213,14 @@ export default class DidIndexer {
             if (response.checkpointCursor === undefined) {
                 throw new Error('Snapshot export response missing checkpointCursor');
             }
+            if (!(await this.checkSourceEpoch(response))) {
+                cursor = null;
+                checkpointCursor = null;
+                continue;
+            }
+            if (response.hasMore && (!response.cursor || response.cursor === cursor)) {
+                throw new Error('Snapshot export did not advance cursor');
+            }
 
             const responseCheckpointCursor = response.checkpointCursor ?? '0';
             if (checkpointCursor && responseCheckpointCursor !== checkpointCursor) {
@@ -257,10 +250,6 @@ export default class DidIndexer {
                 return stats;
             }
 
-            if (!nextCursor || nextCursor === cursor) {
-                throw new Error('Snapshot export did not advance cursor');
-            }
-
             cursor = nextCursor;
         }
     }
@@ -279,8 +268,14 @@ export default class DidIndexer {
             if (response.mode !== 'changes') {
                 throw new Error(`Expected changes export response, got ${response.mode}`);
             }
+            if (!(await this.checkSourceEpoch(response))) {
+                return this.syncSnapshot();
+            }
 
             const nextCursor = response.cursor ?? cursor ?? '0';
+            if (response.hasMore && (!nextCursor || nextCursor === cursor)) {
+                throw new Error('Changes export did not advance cursor');
+            }
             const result = await this.applyExportPage(response, {
                 [INDEX_SYNC_STATE_KEYS.changesCursor]: nextCursor,
             });
@@ -290,10 +285,6 @@ export default class DidIndexer {
 
             if (!response.hasMore) {
                 return stats;
-            }
-
-            if (!nextCursor || nextCursor === cursor) {
-                throw new Error('Changes export did not advance cursor');
             }
 
             cursor = nextCursor;
@@ -317,11 +308,49 @@ export default class DidIndexer {
             }));
         }
 
+        const appliedAt = new Date().toISOString();
+        syncStateUpdates[INDEX_SYNC_STATE_KEYS.epoch] = response.indexEpoch;
+        syncStateUpdates[INDEX_SYNC_STATE_KEYS.appliedAt] = appliedAt;
+        const caughtUp = response.mode === 'changes' && !response.hasMore;
+        syncStateUpdates[INDEX_SYNC_STATE_KEYS.caughtUpCursor] = caughtUp
+            ? syncStateUpdates[INDEX_SYNC_STATE_KEYS.changesCursor] : null;
+        syncStateUpdates[INDEX_SYNC_STATE_KEYS.caughtUpAt] = caughtUp ? appliedAt : null;
+
         return this.db.applyIndexPage({
             dids,
             blocks: response.blocks,
             syncStateUpdates,
         });
+    }
+
+    private async checkSourceEpoch(response: IndexExportResponse): Promise<boolean> {
+        if (typeof response.indexEpoch !== 'string' || !response.indexEpoch) {
+            throw new Error('Index export response missing indexEpoch');
+        }
+        if (!Array.isArray(response.dids) || !Array.isArray(response.blocks)
+            || typeof response.hasMore !== 'boolean'
+            || (response.cursor !== null && typeof response.cursor !== 'string')
+            || (response.checkpointCursor !== null && typeof response.checkpointCursor !== 'string')
+            || !response.dids.every(record => record && typeof record.did === 'string' && record.did.length > 0
+                && (record.removed === undefined || typeof record.removed === 'boolean')
+                && Array.isArray(record.events) && record.events.every(event => event && event.operation
+                    && typeof event.operation.type === 'string'))
+            || !response.blocks.every(record => record && typeof record.registry === 'string'
+                && (record.removed === undefined || typeof record.removed === 'boolean')
+                && record.block && typeof record.block.hash === 'string'
+                && Number.isFinite(record.block.height) && Number.isFinite(record.block.time))) {
+            throw new Error('Invalid index export response');
+        }
+        const epoch = await this.db.loadSyncState(INDEX_SYNC_STATE_KEYS.epoch);
+        if ((epoch && epoch !== response.indexEpoch)
+            || (!epoch && (await this.isSnapshotComplete()
+                || await this.db.loadSyncState(INDEX_SYNC_STATE_KEYS.snapshotCursor)))) {
+            await this.db.wipeDb();
+            this.initialMetricsQuietRuns = 0;
+            this.log.warn('Gatekeeper index epoch changed or is unknown, rebuilding the Search index');
+            return false;
+        }
+        return true;
     }
 
     private createPageBlockLookup(blocks: IndexExportBlockRecord[]): ProjectionBlockLookup {

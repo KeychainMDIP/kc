@@ -12,7 +12,6 @@ import DbSqlite from '@mdip/gatekeeper/db/sqlite';
 import DbMongo from '@mdip/gatekeeper/db/mongo';
 import DbPostgres from '@mdip/gatekeeper/db/postgres';
 import {
-    CheckDIDsResult,
     Operation,
     ResolveDIDOptions,
 } from '@mdip/gatekeeper/types';
@@ -22,8 +21,6 @@ import ClusterClient from '@mdip/ipfs/cluster';
 import config from './config.js';
 import {
     createWhitelistBlockList,
-    formatBytes,
-    formatDuration,
     DatabaseUnavailableError,
     databaseUnavailableResponse,
     exportIndexWithReadiness,
@@ -234,48 +231,20 @@ v1router.get('/version', trackedRoute(async (req, res) => {
  *                 uptimeSeconds:
  *                   type: integer
  *                   description: The number of seconds since the server started.
- *                 dids:
+ *                 eventsQueue:
  *                   type: object
- *                   description: Detailed statistics of DID checks.
+ *                   description: Live queue counts without operation payloads. DID statistics are available from Search Server /status.
  *                   properties:
+ *                     staged:
+ *                       type: integer
+ *                     pending:
+ *                       type: integer
+ *                     processing:
+ *                       type: integer
  *                     total:
  *                       type: integer
- *                       description: Total number of DIDs processed.
- *                     byType:
- *                       type: object
- *                       description: Breakdown of DIDs by type.
- *                       properties:
- *                         agents:
- *                           type: integer
- *                           description: Number of DIDs of type "agent".
- *                         assets:
- *                           type: integer
- *                           description: Number of DIDs of type "asset".
- *                         confirmed:
- *                           type: integer
- *                           description: Number of DIDs that have been confirmed.
- *                         unconfirmed:
- *                           type: integer
- *                           description: Number of DIDs that remain unconfirmed.
- *                         ephemeral:
- *                           type: integer
- *                           description: Number of DIDs with an expiration (validUntil) set.
- *                         invalid:
- *                           type: integer
- *                           description: Number of DIDs that could not be resolved or are invalid.
- *                     byRegistry:
- *                       type: object
- *                       description: Count of DIDs grouped by registry.
- *                       additionalProperties:
- *                         type: integer
- *                     byVersion:
- *                       type: object
- *                       description: Count of DIDs grouped by version.
- *                       additionalProperties:
- *                         type: integer
- *                     eventsQueue:
- *                       type: object
- *                       description: Details of the events queue.
+ *                     active:
+ *                       type: boolean
  *                 memoryUsage:
  *                   type: object
  *                   description: Memory usage statistics provided by Node.
@@ -2364,7 +2333,6 @@ app.use('/api', (req, res) => {
 });
 
 let shuttingDown = false;
-let statusTimer: ReturnType<typeof setInterval> | undefined;
 let gcTimer: ReturnType<typeof setTimeout> | undefined;
 let server: ReturnType<typeof app.listen> | undefined;
 let shutdownPromise: Promise<void> | undefined;
@@ -2397,10 +2365,6 @@ function shutdown(exitCode = 0): Promise<void> {
     serverReady = false;
     shuttingDown = true;
 
-    if (statusTimer) {
-        clearInterval(statusTimer);
-        statusTimer = undefined;
-    }
     if (gcTimer) {
         clearTimeout(gcTimer);
         gcTimer = undefined;
@@ -2427,7 +2391,6 @@ async function gcLoop() {
     try {
         const response = await gatekeeper.verifyDb();
         log.info(`DID garbage collection: ${JSON.stringify(response)} waiting ${config.gcInterval} minutes...`);
-        await checkDids();
     }
     catch (error: any) {
         log.error(`Error in DID garbage collection: ${error}`);
@@ -2435,91 +2398,19 @@ async function gcLoop() {
     scheduleGc();
 }
 
-let didCheck: CheckDIDsResult;
-
-async function checkDids() {
-    const startTimeMs = Date.now();
-    didCheck = await gatekeeper.checkDIDs();
-    const durationMs = Date.now() - startTimeMs;
-    log.debug({ durationMs }, 'checkDIDs');
-}
-
 async function getStatus() {
     return {
         uptimeSeconds: Math.round((Date.now() - startTime.getTime()) / 1000),
-        dids: didCheck,
+        eventsQueue: gatekeeper.getQueueStatus(),
         memoryUsage: process.memoryUsage()
     };
 }
 
-async function reportStatus() {
-    await checkDids();
-    const status = await getStatus();
-
-    log.info('Status -----------------------------');
-
-    log.info(`DID Database (${config.db}):`);
-    log.info(`  Total: ${status.dids.total}`);
-
-    if (status.dids.total > 0) {
-        log.info(`  By type:`);
-        log.info(`    Agents: ${status.dids.byType.agents}`);
-        log.info(`    Assets: ${status.dids.byType.assets}`);
-        log.info(`    Confirmed: ${status.dids.byType.confirmed}`);
-        log.info(`    Unconfirmed: ${status.dids.byType.unconfirmed}`);
-        log.info(`    Ephemeral: ${status.dids.byType.ephemeral}`);
-        log.info(`    Invalid: ${status.dids.byType.invalid}`);
-
-        log.info(`  By registry:`);
-        const registries = Object.keys(status.dids.byRegistry).sort();
-        for (let registry of registries) {
-            log.info(`    ${registry}: ${status.dids.byRegistry[registry]}`);
-        }
-
-        log.info(`  By version:`);
-        let count = 0;
-        for (let version of [1, 2, 3, 4, 5]) {
-            const num = status.dids.byVersion[version] || 0;
-            log.info(`    ${version}: ${num}`);
-            count += num;
-        }
-        log.info(`    6+: ${status.dids.total - count}`);
-    }
-
-    log.info(`Events Queue: ${status.dids.eventsQueue.length} pending`);
-
-    log.info(`Memory Usage Report:`);
-    log.info(`  RSS: ${formatBytes(status.memoryUsage.rss)} (Resident Set Size - total memory allocated for the process)`);
-    log.info(`  Heap Total: ${formatBytes(status.memoryUsage.heapTotal)} (Total heap allocated)`);
-    log.info(`  Heap Used: ${formatBytes(status.memoryUsage.heapUsed)} (Heap actually used)`);
-    log.info(`  External: ${formatBytes(status.memoryUsage.external)} (Memory used by C++ objects bound to JavaScript)`);
-    log.info(`  Array Buffers: ${formatBytes(status.memoryUsage.arrayBuffers)} (Memory used by ArrayBuffer and SharedArrayBuffer)`);
-
-    log.info(`Uptime: ${status.uptimeSeconds}s (${formatDuration(status.uptimeSeconds)})`);
-
-    log.info('------------------------------------');
-}
-
 async function main() {
-    log.info(`Starting KeychainMDIP Gatekeeper with a db (${config.db}) check...`);
-    await reportStatus();
+    log.info(`Starting KeychainMDIP Gatekeeper with db (${config.db})`);
 
     if (shuttingDown) {
         return;
-    }
-
-    if (config.statusInterval > 0) {
-        log.info(`Starting status update every ${config.statusInterval} minutes`);
-        statusTimer = setInterval(() => {
-            if (!shuttingDown) {
-                trackActiveWork(reportStatus()).catch((error: any) => {
-                    log.error({ error }, 'Error reporting status');
-                });
-            }
-        }, config.statusInterval * 60 * 1000);
-    }
-    else {
-        log.info(`Status update disabled`);
     }
 
     if (config.gcInterval > 0) {
