@@ -132,10 +132,13 @@ async function main(shutdown: Shutdown) {
     let didDb: DIDsDb;
     log.info(`Search Server persisting to ${config.db}`);
 
+    if (config.resetDb) {
+        log.warn('KC_SEARCH_SERVER_RESET_DB is enabled. Rebuilding the Search Server database before indexing.');
+    }
     if (config.db === 'sqlite') {
-        didDb = await DIDsSQLite.create();
+        didDb = await DIDsSQLite.create(undefined, undefined, config.resetDb);
     } else if (config.db === 'postgres') {
-        didDb = await DIDsPostgres.create(config.postgresURL);
+        didDb = await DIDsPostgres.create(config.postgresURL, config.resetDb);
     } else {
         didDb = new DIDsDbMemory();
     }

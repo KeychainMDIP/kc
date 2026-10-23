@@ -40,6 +40,9 @@ KC_SEARCH_SERVER_DID_PREFIX=did:test
 # Database adapter: sqlite | postgres | memory
 KC_SEARCH_SERVER_DB=sqlite
 
+# Recreate only Search Server tables before indexing on every startup
+KC_SEARCH_SERVER_RESET_DB=false
+
 # Used when KC_SEARCH_SERVER_DB=postgres
 # Falls back to KC_POSTGRES_URL when unset
 KC_SEARCH_SERVER_POSTGRES_URL=postgresql://mdip:mdip@localhost:5432/mdip
@@ -67,9 +70,12 @@ KC_LOG_LEVEL=info
 
 The search database is a rebuildable index and this service does not migrate
 older table layouts. Before deploying a release that changes its schema, stop
-Search Server and recreate its database tables, use a fresh Search database, or
-remove its SQLite database file. Clearing rows with `wipeDb()` does not update
-the table layout. Do not reset Gatekeeper or delete its data.
+all Search Server instances and set `KC_SEARCH_SERVER_RESET_DB=true` for the
+next startup. This drops and recreates Search Server's own tables and views,
+including saved cursors and metrics, then reindexes from Gatekeeper.
+
+The flag can be supplied through `.env`. It defaults to `false`. Reset failure
+stops startup rather than serving a partially initialized database.
 
 PostgreSQL startup installs the `pg_trgm` extension and creates a concurrent
 GIN index for document text searches when it is missing. The first startup on

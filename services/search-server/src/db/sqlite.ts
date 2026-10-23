@@ -28,7 +28,7 @@ import {
     SearchStoredStatistics,
 } from "../types.js";
 import { projectStatistics, summarizeStatistics, type StatisticsGroup } from '../statistics.js';
-import { getEventDisplayTime, stableStringify } from './db-utils.js';
+import { getEventDisplayTime, stableStringify, RESET_SEARCH_SCHEMA_SQL } from './db-utils.js';
 import { deduplicateDIDPrefixReferences, extractIdentity, extractIdentityFields } from '../published-credentials.js';
 import {
     AMBIGUOUS_DID_PREFIX,
@@ -51,9 +51,15 @@ export default class Sqlite implements DIDsDb {
     private static readonly ARRAY_WILDCARD_END = /\[\*]$/;
     private static readonly ARRAY_WILDCARD_MID = /\[\*]\./;
 
-    static async create(dbFileName: string = 'dids.db', dataFolder: string = 'data'): Promise<DIDsDb> {
+    static async create(dbFileName: string = 'dids.db', dataFolder: string = 'data', resetDb = false): Promise<DIDsDb> {
         const db = new Sqlite(dbFileName, dataFolder);
-        await db.connect();
+        try {
+            await db.connect(resetDb);
+        }
+        catch (error) {
+            await db.disconnect().catch(() => {});
+            throw error;
+        }
         return db;
     }
 
@@ -68,7 +74,7 @@ export default class Sqlite implements DIDsDb {
         return chained;
     }
 
-    async connect(): Promise<void> {
+    async connect(resetDb = false): Promise<void> {
         if (this.db) {
             return;
         }
@@ -77,6 +83,18 @@ export default class Sqlite implements DIDsDb {
             filename: this.dbFile,
             driver: sqlite3.Database
         });
+
+        if (resetDb) {
+            await this.db.exec('BEGIN');
+            try {
+                await this.db.exec(RESET_SEARCH_SCHEMA_SQL);
+                await this.db.exec('COMMIT');
+            }
+            catch (error) {
+                await this.db.exec('ROLLBACK');
+                throw error;
+            }
+        }
 
         await this.db.exec(`
             CREATE TABLE IF NOT EXISTS did_events (

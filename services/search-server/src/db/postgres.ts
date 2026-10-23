@@ -27,7 +27,7 @@ import {
     SearchStoredStatistics,
 } from '../types.js';
 import { projectStatistics, summarizeStatistics, type StatisticsGroup } from '../statistics.js';
-import { getEventDisplayTime, stableStringify } from './db-utils.js';
+import { getEventDisplayTime, stableStringify, RESET_SEARCH_SCHEMA_SQL } from './db-utils.js';
 import { deduplicateDIDPrefixReferences, extractIdentity, extractIdentityFields } from '../published-credentials.js';
 import {
     AMBIGUOUS_DID_PREFIX,
@@ -118,10 +118,17 @@ export default class Postgres implements DIDsDb {
 
     static async create<T extends DIDsDb>(
         this: new (url: string) => T,
-        url: string
+        url: string,
+        resetDb = false,
     ): Promise<T> {
         const db = new this(url);
-        await db.connect();
+        try {
+            await db.connect(resetDb);
+        }
+        catch (error) {
+            await db.disconnect().catch(() => {});
+            throw error;
+        }
         return db;
     }
 
@@ -133,12 +140,17 @@ export default class Postgres implements DIDsDb {
         );
     }
 
-    async connect(): Promise<void> {
+    async connect(resetDb = false): Promise<void> {
         if (this.pool) {
             return;
         }
 
         this.pool = this.createPool();
+
+        if (resetDb) {
+            // One query keeps all drops in PostgreSQL's implicit transaction.
+            await this.pool.query(RESET_SEARCH_SCHEMA_SQL);
+        }
 
         await this.pool.query(`
             CREATE TABLE IF NOT EXISTS did_events (

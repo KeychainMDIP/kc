@@ -61,7 +61,7 @@ beforeEach(() => {
     jest.clearAllMocks();
     db = new DIDsDbMemory();
     config = {
-        db: 'memory', port: 0, didPrefix: 'did:mdip', postgresURL: 'postgresql://fixture',
+        db: 'memory', resetDb: false, port: 0, didPrefix: 'did:mdip', postgresURL: 'postgresql://fixture',
         gatekeeperURL: 'http://fixture.invalid', refreshIntervalMs: 5000, metricsRefreshIntervalMs: 60000,
         rateLimitEnabled: false, rateLimitWhitelist: [], rateLimitSkipPaths: ['/api/v1/ready'],
         rateLimitWindowValue: 1, rateLimitWindowUnit: 'minute', rateLimitMaxRequests: 10,
@@ -511,8 +511,8 @@ describe('Search Server HTTP routes', () => {
         config.rateLimitWhitelist = ['127.0.0.1'];
         await boot();
         expect(app.get('trust proxy')).toBe(true);
-        if (name === 'sqlite') expect(sqliteCreate).toHaveBeenCalledWith();
-        else expect(postgresCreate).toHaveBeenCalledWith(config.postgresURL);
+        if (name === 'sqlite') expect(sqliteCreate).toHaveBeenCalledWith(undefined, undefined, false);
+        else expect(postgresCreate).toHaveBeenCalledWith(config.postgresURL, false);
         expect(connect).toHaveBeenCalledWith({
             url: config.gatekeeperURL,
             signal: expect.any(AbortSignal),
@@ -529,6 +529,30 @@ describe('Search Server HTTP routes', () => {
         expect(limiter.skip({ ...req, ip: '192.0.2.1' })).toBe(false);
         config.rateLimitWhitelist = [];
         expect(limiter.skip(req)).toBe(false);
+    });
+
+    it.each(['sqlite', 'postgres'])('passes an enabled startup reset to the %s adapter', async name => {
+        config.db = name;
+        config.resetDb = true;
+        await boot();
+        if (name === 'sqlite') expect(sqliteCreate).toHaveBeenCalledWith(undefined, undefined, true);
+        else expect(postgresCreate).toHaveBeenCalledWith(config.postgresURL, true);
+        expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('KC_SEARCH_SERVER_RESET_DB'));
+    });
+
+    it('does not listen or start indexing after a startup reset failure', async () => {
+        config.db = 'postgres';
+        config.resetDb = true;
+        const failure = new Error('reset failed');
+        postgresCreate.mockRejectedValueOnce(failure);
+        const listen = jest.spyOn(app, 'listen');
+        await import(serverEntry);
+        await waitForCall(process.exit as any);
+        expect(listen).not.toHaveBeenCalled();
+        expect(connect).not.toHaveBeenCalled();
+        expect(startIndexing).not.toHaveBeenCalled();
+        expect(process.exit).toHaveBeenCalledWith(1);
+        expect(logger.error).toHaveBeenCalledWith({ error: failure }, '[search-server] Fatal error');
     });
 
     it.each([false, true])('stops indexing and closes storage on shutdown (storage failure: %s)', async fail => {

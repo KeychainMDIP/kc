@@ -201,7 +201,7 @@ export interface ApplyIndexPageResult {
 }
 
 export interface DIDsDb {
-    connect(): Promise<void>;
+    connect(resetDb?: boolean): Promise<void>;
     disconnect(): Promise<void>;
 
     loadSyncState(key: string): Promise<string | null>;
