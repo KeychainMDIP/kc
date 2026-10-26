@@ -259,17 +259,33 @@ export default class Gatekeeper implements GatekeeperInterface {
         delete this.verifiedDIDs[this.didKey(did)];
     }
 
-    private async mutateDID<T>(did: string, fn: () => Promise<T>): Promise<T> {
+    private async mutateDID<T>(
+        did: string,
+        fn: () => Promise<T>,
+        operationCid?: string,
+        historyChanged = false,
+    ): Promise<T> {
         const key = this.didKey(did);
         this.activeMutations.add(key);
         this.invalidateVerifiedDID(did);
+        let persisted = false;
         try {
-            return await fn();
+            const result = await fn();
+            persisted = true;
+            return result;
         }
         finally {
             this.invalidateVerifiedDID(did);
             this.activeMutations.delete(key);
-            for (const dependency of [key, '*']) {
+            const dependencies = [key, '*'];
+            if (persisted && operationCid) {
+                dependencies.push(`op:${operationCid}`);
+            }
+            // Replacements, removals and partially failed writes can change earlier history.
+            if (!persisted || !operationCid || historyChanged) {
+                dependencies.push(`history:${key}`);
+            }
+            for (const dependency of dependencies) {
                 for (const eventKey of this.pendingDependents.get(dependency) ?? []) {
                     if (this.eventStates.get(eventKey)?.state === 'pending') {
                         this.pendingRetryStates.get(eventKey)!.ready = true;
@@ -1113,7 +1129,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                 ordinal: [0],
                 operation,
                 did
-            }, this.publicationRegistries(registry)));
+            }, this.publicationRegistries(registry)), this.didKey(did));
             await this.checkQueueCapacity(registry);
             return did;
         }));
@@ -1192,7 +1208,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                 ordinal: [0],
                 operation,
                 did: operation.did
-            }, this.publicationRegistries(registry)));
+            }, this.publicationRegistries(registry)), await this.generateCID(operation));
             await this.checkQueueCapacity(registry);
 
             return true;
@@ -1362,7 +1378,8 @@ export default class Gatekeeper implements GatekeeperInterface {
                             opid: eventOperationCid,
                             operation: opMatch.operation,
                         };
-                        await this.mutateDID(lockedDid, () => this.db.setEvents(lockedDid, currentEvents));
+                        await this.mutateDID(lockedDid, () => this.db.setEvents(lockedDid, currentEvents),
+                            eventOperationCid, true);
                         return ImportStatus.ADDED;
                     }
 
@@ -1375,27 +1392,27 @@ export default class Gatekeeper implements GatekeeperInterface {
                     }
 
                     if (currentEvents.length === 0) {
-                        await this.mutateDID(lockedDid, () => this.db.addEvent(lockedDid, event));
+                        await this.mutateDID(lockedDid, () => this.db.addEvent(lockedDid, event), eventOperationCid);
                         return ImportStatus.ADDED;
                     }
 
                     // TEMP during did:test, operation.previd is optional
                     if (!event.operation.previd) {
-                        await this.mutateDID(lockedDid, () => this.db.addEvent(lockedDid, event));
+                        await this.mutateDID(lockedDid, () => this.db.addEvent(lockedDid, event), eventOperationCid);
                         return ImportStatus.ADDED;
                     }
 
                     const idMatch = currentEvents.find(item => item.opid === event.operation.previd);
 
                     if (!idMatch) {
-                        this.deferredDependencies.set(event, [this.didKey(lockedDid)]);
+                        this.deferredDependencies.set(event, [`op:${event.operation.previd}`, `history:${this.didKey(lockedDid)}`]);
                         return ImportStatus.DEFERRED;
                     }
 
                     const index = currentEvents.indexOf(idMatch);
 
                     if (index === currentEvents.length - 1) {
-                        await this.mutateDID(lockedDid, () => this.db.addEvent(lockedDid, event));
+                        await this.mutateDID(lockedDid, () => this.db.addEvent(lockedDid, event), eventOperationCid);
                         return ImportStatus.ADDED;
                     }
 
@@ -1411,7 +1428,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                             const newSequence = [...currentEvents.slice(0, index + 1), event];
                             await this.mutateDID(lockedDid, () => this.db.setEvents(lockedDid, newSequence, {
                                 operationEvents: [event],
-                            }));
+                            }), eventOperationCid, true);
                             return ImportStatus.ADDED;
                         }
                     }
