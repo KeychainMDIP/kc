@@ -15,7 +15,6 @@ import {
     GatekeeperInterface,
     GatekeeperEvent,
     GatekeeperOptions,
-    ImportEventsResult,
     Operation,
     MdipDocument,
     ResolveDIDOptions,
@@ -50,12 +49,50 @@ enum ImportStatus {
     DEFERRED = 'deferred',
 }
 
+const MAX_PENDING_EVENT_COUNT = 10_000;
+const MAX_PENDING_EVENT_BYTES = 64 * 1024 * 1024;
+const MAX_EVENT_PAGE_COUNT = 300;
+const MAX_EVENT_PAGE_BYTES = 512 * 1024;
+// A full operation page needs bounded headroom for canonical DID/opid envelope fields.
+const MAX_TRANSIENT_EVENT_BYTES = 1280 * 1024;
+// Longer controller chains stay valid but use one conservative mutation watch.
+const MAX_PENDING_DEPENDENCIES = 32;
+const MAX_HISTORY_CID_CACHE_ENTRIES = 10_000;
+const MAX_HISTORY_CID_CACHE_BYTES = 64 * 1024 * 1024;
+
+interface QueuedGatekeeperEvent {
+    event: GatekeeperEvent;
+    key: string;
+    bytes: number;
+}
+
+type EventQueueState = 'staged' | 'processing' | 'pending';
+
+interface EventQueueRecord {
+    entry: QueuedGatekeeperEvent;
+    state: EventQueueState;
+}
+
+interface PendingEventRetry {
+    dependencies: string[];
+    ready: boolean;
+}
+
 const retryableResolutionErrors = new WeakSet<object>();
+const resolutionDependencies = new WeakMap<object, string[]>();
 
 export default class Gatekeeper implements GatekeeperInterface {
     private db: GatekeeperDb;
-    private eventsQueue: GatekeeperEvent[];
-    private readonly eventsSeen: Record<string, boolean>;
+    private stagedEvents: QueuedGatekeeperEvent[];
+    private pendingEvents: QueuedGatekeeperEvent[];
+    private readonly eventStates: Map<string, EventQueueRecord>;
+    private transientEventCount: number;
+    private transientEventBytes: number;
+    private pendingEventCount: number;
+    private pendingEventBytes: number;
+    private pendingPassRemaining: number;
+    private pendingPassProgress: boolean;
+    private preferStagedEvents: boolean;
     private verifiedDIDs: Record<string, boolean>;
     private mutationRevision: number;
     private isProcessingEvents: boolean;
@@ -66,12 +103,26 @@ export default class Gatekeeper implements GatekeeperInterface {
     private readonly maxOpBytes: number;
     private readonly maxQueueSize: number;
     private readonly ipfsEnabled: boolean;
+    private maxPendingEventCount = MAX_PENDING_EVENT_COUNT;
+    private maxPendingEventBytes = MAX_PENDING_EVENT_BYTES;
+    private maxEventPageCount = MAX_EVENT_PAGE_COUNT;
+    private maxEventPageBytes = MAX_EVENT_PAGE_BYTES;
+    private maxTransientEventBytes = MAX_TRANSIENT_EVENT_BYTES;
     supportedRegistries: string[];
     private didLocks = new Map<string, Promise<void>>();
     private controllerGraphLock: Promise<void> = Promise.resolve();
     private activeMutations = new Set<string>();
     private pendingExpiredControllers = new Map<string, string>();
     private verifyDbInFlight?: Promise<VerifyDbResult>;
+    private eventQueueBarrier: Promise<void> = Promise.resolve();
+    private eventQueueWork = new Set<Promise<unknown>>();
+    private pendingRetryStates = new Map<string, PendingEventRetry>();
+    private pendingDependents = new Map<string, Set<string>>();
+    private deferredDependencies = new WeakMap<GatekeeperEvent, string[]>();
+    private historicalOperationCids = new Map<string, string>();
+    private historicalOperationCidBytes = 0;
+    private maxHistoryCidCacheEntries = MAX_HISTORY_CID_CACHE_ENTRIES;
+    private maxHistoryCidCacheBytes = MAX_HISTORY_CID_CACHE_BYTES;
     constructor(options: GatekeeperOptions) {
         if (!options || !options.db) {
             throw new InvalidParameterError('missing options.db');
@@ -82,8 +133,16 @@ export default class Gatekeeper implements GatekeeperInterface {
             ? createConsoleLogger(options.console)
             : childLogger({ service: 'gatekeeper' });
 
-        this.eventsQueue = [];
-        this.eventsSeen = {};
+        this.stagedEvents = [];
+        this.pendingEvents = [];
+        this.eventStates = new Map();
+        this.transientEventCount = 0;
+        this.transientEventBytes = 0;
+        this.pendingEventCount = 0;
+        this.pendingEventBytes = 0;
+        this.pendingPassRemaining = 0;
+        this.pendingPassProgress = false;
+        this.preferStagedEvents = true;
         this.verifiedDIDs = {};
         this.mutationRevision = 0;
         this.isProcessingEvents = false;
@@ -109,10 +168,66 @@ export default class Gatekeeper implements GatekeeperInterface {
         }
     }
 
-    private clearEventsSeen(): void {
-        for (const key of Object.keys(this.eventsSeen)) {
-            delete this.eventsSeen[key];
+    private clearEventQueues(): void {
+        this.stagedEvents = [];
+        this.pendingEvents = [];
+        this.eventStates.clear();
+        this.transientEventCount = 0;
+        this.transientEventBytes = 0;
+        this.pendingEventCount = 0;
+        this.pendingEventBytes = 0;
+        this.pendingPassRemaining = 0;
+        this.pendingPassProgress = false;
+        this.preferStagedEvents = true;
+        this.pendingRetryStates.clear();
+        this.pendingDependents.clear();
+    }
+
+    private clearPendingRetry(key: string): void {
+        const retry = this.pendingRetryStates.get(key);
+        if (retry) {
+            for (const dependency of retry.dependencies) {
+                const dependents = this.pendingDependents.get(dependency)!;
+                dependents.delete(key);
+                if (dependents.size === 0) {
+                    this.pendingDependents.delete(dependency);
+                }
+            }
+            this.pendingRetryStates.delete(key);
         }
+    }
+
+    private setPendingRetry(key: string, dependencies: string[], ready: boolean): void {
+        this.clearPendingRetry(key);
+        this.pendingRetryStates.set(key, { dependencies, ready });
+        for (const dependency of dependencies) {
+            const dependents = this.pendingDependents.get(dependency) ?? new Set<string>();
+            dependents.add(key);
+            this.pendingDependents.set(dependency, dependents);
+        }
+        this.pendingPassProgress ||= ready;
+    }
+
+    private dependencyError(detail: string, did?: string, visited?: Set<string>): InvalidOperationError {
+        const error = new InvalidOperationError(detail);
+        if (did) {
+            const dependencies = visited && visited.size > MAX_PENDING_DEPENDENCIES
+                ? new Set(['*'])
+                : new Set(visited);
+            dependencies.add(this.didKey(did));
+            resolutionDependencies.set(error, dependencies.has('*') || dependencies.size > MAX_PENDING_DEPENDENCIES
+                ? ['*']
+                : Array.from(dependencies));
+        }
+        return error;
+    }
+
+    private withEventQueueWork<T>(fn: () => Promise<T>): Promise<T> {
+        const work = this.eventQueueBarrier.then(fn).finally(() => {
+            this.eventQueueWork.delete(work);
+        });
+        this.eventQueueWork.add(work);
+        return work;
     }
 
     private didKey(did: string): string {
@@ -154,6 +269,14 @@ export default class Gatekeeper implements GatekeeperInterface {
         finally {
             this.invalidateVerifiedDID(did);
             this.activeMutations.delete(key);
+            for (const dependency of [key, '*']) {
+                for (const eventKey of this.pendingDependents.get(dependency) ?? []) {
+                    if (this.eventStates.get(eventKey)?.state === 'pending') {
+                        this.pendingRetryStates.get(eventKey)!.ready = true;
+                        this.pendingPassProgress = true;
+                    }
+                }
+            }
         }
     }
 
@@ -222,6 +345,7 @@ export default class Gatekeeper implements GatekeeperInterface {
             invalid: boolean;
             notFound?: boolean;
             retryable?: boolean;
+            error?: unknown;
         }> => {
             try {
                 const doc = await this.resolveDID(did);
@@ -229,6 +353,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                     return {
                         invalid: true,
                         notFound: doc.didResolutionMetadata.error === 'notFound',
+                        error: doc.didResolutionMetadata.error,
                     };
                 }
 
@@ -246,7 +371,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                 const retryable = typeof error === 'object'
                     && error !== null
                     && retryableResolutionErrors.has(error);
-                return { invalid: !retryable, retryable };
+                return { invalid: !retryable, retryable, error };
             }
         };
 
@@ -255,9 +380,9 @@ export default class Gatekeeper implements GatekeeperInterface {
             const key = this.didKey(did);
             const revision = this.mutationRevision;
             try {
-                const { doc, expiresAt, invalid, retryable } = await resolveCurrent(did);
+                const { doc, expiresAt, invalid, retryable, error } = await resolveCurrent(did);
                 if (invalid || retryable || !doc) {
-                    throw new InvalidOperationError('DID resolution failed');
+                    throw error ?? new InvalidOperationError('DID resolution failed');
                 }
 
                 const controller = doc.didDocument?.controller;
@@ -292,9 +417,9 @@ export default class Gatekeeper implements GatekeeperInterface {
                     this.verifiedDIDs[key] = true;
                 }
             }
-            catch {
+            catch (error) {
                 if (chatty) {
-                    this.log.warn(`${n}/${total} ${did} invalid`);
+                    this.log.warn({ error, did }, `${n}/${total} ${did} invalid`);
                 }
                 failedDIDs.add(did);
             }
@@ -449,7 +574,7 @@ export default class Gatekeeper implements GatekeeperInterface {
 
         if (chatty) {
             const durationMs = Date.now() - verifyStart;
-            this.log.debug({ durationMs }, 'verifyDb');
+            this.log.info({ durationMs }, 'verifyDb');
         }
 
         return { total, verified, expired, invalid };
@@ -528,7 +653,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         }
 
         const byType = { agents, assets, confirmed, unconfirmed, ephemeral, invalid };
-        const eventsQueue = this.eventsQueue;
+        const eventsQueue = Array.from(this.eventStates.values(), record => record.entry.event);
         return { total, byType, byRegistry, byVersion, eventsQueue };
     }
 
@@ -538,18 +663,50 @@ export default class Gatekeeper implements GatekeeperInterface {
 
     // For testing purposes
     async resetDb(): Promise<boolean> {
-        this.mutationRevision += 1;
-        this.verifiedDIDs = {};
-        await this.db.resetDb();
-        this.pendingExpiredControllers.clear();
-        this.clearEventsSeen();
-        this.eventsQueue = [];
-        return true;
+        // Drain admitted work and keep new admissions behind the reset boundary.
+        const reset = Promise.allSettled([this.eventQueueBarrier, ...this.eventQueueWork])
+            .then(() => this.withControllerGraphLock(async () => {
+                this.mutationRevision += 1;
+                this.verifiedDIDs = {};
+                await this.db.resetDb();
+                this.historicalOperationCids.clear();
+                this.historicalOperationCidBytes = 0;
+                this.pendingExpiredControllers.clear();
+                this.clearEventQueues();
+                return true;
+            }));
+        this.eventQueueBarrier = reset.then(() => {}, () => {});
+        return reset;
     }
 
     async generateCID(operation: unknown): Promise<string> {
         const canonical = this.cipher.canonicalizeJSON(operation);
         return generateCID(JSON.parse(canonical));
+    }
+
+    private async historicalOperationCID(operation: Operation): Promise<string> {
+        // Key by contents, never by an unverified stored opid or mutable object identity.
+        const contents = JSON.stringify(operation);
+        const cached = this.historicalOperationCids.get(contents);
+        if (cached !== undefined) {
+            this.historicalOperationCids.delete(contents);
+            this.historicalOperationCids.set(contents, cached);
+            return cached;
+        }
+
+        const cid = await this.generateCID(operation);
+        const bytes = 2 * (contents.length + cid.length);
+        if (bytes <= this.maxHistoryCidCacheBytes) {
+            while (this.historicalOperationCids.size >= this.maxHistoryCidCacheEntries
+                || this.historicalOperationCidBytes + bytes > this.maxHistoryCidCacheBytes) {
+                const [oldContents, oldCid] = this.historicalOperationCids.entries().next().value!;
+                this.historicalOperationCids.delete(oldContents);
+                this.historicalOperationCidBytes -= 2 * (oldContents.length + oldCid.length);
+            }
+            this.historicalOperationCids.set(contents, cid);
+            this.historicalOperationCidBytes += bytes;
+        }
+        return cid;
     }
 
     async generateDID(operation: Operation): Promise<string> {
@@ -560,13 +717,19 @@ export default class Gatekeeper implements GatekeeperInterface {
     }
 
     async verifyOperation(operation: Operation): Promise<boolean> {
+        return this.verifyOperationWithHistory(operation);
+    }
+
+    private async verifyOperationWithHistory(operation: Operation, events?: GatekeeperEvent[]): Promise<boolean> {
         if (operation.type === 'create') {
             const valid = await this.verifyCreateOperation(operation);
             return valid && !(await this.operationIntroducesControllerCycle(operation));
         }
 
         if (operation.type === 'update' || operation.type === 'delete') {
-            const doc = await this.resolveDID(operation.did);
+            const doc = events === undefined
+                ? await this.resolveDID(operation.did)
+                : await this.resolveHistory(operation.did, copyJSON(events));
             const valid = await this.verifyUpdateOperation(operation, doc);
             return valid && !(await this.operationIntroducesControllerCycle(operation));
         }
@@ -726,7 +889,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                 !doc.didDocument.verificationMethod ||
                 doc.didDocument.verificationMethod.length === 0 ||
                 !doc.didDocument.verificationMethod[0].publicKeyJwk) {
-                throw new InvalidOperationError('didDocument missing verificationMethod');
+                throw this.dependencyError('didDocument missing verificationMethod', controllerDid);
             }
             // TBD select the right key here, not just the first one
             const publicJwk = doc.didDocument.verificationMethod[0].publicKeyJwk;
@@ -777,6 +940,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         visited: Set<string>,
         did?: string
     ): Promise<boolean> {
+        const currentDid = did ?? doc?.didDocument?.id;
         if (this.operationExceedsMaxBytes(operation)) {
             throw new InvalidOperationError('size');
         }
@@ -786,14 +950,13 @@ export default class Gatekeeper implements GatekeeperInterface {
         }
 
         if (!doc?.didDocument) {
-            throw new InvalidOperationError('doc.didDocument');
+            throw this.dependencyError('doc.didDocument', currentDid, visited);
         }
 
         if (doc.didDocumentMetadata?.deactivated) {
-            throw new InvalidOperationError('DID deactivated');
+            throw this.dependencyError('DID deactivated', currentDid, visited);
         }
 
-        const currentDid = did ?? doc.didDocument.id;
         if (currentDid) {
             const key = this.didKey(currentDid);
             if (visited.has(key)) {
@@ -817,7 +980,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         }
 
         if (!doc.didDocument.verificationMethod) {
-            throw new InvalidOperationError('doc.didDocument.verificationMethod');
+            throw this.dependencyError('doc.didDocument.verificationMethod', currentDid, visited);
         }
 
         const signature = operation.signature!;
@@ -831,7 +994,7 @@ export default class Gatekeeper implements GatekeeperInterface {
 
         if (doc.didDocument.verificationMethod.length === 0 ||
             !doc.didDocument.verificationMethod[0].publicKeyJwk) {
-            throw new InvalidOperationError('didDocument missing verificationMethod');
+            throw this.dependencyError('didDocument missing verificationMethod', currentDid, visited);
         }
 
         // TBD get the right signature, not just the first one
@@ -873,7 +1036,7 @@ export default class Gatekeeper implements GatekeeperInterface {
 
     async verifyUpdateOperation(operation: Operation, doc: MdipDocument): Promise<boolean> {
         if (!doc?.didDocument || doc.didResolutionMetadata?.error) {
-            throw new InvalidOperationError('doc.didDocument');
+            throw this.dependencyError('doc.didDocument', operation.did);
         }
 
         if (!this.verifyUpdateOperationStructure(operation, doc)) {
@@ -972,6 +1135,14 @@ export default class Gatekeeper implements GatekeeperInterface {
             ? await this.readForResolution(() => this.db.getEvents(did))
             : [];
 
+        return this.resolveHistory(did, events, options);
+    }
+
+    private async resolveHistory(
+        did: string | undefined,
+        events: GatekeeperEvent[],
+        options?: ResolveDIDOptions,
+    ): Promise<MdipDocument> {
         return resolveDIDFromEvents({
             did,
             events,
@@ -1121,6 +1292,7 @@ export default class Gatekeeper implements GatekeeperInterface {
     }
 
     async importEvent(event: GatekeeperEvent): Promise<ImportStatus> {
+        this.deferredDependencies.delete(event);
         try {
             if (!event.did) {
                 if (event.operation.did) {
@@ -1149,7 +1321,7 @@ export default class Gatekeeper implements GatekeeperInterface {
 
                 for (let i = 0; i < currentEvents.length; i++) {
                     const e = currentEvents[i];
-                    const operationCid = await this.generateCID(e.operation);
+                    const operationCid = await this.historicalOperationCID(e.operation);
 
                     if (!e.opid) {
                         e.opid = operationCid;
@@ -1167,7 +1339,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                         ? await this.verifyCreateOperation(event.operation)
                         : await this.verifyUpdateOperation(
                             event.operation,
-                            await this.resolveDID(lockedDid, { versionSequence: opMatchIndex })
+                            await this.resolveHistory(lockedDid, copyJSON(currentEvents), { versionSequence: opMatchIndex })
                         );
 
                     if (!valid || !(await this.didMatchesOperation(lockedDid, event.operation))) {
@@ -1196,7 +1368,7 @@ export default class Gatekeeper implements GatekeeperInterface {
 
                     return ImportStatus.MERGED;
                 } else {
-                    const ok = await this.verifyOperation(event.operation);
+                    const ok = await this.verifyOperationWithHistory(event.operation, currentEvents);
 
                     if (!ok || !(await this.didMatchesOperation(lockedDid, event.operation))) {
                         return ImportStatus.REJECTED;
@@ -1216,6 +1388,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                     const idMatch = currentEvents.find(item => item.opid === event.operation.previd);
 
                     if (!idMatch) {
+                        this.deferredDependencies.set(event, [this.didKey(lockedDid)]);
                         return ImportStatus.DEFERRED;
                     }
 
@@ -1249,70 +1422,18 @@ export default class Gatekeeper implements GatekeeperInterface {
         } catch (error: any) {
             if (error.type === 'Invalid operation') {
                 // Could be an event with a controller DID that hasn't been imported yet
+                this.deferredDependencies.set(event, resolutionDependencies.get(error) ?? ['*']);
                 return ImportStatus.DEFERRED;
             }
             throw error;
         }
     }
 
-    async importEvents(): Promise<ImportEventsResult> {
-        const passQueue = this.eventsQueue;
-        const passEvents = new Set(passQueue);
-        const total = passQueue.length;
-        let i = 0;
-        let added = 0;
-        let merged = 0;
-        let rejected = 0;
-        const acceptedHashes: string[] = [];
-        const acceptedEvents: GatekeeperEvent[] = [];
-        const rejectedOperations: Operation[] = [];
-
-        this.eventsQueue = [];
-
-        try {
-            for (const event of passQueue) {
-                i += 1;
-
-                const status = await this.importEvent(event);
-
-                if (status === ImportStatus.ADDED) {
-                    added += 1;
-                    if (event.operation.signature?.hash) {
-                        acceptedHashes.push(event.operation.signature.hash.toLowerCase());
-                    }
-                    acceptedEvents.push(event);
-                    this.log.debug(`import ${i}/${total}: added event for ${event.did}`);
-                }
-                else if (status === ImportStatus.MERGED) {
-                    merged += 1;
-                    if (event.operation.signature?.hash) {
-                        acceptedHashes.push(event.operation.signature.hash.toLowerCase());
-                    }
-                    acceptedEvents.push(event);
-                    this.log.debug(`import ${i}/${total}: merged event for ${event.did}`);
-                }
-                else if (status === ImportStatus.REJECTED) {
-                    rejected += 1;
-                    rejectedOperations.push(event.operation);
-                    delete this.eventsSeen[`${event.registry}/${event.operation.signature?.hash}`];
-                    this.log.debug(`import ${i}/${total}: rejected event for ${event.did}`);
-                }
-                else if (status === ImportStatus.DEFERRED) {
-                    this.eventsQueue.push(event);
-                    this.log.debug(`import ${i}/${total}: deferred event for ${event.did}`);
-                }
-            }
-        }
-        catch (error) {
-            const concurrentlyQueued = this.eventsQueue.filter(event => !passEvents.has(event));
-            this.eventsQueue = [...passQueue, ...concurrentlyQueued];
-            throw error;
-        }
-
-        return { added, merged, rejected, acceptedHashes, acceptedEvents, rejectedOperations };
+    async processEvents(): Promise<ProcessEventsResult> {
+        return this.withEventQueueWork(() => this.processQueuedEvents());
     }
 
-    async processEvents(): Promise<ProcessEventsResult> {
+    private async processQueuedEvents(): Promise<ProcessEventsResult> {
         if (this.isProcessingEvents) {
             return { busy: true };
         }
@@ -1320,74 +1441,305 @@ export default class Gatekeeper implements GatekeeperInterface {
         let added = 0;
         let merged = 0;
         let rejected = 0;
-        let done = false;
+        let capacityDeferred = 0;
         const acceptedHashes = new Set<string>();
         const acceptedEventsByHash = new Map<string, GatekeeperEvent>();
         const rejectedOperations: Operation[] = [];
-        const attemptedEvents: GatekeeperEvent[] = [];
-        const attemptedEventSet = new Set<GatekeeperEvent>();
+        const capacityDeferredHashes = new Set<string>();
+        const newlyDeferred = new Map<string, {
+            entry: QueuedGatekeeperEvent;
+            hash: string;
+        }>();
+        const terminalEntries: Array<{
+            entry: QueuedGatekeeperEvent;
+            lane: 'staged' | 'pending';
+        }> = [];
+        let processingEntry: QueuedGatekeeperEvent | undefined;
+        let snapshot: {
+            stagedEvents: QueuedGatekeeperEvent[];
+            pendingEvents: QueuedGatekeeperEvent[];
+            eventStates: Map<string, EventQueueRecord>;
+            transientEventCount: number;
+            transientEventBytes: number;
+            pendingEventCount: number;
+            pendingEventBytes: number;
+            pendingPassRemaining: number;
+            pendingPassProgress: boolean;
+            preferStagedEvents: boolean;
+            pendingRetryStates: Map<string, PendingEventRetry>;
+        } | undefined;
 
         try {
             this.isProcessingEvents = true;
 
-            while (!done) {
-                for (const event of this.eventsQueue) {
-                    if (!attemptedEventSet.has(event)) {
-                        attemptedEventSet.add(event);
-                        attemptedEvents.push(event);
-                    }
-                }
-                const response = await this.importEvents();
+            snapshot = {
+                stagedEvents: [...this.stagedEvents],
+                pendingEvents: [...this.pendingEvents],
+                eventStates: new Map(Array.from(this.eventStates, ([key, record]) => [
+                    key,
+                    { entry: record.entry, state: record.state },
+                ])),
+                transientEventCount: this.transientEventCount,
+                transientEventBytes: this.transientEventBytes,
+                pendingEventCount: this.pendingEventCount,
+                pendingEventBytes: this.pendingEventBytes,
+                pendingPassRemaining: this.pendingPassRemaining,
+                pendingPassProgress: this.pendingPassProgress,
+                preferStagedEvents: this.preferStagedEvents,
+                pendingRetryStates: new Map(Array.from(this.pendingRetryStates, ([key, retry]) => [
+                    key, { ...retry },
+                ])),
+            };
 
-                added += response.added;
-                merged += response.merged;
-                rejected += response.rejected;
-                for (const hash of response.acceptedHashes) {
-                    acceptedHashes.add(hash);
-                }
-                for (const event of response.acceptedEvents) {
-                    const hash = event.operation.signature?.hash?.toLowerCase();
-                    if (hash && !acceptedEventsByHash.has(hash)) {
-                        acceptedEventsByHash.set(hash, event);
-                    }
-                }
-                rejectedOperations.push(...(response.rejectedOperations ?? []));
-
-                done = (response.added === 0 && response.merged === 0);
+            let stagedRemaining = this.stagedEvents.length;
+            if (this.pendingPassRemaining === 0 && this.pendingEvents.length > 0) {
+                this.pendingPassRemaining = this.pendingEvents.length;
+                this.pendingPassProgress = false;
             }
+
+            let attempted = 0;
+            let attemptedBytes = 0;
+            let preferStaged = this.preferStagedEvents;
+
+            while (attempted < this.maxEventPageCount) {
+                if (this.pendingPassRemaining === 0 && this.pendingPassProgress) {
+                    if (this.pendingEvents.length > 0) {
+                        this.pendingPassRemaining = this.pendingEvents.length;
+                    }
+                    this.pendingPassProgress = false;
+                }
+                const stagedAvailable = stagedRemaining > 0 && this.stagedEvents.length > 0;
+                const pendingAvailable = this.pendingPassRemaining > 0 && this.pendingEvents.length > 0;
+                if (!stagedAvailable && !pendingAvailable) {
+                    break;
+                }
+
+                const laneOrder = preferStaged
+                    ? ['staged', 'pending'] as const
+                    : ['pending', 'staged'] as const;
+                let lane: 'staged' | 'pending' | undefined;
+                for (const candidateLane of laneOrder) {
+                    const entry = candidateLane === 'staged'
+                        ? (stagedAvailable ? this.stagedEvents[0] : undefined)
+                        : (pendingAvailable ? this.pendingEvents[0] : undefined);
+                    if (entry && attemptedBytes + entry.bytes <= this.maxEventPageBytes) {
+                        lane = candidateLane;
+                        break;
+                    }
+                }
+                if (!lane) {
+                    break;
+                }
+
+                const entry = lane === 'staged'
+                    ? this.stagedEvents.shift()!
+                    : this.pendingEvents.shift()!;
+                if (lane === 'staged') {
+                    stagedRemaining -= 1;
+                }
+                else {
+                    this.pendingPassRemaining -= 1;
+                }
+                preferStaged = lane !== 'staged';
+
+                processingEntry = entry;
+                const record = this.eventStates.get(entry.key);
+                if (!record) {
+                    throw new Error(`missing queued event state for ${entry.key}`);
+                }
+                if (lane === 'pending' && this.pendingRetryStates.get(entry.key)?.ready === false) {
+                    this.pendingEvents.push(entry);
+                    processingEntry = undefined;
+                    continue;
+                }
+                record.state = 'processing';
+                attempted += 1;
+                attemptedBytes += entry.bytes;
+
+                const attemptRevision = this.mutationRevision;
+                const status = await this.importEvent(entry.event);
+                processingEntry = undefined;
+                if (status === ImportStatus.ADDED || status === ImportStatus.MERGED) {
+                    terminalEntries.push({
+                        entry,
+                        lane: newlyDeferred.has(entry.key) ? 'staged' : lane,
+                    });
+                    newlyDeferred.delete(entry.key);
+                    const hash = entry.event.operation.signature?.hash?.toLowerCase();
+                    if (hash) {
+                        acceptedHashes.add(hash);
+                        if (!acceptedEventsByHash.has(hash)) {
+                            acceptedEventsByHash.set(hash, entry.event);
+                        }
+                    }
+                    if (status === ImportStatus.ADDED) {
+                        added += 1;
+                    }
+                    else {
+                        merged += 1;
+                    }
+                    this.log.debug(`import ${attempted}: ${status} event for ${entry.event.did}`);
+                }
+                else if (status === ImportStatus.REJECTED) {
+                    terminalEntries.push({
+                        entry,
+                        lane: newlyDeferred.has(entry.key) ? 'staged' : lane,
+                    });
+                    newlyDeferred.delete(entry.key);
+                    rejected += 1;
+                    rejectedOperations.push(entry.event.operation);
+                    this.log.debug(`import ${attempted}: rejected event for ${entry.event.did}`);
+                }
+                else if (lane === 'staged') {
+                    const verifiedHash = this.getVerifiedOperationHash(entry.event.operation);
+                    if (!verifiedHash) {
+                        terminalEntries.push({ entry, lane });
+                        rejected += 1;
+                        rejectedOperations.push(entry.event.operation);
+                        continue;
+                    }
+                    newlyDeferred.set(entry.key, {
+                        entry,
+                        hash: verifiedHash.toLowerCase(),
+                    });
+                    this.setPendingRetry(entry.key, this.deferredDependencies.get(entry.event) ?? ['*'],
+                        this.mutationRevision !== attemptRevision);
+                    record.state = 'pending';
+                    this.pendingEvents.push(entry);
+                }
+                else {
+                    this.setPendingRetry(entry.key, this.deferredDependencies.get(entry.event) ?? ['*'],
+                        this.mutationRevision !== attemptRevision);
+                    record.state = 'pending';
+                    this.pendingEvents.push(entry);
+                    this.log.debug(`import ${attempted}: deferred event for ${entry.event.did}`);
+                }
+            }
+
+            // Keep states and admission capacity reserved until every awaited page attempt succeeds.
+            for (const { entry, lane } of terminalEntries) {
+                if (lane === 'staged') {
+                    this.transientEventCount -= 1;
+                    this.transientEventBytes -= entry.bytes;
+                }
+                else {
+                    this.pendingEventCount -= 1;
+                    this.pendingEventBytes -= entry.bytes;
+                }
+                this.eventStates.delete(entry.key);
+                this.clearPendingRetry(entry.key);
+            }
+
+            let unattemptedDeferredAdmitted = false;
+            const capacityDeferredEntries = new Set<QueuedGatekeeperEvent>();
+            for (const { entry, hash } of newlyDeferred.values()) {
+                const pendingFits = this.pendingEventCount < this.maxPendingEventCount
+                    && this.pendingEventBytes + entry.bytes <= this.maxPendingEventBytes;
+                this.transientEventCount -= 1;
+                this.transientEventBytes -= entry.bytes;
+                if (pendingFits) {
+                    const record = this.eventStates.get(entry.key)!;
+                    record.state = 'pending';
+                    this.pendingEventCount += 1;
+                    this.pendingEventBytes += entry.bytes;
+                    unattemptedDeferredAdmitted ||= this.pendingRetryStates.get(entry.key)!.ready;
+                }
+                else {
+                    capacityDeferredEntries.add(entry);
+                    this.eventStates.delete(entry.key);
+                    this.clearPendingRetry(entry.key);
+                    capacityDeferred += 1;
+                    capacityDeferredHashes.add(hash);
+                }
+            }
+            if (capacityDeferredEntries.size > 0) {
+                const unattempted = new Set(this.pendingEvents.slice(0, this.pendingPassRemaining));
+                for (const entry of capacityDeferredEntries) {
+                    if (unattempted.has(entry)) {
+                        this.pendingPassRemaining -= 1;
+                    }
+                }
+                this.pendingEvents = this.pendingEvents.filter(
+                    entry => !capacityDeferredEntries.has(entry)
+                );
+            }
+
+            let hasMore = this.stagedEvents.length > 0 || this.pendingPassRemaining > 0;
+            if (this.pendingPassRemaining === 0) {
+                if ((this.pendingPassProgress || unattemptedDeferredAdmitted)
+                    && this.pendingEvents.length > 0) {
+                    this.pendingPassRemaining = this.pendingEvents.length;
+                    hasMore = true;
+                }
+                this.pendingPassProgress = false;
+            }
+            this.preferStagedEvents = !snapshot.preferStagedEvents;
+
+            const pending = this.pendingEventCount;
+            const response = {
+                added,
+                merged,
+                rejected,
+                pending,
+                acceptedHashes: Array.from(acceptedHashes),
+                acceptedEvents: Array.from(acceptedEventsByHash.values()),
+                ...(rejectedOperations.length > 0 && { rejectedOperations }),
+                hasMore,
+                capacityDeferred,
+                capacityDeferredHashes: Array.from(capacityDeferredHashes),
+            };
+
+            const { acceptedEvents, rejectedOperations: rejectedOperationList, ...logResponseBase } = response;
+            const logResponse = {
+                ...logResponseBase,
+                acceptedEventsCount: acceptedEvents.length,
+                rejectedOperationsCount: rejectedOperationList?.length ?? 0,
+            };
+            this.log.debug(`processEvents: ${JSON.stringify(logResponse)}`);
+
+            return response;
         }
         catch (error) {
-            if (attemptedEvents.length > 0) {
-                const concurrentlyQueued = this.eventsQueue.filter(event => !attemptedEventSet.has(event));
-                this.eventsQueue = [...attemptedEvents, ...concurrentlyQueued];
+            if (snapshot) {
+                const concurrentEntries = this.stagedEvents.filter(entry => !snapshot!.eventStates.has(entry.key));
+                this.stagedEvents = [...snapshot.stagedEvents, ...concurrentEntries];
+                this.pendingEvents = [...snapshot.pendingEvents];
+                this.eventStates.clear();
+                for (const [key, record] of snapshot.eventStates) {
+                    this.eventStates.set(key, { entry: record.entry, state: record.state });
+                }
+                for (const entry of concurrentEntries) {
+                    this.eventStates.set(entry.key, { entry, state: 'staged' });
+                }
+                this.transientEventCount = snapshot.transientEventCount + concurrentEntries.length;
+                this.transientEventBytes = snapshot.transientEventBytes
+                    + concurrentEntries.reduce((total, entry) => total + entry.bytes, 0);
+                this.pendingEventCount = snapshot.pendingEventCount;
+                this.pendingEventBytes = snapshot.pendingEventBytes;
+                this.pendingPassRemaining = snapshot.pendingPassRemaining;
+                this.pendingPassProgress = snapshot.pendingPassProgress;
+                this.preferStagedEvents = snapshot.preferStagedEvents;
+                this.pendingRetryStates.clear();
+                this.pendingDependents.clear();
+                // A failed page may have persisted dependencies before rollback.
+                for (const [key, retry] of snapshot.pendingRetryStates) {
+                    this.setPendingRetry(key, retry.dependencies, true);
+                }
             }
-            this.log.error({ error }, 'processEvents error');
+            this.log.error({
+                error,
+                eventKey: processingEntry?.key,
+                did: processingEntry?.event.did,
+                operationType: processingEntry?.event.operation.type,
+                previd: processingEntry?.event.operation.previd,
+                staged: this.transientEventCount,
+                pending: this.pendingEventCount,
+            }, 'processEvents error');
             throw error;
         }
         finally {
             this.isProcessingEvents = false;
         }
-
-        const pending = this.eventsQueue.length;
-        const response = {
-            added,
-            merged,
-            rejected,
-            pending,
-            acceptedHashes: Array.from(acceptedHashes),
-            acceptedEvents: Array.from(acceptedEventsByHash.values()),
-            ...(rejectedOperations.length > 0 && { rejectedOperations }),
-        };
-
-        const { acceptedEvents, rejectedOperations: rejectedOperationList, ...logResponseBase } = response;
-        const logResponse = {
-            ...logResponseBase,
-            acceptedEventsCount: acceptedEvents.length,
-            rejectedOperationsCount: rejectedOperationList?.length ?? 0,
-        };
-        this.log.debug(`processEvents: ${JSON.stringify(logResponse)}`);
-
-        return response;
     }
 
     async verifyEvent(event: GatekeeperEvent): Promise<boolean> {
@@ -1478,27 +1830,96 @@ export default class Gatekeeper implements GatekeeperInterface {
     }
 
     async importBatch(batch: GatekeeperEvent[]): Promise<ImportBatchResult> {
+        return this.withEventQueueWork(() => this.queueBatch(batch));
+    }
+
+    private async queueBatch(batch: GatekeeperEvent[]): Promise<ImportBatchResult> {
         if (!batch || !Array.isArray(batch) || batch.length < 1) {
             throw new InvalidParameterError('batch');
         }
 
         let queued = 0;
         let processed = 0;
+        let capacityDeferred = 0;
         const rejectedIndices: number[] = [];
+        const processedIndices: number[] = [];
+        const capacityDeferredIndices: number[] = [];
 
         for (let i = 0; i < batch.length; i++) {
             const event = batch[i];
+            let serialized: string | undefined;
+            try {
+                serialized = JSON.stringify(event);
+            }
+            catch {
+                rejectedIndices.push(i);
+                continue;
+            }
+            if (serialized === undefined
+                || Buffer.byteLength(serialized, 'utf8') > this.maxEventPageBytes) {
+                rejectedIndices.push(i);
+                continue;
+            }
+
             const ok = await this.verifyEvent(event);
 
             if (ok) {
-                const eventKey = `${event.registry}/${event.operation.signature?.hash}`;
-                if (!this.eventsSeen[eventKey]) {
-                    this.eventsSeen[eventKey] = true;
-                    this.eventsQueue.push(event);
+                let operationCid: string;
+                try {
+                    operationCid = await this.generateCID(event.operation);
+                }
+                catch {
+                    rejectedIndices.push(i);
+                    continue;
+                }
+                const eventKey = `${event.registry}/${operationCid}`;
+                if (this.eventStates.has(eventKey)) {
+                    processed += 1;
+                    processedIndices.push(i);
+                    continue;
+                }
+
+                try {
+                    // importEvent adds these fields, so admission must account for the retained shape.
+                    const did = event.did || event.operation.did || await this.generateDID(event.operation);
+                    const normalizedEvent = {
+                        ...event,
+                        ...(did ? { did } : {}),
+                        ...(event.opid === undefined ? { opid: operationCid } : {}),
+                    };
+                    serialized = JSON.stringify(normalizedEvent);
+                }
+                catch {
+                    rejectedIndices.push(i);
+                    continue;
+                }
+                if (serialized === undefined
+                    || Buffer.byteLength(serialized, 'utf8') > this.maxEventPageBytes) {
+                    rejectedIndices.push(i);
+                    continue;
+                }
+
+                // DID normalization may yield, so another import can reserve this key first.
+                if (this.eventStates.has(eventKey)) {
+                    processed += 1;
+                    processedIndices.push(i);
+                    continue;
+                }
+
+                const bytes = Buffer.byteLength(serialized, 'utf8');
+                const fits = this.transientEventCount < this.maxEventPageCount
+                    && this.transientEventBytes + bytes <= this.maxTransientEventBytes;
+                if (fits) {
+                    const entry = { event, key: eventKey, bytes };
+                    this.eventStates.set(eventKey, { entry, state: 'staged' });
+                    this.stagedEvents.push(entry);
+                    this.transientEventCount += 1;
+                    this.transientEventBytes += bytes;
                     queued += 1;
                 }
                 else {
-                    processed += 1;
+                    capacityDeferred += 1;
+                    capacityDeferredIndices.push(i);
                 }
             }
             else {
@@ -1510,8 +1931,11 @@ export default class Gatekeeper implements GatekeeperInterface {
             queued,
             processed,
             rejected: rejectedIndices.length,
-            total: this.eventsQueue.length,
+            total: this.eventStates.size,
             rejectedIndices,
+            capacityDeferred,
+            capacityDeferredIndices,
+            processedIndices,
         };
     }
 

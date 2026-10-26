@@ -14,7 +14,6 @@ const CONFIG_ENV_KEYS = [
     'KC_GATEKEEPER_JSON_LIMIT',
     'KC_GATEKEEPER_MAX_OP_BYTES',
     'KC_GATEKEEPER_GC_INTERVAL',
-    'KC_GATEKEEPER_STATUS_INTERVAL',
     'KC_GATEKEEPER_TRUST_PROXY',
     'KC_GATEKEEPER_RATE_LIMIT_ENABLED',
     'KC_GATEKEEPER_RATE_LIMIT_WINDOW_VALUE',
@@ -46,7 +45,7 @@ describe('gatekeeper server config', () => {
     });
 
     it('uses defaults when settings are absent', async () => {
-        expect(await importConfig()).toMatchObject({
+        expect(await importConfig()).toStrictEqual({
             port: 4224,
             db: 'redis',
             ipfsURL: 'http://localhost:5001/api/v0',
@@ -58,7 +57,6 @@ describe('gatekeeper server config', () => {
             jsonLimit: '4mb',
             maxOpBytes: undefined,
             gcInterval: 15,
-            statusInterval: 5,
             gatekeeperTrustProxy: false,
             rateLimitEnabled: false,
             rateLimitWindowValue: 1,
@@ -82,7 +80,6 @@ describe('gatekeeper server config', () => {
             KC_GATEKEEPER_JSON_LIMIT: '10mb',
             KC_GATEKEEPER_MAX_OP_BYTES: '123',
             KC_GATEKEEPER_GC_INTERVAL: '30',
-            KC_GATEKEEPER_STATUS_INTERVAL: '10',
             KC_GATEKEEPER_TRUST_PROXY: 'true',
             KC_GATEKEEPER_RATE_LIMIT_ENABLED: 'true',
             KC_GATEKEEPER_RATE_LIMIT_WINDOW_VALUE: '2',
@@ -90,7 +87,7 @@ describe('gatekeeper server config', () => {
             KC_GATEKEEPER_RATE_LIMIT_MAX_REQUESTS: '3',
             KC_GATEKEEPER_RATE_LIMIT_WHITELIST: 'one, , two',
             KC_GATEKEEPER_RATE_LIMIT_SKIP_PATHS: '/one, , /two',
-        })).toMatchObject({
+        })).toStrictEqual({
             port: 1234,
             db: 'json',
             ipfsURL: 'http://ipfs',
@@ -102,7 +99,6 @@ describe('gatekeeper server config', () => {
             jsonLimit: '10mb',
             maxOpBytes: 123,
             gcInterval: 30,
-            statusInterval: 10,
             gatekeeperTrustProxy: true,
             rateLimitEnabled: true,
             rateLimitWindowValue: 2,

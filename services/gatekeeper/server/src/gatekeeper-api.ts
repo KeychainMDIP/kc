@@ -1363,7 +1363,12 @@ v1router.post('/dids/export', trackedRoute(async (req, res) => {
  *                   description: Number of new events queued.
  *                 processed:
  *                   type: integer
- *                   description: Number of events recognized as duplicates (already known).
+ *                   description: Number of events already staged, processing, or retained pending.
+ *                 processedIndices:
+ *                   type: array
+ *                   description: Zero-based indexes of those already-pending events in `dids.flat()` order.
+ *                   items:
+ *                     type: integer
  *                 rejected:
  *                   type: integer
  *                   description: Number of events that failed validation (bad signature, size limit, etc.).
@@ -1372,9 +1377,17 @@ v1router.post('/dids/export', trackedRoute(async (req, res) => {
  *                   description: Zero-based indexes of rejected events in the original submitted batch order (for importDIDs this is `dids.flat()` order).
  *                   items:
  *                     type: integer
+ *                 capacityDeferred:
+ *                   type: integer
+ *                   description: Number of valid events refused because transient admission capacity was full.
+ *                 capacityDeferredIndices:
+ *                   type: array
+ *                   description: Zero-based indexes of retryable capacity-refused events in `dids.flat()` order.
+ *                   items:
+ *                     type: integer
  *                 total:
  *                   type: integer
- *                   description: Total number of events in the queue after this import.
+ *                   description: Total number of staged, processing, and retained-pending events.
  *       500:
  *         description: Internal Server Error.
  *         content:
@@ -1544,7 +1557,12 @@ v1router.post('/batch/export', trackedRoute(async (req, res) => {
  *                   description: Number of new, valid events that were queued.
  *                 processed:
  *                   type: integer
- *                   description: Number of events recognized as duplicates.
+ *                   description: Number of events already staged, processing, or retained pending.
+ *                 processedIndices:
+ *                   type: array
+ *                   description: Zero-based indexes of those already-pending events in the submitted batch.
+ *                   items:
+ *                     type: integer
  *                 rejected:
  *                   type: integer
  *                   description: Number of events that failed validation.
@@ -1553,9 +1571,17 @@ v1router.post('/batch/export', trackedRoute(async (req, res) => {
  *                   description: Zero-based indexes of rejected events in the original submitted batch order.
  *                   items:
  *                     type: integer
+ *                 capacityDeferred:
+ *                   type: integer
+ *                   description: Number of valid events refused because transient admission capacity was full.
+ *                 capacityDeferredIndices:
+ *                   type: array
+ *                   description: Zero-based indexes of retryable capacity-refused events in the submitted batch.
+ *                   items:
+ *                     type: integer
  *                 total:
  *                   type: integer
- *                   description: The total event queue size after this import.
+ *                   description: Total number of staged, processing, and retained-pending events.
  *
  *       500:
  *         description: Internal Server Error.
@@ -1836,9 +1862,9 @@ v1router.get('/db/verify', trackedRoute(async (req, res) => {
  *   post:
  *     summary: Process queued events
  *     description: >
- *       Iterates over all queued events, importing them if they are valid (adding or merging).
- *       Continues until no more new events can be processed. If `processEvents` is already running,
- *       it may return `{ busy: true }` to indicate that processing is in progress.
+ *       Processes one bounded page of queued events, importing them if they are valid (adding or merging).
+ *       Call again while `hasMore` is true. If `processEvents` is already running, it may return
+ *       `{ busy: true }` to indicate that processing is in progress.
  *
  *     responses:
  *       200:
@@ -1867,7 +1893,18 @@ v1router.get('/db/verify', trackedRoute(async (req, res) => {
  *                       description: Number of events that failed validation.
  *                     pending:
  *                       type: integer
- *                       description: Number of events still left in the queue after processing.
+ *                       description: Number of retained unresolved events after this page.
+ *                     hasMore:
+ *                       type: boolean
+ *                       description: True when another bounded processing page can run immediately.
+ *                     capacityDeferred:
+ *                       type: integer
+ *                       description: Number of staged events refused from retained pending capacity.
+ *                     capacityDeferredHashes:
+ *                       type: array
+ *                       description: Content-verified operation hashes for retryable capacity-refused events.
+ *                       items:
+ *                         type: string
  *                     acceptedHashes:
  *                       type: array
  *                       description: Lower-case signature hashes of events accepted during this processing run (added or merged).
@@ -2364,7 +2401,6 @@ app.use('/api', (req, res) => {
 });
 
 let shuttingDown = false;
-let statusTimer: ReturnType<typeof setInterval> | undefined;
 let gcTimer: ReturnType<typeof setTimeout> | undefined;
 let server: ReturnType<typeof app.listen> | undefined;
 let shutdownPromise: Promise<void> | undefined;
@@ -2397,10 +2433,6 @@ function shutdown(exitCode = 0): Promise<void> {
     serverReady = false;
     shuttingDown = true;
 
-    if (statusTimer) {
-        clearInterval(statusTimer);
-        statusTimer = undefined;
-    }
     if (gcTimer) {
         clearTimeout(gcTimer);
         gcTimer = undefined;
@@ -2441,7 +2473,7 @@ async function checkDids() {
     const startTimeMs = Date.now();
     didCheck = await gatekeeper.checkDIDs();
     const durationMs = Date.now() - startTimeMs;
-    log.debug({ durationMs }, 'checkDIDs');
+    log.info({ durationMs }, 'checkDIDs');
 }
 
 async function getStatus() {
@@ -2506,20 +2538,6 @@ async function main() {
 
     if (shuttingDown) {
         return;
-    }
-
-    if (config.statusInterval > 0) {
-        log.info(`Starting status update every ${config.statusInterval} minutes`);
-        statusTimer = setInterval(() => {
-            if (!shuttingDown) {
-                trackActiveWork(reportStatus()).catch((error: any) => {
-                    log.error({ error }, 'Error reporting status');
-                });
-            }
-        }, config.statusInterval * 60 * 1000);
-    }
-    else {
-        log.info(`Status update disabled`);
     }
 
     if (config.gcInterval > 0) {

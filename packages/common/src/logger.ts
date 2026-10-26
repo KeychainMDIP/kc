@@ -88,6 +88,29 @@ export function createLogger(
     const loggerOptions: LoggerOptions = {
         ...options,
         level: resolvedLevel,
+        serializers: {
+            error: error => {
+                if (typeof error?.message !== 'string') {
+                    return error;
+                }
+                // Request and response properties can contain credentials or private data.
+                const diagnosticError = {
+                    constructor: error.constructor,
+                    name: error.name,
+                    message: error.message,
+                    stack: error.stack,
+                    cause: typeof error.cause === 'function' ? () => error.cause() : error.cause,
+                };
+                const serialized = pino.stdSerializers.err(diagnosticError);
+                return {
+                    type: serialized.type,
+                    message: serialized.message,
+                    stack: serialized.stack,
+                    code: error.code,
+                };
+            },
+            ...options.serializers,
+        },
     };
 
     if (options.transport !== undefined && options.transport !== null) {
@@ -99,6 +122,7 @@ export function createLogger(
         translateTime: 'SYS:standard',
         ignore: 'pid,hostname,service',
         singleLine: true,
+        errorLikeObjectKeys: ['err'],
     });
 
     return pino(loggerOptions, stream);
