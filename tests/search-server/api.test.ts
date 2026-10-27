@@ -456,6 +456,7 @@ describe('Search Server HTTP routes', () => {
         ['/events', 'listEvents', undefined],
         ['/search?q=Alice', 'searchDocs', undefined],
         ['/query', 'queryDocs', { where: {} }],
+        ['/identities', 'listIdentities', undefined],
         ['/metrics/schemas/published', 'getPublishedCredentialCountsBySchema', undefined],
         ['/metrics/snapshots/2026-01-01', 'getNetworkMetricSnapshot', undefined],
         ['/metrics/credentials/published', 'listPublishedCredentials', undefined],
@@ -463,9 +464,13 @@ describe('Search Server HTTP routes', () => {
         ['/metrics/challenge-receipts/usage?attesterDid=attester', 'getChallengeReceiptUsage', undefined],
     ] as const)('reports storage errors from %s', async (path, method, body) => {
         await db.saveSyncState(INDEX_SYNC_STATE_KEYS.metricsDidPrefix, 'did:mdip');
-        jest.spyOn(db, method).mockRejectedValue(new Error('storage unavailable'));
+        const read = jest.spyOn(db, method).mockRejectedValue(new Error('storage unavailable'));
         await boot();
         expect(await request(path, body)).toEqual({ status: 500, body: { error: 'Error: storage unavailable' } });
+
+        const { SearchUnavailableError } = await import('../../services/search-server/src/db/coordination.ts');
+        read.mockRejectedValue(new SearchUnavailableError('schema unavailable'));
+        expect(await request(path, body)).toEqual({ status: 503, body: { error: 'Error: schema unavailable' } });
     });
 
     it.each(['sqlite', 'postgres'])('selects the %s adapter and configures rate limiting', async name => {

@@ -1713,6 +1713,30 @@ describe('postgres adapter with mocked pool', () => {
         expect(mockClient.release).toHaveBeenCalledTimes(1);
     });
 
+    it('preserves database errors during role checks and releases the read transaction', async () => {
+        const failure = Object.assign(new Error('permission denied for table search_index_control'), { code: '42501' });
+        const client = {
+            query: jest.fn(async (sql: string) => {
+                if (sql.includes('pg_try_advisory_')) return { rows: [{ acquired: true }] };
+                if (sql.includes('FROM search_index_control')) throw failure;
+                if (sql.includes('pg_advisory_unlock')) return { rows: [{ released: true }] };
+                return { rows: [] };
+            }),
+            release: jest.fn(),
+        };
+        const Postgres = await loadPostgresModule();
+        const db = new Postgres('postgresql://example');
+        (db as any).pool = { connect: jest.fn(async () => client) };
+
+        await expect(db.getRole()).rejects.toBe(failure);
+
+        expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+        expect(client.query).toHaveBeenLastCalledWith(
+            expect.stringContaining('pg_advisory_unlock_shared'), ['search-server', 'index-schema']
+        );
+        expect(client.release).toHaveBeenCalledWith(false);
+    });
+
     it('covers static create plus real connect and disconnect branches with spied pool methods', async () => {
         const Postgres = await loadPostgresModule();
         const mockClient = {
