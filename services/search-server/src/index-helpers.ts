@@ -1,3 +1,4 @@
+import { readDatabase } from './db/db-utils.js';
 import type { Request } from "express";
 import { BlockList, isIP } from "net";
 
@@ -176,36 +177,39 @@ export function parseOptionalPositiveInteger(value: unknown, fieldName: string):
 }
 
 export async function getSearchStatus(didDb: DIDsDb, dbName: string) {
-    const sync = {
-        snapshotComplete: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.snapshotComplete) === 'true',
-        snapshotCursor: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.snapshotCursor),
-        snapshotCheckpointCursor: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.snapshotCheckpointCursor),
-        changesCursor: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.changesCursor),
-        lastSyncStartedAt: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastSyncStartedAt),
-        lastSyncCompletedAt: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastSyncCompletedAt),
-        lastSyncError: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastSyncError),
-        lastSyncMode: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastSyncMode),
-        lastPagesProcessed: Number.parseInt(
-            await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastPagesProcessed) ?? '0',
-            10
-        ),
-        lastDidsChanged: Number.parseInt(
-            await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastDidsChanged) ?? '0',
-            10
-        ),
-        lastBlocksStored: Number.parseInt(
-            await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastBlocksStored) ?? '0',
-            10
-        ),
-    };
+    return readDatabase(didDb, async () => {
+        const sync = {
+            snapshotComplete: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.snapshotComplete) === 'true',
+            snapshotCursor: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.snapshotCursor),
+            snapshotCheckpointCursor: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.snapshotCheckpointCursor),
+            changesCursor: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.changesCursor),
+            lastSyncStartedAt: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastSyncStartedAt),
+            lastSyncCompletedAt: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastSyncCompletedAt),
+            lastSyncError: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastSyncError),
+            lastSyncMode: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastSyncMode),
+            lastPagesProcessed: Number.parseInt(
+                await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastPagesProcessed) ?? '0',
+                10
+            ),
+            lastDidsChanged: Number.parseInt(
+                await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastDidsChanged) ?? '0',
+                10
+            ),
+            lastBlocksStored: Number.parseInt(
+                await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastBlocksStored) ?? '0',
+                10
+            ),
+        };
 
-    return {
-        ready: true,
-        db: dbName,
-        sync,
-        metrics: {
-            lastRebuiltAt: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsLastRebuiltAt),
-            lastError: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsLastError),
-        },
-    };
+        return {
+            ready: true,
+            db: dbName,
+            role: await didDb.getRole?.() ?? 'writer',
+            sync,
+            metrics: {
+                lastRebuiltAt: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsLastRebuiltAt),
+                lastError: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsLastError),
+            },
+        };
+    });
 }

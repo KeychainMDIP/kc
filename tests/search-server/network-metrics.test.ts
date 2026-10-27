@@ -1,3 +1,4 @@
+import { mockPostgresPool } from './postgres-mock.ts';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -872,8 +873,8 @@ describe('network metric database branches', () => {
             throw new Error(`Unexpected PostgreSQL query: ${text}`);
         });
         const client = {
-            query: jest.fn<(...args: unknown[]) => Promise<unknown>>()
-                .mockResolvedValue({ rowCount: 0, rows: [] }),
+            query: jest.fn(async (sql: string, params?: unknown[]) => sql.startsWith('SELECT')
+                ? poolQuery(sql, params) : { rowCount: 0, rows: [] }),
             release: jest.fn(),
         };
         const pool = {
@@ -881,7 +882,7 @@ describe('network metric database branches', () => {
             connect: jest.fn<() => Promise<typeof client>>().mockResolvedValue(client),
         };
         const db = new Postgres('postgresql://example');
-        (db as any).pool = pool;
+        (db as any).pool = mockPostgresPool(db, pool);
 
         expect(await collectDIDEventHistories(db, 1)).toStrictEqual([
             { did, events: [firstEvent, secondEvent] },
@@ -892,6 +893,7 @@ describe('network metric database branches', () => {
             [did, 0, 1]
         );
         expect(await collectDIDEventHistories(db, 500)).toHaveLength(2);
+        client.release.mockClear();
         await db.replaceNetworkMetricSnapshots([snapshot]);
         expect(client.query).toHaveBeenCalledWith(
             expect.stringContaining('INSERT INTO network_metric_snapshots'),
@@ -933,7 +935,7 @@ describe('network metric database branches', () => {
             connect: jest.fn<() => Promise<typeof client>>().mockResolvedValue(client),
         };
         const db = new Postgres('postgresql://example');
-        (db as any).pool = pool;
+        (db as any).pool = mockPostgresPool(db, pool);
 
         await expect(db.replaceNetworkMetricSnapshots([snapshot])).rejects.toThrow(failure);
         expect(client.query).toHaveBeenCalledWith('ROLLBACK');

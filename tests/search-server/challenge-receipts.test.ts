@@ -1,3 +1,4 @@
+import { mockPostgresPool } from './postgres-mock.ts';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -660,7 +661,7 @@ describe('postgres challenge receipt adapter with mocked pool', () => {
             responseCommitment: 'mock-commitment-1',
             updatedAt: '2026-04-01T10:01:00.000Z',
         };
-        const poolQuery = jest.fn(async (sql: string) => {
+        const poolQuery = jest.fn(async (sql: string, _params?: unknown[]) => {
             const text = String(sql);
 
             if (text.includes('CREATE TABLE IF NOT EXISTS challenge_receipts')) {
@@ -697,8 +698,8 @@ describe('postgres challenge receipt adapter with mocked pool', () => {
             return { rowCount: 0, rows: [] };
         });
         const mockClient = {
-            query: jest.fn<(...args: unknown[]) => Promise<unknown>>()
-                .mockResolvedValue({ rowCount: 0, rows: [] }),
+            query: jest.fn(async (sql: string, params?: unknown[]) => sql.startsWith('SELECT')
+                ? poolQuery(sql, params) : { rowCount: 0, rows: [] }),
             release: jest.fn(),
         };
         const mockPool = {
@@ -710,7 +711,7 @@ describe('postgres challenge receipt adapter with mocked pool', () => {
 
         class TestPostgres extends Postgres {
             protected createPool(): any {
-                return mockPool;
+                return mockPostgresPool(this, mockPool);
             }
         }
 
@@ -794,7 +795,7 @@ describe('postgres challenge receipt adapter with mocked pool', () => {
                 record.updatedAt,
             ]
         );
-        expect(poolQuery).toHaveBeenCalledWith('DELETE FROM challenge_receipts');
+        expect(mockClient.query).toHaveBeenCalledWith('DELETE FROM challenge_receipts');
         expect(poolQuery).toHaveBeenCalledWith(
             expect.stringContaining("dc.prefix || ':' || dc.suffix AS \"receiptDid\""),
             [
@@ -842,7 +843,7 @@ describe('postgres challenge receipt adapter with mocked pool', () => {
 
         class TestPostgres extends Postgres {
             protected createPool(): any {
-                return mockPool;
+                return mockPostgresPool(this, mockPool);
             }
         }
 

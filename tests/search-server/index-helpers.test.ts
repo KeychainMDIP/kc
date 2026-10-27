@@ -84,6 +84,7 @@ describe('Search Server request helpers', () => {
         expect(await getSearchStatus(db, 'memory')).toEqual({
             ready: true,
             db: 'memory',
+            role: 'writer',
             sync: {
                 snapshotComplete: false,
                 snapshotCursor: null,
@@ -112,6 +113,7 @@ describe('Search Server request helpers', () => {
         expect(await getSearchStatus(db, 'memory')).toEqual({
             ready: true,
             db: 'memory',
+            role: 'writer',
             sync: { ...sync, snapshotComplete: true, lastPagesProcessed: 2, lastDidsChanged: 3, lastBlocksStored: 4 },
             metrics: { lastRebuiltAt: metricsLastRebuiltAt, lastError: metricsLastError },
         });
