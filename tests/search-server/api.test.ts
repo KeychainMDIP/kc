@@ -21,8 +21,8 @@ const startIndexing = jest.fn<() => Promise<void>>();
 const beginStopping = jest.fn<() => void>();
 const stopIndexing = jest.fn<() => Promise<void>>();
 const resolveDID = jest.fn<(...args: any[]) => Promise<any>>();
-const sqliteCreate = jest.fn(async () => db);
-const postgresCreate = jest.fn(async () => db);
+const sqliteCreate = jest.fn(() => db);
+const postgresCreate = jest.fn((_url?: string) => db);
 let db: DIDsDbMemory;
 let config: Record<string, any>;
 let app: ReturnType<typeof express>;
@@ -40,8 +40,8 @@ jest.unstable_mockModule(require.resolve('express-rate-limit').replace(/\.cjs$/,
 jest.unstable_mockModule('@mdip/common/logger', () => ({ childLogger: () => logger }));
 jest.unstable_mockModule('@mdip/gatekeeper', () => ({ resolveDIDFromEvents: resolveDID }));
 jest.unstable_mockModule('@mdip/gatekeeper/client', () => ({ default: class { connect = connect; } }));
-jest.unstable_mockModule('./db/sqlite.js', () => ({ default: { create: sqliteCreate } }));
-jest.unstable_mockModule('./db/postgres.js', () => ({ default: { create: postgresCreate } }));
+jest.unstable_mockModule('./db/sqlite.js', () => ({ default: class { constructor() { sqliteCreate(); return db; } } }));
+jest.unstable_mockModule('./db/postgres.js', () => ({ default: class { constructor(url: string) { postgresCreate(url); return db; } } }));
 jest.unstable_mockModule('../../services/search-server/src/db/json-memory.ts', () => ({
     default: class { constructor() { return db; } },
 }));
@@ -629,5 +629,103 @@ describe('Search Server HTTP routes', () => {
         expect(disconnect).toHaveBeenCalledTimes(1);
         expect(process.exit).toHaveBeenCalledWith(1);
         expect(logger.error).toHaveBeenCalledWith({ error: expect.any(Error) }, '[search-server] Fatal error');
+    });
+});
+
+describe('Search Server guarded startup and readers', () => {
+    it('serves 503 until database initialization finishes', async () => {
+        let finish!: () => void;
+        jest.spyOn(db, 'connect').mockReturnValue(new Promise<void>(resolve => { finish = resolve; }));
+        const read = jest.spyOn(db, 'getDIDEvents');
+        await boot();
+        expect((await request('/ready')).status).toBe(503);
+        expect((await request(`/did/${schemaDid}`)).status).toBe(503);
+        expect(read).not.toHaveBeenCalled();
+        expect(startIndexing).not.toHaveBeenCalled();
+        finish();
+        await waitForCall(startIndexing as any);
+        expect((await request('/ready')).status).toBe(200);
+    });
+
+    it('keeps a superseded compatible reader ready and reports its database role', async () => {
+        (db as any).getRole = jest.fn(async () => 'reader');
+        await boot();
+        expect(await request('/ready')).toEqual({ status: 200, body: { ready: true } });
+        expect((await request('/status')).body.role).toBe('reader');
+    });
+
+    it('reports incompatible coordination as unavailable in readiness and normal read routes', async () => {
+        await boot();
+        const { SearchUnavailableError } = await import('../../services/search-server/src/db/coordination.ts');
+        (db as any).getRole = jest.fn(async () => { throw new SearchUnavailableError('schema unavailable'); });
+        jest.spyOn(db, 'findDIDBySuffix').mockRejectedValue(new SearchUnavailableError('schema unavailable'));
+        expect((await request('/ready')).status).toBe(503);
+        expect((await request('/status')).status).toBe(503);
+        expect((await request(`/did/${schemaDid}/events`)).status).toBe(503);
+    });
+
+    it('cancels database startup and waits for it before disconnecting', async () => {
+        config.db = 'postgres';
+        let started!: () => void;
+        const pending = new Promise<void>(resolve => { started = resolve; });
+        const disconnect = jest.spyOn(db, 'disconnect');
+        jest.spyOn(db, 'connect').mockImplementation((async (signal?: AbortSignal) => {
+            started();
+            await new Promise<void>((_resolve, reject) => {
+                signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+            });
+        }) as typeof db.connect);
+        await boot();
+        await pending;
+        const shutdown = process.listeners('SIGTERM').find(listener => !processListeners.SIGTERM.includes(listener))!;
+        await shutdown('SIGTERM');
+        expect(startIndexing).not.toHaveBeenCalled();
+        expect(disconnect).toHaveBeenCalledTimes(1);
+        expect(process.exit).toHaveBeenCalledWith(0);
+    });
+
+    it('does not bind or initialize storage when dependency setup finishes after shutdown', async () => {
+        let finish!: () => void;
+        connect.mockReturnValue(new Promise<void>(resolve => { finish = resolve; }));
+        const dbConnect = jest.spyOn(db, 'connect');
+        const listen = jest.spyOn(app, 'listen');
+        await import(serverEntry);
+        await waitForCall(connect as any);
+        const shutdown = process.listeners('SIGTERM').find(listener => !processListeners.SIGTERM.includes(listener))!;
+        await shutdown('SIGTERM');
+        finish();
+        await new Promise(resolve => setImmediate(resolve));
+        expect(listen).not.toHaveBeenCalled();
+        expect(dbConnect).not.toHaveBeenCalled();
+        expect(startIndexing).not.toHaveBeenCalled();
+    });
+
+    it('closes a late listener without initializing storage after shutdown', async () => {
+        let finishBinding!: () => Promise<void>;
+        const dbConnect = jest.spyOn(db, 'connect');
+        const disconnect = jest.spyOn(db, 'disconnect');
+        const listen = jest.spyOn(app, 'listen').mockImplementation(((_port: number, callback: () => void) => {
+            server = createServer(app);
+            finishBinding = () => new Promise<void>(resolve => {
+                server!.listen(0, '127.0.0.1', () => { callback(); resolve(); });
+            });
+            return server;
+        }) as typeof app.listen);
+
+        await import(serverEntry);
+        await waitForCall(listen as any);
+        const shutdown = process.listeners('SIGTERM').find(listener => !processListeners.SIGTERM.includes(listener))!;
+        await shutdown('SIGTERM');
+        expect(disconnect).toHaveBeenCalledTimes(1);
+
+        const closed = new Promise<void>(resolve => server!.once('close', () => resolve()));
+        await finishBinding();
+        await closed;
+
+        expect(server!.listening).toBe(false);
+        expect(dbConnect).not.toHaveBeenCalled();
+        expect(startIndexing).not.toHaveBeenCalled();
+        expect(process.exit).toHaveBeenCalledTimes(1);
+        expect(process.exit).toHaveBeenCalledWith(0);
     });
 });

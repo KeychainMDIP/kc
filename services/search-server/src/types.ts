@@ -200,6 +200,8 @@ export interface ApplyIndexPageResult {
 export interface DIDsDb {
     connect(): Promise<void>;
     disconnect(): Promise<void>;
+    withRead?<T>(work: () => Promise<T>): Promise<T>;
+    getRole?(): Promise<'writer' | 'reader'>;
 
     loadSyncState(key: string): Promise<string | null>;
     saveSyncState(key: string, value: string | null): Promise<void>;

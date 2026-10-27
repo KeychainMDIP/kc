@@ -1,4 +1,9 @@
 import type { GatekeeperEvent } from '../types.js';
+import type { DIDsDb } from '../types.js';
+
+export function readDatabase<T>(db: DIDsDb, work: () => Promise<T>): Promise<T> {
+    return db.withRead ? db.withRead(work) : work();
+}
 
 export function copyJSON<T>(value: T): T {
     return JSON.parse(JSON.stringify(value)) as T;

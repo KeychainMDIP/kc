@@ -1,3 +1,5 @@
+import { IndexOwnershipLostError } from '../../services/search-server/src/db/coordination.ts';
+import { INDEX_SYNC_STATE_KEYS } from '../../services/search-server/src/DidIndexer.ts';
 import { jest } from '@jest/globals';
 import { setLogger } from '../../packages/common/src/logger.ts';
 import DidIndexer, { type GatekeeperIndexClient } from '../../services/search-server/src/DidIndexer.ts';
@@ -555,4 +557,56 @@ describe('DidIndexer gatekeeper read boundary', () => {
         expect(await lookup('stored', 20)).toStrictEqual(storedBlock);
         expect(await lookup('stored', 'stored-a')).toStrictEqual(storedBlock);
     });
+});
+
+
+describe('DidIndexer ownership handoff', () => {
+    it.each(['initial', 'error-save', 'metrics', 'metrics-error-save'])(
+        'yields without installing another timer when ownership is lost at %s', async stage => {
+            const db = new DIDsDbMemory();
+            const interval = jest.spyOn(global, 'setInterval');
+            const original = db.saveSyncState.bind(db);
+            if (stage.startsWith('metrics')) {
+                await original(INDEX_SYNC_STATE_KEYS.snapshotComplete, 'true');
+                await original(INDEX_SYNC_STATE_KEYS.changesCursor, '6');
+                await original(INDEX_SYNC_STATE_KEYS.metricsLastRebuiltAt, '2020-01-01T00:00:00.000Z');
+                if (stage === 'metrics') {
+                    jest.spyOn(db, 'replaceNetworkMetricSnapshots').mockRejectedValue(new IndexOwnershipLostError());
+                } else {
+                    jest.spyOn(db, 'iterateDIDEventHistories').mockImplementation(async function* () {
+                        yield* [];
+                        throw new Error('metric scan failed');
+                    });
+                }
+            }
+            const save = jest.spyOn(db, 'saveSyncState').mockImplementation(async (key, value) => {
+                if ((stage === 'initial' && key === INDEX_SYNC_STATE_KEYS.lastSyncStartedAt)
+                    || (stage === 'error-save' && key === INDEX_SYNC_STATE_KEYS.lastSyncError)
+                    || (stage === 'metrics-error-save' && key === INDEX_SYNC_STATE_KEYS.metricsLastError)) {
+                    throw new IndexOwnershipLostError();
+                }
+                await original(key, value);
+            });
+            const gatekeeper = {
+                isReady: jest.fn(async () => true),
+                exportIndex: jest.fn(async () => {
+                    if (stage === 'error-save') throw new Error('export failed');
+                    return createChangesResponse();
+                }),
+            };
+            const indexer = new DidIndexer(gatekeeper, db, {
+                intervalMs: 1000, metricsRefreshIntervalMs: 1,
+            });
+            try {
+                await indexer.startIndexing();
+                expect(interval).not.toHaveBeenCalled();
+                expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('Continuing as an HTTP reader'));
+                if (stage === 'initial') expect(save).toHaveBeenCalledTimes(1);
+                await indexer.startIndexing();
+                expect(gatekeeper.isReady).toHaveBeenCalledTimes(1);
+            } finally {
+                await indexer.stopIndexing();
+                jest.restoreAllMocks();
+            }
+        });
 });

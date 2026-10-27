@@ -71,12 +71,39 @@ a release that changes its schema.
 
 PostgreSQL startup installs the `pg_trgm` extension and creates a concurrent
 GIN index for document text searches when it is missing. The first startup on
-an existing database waits for that index build to finish without blocking
-normal table writes. This index addition does not require a database reset.
+an existing database waits for that index build to finish while compatible HTTP readers remain available. Index writes wait for
+startup to complete. This index addition does not require a database reset.
 Concurrent Search Server startups serialize this setup through PostgreSQL.
 Allow additional database storage and some indexing work when DID documents
 are synchronized. The PostgreSQL user must be permitted to create the extension
 and index.
+
+### Multiple Search Server instances
+
+Multiple Search Server processes can share one PostgreSQL Search database.
+Each successful startup takes over indexing. PostgreSQL serializes the handoff
+with active writes and checks the process's ownership on every later mutation.
+The previous process stops indexing and continues serving HTTP reads. Handoff
+preserves indexed data and synchronization cursors.
+
+All instances must use compatible versions, the same Gatekeeper index feed and
+compatible network-metric scope. Shared SQLite files are not supported for this
+setup. PostgreSQL must be reached directly or through a proxy with session
+pooling. Transaction and statement pooling do not preserve the session locks
+used during startup and reads.
+
+Only one instance indexes. Readers do not automatically promote themselves if
+the writer exits. Restart the writer through its supervisor, or restart a
+compatible reader to take over. Startup and schema-lock contention have bounded
+waits. Requests temporarily unable to access a compatible schema return 503.
+An incompatible schema is rejected without changing its data or ownership.
+Schema changes still require a coordinated rebuild with all incompatible
+instances stopped. Manual table drops while processes are running are unsafe.
+
+`GET /api/v1/status` adds `role`, either `"writer"` or `"reader"`, derived from
+the shared database. Healthy readers remain ready. `/api/v1/ready` returns 503
+while initialization is incomplete or the PostgreSQL database is unavailable
+or incompatible. Readiness does not mean indexing has caught up.
 
 ### Endpoints
 
@@ -91,11 +118,11 @@ authoritative DIDs from another network remain excluded. This option does not
 reclassify stored DIDs and does not apply to historical metric snapshots.
 
 ### `GET /api/v1/ready`
-- **Description**: Returns `{ "ready": true }` once the HTTP service is available.
+- **Description**: Returns `{ "ready": true }` when initialization is complete and the database is usable. Returns 503 while unavailable.
 
 ### `GET /api/v1/status`
 - **Description**: Returns the database adapter, index synchronization state,
-  and the last network-metrics rebuild time or error.
+  the per-instance writer/reader role, and the last network-metrics rebuild time or error.
 
 ### `GET /api/v1/did/:did`
 - **Description**: Returns the DID Document

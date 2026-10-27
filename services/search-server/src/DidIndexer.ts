@@ -17,6 +17,7 @@ import {
 } from "./projections.js";
 import { buildNetworkMetricSnapshots } from './network-metrics.js';
 import { canonicalDID, getDIDSuffix } from './did-aliases.js';
+import { IndexOwnershipLostError } from './db/coordination.js';
 
 export interface GatekeeperIndexClient {
     isReady(): Promise<boolean>;
@@ -181,6 +182,7 @@ export default class DidIndexer {
                 `Stored ${stats.storedBlocks} block(s).`
             );
         } catch (err) {
+            if (this.yieldIfOwnershipLost(err)) return;
             if (this.stopped && isCancellationError(err)) {
                 return;
             }
@@ -189,6 +191,7 @@ export default class DidIndexer {
                 await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.lastSyncError, String(err));
             }
             catch (saveError) {
+                if (this.yieldIfOwnershipLost(saveError)) return;
                 this.log.warn({ error: saveError }, "Could not save sync error state");
             }
 
@@ -441,13 +444,22 @@ export default class DidIndexer {
             }, 'Rebuilt network metrics');
         }
         catch (error) {
+            if (this.yieldIfOwnershipLost(error)) return;
             try {
                 await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.metricsLastError, String(error));
             }
             catch (saveError) {
+                if (this.yieldIfOwnershipLost(saveError)) return;
                 this.log.warn({ error: saveError }, 'Could not save metrics error state');
             }
             this.log.error({ error }, 'Network metrics rebuild error');
         }
+    }
+
+    private yieldIfOwnershipLost(error: unknown): boolean {
+        if (!(error instanceof IndexOwnershipLostError)) return false;
+        this.beginStopping();
+        this.log.info('Indexing handed over to another Search Server. Continuing as an HTTP reader');
+        return true;
     }
 }

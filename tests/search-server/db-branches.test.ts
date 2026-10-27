@@ -1,3 +1,4 @@
+import { mockPostgresPool } from './postgres-mock.ts';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -446,7 +447,7 @@ describe('search DB branch behavior', () => {
 
         class TestPostgres extends Postgres {
             protected createPool(): any {
-                return mockPool;
+                return mockPostgresPool(this, mockPool);
             }
         }
 
@@ -525,7 +526,7 @@ describe('search DB branch behavior', () => {
                 text.includes('CREATE INDEX') || text.includes('pg_advisory_') ||
                 text.includes('FROM pg_class idx') ||
                 text === 'ANALYZE did_docs' ||
-                text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK') {
+                text.startsWith('BEGIN') || text === 'COMMIT' || text === 'ROLLBACK') {
                 return { rowCount: 0, rows: [] };
             }
 
@@ -782,7 +783,7 @@ describe('search DB branch behavior', () => {
 
         class TestPostgres extends Postgres {
             protected createPool(): any {
-                return mockPool;
+                return mockPostgresPool(this, mockPool);
             }
         }
 
@@ -933,7 +934,7 @@ describe('search DB branch behavior', () => {
             connect: jest.fn(async () => ({ query: clientQuery, release: jest.fn() })),
         };
         const db = new Postgres('postgresql://example');
-        (db as any).pool = mockPool;
+        (db as any).pool = mockPostgresPool(db, mockPool);
         const didA = 'did:test:batch-a';
         const didB = 'did:test:batch-b';
         const events = (did: string, count: number) => Array.from({ length: count }, (_, index) => ({
@@ -971,10 +972,10 @@ describe('search DB branch behavior', () => {
         const Postgres = (await import('../../services/search-server/src/db/postgres.ts')).default;
         const clientQuery = jest.fn(async (_sql: string, _params?: unknown[]) => ({ rowCount: 0, rows: [] }));
         const db = new Postgres('postgresql://example');
-        (db as any).pool = {
+        (db as any).pool = mockPostgresPool(db, {
             query: jest.fn(async () => ({ rowCount: 0, rows: [] })),
             connect: jest.fn(async () => ({ query: clientQuery, release: jest.fn() })),
-        };
+        });
         const holderDid = 'did:test:holder';
 
         await db.applyIndexPage({
