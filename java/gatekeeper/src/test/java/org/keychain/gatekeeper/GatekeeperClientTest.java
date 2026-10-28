@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import okhttp3.mockwebserver.MockResponse;
@@ -37,6 +38,7 @@ class GatekeeperClientTest {
     private MockWebServer server;
     private GatekeeperClient client;
     private ObjectMapper mapper;
+    private final List<GatekeeperClient> clients = new ArrayList<>();
 
     @BeforeEach
     void setup() throws Exception {
@@ -44,12 +46,13 @@ class GatekeeperClientTest {
         server.start();
         GatekeeperClientOptions options = new GatekeeperClientOptions();
         options.baseUrl = server.url("/").toString().replaceAll("/$", "");
-        client = new GatekeeperClient(options);
+        client = createClient(options);
         mapper = new ObjectMapper();
     }
 
     @AfterEach
     void teardown() throws Exception {
+        clients.forEach(GatekeeperClient::close);
         server.shutdown();
     }
 
@@ -157,7 +160,7 @@ class GatekeeperClientTest {
 
         GatekeeperClientOptions options = new GatekeeperClientOptions();
         options.baseUrl = server.url("/api/v1/").toString();
-        GatekeeperClient localClient = new GatekeeperClient(options);
+        GatekeeperClient localClient = createClient(options);
 
         localClient.getBlock("local");
         var recorded = server.takeRequest();
@@ -374,7 +377,7 @@ class GatekeeperClientTest {
         options.baseUrl = server.url("/").toString();
         options.headerName = "Authorization";
         options.headerValue = "Bearer original";
-        GatekeeperClient authenticated = new GatekeeperClient(options);
+        GatekeeperClient authenticated = createClient(options);
         authenticated.addCustomHeader("X-Tenant", "tenant");
         authenticated.addCustomHeader("authorization", "Bearer replacement");
         server.enqueue(new MockResponse().setBody("[]"));
@@ -427,6 +430,12 @@ class GatekeeperClientTest {
             assertNotNull(input);
             return mapper.readTree(input).get(name);
         }
+    }
+
+    private GatekeeperClient createClient(GatekeeperClientOptions options) {
+        GatekeeperClient created = new GatekeeperClient(options);
+        clients.add(created);
+        return created;
     }
 
     private RecordedRequest takeRequest() throws InterruptedException {

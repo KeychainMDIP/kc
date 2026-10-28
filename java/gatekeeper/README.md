@@ -6,6 +6,7 @@ HTTP client for the Gatekeeper REST API.
 
 ```java
 import org.keychain.gatekeeper.GatekeeperClient;
+import org.keychain.gatekeeper.GatekeeperClientCancellation;
 import org.keychain.gatekeeper.GatekeeperClientOptions;
 import org.keychain.gatekeeper.model.IndexExportRequest;
 import org.keychain.gatekeeper.model.IndexExportResponse;
@@ -17,6 +18,45 @@ options.baseUrl = "http://localhost:4224";
 GatekeeperClient gatekeeper = new GatekeeperClient(options);
 MdipDocument doc = gatekeeper.resolveDID("did:test:example", null);
 ```
+
+## Readiness and lifecycle
+
+Set `waitUntilReady` to wait during construction. `maxRetries` counts retries
+after the initial attempt, and zero means unlimited retries. Exhaustion throws
+instead of returning an unready client. `intervalSeconds` defaults to five and
+can be zero for immediate retries.
+
+Readiness retries connection failures, timeouts and HTTP 408, 425, 429, 500,
+502, 503 and 504. Other HTTP errors, malformed readiness responses and TLS
+failures propagate. DNS lookup failures also propagate because Java does not
+reliably distinguish temporary lookup failures from an unknown hostname.
+Application-level retries are limited to readiness. Existing HTTP redirect
+handling is retained.
+
+`callTimeout` defaults to 60 seconds and bounds a complete HTTP call, including
+reading the response body. It must be at least one millisecond and no more than
+2,147,483,647 milliseconds. The existing `connectTimeout` and `readTimeout`
+controls default to 10 and 30 seconds. A call deadline does not limit the total
+readiness wait across retries.
+
+Use `close()` or try-with-resources to cancel active calls, wake readiness waits
+and release the client's HTTP resources. Closing a client is permanent.
+For cancellation before the constructor returns, supply a handle in the options:
+
+```java
+GatekeeperClientCancellation cancellation = new GatekeeperClientCancellation();
+options.cancellation = cancellation;
+options.waitUntilReady = true;
+try (GatekeeperClient client = new GatekeeperClient(options)) {
+    // Use the client here.
+}
+```
+
+Another thread can call `cancellation.cancel()` during startup or shutdown.
+Cancellation throws `CancellationException` and affects all clients using that
+handle. Closing one client does not cancel other clients sharing the handle.
+Interrupting a readiness delay fails the wait and preserves interrupt status.
+Cancelling or timing out does not undo an operation the server may have accepted.
 
 ## Index export
 
