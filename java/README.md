@@ -13,6 +13,33 @@ Compatibility and runtime
 - Dependencies are pure-Java artifacts (OkHttp, Jackson, Bouncy Castle, Tink, bitcoinj).
 - Gatekeeper default base URL is `http://localhost:4224` (see `GatekeeperClientOptions`).
 
+## Tests
+
+Install JDK 11 and set `JAVA_HOME` to its installation directory if it is not
+your default JDK. Gradle uses the Java 11 toolchain without requiring a specific
+installation path. The Java tests workflow runs the offline suite on pushes and
+pull requests that change Java code or the workflow.
+
+From `java/`, run:
+
+```bash
+./gradlew test
+```
+
+The default suite includes the operation and encrypted-wallet compatibility
+vectors and does not require a running Gatekeeper. Unsupported Gatekeeper calls
+in offline Keymaster tests fail immediately. Tests tagged `live` are excluded.
+
+To run the live Keymaster tests, explicitly point them at an isolated test
+Gatekeeper with the local registry enabled:
+
+```bash
+KC_GATEKEEPER_URL=http://localhost:4224 ./gradlew :keymaster:liveTest
+```
+
+Live tests publish operations and remove DID test data. Do not point them at a
+shared or production node.
+
 Quickstart (Gradle)
 ```gradle
 dependencies {
