@@ -7,11 +7,6 @@ on:
     paths:
       - 'java/**'
       - '.github/workflows/java-test.yml'
-  pull_request:
-    paths:
-      - 'java/**'
-      - '.github/workflows/java-test.yml'
-
 permissions:
   contents: read
 

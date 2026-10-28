@@ -17,8 +17,8 @@ Compatibility and runtime
 
 Install JDK 11 and set `JAVA_HOME` to its installation directory if it is not
 your default JDK. Gradle uses the Java 11 toolchain without requiring a specific
-installation path. The Java tests workflow runs the offline suite on pushes and
-pull requests that change Java code or the workflow.
+installation path. The Java tests workflow runs the offline suite on pushes
+that change Java code or the workflow.
 
 From `java/`, run:
 
