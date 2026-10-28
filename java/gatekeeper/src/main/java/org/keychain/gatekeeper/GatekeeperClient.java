@@ -151,23 +151,27 @@ public class GatekeeperClient implements GatekeeperInterface, AutoCloseable {
     }
 
     public boolean isReady() {
-        HttpUrl url = baseUrl.newBuilder()
-            .addPathSegment("ready")
-            .build();
         try {
-            JsonNode ready = executeRequest(new Request.Builder().url(url).get().build(), response ->
-                mapper.readerFor(JsonNode.class).with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
-                    .readValue(response.body() != null ? response.body().string() : ""));
-            if (ready == null || !ready.isBoolean()) {
-                throw new IllegalStateException("Gatekeeper readiness response must be a boolean");
-            }
-            return ready.booleanValue();
+            return probeReadiness();
         } catch (RuntimeException e) {
             if (isRetryableFailure(e)) {
                 return false;
             }
             throw e;
         }
+    }
+
+    private boolean probeReadiness() {
+        HttpUrl url = baseUrl.newBuilder()
+            .addPathSegment("ready")
+            .build();
+        JsonNode ready = executeRequest(new Request.Builder().url(url).get().build(), response ->
+            mapper.readerFor(JsonNode.class).with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+                .readValue(response.body() != null ? response.body().string() : ""));
+        if (ready == null || !ready.isBoolean()) {
+            throw new IllegalStateException("Gatekeeper readiness response must be a boolean");
+        }
+        return ready.booleanValue();
     }
 
     public void waitUntilReady(GatekeeperClientOptions options) {
@@ -195,7 +199,18 @@ public class GatekeeperClient implements GatekeeperInterface, AutoCloseable {
         while (true) {
             checkOpen();
             attempts += 1;
-            if (isReady()) {
+            RuntimeException lastFailure = null;
+            boolean ready;
+            try {
+                ready = probeReadiness();
+            } catch (RuntimeException e) {
+                if (!isRetryableFailure(e)) {
+                    throw e;
+                }
+                lastFailure = e;
+                ready = false;
+            }
+            if (ready) {
                 checkOpen();
                 if (chatty) {
                     System.out.println("Gatekeeper service is ready!");
@@ -208,7 +223,7 @@ public class GatekeeperClient implements GatekeeperInterface, AutoCloseable {
             }
 
             if (maxRetries > 0 && attempts > maxRetries) {
-                throw new IllegalStateException("Gatekeeper did not become ready after " + attempts + " attempts");
+                throw new IllegalStateException("Gatekeeper did not become ready after " + attempts + " attempts", lastFailure);
             }
             if (!chatty && becomeChattyAfter > 0 && attempts > becomeChattyAfter) {
                 System.out.println("Connecting to gatekeeper at " + baseUrl);

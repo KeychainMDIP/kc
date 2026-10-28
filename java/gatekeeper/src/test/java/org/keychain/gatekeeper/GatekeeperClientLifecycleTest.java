@@ -142,6 +142,19 @@ class GatekeeperClientLifecycleTest {
         assertEquals(2, server.getRequestCount());
     }
 
+    @Test
+    void readinessExhaustionRetainsTheLastTransportFailure() {
+        server.enqueue(new MockResponse().setResponseCode(503));
+        server.enqueue(new MockResponse().setResponseCode(503));
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+            () -> new GatekeeperClient(waitOptions()));
+
+        GatekeeperClientException cause = assertInstanceOf(GatekeeperClientException.class, failure.getCause());
+        assertEquals(503, cause.statusCode);
+        assertEquals(2, server.getRequestCount());
+    }
+
     @ParameterizedTest
     @MethodSource("invalidDeadlines")
     void invalidDeadlinesFailBeforeRequests(Duration deadline) {
