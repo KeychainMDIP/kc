@@ -1969,7 +1969,7 @@ export default class Keymaster implements KeymasterInterface {
         const msgHash = Buffer.from(digest).toString('hex');
         const baseSignature = this.cipher.signHash(msgHash, keypair.privateJwk, {recoverable:true});
         const issuerAddress = this.jwkToEthereumAddress(keypair.publicJwk);
-        const recoveryByte = baseSignature.startsWith('00') ? '27' : '28';
+        const recoveryByte = baseSignature.startsWith('00') ? '1B' : '1C';
         const signature = `${baseSignature.slice(2)}${recoveryByte}`;
 
         return {
