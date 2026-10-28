@@ -8,7 +8,13 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.Proxy;
+import java.net.ProxySelector;
 import java.net.ServerSocket;
+import java.net.SocketAddress;
+import java.net.URI;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -192,6 +198,23 @@ class GatekeeperClientLifecycleTest {
         assertFalse(client.isReady());
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void fallsBackToAnotherRouteBeforeSending(boolean write) throws Exception {
+        withUnavailableProxy(true, () -> {
+            server.enqueue(new MockResponse().setBody(write ? "\"did:test:fallback\"" : "true"));
+            GatekeeperClient client = client(options());
+            if (write) {
+                Operation operation = new Operation();
+                operation.type = "create";
+                assertEquals("did:test:fallback", client.createDID(operation));
+            } else {
+                assertTrue(client.isReady());
+            }
+            assertEquals(1, server.getRequestCount());
+        });
+    }
+
     @Test
     void tlsHandshakeFailuresArePermanent() throws Exception {
         SSLContext context = SSLContext.getInstance("TLS");
@@ -204,6 +227,19 @@ class GatekeeperClientLifecycleTest {
             () -> new GatekeeperClient(options));
 
         assertInstanceOf(SSLException.class, failure.getCause());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void tlsFailuresRemainPermanentAcrossConnectionFallback(boolean unavailableFirst) throws Exception {
+        SSLContext context = SSLContext.getInstance("TLS");
+        context.init(new KeyManager[0], null, null);
+        server.useHttps(context.getSocketFactory(), false);
+        withUnavailableProxy(unavailableFirst, () -> {
+            GatekeeperClient client = client(options());
+
+            assertThrows(IllegalStateException.class, client::isReady);
+        });
     }
 
     @Test
@@ -224,16 +260,15 @@ class GatekeeperClientLifecycleTest {
         server.enqueue(new MockResponse().setBody("true"));
         GatekeeperClientOptions options = waitOptions();
         options.callTimeout = Duration.ofMillis(500);
-        // A cancelled socket may need connection recovery before the next request reaches the server.
-        options.maxRetries = 3;
         try (GatekeeperClient client = new GatekeeperClient(options)) {
             assertEquals(2, server.getRequestCount());
         }
     }
 
-    @Test
-    void failedWritesAreNotAutomaticallyRetried() {
-        server.enqueue(new MockResponse().setResponseCode(503).setHeader("Retry-After", "0"));
+    @ParameterizedTest
+    @ValueSource(ints = {408, 503})
+    void failedWritesAreNotAutomaticallyRetried(int status) {
+        server.enqueue(new MockResponse().setResponseCode(status).setHeader("Retry-After", "0"));
         server.enqueue(new MockResponse().setBody("\"did:test:unexpected-retry\""));
         GatekeeperClient client = client(options());
         Operation operation = new Operation();
@@ -242,7 +277,20 @@ class GatekeeperClientLifecycleTest {
         GatekeeperClientException failure = assertThrows(GatekeeperClientException.class,
             () -> client.createDID(operation));
 
-        assertEquals(503, failure.statusCode);
+        assertEquals(status, failure.statusCode);
+        assertEquals(1, server.getRequestCount());
+    }
+
+    @Test
+    void disconnectedWriteAcknowledgementsAreNotAutomaticallyRetried() {
+        server.enqueue(new MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST));
+        server.enqueue(new MockResponse().setBody("\"did:test:unexpected-retry\""));
+        GatekeeperClient client = client(options());
+        Operation operation = new Operation();
+        operation.type = "create";
+
+        assertThrows(IllegalStateException.class, () -> client.createDID(operation));
+
         assertEquals(1, server.getRequestCount());
     }
 
@@ -390,6 +438,29 @@ class GatekeeperClientLifecycleTest {
         GatekeeperClientOptions options = new GatekeeperClientOptions();
         options.baseUrl = server.url("/").toString();
         return options;
+    }
+
+    private void withUnavailableProxy(boolean unavailableFirst, Runnable action) throws Exception {
+        ProxySelector previous = ProxySelector.getDefault();
+        InetSocketAddress unavailable;
+        try (ServerSocket closedEndpoint = new ServerSocket(0)) {
+            unavailable = new InetSocketAddress("127.0.0.1", closedEndpoint.getLocalPort());
+        }
+        ProxySelector.setDefault(new ProxySelector() {
+            @Override
+            public List<Proxy> select(URI uri) {
+                Proxy proxy = new Proxy(Proxy.Type.HTTP, unavailable);
+                return unavailableFirst ? List.of(proxy, Proxy.NO_PROXY) : List.of(Proxy.NO_PROXY, proxy);
+            }
+
+            @Override
+            public void connectFailed(URI uri, SocketAddress address, IOException error) {}
+        });
+        try {
+            action.run();
+        } finally {
+            ProxySelector.setDefault(previous);
+        }
     }
 
     private GatekeeperClientOptions waitOptions() {

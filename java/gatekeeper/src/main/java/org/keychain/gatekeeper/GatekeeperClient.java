@@ -101,11 +101,17 @@ public class GatekeeperClient implements GatekeeperInterface, AutoCloseable {
             .connectTimeout(connectTimeout)
             .readTimeout(readTimeout)
             .callTimeout(callTimeoutMillis, TimeUnit.MILLISECONDS)
-            .retryOnConnectionFailure(false)
+            .retryOnConnectionFailure(true)
             .addNetworkInterceptor(chain -> {
-                Response response = chain.proceed(chain.request());
-                // Keep 503 retries in the readiness loop without bypassing normal response decoding.
-                return response.code() == 503
+                Response response;
+                try {
+                    response = chain.proceed(chain.request());
+                } catch (IOException e) {
+                    // Allow connection fallback, but never replay a possibly transmitted request.
+                    throw new IllegalStateException("Gatekeeper request failed", e);
+                }
+                // Keep HTTP retries in the readiness loop without bypassing normal response decoding.
+                return response.code() == 408 || response.code() == 503
                     ? response.newBuilder().header("Retry-After", "1").build() : response;
             })
             .build();
@@ -591,6 +597,11 @@ public class GatekeeperClient implements GatekeeperInterface, AutoCloseable {
             return result;
         } catch (RuntimeException e) {
             checkOpen();
+            if (!(e instanceof GatekeeperClientException) && e.getCause() instanceof IOException && call.isCanceled()) {
+                InterruptedIOException timeout = new InterruptedIOException("Gatekeeper call timed out");
+                timeout.initCause(e.getCause());
+                throw new IllegalStateException("Gatekeeper request failed", timeout);
+            }
             throw e;
         } catch (IOException e) {
             synchronized (lifecycleLock) {
@@ -655,7 +666,14 @@ public class GatekeeperClient implements GatekeeperInterface, AutoCloseable {
             return false;
         }
         boolean retryable = false;
-        for (Throwable cause = error.getCause(); cause != null; cause = cause.getCause()) {
+        List<Throwable> failures = new ArrayList<>();
+        Set<Throwable> seen = new HashSet<>();
+        failures.add(error);
+        for (int i = 0; i < failures.size(); i++) {
+            Throwable cause = failures.get(i);
+            if (cause == null || !seen.add(cause)) {
+                continue;
+            }
             // shortcut: DNS failures stay permanent until a resolver exposes temporary failure codes.
             if (cause instanceof JsonProcessingException || cause instanceof SSLException
                 || cause instanceof ProtocolException || cause instanceof UnknownHostException) {
@@ -663,6 +681,10 @@ public class GatekeeperClient implements GatekeeperInterface, AutoCloseable {
             }
             if (cause instanceof SocketException || cause instanceof InterruptedIOException || cause instanceof EOFException) {
                 retryable = true;
+            }
+            failures.add(cause.getCause());
+            for (Throwable suppressed : cause.getSuppressed()) {
+                failures.add(suppressed);
             }
         }
         return retryable;

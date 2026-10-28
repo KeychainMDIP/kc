@@ -31,7 +31,9 @@ Readiness retries connection failures, timeouts and HTTP 408, 425, 429, 500,
 failures propagate. DNS lookup failures also propagate because Java does not
 reliably distinguish temporary lookup failures from an unknown hostname.
 Application-level retries are limited to readiness. Existing HTTP redirect
-handling is retained.
+handling is retained. The HTTP client can try another connection route before
+sending a request. It does not automatically replay requests after a transmission
+failure or an HTTP 408/503 response.
 
 `callTimeout` defaults to 60 seconds and bounds a complete HTTP call, including
 reading the response body. It must be at least one millisecond and no more than
