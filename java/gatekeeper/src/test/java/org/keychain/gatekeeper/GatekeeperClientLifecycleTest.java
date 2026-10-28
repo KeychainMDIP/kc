@@ -211,6 +211,8 @@ class GatekeeperClientLifecycleTest {
         server.enqueue(new MockResponse().setBody("true"));
         GatekeeperClientOptions options = waitOptions();
         options.callTimeout = Duration.ofMillis(500);
+        // A cancelled socket may need connection recovery before the next request reaches the server.
+        options.maxRetries = 3;
         try (GatekeeperClient client = new GatekeeperClient(options)) {
             assertEquals(2, server.getRequestCount());
         }
