@@ -102,7 +102,17 @@ export interface VerifiableCredential {
     };
     credential?: Record<string, unknown> | null;
     signature?: Signature;
-    evmSignature?: Signature;
+}
+
+export interface CreateEvmCredentialOptions {
+
+}
+
+export interface EvmCredentialEnvelope {
+    credential: Partial<VerifiableCredential>;
+    issuerAddress: string;
+    compressedCredential: string;
+    signature: string;
 }
 
 export interface IssueCredentialsOptions extends EncryptOptions {

@@ -66,6 +66,12 @@ console.log(`bound: ${JSON.stringify(bound, null, 2)}`)
 const vcdid = await keymaster.issueCredential(bound);
 console.log(`vcdid: ${vcdid}`);
 
+
 keymaster.setCurrentId('alice')
 const vc = await keymaster.getCredential(vcdid);
 console.log(`vc: ${JSON.stringify(vc, null, 2)}`)
+
+keymaster.setCurrentId('bob')
+const evmCredential = await keymaster.createEvmCredential(vc, {});
+console.log(`evmCredential: ${JSON.stringify(evmCredential, null, 2)}`)
+

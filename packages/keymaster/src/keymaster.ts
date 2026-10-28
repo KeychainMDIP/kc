@@ -19,12 +19,14 @@ import {
     ChallengeResponse,
     CheckWalletResult,
     CreateAssetOptions,
+    CreateEvmCredentialOptions,
     EncryptedMessage,
     FileAssetOptions,
     CreateResponseOptions,
     DmailItem,
     DmailMessage,
     EncryptOptions,
+    EvmCredentialEnvelope,
     FileAsset,
     FixWalletResult,
     Group,
@@ -1886,22 +1888,25 @@ export default class Keymaster implements KeymasterInterface {
         return publicKeyToAddress(uncompressedPublicKey);
     }
 
-    async addEvmCredentialSignature(
+    async createEvmCredential(
         credential: Partial<VerifiableCredential>,
-        controller: string
-    ): Promise<Partial<VerifiableCredential>> {
-        // Fetches current ID if name is missing
-        const id = await this.fetchIdInfo(controller);
+        _: CreateEvmCredentialOptions = {}
+    ): Promise<EvmCredentialEnvelope> {
+        const id = await this.fetchIdInfo();
         const keypair = await this.fetchKeyPair(id.did);
+
+        const unsigned = { ...credential };
+        delete unsigned.signature;
+        delete unsigned['issuer'] // recovered from sig
 
         const contextTable = new Map<string, number>([
             ["https://www.w3.org/ns/credentials/v2", 16],
             ["https://www.w3.org/ns/credentials/examples/v2",17],
-            [(credential['@context']![2]) as string, 256]
+            [(unsigned['@context']![2]) as string, 256]
         ])
 
         const issuerTable = new Map<string, number>([
-            [controller, 67]
+            [id.did, 67]
         ])
 
         const typeTable = new Map([
@@ -1950,35 +1955,28 @@ export default class Keymaster implements KeymasterInterface {
 
             throw new InvalidParameterError('url'); 
         }
-        console.log(`credential:${JSON.stringify(credential, null, 2)}`)
-        const credCopy = {...credential}
-        delete credCopy['signature']
-        delete credCopy['issuer'] // recovered from sig
-        console.log(`credential:${JSON.stringify(credCopy, null, 2)}`)
-    
+
         const cborldBytes = await encode({
-            jsonldDocument : credCopy,
+            jsonldDocument : unsigned,
             documentLoader,            
             registryEntryId: 9999,
             typeTableLoader: async (_) => { return typeTable }
         });
 
-        console.log(`cbor: ${Buffer.from(cborldBytes).toString('hex')}`)
+        const compressedCredential = Buffer.from(cborldBytes).toString('hex');
 
         const digest = keccak256(cborldBytes, 'bytes');
         const msgHash = Buffer.from(digest).toString('hex');
-        const signature = this.cipher.signHash(msgHash, keypair.privateJwk, {recoverable:true});
-
-        console.log(`address: ${this.jwkToEthereumAddress(keypair.publicJwk)}`)
+        const baseSignature = this.cipher.signHash(msgHash, keypair.privateJwk, {recoverable:true});
+        const issuerAddress = this.jwkToEthereumAddress(keypair.publicJwk);
+        const recoveryByte = baseSignature.startsWith('00') ? '27' : '28';
+        const signature = `${baseSignature.slice(2)}${recoveryByte}`;
 
         return {
-            ...credential,
-            evmSignature: {
-                signer: id.did,
-                signed: new Date().toISOString(),
-                hash: msgHash,
-                value: signature,
-            }
+            credential,
+            issuerAddress,
+            compressedCredential,
+            signature
         };
     }
 
@@ -1998,14 +1996,10 @@ export default class Keymaster implements KeymasterInterface {
 
         const unsigned = { ...credential };
         delete unsigned.signature;
-        const firstSigned = await this.addSignature(unsigned, id.did);
-        delete unsigned.evmSignature;
-        const signed = await this.addEvmCredentialSignature(firstSigned, id.did)
+        const signed = await this.addSignature(unsigned, id.did);
         if (!this.isVerifiableCredential(signed)) {
             throw new InvalidParameterError('credential');
         }
-
-        console.log(JSON.stringify(signed, null, 2));
 
         return this.encryptJSONFor(signed, credential.credentialSubject!.id, id.did, { ...options, includeHash: true });
     }
