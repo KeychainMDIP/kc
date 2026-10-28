@@ -1,0 +1,79 @@
+{
+  "importBatch": {
+    "queued": 1,
+    "processed": 0,
+    "rejected": 1,
+    "total": 2,
+    "rejectedIndices": [1]
+  },
+  "processEvents": {
+    "added": 1,
+    "merged": 0,
+    "rejected": 1,
+    "pending": 0,
+    "acceptedHashes": ["accepted-hash"],
+    "acceptedEvents": [{
+      "registry": "hyperswarm",
+      "time": "2026-10-28T09:00:00.000Z",
+      "ordinal": [1793178000000, 0],
+      "did": "did:test:example",
+      "opid": "operation-cid",
+      "operation": {
+        "type": "create",
+        "created": "2026-10-28T09:00:00.000Z",
+        "mdip": {"version": 1, "type": "agent", "registry": "hyperswarm"},
+        "publicJwk": {"kty": "EC", "crv": "secp256k1", "x": "public-x", "y": "public-y"},
+        "signature": {"signed": "2026-10-28T09:00:00.000Z", "hash": "accepted-hash", "value": "signature"}
+      }
+    }],
+    "rejectedOperations": [{
+      "type": "delete",
+      "did": "did:test:rejected",
+      "previd": "previous-cid",
+      "signature": {"signer": "did:test:issuer", "signed": "2026-10-28T09:00:00.000Z", "hash": "rejected-hash", "value": "invalid"}
+    }]
+  },
+  "snapshot": {
+    "mode": "snapshot",
+    "indexEpoch": "epoch-one",
+    "cursor": "opaque snapshot / ?#%+ cursor",
+    "checkpointCursor": "opaque checkpoint / ?#%+ cursor",
+    "hasMore": true,
+    "dids": [{"did": "did:test:example", "events": [], "removed": false}],
+    "blocks": [{"registry": "Signet", "block": {"height": 0, "hash": "genesis", "time": 0}}]
+  },
+  "changes": {
+    "mode": "changes",
+    "indexEpoch": "epoch-two",
+    "cursor": null,
+    "checkpointCursor": null,
+    "hasMore": false,
+    "dids": [{"did": "did:test:removed", "events": [], "removed": true}],
+    "blocks": [{"registry": "Signet", "block": {"height": 0, "hash": "genesis", "time": 0}, "removed": true}],
+    "operations": [{
+      "seq": 4294967296,
+      "did": "did:test:example",
+      "operationHash": "accepted-hash",
+      "event": {
+        "registry": "hyperswarm",
+        "time": "2026-10-28T09:00:00.000Z",
+        "ordinal": [1793178000000, 0],
+        "did": "did:test:example",
+        "opid": "operation-cid",
+        "operation": {"type": "create", "data": {"optional": null}}
+      }
+    }],
+    "removedOperations": [{"seq": 4294967297, "did": "did:test:removed", "operationHash": "removed-hash"}]
+  },
+  "status": {
+    "uptimeSeconds": 12,
+    "dids": {
+      "total": 1,
+      "byType": {"agents": 1, "assets": 0, "confirmed": 1, "unconfirmed": 0, "ephemeral": 0, "invalid": 0},
+      "byRegistry": {"local": 1},
+      "byVersion": {"1": 1},
+      "eventsQueue": []
+    },
+    "memoryUsage": {"rss": 4294967296, "heapTotal": 200, "heapUsed": 100, "external": 50, "arrayBuffers": 25}
+  }
+}

@@ -9,6 +9,7 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.TreeMap;
 import okhttp3.HttpUrl;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -23,6 +24,8 @@ import org.keychain.gatekeeper.model.GatekeeperEvent;
 import org.keychain.gatekeeper.model.GetDIDOptions;
 import org.keychain.gatekeeper.model.GetStatusResult;
 import org.keychain.gatekeeper.model.ImportBatchResult;
+import org.keychain.gatekeeper.model.IndexExportRequest;
+import org.keychain.gatekeeper.model.IndexExportResponse;
 import org.keychain.gatekeeper.model.MdipDocument;
 import org.keychain.gatekeeper.model.Operation;
 import org.keychain.gatekeeper.model.ProcessEventsResult;
@@ -38,8 +41,7 @@ public class GatekeeperClient implements GatekeeperInterface {
     private final OkHttpClient http;
     private final ObjectMapper mapper;
     private final HttpUrl baseUrl;
-    private String headerName;
-    private String headerValue;
+    private final Map<String, String> customHeaders = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
 
     public GatekeeperClient(GatekeeperClientOptions options) {
         Objects.requireNonNull(options, "options is required");
@@ -66,23 +68,22 @@ public class GatekeeperClient implements GatekeeperInterface {
             .readTimeout(readTimeout)
             .build();
 
-        this.headerName = options.headerName;
-        this.headerValue = options.headerValue;
+        if (options.headerName != null && options.headerValue != null) {
+            customHeaders.put(options.headerName, options.headerValue);
+        }
 
         if (Boolean.TRUE.equals(options.waitUntilReady)) {
             waitUntilReady(options);
         }
     }
 
-    public void addCustomHeader(String header, String value) {
-        this.headerName = header;
-        this.headerValue = value;
+    public synchronized void addCustomHeader(String header, String value) {
+        customHeaders.put(header, value);
     }
 
-    public void removeCustomHeader(String header) {
-        if (header != null && header.equals(this.headerName)) {
-            this.headerName = null;
-            this.headerValue = null;
+    public synchronized void removeCustomHeader(String header) {
+        if (header != null) {
+            customHeaders.remove(header);
         }
     }
 
@@ -231,6 +232,11 @@ public class GatekeeperClient implements GatekeeperInterface {
     }
 
     @Override
+    public IndexExportResponse exportIndex(IndexExportRequest request) {
+        return postJson("/index/export", Objects.requireNonNull(request, "request is required"), IndexExportResponse.class);
+    }
+
+    @Override
     public ImportBatchResult importDIDs(java.util.List<java.util.List<GatekeeperEvent>> dids) {
         return postJson("/dids/import", dids, ImportBatchResult.class);
     }
@@ -268,9 +274,13 @@ public class GatekeeperClient implements GatekeeperInterface {
     }
 
     @Override
-    public boolean clearQueue(String registry, java.util.List<Operation> events) {
-        String path = "/queue/" + registry + "/clear";
-        return postJson(path, events, Boolean.class);
+    public boolean clearQueue(String registry, java.util.List<?> eventsOrHashes) {
+        HttpUrl url = baseUrl.newBuilder()
+            .addPathSegment("queue")
+            .addPathSegment(registry)
+            .addPathSegment("clear")
+            .build();
+        return postJson(url, eventsOrHashes, Boolean.class);
     }
 
     @Override
@@ -366,8 +376,11 @@ public class GatekeeperClient implements GatekeeperInterface {
 
     @Override
     public boolean addBlock(String registry, BlockInfo blockInfo) {
-        String path = "/block/" + registry;
-        return postJson(path, blockInfo, Boolean.class);
+        HttpUrl url = baseUrl.newBuilder()
+            .addPathSegment("block")
+            .addPathSegment(registry)
+            .build();
+        return postJson(url, blockInfo, Boolean.class);
     }
 
     @Override
@@ -376,21 +389,27 @@ public class GatekeeperClient implements GatekeeperInterface {
     }
 
     private <T> T postJson(String path, Object body, Class<T> responseType) {
-        Request request = buildPostRequest(path, body);
+        HttpUrl url = baseUrl.newBuilder().addPathSegments(trimLeadingSlash(path)).build();
+        return postJson(url, body, responseType);
+    }
+
+    private <T> T postJson(HttpUrl url, Object body, Class<T> responseType) {
+        Request request = buildPostRequest(url, body);
         return execute(request, responseType);
     }
 
     private <T> T postJsonType(String path, Object body, TypeReference<T> typeRef) {
-        Request request = buildPostRequest(path, body);
+        HttpUrl url = baseUrl.newBuilder().addPathSegments(trimLeadingSlash(path)).build();
+        Request request = buildPostRequest(url, body);
         return execute(request, typeRef);
     }
 
-    private Request buildPostRequest(String path, Object body) {
+    private Request buildPostRequest(HttpUrl url, Object body) {
         try {
             String json = mapper.writeValueAsString(body);
             RequestBody requestBody = RequestBody.create(json, JSON);
             return new Request.Builder()
-                    .url(baseUrl.newBuilder().addPathSegments(trimLeadingSlash(path)).build())
+                    .url(url)
                     .post(requestBody)
                     .build();
         } catch (IOException e) {
@@ -424,12 +443,7 @@ public class GatekeeperClient implements GatekeeperInterface {
     }
 
     private <T> T execute(Request request, Class<T> responseType) {
-        Request.Builder builder = request.newBuilder();
-        if (headerName != null && headerValue != null) {
-            builder.addHeader(headerName, headerValue);
-        }
-
-        try (Response response = http.newCall(builder.build()).execute()) {
+        try (Response response = http.newCall(withCustomHeaders(request)).execute()) {
             String body = response.body() != null ? response.body().string() : "";
             if (!response.isSuccessful()) {
                 GatekeeperError error = GatekeeperErrorParser.parse(body);
@@ -455,12 +469,7 @@ public class GatekeeperClient implements GatekeeperInterface {
     }
 
     private <T> T execute(Request request, TypeReference<T> typeRef) {
-        Request.Builder builder = request.newBuilder();
-        if (headerName != null && headerValue != null) {
-            builder.addHeader(headerName, headerValue);
-        }
-
-        try (Response response = http.newCall(builder.build()).execute()) {
+        try (Response response = http.newCall(withCustomHeaders(request)).execute()) {
             String body = response.body() != null ? response.body().string() : "";
             if (!response.isSuccessful()) {
                 GatekeeperError error = GatekeeperErrorParser.parse(body);
@@ -480,12 +489,7 @@ public class GatekeeperClient implements GatekeeperInterface {
             .url(url)
             .get()
             .build();
-        Request.Builder builder = request.newBuilder();
-        if (headerName != null && headerValue != null) {
-            builder.addHeader(headerName, headerValue);
-        }
-
-        try (Response response = http.newCall(builder.build()).execute()) {
+        try (Response response = http.newCall(withCustomHeaders(request)).execute()) {
             ResponseBody responseBody = response.body();
             byte[] bytes = responseBody != null ? responseBody.bytes() : new byte[0];
             if (!response.isSuccessful()) {
@@ -505,6 +509,12 @@ public class GatekeeperClient implements GatekeeperInterface {
             .get()
             .build();
         return execute(request, String.class);
+    }
+
+    private synchronized Request withCustomHeaders(Request request) {
+        Request.Builder builder = request.newBuilder();
+        customHeaders.forEach(builder::header);
+        return builder.build();
     }
 
     private static String trimLeadingSlash(String path) {
