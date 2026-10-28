@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Proxy;
 import java.net.ProxySelector;
@@ -58,7 +59,7 @@ class GatekeeperClientLifecycleTest {
     @BeforeEach
     void setup() throws Exception {
         server = new MockWebServer();
-        server.start();
+        server.start(InetAddress.getByName("127.0.0.1"), 0);
     }
 
     @AfterEach
@@ -221,7 +222,8 @@ class GatekeeperClientLifecycleTest {
         context.init(new KeyManager[0], null, null);
         server.useHttps(context.getSocketFactory(), false);
         GatekeeperClientOptions options = waitOptions();
-        options.baseUrl = server.url("/").toString();
+        // Use one route to assert the TLS error as the immediate cause.
+        options.baseUrl = server.url("/").newBuilder().host("127.0.0.1").build().toString();
 
         IllegalStateException failure = assertThrows(IllegalStateException.class,
             () -> new GatekeeperClient(options));
