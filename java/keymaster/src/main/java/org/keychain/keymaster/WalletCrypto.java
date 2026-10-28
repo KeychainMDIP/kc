@@ -1,6 +1,5 @@
 package org.keychain.keymaster;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Map;
 import org.keychain.crypto.KeymasterCrypto;
@@ -30,7 +29,7 @@ public class WalletCrypto {
         Seed safeSeed = new Seed();
         safeSeed.mnemonicEnc = wallet.seed.mnemonicEnc;
 
-        String plaintext = toJson(mapper, walletToMap(wallet));
+        String plaintext = toJson(mapper, WalletJsonMapper.walletPayload(wallet));
         String mnemonic = MnemonicEncryption.decrypt(wallet.seed.mnemonicEnc, passphrase);
         var master = HdKeyUtil.masterFromMnemonic(mnemonic);
         var jwk = crypto.generateJwk(HdKeyUtil.privateKeyBytes(master));
@@ -41,14 +40,6 @@ public class WalletCrypto {
         stored.seed = safeSeed;
         stored.enc = enc;
         return stored;
-    }
-
-    private static Map<String, Object> walletToMap(WalletFile wallet) {
-        ObjectMapper mapper = WalletJsonMapper.mapper();
-        Map<String, Object> data = mapper.convertValue(wallet, new TypeReference<>() {});
-        data.remove("version");
-        data.remove("seed");
-        return data;
     }
 
     private static String toJson(ObjectMapper mapper, Map<String, Object> data) {

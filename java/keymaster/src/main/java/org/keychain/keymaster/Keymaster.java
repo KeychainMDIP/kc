@@ -138,24 +138,11 @@ public class Keymaster {
         if (wallet == null) {
             throw new IllegalArgumentException("wallet is required");
         }
-        if (wallet.salt != null || wallet.iv != null || wallet.data != null) {
-            throw new IllegalStateException("Keymaster: Unsupported wallet version.");
-        }
         if (wallet.version != 1 || wallet.seed == null || wallet.seed.mnemonicEnc == null || wallet.enc == null) {
             throw new IllegalStateException("Keymaster: Unsupported wallet version.");
         }
 
-        try {
-            walletManager.decryptStoredWallet(wallet);
-        } catch (IllegalStateException e) {
-            throw new IllegalStateException("Keymaster: Incorrect passphrase.");
-        }
-
-        try {
-            return walletManager.saveStoredWallet(wallet, overwrite);
-        } catch (IllegalStateException e) {
-            throw new IllegalStateException("Keymaster: Incorrect passphrase.");
-        }
+        return walletManager.saveStoredWallet(wallet, overwrite);
     }
 
     public boolean mutateWallet(Consumer<WalletFile> mutator) {
@@ -2769,6 +2756,9 @@ public class Keymaster {
         target.current = source.current;
         target.names = source.names;
         target.extras = source.extras;
+        Map<String, Object> metadata = new LinkedHashMap<>(source.additionalProperties());
+        target.additionalProperties().clear();
+        target.additionalProperties().putAll(metadata);
     }
 
     private static boolean didMatch(String did1, String did2) {

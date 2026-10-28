@@ -2,20 +2,11 @@ package org.keychain.keymaster;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.nio.charset.StandardCharsets;
-import java.security.GeneralSecurityException;
-import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
-import javax.crypto.Cipher;
-import javax.crypto.SecretKey;
-import javax.crypto.SecretKeyFactory;
-import javax.crypto.spec.GCMParameterSpec;
-import javax.crypto.spec.PBEKeySpec;
-import javax.crypto.spec.SecretKeySpec;
 import org.bitcoinj.crypto.DeterministicKey;
 import org.keychain.crypto.HdKeyUtil;
 import org.keychain.crypto.KeymasterCrypto;
@@ -57,11 +48,7 @@ public class KeymasterWalletManager {
         }
 
         WalletFile wallet;
-        if (isLegacyEncrypted(stored)) {
-            wallet = decryptLegacyEncrypted(stored);
-            wallet = upgradeWallet(wallet);
-            store.saveWallet(encryptWalletForStorage(wallet), true);
-        } else if (isLegacyV0(stored)) {
+        if (isLegacyV0(stored)) {
             wallet = upgradeWallet(toWalletFile(stored));
             store.saveWallet(encryptWalletForStorage(wallet), true);
         } else if (isV1WithEnc(stored)) {
@@ -72,6 +59,7 @@ public class KeymasterWalletManager {
             throw new IllegalStateException("Keymaster: Unsupported wallet version.");
         }
 
+        WalletJsonMapper.walletPayload(wallet);
         walletCache = wallet;
         return walletCache;
     }
@@ -87,15 +75,13 @@ public class KeymasterWalletManager {
     }
 
     boolean saveStoredWallet(WalletEncFile stored, boolean overwrite) {
+        WalletFile wallet = decryptWalletFromStorage(stored);
         boolean ok = store.saveWallet(stored, overwrite);
         if (ok) {
-            walletCache = decryptWalletFromStorage(stored);
+            walletCache = wallet;
+            hdkeyCache = null;
         }
         return ok;
-    }
-
-    void decryptStoredWallet(WalletEncFile stored) {
-        decryptWalletFromStorage(stored);
     }
 
     public boolean mutateWallet(Consumer<WalletFile> mutator) {
@@ -107,9 +93,9 @@ public class KeymasterWalletManager {
             }
 
             WalletFile working = deepCopyWallet(wallet);
-            String before = toJson(mapper, walletToMap(working));
+            String before = toJson(mapper, WalletJsonMapper.walletPayload(working));
             mutator.accept(working);
-            String after = toJson(mapper, walletToMap(working));
+            String after = toJson(mapper, WalletJsonMapper.walletPayload(working));
 
             if (Objects.equals(before, after)) {
                 return false;
@@ -150,6 +136,7 @@ public class KeymasterWalletManager {
             && wallet.seed.mnemonic != null;
 
         if (legacy) {
+            WalletJsonMapper.walletPayload(wallet);
             DeterministicKey key = HdKeyUtil.fromXpriv(wallet.seed.hdkey.xpriv);
             var jwk = crypto.generateJwk(HdKeyUtil.privateKeyBytes(key));
             String mnemonic = crypto.decryptMessage(jwk.publicJwk, jwk.privateJwk, wallet.seed.mnemonic);
@@ -165,6 +152,7 @@ public class KeymasterWalletManager {
             upgraded.current = wallet.current;
             upgraded.names = wallet.names;
             upgraded.extras = wallet.extras;
+            upgraded.additionalProperties().putAll(wallet.additionalProperties());
 
             hdkeyCache = HdKeyUtil.masterFromMnemonic(mnemonic);
             return upgraded;
@@ -181,7 +169,7 @@ public class KeymasterWalletManager {
         Seed safeSeed = new Seed();
         safeSeed.mnemonicEnc = wallet.seed.mnemonicEnc;
 
-        String plaintext = toJson(mapper, walletToMap(wallet));
+        String plaintext = toJson(mapper, WalletJsonMapper.walletPayload(wallet));
         DeterministicKey master = getHdKeyFromCacheOrMnemonic(wallet);
         var jwk = crypto.generateJwk(HdKeyUtil.privateKeyBytes(master));
         String enc = crypto.encryptMessage(jwk.publicJwk, jwk.privateJwk, plaintext);
@@ -198,23 +186,22 @@ public class KeymasterWalletManager {
             throw new IllegalArgumentException("stored.seed.mnemonicEnc is required");
         }
 
-        WalletFile wallet = new WalletFile();
-        wallet.version = stored.version;
-        wallet.seed = stored.seed;
-
-        DeterministicKey master = getHdKeyFromCacheOrMnemonic(wallet);
+        String mnemonic;
+        try {
+            mnemonic = MnemonicEncryption.decrypt(stored.seed.mnemonicEnc, passphrase);
+        } catch (RuntimeException e) {
+            throw new IllegalStateException("Keymaster: Incorrect passphrase.", e);
+        }
+        DeterministicKey master = HdKeyUtil.masterFromMnemonic(mnemonic);
         var jwk = crypto.generateJwk(HdKeyUtil.privateKeyBytes(master));
         String plaintext = crypto.decryptMessage(jwk.publicJwk, jwk.privateJwk, stored.enc);
 
         Map<String, Object> data = fromJson(mapper, plaintext);
+        WalletJsonMapper.validatePayload(data);
         data.put("version", stored.version);
         data.put("seed", stored.seed);
 
         return mapper.convertValue(data, WalletFile.class);
-    }
-
-    private boolean isLegacyEncrypted(WalletEncFile stored) {
-        return stored != null && stored.salt != null && stored.iv != null && stored.data != null;
     }
 
     private boolean isLegacyV0(WalletEncFile stored) {
@@ -241,54 +228,8 @@ public class KeymasterWalletManager {
             && stored.seed.mnemonicEnc != null;
     }
 
-    private WalletFile decryptLegacyEncrypted(WalletEncFile stored) {
-        if (passphrase == null || passphrase.isBlank()) {
-            throw new IllegalStateException("KC_ENCRYPTED_PASSPHRASE not set");
-        }
-
-        try {
-            byte[] salt = Base64.getDecoder().decode(stored.salt);
-            byte[] iv = Base64.getDecoder().decode(stored.iv);
-            byte[] combined = Base64.getDecoder().decode(stored.data);
-
-            SecretKey key = deriveLegacyKey(passphrase, salt);
-            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(128, iv));
-            byte[] plaintext = cipher.doFinal(combined);
-            String json = new String(plaintext, StandardCharsets.UTF_8);
-            return mapper.readValue(json, WalletFile.class);
-        } catch (GeneralSecurityException e) {
-            throw new IllegalStateException("Incorrect passphrase.");
-        } catch (Exception e) {
-            throw new IllegalStateException("Failed to parse legacy wallet", e);
-        }
-    }
-
-    private static SecretKey deriveLegacyKey(String passphrase, byte[] salt) throws GeneralSecurityException {
-        PBEKeySpec spec = new PBEKeySpec(passphrase.toCharArray(), salt, 100_000, 256);
-        SecretKeyFactory factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA512");
-        byte[] keyBytes = factory.generateSecret(spec).getEncoded();
-        return new SecretKeySpec(keyBytes, "AES");
-    }
-
     private WalletFile toWalletFile(WalletEncFile stored) {
-        Map<String, Object> data = new HashMap<>();
-        if (stored.extra != null) {
-            data.putAll(stored.extra);
-        }
-        data.put("version", stored.version);
-        if (stored.seed != null) {
-            data.put("seed", stored.seed);
-        }
-        return mapper.convertValue(data, WalletFile.class);
-    }
-
-    private static Map<String, Object> walletToMap(WalletFile wallet) {
-        ObjectMapper mapper = WalletJsonMapper.mapper();
-        Map<String, Object> data = mapper.convertValue(wallet, new TypeReference<>() {});
-        data.remove("version");
-        data.remove("seed");
-        return data;
+        return mapper.convertValue(stored, WalletFile.class);
     }
 
     private static String toJson(ObjectMapper mapper, Map<String, Object> data) {

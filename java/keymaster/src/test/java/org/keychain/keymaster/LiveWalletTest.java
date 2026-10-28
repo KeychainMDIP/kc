@@ -9,20 +9,10 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
-import java.security.GeneralSecurityException;
-import java.security.SecureRandom;
-import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import javax.crypto.Cipher;
-import javax.crypto.SecretKey;
-import javax.crypto.SecretKeyFactory;
-import javax.crypto.spec.GCMParameterSpec;
-import javax.crypto.spec.PBEKeySpec;
-import javax.crypto.spec.SecretKeySpec;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -40,7 +30,6 @@ import org.keychain.keymaster.model.Seed;
 import org.keychain.keymaster.model.WalletEncFile;
 import org.keychain.keymaster.model.WalletFile;
 import org.keychain.keymaster.store.WalletJson;
-import org.keychain.keymaster.store.WalletJsonMapper;
 import org.keychain.keymaster.testutil.LiveTestSupport;
 import org.keychain.keymaster.testutil.TestFixtures;
 
@@ -294,21 +283,6 @@ class LiveWalletTest {
         assertNotNull(upgraded.seed.mnemonicEnc);
         assertEquals(legacy.counter, upgraded.counter);
         assertEquals(legacy.ids.size(), upgraded.ids.size());
-    }
-
-    @Test
-    void loadWalletUpgradesLegacyEncryptedWrapper() {
-        WalletJson<WalletEncFile> store = newStore("wallet");
-        WalletFile legacy = buildLegacyV0Wallet();
-        WalletEncFile wrapper = buildLegacyEncryptedWrapper(legacy);
-        store.saveWallet(wrapper, true);
-
-        Keymaster keymaster = newKeymaster(store);
-        WalletFile upgraded = keymaster.loadWallet();
-
-        assertEquals(1, upgraded.version);
-        assertNotNull(upgraded.seed);
-        assertNotNull(upgraded.seed.mnemonicEnc);
     }
 
     @Test
@@ -792,36 +766,6 @@ class LiveWalletTest {
         seed.mnemonic = crypto.encryptMessage(keypair.publicJwk, keypair.privateJwk, MNEMONIC);
         wallet.seed = seed;
         return wallet;
-    }
-
-    private static WalletEncFile buildLegacyEncryptedWrapper(WalletFile wallet) {
-        try {
-            byte[] salt = new byte[16];
-            byte[] iv = new byte[12];
-            new SecureRandom().nextBytes(salt);
-            new SecureRandom().nextBytes(iv);
-
-            SecretKey key = deriveLegacyKey(salt);
-            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(128, iv));
-            byte[] plaintext = WalletJsonMapper.mapper().writeValueAsString(wallet).getBytes(StandardCharsets.UTF_8);
-            byte[] ciphertext = cipher.doFinal(plaintext);
-
-            WalletEncFile stored = new WalletEncFile();
-            stored.salt = Base64.getEncoder().encodeToString(salt);
-            stored.iv = Base64.getEncoder().encodeToString(iv);
-            stored.data = Base64.getEncoder().encodeToString(ciphertext);
-            return stored;
-        } catch (Exception e) {
-            throw new IllegalStateException("Failed to build legacy wrapper", e);
-        }
-    }
-
-    private static SecretKey deriveLegacyKey(byte[] salt) throws GeneralSecurityException {
-        PBEKeySpec spec = new PBEKeySpec(PASSPHRASE.toCharArray(), salt, 100_000, 256);
-        SecretKeyFactory factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA512");
-        byte[] keyBytes = factory.generateSecret(spec).getEncoded();
-        return new SecretKeySpec(keyBytes, "AES");
     }
 
     private static HdKey toModelHdKey(org.bitcoinj.crypto.DeterministicKey master) {
