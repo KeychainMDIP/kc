@@ -1135,6 +1135,18 @@ describe('getBlock', () => {
         expect(block).toStrictEqual(mockBlock);
     });
 
+    it('should return the block at height zero', async () => {
+        const genesisBlock = { ...mockBlock, height: 0 };
+        nock(GatekeeperURL)
+            .get(`${Endpoints.block}/${mockRegistry}/0`)
+            .reply(200, genesisBlock);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        const block = await gatekeeper.getBlock(mockRegistry, 0);
+
+        expect(block).toStrictEqual(genesisBlock);
+    });
+
     it('should throw exception on getBlock server error', async () => {
         nock(GatekeeperURL)
             .get(`${Endpoints.block}/${mockRegistry}/latest`)

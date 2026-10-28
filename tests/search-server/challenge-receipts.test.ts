@@ -379,6 +379,55 @@ describe.each(adapterFactories)('$name challenge receipt storage', ({ create }) 
         }
     });
 
+    it('optionally includes receipts without an authoritative prefix', async () => {
+        const { db, cleanup } = await create();
+        const ambiguousDid = 'did:test:ambiguous-receipt';
+        const scopedAmbiguousDid = 'did:mdip:ambiguous-receipt';
+        const authoritativeDid = 'did:test:authoritative-receipt';
+        const common = {
+            attesterDid: 'did:test:attester',
+            schemaDid: 'did:test:schema',
+            requesterDid: 'did:test:requester',
+        };
+        const ambiguousReceipt: ChallengeReceiptRecord = {
+            receiptDid: ambiguousDid,
+            ...common,
+            responseCommitment: 'ambiguous-commitment',
+            updatedAt: '2026-04-01T10:00:00.000Z',
+        };
+        const authoritativeReceipt: ChallengeReceiptRecord = {
+            receiptDid: authoritativeDid,
+            ...common,
+            responseCommitment: 'authoritative-commitment',
+            updatedAt: '2026-04-01T11:00:00.000Z',
+        };
+        const authoritativeEvent = createAssetEvent(authoritativeDid, {});
+        authoritativeEvent.operation.mdip!.prefix = 'did:test';
+
+        try {
+            await seedDID(db, ambiguousDid, { challengeReceipts: [ambiguousReceipt] });
+            await seedDID(db, authoritativeDid, {
+                events: [authoritativeEvent],
+                challengeReceipts: [authoritativeReceipt],
+            });
+
+            expect(await db.listChallengeReceipts({ didPrefix: 'did:mdip' }))
+                .toStrictEqual({ total: 0, receipts: [] });
+            expect(await db.listChallengeReceipts({
+                didPrefix: 'did:mdip', includeAmbiguous: true,
+            })).toStrictEqual({
+                total: 1,
+                receipts: [{ ...ambiguousReceipt, receiptDid: scopedAmbiguousDid }],
+            });
+            expect(await db.getChallengeReceiptUsage({
+                didPrefix: 'did:mdip', includeAmbiguous: true, attesterDid: common.attesterDid,
+            })).toMatchObject({ total: 1, usage: [{ count: 1 }] });
+        }
+        finally {
+            await cleanup();
+        }
+    });
+
     it('deduplicates challenge receipt usage across DID prefix aliases', async () => {
         const { db, cleanup } = await create();
         const rows: ChallengeReceiptRecord[] = [
@@ -624,7 +673,7 @@ describe('postgres challenge receipt adapter with mocked pool', () => {
                 return { rowCount: 1, rows: [{ total: 1 }] };
             }
             if (text.includes('AS "receiptDid"')) {
-                return { rowCount: 1, rows: [record] };
+                return { rowCount: 1, rows: [{ ...record, prefixAmbiguous: true }] };
             }
             if (text.includes('MIN(cr.attester_did) AS "attesterDid"')) {
                 return {
@@ -712,6 +761,17 @@ describe('postgres challenge receipt adapter with mocked pool', () => {
                 lastUpdatedAt: record.updatedAt,
             }],
         });
+        expect(await db.listChallengeReceipts({
+            didPrefix: 'did:mdip', includeAmbiguous: true,
+        })).toMatchObject({
+            total: 1,
+            receipts: [{ receiptDid: 'did:mdip:receipt-1' }],
+        });
+        await db.getChallengeReceiptUsage({
+            didPrefix: 'did:mdip', includeAmbiguous: true, attesterDid: record.attesterDid,
+        });
+        expect(poolQuery.mock.calls.filter(([sql]) => String(sql).includes('OR dc.prefix_ambiguous')))
+            .toHaveLength(4);
 
         await db.wipeDb();
         await db.disconnect();

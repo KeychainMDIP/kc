@@ -923,6 +923,8 @@ describe.each(adapterFactories)('$name query and utility behavior', ({ create })
             )).toBe(true);
             expect(await db.findDIDBySuffix('mdip-holder', 'did:test')).toBeNull();
             expect(await db.findDIDBySuffix('mdip-holder', 'did:mdip')).toBe(mdipHolder);
+            expect(await db.findAmbiguousDIDBySuffix('test-holder')).toBeNull();
+            expect(await db.findAmbiguousDIDBySuffix('mdip-holder')).toBeNull();
             expect(await db.listPublishedCredentials({ didPrefix: 'did:test', limit: 1, offset: 1 }))
                 .toStrictEqual({ total: 1, credentials: [] });
             expect(await db.getPublishedCredentialCountsBySchema('did:test')).toStrictEqual([
@@ -995,6 +997,19 @@ describe.each(adapterFactories)('$name query and utility behavior', ({ create })
             await seedDID(db, storedSchemaDid, {
                 doc: { didDocumentData: { searchable: 'legacy-network-schema' } },
             });
+            expect(await db.findAmbiguousDIDBySuffix('legacy-credential')).toBe(storedCredentialDid);
+            expect(await db.findAmbiguousDIDBySuffix('legacy-schema')).toBe(storedSchemaDid);
+            expect(await db.findAmbiguousDIDBySuffix('missing')).toBeNull();
+            await seedDID(db, 'did:test:uniquely-referenced-test');
+            await seedDID(db, 'did:test:uniquely-referenced-other');
+            await seedDID(db, 'did:test:reference-source', {
+                didPrefixReferences: [
+                    'did:test:uniquely-referenced-test',
+                    'did:other:uniquely-referenced-other',
+                ],
+            });
+            expect(await db.findAmbiguousDIDBySuffix('uniquely-referenced-test')).toBeNull();
+            expect(await db.findAmbiguousDIDBySuffix('uniquely-referenced-other')).toBeNull();
             await seedDID(db, holderDid, {
                 events: holderEvents,
                 publishedCredentials: [{
@@ -1020,6 +1035,8 @@ describe.each(adapterFactories)('$name query and utility behavior', ({ create })
             });
             expect(await db.findDIDBySuffix('legacy-schema', 'did:mdip')).toBe(storedSchemaDid);
             expect(await db.findDIDBySuffix('legacy-schema', 'did:test')).toBeNull();
+            expect(await db.findAmbiguousDIDBySuffix('legacy-credential')).toBeNull();
+            expect(await db.findAmbiguousDIDBySuffix('legacy-schema')).toBeNull();
             expect(await db.searchDocs('legacy-network-schema', { didPrefix: 'did:mdip', limit: 50 }))
                 .toStrictEqual(completeSearchPage([publishedSchemaDid]));
             expect(await db.searchDocs('legacy-network-schema', { didPrefix: 'did:test', limit: 50 }))
@@ -1056,6 +1073,11 @@ describe.each(adapterFactories)('$name query and utility behavior', ({ create })
             expect(await db.findDIDBySuffix('legacy-schema', 'did:test')).toBeNull();
             expect(await db.searchDocs('legacy-network-schema', { didPrefix: 'did:mdip', limit: 50 }))
                 .toStrictEqual(completeSearchPage([publishedSchemaDid]));
+
+            await seedDID(db, 'did:test:conflicting-reference-holder', {
+                didPrefixReferences: ['did:test:legacy-schema'],
+            });
+            expect(await db.findAmbiguousDIDBySuffix('legacy-schema')).toBe(storedSchemaDid);
         }
         finally {
             await cleanup();
@@ -1100,25 +1122,53 @@ describe.each(adapterFactories)('$name query and utility behavior', ({ create })
 
             expect(await db.findDIDBySuffix('credential-agent', 'did:test')).toBe(credentialDid);
             expect(await db.findDIDBySuffix('credential-agent', 'did:mdip')).toBeNull();
+            expect(await db.findAmbiguousDIDBySuffix('credential-agent')).toBe(credentialDid);
+            expect(await db.findAmbiguousDIDBySuffix('schema-agent')).toBe(schemaDid);
             expect(await db.searchDocs('credential-agent-collision', { didPrefix: 'did:test', limit: 50 }))
                 .toStrictEqual(completeSearchPage([credentialDid]));
             expect(await db.searchDocs('credential-agent-collision', { didPrefix: 'did:mdip', limit: 50 }))
                 .toStrictEqual(completeSearchPage([]));
+            expect(await db.searchDocs('credential-agent-collision', {
+                didPrefix: 'did:mdip', includeAmbiguous: true, limit: 50,
+            })).toStrictEqual(completeSearchPage([mdipCredentialDid]));
+            expect(await db.searchDocs('credential-agent-collision', {
+                didPrefix: 'did:mdip',
+                includeAmbiguous: true,
+                limit: 50,
+                cursor: 'did:mdip:before-credential-agent',
+            })).toStrictEqual(completeSearchPage([mdipCredentialDid]));
             expect(await db.queryDocs({
                 'didDocumentData.searchable': { $in: ['schema-agent-collision'] },
             }, 'did:test')).toStrictEqual([schemaDid]);
+            expect(await db.queryDocs({
+                'didDocumentData.searchable': { $in: ['schema-agent-collision'] },
+            }, 'did:mdip', true)).toStrictEqual([mdipSchemaDid]);
             expect((await db.listEvents({ didPrefix: 'did:mdip' })).events.some(
                 event => event.did === mdipCredentialDid || event.did === mdipSchemaDid
             )).toBe(false);
+            expect((await db.listEvents({ didPrefix: 'did:mdip', includeAmbiguous: true })).events).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({ did: mdipCredentialDid }),
+                    expect.objectContaining({ did: mdipSchemaDid }),
+                ])
+            );
             expect(await db.listPublishedCredentials({ didPrefix: 'did:test' })).toMatchObject({
                 total: 1,
                 credentials: [{ credentialDid, schemaDid }],
             });
             expect(await db.listPublishedCredentials({ didPrefix: 'did:mdip' })).toMatchObject({ total: 0 });
+            expect(await db.listPublishedCredentials({ didPrefix: 'did:mdip', includeAmbiguous: true }))
+                .toMatchObject({
+                    total: 1,
+                    credentials: [{ credentialDid: mdipCredentialDid, schemaDid: mdipSchemaDid }],
+                });
             expect(await db.getPublishedCredentialCountsBySchema('did:test')).toStrictEqual([
                 { schemaDid, count: 1 },
             ]);
             expect(await db.getPublishedCredentialCountsBySchema('did:mdip')).toStrictEqual([]);
+            expect(await db.getPublishedCredentialCountsBySchema('did:mdip', true)).toStrictEqual([
+                { schemaDid: mdipSchemaDid, count: 1 },
+            ]);
         }
         finally {
             await cleanup();
@@ -1169,6 +1219,7 @@ describe.each(adapterFactories)('$name query and utility behavior', ({ create })
 
             expect(await db.findDIDBySuffix('conflicting-credential', 'did:test')).toBe(credentialDid);
             expect(await db.findDIDBySuffix('conflicting-credential', 'did:mdip')).toBeNull();
+            expect(await db.findAmbiguousDIDBySuffix('conflicting-credential')).toBeNull();
             expect(await db.listPublishedCredentials({ didPrefix: 'did:test' })).toMatchObject({
                 total: 1,
                 credentials: [{ credentialDid, schemaDid }],
@@ -1182,6 +1233,12 @@ describe.each(adapterFactories)('$name query and utility behavior', ({ create })
                 .toStrictEqual(completeSearchPage([schemaDid]));
             expect(await db.searchDocs('conflicting-prefix-schema', { didPrefix: 'did:mdip', limit: 50 }))
                 .toStrictEqual(completeSearchPage([]));
+            expect(await db.searchDocs('conflicting-prefix-schema', {
+                didPrefix: 'did:mdip', includeAmbiguous: true, limit: 50,
+            })).toStrictEqual(completeSearchPage([]));
+            expect(await db.listPublishedCredentials({
+                didPrefix: 'did:mdip', includeAmbiguous: true,
+            })).toMatchObject({ total: 0 });
         }
         finally {
             await cleanup();
@@ -1400,21 +1457,23 @@ describe('postgres adapter with mocked pool', () => {
                         subjectDid: 'did:test:subject-1',
                         revealed: true,
                         updatedAt: '2026-04-02T09:05:00.000Z',
+                        credentialPrefixAmbiguous: true,
+                        schemaPrefixAmbiguous: true,
                     }],
                 };
             }
             if (text.includes("doc::text LIKE '%' || $1 || '%'")) {
                 const rows = params?.[0] === 'paged'
-                    ? [{ did: 'did:test:search-1' }, { did: 'did:test:search-2' }]
-                    : [{ did: 'did:test:search-1' }];
+                    ? [{ did: 'did:test:search-1', prefixAmbiguous: true }, { did: 'did:test:search-2', prefixAmbiguous: true }]
+                    : [{ did: 'did:test:search-1', prefixAmbiguous: true }];
                 return { rowCount: rows.length, rows };
             }
-            if (text.includes('did AS "storedDid", prefix')) {
+            if (text.includes('did AS "storedDid"')) {
                 const dids = params?.[0] as string[];
                 const prefix = params?.[1] as string | undefined;
                 const rows = dids
-                    .filter(did => !prefix || did.startsWith(`${prefix}:`))
-                    .map(did => ({ storedDid: did, did }));
+                    .filter(did => text.includes('OR prefix_ambiguous') || !prefix || did.startsWith(`${prefix}:`))
+                    .map(did => ({ storedDid: did, did, prefixAmbiguous: true }));
                 return { rowCount: rows.length, rows };
             }
             if (text.includes('JOIN LATERAL jsonb_array_elements') && text.includes('elem.value = expected.value::jsonb')) {
@@ -1482,6 +1541,11 @@ describe('postgres adapter with mocked pool', () => {
         expect(await db.getPublishedCredentialCountsBySchema('did:test')).toStrictEqual([
             { schemaDid: 'did:test:schema-1', count: 2 },
         ]);
+        await db.getPublishedCredentialCountsBySchema('did:mdip', true);
+        expect(poolQuery).toHaveBeenLastCalledWith(
+            expect.stringContaining('pc.credential_effective_prefix = $1 OR pc.credential_prefix_ambiguous'),
+            ['did:mdip']
+        );
         expect(await db.listPublishedCredentials({
             didPrefix: 'did:test',
             credentialDid: 'did:test:credential-1',
@@ -1503,13 +1567,27 @@ describe('postgres adapter with mocked pool', () => {
                 updatedAt: '2026-04-02T09:05:00.000Z',
             }],
         });
+        expect(await db.listPublishedCredentials({
+            didPrefix: 'did:mdip', includeAmbiguous: true,
+        })).toMatchObject({
+            total: 1,
+            credentials: [{
+                credentialDid: 'did:mdip:credential-1',
+                schemaDid: 'did:mdip:schema-1',
+            }],
+        });
         expect(await db.searchDocs('search', { limit: 50 }))
+            .toStrictEqual(completeSearchPage(['did:test:search-1']));
+        expect(await db.searchDocs('search', { limit: 50, cursor: 'did:test:cursor' }))
             .toStrictEqual(completeSearchPage(['did:test:search-1']));
         expect(await db.searchDocs('search', {
             didPrefix: 'did:test',
             limit: 25,
             cursor: 'did:test:cursor',
         })).toStrictEqual(completeSearchPage(['did:test:search-1']));
+        expect(await db.searchDocs('search', {
+            didPrefix: 'did:mdip', includeAmbiguous: true, limit: 25,
+        })).toStrictEqual(completeSearchPage(['did:mdip:search-1']));
         expect(await db.searchDocs('100%_complete!', { limit: 50 }))
             .toStrictEqual(completeSearchPage(['did:test:search-1']));
         expect(await db.searchDocs('paged', { limit: 1 })).toStrictEqual({
@@ -1520,19 +1598,23 @@ describe('postgres adapter with mocked pool', () => {
         const searchCalls = poolQuery.mock.calls.filter(([sql]) =>
             String(sql).includes('WITH matches AS MATERIALIZED')
         );
-        expect(searchCalls).toHaveLength(4);
+        expect(searchCalls).toHaveLength(6);
         expect(searchCalls[0][0]).toContain("ESCAPE '!'");
         expect(searchCalls[0][0]).not.toContain('WHERE dc.prefix = $2');
         expect(searchCalls[0][0]).toContain('ORDER BY');
         expect(searchCalls[0][1]).toStrictEqual(['search', 51]);
-        expect(searchCalls[1][0]).toContain('dc.prefix = $2');
-        expect(searchCalls[1][0]).toContain('> $3');
-        expect(searchCalls[1][1]).toStrictEqual(['search', 'did:test', 'did:test:cursor', 26]);
-        expect(searchCalls[2][1]).toStrictEqual(['100!%!_complete!!', 51]);
-        expect(searchCalls[3][1]).toStrictEqual(['paged', 2]);
-        expect(clientQuery.mock.calls.filter(([sql]) => sql === 'BEGIN READ ONLY')).toHaveLength(4);
+        expect(searchCalls[1][0]).not.toContain('WHERE dc.prefix');
+        expect(searchCalls[1][1]).toStrictEqual(['search', 'did:test:cursor', 51]);
+        expect(searchCalls[2][0]).toContain('dc.prefix = $2');
+        expect(searchCalls[2][0]).toContain('> $3');
+        expect(searchCalls[2][1]).toStrictEqual(['search', 'did:test', 'cursor', 26]);
+        expect(searchCalls[3][0]).toContain('OR dc.prefix_ambiguous');
+        expect(searchCalls[3][1]).toStrictEqual(['search', 'did:mdip', 26]);
+        expect(searchCalls[4][1]).toStrictEqual(['100!%!_complete!!', 51]);
+        expect(searchCalls[5][1]).toStrictEqual(['paged', 2]);
+        expect(clientQuery.mock.calls.filter(([sql]) => sql === 'BEGIN READ ONLY')).toHaveLength(6);
         expect(clientQuery.mock.calls.filter(([sql]) => sql === "SET LOCAL statement_timeout = '5000ms'"))
-            .toHaveLength(4);
+            .toHaveLength(6);
 
         expect(await db.queryDocs({})).toStrictEqual([]);
         await expect(db.queryDocs({ '$.didDocument.id': {} } as any)).rejects.toThrow('Only {$in:[…]} supported');
@@ -1545,6 +1627,9 @@ describe('postgres adapter with mocked pool', () => {
         expect(await db.queryDocs({
             '$.didDocument.id': { $in: ['did:test:plain-path'] },
         }, 'did:mdip')).toStrictEqual([]);
+        expect(await db.queryDocs({
+            '$.didDocument.id': { $in: ['did:test:plain-path'] },
+        }, 'did:mdip', true)).toStrictEqual(['did:mdip:plain-path']);
 
         await db.wipeDb();
         await db.disconnect();

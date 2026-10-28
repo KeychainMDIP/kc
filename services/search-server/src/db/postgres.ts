@@ -36,6 +36,25 @@ import {
 
 const DEFAULT_POSTGRES_CONNECTION_TIMEOUT_MS = 3_000;
 const DEFAULT_SEARCH_TIMEOUT_MS = 5_000;
+const INSERT_BATCH_SIZE = 500;
+
+async function insertRows(
+    client: PoolClient,
+    statement: string,
+    rows: unknown[][],
+    casts: string[] = [],
+    suffix = ''
+): Promise<void> {
+    for (let offset = 0; offset < rows.length; offset += INSERT_BATCH_SIZE) {
+        const batch = rows.slice(offset, offset + INSERT_BATCH_SIZE);
+        const params: unknown[] = [];
+        const values = batch.map(row => `(${row.map((value, column) => {
+            params.push(value);
+            return `$${params.length}${casts[column] ?? ''}`;
+        }).join(', ')})`);
+        await client.query(`${statement} VALUES ${values.join(', ')}${suffix}`, params);
+    }
+}
 
 function readPositiveIntegerEnv(name: string, fallback: number): number {
     const configured = process.env[name];
@@ -60,6 +79,7 @@ interface DidRow {
 
 interface EffectiveDidRow extends DidRow {
     storedDid: string;
+    prefixAmbiguous: boolean;
 }
 
 interface EventRow {
@@ -208,7 +228,8 @@ export default class Postgres implements DIDsDb {
                        CASE WHEN MIN(prefix) = MAX(prefix)
                            THEN MIN(prefix)
                            ELSE '${AMBIGUOUS_DID_PREFIX}'
-                       END AS prefix
+                       END AS prefix,
+                       COUNT(DISTINCT prefix)::int AS prefix_count
                 FROM did_prefix_references
                 GROUP BY suffix;
 
@@ -217,14 +238,24 @@ export default class Postgres implements DIDsDb {
                        dc.did,
                        CASE WHEN dc.prefix_authoritative OR dc.is_agent THEN dc.prefix
                            ELSE COALESCE(rp.prefix, '${AMBIGUOUS_DID_PREFIX}')
-                       END AS prefix
+                       END AS prefix,
+                       NOT dc.prefix_authoritative
+                           AND (dc.is_agent OR COALESCE(rp.prefix_count, 0) <> 1) AS prefix_ambiguous
                 FROM did_classifications dc
                 LEFT JOIN did_reference_prefixes rp ON rp.suffix = dc.suffix;
 
             CREATE OR REPLACE VIEW published_credentials_classified AS
                 SELECT pc.*,
                        CASE WHEN cc.prefix_authoritative OR cc.is_agent THEN cc.prefix ELSE cr.prefix END AS credential_effective_prefix,
-                       CASE WHEN sc.prefix_authoritative OR sc.is_agent THEN sc.prefix ELSE sr.prefix END AS schema_effective_prefix
+                       CASE WHEN sc.prefix_authoritative OR sc.is_agent THEN sc.prefix ELSE sr.prefix END AS schema_effective_prefix,
+                       CASE WHEN cc.suffix IS NULL THEN COALESCE(cr.prefix_count, 0) <> 1
+                            ELSE NOT cc.prefix_authoritative
+                                 AND (cc.is_agent OR COALESCE(cr.prefix_count, 0) <> 1)
+                       END AS credential_prefix_ambiguous,
+                       CASE WHEN sc.suffix IS NULL THEN COALESCE(sr.prefix_count, 0) <> 1
+                            ELSE NOT sc.prefix_authoritative
+                                 AND (sc.is_agent OR COALESCE(sr.prefix_count, 0) <> 1)
+                       END AS schema_prefix_ambiguous
                 FROM published_credentials pc
                 LEFT JOIN did_classifications cc ON cc.suffix = pc.credential_suffix
                 LEFT JOIN did_classifications sc ON sc.suffix = pc.schema_suffix
@@ -415,6 +446,22 @@ export default class Postgres implements DIDsDb {
         return result.rows[0]?.did ?? null;
     }
 
+    async findAmbiguousDIDBySuffix(suffix: string): Promise<string | null> {
+        const result = await this.getPool().query<DidRow>(
+            `SELECT dc.did FROM did_classifications dc
+             WHERE dc.suffix = $1
+               AND NOT dc.prefix_authoritative
+               AND (dc.is_agent OR (
+                   SELECT COUNT(DISTINCT dpr.prefix)
+                   FROM did_prefix_references dpr
+                   WHERE dpr.suffix = dc.suffix
+               ) <> 1)
+             LIMIT 1`,
+            [suffix]
+        );
+        return result.rows[0]?.did ?? null;
+    }
+
     async getBlock(registry: string, blockId?: BlockId): Promise<BlockInfo | null> {
         const pool = this.getPool();
         let result;
@@ -468,6 +515,16 @@ export default class Postgres implements DIDsDb {
 
         try {
             await client.query('BEGIN');
+            const blockRows: unknown[][] = [];
+            const classificationRows: unknown[][] = [];
+            const eventRows: unknown[][] = [];
+            const docRows: unknown[][] = [];
+            const credentialRows = new Map<string, unknown[]>();
+            const schemaRows: unknown[][] = [];
+            const fieldRows: unknown[][] = [];
+            const referenceRows: unknown[][] = [];
+            const receiptRows: unknown[][] = [];
+            const syncStateRows: unknown[][] = [];
 
             for (const { registry, block, removed } of page.blocks) {
                 if (removed) {
@@ -481,15 +538,7 @@ export default class Postgres implements DIDsDb {
                     continue;
                 }
 
-                await client.query(
-                    `INSERT INTO blocks (registry, hash, height, time, block)
-                     VALUES ($1, $2, $3, $4, $5::jsonb)
-                     ON CONFLICT (registry, hash) DO UPDATE SET
-                        height = EXCLUDED.height,
-                        time = EXCLUDED.time,
-                        block = EXCLUDED.block`,
-                    [registry, block.hash, block.height, block.time, JSON.stringify(block)]
-                );
+                blockRows.push([registry, block.hash, block.height, block.time, JSON.stringify(block)]);
                 result.storedBlocks += 1;
             }
 
@@ -533,57 +582,72 @@ export default class Postgres implements DIDsDb {
                 }
 
                 const classification = classifyDIDPrefix(record.events);
-                await client.query(
-                    `INSERT INTO did_classifications (suffix, did, prefix, prefix_authoritative, is_agent) VALUES ($1, $2, $3, $4, $5)
-                     ON CONFLICT (suffix) DO UPDATE SET
-                        did = EXCLUDED.did,
-                        prefix = EXCLUDED.prefix,
-                        prefix_authoritative = EXCLUDED.prefix_authoritative,
-                        is_agent = EXCLUDED.is_agent`,
-                    [suffix, record.did, classification.prefix, classification.authoritative, isAgentDID(record.events)]
-                );
+                classificationRows.push([
+                    suffix,
+                    record.did,
+                    classification.prefix,
+                    classification.authoritative,
+                    isAgentDID(record.events),
+                ]);
 
                 for (const [index, event] of record.events.entries()) {
-                    await client.query(
-                        'INSERT INTO did_events (did, event_index, registry, time, event) VALUES ($1, $2, $3, $4, $5::jsonb)',
-                        [record.did, index, event.registry, getEventDisplayTime(event), JSON.stringify(event)]
-                    );
+                    eventRows.push([
+                        record.did,
+                        index,
+                        event.registry,
+                        getEventDisplayTime(event),
+                        JSON.stringify(event),
+                    ]);
                 }
 
                 if (record.doc) {
-                    await client.query(
-                        `INSERT INTO did_docs (did, doc) VALUES ($1, $2::jsonb)
-                         ON CONFLICT (did) DO UPDATE SET doc = EXCLUDED.doc`,
-                        [record.did, JSON.stringify(record.doc)]
-                    );
+                    docRows.push([record.did, JSON.stringify(record.doc)]);
                 }
 
-                await this.replacePublishedCredentialsWithClient(
-                    client,
-                    record.did,
-                    record.publishedCredentials ?? []
-                );
+                await client.query('DELETE FROM published_credentials WHERE holder_did = $1', [record.did]);
+                for (const credential of record.publishedCredentials ?? []) {
+                    const credentialSuffix = getDIDSuffix(credential.credentialDid);
+                    credentialRows.set(`${credential.holderDid}\0${credentialSuffix}`, [
+                        credential.holderDid,
+                        credentialSuffix,
+                        getDIDSuffix(credential.schemaDid),
+                        credential.issuerDid,
+                        credential.subjectDid,
+                        credential.revealed,
+                        credential.updatedAt,
+                    ]);
+                }
                 await client.query('DELETE FROM identity_schemas WHERE did = $1', [record.did]);
                 for (const schemaSuffix of new Set((record.publishedCredentials ?? []).map(item => getDIDSuffix(item.schemaDid)))) {
-                    await client.query('INSERT INTO identity_schemas (did, schema_suffix) VALUES ($1, $2)', [record.did, schemaSuffix]);
+                    schemaRows.push([record.did, schemaSuffix]);
                 }
                 await client.query('DELETE FROM identity_fields WHERE did = $1', [record.did]);
                 for (const [suffix, fields] of extractIdentityFields(record.doc ?? {}, record.publishedCredentials ?? [])) {
                     for (const field of fields) {
-                        await client.query('INSERT INTO identity_fields (did, field, schema_suffix) VALUES ($1, $2, $3)', [record.did, field, suffix]);
+                        fieldRows.push([record.did, field, suffix]);
                     }
                 }
-                await this.replaceDIDPrefixReferencesWithClient(
-                    client,
-                    record.did,
+                await client.query('DELETE FROM did_prefix_references WHERE source_did = $1', [record.did]);
+                for (const did of deduplicateDIDPrefixReferences(
                     record.didPrefixReferences ?? [],
                     record.publishedCredentials ?? []
-                );
-                await this.replaceChallengeReceiptsWithClient(
-                    client,
-                    record.did,
-                    record.challengeReceipts ?? []
-                );
+                )) {
+                    referenceRows.push([record.did, getDIDSuffix(did), getDIDPrefix(did)]);
+                }
+                await client.query('DELETE FROM challenge_receipts WHERE receipt_did = $1', [record.did]);
+                for (const receipt of record.challengeReceipts ?? []) {
+                    receiptRows.push([
+                        receipt.receiptDid,
+                        receipt.attesterDid,
+                        getDIDSuffix(receipt.attesterDid),
+                        receipt.schemaDid,
+                        getDIDSuffix(receipt.schemaDid),
+                        receipt.requesterDid,
+                        getDIDSuffix(receipt.requesterDid),
+                        receipt.responseCommitment,
+                        receipt.updatedAt,
+                    ]);
+                }
             }
 
             for (const [key, value] of Object.entries(page.syncStateUpdates ?? {})) {
@@ -592,12 +656,110 @@ export default class Postgres implements DIDsDb {
                     continue;
                 }
 
-                await client.query(
-                    `INSERT INTO sync_state (key, value) VALUES ($1, $2)
-                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
-                    [key, value]
-                );
+                syncStateRows.push([key, value]);
             }
+
+            await insertRows(
+                client,
+                'INSERT INTO blocks (registry, hash, height, time, block)',
+                blockRows,
+                ['', '', '', '', '::jsonb'],
+                ` ON CONFLICT (registry, hash) DO UPDATE SET
+                    height = EXCLUDED.height,
+                    time = EXCLUDED.time,
+                    block = EXCLUDED.block`
+            );
+            await insertRows(
+                client,
+                'INSERT INTO did_classifications (suffix, did, prefix, prefix_authoritative, is_agent)',
+                classificationRows,
+                [],
+                ` ON CONFLICT (suffix) DO UPDATE SET
+                    did = EXCLUDED.did,
+                    prefix = EXCLUDED.prefix,
+                    prefix_authoritative = EXCLUDED.prefix_authoritative,
+                    is_agent = EXCLUDED.is_agent`
+            );
+            await insertRows(
+                client,
+                'INSERT INTO did_events (did, event_index, registry, time, event)',
+                eventRows,
+                ['', '', '', '', '::jsonb']
+            );
+            await insertRows(
+                client,
+                'INSERT INTO did_docs (did, doc)',
+                docRows,
+                ['', '::jsonb'],
+                ' ON CONFLICT (did) DO UPDATE SET doc = EXCLUDED.doc'
+            );
+            await insertRows(
+                client,
+                `INSERT INTO published_credentials (
+                    holder_did,
+                    credential_suffix,
+                    schema_suffix,
+                    issuer_did,
+                    subject_did,
+                    revealed,
+                    updated_at
+                )`,
+                Array.from(credentialRows.values()),
+                [],
+                ` ON CONFLICT (holder_did, credential_suffix) DO UPDATE SET
+                    schema_suffix = EXCLUDED.schema_suffix,
+                    issuer_did = EXCLUDED.issuer_did,
+                    subject_did = EXCLUDED.subject_did,
+                    revealed = EXCLUDED.revealed,
+                    updated_at = EXCLUDED.updated_at`
+            );
+            await insertRows(
+                client,
+                'INSERT INTO identity_schemas (did, schema_suffix)',
+                schemaRows
+            );
+            await insertRows(
+                client,
+                'INSERT INTO identity_fields (did, field, schema_suffix)',
+                fieldRows
+            );
+            await insertRows(
+                client,
+                'INSERT INTO did_prefix_references (source_did, suffix, prefix)',
+                referenceRows
+            );
+            await insertRows(
+                client,
+                `INSERT INTO challenge_receipts (
+                    receipt_did,
+                    attester_did,
+                    attester_suffix,
+                    schema_did,
+                    schema_suffix,
+                    requester_did,
+                    requester_suffix,
+                    response_commitment,
+                    updated_at
+                )`,
+                receiptRows,
+                [],
+                ` ON CONFLICT (receipt_did) DO UPDATE SET
+                    attester_did = EXCLUDED.attester_did,
+                    attester_suffix = EXCLUDED.attester_suffix,
+                    schema_did = EXCLUDED.schema_did,
+                    schema_suffix = EXCLUDED.schema_suffix,
+                    requester_did = EXCLUDED.requester_did,
+                    requester_suffix = EXCLUDED.requester_suffix,
+                    response_commitment = EXCLUDED.response_commitment,
+                    updated_at = EXCLUDED.updated_at`
+            );
+            await insertRows(
+                client,
+                'INSERT INTO sync_state (key, value)',
+                syncStateRows,
+                [],
+                ' ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value'
+            );
 
             await client.query('COMMIT');
             return result;
@@ -632,10 +794,15 @@ export default class Postgres implements DIDsDb {
 
     async listIdentities(options: IdentityListOptions = {}): Promise<IdentityListResult> {
         const pool = this.getPool();
-        const { didPrefix, schemaDid, fields = [], limit = 50, offset = 0 } = options;
+        const { didPrefix, includeAmbiguous = false, schemaDid, fields = [], limit = 50, offset = 0 } = options;
+        const scopeFilter = didPrefix
+            ? includeAmbiguous
+                ? 'AND (dc.prefix COLLATE "C" = $1 OR NOT dc.prefix_authoritative)'
+                : 'AND dc.prefix COLLATE "C" = $1'
+            : '';
         let from = `FROM did_classifications dc
             JOIN did_docs d ON d.did = dc.did
-            WHERE dc.is_agent = TRUE ${didPrefix ? 'AND dc.prefix COLLATE "C" = $1' : ''}`;
+            WHERE dc.is_agent = TRUE ${scopeFilter}`;
         const params = didPrefix ? [didPrefix] : [];
         if (fields.length > 0) {
             const placeholders = fields.map((_, index) => `$${params.length + index + 1}`);
@@ -661,9 +828,13 @@ export default class Postgres implements DIDsDb {
         try {
             await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
             const count = await client.query<CountRow>(`SELECT COUNT(*)::int AS total ${from}`, params);
-            const rows = await client.query<DocRow & DidRow>(
-                `SELECT dc.prefix || ':' || dc.suffix AS did, d.doc ${from}
-                 ORDER BY dc.prefix COLLATE "C", dc.suffix COLLATE "C"
+            const rows = await client.query<DocRow & DidRow & { prefixAmbiguous: boolean }>(
+                `SELECT dc.prefix || ':' || dc.suffix AS did,
+                        NOT dc.prefix_authoritative AS "prefixAmbiguous",
+                        d.doc ${from}
+                 ORDER BY ${didPrefix
+        ? 'dc.suffix COLLATE "C"'
+        : 'dc.prefix COLLATE "C", dc.suffix COLLATE "C"'}
                  LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
                 [...params, Math.max(0, limit), Math.max(0, offset)]
             );
@@ -671,7 +842,11 @@ export default class Postgres implements DIDsDb {
             return {
                 total: count.rows[0].total,
                 identities: rows.rows.map(row => extractIdentity(
-                    row.did, typeof row.doc === 'string' ? JSON.parse(row.doc) : row.doc, options
+                    includeAmbiguous && didPrefix && row.prefixAmbiguous
+                        ? `${didPrefix}:${getDIDSuffix(row.did)}`
+                        : row.did,
+                    typeof row.doc === 'string' ? JSON.parse(row.doc) : row.doc,
+                    options
                 )),
             };
         }
@@ -689,14 +864,25 @@ export default class Postgres implements DIDsDb {
         }
     }
 
-    async getPublishedCredentialCountsBySchema(didPrefix?: string): Promise<PublishedCredentialSchemaCount[]> {
+    async getPublishedCredentialCountsBySchema(
+        didPrefix?: string,
+        includeAmbiguous = false
+    ): Promise<PublishedCredentialSchemaCount[]> {
         const pool = this.getPool();
+        const schemaPrefix = didPrefix && includeAmbiguous
+            ? 'CASE WHEN pc.schema_prefix_ambiguous THEN $1 ELSE pc.schema_effective_prefix END'
+            : 'pc.schema_effective_prefix';
+        const credentialScope = includeAmbiguous
+            ? '(pc.credential_effective_prefix = $1 OR pc.credential_prefix_ambiguous)'
+            : 'pc.credential_effective_prefix = $1';
+        const schemaScope = includeAmbiguous
+            ? '(pc.schema_effective_prefix = $1 OR pc.schema_prefix_ambiguous)'
+            : 'pc.schema_effective_prefix = $1';
         const result = await pool.query<PublishedCredentialSchemaCount>(
-            `SELECT pc.schema_effective_prefix || ':' || pc.schema_suffix AS "schemaDid",
+            `SELECT ${schemaPrefix} || ':' || pc.schema_suffix AS "schemaDid",
                     COUNT(*)::int AS count
              FROM published_credentials_classified pc
-             ${didPrefix ? `WHERE pc.credential_effective_prefix = $1
-                AND pc.schema_effective_prefix = $1` : ''}
+             ${didPrefix ? `WHERE ${credentialScope} AND ${schemaScope}` : ''}
              GROUP BY "schemaDid"
              ORDER BY count DESC, "schemaDid" ASC`,
             didPrefix ? [didPrefix] : []
@@ -711,6 +897,7 @@ export default class Postgres implements DIDsDb {
         const pool = this.getPool();
         const {
             didPrefix,
+            includeAmbiguous = false,
             credentialDid,
             schemaDid,
             issuerDid,
@@ -725,8 +912,11 @@ export default class Postgres implements DIDsDb {
         let index = 1;
 
         if (didPrefix) {
-            clauses.push(`pc.credential_effective_prefix = $${index++}`);
+            clauses.push(includeAmbiguous
+                ? `(pc.credential_effective_prefix = $${index} OR pc.credential_prefix_ambiguous)`
+                : `pc.credential_effective_prefix = $${index}`);
             params.push(didPrefix);
+            index++;
         }
 
         if (credentialDid) {
@@ -768,7 +958,10 @@ export default class Postgres implements DIDsDb {
         const pageParams = [...params, Math.max(0, limit), Math.max(0, offset)];
         const limitParam = `$${pageParams.length - 1}`;
         const offsetParam = `$${pageParams.length}`;
-        const result = await pool.query<PublishedCredentialRecord>(
+        const result = await pool.query<PublishedCredentialRecord & {
+            credentialPrefixAmbiguous: boolean;
+            schemaPrefixAmbiguous: boolean;
+        }>(
             `SELECT
                 pc.holder_did AS "holderDid",
                 pc.credential_effective_prefix || ':' || pc.credential_suffix AS "credentialDid",
@@ -776,17 +969,27 @@ export default class Postgres implements DIDsDb {
                 pc.issuer_did AS "issuerDid",
                 pc.subject_did AS "subjectDid",
                 pc.revealed AS "revealed",
-                pc.updated_at AS "updatedAt"
+                pc.updated_at AS "updatedAt",
+                pc.credential_prefix_ambiguous AS "credentialPrefixAmbiguous",
+                pc.schema_prefix_ambiguous AS "schemaPrefixAmbiguous"
              FROM published_credentials_classified pc
              ${where}
-             ORDER BY pc.updated_at DESC, "credentialDid" ASC
+             ORDER BY pc.updated_at DESC, ${didPrefix ? 'pc.credential_suffix' : '"credentialDid"'} ASC
              LIMIT ${limitParam} OFFSET ${offsetParam}`,
             pageParams
         );
 
         return {
             total: totalResult.rows[0]?.total ?? 0,
-            credentials: result.rows,
+            credentials: result.rows.map(({ credentialPrefixAmbiguous, schemaPrefixAmbiguous, ...row }) => ({
+                ...row,
+                credentialDid: includeAmbiguous && didPrefix && credentialPrefixAmbiguous
+                    ? `${didPrefix}:${getDIDSuffix(row.credentialDid)}`
+                    : row.credentialDid,
+                schemaDid: includeAmbiguous && didPrefix && schemaPrefixAmbiguous
+                    ? `${didPrefix}:${getDIDSuffix(row.schemaDid)}`
+                    : row.schemaDid,
+            })),
         };
     }
 
@@ -809,25 +1012,31 @@ export default class Postgres implements DIDsDb {
         const pageParams = [...params, Math.max(0, limit), Math.max(0, offset)];
         const limitParam = `$${pageParams.length - 1}`;
         const offsetParam = `$${pageParams.length}`;
-        const result = await pool.query<ChallengeReceiptRecord>(
+        const result = await pool.query<ChallengeReceiptRecord & { prefixAmbiguous: boolean }>(
             `SELECT
                 dc.prefix || ':' || dc.suffix AS "receiptDid",
                 cr.attester_did AS "attesterDid",
                 cr.schema_did AS "schemaDid",
                 cr.requester_did AS "requesterDid",
                 cr.response_commitment AS "responseCommitment",
-                cr.updated_at AS "updatedAt"
+                cr.updated_at AS "updatedAt",
+                dc.prefix_ambiguous AS "prefixAmbiguous"
              FROM challenge_receipts cr
              JOIN did_classifications_effective dc ON dc.did = cr.receipt_did
              ${where}
-             ORDER BY cr.updated_at DESC, "receiptDid" ASC
+             ORDER BY cr.updated_at DESC, ${options.didPrefix ? 'dc.suffix' : '"receiptDid"'} ASC
              LIMIT ${limitParam} OFFSET ${offsetParam}`,
             pageParams
         );
 
         return {
             total: totalResult.rows[0]?.total ?? 0,
-            receipts: result.rows,
+            receipts: result.rows.map(({ prefixAmbiguous, ...row }) => ({
+                ...row,
+                receiptDid: options.includeAmbiguous && options.didPrefix && prefixAmbiguous
+                    ? `${options.didPrefix}:${getDIDSuffix(row.receiptDid)}`
+                    : row.receiptDid,
+            })),
         };
     }
 
@@ -888,6 +1097,7 @@ export default class Postgres implements DIDsDb {
         const pool = this.getPool();
         const {
             didPrefix,
+            includeAmbiguous = false,
             registry,
             updatedAfter,
             updatedBefore,
@@ -899,8 +1109,11 @@ export default class Postgres implements DIDsDb {
         let index = 1;
 
         if (didPrefix) {
-            clauses.push(`dc.prefix = $${index++}`);
+            clauses.push(includeAmbiguous
+                ? `(dc.prefix = $${index} OR dc.prefix_ambiguous)`
+                : `dc.prefix = $${index}`);
             params.push(didPrefix);
+            index++;
         }
 
         if (registry) {
@@ -934,15 +1147,17 @@ export default class Postgres implements DIDsDb {
             registry: string;
             time: string;
             event: GatekeeperEvent | string;
+            prefixAmbiguous: boolean;
         }>(
             `SELECT dc.prefix || ':' || dc.suffix AS did,
                     e.registry,
                     e.time,
-                    e.event
+                    e.event,
+                    dc.prefix_ambiguous AS "prefixAmbiguous"
              FROM did_events e
              JOIN did_classifications_effective dc ON dc.did = e.did
              ${where}
-             ORDER BY e.time DESC, did ASC, e.event_index ASC
+             ORDER BY e.time DESC, ${didPrefix ? 'dc.suffix' : 'did'} ASC, e.event_index ASC
              LIMIT ${limitParam} OFFSET ${offsetParam}`,
             pageParams
         );
@@ -950,7 +1165,9 @@ export default class Postgres implements DIDsDb {
         return {
             total: totalResult.rows[0]?.total ?? 0,
             events: result.rows.map(row => ({
-                did: row.did,
+                did: includeAmbiguous && didPrefix && row.prefixAmbiguous
+                    ? `${didPrefix}:${getDIDSuffix(row.did)}`
+                    : row.did,
                 registry: row.registry,
                 time: row.time,
                 event: typeof row.event === 'string'
@@ -1113,17 +1330,24 @@ export default class Postgres implements DIDsDb {
 
     async searchDocs(q: string, options: SearchDocsOptions): Promise<SearchDocsResult> {
         const pool = this.getPool();
-        const { didPrefix, limit, cursor } = options;
+        const { didPrefix, includeAmbiguous = false, limit, cursor } = options;
         const escapedQuery = q.replace(/[!%_]/g, '!$&');
         const params: unknown[] = [escapedQuery];
         const filters: string[] = [];
         if (didPrefix) {
             params.push(didPrefix);
-            filters.push(`dc.prefix = $${params.length}`);
+            filters.push(includeAmbiguous
+                ? `(dc.prefix = $${params.length} OR dc.prefix_ambiguous)`
+                : `dc.prefix = $${params.length}`);
         }
         if (cursor) {
             params.push(cursor);
-            filters.push(`(dc.prefix || ':' || dc.suffix) COLLATE "C" > $${params.length}`);
+            filters.push(didPrefix
+                ? `dc.suffix COLLATE "C" > $${params.length}`
+                : `(dc.prefix || ':' || dc.suffix) COLLATE "C" > $${params.length}`);
+            if (didPrefix) {
+                params[params.length - 1] = getDIDSuffix(cursor);
+            }
         }
         params.push(limit + 1);
 
@@ -1132,23 +1356,28 @@ export default class Postgres implements DIDsDb {
         try {
             await client.query('BEGIN READ ONLY');
             await client.query(`SET LOCAL statement_timeout = '${this.searchTimeoutMs}ms'`);
-            const result = await client.query<DidRow>(
+            const result = await client.query<DidRow & { prefixAmbiguous: boolean }>(
                 `WITH matches AS MATERIALIZED (
                     SELECT did
                     FROM did_docs
                     WHERE doc::text LIKE '%' || $1 || '%' ESCAPE '!'
                  )
-                 SELECT dc.prefix || ':' || dc.suffix AS did
+                 SELECT dc.prefix || ':' || dc.suffix AS did,
+                        dc.prefix_ambiguous AS "prefixAmbiguous"
                  FROM matches m
                  JOIN did_classifications_effective dc ON dc.did = m.did
                  ${filters.length ? `WHERE ${filters.join(' AND ')}` : ''}
-                 ORDER BY (dc.prefix || ':' || dc.suffix) COLLATE "C"
+                 ORDER BY ${didPrefix ? 'dc.suffix' : `(dc.prefix || ':' || dc.suffix)`} COLLATE "C"
                  LIMIT $${params.length}`,
                 params
             );
             await client.query('COMMIT');
 
-            const dids = result.rows.slice(0, limit).map(row => row.did);
+            const dids = result.rows.slice(0, limit).map(row =>
+                includeAmbiguous && didPrefix && row.prefixAmbiguous
+                    ? `${didPrefix}:${getDIDSuffix(row.did)}`
+                    : row.did
+            );
             return {
                 dids,
                 nextCursor: result.rows.length > limit ? dids[dids.length - 1] : null,
@@ -1168,7 +1397,11 @@ export default class Postgres implements DIDsDb {
         }
     }
 
-    async queryDocs(where: Record<string, unknown>, didPrefix?: string): Promise<string[]> {
+    async queryDocs(
+        where: Record<string, unknown>,
+        didPrefix?: string,
+        includeAmbiguous = false
+    ): Promise<string[]> {
         const pool = this.getPool();
 
         const entry = Object.entries(where)[0] as [string, any] | undefined;
@@ -1279,7 +1512,7 @@ export default class Postgres implements DIDsDb {
             );
         }
 
-        return this.effectiveDIDs(result.rows.map(row => row.did), didPrefix);
+        return this.effectiveDIDs(result.rows.map(row => row.did), didPrefix, includeAmbiguous);
     }
 
     async wipeDb(): Promise<void> {
@@ -1305,15 +1538,28 @@ export default class Postgres implements DIDsDb {
         return this.pool;
     }
 
-    private async effectiveDIDs(dids: string[], didPrefix?: string): Promise<string[]> {
+    private async effectiveDIDs(
+        dids: string[],
+        didPrefix: string | undefined,
+        includeAmbiguous: boolean
+    ): Promise<string[]> {
         const result = await this.getPool().query<EffectiveDidRow>(
-            `SELECT did AS "storedDid", prefix || ':' || suffix AS did
+            `SELECT did AS "storedDid",
+                    prefix || ':' || suffix AS did,
+                    prefix_ambiguous AS "prefixAmbiguous"
              FROM did_classifications_effective
              WHERE did = ANY($1::text[])
-             ${didPrefix ? 'AND prefix = $2' : ''}`,
+             ${didPrefix
+        ? `AND (prefix = $2${includeAmbiguous ? ' OR prefix_ambiguous' : ''})`
+        : ''}`,
             didPrefix ? [dids, didPrefix] : [dids]
         );
-        const effectiveByStored = new Map(result.rows.map(row => [row.storedDid, row.did]));
+        const effectiveByStored = new Map(result.rows.map(row => [
+            row.storedDid,
+            includeAmbiguous && didPrefix && row.prefixAmbiguous
+                ? `${didPrefix}:${getDIDSuffix(row.did)}`
+                : row.did,
+        ]));
         return dids.flatMap(did => {
             const effectiveDid = effectiveByStored.get(did);
             return effectiveDid ? [effectiveDid] : [];
@@ -1330,109 +1576,6 @@ export default class Postgres implements DIDsDb {
         });
     }
 
-    private async replacePublishedCredentialsWithClient(
-        client: PoolClient,
-        holderDid: string,
-        records: PublishedCredentialRecord[]
-    ): Promise<void> {
-        await client.query(
-            'DELETE FROM published_credentials WHERE holder_did = $1',
-            [holderDid]
-        );
-
-        for (const record of records) {
-            await client.query(
-                `INSERT INTO published_credentials (
-                    holder_did,
-                    credential_suffix,
-                    schema_suffix,
-                    issuer_did,
-                    subject_did,
-                    revealed,
-                    updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-                ON CONFLICT (holder_did, credential_suffix) DO UPDATE SET
-                    schema_suffix = EXCLUDED.schema_suffix,
-                    issuer_did = EXCLUDED.issuer_did,
-                    subject_did = EXCLUDED.subject_did,
-                    revealed = EXCLUDED.revealed,
-                    updated_at = EXCLUDED.updated_at`,
-                [
-                    record.holderDid,
-                    getDIDSuffix(record.credentialDid),
-                    getDIDSuffix(record.schemaDid),
-                    record.issuerDid,
-                    record.subjectDid,
-                    record.revealed,
-                    record.updatedAt,
-                ]
-            );
-        }
-    }
-
-    private async replaceDIDPrefixReferencesWithClient(
-        client: PoolClient,
-        sourceDid: string,
-        references: string[],
-        publishedCredentials: PublishedCredentialRecord[]
-    ): Promise<void> {
-        await client.query('DELETE FROM did_prefix_references WHERE source_did = $1', [sourceDid]);
-
-        for (const did of deduplicateDIDPrefixReferences(references, publishedCredentials)) {
-            await client.query(
-                'INSERT INTO did_prefix_references (source_did, suffix, prefix) VALUES ($1, $2, $3)',
-                [sourceDid, getDIDSuffix(did), getDIDPrefix(did)]
-            );
-        }
-    }
-
-    private async replaceChallengeReceiptsWithClient(
-        client: PoolClient,
-        receiptDid: string,
-        records: ChallengeReceiptRecord[]
-    ): Promise<void> {
-        await client.query(
-            'DELETE FROM challenge_receipts WHERE receipt_did = $1',
-            [receiptDid]
-        );
-
-        for (const record of records) {
-            await client.query(
-                `INSERT INTO challenge_receipts (
-                    receipt_did,
-                    attester_did,
-                    attester_suffix,
-                    schema_did,
-                    schema_suffix,
-                    requester_did,
-                    requester_suffix,
-                    response_commitment,
-                    updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                ON CONFLICT (receipt_did) DO UPDATE SET
-                    attester_did = EXCLUDED.attester_did,
-                    attester_suffix = EXCLUDED.attester_suffix,
-                    schema_did = EXCLUDED.schema_did,
-                    schema_suffix = EXCLUDED.schema_suffix,
-                    requester_did = EXCLUDED.requester_did,
-                    requester_suffix = EXCLUDED.requester_suffix,
-                    response_commitment = EXCLUDED.response_commitment,
-                    updated_at = EXCLUDED.updated_at`,
-                [
-                    record.receiptDid,
-                    record.attesterDid,
-                    getDIDSuffix(record.attesterDid),
-                    record.schemaDid,
-                    getDIDSuffix(record.schemaDid),
-                    record.requesterDid,
-                    getDIDSuffix(record.requesterDid),
-                    record.responseCommitment,
-                    record.updatedAt,
-                ]
-            );
-        }
-    }
-
     private buildChallengeReceiptWhere(
         options: ChallengeReceiptListOptions | ChallengeReceiptUsageOptions
     ): { where: string; params: unknown[] } {
@@ -1443,8 +1586,11 @@ export default class Postgres implements DIDsDb {
         const responseCommitment = 'responseCommitment' in options ? options.responseCommitment : undefined;
 
         if (options.didPrefix) {
-            clauses.push(`dc.prefix = $${index++}`);
+            clauses.push(options.includeAmbiguous
+                ? `(dc.prefix = $${index} OR dc.prefix_ambiguous)`
+                : `dc.prefix = $${index}`);
             params.push(options.didPrefix);
+            index++;
         }
 
         if (receiptDid) {

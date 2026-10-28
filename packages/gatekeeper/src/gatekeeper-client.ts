@@ -406,7 +406,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
 
     async getBlock(registry: string, block?: BlockId): Promise<BlockInfo | null> {
         try {
-            const url = block
+            const url = block !== undefined
                 ? `${this.API}/block/${registry}/${block}`
                 : `${this.API}/block/${registry}/latest`;
             const response = await this.axios.get(url);

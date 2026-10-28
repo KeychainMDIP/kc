@@ -84,7 +84,11 @@ DID resolution, search, query, identity, event, and credential-metric endpoints 
 `KC_SEARCH_SERVER_DID_PREFIX` when configured. Indexed DID results use the
 effective prefix determined by the precedence documented in
 [DID network classification](#did-network-classification), not necessarily a
-stored alias's prefix.
+stored alias's prefix. The live discovery and metric endpoints documented below
+accept `includeAmbiguous=true` to also return legacy DIDs whose prefix cannot be
+determined authoritatively. Those DIDs are returned under the configured prefix;
+authoritative DIDs from another network remain excluded. This option does not
+reclassify stored DIDs and does not apply to historical metric snapshots.
 
 ### `GET /api/v1/ready`
 - **Description**: Returns `{ "ready": true }` once the HTTP service is available.
@@ -99,8 +103,11 @@ stored alias's prefix.
     - `versionSequence` (optional, positive integer)
     - `versionTime` (optional, timestamp accepted by Gatekeeper resolution)
 - **Notes**: Prefix aliases are matched by final CID suffix. A configured
-  network scope must match the DID's effective classification. An existing
-  storage alias cannot bypass that scope.
+  network scope must match the DID's effective classification. For direct
+  lookup only, a legacy DID without conclusive operation or manifest prefix
+  evidence can be resolved in the configured scope by its CID suffix. This
+  does not reclassify the stored DID. Scoped listings, search, and live metrics
+  include it only when `includeAmbiguous=true` is supplied.
 - **Returns**:
     - `200 OK` + JSON DID Document if present.
     - `400 Bad Request` for an invalid `versionSequence`.
@@ -109,7 +116,8 @@ stored alias's prefix.
 ### `GET /api/v1/did/:did/events`
 - **Description**: Returns all indexed events for the DID in operation order.
 - **Notes**: DID prefix aliases are matched by final CID suffix and validated
-  against the configured network scope.
+  against the configured network scope. The direct legacy fallback described
+  above also applies, without changing the stored events or classification.
 - **Returns**:
     - `200 OK` + an array of Gatekeeper events.
     - `200 OK` + `[]` if the DID has no indexed events.
@@ -118,6 +126,7 @@ stored alias's prefix.
 - **Description**: Returns a paginated list of indexed DID events.
 - **Query Params**:
     - `registry`, `updatedAfter`, `updatedBefore` (optional)
+    - `includeAmbiguous` (optional boolean, default `false`)
     - `limit` (optional, default `50`)
     - `offset` (optional, default `0`)
 - **Returns**:
@@ -128,6 +137,7 @@ stored alias's prefix.
   configured network scope and returns matching effective DIDs.
 - **Query Params**:
     - `q` (string containing at least three Unicode characters)
+    - `includeAmbiguous` (optional boolean, default `false`)
     - `limit` (optional, default `50`, maximum `500`)
     - `cursor` (optional, the `nextCursor` returned by the preceding page)
 - **Notes**: Search terms are literal. SQL wildcard characters `%` and `_` do
@@ -147,6 +157,8 @@ stored alias's prefix.
 ### `POST /api/v1/query`
 - **Description**: Queries indexed DID documents in the configured network
   scope using a `where` object with an `$in` condition.
+- **Query Params**:
+    - `includeAmbiguous` (optional boolean, default `false`)
 - **Body**: `{ "where": { "didDocumentData.type": { "$in": ["value"] } } }`
 - **Returns**:
     - `200 OK` + an array of matching effective DIDs.
@@ -165,6 +177,8 @@ Gatekeeper.
 
 Query parameters:
 
+- `includeAmbiguous` (optional boolean, default `false`) includes legacy agent
+  DIDs without an authoritative prefix.
 - `limit` (optional, default `50`, maximum `500`) and `offset` (optional, default
   `0`) are non-negative integers. `limit=0` returns only the total.
 - `schemaDid` (optional) filters identities to those with a published credential
@@ -265,6 +279,8 @@ failures return `500`.
 
 ### `GET /api/v1/metrics/schemas/published`
 - **Description**: Returns current published credential counts grouped by schema DID.
+- **Query Params**:
+    - `includeAmbiguous` (optional boolean, default `false`)
 - **Returns**:
     - `200 OK` + `{ "schemas": [{ "schemaDid": "...", "count": 42 }] }`
     - `400 Bad Request` when the removed `date` query parameter is supplied.
@@ -277,6 +293,7 @@ failures return `500`.
     - `issuerDid` (optional)
     - `subjectDid` (optional)
     - `revealed` (optional, `true` or `false`)
+    - `includeAmbiguous` (optional boolean, default `false`)
     - `limit` (optional, default `50`, maximum `500`)
     - `offset` (optional, default `0`)
 - **Notes**:
@@ -352,6 +369,7 @@ failures return `500`.
 - **Query Params**:
     - `receiptDid`, `attesterDid`, `schemaDid`, `requesterDid`,
       `responseCommitment`, `updatedAfter`, `updatedBefore` (optional)
+    - `includeAmbiguous` (optional boolean, default `false`)
     - `limit` (optional, default `50`)
     - `offset` (optional, default `0`)
 - **Notes**:
@@ -365,6 +383,7 @@ failures return `500`.
 - **Query Params**:
     - `attesterDid` (required)
     - `schemaDid`, `requesterDid`, `updatedAfter`, `updatedBefore` (optional)
+    - `includeAmbiguous` (optional boolean, default `false`)
     - `limit` (optional, default `50`)
     - `offset` (optional, default `0`)
 - **Notes**:

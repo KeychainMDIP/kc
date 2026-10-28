@@ -709,7 +709,7 @@ function KeymasterUI({ keymaster, title, challengeDID, onWalletUpload }: Keymast
             }
 
             setDisableSendResponse(true);
-            axios.post(callback, { response });
+            await axios.post(callback, { response });
         } catch (error) {
             showError(error);
         }
