@@ -113,6 +113,37 @@ Cryptographic resolution prefers confirmed keys. Only a not-found response
 permits fallback to the immutable version-1 key, retaining any historical time
 used for decryption. Connection and other resolution failures propagate.
 
+## Credential validation
+
+The credential validator requires the v2 base context first, supported HTTP(S)
+string contexts, the `VerifiableCredential` type, valid issuer and subject DIDs,
+and the reference signature structure. Inline JSON-LD context objects are not
+supported. URL checks retain the reference's portable limitation around IPv6,
+Unicode hostnames and complete host validation.
+
+Issuance and updates validate the newly signed credential before publishing.
+Updates require the initiating issuer and replace the previous signature.
+Acceptance requires the holder as subject and a valid signature from the stated
+issuer. Credential reads, issued lists and publication share the same structural
+validator.
+
+Missing or null validity bounds remain supported. Present dates require an
+explicit timezone and a valid Gregorian date, with the reference's support for
+fractional seconds and `24:00:00`. The signed validity period must be ordered.
+Selection and verification use an inclusive start and exclusive expiry against
+one millisecond clock snapshot per response workflow. Fractional boundaries
+retain their meaning even below millisecond precision.
+
+Acceptance does not require the credential to be current. A valid expired or
+future-dated credential can remain held, while selection and verification skip
+it outside its validity period. Invalid candidates are skipped without deleting
+them, allowing a later valid alternative to satisfy the challenge.
+
+Challenge selection uses `type[1]` as the schema. An absent or empty issuer list
+is unrestricted. Optional schema fields can be omitted when issuing a
+credential. Presentations carry the complete signed credential and do not
+provide field-level selective disclosure.
+
 ## Deployment options
 
 Existing constructors remain available. Use `KeymasterOptions` to configure

@@ -1,11 +1,15 @@
 package org.keychain.keymaster;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.DateTimeException;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.bitcoinj.crypto.DeterministicKey;
 import org.keychain.cid.Cid;
 import org.keychain.crypto.HdKeyUtil;
@@ -39,6 +43,11 @@ public class Keymaster {
     private static final String EPOCH_ISO = ISO_MILLIS.format(Instant.EPOCH);
     private static final int MAX_NAME_LENGTH = 32;
     private static Supplier<Instant> NOW_SUPPLIER = Instant::now;
+    // shortcut: match the reference's portable URL check, expand in a separate URL-validation change.
+    private static final Pattern CREDENTIAL_CONTEXT_URL = Pattern.compile(
+        "^https?://[a-z\\d](?:[a-z\\d.-]*[a-z\\d])?(?::(\\d{1,5}))?(?:[/?#]|$)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern CREDENTIAL_DATE = Pattern.compile(
+        "(-?(?:[1-9]\\d{3,}|0\\d{3}))-(\\d{2})-(\\d{2})T(\\d{2}):([0-5]\\d):([0-5]\\d)(?:\\.(\\d+))?(Z|[+-]\\d{2}:[0-5]\\d)");
     private final KeymasterWalletManager walletManager;
     private final KeymasterCrypto crypto;
     private final String passphrase;
@@ -1156,6 +1165,7 @@ public class Keymaster {
         }
 
         java.util.List<String> matches = new java.util.ArrayList<>();
+        long now = NOW_SUPPLIER.get().toEpochMilli();
         Object credentialsObj = challenge.get("credentials");
         if (credentialsObj instanceof java.util.List<?>) {
             @SuppressWarnings("unchecked")
@@ -1166,7 +1176,7 @@ public class Keymaster {
                 }
                 @SuppressWarnings("unchecked")
                 java.util.Map<String, Object> spec = (java.util.Map<String, Object>) item;
-                String match = findMatchingCredential(spec, responder);
+                String match = findMatchingCredential(spec, responder, now);
                 if (match != null) {
                     matches.add(match);
                 }
@@ -1247,6 +1257,7 @@ public class Keymaster {
         java.util.Map<String, Object> challenge = (java.util.Map<String, Object>) challengeObj;
 
         java.util.List<java.util.Map<String, Object>> vps = new java.util.ArrayList<>();
+        long now = NOW_SUPPLIER.get().toEpochMilli();
         Object credentialsObj = response.get("credentials");
         if (credentialsObj instanceof java.util.List<?>) {
             for (Object entry : (java.util.List<?>) credentialsObj) {
@@ -1292,7 +1303,7 @@ public class Keymaster {
                 }
                 @SuppressWarnings("unchecked")
                 java.util.Map<String, Object> vp = (java.util.Map<String, Object>) vpPlain;
-                if (!verifySignature(vp)) {
+                if (!isVerifiableCredential(vp) || !verifyCredentialSignature(vp) || !isCredentialCurrent(vp, now)) {
                     continue;
                 }
 
@@ -1320,7 +1331,7 @@ public class Keymaster {
                             }
                             if (matchSpec != null) {
                                 Object issuersObj = matchSpec.get("issuers");
-                                if (issuersObj instanceof java.util.List<?>) {
+                                if (issuersObj instanceof java.util.List<?> && !((List<?>) issuersObj).isEmpty()) {
                                     Object issuerObj = vp.get("issuer");
                                     if (issuerObj instanceof String) {
                                         if (!((java.util.List<?>) issuersObj).contains(issuerObj)) {
@@ -1538,7 +1549,7 @@ public class Keymaster {
             throw new IllegalArgumentException("subjectId");
         }
 
-        String from = validFrom != null ? validFrom : nowIso();
+        String from = validFrom != null && !validFrom.isEmpty() ? validFrom : nowIso();
         String type = lookupDID(schemaId);
         String subjectDid = lookupDID(subjectId);
 
@@ -1596,17 +1607,10 @@ public class Keymaster {
         }
 
         java.util.Map<String, Object> signed = addSignatureInternal(bound, issuerDid);
-        Object subjectObj = signed.get("credentialSubject");
-        if (!(subjectObj instanceof java.util.Map<?, ?>)) {
-            throw new IllegalArgumentException("credential.credentialSubject.id");
+        if (!isVerifiableCredential(signed)) {
+            throw new IllegalArgumentException("credential");
         }
-
-        @SuppressWarnings("unchecked")
-        java.util.Map<String, Object> subject = (java.util.Map<String, Object>) subjectObj;
-        Object subjectId = subject.get("id");
-        if (!(subjectId instanceof String) || ((String) subjectId).isBlank()) {
-            throw new IllegalArgumentException("credential.credentialSubject.id");
-        }
+        String subjectId = (String) ((Map<?, ?>) signed.get("credentialSubject")).get("id");
 
         EncryptOptions encryption = options != null
             ? WalletJsonMapper.mapper().convertValue(options, EncryptOptions.class) : new EncryptOptions();
@@ -1614,7 +1618,7 @@ public class Keymaster {
         encryption.controller = null;
         encryption.name = null;
         encryption.includeHash = true;
-        return encryptJsonFor(signed, (String) subjectId, issuerDid, encryption);
+        return encryptJsonFor(signed, subjectId, issuerDid, encryption);
     }
 
     public java.util.Map<String, Object> getCredential(String id) {
@@ -1655,18 +1659,13 @@ public class Keymaster {
             IDInfo current = fetchIdInfo(null);
             String did = lookupDID(id);
             Object vc = decryptJsonFor(did, current.did);
-            if (isVerifiableCredential(vc)) {
-                @SuppressWarnings("unchecked")
-                java.util.Map<String, Object> map = (java.util.Map<String, Object>) vc;
-                Object subjectObj = map.get("credentialSubject");
-                if (subjectObj instanceof java.util.Map<?, ?>) {
-                    @SuppressWarnings("unchecked")
-                    java.util.Map<String, Object> subject = (java.util.Map<String, Object>) subjectObj;
-                    Object subjectId = subject.get("id");
-                    if (subjectId instanceof String && !current.did.equals(subjectId)) {
-                        return false;
-                    }
-                }
+            if (!isVerifiableCredential(vc)) {
+                return false;
+            }
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Object> map = (java.util.Map<String, Object>) vc;
+            if (!current.did.equals(((Map<?, ?>) map.get("credentialSubject")).get("id")) || !verifyCredentialSignature(map)) {
+                return false;
             }
             return addToHeldFor(did, current.did);
         } catch (Exception e) {
@@ -1709,9 +1708,10 @@ public class Keymaster {
         if (!isVerifiableCredential(original)) {
             throw new IllegalArgumentException("did is not a credential");
         }
-        if (credential == null ||
-            credential.get("credential") == null ||
-            credential.get("credentialSubject") == null) {
+        Object claims = credential == null ? null : credential.get("credential");
+        if (claims == null || Boolean.FALSE.equals(claims) || "".equals(claims)
+            || claims instanceof Number && (((Number) claims).doubleValue() == 0 || Double.isNaN(((Number) claims).doubleValue()))
+            || credential.get("credentialSubject") == null) {
             throw new IllegalArgumentException("credential");
         }
 
@@ -1725,10 +1725,16 @@ public class Keymaster {
         if (!(subjectId instanceof String) || ((String) subjectId).isBlank()) {
             throw new IllegalArgumentException("credential");
         }
+        if (!sender.equals(credential.get("issuer"))) {
+            throw new IllegalArgumentException("credential.issuer");
+        }
 
         java.util.Map<String, Object> unsigned = new java.util.LinkedHashMap<>(credential);
         unsigned.remove("signature");
         java.util.Map<String, Object> signed = addSignatureInternal(unsigned, sender);
+        if (!isVerifiableCredential(signed)) {
+            throw new IllegalArgumentException("credential");
+        }
 
         String msg;
         try {
@@ -2024,7 +2030,7 @@ public class Keymaster {
         return null;
     }
 
-    private String findMatchingCredential(java.util.Map<String, Object> credential, String holder) {
+    private String findMatchingCredential(java.util.Map<String, Object> credential, String holder, long now) {
         IDInfo id = fetchIdInfo(holder);
         if (id.held == null) {
             return null;
@@ -2050,7 +2056,7 @@ public class Keymaster {
                 }
 
                 Object issuersObj = credential.get("issuers");
-                if (issuersObj instanceof java.util.List<?>) {
+                if (issuersObj instanceof java.util.List<?> && !((List<?>) issuersObj).isEmpty()) {
                     Object issuerObj = doc.get("issuer");
                     if (issuerObj instanceof String && !((java.util.List<?>) issuersObj).contains(issuerObj)) {
                         continue;
@@ -2059,10 +2065,12 @@ public class Keymaster {
 
                 Object schemaObj = credential.get("schema");
                 Object typeObj = doc.get("type");
-                if (schemaObj instanceof String && typeObj instanceof java.util.List<?>) {
-                    if (!((java.util.List<?>) typeObj).contains(schemaObj)) {
-                        continue;
-                    }
+                List<?> types = (List<?>) typeObj;
+                if (types.size() < 2 || !Objects.equals(types.get(1), schemaObj)) {
+                    continue;
+                }
+                if (!isCredentialCurrent(doc, now) || !verifyCredentialSignature(doc)) {
+                    continue;
                 }
 
                 return did;
@@ -2552,19 +2560,119 @@ public class Keymaster {
     }
 
     private static boolean isVerifiableCredential(Object obj) {
-        if (!(obj instanceof java.util.Map<?, ?>)) {
+        if (!(obj instanceof Map<?, ?>)) {
             return false;
         }
-        @SuppressWarnings("unchecked")
-        java.util.Map<String, Object> map = (java.util.Map<String, Object>) obj;
-        Object context = map.get("@context");
-        Object type = map.get("type");
-        Object issuer = map.get("issuer");
-        Object subject = map.get("credentialSubject");
-        return context instanceof java.util.List<?> &&
-            type instanceof java.util.List<?> &&
-            issuer != null &&
-            subject != null;
+        Map<?, ?> vc = (Map<?, ?>) obj;
+        Object context = vc.get("@context");
+        Object type = vc.get("type");
+        Object subject = vc.get("credentialSubject");
+        Object signature = vc.get("signature");
+        Object fromValue = vc.get("validFrom");
+        Object untilValue = vc.get("validUntil");
+        double from = credentialTimestamp(fromValue);
+        double until = credentialTimestamp(untilValue);
+        if (!(context instanceof List<?>) || ((List<?>) context).isEmpty()
+            || !"https://www.w3.org/ns/credentials/v2".equals(((List<?>) context).get(0))) {
+            return false;
+        }
+        for (Object value : (List<?>) context) {
+            if (!(value instanceof String)) return false;
+            Matcher url = CREDENTIAL_CONTEXT_URL.matcher((String) value);
+            if (!url.find() || url.group(1) != null && Integer.parseInt(url.group(1)) > 65535) return false;
+        }
+        if (!(type instanceof List<?>) || !((List<?>) type).contains("VerifiableCredential")
+            || ((List<?>) type).stream().anyMatch(value -> !(value instanceof String) || ((String) value).isEmpty())
+            || !(vc.get("issuer") instanceof String) || !isValidDID((String) vc.get("issuer"))
+            || fromValue != null && !Double.isFinite(from)
+            || untilValue != null && !Double.isFinite(until)
+            || fromValue != null && untilValue != null && !credentialPeriodOrdered((String) fromValue, (String) untilValue, from, until)
+            || !(subject instanceof Map<?, ?>) || !(((Map<?, ?>) subject).get("id") instanceof String)
+            || !isValidDID((String) ((Map<?, ?>) subject).get("id"))
+            || !(signature instanceof Map<?, ?>)) {
+            return false;
+        }
+        Map<?, ?> sig = (Map<?, ?>) signature;
+        return sig.get("signer") instanceof String && isValidDID((String) sig.get("signer"))
+            && Double.isFinite(credentialTimestamp(sig.get("signed")))
+            && (!sig.containsKey("hash") || sig.get("hash") instanceof String && !((String) sig.get("hash")).isEmpty())
+            && sig.get("value") instanceof String && !((String) sig.get("value")).isEmpty();
+    }
+
+    private boolean verifyCredentialSignature(Map<String, Object> credential) {
+        Object signature = credential.get("signature");
+        return credential.get("issuer") instanceof String && signature instanceof Map<?, ?>
+            && credential.get("issuer").equals(((Map<?, ?>) signature).get("signer"))
+            && verifySignature(credential);
+    }
+
+    private static double credentialTimestamp(Object value) {
+        if (!(value instanceof String)) return Double.NaN;
+        Matcher match = CREDENTIAL_DATE.matcher((String) value);
+        if (!match.matches()) return Double.NaN;
+        try {
+            int year = Integer.parseInt(match.group(1));
+            int month = Integer.parseInt(match.group(2));
+            int day = Integer.parseInt(match.group(3));
+            int hour = Integer.parseInt(match.group(4));
+            int minute = Integer.parseInt(match.group(5));
+            int second = Integer.parseInt(match.group(6));
+            String fraction = match.group(7) == null ? "" : match.group(7);
+            String zone = match.group(8);
+            if (hour > 24 || hour == 24 && (minute != 0 || second != 0 || hasNonzeroDigit(fraction, 0))) return Double.NaN;
+            long epochDay = LocalDate.of(year, month, day).toEpochDay();
+            // Keep the reference Date range before timezone adjustment and fractional rounding.
+            if (Math.abs(epochDay) > 100_000_000L) return Double.NaN;
+            String firstDigits = fraction.substring(0, Math.min(3, fraction.length()));
+            int millis = Integer.parseInt((firstDigits + "000").substring(0, 3));
+            long time = epochDay * 86_400_000L + hour * 3_600_000L + minute * 60_000L + second * 1000L + millis;
+            if (Math.abs(time) > 8_640_000_000_000_000L) return Double.NaN;
+            long offset = 0;
+            if (!"Z".equals(zone)) {
+                offset = (Integer.parseInt(zone.substring(1, 3)) * 60L + Integer.parseInt(zone.substring(4, 6))) * 60_000L;
+                if (offset > 14 * 60 * 60_000L) return Double.NaN;
+                if (zone.charAt(0) == '-') offset = -offset;
+            }
+            // Round up so comparisons against the integer millisecond clock preserve the boundary.
+            return time - offset + (hasNonzeroDigit(fraction, 3) ? 1 : 0);
+        } catch (DateTimeException | NumberFormatException invalid) {
+            return Double.NaN;
+        }
+    }
+
+    private static boolean credentialPeriodOrdered(String fromValue, String untilValue, double from, double until) {
+        if (from != until) return from < until;
+        String fromRemainder = credentialFractionRemainder(fromValue);
+        String untilRemainder = credentialFractionRemainder(untilValue);
+        double fromBase = from - (hasNonzeroDigit(fromRemainder, 0) ? 1 : 0);
+        double untilBase = until - (hasNonzeroDigit(untilRemainder, 0) ? 1 : 0);
+        if (fromBase != untilBase) return fromBase < untilBase;
+        int length = Math.max(fromRemainder.length(), untilRemainder.length());
+        for (int index = 0; index < length; index++) {
+            char fromDigit = index < fromRemainder.length() ? fromRemainder.charAt(index) : '0';
+            char untilDigit = index < untilRemainder.length() ? untilRemainder.charAt(index) : '0';
+            if (fromDigit != untilDigit) return fromDigit < untilDigit;
+        }
+        return true;
+    }
+
+    private static String credentialFractionRemainder(String value) {
+        Matcher match = CREDENTIAL_DATE.matcher(value);
+        String fraction = match.matches() ? match.group(7) : null;
+        return fraction != null && fraction.length() > 3 ? fraction.substring(3) : "";
+    }
+
+    private static boolean hasNonzeroDigit(String value, int start) {
+        for (int index = start; index < value.length(); index++) {
+            if (value.charAt(index) != '0') return true;
+        }
+        return false;
+    }
+
+    private static boolean isCredentialCurrent(Map<String, Object> credential, long now) {
+        Object from = credential.get("validFrom");
+        Object until = credential.get("validUntil");
+        return (from == null || credentialTimestamp(from) <= now) && (until == null || now < credentialTimestamp(until));
     }
 
     public boolean addToOwned(String did, String ownerDid) {
@@ -2925,7 +3033,7 @@ public class Keymaster {
         if (did == null || !did.startsWith("did:")) {
             return false;
         }
-        String[] parts = did.split(":");
+        String[] parts = did.split(":", -1);
         if (parts.length < 3) {
             return false;
         }
