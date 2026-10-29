@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 import org.bitcoinj.crypto.DeterministicKey;
 import org.keychain.crypto.HdKeyUtil;
 import org.keychain.crypto.KeymasterCrypto;
@@ -25,6 +26,7 @@ public class KeymasterWalletManager {
     private final ReentrantLock writeLock = new ReentrantLock();
     private WalletFile walletCache;
     private DeterministicKey hdkeyCache;
+    private String hdkeyCacheSeed;
 
     public KeymasterWalletManager(
         WalletStore<WalletEncFile> store,
@@ -38,6 +40,10 @@ public class KeymasterWalletManager {
     }
 
     public WalletFile loadWallet() {
+        return withWalletLock(this::loadWalletUnlocked);
+    }
+
+    private WalletFile loadWalletUnlocked() {
         if (walletCache != null) {
             return walletCache;
         }
@@ -48,77 +54,118 @@ public class KeymasterWalletManager {
         }
 
         WalletFile wallet;
+        DeterministicKey master;
         if (isLegacyV0(stored)) {
-            wallet = upgradeWallet(toWalletFile(stored));
-            store.saveWallet(encryptWalletForStorage(wallet), true);
+            if (!saveWallet(toWalletFile(stored), true)) {
+                throw new IllegalStateException("save wallet failed");
+            }
+            return walletCache;
         } else if (isV1WithEnc(stored)) {
-            wallet = decryptWalletFromStorage(stored);
+            master = getHdKeyForSeed(stored.seed);
+            wallet = decryptWalletFromStorage(stored, master);
         } else if (isV1Decrypted(stored)) {
             wallet = toWalletFile(stored);
+            master = getHdKeyForSeed(wallet.seed);
         } else {
             throw new IllegalStateException("Keymaster: Unsupported wallet version.");
         }
 
         WalletJsonMapper.walletPayload(wallet);
-        walletCache = wallet;
+        publishWallet(wallet, master);
         return walletCache;
     }
 
     public boolean saveWallet(WalletFile wallet, boolean overwrite) {
-        WalletFile upgraded = upgradeWallet(wallet);
-        WalletEncFile stored = encryptWalletForStorage(upgraded);
-        boolean ok = store.saveWallet(stored, overwrite);
-        if (ok) {
-            walletCache = upgraded;
-        }
-        return ok;
+        return withWalletLock(() -> {
+            WalletFile upgraded = upgradeWallet(deepCopyWallet(wallet));
+            DeterministicKey master = getHdKeyForSeed(upgraded.seed);
+            WalletEncFile stored = encryptWalletForStorage(upgraded, master);
+            WalletFile candidate = decryptWalletFromStorage(stored, master);
+            boolean ok = store.saveWallet(stored, overwrite);
+            if (ok) {
+                publishWallet(candidate, master);
+            }
+            return ok;
+        });
     }
 
     boolean saveStoredWallet(WalletEncFile stored, boolean overwrite) {
-        WalletFile wallet = decryptWalletFromStorage(stored);
-        boolean ok = store.saveWallet(stored, overwrite);
-        if (ok) {
-            walletCache = wallet;
-            hdkeyCache = null;
-        }
-        return ok;
+        return withWalletLock(() -> {
+            WalletEncFile candidate = mapper.convertValue(stored, WalletEncFile.class);
+            if (!isV1WithEnc(candidate)) {
+                throw new IllegalStateException("Keymaster: Unsupported wallet version.");
+            }
+            DeterministicKey master = getHdKeyForSeed(candidate.seed);
+            WalletFile wallet = decryptWalletFromStorage(candidate, master);
+            boolean ok = store.saveWallet(candidate, overwrite);
+            if (ok) {
+                publishWallet(wallet, master);
+            }
+            return ok;
+        });
     }
 
     public boolean mutateWallet(Consumer<WalletFile> mutator) {
-        writeLock.lock();
-        try {
+        return withWalletLock(() -> {
             WalletFile wallet = loadWallet();
             if (wallet == null) {
                 throw new IllegalStateException("No wallet loaded");
             }
 
             WalletFile working = deepCopyWallet(wallet);
-            String before = toJson(mapper, WalletJsonMapper.walletPayload(working));
+            String before = toJson(mapper, working);
             mutator.accept(working);
-            String after = toJson(mapper, WalletJsonMapper.walletPayload(working));
+            String after = toJson(mapper, working);
 
             if (Objects.equals(before, after)) {
                 return false;
             }
 
-            boolean ok = saveWallet(working, true);
-            if (ok) {
-                walletCache = working;
+            if (walletCache != wallet) {
+                throw new IllegalStateException("Wallet changed during mutation. Try again.");
             }
-            return ok;
-        } finally {
-            writeLock.unlock();
-        }
+            if (!saveWallet(working, true)) {
+                throw new IllegalStateException("save wallet failed");
+            }
+            return true;
+        });
     }
 
     DeterministicKey getHdKeyFromCacheOrMnemonic(WalletFile wallet) {
-        if (hdkeyCache != null) {
+        return withWalletLock(() -> getHdKeyForSeed(wallet.seed));
+    }
+
+    private DeterministicKey getHdKeyForSeed(Seed seed) {
+        if (seed == null || seed.mnemonicEnc == null) {
+            throw new IllegalArgumentException("wallet.seed.mnemonicEnc is required");
+        }
+        String fingerprint = toJson(mapper, seed.mnemonicEnc);
+        if (hdkeyCache != null && Objects.equals(hdkeyCacheSeed, fingerprint)) {
             return hdkeyCache;
         }
 
-        String mnemonic = MnemonicEncryption.decrypt(wallet.seed.mnemonicEnc, passphrase);
-        hdkeyCache = HdKeyUtil.masterFromMnemonic(mnemonic);
-        return hdkeyCache;
+        try {
+            String mnemonic = MnemonicEncryption.decrypt(seed.mnemonicEnc, passphrase);
+            return HdKeyUtil.masterFromMnemonic(mnemonic);
+        } catch (RuntimeException e) {
+            throw new IllegalStateException("Keymaster: Incorrect passphrase.", e);
+        }
+    }
+
+    private void publishWallet(WalletFile wallet, DeterministicKey master) {
+        String fingerprint = toJson(mapper, wallet.seed.mnemonicEnc);
+        walletCache = wallet;
+        hdkeyCache = master;
+        hdkeyCacheSeed = fingerprint;
+    }
+
+    <T> T withWalletLock(Supplier<T> action) {
+        writeLock.lock();
+        try {
+            return action.get();
+        } finally {
+            writeLock.unlock();
+        }
     }
 
     WalletFile upgradeWallet(WalletFile wallet) {
@@ -154,14 +201,13 @@ public class KeymasterWalletManager {
             upgraded.extras = wallet.extras;
             upgraded.additionalProperties().putAll(wallet.additionalProperties());
 
-            hdkeyCache = HdKeyUtil.masterFromMnemonic(mnemonic);
             return upgraded;
         }
 
         throw new IllegalStateException("Keymaster: Unsupported wallet version.");
     }
 
-    private WalletEncFile encryptWalletForStorage(WalletFile wallet) {
+    private WalletEncFile encryptWalletForStorage(WalletFile wallet, DeterministicKey master) {
         if (wallet == null || wallet.seed == null || wallet.seed.mnemonicEnc == null) {
             throw new IllegalArgumentException("wallet.seed.mnemonicEnc is required");
         }
@@ -170,7 +216,6 @@ public class KeymasterWalletManager {
         safeSeed.mnemonicEnc = wallet.seed.mnemonicEnc;
 
         String plaintext = toJson(mapper, WalletJsonMapper.walletPayload(wallet));
-        DeterministicKey master = getHdKeyFromCacheOrMnemonic(wallet);
         var jwk = crypto.generateJwk(HdKeyUtil.privateKeyBytes(master));
         String enc = crypto.encryptMessage(jwk.publicJwk, jwk.privateJwk, plaintext);
 
@@ -181,18 +226,11 @@ public class KeymasterWalletManager {
         return stored;
     }
 
-    private WalletFile decryptWalletFromStorage(WalletEncFile stored) {
+    private WalletFile decryptWalletFromStorage(WalletEncFile stored, DeterministicKey master) {
         if (stored == null || stored.seed == null || stored.seed.mnemonicEnc == null) {
             throw new IllegalArgumentException("stored.seed.mnemonicEnc is required");
         }
 
-        String mnemonic;
-        try {
-            mnemonic = MnemonicEncryption.decrypt(stored.seed.mnemonicEnc, passphrase);
-        } catch (RuntimeException e) {
-            throw new IllegalStateException("Keymaster: Incorrect passphrase.", e);
-        }
-        DeterministicKey master = HdKeyUtil.masterFromMnemonic(mnemonic);
         var jwk = crypto.generateJwk(HdKeyUtil.privateKeyBytes(master));
         String plaintext = crypto.decryptMessage(jwk.publicJwk, jwk.privateJwk, stored.enc);
 
@@ -232,7 +270,7 @@ public class KeymasterWalletManager {
         return mapper.convertValue(stored, WalletFile.class);
     }
 
-    private static String toJson(ObjectMapper mapper, Map<String, Object> data) {
+    private static String toJson(ObjectMapper mapper, Object data) {
         try {
             return mapper.writeValueAsString(data);
         } catch (Exception e) {

@@ -48,3 +48,18 @@ and key indexes. Java rejects missing values, numeric strings, fractional
 numbers and values above 2,147,483,647 instead of coercing or wrapping them.
 This upper bound reflects Java's existing integer and HD-derivation limits.
 Malformed encrypted payloads and incorrect passphrases cannot replace a wallet.
+
+## Wallet persistence
+
+One Keymaster instance serializes wallet loading, creation, mutation, replacement
+and recovery. Cached wallet data and its derived key are updated together after
+a successful write. A refused mutation or failed recovery throws instead of
+reporting success. Direct saves still return `false` when overwrite is refused.
+
+The JSON adapter writes and flushes a temporary file in the wallet's directory,
+then atomically replaces the old file. Existing POSIX ownership, group and
+permissions are retained. If these cannot be retained, the write fails.
+If atomic replacement is unsupported or a write fails, the adapter reports the
+error and removes the temporary file without replacing the previous wallet.
+Use a filesystem that supports atomic file moves and a single writer for each
+wallet file. This does not coordinate separate processes or Keymaster instances.

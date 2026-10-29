@@ -14,7 +14,7 @@ public class WalletJsonMemory<T> implements WalletStore<T> {
     }
 
     @Override
-    public boolean saveWallet(T wallet, boolean overwrite) {
+    public synchronized boolean saveWallet(T wallet, boolean overwrite) {
         if (walletCache != null && !overwrite) {
             return false;
         }
@@ -28,7 +28,7 @@ public class WalletJsonMemory<T> implements WalletStore<T> {
     }
 
     @Override
-    public T loadWallet() {
+    public synchronized T loadWallet() {
         if (walletCache == null) {
             return null;
         }

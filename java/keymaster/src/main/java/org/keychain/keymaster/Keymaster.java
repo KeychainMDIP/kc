@@ -123,11 +123,10 @@ public class Keymaster {
     }
 
     public WalletFile loadWallet() {
-        WalletFile wallet = walletManager.loadWallet();
-        if (wallet == null) {
-            return newWallet(null, false);
-        }
-        return wallet;
+        return walletManager.withWalletLock(() -> {
+            WalletFile wallet = walletManager.loadWallet();
+            return wallet == null ? newWallet(null, false) : wallet;
+        });
     }
 
     public boolean saveWallet(WalletFile wallet, boolean overwrite) {
@@ -146,8 +145,10 @@ public class Keymaster {
     }
 
     public boolean mutateWallet(Consumer<WalletFile> mutator) {
-        loadWallet();
-        return walletManager.mutateWallet(mutator);
+        return walletManager.withWalletLock(() -> {
+            loadWallet();
+            return walletManager.mutateWallet(mutator);
+        });
     }
 
     public java.util.Map<String, String> listNames(boolean includeIds) {
@@ -261,23 +262,25 @@ public class Keymaster {
     }
 
     public WalletFile newWallet(String mnemonic, boolean overwrite) {
-        String phrase = mnemonic != null ? mnemonic : crypto.generateMnemonic();
+        return walletManager.withWalletLock(() -> {
+            String phrase = mnemonic != null ? mnemonic : crypto.generateMnemonic();
 
-        Seed seed = new Seed();
-        seed.mnemonicEnc = MnemonicEncryption.encrypt(phrase, passphrase);
+            Seed seed = new Seed();
+            seed.mnemonicEnc = MnemonicEncryption.encrypt(phrase, passphrase);
 
-        WalletFile wallet = new WalletFile();
-        wallet.version = 1;
-        wallet.seed = seed;
-        wallet.counter = 0;
-        wallet.ids = new HashMap<>();
+            WalletFile wallet = new WalletFile();
+            wallet.version = 1;
+            wallet.seed = seed;
+            wallet.counter = 0;
+            wallet.ids = new HashMap<>();
 
-        boolean ok = saveWallet(wallet, overwrite);
-        if (!ok) {
-            throw new IllegalStateException("save wallet failed");
-        }
+            boolean ok = saveWallet(wallet, overwrite);
+            if (!ok) {
+                throw new IllegalStateException("save wallet failed");
+            }
 
-        return wallet;
+            return walletManager.loadWallet();
+        });
     }
 
     public String decryptMnemonic() {
@@ -641,6 +644,10 @@ public class Keymaster {
     }
 
     public WalletFile recoverWallet(String did) {
+        return walletManager.withWalletLock(() -> recoverWalletLocked(did));
+    }
+
+    private WalletFile recoverWalletLocked(String did) {
         try {
             if (gatekeeper == null) {
                 throw new IllegalStateException("gatekeeper not configured");
@@ -677,16 +684,17 @@ public class Keymaster {
             String backup = crypto.decryptMessage(keypair.publicJwk, keypair.privateJwk, (String) backupObj);
             WalletFile recovered = WalletJsonMapper.mapper().readValue(backup, WalletFile.class);
 
-            WalletFile upgraded = walletManager.upgradeWallet(recovered);
-            if (upgraded.version != null && upgraded.version == 1 && upgraded.seed != null && upgraded.seed.mnemonicEnc != null) {
+            if (recovered.version != null && recovered.version == 1 && recovered.seed != null && recovered.seed.mnemonicEnc != null) {
                 String mnemonic = decryptMnemonic();
-                upgraded.seed.mnemonicEnc = MnemonicEncryption.encrypt(mnemonic, passphrase);
+                recovered.seed.mnemonicEnc = MnemonicEncryption.encrypt(mnemonic, passphrase);
             }
 
-            mutateWallet(current -> replaceWallet(current, upgraded));
+            mutateWallet(current -> replaceWallet(current, walletManager.upgradeWallet(recovered)));
             return loadWallet();
+        } catch (RuntimeException e) {
+            throw e;
         } catch (Exception e) {
-            return loadWallet();
+            throw new IllegalStateException("Failed to recover wallet", e);
         }
     }
 

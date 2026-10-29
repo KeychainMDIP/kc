@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -99,7 +100,7 @@ class LiveWalletTest {
             wrong.loadWallet();
             throw new IllegalStateException("expected exception");
         } catch (IllegalStateException e) {
-            assertEquals("Mnemonic decryption failed", e.getMessage());
+            assertEquals("Keymaster: Incorrect passphrase.", e.getMessage());
         }
     }
 
@@ -552,27 +553,27 @@ class LiveWalletTest {
     }
 
     @Test
-    void recoverDoesNothingWhenNoBackup() {
+    void recoverThrowsWhenNoBackup() {
         Keymaster keymaster = newKeymaster();
         keymaster.createId("Bob");
         String mnemonic = keymaster.decryptMnemonic();
 
         keymaster.newWallet(mnemonic, true);
-        WalletFile recovered = keymaster.recoverWallet();
+        assertThrows(IllegalArgumentException.class, keymaster::recoverWallet);
 
-        assertTrue(recovered.ids.isEmpty());
+        assertTrue(keymaster.loadWallet().ids.isEmpty());
     }
 
     @Test
-    void recoverDoesNothingWhenBackupDidInvalid() {
+    void recoverThrowsWhenBackupDidInvalid() {
         Keymaster keymaster = newKeymaster();
         String agentDid = keymaster.createId("Bob");
         String mnemonic = keymaster.decryptMnemonic();
 
         keymaster.newWallet(mnemonic, true);
-        WalletFile recovered = keymaster.recoverWallet(agentDid);
+        assertThrows(IllegalArgumentException.class, () -> keymaster.recoverWallet(agentDid));
 
-        assertTrue(recovered.ids.isEmpty());
+        assertTrue(keymaster.loadWallet().ids.isEmpty());
     }
 
     @Test
