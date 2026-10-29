@@ -63,3 +63,26 @@ If atomic replacement is unsupported or a write fails, the adapter reports the
 error and removes the temporary file without replacing the previous wallet.
 Use a filesystem that supports atomic file moves and a single writer for each
 wallet file. This does not coordinate separate processes or Keymaster instances.
+
+## Identity lifecycle
+
+Identity creation persists the account reservation before publishing the DID.
+A failed reservation prevents publication. A publication or final wallet-write
+failure can leave an account consumed without an identity entry, including
+after restart. That account is not reused.
+Preparing a `createIdOperation()` remains read-only and does not reserve an account.
+
+Identity and alias names share one namespace. Creation, renaming and recovery
+trim whitespace like JavaScript, reject `.` and `..`, and detect collisions
+with historical names that contain surrounding whitespace.
+
+Recovery reconciles an older backup with the current `#key-N` index and checks
+that the derived key matches the DID's public key before adding the identity.
+The wallet counter advances beyond the recovered account without moving
+backwards. Values outside Java's account or key-index range fail explicitly.
+
+An unconfirmed version-1 identity may rotate. Later unconfirmed versions must
+wait for confirmation. If a successful Gatekeeper response is followed by a
+failed wallet write, its key index remains accessible in memory. A later
+successful wallet write persists that reconciliation. This does not guarantee
+recovery of the updated index across a restart before that write.

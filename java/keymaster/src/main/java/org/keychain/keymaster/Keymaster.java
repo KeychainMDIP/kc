@@ -212,12 +212,9 @@ public class Keymaster {
             throw new IllegalArgumentException("current name is required");
         }
         mutateWallet(wallet -> {
-            String validNew = validateNameInternal(newName, null);
+            String validNew = validateNameInternal(newName, wallet);
             if (wallet.ids == null || !wallet.ids.containsKey(currentName)) {
                 throw new IllegalArgumentException("unknown id");
-            }
-            if (wallet.ids.containsKey(validNew)) {
-                throw new IllegalArgumentException("name already used");
             }
             IDInfo info = wallet.ids.get(currentName);
             wallet.ids.put(validNew, info);
@@ -482,6 +479,10 @@ public class Keymaster {
     }
 
     public String recoverId(String did) {
+        return walletManager.withWalletLock(() -> recoverIdLocked(did));
+    }
+
+    private String recoverIdLocked(String did) {
         try {
             if (did == null || did.isBlank()) {
                 throw new IllegalArgumentException("did is required");
@@ -523,6 +524,12 @@ public class Keymaster {
             IDInfo idInfo = WalletJsonMapper.mapper().convertValue(idMap, IDInfo.class);
             String name = (String) nameObj;
 
+            if (!isValidDID(idInfo.did) || !didMatch(idInfo.did, getAgentDID(doc))) {
+                throw new IllegalArgumentException("Invalid identity backup DID");
+            }
+            EcdsaJwkPublic currentPublicKey = getPublicKeyJwk(doc);
+            MdipDocument.VerificationMethod method = doc.didDocument.verificationMethod.get(0);
+
             mutateWallet(wallet -> {
                 if (wallet.ids == null) {
                     wallet.ids = new java.util.LinkedHashMap<>();
@@ -530,17 +537,47 @@ public class Keymaster {
                 if (wallet.ids.containsKey(name)) {
                     throw new IllegalStateException(name + " already exists in wallet");
                 }
-                wallet.ids.put(name, idInfo);
-                wallet.current = name;
-                wallet.counter = wallet.counter + 1;
+                String storedName = validateNameInternal(name, wallet);
+                if (idInfo.account == Integer.MAX_VALUE) {
+                    throw new IllegalArgumentException("Identity account range exhausted");
+                }
+                int index = recoveredKeyIndex(method.id, idInfo.index);
+                JwkPair recovered = getCurrentKeypairFromPath(wallet, idInfo.account, index);
+                if (!Objects.equals(recovered.publicJwk.x, currentPublicKey.x)
+                    || !Objects.equals(recovered.publicJwk.y, currentPublicKey.y)) {
+                    throw new IllegalArgumentException("Current identity key does not belong to wallet");
+                }
+                idInfo.index = index;
+                wallet.ids.put(storedName, idInfo);
+                wallet.current = storedName;
+                wallet.counter = Math.max(wallet.counter, idInfo.account + 1);
             });
 
-            return name;
+            return trimName(name);
         } catch (Exception e) {
             if (e instanceof IllegalStateException) {
                 throw (IllegalStateException) e;
             }
-            throw new IllegalArgumentException("did");
+            throw new IllegalArgumentException("did", e);
+        }
+    }
+
+    private static int recoveredKeyIndex(String methodId, int backupIndex) {
+        if (methodId == null || !methodId.matches("#key-[1-9][0-9]*")) {
+            return backupIndex;
+        }
+        try {
+            double index = Double.parseDouble(methodId.substring(5)) - 1;
+            // Match the reference's treatment of hints outside JavaScript's safe integer range.
+            if (!Double.isFinite(index) || index > 9007199254740991d || index <= backupIndex) {
+                return backupIndex;
+            }
+            if (index > Integer.MAX_VALUE) {
+                throw new IllegalArgumentException("Identity key index exceeds Java derivation range");
+            }
+            return (int) index;
+        } catch (NumberFormatException ignored) {
+            return backupIndex;
         }
     }
 
@@ -704,38 +741,35 @@ public class Keymaster {
         }
         String targetRegistry = registry == null || registry.isBlank() ? defaultRegistry : registry;
 
-        final String[] createdDid = new String[1];
-        mutateWallet(wallet -> {
-            String validName = validateNameInternal(name, wallet);
-
-            int account = wallet.counter;
-            int index = 0;
-            JwkPair keypair = getCurrentKeypairFromPath(wallet, account, index);
-
-            BlockInfo block = gatekeeper.getBlock(targetRegistry);
-            String blockid = block != null ? block.hash : null;
-
-            Operation signed = operationFactory.createSignedCreateIdOperation(
-                targetRegistry,
-                JwkConverter.toEcdsaJwkPublic(keypair.publicJwk),
-                keypair.privateJwk,
-                blockid
-            );
-
+        return walletManager.withWalletLock(() -> {
+            WalletFile initial = loadWallet();
+            String validName = validateNameInternal(name, initial);
+            int account = initial.counter;
+            if (account == Integer.MAX_VALUE) {
+                throw new IllegalStateException("Identity account range exhausted");
+            }
+            Operation signed = createIdOperation(validName, account, targetRegistry);
+            if (loadWallet() != initial) {
+                throw new IllegalStateException("Wallet changed during identity creation. Try again.");
+            }
+            // Reserve durably before publication, including ambiguous publication failures.
+            mutateWallet(wallet -> wallet.counter = account + 1);
+            WalletFile reserved = loadWallet();
             String did = gatekeeper.createDID(signed);
-            createdDid[0] = did;
-
-            IDInfo idInfo = new IDInfo();
-            idInfo.did = did;
-            idInfo.account = account;
-            idInfo.index = index;
-
-            wallet.ids.put(validName, idInfo);
-            wallet.counter = account + 1;
-            wallet.current = validName;
+            if (loadWallet() != reserved) {
+                throw new IllegalStateException("Wallet changed during identity creation. Try again.");
+            }
+            mutateWallet(wallet -> {
+                String storedName = validateNameInternal(validName, wallet);
+                IDInfo idInfo = new IDInfo();
+                idInfo.did = did;
+                idInfo.account = account;
+                idInfo.index = 0;
+                wallet.ids.put(storedName, idInfo);
+                wallet.current = storedName;
+            });
+            return did;
         });
-
-        return createdDid[0];
     }
 
     public String createId(String name, CreateIdOptions options) {
@@ -1814,6 +1848,9 @@ public class Keymaster {
         final boolean[] ok = {false};
         mutateWallet(wallet -> {
             IDInfo id = getCurrentIdInfo(wallet);
+            if (id.index == Integer.MAX_VALUE) {
+                throw new IllegalStateException("Identity key index range exhausted");
+            }
             int nextIndex = id.index + 1;
 
             DeterministicKey master = walletManager.getHdKeyFromCacheOrMnemonic(wallet);
@@ -1821,15 +1858,17 @@ public class Keymaster {
             JwkPair keypair = crypto.generateJwk(HdKeyUtil.privateKeyBytes(derived));
 
             MdipDocument doc = resolveDID(id.did);
-            if (doc.didDocumentMetadata == null || !Boolean.TRUE.equals(doc.didDocumentMetadata.confirmed)) {
+            if (doc.didDocumentMetadata == null || (!Boolean.TRUE.equals(doc.didDocumentMetadata.confirmed)
+                && !"1".equals(doc.didDocumentMetadata.version))) {
                 throw new IllegalStateException("Keymaster: Cannot rotate keys");
             }
-            if (doc.didDocument == null || doc.didDocument.verificationMethod == null) {
+            if (doc.didDocument == null || doc.didDocument.verificationMethod == null
+                || doc.didDocument.verificationMethod.isEmpty() || doc.didDocument.verificationMethod.get(0) == null) {
                 throw new IllegalStateException("DID Document missing verificationMethod");
             }
 
             MdipDocument.VerificationMethod method = doc.didDocument.verificationMethod.get(0);
-            method.id = "#key-" + (nextIndex + 1);
+            method.id = "#key-" + ((long) nextIndex + 1);
             method.publicKeyJwk = JwkConverter.toEcdsaJwkPublic(keypair.publicJwk);
             doc.didDocument.authentication = java.util.List.of(method.id);
 
@@ -1839,6 +1878,15 @@ public class Keymaster {
             }
 
             id.index = nextIndex;
+            // Keep an accepted rotation usable in memory if the subsequent wallet write fails.
+            WalletFile cached = loadWallet();
+            if (WalletJsonMapper.mapper().valueToTree(wallet.seed).equals(WalletJsonMapper.mapper().valueToTree(cached.seed))) {
+                for (IDInfo cachedId : cached.ids.values()) {
+                    if (didMatch(cachedId.did, id.did) && cachedId.account == id.account) {
+                        cachedId.index = Math.max(cachedId.index, nextIndex);
+                    }
+                }
+            }
         });
 
         return ok[0];
@@ -2185,10 +2233,13 @@ public class Keymaster {
     }
 
     private static String validateNameInternal(String name, WalletFile wallet) {
-        if (name == null || name.trim().isEmpty()) {
+        if (name == null || trimName(name).isEmpty()) {
             throw new IllegalArgumentException("Invalid parameter: name must be a non-empty string");
         }
-        String trimmed = name.trim();
+        String trimmed = trimName(name);
+        if (".".equals(trimmed) || "..".equals(trimmed)) {
+            throw new IllegalArgumentException("Invalid parameter: name cannot be \".\" or \"..\"");
+        }
         if (trimmed.length() > MAX_NAME_LENGTH) {
             throw new IllegalArgumentException("Invalid parameter: name too long");
         }
@@ -2198,14 +2249,31 @@ public class Keymaster {
             }
         }
         if (wallet != null) {
-            if (wallet.names != null && wallet.names.containsKey(trimmed)) {
-                throw new IllegalArgumentException("Invalid parameter: name already used");
-            }
-            if (wallet.ids != null && wallet.ids.containsKey(trimmed)) {
-                throw new IllegalArgumentException("Invalid parameter: name already used");
+            for (Map<?, ?> names : Arrays.asList(wallet.names, wallet.ids)) {
+                if (names != null && names.keySet().stream().anyMatch(key -> trimName((String) key).equals(trimmed))) {
+                    throw new IllegalArgumentException("Invalid parameter: name already used");
+                }
             }
         }
         return trimmed;
+    }
+
+    private static String trimName(String name) {
+        int start = 0;
+        int end = name.length();
+        while (start < end && isNameWhitespace(name.charAt(start))) {
+            start++;
+        }
+        while (end > start && isNameWhitespace(name.charAt(end - 1))) {
+            end--;
+        }
+        return name.substring(start, end);
+    }
+
+    private static boolean isNameWhitespace(char value) {
+        // Match ECMAScript trim, including nonbreaking spaces and the byte-order mark.
+        return value >= '\t' && value <= '\r' || value == '\ufeff' || value == '\u2028' || value == '\u2029'
+            || Character.getType(value) == Character.SPACE_SEPARATOR;
     }
 
     private static String normalizeRegistry(String registry) {
@@ -2600,9 +2668,7 @@ public class Keymaster {
             return crypto.generateJwk(HdKeyUtil.privateKeyBytes(derived));
         }
 
-        ResolveDIDOptions options = new ResolveDIDOptions();
-        options.confirm = true;
-        MdipDocument doc = gatekeeper.resolveDID(id.did, options);
+        MdipDocument doc = resolveIdentityForCryptography(id.did);
         EcdsaJwkPublic confirmed = getPublicKeyJwk(doc);
 
         for (int i = id.index; i >= 0; i -= 1) {
@@ -2616,6 +2682,19 @@ public class Keymaster {
         }
 
         return null;
+    }
+
+    private MdipDocument resolveIdentityForCryptography(String did) {
+        ResolveDIDOptions options = new ResolveDIDOptions();
+        options.confirm = true;
+        MdipDocument doc = gatekeeper.resolveDID(did, options);
+        if (doc != null && doc.didResolutionMetadata != null && "notFound".equals(doc.didResolutionMetadata.error)) {
+            // Use only the immutable create key while registry confirmation is pending.
+            ResolveDIDOptions initial = new ResolveDIDOptions();
+            initial.versionSequence = 1;
+            return gatekeeper.resolveDID(did, initial);
+        }
+        return doc;
     }
 
     public boolean updateDID(MdipDocument doc) {
