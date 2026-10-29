@@ -86,3 +86,54 @@ wait for confirmation. If a successful Gatekeeper response is followed by a
 failed wallet write, its key index remains accessible in memory. A later
 successful wallet write persists that reconciliation. This does not guarantee
 recovery of the updated index across a restart before that write.
+
+## Operation identity and version checks
+
+Asset creation, encryption, credential workflows, identity backups and challenge
+responses keep the initiating identity throughout their nested calls. Changing
+the current identity during a network call does not change the sender, holder
+or wallet entry updated by that operation. An explicit asset controller chooses
+the signing identity while the initiating owner tracks the asset.
+Issuance and response creation retain their previous handling of inherited
+`name` and `controller` options, which are ignored. Their assets stay controlled
+by the issuer or responder. Generic asset and encryption methods support
+explicit controller selection.
+`listIssued(issuer)` decrypts using the requested issuer, even if another
+identity is selected. `listIssued()` and `listCredentials()` select the current
+identity.
+
+`updateDID()` preserves a supplied `didDocumentMetadata.versionId` as the
+version precondition and returns `false` if it is stale, including for an
+otherwise unchanged document. Without a precondition it uses the current
+version. Signing uses a separate document copy and keeps the caller unchanged.
+Unpublishing a credential and recording a wallet-backup link throw if their
+update is rejected.
+
+Cryptographic resolution prefers confirmed keys. Only a not-found response
+permits fallback to the immutable version-1 key, retaining any historical time
+used for decryption. Connection and other resolution failures propagate.
+
+## Deployment options
+
+Existing constructors remain available. Use `KeymasterOptions` to configure
+the DID prefix and maximum name length alongside the default registry:
+
+```java
+import org.keychain.keymaster.KeymasterOptions;
+
+KeymasterOptions settings = new KeymasterOptions();
+settings.wallet = store;
+settings.gatekeeper = gatekeeper;
+settings.passphrase = "passphrase";
+settings.defaultRegistry = "hyperswarm";
+settings.didPrefix = "did:example";
+settings.maxNameLength = 32;
+Keymaster configured = new Keymaster(settings);
+```
+
+The prefix must match `did:<lowercase-method>` with letters or digits in the
+method. It is included before signing normal identity, asset and wallet-backup
+creates. The deterministic seed-bank create operation remains unprefixed to
+match the reference. Ephemeral challenges and responses default to Hyperswarm
+even when the normal default registry differs. Set their `registry` option
+explicitly to override it.

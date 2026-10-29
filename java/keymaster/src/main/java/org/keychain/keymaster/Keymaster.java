@@ -46,6 +46,21 @@ public class Keymaster {
     private final OperationFactory operationFactory;
     private final String defaultRegistry;
     private final String ephemeralRegistry;
+    private final String didPrefix;
+    private final int maxNameLength;
+
+    public Keymaster(KeymasterOptions options) {
+        this(
+            Objects.requireNonNull(options, "options is required").wallet,
+            options.gatekeeper,
+            options.crypto,
+            options.operationFactory != null ? options.operationFactory : new OperationFactory(options.crypto),
+            options.passphrase,
+            options.defaultRegistry,
+            options.didPrefix,
+            options.maxNameLength
+        );
+    }
 
     public Keymaster(
         WalletStore<WalletEncFile> store,
@@ -54,6 +69,19 @@ public class Keymaster {
         OperationFactory operationFactory,
         String passphrase,
         String defaultRegistry
+    ) {
+        this(store, gatekeeper, crypto, operationFactory, passphrase, defaultRegistry, null, MAX_NAME_LENGTH);
+    }
+
+    private Keymaster(
+        WalletStore<WalletEncFile> store,
+        GatekeeperInterface gatekeeper,
+        KeymasterCrypto crypto,
+        OperationFactory operationFactory,
+        String passphrase,
+        String defaultRegistry,
+        String didPrefix,
+        int maxNameLength
     ) {
         if (store == null) {
             throw new IllegalArgumentException("store is required");
@@ -67,13 +95,21 @@ public class Keymaster {
         if (passphrase == null || passphrase.isEmpty()) {
             throw new IllegalArgumentException("passphrase is required");
         }
+        if (didPrefix != null && !didPrefix.matches("did:[a-z0-9]+")) {
+            throw new IllegalArgumentException("Invalid DID prefix");
+        }
+        if (maxNameLength <= 0) {
+            throw new IllegalArgumentException("maxNameLength must be positive");
+        }
 
         this.crypto = crypto;
         this.passphrase = passphrase;
         this.gatekeeper = gatekeeper;
         this.operationFactory = operationFactory;
         this.defaultRegistry = normalizeRegistry(defaultRegistry);
-        this.ephemeralRegistry = this.defaultRegistry;
+        this.ephemeralRegistry = "hyperswarm";
+        this.didPrefix = didPrefix;
+        this.maxNameLength = maxNameLength;
         this.walletManager = new KeymasterWalletManager(store, crypto, passphrase);
     }
 
@@ -404,8 +440,10 @@ public class Keymaster {
         if (gatekeeper == null) {
             throw new IllegalStateException("gatekeeper not configured");
         }
+        return resolveSeedBankFor(hdKeyPair());
+    }
 
-        JwkPair keypair = hdKeyPair();
+    private MdipDocument resolveSeedBankFor(JwkPair keypair) {
         Operation operation = new Operation();
         operation.type = "create";
         operation.created = EPOCH_ISO;
@@ -444,6 +482,7 @@ public class Keymaster {
         if (name == null || name.isBlank()) {
             throw new IllegalStateException("Keymaster: No current ID");
         }
+        String owner = fetchIdInfo(null, wallet).did;
         IDInfo idInfo = fetchIdInfo(name, wallet);
         JwkPair keypair = hdKeyPair();
 
@@ -466,7 +505,10 @@ public class Keymaster {
 
         java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
         payload.put("backup", backup);
-        String vaultDid = createAsset(payload, registry, name, null);
+        CreateAssetOptions options = new CreateAssetOptions();
+        options.registry = registry;
+        options.controller = idInfo.did;
+        String vaultDid = createAssetFor(payload, owner, options);
 
         if (!(doc.didDocumentData instanceof java.util.Map<?, ?>)) {
             doc.didDocumentData = new java.util.LinkedHashMap<>();
@@ -582,6 +624,10 @@ public class Keymaster {
     }
 
     public boolean updateSeedBank(MdipDocument doc) {
+        return updateSeedBankFor(doc, hdKeyPair());
+    }
+
+    private boolean updateSeedBankFor(MdipDocument doc, JwkPair keypair) {
         if (gatekeeper == null) {
             throw new IllegalStateException("gatekeeper not configured");
         }
@@ -589,16 +635,20 @@ public class Keymaster {
             throw new IllegalArgumentException("Invalid parameter: seed bank missing DID");
         }
 
-        JwkPair keypair = hdKeyPair();
-        String did = doc.didDocument.id;
+        MdipDocument update = WalletJsonMapper.mapper().convertValue(doc, MdipDocument.class);
+        String did = update.didDocument.id;
+        String expectedPrevid = update.didDocumentMetadata != null ? update.didDocumentMetadata.versionId : null;
         MdipDocument current = gatekeeper.resolveDID(did, null);
         String previd = current != null && current.didDocumentMetadata != null ? current.didDocumentMetadata.versionId : null;
+        if (expectedPrevid != null && !expectedPrevid.equals(previd)) {
+            return false;
+        }
 
         Operation operation = new Operation();
         operation.type = "update";
         operation.did = did;
         operation.previd = previd;
-        operation.doc = doc;
+        operation.doc = update;
 
         String msgHash = crypto.hashJson(operation);
         Signature signature = new Signature();
@@ -629,9 +679,10 @@ public class Keymaster {
         if (wallet == null) {
             wallet = loadWallet();
         }
+        wallet = WalletJsonMapper.mapper().convertValue(wallet, WalletFile.class);
 
         JwkPair keypair = hdKeyPair();
-        MdipDocument seedBank = resolveSeedBank();
+        MdipDocument seedBank = resolveSeedBankFor(keypair);
         String msg;
         try {
             msg = WalletJsonMapper.mapper().writeValueAsString(wallet);
@@ -649,6 +700,7 @@ public class Keymaster {
         mdip.version = 1;
         mdip.type = "asset";
         mdip.registry = registry;
+        mdip.prefix = didPrefix;
         operation.mdip = mdip;
         operation.controller = seedBank.didDocument != null ? seedBank.didDocument.id : null;
         java.util.Map<String, Object> data = new java.util.LinkedHashMap<>();
@@ -670,7 +722,9 @@ public class Keymaster {
             java.util.Map<String, Object> seedData = (java.util.Map<String, Object>) seedBank.didDocumentData;
             seedData.put("wallet", backupDid);
             seedBank.didDocumentData = seedData;
-            updateSeedBank(seedBank);
+            if (!updateSeedBankFor(seedBank, keypair)) {
+                throw new IllegalStateException("update seed bank failed");
+            }
         }
 
         return backupDid;
@@ -813,7 +867,8 @@ public class Keymaster {
             targetRegistry,
             JwkConverter.toEcdsaJwkPublic(keypair.publicJwk),
             keypair.privateJwk,
-            blockid
+            blockid,
+            didPrefix
         );
     }
 
@@ -831,20 +886,34 @@ public class Keymaster {
     }
 
     public String createAsset(Object data, String registry, String controllerDid, String validUntil) {
+        CreateAssetOptions options = new CreateAssetOptions();
+        options.registry = registry;
+        options.controller = controllerDid;
+        options.validUntil = validUntil;
+        return createAsset(data, options);
+    }
+
+    public String createAsset(Object data, CreateAssetOptions options) {
+        String owner = fetchIdInfo(null).did;
+        return createAssetFor(data, owner, options);
+    }
+
+    private String createAssetFor(Object data, String owner, CreateAssetOptions options) {
         if (gatekeeper == null) {
             throw new IllegalStateException("gatekeeper not configured");
         }
         if (data == null) {
             throw new IllegalArgumentException("data is required");
         }
-        if (registry == null || registry.isBlank()) {
-            throw new IllegalArgumentException("registry is required");
-        }
-        validateValidUntil(validUntil);
-
+        CreateAssetOptions effective = options != null
+            ? WalletJsonMapper.mapper().convertValue(options, CreateAssetOptions.class) : new CreateAssetOptions();
+        String registry = effective.registry == null || effective.registry.isBlank() ? defaultRegistry : effective.registry;
+        validateValidUntil(effective.validUntil);
         WalletFile wallet = loadWallet();
-        IDInfo idInfo = controllerDid != null ? fetchIdInfo(controllerDid, wallet) : fetchIdInfo(null, wallet);
-        String signerDid = idInfo.did;
+        String name = effective.name != null && !effective.name.isEmpty()
+            ? validateNameInternal(effective.name, wallet) : null;
+        IDInfo controller = fetchIdInfo(effective.controller == null || effective.controller.isBlank() ? owner : effective.controller, wallet);
+        String signerDid = controller.did;
         JwkPair keypair = fetchKeyPair(signerDid);
         if (keypair == null) {
             throw new IllegalStateException("no keypair available for controller");
@@ -857,37 +926,18 @@ public class Keymaster {
             signerDid,
             data,
             blockid,
-            validUntil,
+            effective.validUntil,
             keypair.privateJwk,
-            signerDid
+            signerDid,
+            didPrefix
         );
 
         String did = gatekeeper.createDID(signed);
-        if (validUntil == null) {
-            mutateWallet(updated -> {
-                IDInfo current = getCurrentIdInfo(updated);
-                if (current.owned == null) {
-                    current.owned = new ArrayList<>();
-                }
-                List<String> owned = current.owned;
-                if (!owned.contains(did)) {
-                    owned.add(did);
-                }
-            });
+        if (effective.validUntil == null) {
+            addToOwned(did, owner);
         }
-        return did;
-    }
-
-    public String createAsset(Object data, CreateAssetOptions options) {
-        if (options == null) {
-            return createAsset(data, defaultRegistry, null, null);
-        }
-        String registry = options.registry != null ? options.registry : defaultRegistry;
-        String validUntil = options.validUntil;
-        String controller = options.controller;
-        String did = createAsset(data, registry, controller, validUntil);
-        if (options.name != null && !options.name.isBlank()) {
-            addName(options.name, did);
+        if (name != null) {
+            addName(name, did);
         }
         return did;
     }
@@ -1036,6 +1086,7 @@ public class Keymaster {
     }
 
     public String cloneAsset(String id, String registry, String controller) {
+        String owner = fetchIdInfo(null).did;
         MdipDocument assetDoc = resolveDID(id);
         if (assetDoc == null || assetDoc.mdip == null || !"asset".equals(assetDoc.mdip.type)) {
             throw new IllegalArgumentException("id");
@@ -1054,7 +1105,10 @@ public class Keymaster {
             targetRegistry = assetDoc.mdip.registry ;
         }
 
-        return createAsset(assetData, targetRegistry, controller, null);
+        CreateAssetOptions options = new CreateAssetOptions();
+        options.registry = targetRegistry;
+        options.controller = controller;
+        return createAssetFor(assetData, owner, options);
     }
 
     public String createResponse(String challengeDid) {
@@ -1062,7 +1116,12 @@ public class Keymaster {
     }
 
     public String createResponse(String challengeDid, CreateResponseOptions options) {
-        CreateResponseOptions effective = options != null ? options : new CreateResponseOptions();
+        String responder = fetchIdInfo(null).did;
+        CreateResponseOptions effective = options != null
+            ? WalletJsonMapper.mapper().convertValue(options, CreateResponseOptions.class) : new CreateResponseOptions();
+        // Protocol responses and their presentations remain controlled by the responder.
+        effective.controller = null;
+        effective.name = null;
         int retries = effective.retries != null ? effective.retries : 0;
         int delay = effective.delay != null ? effective.delay : 1000;
 
@@ -1072,7 +1131,6 @@ public class Keymaster {
         if (effective.validUntil == null) {
             effective.validUntil = ISO_MILLIS.format(Instant.now().plusSeconds(3600));
         }
-        boolean encryptForSender = effective.encryptForSender == null || effective.encryptForSender;
 
         MdipDocument doc = resolveWithRetries(challengeDid, retries, delay);
         if (doc == null) {
@@ -1108,7 +1166,7 @@ public class Keymaster {
                 }
                 @SuppressWarnings("unchecked")
                 java.util.Map<String, Object> spec = (java.util.Map<String, Object>) item;
-                String match = findMatchingCredential(spec);
+                String match = findMatchingCredential(spec, responder);
                 if (match != null) {
                     matches.add(match);
                 }
@@ -1117,15 +1175,9 @@ public class Keymaster {
 
         java.util.List<java.util.Map<String, Object>> pairs = new java.util.ArrayList<>();
         for (String vcDid : matches) {
-            String plaintext = decryptMessage(vcDid);
-            String vpDid = encryptMessage(
-                plaintext,
-                requestor,
-                true,
-                effective.registry,
-                effective.validUntil,
-                encryptForSender
-            );
+            String plaintext = decryptMessageFor(vcDid, responder);
+            effective.includeHash = true;
+            String vpDid = encryptMessageFor(plaintext, requestor, responder, effective);
             java.util.Map<String, Object> pair = new java.util.LinkedHashMap<>();
             pair.put("vc", vcDid);
             pair.put("vp", vpDid);
@@ -1145,14 +1197,8 @@ public class Keymaster {
 
         java.util.Map<String, Object> wrapper = new java.util.LinkedHashMap<>();
         wrapper.put("response", response);
-        return encryptJsonInternal(
-            wrapper,
-            requestor,
-            false,
-            effective.registry,
-            effective.validUntil,
-            encryptForSender
-        );
+        effective.includeHash = false;
+        return encryptJsonFor(wrapper, requestor, responder, effective);
     }
 
     public java.util.Map<String, Object> verifyResponse(String responseDid) {
@@ -1160,6 +1206,7 @@ public class Keymaster {
     }
 
     public java.util.Map<String, Object> verifyResponse(String responseDid, CreateResponseOptions options) {
+        String verifier = fetchIdInfo(null).did;
         CreateResponseOptions effective = options != null ? options : new CreateResponseOptions();
         int retries = effective.retries != null ? effective.retries : 0;
         int delay = effective.delay != null ? effective.delay : 1000;
@@ -1169,7 +1216,7 @@ public class Keymaster {
             throw new IllegalArgumentException("responseDID does not resolve");
         }
 
-        Object wrapperObj = decryptJSON(responseDid);
+        Object wrapperObj = decryptJsonFor(responseDid, verifier);
         if (!(wrapperObj instanceof java.util.Map<?, ?>)) {
             throw new IllegalArgumentException("responseDID not a valid challenge response");
         }
@@ -1239,7 +1286,7 @@ public class Keymaster {
                     continue;
                 }
 
-                Object vpPlain = decryptJSON((String) vpObj);
+                Object vpPlain = decryptJsonFor((String) vpObj, verifier);
                 if (!(vpPlain instanceof java.util.Map<?, ?>)) {
                     continue;
                 }
@@ -1476,6 +1523,14 @@ public class Keymaster {
         String validUntil,
         java.util.Map<String, Object> credential
     ) {
+        String issuer = fetchIdInfo(null).did;
+        return bindCredentialFor(schemaId, subjectId, validFrom, validUntil, credential, issuer);
+    }
+
+    private java.util.Map<String, Object> bindCredentialFor(
+        String schemaId, String subjectId, String validFrom, String validUntil,
+        java.util.Map<String, Object> credential, String issuer
+    ) {
         if (schemaId == null || schemaId.isBlank()) {
             throw new IllegalArgumentException("schemaId");
         }
@@ -1486,7 +1541,6 @@ public class Keymaster {
         String from = validFrom != null ? validFrom : nowIso();
         String type = lookupDID(schemaId);
         String subjectDid = lookupDID(subjectId);
-        IDInfo issuer = fetchIdInfo(null);
 
         java.util.Map<String, Object> boundCredential = credential;
         if (boundCredential == null) {
@@ -1508,7 +1562,7 @@ public class Keymaster {
         java.util.Map<String, Object> vc = new java.util.LinkedHashMap<>();
         vc.put("@context", context);
         vc.put("type", types);
-        vc.put("issuer", issuer.did);
+        vc.put("issuer", issuer);
         vc.put("validFrom", from);
         if (validUntil != null) {
             vc.put("validUntil", validUntil);
@@ -1524,28 +1578,24 @@ public class Keymaster {
     }
 
     public String issueCredential(java.util.Map<String, Object> credential, IssueCredentialOptions options) {
+        String issuerDid = fetchIdInfo(null).did;
         if (credential == null) {
             throw new IllegalArgumentException("credential is required");
         }
 
         java.util.Map<String, Object> bound = credential;
         if (options != null && options.schema != null && options.subject != null) {
-            bound = bindCredential(
-                options.schema,
-                options.subject,
-                options.validFrom,
-                options.validUntil,
-                credential
+            bound = bindCredentialFor(
+                options.schema, options.subject, options.validFrom, options.validUntil, credential, issuerDid
             );
         }
 
         Object issuer = bound.get("issuer");
-        IDInfo current = fetchIdInfo(null);
-        if (issuer == null || !issuer.equals(current.did)) {
+        if (issuer == null || !issuer.equals(issuerDid)) {
             throw new IllegalArgumentException("credential.issuer");
         }
 
-        java.util.Map<String, Object> signed = addSignatureInternal(bound, null);
+        java.util.Map<String, Object> signed = addSignatureInternal(bound, issuerDid);
         Object subjectObj = signed.get("credentialSubject");
         if (!(subjectObj instanceof java.util.Map<?, ?>)) {
             throw new IllegalArgumentException("credential.credentialSubject.id");
@@ -1558,18 +1608,22 @@ public class Keymaster {
             throw new IllegalArgumentException("credential.credentialSubject.id");
         }
 
-        String targetRegistry = options != null ? options.registry : null;
-        String targetValidUntil = options != null ? options.validUntil : null;
-        boolean encryptForSender = options == null || options.encryptForSender == null || options.encryptForSender;
-        return encryptJsonInternal(signed, (String) subjectId, true, targetRegistry, targetValidUntil, encryptForSender);
+        EncryptOptions encryption = options != null
+            ? WalletJsonMapper.mapper().convertValue(options, EncryptOptions.class) : new EncryptOptions();
+        // Preserve the issuance contract rather than delegating or naming its asset.
+        encryption.controller = null;
+        encryption.name = null;
+        encryption.includeHash = true;
+        return encryptJsonFor(signed, (String) subjectId, issuerDid, encryption);
     }
 
     public java.util.Map<String, Object> getCredential(String id) {
         if (id == null || id.isBlank()) {
             throw new IllegalArgumentException("id is required");
         }
+        String holder = fetchIdInfo(null).did;
         String did = lookupDID(id);
-        Object vc = decryptJSON(did);
+        Object vc = decryptJsonFor(did, holder);
         if (!isVerifiableCredential(vc)) {
             return null;
         }
@@ -1579,8 +1633,13 @@ public class Keymaster {
     }
 
     public boolean removeCredential(String id) {
+        String holder = fetchIdInfo(null).did;
         String did = lookupDID(id);
-        return removeFromHeld(did);
+        return removeFromHeldFor(did, holder);
+    }
+
+    public java.util.List<String> listCredentials() {
+        return listCredentials(null);
     }
 
     public java.util.List<String> listCredentials(String id) {
@@ -1595,7 +1654,7 @@ public class Keymaster {
         try {
             IDInfo current = fetchIdInfo(null);
             String did = lookupDID(id);
-            Object vc = decryptJSON(did);
+            Object vc = decryptJsonFor(did, current.did);
             if (isVerifiableCredential(vc)) {
                 @SuppressWarnings("unchecked")
                 java.util.Map<String, Object> map = (java.util.Map<String, Object>) vc;
@@ -1609,10 +1668,14 @@ public class Keymaster {
                     }
                 }
             }
-            return addToHeld(did);
+            return addToHeldFor(did, current.did);
         } catch (Exception e) {
             return false;
         }
+    }
+
+    public java.util.List<String> listIssued() {
+        return listIssued(null);
     }
 
     public java.util.List<String> listIssued(String issuer) {
@@ -1622,7 +1685,7 @@ public class Keymaster {
         if (id.owned != null) {
             for (String did : id.owned) {
                 try {
-                    Object credential = decryptJSON(did);
+                    Object credential = decryptJsonFor(did, id.did);
                     if (isVerifiableCredential(credential)) {
                         @SuppressWarnings("unchecked")
                         java.util.Map<String, Object> map = (java.util.Map<String, Object>) credential;
@@ -1640,8 +1703,9 @@ public class Keymaster {
     }
 
     public boolean updateCredential(String did, java.util.Map<String, Object> credential) {
+        String sender = fetchIdInfo(null).did;
         String credentialDid = lookupDID(did);
-        Object original = decryptJSON(credentialDid);
+        Object original = decryptJsonFor(credentialDid, sender);
         if (!isVerifiableCredential(original)) {
             throw new IllegalArgumentException("did is not a credential");
         }
@@ -1664,7 +1728,7 @@ public class Keymaster {
 
         java.util.Map<String, Object> unsigned = new java.util.LinkedHashMap<>(credential);
         unsigned.remove("signature");
-        java.util.Map<String, Object> signed = addSignatureInternal(unsigned, null);
+        java.util.Map<String, Object> signed = addSignatureInternal(unsigned, sender);
 
         String msg;
         try {
@@ -1673,15 +1737,12 @@ public class Keymaster {
             throw new IllegalArgumentException("credential");
         }
 
-        IDInfo sender = fetchIdInfo(null);
-        JwkPair senderKeypair = fetchKeyPair(null);
+        JwkPair senderKeypair = fetchKeyPair(sender);
         if (senderKeypair == null) {
             throw new IllegalArgumentException("no valid sender keypair");
         }
 
-        ResolveDIDOptions options = new ResolveDIDOptions();
-        options.confirm = true;
-        MdipDocument holderDoc = gatekeeper.resolveDID((String) subjectId, options);
+        MdipDocument holderDoc = resolveIdentityForCryptography((String) subjectId);
         EcdsaJwkPublic receivePublicJwk = getPublicKeyJwk(holderDoc);
         org.keychain.crypto.JwkPublic receiverCrypto = new org.keychain.crypto.JwkPublic(
             receivePublicJwk.kty,
@@ -1696,7 +1757,7 @@ public class Keymaster {
 
         MdipDocument doc = resolveDID(credentialDid);
         java.util.Map<String, Object> encrypted = new java.util.LinkedHashMap<>();
-        encrypted.put("sender", sender.did);
+        encrypted.put("sender", sender);
         encrypted.put("created", nowIso());
         encrypted.put("cipher_hash", msgHash);
         encrypted.put("cipher_sender", cipherSender);
@@ -1724,7 +1785,7 @@ public class Keymaster {
     public java.util.Map<String, Object> publishCredential(String did, boolean reveal) {
         IDInfo id = fetchIdInfo(null);
         String credentialDid = lookupDID(did);
-        Object vcObj = decryptJSON(credentialDid);
+        Object vcObj = decryptJsonFor(credentialDid, id.did);
         if (!isVerifiableCredential(vcObj)) {
             throw new IllegalArgumentException("did is not a credential");
         }
@@ -1791,7 +1852,9 @@ public class Keymaster {
                     manifest.remove(credentialDid);
                     data.put("manifest", manifest);
                     doc.didDocumentData = data;
-                    updateDID(doc);
+                    if (!updateDID(doc)) {
+                        throw new IllegalStateException("update DID failed");
+                    }
                     return "OK credential " + did + " removed from manifest";
                 }
             }
@@ -1812,7 +1875,10 @@ public class Keymaster {
             throw new IllegalArgumentException("did is required");
         }
         String actualDid = lookupDID(did);
-        MdipDocument doc = gatekeeper.resolveDID(actualDid, options);
+        return checkedResolution(gatekeeper.resolveDID(actualDid, options));
+    }
+
+    private MdipDocument checkedResolution(MdipDocument doc) {
         if (doc != null && doc.didResolutionMetadata != null && doc.didResolutionMetadata.error != null) {
             String error = doc.didResolutionMetadata.error;
             if ("notFound".equals(error)) {
@@ -1958,15 +2024,15 @@ public class Keymaster {
         return null;
     }
 
-    private String findMatchingCredential(java.util.Map<String, Object> credential) {
-        IDInfo id = fetchIdInfo(null);
+    private String findMatchingCredential(java.util.Map<String, Object> credential, String holder) {
+        IDInfo id = fetchIdInfo(holder);
         if (id.held == null) {
             return null;
         }
 
         for (String did : id.held) {
             try {
-                Object docObj = decryptJSON(did);
+                Object docObj = decryptJsonFor(did, id.did);
                 if (!isVerifiableCredential(docObj)) {
                     continue;
                 }
@@ -2206,7 +2272,7 @@ public class Keymaster {
         }
 
         IDInfo id = fetchIdInfo(controllerDid);
-        JwkPair keypair = fetchKeyPair(controllerDid);
+        JwkPair keypair = fetchKeyPair(id.did);
         if (keypair == null) {
             throw new IllegalArgumentException("addSignature: no keypair");
         }
@@ -2232,7 +2298,7 @@ public class Keymaster {
         return validateNameInternal(name, null);
     }
 
-    private static String validateNameInternal(String name, WalletFile wallet) {
+    private String validateNameInternal(String name, WalletFile wallet) {
         if (name == null || trimName(name).isEmpty()) {
             throw new IllegalArgumentException("Invalid parameter: name must be a non-empty string");
         }
@@ -2240,7 +2306,7 @@ public class Keymaster {
         if (".".equals(trimmed) || "..".equals(trimmed)) {
             throw new IllegalArgumentException("Invalid parameter: name cannot be \".\" or \"..\"");
         }
-        if (trimmed.length() > MAX_NAME_LENGTH) {
+        if (trimmed.length() > maxNameLength) {
             throw new IllegalArgumentException("Invalid parameter: name too long");
         }
         for (int i = 0; i < trimmed.length(); i += 1) {
@@ -2318,35 +2384,14 @@ public class Keymaster {
         }
     }
 
-    private String encryptJsonInternal(Object json, String receiverDid, boolean includeHash) {
-        return encryptJsonInternal(json, receiverDid, includeHash, null, null, true);
-    }
-
-    private String encryptJsonInternal(
-        Object json,
-        String receiverDid,
-        boolean includeHash,
-        String registry,
-        String validUntil
-    ) {
-        return encryptJsonInternal(json, receiverDid, includeHash, registry, validUntil, true);
-    }
-
-    private String encryptJsonInternal(
-        Object json,
-        String receiverDid,
-        boolean includeHash,
-        String registry,
-        String validUntil,
-        boolean encryptForSender
-    ) {
+    private String encryptJsonFor(Object json, String receiverDid, String sender, EncryptOptions options) {
         String plaintext;
         try {
             plaintext = WalletJsonMapper.mapper().writeValueAsString(json);
         } catch (Exception e) {
-            throw new IllegalArgumentException("json");
+            throw new IllegalArgumentException("json", e);
         }
-        return encryptMessage(plaintext, receiverDid, includeHash, registry, validUntil, encryptForSender);
+        return encryptMessageFor(plaintext, receiverDid, sender, options);
     }
 
     public String encryptMessage(String msg, String receiverDid) {
@@ -2360,40 +2405,24 @@ public class Keymaster {
     }
 
     public String encryptMessage(String msg, String receiverDid, EncryptOptions options) {
-        EncryptOptions effective = options != null ? options : new EncryptOptions();
-        boolean includeHash = effective.includeHash != null && effective.includeHash;
-        boolean encryptForSender = effective.encryptForSender == null || effective.encryptForSender;
-        return encryptMessage(
-            msg,
-            receiverDid,
-            includeHash,
-            effective.registry,
-            effective.validUntil,
-            encryptForSender
-        );
+        return encryptMessageFor(msg, receiverDid, fetchIdInfo(null).did, options);
     }
 
-    private String encryptMessage(
-        String msg,
-        String receiverDid,
-        boolean includeHash,
-        String registry,
-        String validUntil,
-        boolean encryptForSender
-    ) {
+    private String encryptMessageFor(String msg, String receiverDid, String senderDid, EncryptOptions options) {
+        EncryptOptions effective = options != null ? options : new EncryptOptions();
+        boolean includeHash = Boolean.TRUE.equals(effective.includeHash);
+        boolean encryptForSender = effective.encryptForSender == null || effective.encryptForSender;
         if (receiverDid == null || receiverDid.isBlank()) {
             throw new IllegalArgumentException("receiver did is required");
         }
         String resolvedReceiver = lookupDID(receiverDid);
-        IDInfo sender = fetchIdInfo(null);
-        JwkPair senderKeypair = fetchKeyPair(null);
+        IDInfo sender = fetchIdInfo(senderDid);
+        JwkPair senderKeypair = fetchKeyPair(sender.did);
         if (senderKeypair == null) {
             throw new IllegalArgumentException("no valid sender keypair");
         }
 
-        ResolveDIDOptions options = new ResolveDIDOptions();
-        options.confirm = true;
-        MdipDocument doc = gatekeeper.resolveDID(resolvedReceiver, options);
+        MdipDocument doc = resolveIdentityForCryptography(resolvedReceiver);
         EcdsaJwkPublic receiverJwk = getPublicKeyJwk(doc);
         org.keychain.crypto.JwkPublic receiverCrypto = new org.keychain.crypto.JwkPublic(
             receiverJwk.kty,
@@ -2419,8 +2448,7 @@ public class Keymaster {
 
         java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
         payload.put("encrypted", encrypted);
-        String targetRegistry = registry == null || registry.isBlank() ? defaultRegistry : registry;
-        return createAsset(payload, targetRegistry, null, validUntil);
+        return createAssetFor(payload, sender.did, effective);
     }
 
     public String encryptJSON(Object json, String receiverDid) {
@@ -2434,21 +2462,15 @@ public class Keymaster {
     }
 
     public String encryptJSON(Object json, String receiverDid, EncryptOptions options) {
-        EncryptOptions effective = options != null ? options : new EncryptOptions();
-        boolean includeHash = effective.includeHash != null && effective.includeHash;
-        boolean encryptForSender = effective.encryptForSender == null || effective.encryptForSender;
-        return encryptJsonInternal(
-            json,
-            receiverDid,
-            includeHash,
-            effective.registry,
-            effective.validUntil,
-            encryptForSender
-        );
+        return encryptJsonFor(json, receiverDid, fetchIdInfo(null).did, options);
     }
 
     public Object decryptJSON(String did) {
-        String plaintext = decryptMessage(did);
+        return decryptJsonFor(did, fetchIdInfo(null).did);
+    }
+
+    private Object decryptJsonFor(String did, String recipient) {
+        String plaintext = decryptMessageFor(did, recipient);
         try {
             return WalletJsonMapper.mapper().readValue(plaintext, Object.class);
         } catch (Exception e) {
@@ -2457,8 +2479,12 @@ public class Keymaster {
     }
 
     public String decryptMessage(String did) {
+        return decryptMessageFor(did, fetchIdInfo(null).did);
+    }
+
+    private String decryptMessageFor(String did, String recipient) {
         WalletFile wallet = loadWallet();
-        IDInfo id = fetchIdInfo(null, wallet);
+        IDInfo id = fetchIdInfo(recipient, wallet);
         Object assetObj = resolveAsset(did);
         if (!(assetObj instanceof java.util.Map<?, ?>)) {
             throw new IllegalArgumentException("Invalid parameter: did not encrypted");
@@ -2490,10 +2516,7 @@ public class Keymaster {
             throw new IllegalArgumentException("Invalid parameter: did not encrypted");
         }
 
-        ResolveDIDOptions options = new ResolveDIDOptions();
-        options.confirm = true;
-        options.versionTime = created;
-        MdipDocument senderDoc = gatekeeper.resolveDID(senderDid, options);
+        MdipDocument senderDoc = resolveIdentityForCryptography(senderDid, created);
         EcdsaJwkPublic senderPublicJwk = getPublicKeyJwk(senderDoc);
         org.keychain.crypto.JwkPublic senderCrypto = new org.keychain.crypto.JwkPublic(
             senderPublicJwk.kty,
@@ -2561,11 +2584,15 @@ public class Keymaster {
     }
 
     public boolean addToHeld(String did) {
+        return addToHeldFor(did, fetchIdInfo(null).did);
+    }
+
+    private boolean addToHeldFor(String did, String holder) {
         if (did == null || did.isBlank()) {
             throw new IllegalArgumentException("did is required");
         }
         mutateWallet(wallet -> {
-            IDInfo idInfo = getCurrentIdInfo(wallet);
+            IDInfo idInfo = fetchIdInfo(holder, wallet);
             if (idInfo.held == null) {
                 idInfo.held = new java.util.ArrayList<>();
             }
@@ -2577,12 +2604,16 @@ public class Keymaster {
     }
 
     public boolean removeFromHeld(String did) {
+        return removeFromHeldFor(did, fetchIdInfo(null).did);
+    }
+
+    private boolean removeFromHeldFor(String did, String holder) {
         if (did == null || did.isBlank()) {
             throw new IllegalArgumentException("did is required");
         }
         final boolean[] changed = {false};
         mutateWallet(wallet -> {
-            IDInfo idInfo = getCurrentIdInfo(wallet);
+            IDInfo idInfo = fetchIdInfo(holder, wallet);
             if (idInfo.held == null) {
                 return;
             }
@@ -2685,16 +2716,23 @@ public class Keymaster {
     }
 
     private MdipDocument resolveIdentityForCryptography(String did) {
+        return resolveIdentityForCryptography(did, null);
+    }
+
+    private MdipDocument resolveIdentityForCryptography(String did, String versionTime) {
+        String identityDid = lookupDID(did);
         ResolveDIDOptions options = new ResolveDIDOptions();
         options.confirm = true;
-        MdipDocument doc = gatekeeper.resolveDID(did, options);
+        options.versionTime = versionTime;
+        MdipDocument doc = gatekeeper.resolveDID(identityDid, options);
         if (doc != null && doc.didResolutionMetadata != null && "notFound".equals(doc.didResolutionMetadata.error)) {
             // Use only the immutable create key while registry confirmation is pending.
             ResolveDIDOptions initial = new ResolveDIDOptions();
             initial.versionSequence = 1;
-            return gatekeeper.resolveDID(did, initial);
+            initial.versionTime = versionTime;
+            doc = gatekeeper.resolveDID(identityDid, initial);
         }
-        return doc;
+        return checkedResolution(doc);
     }
 
     public boolean updateDID(MdipDocument doc) {
@@ -2705,14 +2743,20 @@ public class Keymaster {
             throw new IllegalArgumentException("doc.didDocument.id is required");
         }
 
-        String did = doc.didDocument.id;
+        MdipDocument update = WalletJsonMapper.mapper().convertValue(doc, MdipDocument.class);
+        String did = update.didDocument.id;
+        String expectedPrevid = update.didDocumentMetadata != null ? update.didDocumentMetadata.versionId : null;
         MdipDocument current = resolveDID(did);
-        String previd = current != null && current.didDocumentMetadata != null ? current.didDocumentMetadata.versionId : null;
+        String currentPrevid = current != null && current.didDocumentMetadata != null ? current.didDocumentMetadata.versionId : null;
+        if (expectedPrevid != null && !expectedPrevid.equals(currentPrevid)) {
+            return false;
+        }
+        String previd = expectedPrevid != null ? expectedPrevid : currentPrevid;
         String registry = current != null && current.mdip != null ? current.mdip.registry : null;
 
         if (current != null) {
             MdipDocument currentCopy = WalletJsonMapper.mapper().convertValue(current, MdipDocument.class);
-            MdipDocument docCopy = WalletJsonMapper.mapper().convertValue(doc, MdipDocument.class);
+            MdipDocument docCopy = WalletJsonMapper.mapper().convertValue(update, MdipDocument.class);
             currentCopy.didDocumentMetadata = null;
             currentCopy.didResolutionMetadata = null;
             docCopy.didDocumentMetadata = null;
@@ -2728,7 +2772,7 @@ public class Keymaster {
         String blockid = block != null ? block.hash : null;
 
         String signerDid = current != null && current.didDocument != null
-            ? (current.didDocument.controller != null ? current.didDocument.controller : current.didDocument.id)
+            ? (current.mdip != null && "agent".equals(current.mdip.type) ? current.didDocument.id : current.didDocument.controller)
             : did;
 
         JwkPair keypair = fetchKeyPair(signerDid);
@@ -2739,7 +2783,7 @@ public class Keymaster {
             did,
             previd,
             blockid,
-            doc,
+            update,
             keypair.privateJwk,
             signerDid
         );
@@ -2769,7 +2813,7 @@ public class Keymaster {
         operation.blockid = blockid;
 
         String signerDid = current != null && current.didDocument != null
-            ? (current.didDocument.controller != null ? current.didDocument.controller : current.didDocument.id)
+            ? (current.mdip != null && "agent".equals(current.mdip.type) ? current.didDocument.id : current.didDocument.controller)
             : did;
 
         JwkPair keypair = fetchKeyPair(signerDid);

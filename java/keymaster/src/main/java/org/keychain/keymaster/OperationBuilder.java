@@ -5,10 +5,12 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.Objects;
+import org.keychain.gatekeeper.model.DocumentMetadata;
 import org.keychain.gatekeeper.model.EcdsaJwkPublic;
 import org.keychain.gatekeeper.model.Mdip;
 import org.keychain.gatekeeper.model.MdipDocument;
 import org.keychain.gatekeeper.model.Operation;
+import org.keychain.keymaster.store.WalletJsonMapper;
 
 public class OperationBuilder {
     private static final DateTimeFormatter ISO_MILLIS =
@@ -100,11 +102,8 @@ public class OperationBuilder {
     }
 
     private static MdipDocument stripMetadata(MdipDocument doc) {
-        MdipDocument copy = new MdipDocument();
-        copy.didDocument = doc.didDocument;
-        copy.didDocumentData = doc.didDocumentData;
-        copy.mdip = doc.mdip;
-        copy.didDocumentMetadata = null;
+        MdipDocument copy = WalletJsonMapper.mapper().convertValue(doc, MdipDocument.class);
+        copy.didDocumentMetadata = new DocumentMetadata();
         copy.didResolutionMetadata = null;
         return copy;
     }
