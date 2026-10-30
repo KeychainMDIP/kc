@@ -95,9 +95,10 @@ responses keep the initiating identity throughout their nested calls. Changing
 the current identity during a network call does not change the sender, holder
 or wallet entry updated by that operation. An explicit asset controller chooses
 the signing identity while the initiating owner tracks the asset.
-Issuance and response creation ignore inherited `name` and `controller`
-options. Their assets stay controlled by the issuer or responder. Generic asset
-and encryption methods support explicit controller selection.
+Issuance forwards `name` and `controller` options to encrypted asset creation.
+The original issuer still signs the credential, remains its encrypted sender
+and tracks the asset in its wallet. Response creation ignores inherited `name`
+and `controller` options and keeps its assets controlled by the responder.
 `listIssued(issuer)` decrypts using the requested issuer, even if another
 identity is selected. `listIssued()` and `listCredentials()` select the current
 identity.

@@ -1670,9 +1670,6 @@ public class Keymaster {
 
         EncryptOptions encryption = options != null
             ? WalletJsonMapper.mapper().convertValue(options, EncryptOptions.class) : new EncryptOptions();
-        // Preserve the issuance contract rather than delegating or naming its asset.
-        encryption.controller = null;
-        encryption.name = null;
         encryption.includeHash = true;
         return encryptJsonFor(signed, subjectId, issuerDid, encryption);
     }

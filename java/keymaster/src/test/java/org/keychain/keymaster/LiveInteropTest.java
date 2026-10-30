@@ -77,7 +77,12 @@ class LiveInteropTest {
         String schema = java.createSchema(TestFixtures.mockSchema());
         Map<String, Object> bound = java.bindCredential(schema, holder);
         bound.put("credential", CLAIMS);
-        String vc = java.issueCredential(bound);
+        IssueCredentialOptions issuance = new IssueCredentialOptions();
+        issuance.name = "Named VC";
+        issuance.controller = holder;
+        String vc = java.issueCredential(bound, issuance);
+        assertEquals(vc, java.lookupDID("Named VC"));
+        assertEquals(holder, java.resolveDID(vc).didDocument.controller);
         java.setCurrentId("Holder");
         assertTrue(java.acceptCredential(vc));
         java.setCurrentId("Verifier");

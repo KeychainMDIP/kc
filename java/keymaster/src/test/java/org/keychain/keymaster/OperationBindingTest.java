@@ -247,20 +247,42 @@ class OperationBindingTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"name", "controller", "both"})
-    void issuanceOptionsDoNotNameOrDelegateTheCredential(String ignored) {
+    void issuanceForwardsAssetOptionsWithoutChangingTheIssuer(String supplied) {
         String schema = keymaster.createSchema(TestFixtures.mockSchema());
         Map<String, Object> bound = keymaster.bindCredential(schema, bob, null, null, Map.of("email", "alice@example.test"));
         IssueCredentialOptions options = new IssueCredentialOptions();
-        if (!"controller".equals(ignored)) options.name = "Alice";
-        if (!"name".equals(ignored)) options.controller = bob;
+        if (!"controller".equals(supplied)) options.name = " Issued VC ";
+        if (!"name".equals(supplied)) options.controller = "Bob";
         JsonNode before = mapper.valueToTree(options);
+        switchOnResolve(alice, "Bob");
 
         String vc = keymaster.issueCredential(bound, options);
 
-        assertEquals(alice, node.doc(vc).didDocument.controller);
+        assertEquals(options.controller != null ? bob : alice, node.doc(vc).didDocument.controller);
+        if (options.name != null) assertEquals(vc, keymaster.lookupDID("Issued VC"));
+        else assertFalse(keymaster.listNames(false).containsKey("Issued VC"));
         assertEquals(alice, encrypted(vc).get("sender"));
+        Map<String, Object> plaintext = keymaster.getCredential(vc);
+        assertEquals(alice, plaintext.get("issuer"));
+        assertEquals(alice, ((Map<?, ?>) plaintext.get("signature")).get("signer"));
+        assertTrue(keymaster.verifySignature(plaintext));
         assertTrue(keymaster.listAssets("Alice").contains(vc));
         assertFalse(keymaster.listAssets("Bob").contains(vc));
+        assertEquals(before, mapper.valueToTree(options));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"duplicate-name", "invalid-name", "unknown-controller"})
+    void invalidIssuanceAssetOptionsFailBeforePublication(String invalid) {
+        String schema = keymaster.createSchema(TestFixtures.mockSchema());
+        Map<String, Object> bound = keymaster.bindCredential(schema, bob);
+        IssueCredentialOptions options = new IssueCredentialOptions();
+        if ("unknown-controller".equals(invalid)) options.controller = "Unknown";
+        else options.name = "duplicate-name".equals(invalid) ? "Alice" : "..";
+        JsonNode before = mapper.valueToTree(options);
+        int creates = node.created.size();
+        assertThrows(IllegalArgumentException.class, () -> keymaster.issueCredential(bound, options));
+        assertEquals(creates, node.created.size());
         assertEquals(before, mapper.valueToTree(options));
     }
 
