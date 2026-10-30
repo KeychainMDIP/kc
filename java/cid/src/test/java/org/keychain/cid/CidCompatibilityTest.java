@@ -23,7 +23,8 @@ class CidCompatibilityTest {
             return new String(input.readAllBytes(), StandardCharsets.UTF_8).lines()
                 .filter(line -> !line.startsWith("#")).map(line -> {
                     String[] columns = line.split("\\t", -1);
-                    return Arguments.of(columns[0], Boolean.parseBoolean(columns[1]), columns[2].equals("<null>") ? null : columns[2]);
+                    String value = columns[2].equals("<null>") ? null : columns[2].equals("<empty>") ? "" : columns[2];
+                    return Arguments.of(columns[0], Boolean.parseBoolean(columns[1]), value);
                 });
         }
     }
