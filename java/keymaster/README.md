@@ -144,6 +144,43 @@ is unrestricted. Optional schema fields can be omitted when issuing a
 credential. Presentations carry the complete signed credential and do not
 provide field-level selective disclosure.
 
+## Responses and challenge receipts
+
+Verification authenticates the response controller and encrypted sender, requires
+that the selected verifier owns the live challenge, and binds each credential's
+subject to the responder. It decrypts the same outer response version it checks.
+Presentations must reference live encrypted credentials, have matching declared
+hashes and match a SHA-256 hash of the exact decrypted plaintext. Issuer
+signatures, structure, validity, schemas and issuer restrictions are checked.
+Distinct presentations are assigned to individual requirements without depending
+on their order. Repeating one presentation does not satisfy multiple requirements.
+Client-supplied counters and match flags cannot authorize a response.
+
+New responses contain a random `responseNonce`. As in the reference,
+`verifyResponse(responseDid)` now publishes challenge receipts when verification
+succeeds. To verify without writing, set `CreateResponseOptions.publish = false`.
+Both existing verification overloads remain available, including a null options
+argument. Response creation ignores `publish`.
+
+Each public receipt contains only its version, attester DID, schema DID, requester
+DID and a commitment computed as `hashJSON({ responseDid, responseNonce })`.
+It contains no private credential claims, holder DID, response DID or nonce.
+The initiating requester controls the receipt even if the selected identity
+changes during verification. Receipts use the normal default registry and have
+no expiry unless explicitly configured.
+
+`publishChallengeReceipts(responseDid, options)` supports retries, delay, registry,
+expiration and a name for a single receipt. `PublishChallengeReceiptOptions`
+can reuse a trusted `verifyResponse()` result through its `verification` field.
+Do not populate that field from unverified external input. Without it, the
+response is verified again with publication disabled.
+
+A legacy response without a nonce can still verify with `publish = false`, but
+cannot publish receipts. This also applies to empty challenges, which otherwise
+succeed without writing any receipts. Publication failures propagate. Multiple
+receipt writes are separate operations, so a later failure does not undo earlier
+receipts. Repeated publication is not guaranteed to be idempotent.
+
 ## Deployment options
 
 Existing constructors remain available. Use `KeymasterOptions` to configure

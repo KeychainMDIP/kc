@@ -20,3 +20,8 @@ String msgHash = crypto.hashMessage("hello");
 String sig = crypto.signHash(msgHash, jwkPair.privateJwk);
 boolean ok = crypto.verifySig(msgHash, sig, jwkPair.publicJwk);
 ```
+
+`generateRandomSalt()` returns 32 cryptographically random bytes encoded as
+multibase base64url with the `u` prefix, matching the reference response nonce.
+JWK values and ciphertext remain unprefixed base64url. Mnemonic encryption
+retains its separate padded base64 encoding.

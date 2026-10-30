@@ -37,6 +37,7 @@ public class TestGatekeeper {
     public boolean rejectUpdate;
     public boolean requestedInitialKey;
     public int updates;
+    public Consumer<Operation> beforeCreate = operation -> {};
     public Runnable afterCreate = () -> {};
     public Runnable afterUpdate = () -> {};
     public final GatekeeperInterface client = (GatekeeperInterface) Proxy.newProxyInstance(
@@ -54,6 +55,7 @@ public class TestGatekeeper {
     public MdipDocument vault(String did) { return doc((String) ((Map<?, ?>) doc(did).didDocumentData).get("vault")); }
 
     private String create(Operation operation) {
+        beforeCreate.accept(operation);
         byte[] multihash = new byte[34];
         multihash[0] = 0x12;
         multihash[1] = 0x20;

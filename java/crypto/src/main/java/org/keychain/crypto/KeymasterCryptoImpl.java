@@ -87,6 +87,6 @@ public class KeymasterCryptoImpl implements KeymasterCrypto {
 
     @Override
     public String generateRandomSalt() {
-        return Base64Url.encode(Bytes.random(32));
+        return "u" + Base64Url.encode(Bytes.random(32));
     }
 }

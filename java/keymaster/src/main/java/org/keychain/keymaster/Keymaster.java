@@ -26,6 +26,7 @@ import org.keychain.gatekeeper.model.MdipDocument;
 import org.keychain.gatekeeper.model.Operation;
 import org.keychain.gatekeeper.model.ResolveDIDOptions;
 import org.keychain.gatekeeper.model.Signature;
+import org.keychain.keymaster.model.ChallengeReceipt;
 import org.keychain.keymaster.model.Seed;
 import org.keychain.keymaster.model.IDInfo;
 import org.keychain.keymaster.model.Group;
@@ -1204,6 +1205,7 @@ public class Keymaster {
         response.put("requested", requested);
         response.put("fulfilled", fulfilled);
         response.put("match", match);
+        response.put("responseNonce", crypto.generateRandomSalt());
 
         java.util.Map<String, Object> wrapper = new java.util.LinkedHashMap<>();
         wrapper.put("response", response);
@@ -1215,148 +1217,215 @@ public class Keymaster {
         return verifyResponse(responseDid, null);
     }
 
-    public java.util.Map<String, Object> verifyResponse(String responseDid, CreateResponseOptions options) {
-        String verifier = fetchIdInfo(null).did;
+    public Map<String, Object> verifyResponse(String responseDid, CreateResponseOptions options) {
+        return verifyResponseFor(responseDid, fetchIdInfo(null).did, options);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> verifyResponseFor(String responseDid, String verifier, CreateResponseOptions options) {
         CreateResponseOptions effective = options != null ? options : new CreateResponseOptions();
         int retries = effective.retries != null ? effective.retries : 0;
         int delay = effective.delay != null ? effective.delay : 1000;
-
         MdipDocument responseDoc = resolveWithRetries(responseDid, retries, delay);
         if (responseDoc == null) {
             throw new IllegalArgumentException("responseDID does not resolve");
         }
-
-        Object wrapperObj = decryptJsonFor(responseDid, verifier);
-        if (!(wrapperObj instanceof java.util.Map<?, ?>)) {
+        Object data = responseDoc.didDocumentData;
+        if (Boolean.TRUE.equals(responseDoc.didDocumentMetadata != null ? responseDoc.didDocumentMetadata.deactivated : null)
+            || !(data instanceof Map<?, ?>)) {
+            throw new IllegalArgumentException("Invalid parameter: did not encrypted");
+        }
+        Map<String, Object> asset = (Map<String, Object>) data;
+        Object encrypted = asset.get("encrypted");
+        if (!(encrypted instanceof Map<?, ?>) && !(asset.get("cipher_hash") instanceof String)) {
+            throw new IllegalArgumentException("Invalid parameter: did not encrypted");
+        }
+        Map<String, Object> crypt = encrypted instanceof Map<?, ?> ? (Map<String, Object>) encrypted : asset;
+        String responder = responseDoc.didDocument != null ? responseDoc.didDocument.controller : null;
+        if (responder == null || responder.isEmpty()) {
+            throw new IllegalArgumentException("Invalid parameter: response controller");
+        }
+        if (!responder.equals(crypt.get("sender"))) {
+            throw new IllegalArgumentException("Invalid parameter: response sender");
+        }
+        // Use the response version whose controller and encrypted sender were checked.
+        WalletFile wallet = loadWallet();
+        Object wrapper = parseEncryptedJson(decryptAssetMessage(asset, wallet, fetchIdInfo(verifier, wallet)));
+        if (!(wrapper instanceof Map<?, ?>) || !(((Map<?, ?>) wrapper).get("response") instanceof Map<?, ?>)) {
             throw new IllegalArgumentException("responseDID not a valid challenge response");
         }
-        @SuppressWarnings("unchecked")
-        java.util.Map<String, Object> wrapper = (java.util.Map<String, Object>) wrapperObj;
-        Object responseObj = wrapper.get("response");
-        if (!(responseObj instanceof java.util.Map<?, ?>)) {
-            throw new IllegalArgumentException("responseDID not a valid challenge response");
-        }
-        @SuppressWarnings("unchecked")
-        java.util.Map<String, Object> response = (java.util.Map<String, Object>) responseObj;
-
-        Object challengeDidObj = response.get("challenge");
-        if (!(challengeDidObj instanceof String)) {
-            throw new IllegalArgumentException("challenge not found");
-        }
-        Object result = resolveAsset((String) challengeDidObj);
-        if (!(result instanceof java.util.Map<?, ?>)) {
-            throw new IllegalArgumentException("challenge not found");
-        }
-        @SuppressWarnings("unchecked")
-        java.util.Map<String, Object> resultMap = (java.util.Map<String, Object>) result;
-        Object challengeObj = resultMap.get("challenge");
-        if (!(challengeObj instanceof java.util.Map<?, ?>)) {
+        Map<String, Object> response = (Map<String, Object>) ((Map<?, ?>) wrapper).get("response");
+        if (!(response.get("challenge") instanceof String)) {
             throw new IllegalArgumentException("Invalid parameter: challengeDID");
         }
-        @SuppressWarnings("unchecked")
-        java.util.Map<String, Object> challenge = (java.util.Map<String, Object>) challengeObj;
-
-        java.util.List<java.util.Map<String, Object>> vps = new java.util.ArrayList<>();
+        MdipDocument challengeDoc = resolveDID((String) response.get("challenge"));
+        Map<String, Object> challenge = responseChallenge(challengeDoc);
+        if (!verifier.equals(challengeDoc.didDocument != null ? challengeDoc.didDocument.controller : null)) {
+            throw new IllegalArgumentException("Invalid parameter: requesterDid");
+        }
+        Object requirements = challenge.get("credentials");
+        if (requirements != null && !(requirements instanceof List<?>)) {
+            throw new IllegalArgumentException("Invalid parameter: challenge.credentials");
+        }
+        List<?> requested = requirements != null ? (List<?>) requirements : List.of();
+        if (!(response.get("credentials") instanceof List<?>)) {
+            throw new IllegalArgumentException("Invalid parameter: response.credentials");
+        }
+        Set<String> seen = new HashSet<>();
+        List<Map<String, Object>> candidates = new ArrayList<>();
+        List<List<Integer>> eligible = new ArrayList<>();
         long now = NOW_SUPPLIER.get().toEpochMilli();
-        Object credentialsObj = response.get("credentials");
-        if (credentialsObj instanceof java.util.List<?>) {
-            for (Object entry : (java.util.List<?>) credentialsObj) {
-                if (!(entry instanceof java.util.Map<?, ?>)) {
-                    continue;
+        for (Object entry : (List<?>) response.get("credentials")) {
+            if (!(entry instanceof Map<?, ?>)) continue;
+            Map<?, ?> pair = (Map<?, ?>) entry;
+            if (!(pair.get("vc") instanceof String) || !(pair.get("vp") instanceof String)) continue;
+            String vpDid = (String) pair.get("vp");
+            if (seen.contains(vpDid)) continue;
+            Object vcData = resolveAsset((String) pair.get("vc"));
+            Object vpData = resolveAsset(vpDid);
+            if (!(vcData instanceof Map<?, ?>) || !(vpData instanceof Map<?, ?>)) continue;
+            Object vcEncrypted = ((Map<?, ?>) vcData).get("encrypted");
+            Object vpEncrypted = ((Map<?, ?>) vpData).get("encrypted");
+            if (!(vcEncrypted instanceof Map<?, ?>) || !(vpEncrypted instanceof Map<?, ?>)) continue;
+            Object hash = ((Map<?, ?>) vcEncrypted).get("cipher_hash");
+            if (!(hash instanceof String) || !hash.equals(((Map<?, ?>) vpEncrypted).get("cipher_hash"))) continue;
+            String plaintext = decryptMessageFor(vpDid, verifier);
+            Object parsed = parseEncryptedJson(plaintext);
+            if (!hash.equals(crypto.hashMessage(plaintext)) || !isVerifiableCredential(parsed)) continue;
+            Map<String, Object> vp = (Map<String, Object>) parsed;
+            if (!verifyCredentialSignature(vp) || !isCredentialCurrent(vp, now)
+                || !responder.equals(((Map<?, ?>) vp.get("credentialSubject")).get("id"))) continue;
+            List<?> types = (List<?>) vp.get("type");
+            if (types.size() < 2 || !((String) types.get(1)).startsWith("did:")) continue;
+            List<Integer> indexes = new ArrayList<>();
+            for (int i = 0; i < requested.size(); i++) {
+                if (!(requested.get(i) instanceof Map<?, ?>)) {
+                    throw new IllegalArgumentException("Invalid parameter: challenge.credentials");
                 }
-                @SuppressWarnings("unchecked")
-                java.util.Map<String, Object> pair = (java.util.Map<String, Object>) entry;
-                Object vcObj = pair.get("vc");
-                Object vpObj = pair.get("vp");
-                if (!(vcObj instanceof String) || !(vpObj instanceof String)) {
-                    continue;
+                Map<?, ?> spec = (Map<?, ?>) requested.get(i);
+                Object issuers = spec.get("issuers");
+                if (types.get(1).equals(spec.get("schema")) && (issuers == null
+                    || issuers instanceof List<?> && (((List<?>) issuers).isEmpty() || ((List<?>) issuers).contains(vp.get("issuer"))))) {
+                    indexes.add(i);
                 }
+            }
+            if (indexes.isEmpty()) continue;
+            seen.add(vpDid);
+            candidates.add(vp);
+            eligible.add(indexes);
+        }
+        int[] assigned = new int[requested.size()];
+        Arrays.fill(assigned, -1);
+        for (int i = 0; i < candidates.size(); i++) {
+            assignPresentation(i, eligible, assigned, new boolean[assigned.length]);
+        }
+        Set<Integer> matched = new HashSet<>();
+        for (int index : assigned) if (index >= 0) matched.add(index);
+        List<Map<String, Object>> vps = new ArrayList<>();
+        for (int i = 0; i < candidates.size(); i++) if (matched.contains(i)) vps.add(candidates.get(i));
+        response.put("vps", vps);
+        response.put("match", matched.size() == requested.size());
+        response.put("responder", responder);
+        if (!Boolean.FALSE.equals(effective.publish) && Boolean.TRUE.equals(response.get("match"))) {
+            PublishChallengeReceiptOptions publication = new PublishChallengeReceiptOptions();
+            publication.verification = response;
+            publishChallengeReceiptsFor(responseDid, verifier, publication);
+        }
+        return response;
+    }
 
-                Object vcData = resolveAsset((String) vcObj);
-                Object vpData = resolveAsset((String) vpObj);
-                if (!(vcData instanceof java.util.Map<?, ?>) || !(vpData instanceof java.util.Map<?, ?>)) {
-                    continue;
-                }
-
-                @SuppressWarnings("unchecked")
-                java.util.Map<String, Object> vcDataMap = (java.util.Map<String, Object>) vcData;
-                @SuppressWarnings("unchecked")
-                java.util.Map<String, Object> vpDataMap = (java.util.Map<String, Object>) vpData;
-                Object vcEncryptedObj = vcDataMap.get("encrypted");
-                Object vpEncryptedObj = vpDataMap.get("encrypted");
-                if (!(vcEncryptedObj instanceof java.util.Map<?, ?>) || !(vpEncryptedObj instanceof java.util.Map<?, ?>)) {
-                    continue;
-                }
-                @SuppressWarnings("unchecked")
-                java.util.Map<String, Object> vcEncrypted = (java.util.Map<String, Object>) vcEncryptedObj;
-                @SuppressWarnings("unchecked")
-                java.util.Map<String, Object> vpEncrypted = (java.util.Map<String, Object>) vpEncryptedObj;
-                Object vcHash = vcEncrypted.get("cipher_hash");
-                Object vpHash = vpEncrypted.get("cipher_hash");
-                if (vcHash == null || !vcHash.equals(vpHash)) {
-                    continue;
-                }
-
-                Object vpPlain = decryptJsonFor((String) vpObj, verifier);
-                if (!(vpPlain instanceof java.util.Map<?, ?>)) {
-                    continue;
-                }
-                @SuppressWarnings("unchecked")
-                java.util.Map<String, Object> vp = (java.util.Map<String, Object>) vpPlain;
-                if (!isVerifiableCredential(vp) || !verifyCredentialSignature(vp) || !isCredentialCurrent(vp, now)) {
-                    continue;
-                }
-
-                Object typesObj = vp.get("type");
-                if (!(typesObj instanceof java.util.List<?>)) {
-                    continue;
-                }
-
-                if (((java.util.List<?>) typesObj).size() >= 2) {
-                    Object schemaObj = ((java.util.List<?>) typesObj).get(1);
-                    if (schemaObj instanceof String) {
-                        String schema = (String) schemaObj;
-                        Object challengeCredentialsObj = challenge.get("credentials");
-                        if (challengeCredentialsObj instanceof java.util.List<?>) {
-                            java.util.Map<String, Object> matchSpec = null;
-                            for (Object specObj : (java.util.List<?>) challengeCredentialsObj) {
-                                if (specObj instanceof java.util.Map<?, ?>) {
-                                    @SuppressWarnings("unchecked")
-                                    java.util.Map<String, Object> spec = (java.util.Map<String, Object>) specObj;
-                                    if (schema.equals(spec.get("schema"))) {
-                                        matchSpec = spec;
-                                        break;
-                                    }
-                                }
-                            }
-                            if (matchSpec != null) {
-                                Object issuersObj = matchSpec.get("issuers");
-                                if (issuersObj instanceof java.util.List<?> && !((List<?>) issuersObj).isEmpty()) {
-                                    Object issuerObj = vp.get("issuer");
-                                    if (issuerObj instanceof String) {
-                                        if (!((java.util.List<?>) issuersObj).contains(issuerObj)) {
-                                            continue;
-                                        }
-                                    }
-                                }
-                            } else {
-                                continue;
-                            }
-                        }
-                    }
-                }
-
-                vps.add(vp);
+    private static boolean assignPresentation(int presentation, List<List<Integer>> eligible, int[] assigned, boolean[] visited) {
+        for (int index : eligible.get(presentation)) {
+            if (visited[index]) continue;
+            visited[index] = true;
+            if (assigned[index] < 0 || assignPresentation(assigned[index], eligible, assigned, visited)) {
+                assigned[index] = presentation;
+                return true;
             }
         }
+        return false;
+    }
 
-        response.put("vps", vps);
-        Object challengeCredentialsObj = challenge.get("credentials");
-        int requested = challengeCredentialsObj instanceof java.util.List<?> ? ((java.util.List<?>) challengeCredentialsObj).size() : 0;
-        response.put("match", vps.size() == requested);
-        response.put("responder", responseDoc.didDocument != null ? responseDoc.didDocument.controller : null);
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> responseChallenge(MdipDocument doc) {
+        if (doc == null || Boolean.TRUE.equals(doc.didDocumentMetadata != null ? doc.didDocumentMetadata.deactivated : null)
+            || !(doc.didDocumentData instanceof Map<?, ?>)
+            || !(((Map<?, ?>) doc.didDocumentData).get("challenge") instanceof Map<?, ?>)) {
+            throw new IllegalArgumentException("Invalid parameter: challengeDID");
+        }
+        return (Map<String, Object>) ((Map<?, ?>) doc.didDocumentData).get("challenge");
+    }
 
-        return response;
+    public List<String> publishChallengeReceipts(String responseDid) {
+        return publishChallengeReceipts(responseDid, null);
+    }
+
+    public List<String> publishChallengeReceipts(String responseDid, PublishChallengeReceiptOptions options) {
+        return publishChallengeReceiptsFor(responseDid, fetchIdInfo(null).did,
+            options != null ? options : new PublishChallengeReceiptOptions());
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<String> publishChallengeReceiptsFor(String responseDid, String requester, PublishChallengeReceiptOptions options) {
+        Map<String, Object> response = options.verification;
+        if (response == null) {
+            CreateResponseOptions verification = new CreateResponseOptions();
+            verification.retries = options.retries;
+            verification.delay = options.delay;
+            verification.publish = false;
+            response = verifyResponseFor(responseDid, requester, verification);
+        }
+        if (!Boolean.TRUE.equals(response.get("match"))) {
+            throw new IllegalArgumentException("Invalid parameter: verification.match");
+        }
+        Object nonce = response.get("responseNonce");
+        if (!(nonce instanceof String) || ((String) nonce).isEmpty()) {
+            throw new IllegalArgumentException("Invalid parameter: response.responseNonce");
+        }
+        if (!(response.get("challenge") instanceof String)) {
+            throw new IllegalArgumentException("Invalid parameter: challengeDID");
+        }
+        MdipDocument doc = resolveDID((String) response.get("challenge"));
+        Map<String, Object> challenge = responseChallenge(doc);
+        if (!requester.equals(doc.didDocument != null ? doc.didDocument.controller : null)) {
+            throw new IllegalArgumentException("Invalid parameter: requesterDid");
+        }
+        Object vps = response.get("vps");
+        Object credentials = challenge.get("credentials");
+        if ((vps != null && !(vps instanceof List<?>)) || (credentials instanceof List<?>
+            && !((List<?>) credentials).isEmpty() && vps == null)) {
+            throw new IllegalArgumentException("Invalid parameter: verification.vps");
+        }
+        String commitment = crypto.hashJson(Map.of("responseDid", responseDid, "responseNonce", nonce));
+        List<ChallengeReceipt> receipts = new ArrayList<>();
+        for (Object vp : vps != null ? (List<?>) vps : List.of()) {
+            if (!isVerifiableCredential(vp)) {
+                throw new IllegalArgumentException("Invalid parameter: verification.vps");
+            }
+            Map<String, Object> credential = (Map<String, Object>) vp;
+            List<?> types = (List<?>) credential.get("type");
+            if (types.size() < 2 || !((String) types.get(1)).startsWith("did:")) {
+                throw new IllegalArgumentException("Invalid parameter: verification.vps.type");
+            }
+            ChallengeReceipt receipt = new ChallengeReceipt();
+            receipt.attesterDid = (String) credential.get("issuer");
+            receipt.schemaDid = (String) types.get(1);
+            receipt.requesterDid = requester;
+            receipt.responseCommitment = commitment;
+            receipts.add(receipt);
+        }
+        if (options.name != null && !options.name.isEmpty() && receipts.size() != 1) {
+            throw new IllegalArgumentException("Invalid parameter: options.name");
+        }
+        CreateAssetOptions assetOptions = new CreateAssetOptions();
+        assetOptions.registry = options.registry;
+        assetOptions.validUntil = options.validUntil;
+        assetOptions.name = options.name;
+        List<String> dids = new ArrayList<>();
+        for (ChallengeReceipt receipt : receipts) {
+            dids.add(createAssetFor(Map.of("challengeReceipt", receipt), requester, assetOptions));
+        }
+        return dids;
     }
 
     public String createGroup(String name) {
@@ -2479,6 +2548,10 @@ public class Keymaster {
 
     private Object decryptJsonFor(String did, String recipient) {
         String plaintext = decryptMessageFor(did, recipient);
+        return parseEncryptedJson(plaintext);
+    }
+
+    private Object parseEncryptedJson(String plaintext) {
         try {
             return WalletJsonMapper.mapper().readValue(plaintext, Object.class);
         } catch (Exception e) {
@@ -2494,6 +2567,10 @@ public class Keymaster {
         WalletFile wallet = loadWallet();
         IDInfo id = fetchIdInfo(recipient, wallet);
         Object assetObj = resolveAsset(did);
+        return decryptAssetMessage(assetObj, wallet, id);
+    }
+
+    private String decryptAssetMessage(Object assetObj, WalletFile wallet, IDInfo id) {
         if (!(assetObj instanceof java.util.Map<?, ?>)) {
             throw new IllegalArgumentException("Invalid parameter: did not encrypted");
         }
