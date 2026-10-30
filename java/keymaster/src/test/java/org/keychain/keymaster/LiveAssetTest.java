@@ -415,7 +415,7 @@ class LiveAssetTest {
     }
 
     @Test
-    void updateAssetRemovesUndefinedProperty() {
+    void updateAssetRetainsExplicitNull() {
         Keymaster keymaster = newKeymaster();
         keymaster.createId("Bob");
         Map<String, Object> mockAsset1 = Map.of("key1", "val1", "key2", "val2");
@@ -425,6 +425,8 @@ class LiveAssetTest {
         assertTrue(keymaster.updateAsset(did, mockAsset2));
         Object asset = keymaster.resolveAsset(did);
 
-        assertEquals(Map.of("key1", "val1"), asset);
+        Map<String, Object> expected = new java.util.HashMap<>(mockAsset1);
+        expected.put("key2", null);
+        assertEquals(expected, asset);
     }
 }

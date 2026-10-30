@@ -64,6 +64,11 @@ error and removes the temporary file without replacing the previous wallet.
 Use a filesystem that supports atomic file moves and a single writer for each
 wallet file. This does not coordinate separate processes or Keymaster instances.
 
+Wallet cleanup removes malformed DID strings and references to conclusively
+deactivated DIDs. Resolution failures, including not-found responses, abort the
+whole cleanup without saving partial removals. Removing the selected identity
+selects a remaining identity, or clears the selection when none remain.
+
 ## Identity lifecycle
 
 Identity creation persists the account reservation before publishing the DID.
@@ -112,6 +117,21 @@ update is rejected.
 Cryptographic resolution prefers confirmed keys. Only a not-found response
 permits fallback to the immutable version-1 key, retaining any historical time
 used for decryption. Connection and other resolution failures propagate.
+
+## Assets, groups and schemas
+
+`resolveAsset(did, options)` forwards historical version, time and confirmation
+options to DID resolution. Resolution failures propagate. Missing asset data,
+missing controllers and deactivated assets still return an empty object.
+Asset updates use a shallow merge and retain explicit null values.
+
+Group membership edits retain the version originally read. A rejected update
+throws and the caller can try again. Edits preserve unrelated asset and group
+properties, including the original flat layout of legacy groups. Membership
+traversal stops cycles and checks later branches without a depth limit.
+
+Schema templates resolve aliases before setting `$schema`. Listing names with
+identity names included returns a separate map without changing the wallet.
 
 ## Credential validation
 

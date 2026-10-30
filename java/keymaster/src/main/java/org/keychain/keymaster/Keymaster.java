@@ -405,6 +405,9 @@ public class Keymaster {
                     java.util.Map.Entry<String, IDInfo> entry = iterator.next();
                     if (shouldRemoveDid(entry.getValue().did)) {
                         iterator.remove();
+                        if (entry.getKey().equals(wallet.current)) {
+                            wallet.current = wallet.ids.keySet().stream().findFirst().orElse("");
+                        }
                         result.idsRemoved += 1;
                     }
                 }
@@ -1061,7 +1064,7 @@ public class Keymaster {
                 return false;
             }
             return validateSchema(schema);
-        } catch (IllegalArgumentException e) {
+        } catch (Exception e) {
             return false;
         }
     }
@@ -1070,9 +1073,10 @@ public class Keymaster {
         if (!testSchema(schemaId)) {
             throw new IllegalArgumentException("Invalid parameter: schemaId");
         }
-        Object schema = getSchema(schemaId);
+        String schemaDid = lookupDID(schemaId);
+        Object schema = getSchema(schemaDid);
         java.util.Map<String, Object> template = generateSchema(schema);
-        template.put("$schema", schemaId);
+        template.put("$schema", schemaDid);
         return template;
     }
 
@@ -1443,92 +1447,85 @@ public class Keymaster {
     }
 
     public Group getGroup(String id) {
-        Object asset = resolveAsset(id);
-        if (!(asset instanceof java.util.Map<?, ?>)) {
+        Map<String, Object> group = groupData(resolveDID(id));
+        return group != null ? WalletJsonMapper.mapper().convertValue(group, Group.class) : null;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> groupData(MdipDocument doc) {
+        if (doc == null || doc.didDocument == null || doc.didDocument.controller == null
+            || doc.didDocument.controller.isEmpty()
+            || doc.didDocumentMetadata != null && Boolean.TRUE.equals(doc.didDocumentMetadata.deactivated)
+            || !(doc.didDocumentData instanceof Map<?, ?>)) {
             return null;
         }
-
-        @SuppressWarnings("unchecked")
-        java.util.Map<String, Object> map = (java.util.Map<String, Object>) asset;
-        if (map.isEmpty()) {
-            return null;
-        }
-
-        if (map.containsKey("members")) {
-            return WalletJsonMapper.mapper().convertValue(map, Group.class);
-        }
-
-        Object groupObj = map.get("group");
-        if (groupObj == null) {
-            return null;
-        }
-
-        return WalletJsonMapper.mapper().convertValue(groupObj, Group.class);
+        Map<String, Object> data = (Map<String, Object>) doc.didDocumentData;
+        if (data.get("members") instanceof List<?>) return data;
+        Object group = data.get("group");
+        return group instanceof Map<?, ?> ? (Map<String, Object>) group : null;
     }
 
     public boolean addGroupMember(String groupId, String memberId) {
         String groupDid = lookupDID(groupId);
         String memberDid = lookupDID(memberId);
-
         if (memberDid.equals(groupDid)) {
             throw new IllegalArgumentException("Invalid parameter: can't add a group to itself");
         }
-
         try {
             resolveDID(memberDid);
         } catch (Exception e) {
             throw new IllegalArgumentException("Invalid parameter: memberId");
         }
-
-        Group group = getGroup(groupId);
-        if (group == null || group.members == null) {
+        MdipDocument doc = resolveDID(groupDid);
+        Map<String, Object> group = groupData(doc);
+        if (group == null || !(group.get("members") instanceof List<?>)) {
             throw new IllegalArgumentException("Invalid parameter: groupId");
         }
-
-        if (group.members.contains(memberDid)) {
-            return true;
-        }
-
-        boolean isMember = testGroup(memberId, groupId);
-        if (isMember) {
+        List<?> members = (List<?>) group.get("members");
+        if (members.contains(memberDid)) return true;
+        if (testGroup(memberId, groupId)) {
             throw new IllegalArgumentException("Invalid parameter: can't create mutual membership");
         }
-
-        java.util.Set<String> members = new java.util.LinkedHashSet<>(group.members);
-        members.add(memberDid);
-        group.members = new java.util.ArrayList<>(members);
-
-        java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
-        payload.put("group", WalletJsonMapper.mapper().convertValue(group, java.util.Map.class));
-        return updateAsset(groupDid, payload);
+        Set<Object> updated = new LinkedHashSet<>(members);
+        updated.add(memberDid);
+        return updateGroupMembers(doc, group, updated);
     }
 
     public boolean removeGroupMember(String groupId, String memberId) {
         String groupDid = lookupDID(groupId);
         String memberDid = lookupDID(memberId);
-        Group group = getGroup(groupDid);
-
-        if (group == null || group.members == null) {
-            throw new IllegalArgumentException("Invalid parameter: groupId");
-        }
-
         try {
             resolveDID(memberDid);
         } catch (Exception e) {
             throw new IllegalArgumentException("Invalid parameter: memberId");
         }
-
-        if (!group.members.contains(memberDid)) {
-            return true;
+        MdipDocument doc = resolveDID(groupDid);
+        Map<String, Object> group = groupData(doc);
+        if (group == null || !(group.get("members") instanceof List<?>)) {
+            throw new IllegalArgumentException("Invalid parameter: groupId");
         }
+        List<?> members = (List<?>) group.get("members");
+        if (!members.contains(memberDid)) return true;
+        List<Object> updated = new ArrayList<>(members);
+        updated.removeIf(memberDid::equals);
+        return updateGroupMembers(doc, group, updated);
+    }
 
-        java.util.Set<String> members = new java.util.LinkedHashSet<>(group.members);
-        members.remove(memberDid);
-        group.members = new java.util.ArrayList<>(members);
-
-        java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
-        payload.put("group", WalletJsonMapper.mapper().convertValue(group, java.util.Map.class));
-        return updateAsset(groupDid, payload);
+    @SuppressWarnings("unchecked")
+    private boolean updateGroupMembers(MdipDocument doc, Map<String, Object> group, Collection<?> members) {
+        Map<String, Object> updated = new LinkedHashMap<>(group);
+        updated.put("members", new ArrayList<>(members));
+        if (doc.didDocumentData == group) {
+            doc.didDocumentData = updated;
+        } else {
+            Map<String, Object> data = new LinkedHashMap<>((Map<String, Object>) doc.didDocumentData);
+            data.put("group", updated);
+            doc.didDocumentData = data;
+        }
+        if (!updateDID(doc)) {
+            throw new IllegalStateException("DID update was rejected. Please try again.");
+        }
+        return true;
     }
 
     public boolean testGroup(String groupId) {
@@ -1536,29 +1533,24 @@ public class Keymaster {
     }
 
     public boolean testGroup(String groupId, String memberId) {
+        return testGroupRecursive(groupId, memberId, new HashSet<>());
+    }
+
+    private boolean testGroupRecursive(String groupId, String memberId, Set<String> visited) {
         try {
-            Group group = getGroup(groupId);
-            if (group == null) {
-                return false;
-            }
-
-            if (memberId == null || memberId.isBlank()) {
-                return true;
-            }
-
-            String didMember = lookupDID(memberId);
-            boolean isMember = group.members != null && group.members.contains(didMember);
-
-            if (!isMember && group.members != null) {
+            String groupDid = lookupDID(groupId);
+            if (!visited.add(groupDid)) return false;
+            Group group = getGroup(groupDid);
+            if (group == null) return false;
+            if (memberId == null || memberId.isEmpty()) return true;
+            String memberDid = lookupDID(memberId);
+            if (group.members != null && group.members.contains(memberDid)) return true;
+            if (group.members != null) {
                 for (String did : group.members) {
-                    isMember = testGroup(did, didMember);
-                    if (isMember) {
-                        break;
-                    }
+                    if (testGroupRecursive(did, memberDid, visited)) return true;
                 }
             }
-
-            return isMember;
+            return false;
         } catch (Exception e) {
             return false;
         }
@@ -2171,27 +2163,20 @@ public class Keymaster {
     }
 
     public Object resolveAsset(String did) {
-        try {
-            MdipDocument doc = resolveDID(did);
-            if (doc == null || doc.mdip == null || !"asset".equals(doc.mdip.type)) {
-                return new java.util.LinkedHashMap<String, Object>();
-            }
-            if (doc.didDocumentMetadata != null && Boolean.TRUE.equals(doc.didDocumentMetadata.deactivated)) {
-                return new java.util.LinkedHashMap<String, Object>();
-            }
-            if (doc.didDocument == null || doc.didDocument.controller == null || doc.didDocument.controller.isBlank()) {
-                return new java.util.LinkedHashMap<String, Object>();
-            }
-            return Objects.requireNonNullElseGet(doc.didDocumentData, LinkedHashMap::new);
-        } catch (IllegalArgumentException e) {
-            String msg = e.getMessage();
-            if ("unknown id".equals(msg) || "bad format".equals(msg) || "unknown".equals(msg)) {
-                throw e;
-            }
-            return new java.util.LinkedHashMap<String, Object>();
-        } catch (Exception e) {
-            return new java.util.LinkedHashMap<String, Object>();
+        return resolveAsset(did, null);
+    }
+
+    public Object resolveAsset(String did, ResolveDIDOptions options) {
+        MdipDocument doc = resolveDID(did, options);
+        Object data = doc != null ? doc.didDocumentData : null;
+        if (doc == null || doc.didDocument == null || doc.didDocument.controller == null
+            || doc.didDocument.controller.isEmpty()
+            || doc.didDocumentMetadata != null && Boolean.TRUE.equals(doc.didDocumentMetadata.deactivated)
+            || data == null || Boolean.FALSE.equals(data) || "".equals(data)
+            || data instanceof Number && (((Number) data).doubleValue() == 0 || Double.isNaN(((Number) data).doubleValue()))) {
+            return new LinkedHashMap<String, Object>();
         }
+        return data;
     }
 
     public boolean updateAsset(String did, java.util.Map<String, Object> data) {
@@ -2210,13 +2195,7 @@ public class Keymaster {
             java.util.Map<String, Object> current = (java.util.Map<String, Object>) currentData;
             merged.putAll(current);
         }
-        for (java.util.Map.Entry<String, Object> entry : data.entrySet()) {
-            if (entry.getValue() == null) {
-                merged.remove(entry.getKey());
-            } else {
-                merged.put(entry.getKey(), entry.getValue());
-            }
-        }
+        merged.putAll(data);
         doc.didDocumentData = merged;
         return updateDID(doc);
     }
@@ -2450,15 +2429,11 @@ public class Keymaster {
         if (!isValidDID(did)) {
             return true;
         }
-        try {
-            MdipDocument doc = resolveDID(did);
-            if (doc == null) {
-                return true;
-            }
-            return doc.didDocumentMetadata != null && Boolean.TRUE.equals(doc.didDocumentMetadata.deactivated);
-        } catch (Exception e) {
-            return true;
+        MdipDocument doc = resolveDID(did);
+        if (doc == null) {
+            throw new IllegalStateException("DID resolution failed");
         }
+        return doc.didDocumentMetadata != null && Boolean.TRUE.equals(doc.didDocumentMetadata.deactivated);
     }
 
     private String encryptJsonFor(Object json, String receiverDid, String sender, EncryptOptions options) {

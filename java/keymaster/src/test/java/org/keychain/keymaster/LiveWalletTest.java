@@ -688,18 +688,19 @@ class LiveWalletTest {
     }
 
     @Test
-    void fixWalletRemovesDeletedDids() {
+    void fixWalletPreservesPhysicallyRemovedDids() {
         Keymaster keymaster = newKeymaster();
         String agentDid = keymaster.createId("Alice");
         String schemaDid = keymaster.createSchema();
         keymaster.addName("schema", schemaDid);
         gatekeeperClient().removeDIDs(List.of(agentDid, schemaDid));
 
-        FixWalletResult result = keymaster.fixWallet();
-        assertEquals(1, result.idsRemoved);
-        assertEquals(0, result.ownedRemoved);
-        assertEquals(0, result.heldRemoved);
-        assertEquals(1, result.namesRemoved);
+        WalletFile original = keymaster.loadWallet();
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, keymaster::fixWallet);
+        assertEquals("unknown", error.getMessage());
+        assertSame(original, keymaster.loadWallet());
+        assertEquals(List.of("Alice"), keymaster.listIds());
+        assertEquals(schemaDid, keymaster.lookupDID("schema"));
     }
 
     @Test

@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.lang.reflect.Proxy;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -27,11 +28,12 @@ public class TestGatekeeper {
     private final KeymasterCryptoImpl crypto = new KeymasterCryptoImpl();
     private final Map<String, String> operationDids = new HashMap<>();
     public Consumer<String> beforeResolve = did -> {};
-    public final List<String> resolvedDids = new ArrayList<>();
-    public final List<ResolveDIDOptions> resolveOptions = new ArrayList<>();
+    public Consumer<String> afterResolve = did -> {};
+    public final List<String> resolvedDids = Collections.synchronizedList(new ArrayList<>());
+    public final List<ResolveDIDOptions> resolveOptions = Collections.synchronizedList(new ArrayList<>());
     public final List<Operation> submitted = new ArrayList<>();
     public final List<Operation> created = new ArrayList<>();
-    public final Map<String, MdipDocument> docs = new LinkedHashMap<>();
+    public final Map<String, MdipDocument> docs = Collections.synchronizedMap(new LinkedHashMap<>());
     public final Map<String, MdipDocument> initial = new HashMap<>();
     public boolean confirmed = true;
     public boolean rejectUpdate;
@@ -105,16 +107,17 @@ public class TestGatekeeper {
             missing.didResolutionMetadata.error = "notFound";
             return missing;
         }
-        return copy(doc);
+        MdipDocument result = copy(doc);
+        afterResolve.accept(did);
+        return result;
     }
 
-    private boolean update(Operation operation) {
+    private synchronized boolean update(Operation operation) {
         submitted.add(operation);
         MdipDocument previous = doc(operation.did);
         MdipDocument signer = "agent".equals(previous.mdip.type) ? previous : doc(previous.didDocument.controller);
         assertSignature(operation, signer.didDocument.verificationMethod.get(0).publicKeyJwk);
-        if (rejectUpdate) return false;
-        assertEquals(previous.didDocumentMetadata.versionId, operation.previd);
+        if (rejectUpdate || !java.util.Objects.equals(previous.didDocumentMetadata.versionId, operation.previd)) return false;
         MdipDocument next = copy(operation.doc);
         next.didDocumentMetadata = new DocumentMetadata();
         next.didDocumentMetadata.confirmed = previous.didDocumentMetadata.confirmed;
