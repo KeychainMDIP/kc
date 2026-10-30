@@ -13,10 +13,12 @@ import org.keychain.keymaster.model.FixWalletResult;
 import org.keychain.keymaster.model.WalletEncFile;
 import org.keychain.keymaster.model.WalletFile;
 import org.keychain.keymaster.store.WalletJsonMemory;
+import org.keychain.keymaster.store.WalletJsonMapper;
 import org.keychain.keymaster.store.WalletStore;
 import org.keychain.demo.config.KeymasterConfig;
 import org.keychain.gatekeeper.GatekeeperInterface;
 import org.keychain.keymaster.Keymaster;
+import org.keychain.keymaster.KeymasterOptions;
 import org.keychain.keymaster.CreateAssetOptions;
 import org.springframework.stereotype.Service;
 
@@ -26,6 +28,7 @@ public class KeymasterService {
     private final WalletStore<WalletEncFile> walletStore;
     private final GatekeeperInterface gatekeeper;
     private final String registry;
+    private final String didPrefix;
     private Keymaster keymaster;
 
     public KeymasterService(
@@ -36,8 +39,19 @@ public class KeymasterService {
         this.walletStore = walletStore;
         this.gatekeeper = gatekeeper;
         this.registry = config.getRegistry();
+        this.didPrefix = config.getDidPrefix();
         this.mapper = new ObjectMapper();
         this.mapper.setSerializationInclusion(JsonInclude.Include.NON_NULL);
+    }
+
+    private Keymaster newKeymaster(WalletStore<WalletEncFile> store, String passphrase) {
+        KeymasterOptions options = new KeymasterOptions();
+        options.wallet = store;
+        options.gatekeeper = gatekeeper;
+        options.passphrase = passphrase;
+        options.defaultRegistry = registry;
+        options.didPrefix = didPrefix;
+        return new Keymaster(options);
     }
 
     public Keymaster getKeymaster() {
@@ -56,7 +70,7 @@ public class KeymasterService {
         if (passphrase == null || passphrase.isBlank()) {
             throw new IllegalArgumentException("Passphrase is required");
         }
-        Keymaster instance = new Keymaster(walletStore, gatekeeper, passphrase, registry);
+        Keymaster instance = newKeymaster(walletStore, passphrase);
         if (createIfMissing && walletStore.loadWallet() == null) {
             instance.newWallet(null, true);
         } else {
@@ -69,7 +83,7 @@ public class KeymasterService {
         if (passphrase == null || passphrase.isBlank()) {
             throw new IllegalArgumentException("Passphrase is required");
         }
-        Keymaster instance = new Keymaster(walletStore, gatekeeper, passphrase, registry);
+        Keymaster instance = newKeymaster(walletStore, passphrase);
         instance.newWallet(null, true);
         this.keymaster = instance;
     }
@@ -84,18 +98,20 @@ public class KeymasterService {
 
         WalletJsonMemory<WalletEncFile> memory = new WalletJsonMemory<>(WalletEncFile.class);
         memory.saveWallet(wallet, true);
-        Keymaster temp = new Keymaster(memory, gatekeeper, passphrase, registry);
+        Keymaster temp = newKeymaster(memory, passphrase);
         temp.loadWallet();
 
-        walletStore.saveWallet(wallet, true);
-        Keymaster instance = new Keymaster(walletStore, gatekeeper, passphrase, registry);
+        if (!walletStore.saveWallet(wallet, true)) {
+            throw new IllegalStateException("Wallet replacement was refused");
+        }
+        Keymaster instance = newKeymaster(walletStore, passphrase);
         instance.loadWallet();
         this.keymaster = instance;
     }
 
     public WalletEncFile parseWalletEncFile(String json) {
         try {
-            return mapper.readValue(json, WalletEncFile.class);
+            return WalletJsonMapper.mapper().readValue(json, WalletEncFile.class);
         } catch (Exception e) {
             throw new IllegalArgumentException("Invalid wallet file", e);
         }

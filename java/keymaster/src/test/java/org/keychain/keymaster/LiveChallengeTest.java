@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.keychain.gatekeeper.model.MdipDocument;
@@ -15,6 +16,7 @@ import org.keychain.keymaster.testutil.LiveTestSupport;
 import org.keychain.keymaster.testutil.TestFixtures;
 
 @Tag("live")
+@ExtendWith(LiveTestSupport.class)
 class LiveChallengeTest {
     @TempDir
     Path tempDir;
@@ -27,7 +29,7 @@ class LiveChallengeTest {
     void createChallengeEmptyDefaults() {
         Keymaster keymaster = newKeymaster();
         String alice = keymaster.createId("Alice");
-        String did = keymaster.createChallenge();
+        String did = keymaster.createChallenge(Map.of(), LiveTestSupport.localAssets());
         MdipDocument doc = keymaster.resolveDID(did);
 
         assertEquals(did, doc.didDocument.id);
@@ -44,9 +46,9 @@ class LiveChallengeTest {
     void createChallengeEmptyWithExpiry() {
         Keymaster keymaster = newKeymaster();
         String alice = keymaster.createId("Alice");
-        String validUntil = "2025-01-01";
+        String validUntil = java.time.Instant.now().plusSeconds(3600).toString();
 
-        CreateAssetOptions options = new CreateAssetOptions();
+        CreateAssetOptions options = LiveTestSupport.localAssets();
         options.validUntil = validUntil;
         String did = keymaster.createChallenge(Map.of(), options);
         MdipDocument doc = keymaster.resolveDID(did);
@@ -73,7 +75,7 @@ class LiveChallengeTest {
             ))
         );
 
-        String did = keymaster.createChallenge(challenge);
+        String did = keymaster.createChallenge(challenge, LiveTestSupport.localAssets());
         MdipDocument doc = keymaster.resolveDID(did);
 
         assertEquals(did, doc.didDocument.id);
@@ -85,7 +87,7 @@ class LiveChallengeTest {
     void createChallengeInvalidValidUntil() {
         Keymaster keymaster = newKeymaster();
         keymaster.createId("Alice");
-        CreateAssetOptions options = new CreateAssetOptions();
+        CreateAssetOptions options = LiveTestSupport.localAssets();
         options.validUntil = "mockDate";
         IllegalArgumentException error = assertThrows(
             IllegalArgumentException.class,

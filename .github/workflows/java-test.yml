@@ -6,6 +6,10 @@ on:
       - '**'
     paths:
       - 'java/**'
+      - 'packages/**'
+      - 'services/gatekeeper/server/**'
+      - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/java-test.yml'
 permissions:
   contents: read
@@ -28,8 +32,25 @@ jobs:
           java-version: '11'
           cache: gradle
 
-      - name: Run offline tests
-        run: ./gradlew --no-daemon test --console=plain
+      - name: Run offline tests and compile demo
+        run: ./gradlew --no-daemon test :demo:compileJava --console=plain
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.4'
+          cache: npm
+
+      - name: Build reference packages and HTTP service
+        working-directory: .
+        run: |
+          npm ci
+          npm ci --prefix services/gatekeeper/server
+          npm run build
+          npm run build --prefix services/gatekeeper/server
+
+      - name: Run isolated reference integration tests
+        run: node scripts/live-tests.mjs
 
       - name: Upload test reports
         if: always()
@@ -37,6 +58,7 @@ jobs:
         with:
           name: java-test-reports
           path: |
-            java/**/build/test-results/test/*.xml
-            java/**/build/reports/tests/test/**
+            java/**/build/test-results/**/*.xml
+            java/**/build/reports/tests/**
+            java/keymaster/build/reports/interop/**
           if-no-files-found: ignore

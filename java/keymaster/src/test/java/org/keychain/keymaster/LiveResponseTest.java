@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.keychain.keymaster.model.WalletFile;
@@ -14,6 +15,7 @@ import org.keychain.keymaster.testutil.LiveTestSupport;
 import org.keychain.keymaster.testutil.TestFixtures;
 
 @Tag("live")
+@ExtendWith(LiveTestSupport.class)
 class LiveResponseTest {
     @TempDir
     Path tempDir;
@@ -51,10 +53,10 @@ class LiveResponseTest {
                 "issuers", List.of(alice)
             ))
         );
-        String challengeDid = keymaster.createChallenge(challenge);
+        String challengeDid = keymaster.createChallenge(challenge, LiveTestSupport.localAssets());
 
         keymaster.setCurrentId("Bob");
-        String responseDid = keymaster.createResponse(challengeDid);
+        String responseDid = keymaster.createResponse(challengeDid, LiveTestSupport.localResponse());
         Object responseObj = keymaster.decryptJSON(responseDid);
         if (!(responseObj instanceof Map<?, ?>)) {
             throw new IllegalStateException("response did not decrypt");
@@ -79,10 +81,10 @@ class LiveResponseTest {
         String bob = keymaster.createId("Bob");
 
         keymaster.setCurrentId("Alice");
-        String challengeDid = keymaster.createChallenge();
+        String challengeDid = keymaster.createChallenge(Map.of(), LiveTestSupport.localAssets());
 
         keymaster.setCurrentId("Bob");
-        String responseDid = keymaster.createResponse(challengeDid);
+        String responseDid = keymaster.createResponse(challengeDid, LiveTestSupport.localResponse());
 
         keymaster.setCurrentId("Alice");
         Map<String, Object> verify = keymaster.verifyResponse(responseDid);
@@ -116,10 +118,10 @@ class LiveResponseTest {
             "credentials",
             List.of(Map.of("schema", credential1))
         );
-        String challengeDid = keymaster.createChallenge(challenge);
+        String challengeDid = keymaster.createChallenge(challenge, LiveTestSupport.localAssets());
 
         keymaster.setCurrentId("Carol");
-        String responseDid = keymaster.createResponse(challengeDid);
+        String responseDid = keymaster.createResponse(challengeDid, LiveTestSupport.localResponse());
 
         keymaster.setCurrentId("Victor");
         Map<String, Object> verify = keymaster.verifyResponse(responseDid);
@@ -148,10 +150,10 @@ class LiveResponseTest {
             "credentials",
             List.of(Map.of("schema", credential1))
         );
-        String challengeDid = keymaster.createChallenge(challenge);
+        String challengeDid = keymaster.createChallenge(challenge, LiveTestSupport.localAssets());
 
         keymaster.setCurrentId("Carol");
-        String responseDid = keymaster.createResponse(challengeDid);
+        String responseDid = keymaster.createResponse(challengeDid, LiveTestSupport.localResponse());
 
         keymaster.setCurrentId("Victor");
         Map<String, Object> verify = keymaster.verifyResponse(responseDid);
@@ -193,10 +195,10 @@ class LiveResponseTest {
             "credentials",
             List.of(Map.of("schema", credential1))
         );
-        String challengeDid = keymaster.createChallenge(challenge);
+        String challengeDid = keymaster.createChallenge(challenge, LiveTestSupport.localAssets());
 
         keymaster.setCurrentId("Carol");
-        String responseDid = keymaster.createResponse(challengeDid);
+        String responseDid = keymaster.createResponse(challengeDid, LiveTestSupport.localResponse());
 
         keymaster.setCurrentId("Victor");
         Map<String, Object> verify = keymaster.verifyResponse(responseDid);
@@ -250,10 +252,10 @@ class LiveResponseTest {
                 Map.of("schema", schema4, "issuers", List.of(bob))
             )
         );
-        String challengeDid = keymaster.createChallenge(challenge);
+        String challengeDid = keymaster.createChallenge(challenge, LiveTestSupport.localAssets());
 
         keymaster.setCurrentId("Carol");
-        String responseDid = keymaster.createResponse(challengeDid);
+        String responseDid = keymaster.createResponse(challengeDid, LiveTestSupport.localResponse());
         Object responseObj = keymaster.decryptJSON(responseDid);
         @SuppressWarnings("unchecked")
         Map<String, Object> responseMap = (Map<String, Object>) responseObj;
