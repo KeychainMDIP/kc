@@ -2,6 +2,10 @@
 
 HTTP client for the Gatekeeper REST API.
 
+DID documents and their nested models preserve additional JSON properties when
+read and written. Extensions such as `service` remain at their original locations,
+including explicit null values, through Keymaster copies and signed updates.
+
 ## Usage
 
 ```java

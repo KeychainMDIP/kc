@@ -1,6 +1,6 @@
 package org.keychain.gatekeeper.model;
 
-public class EcdsaJwkPublic {
+public class EcdsaJwkPublic extends ExtensibleModel {
     public String kty;
     public String crv;
     public String x;

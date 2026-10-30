@@ -415,6 +415,25 @@ class OperationBindingTest {
         };
     }
 
+    @Test
+    void signedUpdatesPreserveDidExtensionsAndTheCaller() {
+        MdipDocument replacement = copy(node.doc(alice));
+        replacement.additionalProperties().put("extension", null);
+        replacement.didDocument.additionalProperties().put("service", List.of(Map.of(
+            "id", alice + "#service", "type", "Example", "serviceEndpoint", "https://example.test")));
+        replacement.didDocument.verificationMethod.get(0).additionalProperties().put("extension", null);
+        replacement.didDocument.verificationMethod.get(0).publicKeyJwk.additionalProperties().put("alg", "ES256K");
+        replacement.mdip.additionalProperties().put("extension", Map.of("kept", true));
+        JsonNode before = mapper.valueToTree(replacement);
+        assertTrue(keymaster.updateDID(replacement));
+        assertEquals(before, mapper.valueToTree(replacement));
+        MdipDocument actual = keymaster.resolveDID(alice);
+        actual.didDocumentMetadata = replacement.didDocumentMetadata;
+        assertEquals(before, mapper.valueToTree(actual));
+        assertTrue(keymaster.updateDID(keymaster.resolveDID(alice)));
+        assertEquals(1, node.submitted.size(), "An unchanged extension must not trigger another update");
+    }
+
     private String credential() {
         keymaster.setCurrentId("Alice");
         String schema = keymaster.createSchema(TestFixtures.mockSchema());

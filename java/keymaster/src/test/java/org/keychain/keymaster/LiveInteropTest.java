@@ -45,6 +45,25 @@ class LiveInteropTest {
     }
 
     @Test
+    void referenceGatekeeperRetainsDidExtensionsThroughSignedJavaUpdates() {
+        Keymaster java = keymaster();
+        java.newWallet(null, false);
+        String did = java.createId("Extended");
+        var doc = java.resolveDID(did);
+        var services = List.of(Map.of("id", did + "#service", "type", "Example", "serviceEndpoint", "https://example.test"));
+        doc.didDocument.additionalProperties().put("service", services);
+        doc.didDocument.verificationMethod.get(0).publicKeyJwk.additionalProperties().put("alg", "ES256K");
+        doc.additionalProperties().put("extension", null);
+        assertTrue(java.updateDID(doc));
+        assertTrue(java.updateAsset(did, Map.of("updated", true)));
+        var resolved = java.resolveDID(did);
+        assertEquals(services, resolved.didDocument.additionalProperties().get("service"));
+        assertEquals("ES256K", resolved.didDocument.verificationMethod.get(0).publicKeyJwk.additionalProperties().get("alg"));
+        assertTrue(resolved.additionalProperties().containsKey("extension"));
+        assertNull(resolved.additionalProperties().get("extension"));
+    }
+
+    @Test
     void referenceVerifiesJavaCredentialResponseAndEncryptedWallet() throws Exception {
         Keymaster java = keymaster();
         java.newWallet("abandon  abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", false);

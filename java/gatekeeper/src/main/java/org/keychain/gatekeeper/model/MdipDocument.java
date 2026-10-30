@@ -3,7 +3,7 @@ package org.keychain.gatekeeper.model;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 
-public class MdipDocument {
+public class MdipDocument extends ExtensibleModel {
     public DidDocument didDocument;
     public DocumentMetadata didDocumentMetadata;
     public DidResolutionMetadata didResolutionMetadata;
@@ -12,7 +12,7 @@ public class MdipDocument {
 
     public MdipDocument() {}
 
-    public static class DidDocument {
+    public static class DidDocument extends ExtensibleModel {
         @JsonProperty("@context")
         public List<String> context;
         public String id;
@@ -23,7 +23,7 @@ public class MdipDocument {
         public DidDocument() {}
     }
 
-    public static class VerificationMethod {
+    public static class VerificationMethod extends ExtensibleModel {
         public String id;
         public String controller;
         public String type;
@@ -32,7 +32,7 @@ public class MdipDocument {
         public VerificationMethod() {}
     }
 
-    public static class DidResolutionMetadata {
+    public static class DidResolutionMetadata extends ExtensibleModel {
         public String contentType;
         public String retrieved;
         public String error;

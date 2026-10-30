@@ -154,6 +154,30 @@ class GatekeeperClientTest {
     }
 
     @Test
+    void didExtensionsRoundTripAtTheirOriginalLocations() throws Exception {
+        JsonNode original = mapper.readTree("{"
+            + "\"extension\":null,\"didDocumentData\":{},"
+            + "\"didDocument\":{\"id\":\"did:test:abc\","
+            + "\"service\":[{\"id\":\"#service\",\"type\":\"Example\",\"serviceEndpoint\":\"https://example.test\"}],"
+            + "\"verificationMethod\":[{\"id\":\"#key-1\",\"extension\":null,\"publicKeyJwk\":{\"kid\":\"#key-1\",\"alg\":\"ES256K\"}}]},"
+            + "\"mdip\":{\"version\":1,\"type\":\"agent\",\"registry\":\"local\",\"extension\":null,\"registration\":{\"extension\":null}},"
+            + "\"didDocumentMetadata\":{\"versionId\":\"version-1\",\"extension\":null},"
+            + "\"didResolutionMetadata\":{\"extension\":null}}");
+        server.enqueue(new MockResponse().setBody(original.toString()));
+        MdipDocument doc = client.resolveDID("did:test:abc", null);
+        takeRequest();
+        assertTrue(doc.additionalProperties().containsKey("extension"));
+        assertNull(doc.additionalProperties().get("extension"));
+        server.enqueue(new MockResponse().setBody("true"));
+        Operation operation = new Operation();
+        operation.type = "update";
+        operation.did = "did:test:abc";
+        operation.doc = doc;
+        assertTrue(client.updateDID(operation));
+        assertEquals(original, mapper.readTree(takeRequest().getBody().readUtf8()).get("doc"));
+    }
+
+    @Test
     void getBlockUsesRegistryPath() throws Exception {
         BlockInfo block = new BlockInfo();
         block.hash = "hash";
