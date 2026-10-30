@@ -1,6 +1,8 @@
 package org.keychain.keymaster.store;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import java.nio.charset.StandardCharsets;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Map;
@@ -15,6 +17,11 @@ public final class WalletJsonMapper {
 
     public static ObjectMapper mapper() {
         return MAPPER;
+    }
+
+    public static String stringify(Object value) throws JsonProcessingException {
+        // Jackson's byte writer escapes lone surrogates instead of losing them in UTF-8 conversion.
+        return new String(MAPPER.writeValueAsBytes(value), StandardCharsets.UTF_8);
     }
 
     public static Map<String, Object> walletPayload(WalletFile wallet) {

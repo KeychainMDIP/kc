@@ -496,7 +496,7 @@ public class GatekeeperClient implements GatekeeperInterface, AutoCloseable {
 
     private Request buildPostRequest(HttpUrl url, Object body) {
         try {
-            String json = mapper.writeValueAsString(body);
+            byte[] json = mapper.writeValueAsBytes(body);
             RequestBody requestBody = RequestBody.create(json, JSON);
             return new Request.Builder()
                     .url(url)

@@ -83,6 +83,19 @@ class GatekeeperClientTest {
     }
 
     @Test
+    void jsonBodiesPreserveUnicodeCodeUnitsInsteadOfReplacingSignedData() throws Exception {
+        server.enqueue(new MockResponse().setBody("\"did:test:unicode\"").setResponseCode(200));
+        String text = "café 😀 " + (char) 0xd800;
+        Operation operation = new Operation();
+        operation.type = "create";
+        operation.data = java.util.Map.of("text", text, "key" + (char) 0xdfff, "value");
+        client.createDID(operation);
+        JsonNode body = mapper.readTree(takeRequest().getBody().readUtf8());
+        assertEquals(text, body.get("data").get("text").asText());
+        assertEquals("value", body.get("data").get("key" + (char) 0xdfff).asText());
+    }
+
+    @Test
     void resolveDidBuildsQueryParams() throws Exception {
         MdipDocument doc = new MdipDocument();
         server.enqueue(new MockResponse().setBody(mapper.writeValueAsString(doc)).setResponseCode(200));

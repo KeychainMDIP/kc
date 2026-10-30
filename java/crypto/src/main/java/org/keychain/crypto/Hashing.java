@@ -1,6 +1,6 @@
 package org.keychain.crypto;
 
-import java.nio.charset.StandardCharsets;
+import org.keychain.crypto.util.Bytes;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
@@ -10,7 +10,7 @@ public final class Hashing {
     private Hashing() {}
 
     public static String sha256Hex(String msg) {
-        return sha256Hex(msg.getBytes(StandardCharsets.UTF_8));
+        return sha256Hex(Bytes.utf8(msg));
     }
 
     public static String sha256Hex(byte[] data) {
@@ -24,6 +24,6 @@ public final class Hashing {
 
     public static String hashCanonicalJson(Object obj) {
         String canonical = CanonicalJson.canonicalize(obj);
-        return sha256Hex(canonical.getBytes(StandardCharsets.UTF_8));
+        return sha256Hex(canonical);
     }
 }

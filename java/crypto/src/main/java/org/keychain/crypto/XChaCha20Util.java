@@ -1,6 +1,5 @@
 package org.keychain.crypto;
 
-import java.nio.charset.StandardCharsets;
 import com.google.crypto.tink.aead.internal.InsecureNonceXChaCha20Poly1305;
 import org.keychain.crypto.util.Base64Url;
 import org.keychain.crypto.util.Bytes;
@@ -53,10 +52,10 @@ public final class XChaCha20Util {
     }
 
     public static String encryptString(byte[] key32, String plaintext) {
-        return encrypt(key32, plaintext.getBytes(StandardCharsets.UTF_8));
+        return encrypt(key32, Bytes.utf8(plaintext));
     }
 
     public static String decryptToString(byte[] key32, String nonceCiphertextB64Url) {
-        return new String(decrypt(key32, nonceCiphertextB64Url), StandardCharsets.UTF_8);
+        return Bytes.fromUtf8(decrypt(key32, nonceCiphertextB64Url));
     }
 }

@@ -113,9 +113,9 @@ public class KeymasterWalletManager {
             }
 
             WalletFile working = deepCopyWallet(wallet);
-            String before = toJson(mapper, working);
+            String before = toJson(working);
             mutator.accept(working);
-            String after = toJson(mapper, working);
+            String after = toJson(working);
 
             if (Objects.equals(before, after)) {
                 return false;
@@ -139,7 +139,7 @@ public class KeymasterWalletManager {
         if (seed == null || seed.mnemonicEnc == null) {
             throw new IllegalArgumentException("wallet.seed.mnemonicEnc is required");
         }
-        String fingerprint = toJson(mapper, seed.mnemonicEnc);
+        String fingerprint = toJson(seed.mnemonicEnc);
         if (hdkeyCache != null && Objects.equals(hdkeyCacheSeed, fingerprint)) {
             return hdkeyCache;
         }
@@ -153,7 +153,7 @@ public class KeymasterWalletManager {
     }
 
     private void publishWallet(WalletFile wallet, DeterministicKey master) {
-        String fingerprint = toJson(mapper, wallet.seed.mnemonicEnc);
+        String fingerprint = toJson(wallet.seed.mnemonicEnc);
         walletCache = wallet;
         hdkeyCache = master;
         hdkeyCacheSeed = fingerprint;
@@ -184,7 +184,10 @@ public class KeymasterWalletManager {
 
         if (legacy) {
             WalletJsonMapper.walletPayload(wallet);
-            DeterministicKey key = HdKeyUtil.fromXpriv(wallet.seed.hdkey.xpriv);
+            org.keychain.crypto.HdKeyJson json = new org.keychain.crypto.HdKeyJson(
+                wallet.seed.hdkey.xpriv, wallet.seed.hdkey.xpub, null, null, null, null);
+            org.keychain.crypto.HdKey restored = crypto.generateHdKeyJson(json);
+            DeterministicKey key = HdKeyUtil.fromXpriv(restored.xpriv);
             var jwk = crypto.generateJwk(HdKeyUtil.privateKeyBytes(key));
             String mnemonic = crypto.decryptMessage(jwk.publicJwk, jwk.privateJwk, wallet.seed.mnemonic);
 
@@ -215,7 +218,7 @@ public class KeymasterWalletManager {
         Seed safeSeed = new Seed();
         safeSeed.mnemonicEnc = wallet.seed.mnemonicEnc;
 
-        String plaintext = toJson(mapper, WalletJsonMapper.walletPayload(wallet));
+        String plaintext = toJson(WalletJsonMapper.walletPayload(wallet));
         var jwk = crypto.generateJwk(HdKeyUtil.privateKeyBytes(master));
         String enc = crypto.encryptMessage(jwk.publicJwk, jwk.privateJwk, plaintext);
 
@@ -270,9 +273,9 @@ public class KeymasterWalletManager {
         return mapper.convertValue(stored, WalletFile.class);
     }
 
-    private static String toJson(ObjectMapper mapper, Object data) {
+    private static String toJson(Object data) {
         try {
-            return mapper.writeValueAsString(data);
+            return WalletJsonMapper.stringify(data);
         } catch (Exception e) {
             throw new IllegalStateException("Failed to serialize wallet", e);
         }

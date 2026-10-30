@@ -29,7 +29,8 @@ String did = keymaster.createId("Alice", "hyperswarm");
 
 ## Wallet compatibility
 
-Java reads supported v0 wallets and upgrades them to v1, which encrypts the
+Java reads supported v0 wallets through the crypto HD JSON restoration API and
+upgrades them to v1, which encrypts the
 mnemonic using the passphrase and encrypts the remaining wallet data separately.
 The deprecated whole-wallet `{ salt, iv, data }` wrapper is no longer supported.
 Loading it fails without changing the stored file. The obsolete outer

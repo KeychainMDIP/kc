@@ -21,7 +21,9 @@ public final class HdKeyUtil {
         if (xpriv == null || xpriv.isBlank()) {
             throw new IllegalArgumentException("xpriv is required");
         }
-        return DeterministicKey.deserializeB58(xpriv, MainNetParams.get());
+        DeterministicKey key = DeterministicKey.deserializeB58(xpriv, MainNetParams.get());
+        if (key.hasPrivKey()) Secp256k1Jwk.privateScalar(privateKeyBytes(key));
+        return key;
     }
 
     public static DeterministicKey derivePath(DeterministicKey master, int account, int index) {
@@ -52,7 +54,7 @@ public final class HdKeyUtil {
     }
 
     public static HdKey toHdKey(DeterministicKey master) {
-        String xpriv = master.serializePrivB58(MainNetParams.get());
+        String xpriv = master.hasPrivKey() ? master.serializePrivB58(MainNetParams.get()) : null;
         String xpub = master.serializePubB58(MainNetParams.get());
         return new HdKey(xpriv, xpub);
     }

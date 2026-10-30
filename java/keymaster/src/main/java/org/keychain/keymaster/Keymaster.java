@@ -504,7 +504,7 @@ public class Keymaster {
         data.put("id", idInfo);
         String msg;
         try {
-            msg = WalletJsonMapper.mapper().writeValueAsString(data);
+            msg = WalletJsonMapper.stringify(data);
         } catch (Exception e) {
             throw new IllegalStateException("backupId: unable to serialize data", e);
         }
@@ -698,7 +698,7 @@ public class Keymaster {
         MdipDocument seedBank = resolveSeedBankFor(keypair);
         String msg;
         try {
-            msg = WalletJsonMapper.mapper().writeValueAsString(wallet);
+            msg = WalletJsonMapper.stringify(wallet);
         } catch (Exception e) {
             throw new IllegalStateException("backup wallet failed", e);
         }
@@ -1799,7 +1799,7 @@ public class Keymaster {
 
         String msg;
         try {
-            msg = WalletJsonMapper.mapper().writeValueAsString(signed);
+            msg = WalletJsonMapper.stringify(signed);
         } catch (Exception e) {
             throw new IllegalArgumentException("credential");
         }
@@ -2439,7 +2439,7 @@ public class Keymaster {
     private String encryptJsonFor(Object json, String receiverDid, String sender, EncryptOptions options) {
         String plaintext;
         try {
-            plaintext = WalletJsonMapper.mapper().writeValueAsString(json);
+            plaintext = WalletJsonMapper.stringify(json);
         } catch (Exception e) {
             throw new IllegalArgumentException("json", e);
         }
