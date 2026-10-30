@@ -50,3 +50,7 @@ TextDecoder's initial BOM removal and invalid UTF-8 replacement behavior.
 Mnemonic text follows the same rules. Passphrases use TextEncoder's UTF-8
 replacement without plaintext BOM removal. SHA-256, ECDH,
 XChaCha20-Poly1305 and mnemonic encryption use the reference formats.
+
+HD mnemonic derivation applies BIP39 NFKD normalization and preserves whitespace,
+matching the reference. Wallet creation generates a random mnemonic when its
+mnemonic argument is null or empty.

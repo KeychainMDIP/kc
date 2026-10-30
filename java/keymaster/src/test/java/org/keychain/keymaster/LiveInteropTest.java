@@ -47,6 +47,7 @@ class LiveInteropTest {
     @Test
     void referenceVerifiesJavaCredentialResponseAndEncryptedWallet() throws Exception {
         Keymaster java = keymaster();
+        java.newWallet("abandon  abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", false);
         GatekeeperInterface gatekeeper = LiveTestSupport.gatekeeperClient();
         String cursor = checkpoint(gatekeeper);
         String issuer = java.createId("Issuer");
@@ -80,7 +81,8 @@ class LiveInteropTest {
 
     @Test
     void javaVerifiesReferenceCredentialResponseAndEncryptedWallet() throws Exception {
-        JsonNode data = reference("create", Map.of("schema", TestFixtures.mockSchema(), "claims", CLAIMS, "metadata", METADATA));
+        JsonNode data = reference("create", Map.of("schema", TestFixtures.mockSchema(), "claims", CLAIMS, "metadata", METADATA,
+            "mnemonic", "ａｂａｎｄｏｎ abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"));
         Keymaster java = keymaster();
         assertTrue(java.saveWallet(WalletJsonMapper.mapper().treeToValue(data.get("wallet"), WalletEncFile.class), true));
         assertEquals(METADATA, java.loadWallet().additionalProperties().get("interop"));

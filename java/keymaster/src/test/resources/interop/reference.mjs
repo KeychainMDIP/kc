@@ -38,7 +38,7 @@ try {
         result = { receipts, index, wallet: await keymaster.exportEncryptedWallet() };
     } else if (action === 'create') {
         const cursor = (await gatekeeper.exportIndex({ mode: 'snapshot', limit: 1 })).checkpointCursor;
-        await keymaster.newWallet();
+        await keymaster.newWallet(input.mnemonic);
         const issuerDid = await keymaster.createId('Issuer');
         const holderDid = await keymaster.createId('Holder');
         const requesterDid = await keymaster.createId('Verifier');

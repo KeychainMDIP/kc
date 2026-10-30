@@ -708,6 +708,53 @@
         "data": "f9AQqAsveLFZKnJfBUZ3yGENaImU",
         "decrypted": "hello"
       }
+    ],
+    "mnemonicHd": [
+      {
+        "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+        "xpriv": "xprv9s21ZrQH143K3GJpoapnV8SFfukcVBSfeCficPSGfubmSFDxo1kuHnLisriDvSnRRuL2Qrg5ggqHKNVpxR86QEC8w35uxmGoggxtQTPvfUu",
+        "xpub": "xpub661MyMwAqRbcFkPHucMnrGNzDwb6teAX1RbKQmqtEF8kK3Z7LZ59qafCjB9eCRLiTVG3uxBxgKvRgbubRhqSKXnGGb1aoaqLrpMBDrVxga8"
+      },
+      {
+        "mnemonic": "abandon  abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+        "xpriv": "xprv9s21ZrQH143K27YXzDcZfRitFt6TfVAiS3mr79B6V5a12fksdBGWne7GKdi1c1L7GZz3NWJQc8ogQPMwhTBXKZJSF67Buk5MfV5MVTZtHZB",
+        "xpub": "xpub661MyMwAqRbcEbd16F9a2Zfcouvx4wtZoGhSuXai3R6yuU62AiamLSRkAtaGhDP2H7KANfVH8tywoTrUybMLGZdv2N4E5aZ7E77Eq7LUeRA"
+      },
+      {
+        "mnemonic": " abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about ",
+        "xpriv": "xprv9s21ZrQH143K2rVeSo3TJSqGg7TG8ZeFQtxeVcjzXbMFPV4TkJu2uBiAmwsBmnxD1phCFYeA8uiDo8BJdEwTmCYTZgorqAVz3oFH6Yd2gRh",
+        "xpub": "xpub661MyMwAqRbcFLa7YpaTfan1E9HkY2N6n7tFJ19c5vtEGHPcHrDHSz2edDwDrUHBXyAL7DGEmtamtTk7iDj8ZbAhdreZCVDWDGt3g3nh7dc"
+      },
+      {
+        "mnemonic": "abandon　abandon　abandon　abandon　abandon　abandon　abandon　abandon　abandon　abandon　abandon　about",
+        "xpriv": "xprv9s21ZrQH143K3GJpoapnV8SFfukcVBSfeCficPSGfubmSFDxo1kuHnLisriDvSnRRuL2Qrg5ggqHKNVpxR86QEC8w35uxmGoggxtQTPvfUu",
+        "xpub": "xpub661MyMwAqRbcFkPHucMnrGNzDwb6teAX1RbKQmqtEF8kK3Z7LZ59qafCjB9eCRLiTVG3uxBxgKvRgbubRhqSKXnGGb1aoaqLrpMBDrVxga8"
+      },
+      {
+        "mnemonic": "ａｂａｎｄｏｎ abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+        "xpriv": "xprv9s21ZrQH143K3GJpoapnV8SFfukcVBSfeCficPSGfubmSFDxo1kuHnLisriDvSnRRuL2Qrg5ggqHKNVpxR86QEC8w35uxmGoggxtQTPvfUu",
+        "xpub": "xpub661MyMwAqRbcFkPHucMnrGNzDwb6teAX1RbKQmqtEF8kK3Z7LZ59qafCjB9eCRLiTVG3uxBxgKvRgbubRhqSKXnGGb1aoaqLrpMBDrVxga8"
+      },
+      {
+        "mnemonic": "café",
+        "xpriv": "xprv9s21ZrQH143K3GVgx7zr3V7oeEKxs2pPa1itrGrZ1Db6t1EX2Di3E1zXoVP6XdMzcnG6P3H1hvyvzRkeH6znj4ToSYJVTnGAZNV8U7Hcz6q",
+        "xpub": "xpub661MyMwAqRbcFkaA49XrQd4YCGATGVYEwEeVefGAZZ85koZfZm2HmpK1emzYggTVKYqF8JwzaeQJwVndPbJ8Eh5pVR1EFREjDNqn6ANLTSp"
+      },
+      {
+        "mnemonic": "café",
+        "xpriv": "xprv9s21ZrQH143K3GVgx7zr3V7oeEKxs2pPa1itrGrZ1Db6t1EX2Di3E1zXoVP6XdMzcnG6P3H1hvyvzRkeH6znj4ToSYJVTnGAZNV8U7Hcz6q",
+        "xpub": "xpub661MyMwAqRbcFkaA49XrQd4YCGATGVYEwEeVefGAZZ85koZfZm2HmpK1emzYggTVKYqF8JwzaeQJwVndPbJ8Eh5pVR1EFREjDNqn6ANLTSp"
+      },
+      {
+        "mnemonic": "",
+        "xpriv": "xprv9s21ZrQH143K3YUh5Kfg6XMGDtX27keoSC2YCe9KEbAqfmoqWFqpaXU4ZmdGsvNmzsxyQf5SAc118mbZGk2Hicx4y35mm1ZF8dBPEgRF7TV",
+        "xpub": "xpub661MyMwAqRbcG2ZABMCgTfHzmvMWXDNeoQx912YvnvhpYa8z3oA58KnYR2YGrHc2EpycbMDwGcDNefw8B7xZTbMtadScJSiS1WsWCGQaiFT"
+      },
+      {
+        "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about\ud800",
+        "xpriv": "xprv9s21ZrQH143K2HoCkBBCQgnPhAmPVDAgxpkgTWP7A8LpiQcjfkVEg58Y7Mbi6YmXEY34pHLeWoAfZdJBxHT5hydKHLqKyBgMFgEnjQkMAHs",
+        "xpub": "xpub661MyMwAqRbcEmsfrCiCmpj8FCbstftYL3gHFtniiTsobCwtDHoVDsT1xe3gjTrjeuECM9u2twoedToYS4kaRpUfeXX9KDuLqAc12sAdQwh"
+      }
     ]
   }
 }

@@ -306,7 +306,7 @@ public class Keymaster {
 
     public WalletFile newWallet(String mnemonic, boolean overwrite) {
         return walletManager.withWalletLock(() -> {
-            String phrase = mnemonic != null ? mnemonic : crypto.generateMnemonic();
+            String phrase = mnemonic == null || mnemonic.isEmpty() ? crypto.generateMnemonic() : mnemonic;
 
             Seed seed = new Seed();
             seed.mnemonicEnc = MnemonicEncryption.encrypt(phrase, passphrase);

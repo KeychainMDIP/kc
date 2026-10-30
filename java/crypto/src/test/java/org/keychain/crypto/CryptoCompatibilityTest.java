@@ -20,6 +20,14 @@ class CryptoCompatibilityTest {
     private static final JsonNode COMPAT = ROOT.get("compatibility");
     private final KeymasterCrypto crypto = new KeymasterCryptoImpl();
 
+    @ParameterizedTest(name = "mnemonic HD {0}")
+    @MethodSource("mnemonicHdCases")
+    void mnemonicDerivationMatchesTheReferenceWithoutChangingWhitespace(JsonNode vector) {
+        HdKey actual = crypto.generateHdKey(vector.get("mnemonic").asText());
+        assertEquals(vector.get("xpriv").asText(), actual.xpriv);
+        assertEquals(vector.get("xpub").asText(), actual.xpub);
+    }
+
     @ParameterizedTest(name = "HD JSON {0}")
     @MethodSource("hdCases")
     void restoresTheExtendedKeyAndReferenceDerivation(JsonNode vector) {
@@ -181,6 +189,7 @@ class CryptoCompatibilityTest {
     }
     private static Stream<JsonNode> invalidExtendedCases() { return cases("invalidExtended"); }
     private static Stream<JsonNode> decodingCases() { return cases("utf8Decoding"); }
+    private static Stream<JsonNode> mnemonicHdCases() { return cases("mnemonicHd"); }
     private static Stream<JsonNode> mnemonicCases() { return cases("mnemonicText"); }
     private static Stream<JsonNode> hdCases() { return cases("hdJson"); }
     private static Stream<JsonNode> hashCases() { return cases("hashes"); }

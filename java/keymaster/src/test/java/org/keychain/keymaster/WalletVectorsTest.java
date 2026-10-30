@@ -36,6 +36,41 @@ class WalletVectorsTest {
     Path tempDir;
 
     @Test
+    void absentAndEmptyMnemonicsUseTheRandomGenerator() {
+        var generated = new java.util.concurrent.atomic.AtomicInteger();
+        var crypto = new KeymasterCryptoImpl() {
+            @Override public String generateMnemonic() {
+                generated.incrementAndGet();
+                return "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+            }
+        };
+        for (String input : new String[] {null, ""}) {
+            var keymaster = new Keymaster(new WalletJsonMemory<>(WalletEncFile.class),
+                TestFixtures.offlineGatekeeper(), crypto, "passphrase");
+            keymaster.newWallet(input, false);
+            assertEquals(crypto.generateHdKey("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about").xpriv,
+                HdKeyUtil.toHdKey(HdKeyUtil.masterFromMnemonic(keymaster.decryptMnemonic())).xpriv);
+        }
+        assertEquals(2, generated.get());
+    }
+
+    @Test
+    void importsAndReexportsReferenceWalletsWithUnnormalizedMnemonicText() throws Exception {
+        JsonNode vectors = TestFixtures.readVector("mnemonic-wallets.json");
+        for (JsonNode vector : vectors) {
+            var store = new WalletJsonMemory<>(WalletEncFile.class);
+            store.saveWallet(mapper.treeToValue(vector.get("wallet"), WalletEncFile.class), false);
+            var keymaster = new Keymaster(store, TestFixtures.offlineGatekeeper(), "passphrase");
+            assertEquals(vector.get("mnemonic").asText(), keymaster.decryptMnemonic());
+            assertEquals(vector.get("xpriv").asText(), HdKeyUtil.toHdKey(HdKeyUtil.masterFromMnemonic(keymaster.decryptMnemonic())).xpriv);
+            var restoredStore = new WalletJsonMemory<>(WalletEncFile.class);
+            restoredStore.saveWallet(keymaster.exportEncryptedWallet(), false);
+            var restored = new Keymaster(restoredStore, TestFixtures.offlineGatekeeper(), "passphrase");
+            assertEquals(mapper.valueToTree(keymaster.loadWallet()), mapper.valueToTree(restored.loadWallet()));
+        }
+    }
+
+    @Test
     void loadsReferenceWalletAndRestoresItsEncryptedExport() throws Exception {
         JsonNode vector = TestFixtures.readVector("wallet-v1.json");
         WalletJsonMemory<WalletEncFile> store = vectorStore(vector);
