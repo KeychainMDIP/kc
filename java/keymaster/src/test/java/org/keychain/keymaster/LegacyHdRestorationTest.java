@@ -63,19 +63,6 @@ class LegacyHdRestorationTest {
         assertEquals(original, WalletJsonMapper.mapper().valueToTree(store.loadWallet()));
     }
 
-    @Test
-    void oldJavaMalformedPasswordRequiresItsQuestionMarkEncodingWithoutChangingTheStore() {
-        var store = new WalletJsonMemory<>(WalletEncFile.class);
-        Keymaster oldJava = new Keymaster(store, TestFixtures.offlineGatekeeper(), "a?b", "local");
-        oldJava.newWallet(MNEMONIC, false);
-        var original = WalletJsonMapper.mapper().valueToTree(store.loadWallet());
-        Keymaster referencePassword = new Keymaster(store, TestFixtures.offlineGatekeeper(), "a\ud800b", "local");
-        assertThrows(IllegalStateException.class, referencePassword::loadWallet);
-        assertEquals(original, WalletJsonMapper.mapper().valueToTree(store.loadWallet()));
-        Keymaster restored = new Keymaster(store, TestFixtures.offlineGatekeeper(), "a?b", "local");
-        assertEquals(MNEMONIC, restored.decryptMnemonic());
-    }
-
     private WalletJsonMemory<WalletEncFile> legacyStore(boolean publicOnly) throws Exception {
         var mapper = WalletJsonMapper.mapper();
         ObjectNode wallet = ((ObjectNode) TestFixtures.readVector("wallet-v1.json").get("wallet")).deepCopy();

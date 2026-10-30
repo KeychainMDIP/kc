@@ -27,27 +27,22 @@ keymaster.newWallet(null, true);
 String did = keymaster.createId("Alice", "hyperswarm");
 ```
 
-## Wallet compatibility
+## Wallet formats
 
-Java reads supported v0 wallets through the crypto HD JSON restoration API and
-upgrades them to v1, which encrypts the
-mnemonic using the passphrase and encrypts the remaining wallet data separately.
-The deprecated whole-wallet `{ salt, iv, data }` wrapper is no longer supported.
-Loading it fails without changing the stored file. The obsolete outer
-`WalletEncFile.salt`, `.iv` and `.data` Java fields have been removed. These
-names can still be retained as opaque wallet metadata. The `seed.mnemonicEnc`
-encryption format is unchanged.
+Wallet storage uses v1, which encrypts the mnemonic using the passphrase and
+encrypts the remaining wallet data separately. Java also imports the reference
+implementation's v0 wallet format through the crypto HD JSON restoration API.
 
 Unknown wallet and identity properties are preserved at their original JSON
-locations through loading, mutation, saving and encrypted export. Existing
-`extras` objects stay nested as before. Metadata for features Java does not
-implement is retained as opaque data.
+locations through loading, mutation, saving and encrypted export. `extras`
+objects stay nested. Metadata for features Java does not implement is retained
+as opaque data.
 
 Wallet payloads require a nonnegative integer counter and an identity map.
 Each identity requires a nonempty DID string and nonnegative integer account
 and key indexes. Java rejects missing values, numeric strings, fractional
 numbers and values above 2,147,483,647 instead of coercing or wrapping them.
-This upper bound reflects Java's existing integer and HD-derivation limits.
+This upper bound reflects Java's integer and HD-derivation limits.
 Malformed encrypted payloads and incorrect passphrases cannot replace a wallet.
 
 ## Wallet persistence
@@ -100,10 +95,9 @@ responses keep the initiating identity throughout their nested calls. Changing
 the current identity during a network call does not change the sender, holder
 or wallet entry updated by that operation. An explicit asset controller chooses
 the signing identity while the initiating owner tracks the asset.
-Issuance and response creation retain their previous handling of inherited
-`name` and `controller` options, which are ignored. Their assets stay controlled
-by the issuer or responder. Generic asset and encryption methods support
-explicit controller selection.
+Issuance and response creation ignore inherited `name` and `controller`
+options. Their assets stay controlled by the issuer or responder. Generic asset
+and encryption methods support explicit controller selection.
 `listIssued(issuer)` decrypts using the requested issuer, even if another
 identity is selected. `listIssued()` and `listCredentials()` select the current
 identity.
@@ -177,11 +171,10 @@ Distinct presentations are assigned to individual requirements without depending
 on their order. Repeating one presentation does not satisfy multiple requirements.
 Client-supplied counters and match flags cannot authorize a response.
 
-New responses contain a random `responseNonce`. As in the reference,
-`verifyResponse(responseDid)` now publishes challenge receipts when verification
+Responses contain a random `responseNonce`. As in the reference,
+`verifyResponse(responseDid)` publishes challenge receipts when verification
 succeeds. To verify without writing, set `CreateResponseOptions.publish = false`.
-Both existing verification overloads remain available, including a null options
-argument. Response creation ignores `publish`.
+A null options argument uses the defaults. Response creation ignores `publish`.
 
 Each public receipt contains only its version, attester DID, schema DID, requester
 DID and a commitment computed as `hashJSON({ responseDid, responseNonce })`.
@@ -204,7 +197,7 @@ receipts. Repeated publication is not guaranteed to be idempotent.
 
 ## Deployment options
 
-Existing constructors remain available. Use `KeymasterOptions` to configure
+Use `KeymasterOptions` to configure
 the DID prefix and maximum name length alongside the default registry:
 
 ```java

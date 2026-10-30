@@ -30,14 +30,14 @@ Readiness retries connection failures, timeouts and HTTP 408, 425, 429, 500,
 502, 503 and 504. Other HTTP errors, malformed readiness responses and TLS
 failures propagate. DNS lookup failures also propagate because Java does not
 reliably distinguish temporary lookup failures from an unknown hostname.
-Application-level retries are limited to readiness. Existing HTTP redirect
-handling is retained. The HTTP client can try another connection route before
+Application-level retries are limited to readiness. The client follows HTTP
+redirects. The HTTP client can try another connection route before
 sending a request. It does not automatically replay requests after a transmission
 failure or an HTTP 408/503 response.
 
 `callTimeout` defaults to 60 seconds and bounds a complete HTTP call, including
 reading the response body. It must be at least one millisecond and no more than
-2,147,483,647 milliseconds. The existing `connectTimeout` and `readTimeout`
+2,147,483,647 milliseconds. The `connectTimeout` and `readTimeout`
 controls default to 10 and 30 seconds. A call deadline does not limit the total
 readiness wait across retries.
 
@@ -85,15 +85,14 @@ Cursors are opaque strings and must be passed back unchanged. Check
 when it changes. The client returns one page per call and does not manage a
 synchronization loop. A null cursor stays null in the response.
 
-Event ordinal entries are now `Long` values so millisecond timestamps fit.
+Event ordinal entries use `Long` values so millisecond timestamps fit.
 Code that constructs ordinals should use long values, such as `List.of(0L)`.
 Index operation sequence values also use 64-bit integers.
 
 ## Queues and custom headers
 
 `clearQueue()` accepts either a list of operations or a list of their signature
-hash strings. Existing operation-list calls continue to work. Registry values
-are encoded as individual path segments.
+hash strings. Registry values are encoded as individual path segments.
 
 Multiple custom headers can be added with `addCustomHeader()`. Header names
 are matched without regard to case when replacing or removing them. Removing

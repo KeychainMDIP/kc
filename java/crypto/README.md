@@ -32,10 +32,9 @@ retains its separate padded base64 encoding.
 The other fields are ignored, matching the reference. It does not fall back to
 `xpub` when `xpriv` is absent. Checksums and private scalar ranges are validated.
 A public extended key supplied in the `xpriv` field produces a public-only result
-with a null private key, as in the reference. It cannot restore an encrypted
-legacy wallet, which requires a private key.
+with a null private key, as in the reference.
 
-## Compatibility
+## Encoding and validation
 
 Signature verification requires compact low-S ECDSA signatures. Invalid curve
 points return false, while malformed signature encodings throw. Public keys use
@@ -49,10 +48,5 @@ values. String hashing and encryption use
 TextEncoder's replacement for malformed UTF-16. Text decryption follows
 TextDecoder's initial BOM removal and invalid UTF-8 replacement behavior.
 Mnemonic text follows the same rules. Passphrases use TextEncoder's UTF-8
-replacement without plaintext BOM removal. Existing SHA-256, ECDH,
-XChaCha20-Poly1305 and mnemonic encryption formats are unchanged.
-
-Older Java wallets created with a malformed UTF-16 passphrase used `?` for each
-unpaired surrogate. Open those wallets using that old replacement passphrase.
-Failed opening leaves storage unchanged. ASCII and valid Unicode passphrases
-are unaffected.
+replacement without plaintext BOM removal. SHA-256, ECDH,
+XChaCha20-Poly1305 and mnemonic encryption use the reference formats.

@@ -1,7 +1,7 @@
 # Java Libraries
 
 This folder contains Java Keymaster libraries and a Gatekeeper REST client.
-The Java source packages use `org.keychain.*`. Maven coordinates retain the
+The Java source packages use `org.keychain.*`. Maven coordinates use the
 `com.selfid` group ID. The Gradle project version is `1.0.1`. Building this
 repository does not publish a Maven release.
 
@@ -11,7 +11,7 @@ Modules:
 - `gatekeeper` — Gatekeeper REST client.
 - `keymaster` — wallet + credential operations.
 
-Compatibility and runtime
+Runtime requirements
 - JDK 11 is required (targeted bytecode and test runtime).
 - Dependencies are pure-Java artifacts (OkHttp, Jackson, Bouncy Castle, Tink, bitcoinj).
 - Gatekeeper default base URL is `http://localhost:4224` (see `GatekeeperClientOptions`).
@@ -130,32 +130,30 @@ keymaster.publishCredential(credentialDid, true);
 | Area | Java support |
 | --- | --- |
 | Wallets and identities | v0/v1 wallet loading, encrypted export, backup/recovery, identity names, aliases, key rotation and DID-prefix configuration |
-| Assets and schemas | Creation, update, transfer, revocation, historical resolution and the existing minimal schema/template helpers |
+| Assets and schemas | Creation, update, transfer, revocation, historical resolution and minimal schema/template helpers |
 | Credentials | Issuance, update, acceptance, holding, publication and revocation |
 | Challenges | Credential selection, full signed presentations, response verification and public challenge receipts |
 | Groups | Ordinary group membership and traversal |
 | Cryptography and CIDs | HD-key JSON restoration, shared signing/encryption formats and reference CID validation |
-| Gatekeeper client | Existing DID, registry, queue, CAS and block calls, plus paginated index export |
+| Gatekeeper client | DID, registry, queue, CAS, block and paginated index-export calls |
 
 Images, files/documents, notices, DMail, polls/voting, group vaults, Search,
 a remote Keymaster HTTP client and proof-of-work utilities remain outside this
-Java subset. The approved additions are challenge receipts, Gatekeeper index
-export and completion of the existing HD-key JSON restoration method.
+Java subset.
 
 This is compatibility for the supported subset, rather than the entire
-TypeScript API. Existing minimal schema helpers require an object containing
+TypeScript API. Minimal schema helpers require an object containing
 `$schema` and `properties` and generate `TBD` fields. They do not implement a
 complete JSON Schema validator or schema-based value generator. Java wallet
 account and key indexes are bounded by signed 32-bit integers. Cancellation uses
 a Java handle and `close()`, rather than `AbortSignal`.
 
-## Compatibility notes
+## Runtime behavior
 
-This update retains supported v0/v1 wallet and protocol encodings, including
-unknown wallet metadata. Stricter validation rejects malformed wallets,
-credentials, signatures and names that earlier Java versions accepted.
-Readiness exhaustion, permanent configuration errors, refused persistence,
-stale group edits and cleanup resolution failures now report failure.
+Wallet loading preserves unknown wallet metadata. Validation rejects malformed
+wallets, credentials, signatures and names. Readiness exhaustion, permanent
+configuration errors, refused persistence, stale group edits and cleanup
+resolution failures report failure.
 
 Response verification publishes receipts by default, matching the reference.
 Set `CreateResponseOptions.publish = false` for verification without writes.
@@ -164,11 +162,8 @@ Receipts contain public identifiers and a response commitment, without private
 credential claims. Presentations still carry complete signed credentials and
 do not support selective field disclosure.
 
-The obsolete whole-wallet AES wrapper and its outer DTO fields were removed.
 JSON wallet storage requires atomic filesystem moves and a single writer per
-wallet file. Compact signatures must be low-S. The crypto README explains the
-narrow compatibility case for old Java wallets created with malformed UTF-16
-passphrases. Caller code constructing Gatekeeper event ordinals must use
+wallet file. Compact signatures must be low-S. Gatekeeper event ordinals use
 `Long` entries, such as `List.of(0L)`.
 
 Module references:
