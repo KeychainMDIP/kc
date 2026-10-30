@@ -126,7 +126,8 @@ reference's object spread behavior.
 Group membership edits retain the version originally read. A rejected update
 throws and the caller can try again. Edits preserve unrelated asset and group
 properties, including the original flat layout of legacy groups. Membership
-traversal stops cycles and checks later branches without a depth limit.
+traversal uses an iterative work list, stops cycles and checks later branches
+without a depth limit or recursive stack growth.
 
 Schema templates resolve aliases before setting `$schema`. Listing names with
 identity names included returns a separate map without changing the wallet.

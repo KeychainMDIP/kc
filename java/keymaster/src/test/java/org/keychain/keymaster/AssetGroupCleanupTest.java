@@ -330,6 +330,44 @@ class AssetGroupCleanupTest {
     }
 
     @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void deepGroupTraversalDoesNotUseTheJavaCallStack(boolean present) {
+        var template = node.doc(keymaster.createGroup("chain"));
+        List<String> chain = new ArrayList<>();
+        for (int index = 0; index < 5000; index++) {
+            byte[] hash = new byte[34];
+            hash[0] = 0x12;
+            hash[1] = 0x20;
+            java.nio.ByteBuffer.wrap(hash, 30, 4).putInt(index + 1000);
+            chain.add("did:test:" + org.bitcoinj.core.Base58.encode(hash));
+        }
+        for (int index = 0; index < chain.size(); index++) {
+            var doc = mapper.convertValue(template, org.keychain.gatekeeper.model.MdipDocument.class);
+            doc.didDocument.id = chain.get(index);
+            List<String> members = index + 1 < chain.size() ? List.of(chain.get(index + 1))
+                : present ? List.of(bob) : List.of(chain.get(0));
+            doc.didDocumentData = Map.of("group", Map.of("name", "chain", "members", members));
+            node.docs.put(suffix(chain.get(index)), doc);
+        }
+        int reads = node.resolvedDids.size();
+        assertEquals(present, keymaster.testGroup(chain.get(0), "Bob"));
+        assertEquals(reads + 5000, node.resolvedDids.size());
+    }
+
+    @Test
+    void unavailableGroupBranchesDoNotHideALaterMatch() {
+        String leaf = keymaster.createGroup("leaf");
+        assertTrue(keymaster.addGroupMember(leaf, bob));
+        String root = keymaster.createAsset(Map.of("group", Map.of("name", "root", "members",
+            java.util.Arrays.asList(null, "Missing", alice, leaf))));
+        node.beforeResolve = did -> {
+            if (did.equals(alice)) throw new IllegalStateException("Unavailable member");
+        };
+        assertTrue(keymaster.testGroup(root, "Bob"));
+        assertFalse(keymaster.testGroup(null, "Bob"));
+    }
+
+    @ParameterizedTest
     @MethodSource("cleanupFailures")
     void failedCleanupPreservesTheEntireWalletAndStorage(String entry, String failure) {
         String owned = keymaster.createAsset(Map.of("owned", true));

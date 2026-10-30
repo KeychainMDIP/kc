@@ -1528,27 +1528,29 @@ public class Keymaster {
     }
 
     public boolean testGroup(String groupId, String memberId) {
-        return testGroupRecursive(groupId, memberId, new HashSet<>());
-    }
-
-    private boolean testGroupRecursive(String groupId, String memberId, Set<String> visited) {
-        try {
-            String groupDid = lookupDID(groupId);
-            if (!visited.add(groupDid)) return false;
-            Group group = getGroup(groupDid);
-            if (group == null) return false;
-            if (memberId == null || memberId.isEmpty()) return true;
-            String memberDid = lookupDID(memberId);
-            if (group.members != null && group.members.contains(memberDid)) return true;
-            if (group.members != null) {
-                for (String did : group.members) {
-                    if (testGroupRecursive(did, memberDid, visited)) return true;
+        Set<String> visited = new HashSet<>();
+        List<String> pending = new ArrayList<>(Collections.singletonList(groupId));
+        String memberDid = memberId;
+        while (!pending.isEmpty()) {
+            String next = pending.remove(pending.size() - 1);
+            try {
+                String groupDid = lookupDID(next);
+                if (!visited.add(groupDid)) continue;
+                Group group = getGroup(groupDid);
+                if (group == null) continue;
+                if (memberDid == null || memberDid.isEmpty()) return true;
+                memberDid = lookupDID(memberDid);
+                if (group.members != null && group.members.contains(memberDid)) return true;
+                if (group.members != null) {
+                    for (int index = group.members.size() - 1; index >= 0; index--) {
+                        pending.add(group.members.get(index));
+                    }
                 }
+            } catch (Exception e) {
+                // An unavailable member must not prevent checking the remaining branches.
             }
-            return false;
-        } catch (Exception e) {
-            return false;
         }
+        return false;
     }
 
     public java.util.List<String> listGroups(String owner) {
