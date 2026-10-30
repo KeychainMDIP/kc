@@ -12,7 +12,6 @@ public final class Base32Lower {
         for (int i = 0; i < ALPHABET.length(); i += 1) {
             char c = ALPHABET.charAt(i);
             INDEXES[c] = i;
-            INDEXES[Character.toUpperCase(c)] = i;
         }
     }
 
@@ -28,11 +27,10 @@ public final class Base32Lower {
         int buffer = 0;
         int bitsLeft = 0;
 
-        for (int i = 0; i < input.length(); i += 1) {
+        int end = input.length();
+        while (end > 0 && input.charAt(end - 1) == '=') end--;
+        for (int i = 0; i < end; i += 1) {
             char c = input.charAt(i);
-            if (c == '=') {
-                continue;
-            }
             if (c >= 128 || INDEXES[c] < 0) {
                 throw new IllegalArgumentException("input");
             }
@@ -51,6 +49,7 @@ public final class Base32Lower {
             }
         }
 
+        if (bitsLeft >= 5 || buffer != 0) throw new IllegalArgumentException("Unexpected end of base32 data");
         return out.toByteArray();
     }
 }

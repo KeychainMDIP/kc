@@ -16,13 +16,14 @@ tasks.named('test', Test) {
 }
 
 tasks.register('liveTest', Test) {
-    description = 'Runs live Gatekeeper credential tests'
+    description = 'Runs opt-in reference Gatekeeper integration tests'
     group = 'verification'
     testClassesDirs = sourceSets.test.output.classesDirs
     classpath = sourceSets.test.runtimeClasspath
     useJUnitPlatform {
         includeTags 'live'
     }
+    systemProperty 'junit.jupiter.execution.timeout.default', '60 s'
     outputs.upToDateWhen { false }
     outputs.cacheIf { false }
 }

@@ -1,6 +1,5 @@
 package org.keychain.crypto;
 
-import java.nio.charset.StandardCharsets;
 import org.keychain.crypto.util.Base64Url;
 import org.keychain.crypto.util.Bytes;
 
@@ -17,7 +16,8 @@ public class KeymasterCryptoImpl implements KeymasterCrypto {
 
     @Override
     public HdKey generateHdKeyJson(HdKeyJson json) {
-        throw new UnsupportedOperationException("generateHdKeyJson not implemented yet");
+        if (json == null) throw new IllegalArgumentException("json is required");
+        return HdKeyUtil.toHdKey(HdKeyUtil.fromXpriv(json.xpriv));
     }
 
     @Override
@@ -27,8 +27,13 @@ public class KeymasterCryptoImpl implements KeymasterCrypto {
 
     @Override
     public JwkPair generateRandomJwk() {
-        byte[] priv = Bytes.random(32);
-        return Secp256k1Jwk.fromPrivateKey(priv);
+        while (true) {
+            try {
+                return Secp256k1Jwk.fromPrivateKey(Bytes.random(32));
+            } catch (IllegalArgumentException ignored) {
+                // Rejection sampling keeps the secret scalar inside the curve order.
+            }
+        }
     }
 
     @Override
@@ -77,16 +82,16 @@ public class KeymasterCryptoImpl implements KeymasterCrypto {
 
     @Override
     public String encryptMessage(JwkPublic pubKey, JwkPrivate privKey, String message) {
-        return encryptBytes(pubKey, privKey, message.getBytes(StandardCharsets.UTF_8));
+        return encryptBytes(pubKey, privKey, Bytes.utf8(message));
     }
 
     @Override
     public String decryptMessage(JwkPublic pubKey, JwkPrivate privKey, String ciphertextB64Url) {
-        return new String(decryptBytes(pubKey, privKey, ciphertextB64Url), StandardCharsets.UTF_8);
+        return Bytes.fromUtf8(decryptBytes(pubKey, privKey, ciphertextB64Url));
     }
 
     @Override
     public String generateRandomSalt() {
-        return Base64Url.encode(Bytes.random(32));
+        return "u" + Base64Url.encode(Bytes.random(32));
     }
 }

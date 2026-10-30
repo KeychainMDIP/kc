@@ -1,6 +1,7 @@
 package org.keychain.crypto;
 
 import java.nio.charset.StandardCharsets;
+import org.keychain.crypto.util.Bytes;
 import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
 import java.util.Base64;
@@ -46,7 +47,7 @@ public final class MnemonicEncryption {
             SecretKey key = deriveKey(passphrase, salt);
             Cipher cipher = Cipher.getInstance(ENC_ALG);
             cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(128, iv));
-            byte[] ct = cipher.doFinal(mnemonic.getBytes(StandardCharsets.UTF_8));
+            byte[] ct = cipher.doFinal(Bytes.utf8(mnemonic));
 
             return new EncryptedMnemonic(
                 Base64.getEncoder().encodeToString(salt),
@@ -72,14 +73,16 @@ public final class MnemonicEncryption {
             Cipher cipher = Cipher.getInstance(ENC_ALG);
             cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(128, iv));
             byte[] pt = cipher.doFinal(data);
-            return new String(pt, StandardCharsets.UTF_8);
+            return Bytes.fromUtf8(pt);
         } catch (GeneralSecurityException e) {
             throw new IllegalStateException("Mnemonic decryption failed", e);
         }
     }
 
     private static SecretKey deriveKey(String passphrase, byte[] salt) throws GeneralSecurityException {
-        PBEKeySpec spec = new PBEKeySpec(passphrase.toCharArray(), salt, ENC_ITER, KEY_LEN);
+        // Normalize malformed UTF-16 like TextEncoder before the existing PBKDF2 step.
+        String password = new String(Bytes.utf8(passphrase), StandardCharsets.UTF_8);
+        PBEKeySpec spec = new PBEKeySpec(password.toCharArray(), salt, ENC_ITER, KEY_LEN);
         SecretKeyFactory factory = SecretKeyFactory.getInstance(ENC_KDF);
         byte[] keyBytes = factory.generateSecret(spec).getEncoded();
         return new SecretKeySpec(keyBytes, "AES");

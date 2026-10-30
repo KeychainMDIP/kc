@@ -1,19 +1,24 @@
 package org.keychain.crypto;
 
 import java.util.Arrays;
-import java.util.List;
+import java.text.Normalizer;
+import org.bouncycastle.crypto.digests.SHA512Digest;
+import org.bouncycastle.crypto.generators.PKCS5S2ParametersGenerator;
+import org.bouncycastle.crypto.params.KeyParameter;
+import org.keychain.crypto.util.Bytes;
 import org.bitcoinj.crypto.ChildNumber;
 import org.bitcoinj.crypto.DeterministicKey;
 import org.bitcoinj.crypto.HDKeyDerivation;
-import org.bitcoinj.crypto.MnemonicCode;
 import org.bitcoinj.params.MainNetParams;
 
 public final class HdKeyUtil {
     private HdKeyUtil() {}
 
     public static DeterministicKey masterFromMnemonic(String mnemonic) {
-        List<String> words = Arrays.asList(mnemonic.trim().split("\\s+"));
-        byte[] seed = MnemonicCode.toSeed(words, "");
+        String normalized = Normalizer.normalize(mnemonic, Normalizer.Form.NFKD);
+        PKCS5S2ParametersGenerator generator = new PKCS5S2ParametersGenerator(new SHA512Digest());
+        generator.init(Bytes.utf8(normalized), Bytes.utf8("mnemonic"), 2048);
+        byte[] seed = ((KeyParameter) generator.generateDerivedParameters(512)).getKey();
         return HDKeyDerivation.createMasterPrivateKey(seed);
     }
 
@@ -21,7 +26,9 @@ public final class HdKeyUtil {
         if (xpriv == null || xpriv.isBlank()) {
             throw new IllegalArgumentException("xpriv is required");
         }
-        return DeterministicKey.deserializeB58(xpriv, MainNetParams.get());
+        DeterministicKey key = DeterministicKey.deserializeB58(xpriv, MainNetParams.get());
+        if (key.hasPrivKey()) Secp256k1Jwk.privateScalar(privateKeyBytes(key));
+        return key;
     }
 
     public static DeterministicKey derivePath(DeterministicKey master, int account, int index) {
@@ -52,7 +59,7 @@ public final class HdKeyUtil {
     }
 
     public static HdKey toHdKey(DeterministicKey master) {
-        String xpriv = master.serializePrivB58(MainNetParams.get());
+        String xpriv = master.hasPrivKey() ? master.serializePrivB58(MainNetParams.get()) : null;
         String xpub = master.serializePubB58(MainNetParams.get());
         return new HdKey(xpriv, xpub);
     }

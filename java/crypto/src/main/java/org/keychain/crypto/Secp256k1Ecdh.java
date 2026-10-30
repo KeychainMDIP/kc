@@ -23,11 +23,8 @@ public final class Secp256k1Ecdh {
             throw new IllegalArgumentException("pubKey and privKey are required");
         }
 
-        BigInteger d = new BigInteger(1, Base64Url.decode(privKey.d));
-        ECPoint q = DOMAIN.getCurve().createPoint(
-            new BigInteger(1, Base64Url.decode(pubKey.x)),
-            new BigInteger(1, Base64Url.decode(pubKey.y))
-        );
+        BigInteger d = Secp256k1Jwk.privateScalar(Base64Url.decode(privKey.d));
+        ECPoint q = DOMAIN.getCurve().decodePoint(Secp256k1Jwk.toCompressed(pubKey));
 
         ECPoint shared = q.multiply(d).normalize();
         return shared.getEncoded(true);

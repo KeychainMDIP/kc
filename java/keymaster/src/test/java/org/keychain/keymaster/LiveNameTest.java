@@ -7,12 +7,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.keychain.keymaster.model.WalletFile;
 import org.keychain.keymaster.testutil.LiveTestSupport;
 
 @Tag("live")
+@ExtendWith(LiveTestSupport.class)
 class LiveNameTest {
     @TempDir
     Path tempDir;

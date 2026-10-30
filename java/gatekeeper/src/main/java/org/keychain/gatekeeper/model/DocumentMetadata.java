@@ -1,6 +1,6 @@
 package org.keychain.gatekeeper.model;
 
-public class DocumentMetadata {
+public class DocumentMetadata extends ExtensibleModel {
     public String created;
     public String updated;
     public String canonicalId;

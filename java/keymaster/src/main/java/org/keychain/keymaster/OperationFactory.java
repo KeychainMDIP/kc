@@ -30,6 +30,21 @@ public class OperationFactory {
         return signer.signCreate(operation, privateJwk);
     }
 
+    public Operation createSignedCreateIdOperation(
+        String registry,
+        EcdsaJwkPublic publicJwk,
+        JwkPrivate privateJwk,
+        String blockid,
+        String prefix
+    ) {
+        if (prefix == null) {
+            return createSignedCreateIdOperation(registry, publicJwk, privateJwk, blockid);
+        }
+        Operation operation = builder.createIdOperation(registry, publicJwk, blockid);
+        operation.mdip.prefix = prefix;
+        return signer.signCreate(operation, privateJwk);
+    }
+
     public Operation createSignedCreateAssetOperation(
         String registry,
         String controller,
@@ -40,6 +55,24 @@ public class OperationFactory {
         String signerDid
     ) {
         Operation operation = builder.createAssetOperation(registry, controller, data, blockid, validUntil);
+        return signer.sign(operation, privateJwk, signerDid);
+    }
+
+    public Operation createSignedCreateAssetOperation(
+        String registry,
+        String controller,
+        Object data,
+        String blockid,
+        String validUntil,
+        JwkPrivate privateJwk,
+        String signerDid,
+        String prefix
+    ) {
+        if (prefix == null) {
+            return createSignedCreateAssetOperation(registry, controller, data, blockid, validUntil, privateJwk, signerDid);
+        }
+        Operation operation = builder.createAssetOperation(registry, controller, data, blockid, validUntil);
+        operation.mdip.prefix = prefix;
         return signer.sign(operation, privateJwk, signerDid);
     }
 

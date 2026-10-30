@@ -5,6 +5,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.keychain.gatekeeper.model.MdipDocument;
 import org.keychain.keymaster.model.IDInfo;
@@ -16,6 +17,7 @@ import org.keychain.keymaster.testutil.TestFixtures;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Tag("live")
+@ExtendWith(LiveTestSupport.class)
 class LiveCredentialTest {
     @TempDir
     Path tempDir;

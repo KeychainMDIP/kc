@@ -8,6 +8,8 @@ group = 'org.keychain'
 version = '0.0.1-SNAPSHOT'
 
 def vaadinVersion = '23.3.8'
+// Align Spring Boot's managed test runtime with the root JUnit version.
+ext['junit-jupiter.version'] = '5.10.2'
 
 def bootJarTask = tasks.named('bootJar', org.springframework.boot.gradle.tasks.bundling.BootJar)
 

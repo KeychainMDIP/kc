@@ -13,3 +13,6 @@ dids.db-journal
 
 
 **/.npmrc
+
+# Local implementation plans
+/.agents/plans/

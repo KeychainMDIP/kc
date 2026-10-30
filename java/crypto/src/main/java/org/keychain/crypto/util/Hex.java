@@ -22,6 +22,9 @@ public final class Hex {
         int len = hex.length();
         byte[] data = new byte[len / 2];
         for (int i = 0; i < len; i += 2) {
+            if (hex.charAt(i) > 127 || hex.charAt(i + 1) > 127) {
+                throw new IllegalArgumentException("Invalid hex character");
+            }
             int hi = Character.digit(hex.charAt(i), 16);
             int lo = Character.digit(hex.charAt(i + 1), 16);
             if (hi == -1 || lo == -1) {
