@@ -1109,13 +1109,8 @@ public class Keymaster {
         Map<String, Object> assetData = assetProperties(assetDoc.didDocumentData);
         assetData.put("cloned", assetDoc.didDocument != null ? assetDoc.didDocument.id : null);
 
-        String targetRegistry = registry;
-        if (targetRegistry == null || targetRegistry.isBlank()) {
-            targetRegistry = assetDoc.mdip.registry ;
-        }
-
         CreateAssetOptions options = new CreateAssetOptions();
-        options.registry = targetRegistry;
+        options.registry = registry;
         options.controller = controller;
         return createAssetFor(assetData, owner, options);
     }

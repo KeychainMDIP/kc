@@ -144,6 +144,35 @@ class AssetGroupCleanupTest {
         );
     }
 
+    static Stream<Arguments> cloneRegistries() {
+        return Stream.of(
+            Arguments.of("local", "hyperswarm", null, "local"),
+            Arguments.of("hyperswarm", "local", null, "hyperswarm"),
+            Arguments.of(null, "local", null, "hyperswarm"),
+            Arguments.of("local", "hyperswarm", "", "local"),
+            Arguments.of("local", "hyperswarm", "TFTC", "TFTC"),
+            Arguments.of("hyperswarm", "local", "local", "local")
+        );
+    }
+
+    @ParameterizedTest
+    @MethodSource("cloneRegistries")
+    void cloningUsesTheConfiguredDefaultUnlessOverridden(String defaultRegistry, String sourceRegistry,
+                                                        String override, String expectedRegistry) {
+        String owner = keymaster.createId("NetworkOwner", "hyperswarm");
+        Keymaster configured = new Keymaster(store, node.client, "passphrase", defaultRegistry);
+        String source = configured.createAsset(Map.of("original", true), sourceRegistry, null, null);
+        configured.addName("source", source);
+        JsonNode before = mapper.valueToTree(node.doc(source));
+        String clone = override == null ? configured.cloneAsset("source") : configured.cloneAsset("source", override, null);
+        var doc = configured.resolveDID(clone);
+        assertEquals(expectedRegistry, doc.mdip.registry);
+        assertEquals(owner, doc.didDocument.controller);
+        assertEquals(Map.of("original", true, "cloned", source), doc.didDocumentData);
+        assertTrue(configured.listAssets(owner).contains(clone));
+        assertEquals(before, mapper.valueToTree(node.doc(source)));
+    }
+
     @ParameterizedTest
     @MethodSource("indexedAssetData")
     void clonesAndUpdatesPreserveIndexedAssetContents(Object source, Map<String, Object> properties) {

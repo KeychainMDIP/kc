@@ -122,6 +122,8 @@ missing controllers and deactivated assets still return an empty object.
 Asset updates use a shallow merge and retain explicit null values. Cloning and
 updating array or string data retains its indexed properties, matching the
 reference's object spread behavior.
+Cloning uses the configured default registry unless a registry is supplied,
+regardless of the source asset's registry.
 
 Group membership edits retain the version originally read. A rejected update
 throws and the caller can try again. Edits preserve unrelated asset and group
