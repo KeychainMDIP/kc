@@ -1106,12 +1106,7 @@ public class Keymaster {
             throw new IllegalArgumentException("id");
         }
 
-        java.util.Map<String, Object> assetData = new java.util.LinkedHashMap<>();
-        if (assetDoc.didDocumentData instanceof java.util.Map<?, ?>) {
-            @SuppressWarnings("unchecked")
-            java.util.Map<String, Object> data = (java.util.Map<String, Object>) assetDoc.didDocumentData;
-            assetData.putAll(data);
-        }
+        Map<String, Object> assetData = assetProperties(assetDoc.didDocumentData);
         assetData.put("cloned", assetDoc.didDocument != null ? assetDoc.didDocument.id : null);
 
         String targetRegistry = registry;
@@ -2188,16 +2183,29 @@ public class Keymaster {
         }
 
         MdipDocument doc = resolveDID(did);
-        java.util.Map<String, Object> merged = new java.util.HashMap<>();
-        Object currentData = doc.didDocumentData;
-        if (currentData instanceof java.util.Map<?, ?>) {
-            @SuppressWarnings("unchecked")
-            java.util.Map<String, Object> current = (java.util.Map<String, Object>) currentData;
-            merged.putAll(current);
-        }
+        Map<String, Object> merged = assetProperties(doc.didDocumentData);
         merged.putAll(data);
         doc.didDocumentData = merged;
         return updateDID(doc);
+    }
+
+    private static Map<String, Object> assetProperties(Object data) {
+        Map<String, Object> properties = new LinkedHashMap<>();
+        if (data instanceof Map<?, ?>) {
+            ((Map<?, ?>) data).forEach((key, value) -> properties.put((String) key, value));
+        } else if (data instanceof List<?>) {
+            List<?> values = (List<?>) data;
+            for (int index = 0; index < values.size(); index++) {
+                properties.put(Integer.toString(index), values.get(index));
+            }
+        } else if (data instanceof String) {
+            String value = (String) data;
+            // JavaScript object spread indexes strings by UTF-16 code unit.
+            for (int index = 0; index < value.length(); index++) {
+                properties.put(Integer.toString(index), value.substring(index, index + 1));
+            }
+        }
+        return properties;
     }
 
     public boolean transferAsset(String assetDid, String controllerDid) {

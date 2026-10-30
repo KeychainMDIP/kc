@@ -118,7 +118,9 @@ used for decryption. Connection and other resolution failures propagate.
 `resolveAsset(did, options)` forwards historical version, time and confirmation
 options to DID resolution. Resolution failures propagate. Missing asset data,
 missing controllers and deactivated assets still return an empty object.
-Asset updates use a shallow merge and retain explicit null values.
+Asset updates use a shallow merge and retain explicit null values. Cloning and
+updating array or string data retains its indexed properties, matching the
+reference's object spread behavior.
 
 Group membership edits retain the version originally read. A rejected update
 throws and the caller can try again. Edits preserve unrelated asset and group

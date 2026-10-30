@@ -130,6 +130,38 @@ class AssetGroupCleanupTest {
         assertEquals(before, mapper.valueToTree(keymaster.loadWallet()));
     }
 
+    static Stream<Arguments> indexedAssetData() {
+        Map<String, Object> arrayProperties = new LinkedHashMap<>();
+        arrayProperties.put("0", "first");
+        arrayProperties.put("1", null);
+        arrayProperties.put("2", Map.of("nested", true));
+        return Stream.of(
+            Arguments.of(java.util.Arrays.asList("first", null, Map.of("nested", true)), arrayProperties),
+            Arguments.of("A\uD83E\uDDEA", Map.of("0", "A", "1", "\uD83E", "2", "\uDDEA")),
+            Arguments.of(List.of(), Map.of()),
+            Arguments.of(42, Map.of()),
+            Arguments.of(true, Map.of())
+        );
+    }
+
+    @ParameterizedTest
+    @MethodSource("indexedAssetData")
+    void clonesAndUpdatesPreserveIndexedAssetContents(Object source, Map<String, Object> properties) {
+        JsonNode before = mapper.valueToTree(source);
+        String did = keymaster.createAsset(source);
+        String clone = keymaster.cloneAsset(did, "local", null);
+        Map<String, Object> expectedClone = new LinkedHashMap<>(properties);
+        expectedClone.put("cloned", did);
+        assertEquals(expectedClone, keymaster.resolveAsset(clone));
+        assertEquals(before, mapper.valueToTree(keymaster.resolveAsset(did)));
+
+        Map<String, Object> expectedUpdate = new LinkedHashMap<>(properties);
+        expectedUpdate.put("label", "kept");
+        assertTrue(keymaster.updateAsset(did, Map.of("label", "kept")));
+        assertEquals(expectedUpdate, keymaster.resolveAsset(did));
+        assertEquals(before, mapper.valueToTree(source));
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"test", "list", "template"})
     void schemaPredicatesRetainTheirFailureBehaviorWhenResolutionFails(String caller) {
