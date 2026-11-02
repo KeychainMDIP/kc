@@ -1,11 +1,36 @@
 package org.keychain.keymaster.testutil;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.IOException;
+import java.io.InputStream;
+import java.lang.reflect.Proxy;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.keychain.gatekeeper.GatekeeperInterface;
 
 public final class TestFixtures {
     private TestFixtures() {
+    }
+
+    public static JsonNode readVector(String name) throws IOException {
+        try (InputStream input = TestFixtures.class.getResourceAsStream("/vectors/" + name)) {
+            if (input == null) {
+                throw new AssertionError("Missing test vector: " + name);
+            }
+            return new ObjectMapper().readTree(input);
+        }
+    }
+
+    public static GatekeeperInterface offlineGatekeeper() {
+        return (GatekeeperInterface) Proxy.newProxyInstance(
+            GatekeeperInterface.class.getClassLoader(),
+            new Class<?>[] { GatekeeperInterface.class },
+            (proxy, method, args) -> {
+                throw new AssertionError("Unexpected Gatekeeper call: " + method.getName());
+            }
+        );
     }
 
     public static Map<String, Object> mockJson() {

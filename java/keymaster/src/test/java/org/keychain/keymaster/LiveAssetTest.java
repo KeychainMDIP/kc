@@ -9,12 +9,14 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.keychain.gatekeeper.model.MdipDocument;
 import org.keychain.keymaster.testutil.LiveTestSupport;
 
 @Tag("live")
+@ExtendWith(LiveTestSupport.class)
 class LiveAssetTest {
     @TempDir
     private Path tempDir;
@@ -415,7 +417,7 @@ class LiveAssetTest {
     }
 
     @Test
-    void updateAssetRemovesUndefinedProperty() {
+    void updateAssetRetainsExplicitNull() {
         Keymaster keymaster = newKeymaster();
         keymaster.createId("Bob");
         Map<String, Object> mockAsset1 = Map.of("key1", "val1", "key2", "val2");
@@ -425,6 +427,8 @@ class LiveAssetTest {
         assertTrue(keymaster.updateAsset(did, mockAsset2));
         Object asset = keymaster.resolveAsset(did);
 
-        assertEquals(Map.of("key1", "val1"), asset);
+        Map<String, Object> expected = new java.util.HashMap<>(mockAsset1);
+        expected.put("key2", null);
+        assertEquals(expected, asset);
     }
 }

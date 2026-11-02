@@ -1,5 +1,7 @@
 package org.keychain.cid;
 
+import java.math.BigInteger;
+
 public final class Multibase {
     private Multibase() {
     }
@@ -19,6 +21,15 @@ public final class Multibase {
             return Base32Lower.decode(payload);
         }
 
+        if (prefix == 'k' && payload.matches("[0-9a-z]+")) {
+            int zeros = 0;
+            while (zeros < payload.length() && payload.charAt(zeros) == '0') zeros++;
+            byte[] number = new BigInteger(payload, 36).toByteArray();
+            int offset = number[0] == 0 ? 1 : 0;
+            byte[] decoded = new byte[zeros + number.length - offset];
+            System.arraycopy(number, offset, decoded, zeros, number.length - offset);
+            return decoded;
+        }
         throw new IllegalArgumentException("value");
     }
 }

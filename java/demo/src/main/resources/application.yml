@@ -1,6 +1,8 @@
 keymaster:
   gatekeeperUrl: http://localhost:4224
   registry: hyperswarm
+  didPrefix: ${KEYMASTER_DID_PREFIX:did:test}
+  gatekeeperCallTimeout: ${KEYMASTER_GATEKEEPER_CALL_TIMEOUT:60s}
   walletDir: data
   walletFile: wallet.json
 

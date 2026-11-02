@@ -7,7 +7,7 @@
       "data": "wx3fGlIor3vtRtYk0WPnbnEOHnM0agBEUugXfr1FoCrNenafh5H5xfsLXMmVUGBR38HreYHMF5yCmoBMAxwFxmIRsFBVQ0XbajAInzL7WF9UysoSsEstXtP7+M0U/ajMkXQuo0I2ZkrOlxtbIg=="
     }
   },
-  "enc": "NUKhOmTQbN4-BAUml2Jswqrb8tyDjWGXmNiT1SO874b1BiuzuUgcpgFL6wggPmSy1eBGsGbB3O6YoMfk4so-MEq4EbP80kqs8XmxbrUnoQURUPFWb2OFqf9B3ziVYGM06zxhAHarQXmPOfEJrJpS9KFz-QBjB7SvY-fGK8EEjXh0ny_w6N2XyOtD_txHY8uzXS9qF0s30AGl77i9JO7DxDPKFbHpyro1hyIizmlFEOOMFNhZKDbk00Ns5-Z5Sg6mtxFGi1Ha3eAk9y22FvfT2-rXrrgWWX5Cf6Fzja1Jkg",
+  "enc": "tFP_5OD06gUApEWiQXHr6kfRS3Z7yWqeTQPVv-1vXYOiHJeQR8WkW6Lt0FNDpt6rg1NL7zANXmLYeS4zCgronMl4XTHFsf6Mv46hhM4P3bS56frxYxYa3wWaq5f9m1uf0c9mRm0PDHeZlYvk6kVrdnLshLle7KS7D_lE7Rai9II5TTcic8ooc6zT5OiLAd3C7Xr2TvTpiqbRgHWWgh0uIGyoAwohT6cxrx0Fcqzwd67yycXwO4Xhiv_IgZXFssLxOD6k2gNm34LqzTa2zFj7c1oScaPmWhecMtHHVxABoXdIIVtzko3CBblBPxVEGUU9_Il6iRZQMO5q7R6QkVJDlI57GoUNwt2EsgYp-wtjoOKm7byQmfYbB6PZ7AfMgzkJqP2AvtXWIpx5pbvsGdrUG6cuSxBMpkHISdd-D4ZfcAYPIFO8CYC98_GGARZD1BD9x9W5IcUCwnTVWzViB1KcL7pDBVz4Vac_LOTWUpJlY14Ukd0ulxLMnyIQh4zdIQFaBOeoTN44BsjxWWvPdAvGWcCEPijxwHFPAa7YFZZnnnu3_PPt_x-DaYkgDYVxwVDmU181I8CgvrV3JkWA3DAcQIlrFovyoBWnZ_6JE_JudwfrOgjZVkDN9dZY1JsxdpnRKPYN8P9W0AiTVU8NGhfQeT1Cw5WdM3nFWTPxh85265EDCQgajIUyEcX05xcoBQ0m08-jlbLvTJfO67Cya3q-ZJtuApIHTMFYcZOURmQtl0Zo6rIkDlPegbRvUSGfELzsCSGF61uZfkOJt35JR8Prn5hQ03mN5W3Yi-Yxc5gvOeaK6FzKv-WhXFhIWu2afFKwU_VHiFGqCr73jdJyHvHhfAAulXLrUOQLEqZyN11M88tBisxdH9-F5Y3jdS3e0WPYxqdlnFiJajfxVNSOz0vVts00jFkdXxg3YOuVn2Y8xlYJKUy53SrfCNXko36jJ7ABX9pyA9mZF5HmN5GP_eFV2rdF-sBocwEDhR4N62EdyohfGvfrAoRShpkQhQ",
   "passphrase": "passphrase",
   "wallet": {
     "counter": 1,
@@ -21,12 +21,52 @@
         ],
         "owned": [
           "did:test:asset1"
-        ]
+        ],
+        "notices": {
+          "did:test:notice": {
+            "read": false
+          }
+        },
+        "dmail": {
+          "messages": [
+            "did:test:message"
+          ]
+        },
+        "extras": {
+          "legacy": "identity extras"
+        },
+        "extra": {
+          "preserve": "identity field named extra"
+        },
+        "additionalProperties": {
+          "preserve": "identity field named additionalProperties"
+        },
+        "optionalMetadata": null
       }
     },
     "current": "Alice",
     "names": {
       "alias": "did:test:alice"
-    }
+    },
+    "application": {
+      "label": "Wallet metadata",
+      "enabled": true,
+      "nested": [
+        1,
+        {
+          "value": null
+        }
+      ]
+    },
+    "extras": {
+      "legacy": "wallet extras"
+    },
+    "extra": {
+      "preserve": "a field named extra"
+    },
+    "additionalProperties": {
+      "preserve": "a field named additionalProperties"
+    },
+    "optionalMetadata": null
   }
 }

@@ -1,6 +1,6 @@
 package org.keychain.gatekeeper.model;
 
-public class Mdip {
+public class Mdip extends ExtensibleModel {
     public int version;
     public String type;
     public String registry;
