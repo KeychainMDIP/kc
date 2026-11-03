@@ -37,6 +37,7 @@ import {
 const DEFAULT_POSTGRES_CONNECTION_TIMEOUT_MS = 3_000;
 const DEFAULT_SEARCH_TIMEOUT_MS = 5_000;
 const INSERT_BATCH_SIZE = 500;
+const SEARCH_MATCH_PROBE_LIMIT = 1000;
 
 async function insertRows(
     client: PoolClient,
@@ -1357,6 +1358,11 @@ export default class Postgres implements DIDsDb {
             }
         }
         params.push(limit + 1);
+        const scopeFilter = filters.length ? `AND ${filters.join(' AND ')}` : '';
+        const sortKey = didPrefix ? 'dc.suffix COLLATE "C"'
+            : '(dc.prefix || \':\' || dc.suffix) COLLATE "C"';
+        const projection = `dc.prefix || ':' || dc.suffix AS did,
+                            dc.prefix_ambiguous AS "prefixAmbiguous"`;
 
         const client = await pool.connect();
         let discardClient = false;
@@ -1368,13 +1374,34 @@ export default class Postgres implements DIDsDb {
                     SELECT did
                     FROM did_docs
                     WHERE search_text LIKE '%' || lower($1) || '%' ESCAPE '!'
+                    LIMIT ${SEARCH_MATCH_PROBE_LIMIT + 1}
+                 ), candidates AS MATERIALIZED (
+                    SELECT dc.did AS stored_did, ${projection}, ${sortKey} AS sort_key
+                    FROM did_classifications_effective dc
+                    WHERE (SELECT COUNT(*) > ${SEARCH_MATCH_PROBE_LIMIT} FROM matches)
+                        ${scopeFilter}
+                    ORDER BY sort_key
                  )
-                 SELECT dc.prefix || ':' || dc.suffix AS did,
-                        dc.prefix_ambiguous AS "prefixAmbiguous"
-                 FROM matches m
-                 JOIN did_classifications_effective dc ON dc.did = m.did
-                 ${filters.length ? `WHERE ${filters.join(' AND ')}` : ''}
-                 ORDER BY ${didPrefix ? 'dc.suffix' : `(dc.prefix || ':' || dc.suffix)`} COLLATE "C"
+                 SELECT page.did, page."prefixAmbiguous" FROM (
+                    (SELECT ${projection}, ${sortKey} AS sort_key
+                     FROM matches m
+                     JOIN did_classifications_effective dc ON dc.did = m.did
+                     WHERE (SELECT COUNT(*) BETWEEN 1 AND ${SEARCH_MATCH_PROBE_LIMIT} FROM matches)
+                        ${scopeFilter}
+                     ORDER BY sort_key LIMIT $${params.length})
+                    UNION ALL
+                    (SELECT c.did, c."prefixAmbiguous", c.sort_key
+                     FROM candidates c
+                     CROSS JOIN LATERAL (
+                        SELECT 1 FROM did_docs d
+                        WHERE d.did = c.stored_did
+                            AND d.search_text LIKE '%' || lower($1) || '%' ESCAPE '!'
+                        -- Keep text checks after the ordered scan so the page limit can stop early.
+                        OFFSET 0
+                     ) matched
+                     ORDER BY c.sort_key LIMIT $${params.length})
+                 ) page
+                 ORDER BY page.sort_key
                  LIMIT $${params.length}`,
                 params
             );

@@ -1606,6 +1606,11 @@ describe('postgres adapter with mocked pool', () => {
         expect(searchCalls).toHaveLength(6);
         expect(searchCalls[0][0]).toContain("ESCAPE '!'");
         expect(searchCalls[0][0]).toContain("search_text LIKE '%' || lower($1) || '%'");
+        expect(searchCalls[0][0]).toContain('LIMIT 1001');
+        expect(searchCalls[0][0]).toContain('COUNT(*) BETWEEN 1 AND 1000');
+        expect(searchCalls[0][0]).toContain('COUNT(*) > 1000');
+        expect(searchCalls[0][0]).toContain('CROSS JOIN LATERAL');
+        expect(searchCalls[0][0]).toContain('OFFSET 0');
         expect(searchCalls[0][0]).not.toContain('WHERE dc.prefix = $2');
         expect(searchCalls[0][0]).toContain('ORDER BY');
         expect(searchCalls[0][1]).toStrictEqual(['SeArCh', 51]);

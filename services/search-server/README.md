@@ -145,8 +145,10 @@ reclassify stored DIDs and does not apply to historical metric snapshots.
   PostgreSQL collation. Terms shorter than three Unicode characters are rejected
   because PostgreSQL's trigram index cannot serve them efficiently. Use
   structured endpoints for short values. Results are ordered by effective DID.
-  Pagination limits the response size but does not avoid the complete text match
-  performed by PostgreSQL's materialized query.
+  PostgreSQL probes a capped set of text matches. Small searches use that complete
+  match set; broad searches check documents in effective-DID order until the page
+  is filled or candidates are exhausted. Scope and cursor filters apply before
+  pagination, and the statement timeout still bounds expensive searches.
 - **Returns**:
     - `200 OK` + `{ "dids": [...], "nextCursor": "did:..." }`.
       `nextCursor` is `null` on the final page.
