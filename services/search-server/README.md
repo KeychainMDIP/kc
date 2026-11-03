@@ -77,24 +77,6 @@ on document inserts and updates; the indexer still sends only the original
 document. This trades additional database storage and write work for faster
 searches.
 
-Reset the Search Server tables before first deploying this schema. It replaces
-the old `doc::text` trigram index; there is no migration or backfill path. Do
-not reset Gatekeeper's database. PostgreSQL startup installs `pg_trgm` and
-creates the search index concurrently when missing, serializing this setup
-through PostgreSQL. The database user must be permitted to create the extension
-and index.
-
-The optional PostgreSQL search regression test uses an isolated schema in the
-explicitly supplied test database:
-
-```bash
-KC_SEARCH_SERVER_TEST_POSTGRES_URL=postgresql://postgres@localhost:5432/search_test \
-  npm test -- --runTestsByPath tests/search-server/postgres-search.test.ts
-```
-
-Run this from the repository root against a disposable test database. Without
-that variable, the test is skipped.
-
 ### Endpoints
 
 DID resolution, search, query, identity, event, and credential-metric endpoints apply
