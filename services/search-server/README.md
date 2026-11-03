@@ -69,14 +69,31 @@ The search database is a rebuildable index and this service does not migrate
 older table layouts. Reset an existing search-server database before deploying
 a release that changes its schema.
 
-PostgreSQL startup installs the `pg_trgm` extension and creates a concurrent
-GIN index for document text searches when it is missing. The first startup on
-an existing database waits for that index build to finish without blocking
-normal table writes. This index addition does not require a database reset.
-Concurrent Search Server startups serialize this setup through PostgreSQL.
-Allow additional database storage and some indexing work when DID documents
-are synchronized. The PostgreSQL user must be permitted to create the extension
+PostgreSQL stores a generated lowercase copy of each document's JSONB-rendered
+text in `did_docs.search_text` and maintains one trigram GIN index on that
+column. Searches use `LIKE` with a lowercased query, avoiding repeated JSON
+serialization and case folding during searches. PostgreSQL generates the text
+on document inserts and updates; the indexer still sends only the original
+document. This trades additional database storage and write work for faster
+searches.
+
+Reset the Search Server tables before first deploying this schema. It replaces
+the old `doc::text` trigram index; there is no migration or backfill path. Do
+not reset Gatekeeper's database. PostgreSQL startup installs `pg_trgm` and
+creates the search index concurrently when missing, serializing this setup
+through PostgreSQL. The database user must be permitted to create the extension
 and index.
+
+The optional PostgreSQL search regression test uses an isolated schema in the
+explicitly supplied test database:
+
+```bash
+KC_SEARCH_SERVER_TEST_POSTGRES_URL=postgresql://postgres@localhost:5432/search_test \
+  npm test -- --runTestsByPath tests/search-server/postgres-search.test.ts
+```
+
+Run this from the repository root against a disposable test database. Without
+that variable, the test is skipped.
 
 ### Endpoints
 

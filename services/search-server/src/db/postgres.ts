@@ -169,7 +169,8 @@ export default class Postgres implements DIDsDb {
 
             CREATE TABLE IF NOT EXISTS did_docs (
                 did TEXT PRIMARY KEY,
-                doc JSONB NOT NULL
+                doc JSONB NOT NULL,
+                search_text TEXT GENERATED ALWAYS AS (lower(doc::text)) STORED
             );
 
             CREATE TABLE IF NOT EXISTS blocks (
@@ -305,7 +306,7 @@ export default class Postgres implements DIDsDb {
         `);
 
         const client = await this.pool.connect();
-        const lockParams = ['search-server', 'idx_did_docs_doc_trgm'];
+        const lockParams = ['search-server', 'idx_did_docs_search_text_trgm'];
         let locked = false;
         let failed = true;
 
@@ -326,12 +327,18 @@ export default class Postgres implements DIDsDb {
                             AND i.indnkeyatts = 1
                             AND i.indnatts = 1
                             AND i.indpred IS NULL
-                            AND pg_get_expr(i.indexprs, i.indrelid) = '(doc)::text', FALSE)
+                            AND i.indexprs IS NULL
+                            AND i.indkey[0] = (
+                                SELECT attnum FROM pg_attribute
+                                WHERE attrelid = to_regclass($2)
+                                    AND attname = 'search_text' AND NOT attisdropped
+                            ), FALSE)
                             AS "matchesDefinition",
                         EXISTS (
                             SELECT 1 FROM pg_stats stats
                             WHERE stats.schemaname = idx_ns.nspname
-                                AND stats.tablename = idx.relname
+                                AND stats.tablename = $2
+                                AND stats.attname = 'search_text'
                         ) AS "hasStatistics"
                  FROM pg_class idx
                  LEFT JOIN pg_namespace idx_ns ON idx_ns.oid = idx.relnamespace
@@ -339,12 +346,12 @@ export default class Postgres implements DIDsDb {
                  LEFT JOIN pg_am am ON am.oid = idx.relam
                  LEFT JOIN pg_opclass opc ON opc.oid = i.indclass[0]
                  WHERE idx.oid = to_regclass($1)`,
-                ['idx_did_docs_doc_trgm', 'did_docs']
+                ['idx_did_docs_search_text_trgm', 'did_docs']
             );
             const existing = indexStatus.rows[0];
 
             if (existing && !existing.isIndex) {
-                throw new Error('Database object idx_did_docs_doc_trgm exists but is not an index');
+                throw new Error('Database object idx_did_docs_search_text_trgm exists but is not an index');
             }
 
             if (existing?.usable && existing.matchesDefinition) {
@@ -356,12 +363,12 @@ export default class Postgres implements DIDsDb {
             }
 
             if (existing) {
-                await client.query('DROP INDEX CONCURRENTLY IF EXISTS idx_did_docs_doc_trgm');
+                await client.query('DROP INDEX CONCURRENTLY IF EXISTS idx_did_docs_search_text_trgm');
             }
 
             await client.query(`
-                CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_did_docs_doc_trgm
-                    ON did_docs USING gin ((doc::text) gin_trgm_ops)
+                CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_did_docs_search_text_trgm
+                    ON did_docs USING gin (search_text gin_trgm_ops)
             `);
             await client.query('ANALYZE did_docs');
             failed = false;
@@ -1360,7 +1367,7 @@ export default class Postgres implements DIDsDb {
                 `WITH matches AS MATERIALIZED (
                     SELECT did
                     FROM did_docs
-                    WHERE doc::text ILIKE '%' || $1 || '%' ESCAPE '!'
+                    WHERE search_text LIKE '%' || lower($1) || '%' ESCAPE '!'
                  )
                  SELECT dc.prefix || ':' || dc.suffix AS did,
                         dc.prefix_ambiguous AS "prefixAmbiguous"

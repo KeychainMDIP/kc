@@ -1467,7 +1467,7 @@ describe('postgres adapter with mocked pool', () => {
                     }],
                 };
             }
-            if (text.includes("doc::text ILIKE '%' || $1 || '%'")) {
+            if (text.includes("search_text LIKE '%' || lower($1) || '%'")) {
                 const rows = params?.[0] === 'paged'
                     ? [{ did: 'did:test:search-1', prefixAmbiguous: true }, { did: 'did:test:search-2', prefixAmbiguous: true }]
                     : [{ did: 'did:test:search-1', prefixAmbiguous: true }];
@@ -1605,7 +1605,7 @@ describe('postgres adapter with mocked pool', () => {
         );
         expect(searchCalls).toHaveLength(6);
         expect(searchCalls[0][0]).toContain("ESCAPE '!'");
-        expect(searchCalls[0][0]).toContain('doc::text ILIKE');
+        expect(searchCalls[0][0]).toContain("search_text LIKE '%' || lower($1) || '%'");
         expect(searchCalls[0][0]).not.toContain('WHERE dc.prefix = $2');
         expect(searchCalls[0][0]).toContain('ORDER BY');
         expect(searchCalls[0][1]).toStrictEqual(['SeArCh', 51]);
@@ -1750,11 +1750,15 @@ describe('postgres adapter with mocked pool', () => {
         await db.disconnect();
 
         expect(mockPool.query).toHaveBeenCalledTimes(1);
+        expect(mockPool.query).toHaveBeenCalledWith(expect.stringContaining(
+            'search_text TEXT GENERATED ALWAYS AS (lower(doc::text)) STORED'
+        ));
+        expect(mockPool.query).not.toHaveBeenCalledWith(expect.stringContaining('ALTER TABLE'));
         expect(mockClient.query).toHaveBeenCalledTimes(6);
         expect(mockClient.query).toHaveBeenNthCalledWith(
             1,
             'SELECT pg_advisory_lock(hashtext($1), hashtext($2))',
-            ['search-server', 'idx_did_docs_doc_trgm']
+            ['search-server', 'idx_did_docs_search_text_trgm']
         );
         expect(mockClient.query).toHaveBeenNthCalledWith(
             2,
@@ -1763,28 +1767,28 @@ describe('postgres adapter with mocked pool', () => {
         expect(mockClient.query).toHaveBeenNthCalledWith(
             3,
             expect.stringContaining('WHERE idx.oid = to_regclass($1)'),
-            ['idx_did_docs_doc_trgm', 'did_docs']
+            ['idx_did_docs_search_text_trgm', 'did_docs']
         );
         expect(mockClient.query).toHaveBeenNthCalledWith(
             3,
             expect.stringContaining('SELECT 1 FROM pg_stats stats'),
-            ['idx_did_docs_doc_trgm', 'did_docs']
+            ['idx_did_docs_search_text_trgm', 'did_docs']
         );
         expect(mockClient.query).toHaveBeenNthCalledWith(
             4,
             expect.stringContaining(
-                'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_did_docs_doc_trgm'
+                'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_did_docs_search_text_trgm'
             )
         );
         expect(mockClient.query).toHaveBeenNthCalledWith(
             4,
-            expect.stringContaining('ON did_docs USING gin ((doc::text) gin_trgm_ops)')
+            expect.stringContaining('ON did_docs USING gin (search_text gin_trgm_ops)')
         );
         expect(mockClient.query).toHaveBeenNthCalledWith(5, 'ANALYZE did_docs');
         expect(mockClient.query).toHaveBeenNthCalledWith(
             6,
             'SELECT pg_advisory_unlock(hashtext($1), hashtext($2))',
-            ['search-server', 'idx_did_docs_doc_trgm']
+            ['search-server', 'idx_did_docs_search_text_trgm']
         );
         expect(mockClient.release).toHaveBeenCalledWith(false);
         expect(mockPool.end).toHaveBeenCalledTimes(1);
@@ -1853,11 +1857,11 @@ describe('postgres adapter with mocked pool', () => {
         }
 
         await expect(TestPostgres.create('postgresql://example'))
-            .rejects.toThrow('Database object idx_did_docs_doc_trgm exists but is not an index');
+            .rejects.toThrow('Database object idx_did_docs_search_text_trgm exists but is not an index');
         expect(mockClient.release).toHaveBeenCalledWith(true);
     });
 
-    it('destroys the migration connection when acquiring the advisory lock fails', async () => {
+    it('destroys the setup connection when acquiring the advisory lock fails', async () => {
         const Postgres = await loadPostgresModule();
         const failure = new Error('lock failed');
         const mockClient = {
@@ -1880,7 +1884,7 @@ describe('postgres adapter with mocked pool', () => {
         expect(mockClient.release).toHaveBeenCalledWith(true);
     });
 
-    it('destroys the migration connection when releasing the advisory lock fails', async () => {
+    it('destroys the setup connection when releasing the advisory lock fails', async () => {
         const Postgres = await loadPostgresModule();
         const mockClient = {
             query: jest.fn(async (sql: string) => {
