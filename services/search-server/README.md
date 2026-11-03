@@ -141,11 +141,13 @@ reclassify stored DIDs and does not apply to historical metric snapshots.
     - `limit` (optional, default `50`, maximum `500`)
     - `cursor` (optional, the `nextCursor` returned by the preceding page)
 - **Notes**: Search terms are literal. SQL wildcard characters `%` and `_` do
-  not broaden the search. Terms shorter than three Unicode characters are
-  rejected because PostgreSQL's trigram index cannot serve them efficiently.
-  Use structured endpoints for short values. Results are ordered by effective
-  DID. Pagination limits the response size but does not avoid the complete text
-  match performed by PostgreSQL's materialized query.
+  not broaden the search. Matching is case-insensitive for ASCII letters on
+  every database adapter; non-ASCII case equivalence depends on the adapter and
+  PostgreSQL collation. Terms shorter than three Unicode characters are rejected
+  because PostgreSQL's trigram index cannot serve them efficiently. Use
+  structured endpoints for short values. Results are ordered by effective DID.
+  Pagination limits the response size but does not avoid the complete text match
+  performed by PostgreSQL's materialized query.
 - **Returns**:
     - `200 OK` + `{ "dids": [...], "nextCursor": "did:..." }`.
       `nextCursor` is `null` on the final page.

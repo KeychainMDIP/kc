@@ -458,13 +458,14 @@ export default class DIDsDbMemory implements DIDsDb {
 
     async searchDocs(q: string, options: SearchDocsOptions): Promise<SearchDocsResult> {
         const { didPrefix, includeAmbiguous = false, limit, cursor } = options;
+        const normalizedQuery = q.toLowerCase();
         const out: string[] = [];
         const publishedPrefixes = this.publishedReferencePrefixes();
         for (const [did, doc] of this.docs.entries()) {
             const effectiveDid = this.scopedDID(did, publishedPrefixes, didPrefix, includeAmbiguous);
             if (!effectiveDid) continue;
             if (cursor && effectiveDid <= cursor) continue;
-            if (JSON.stringify(doc).includes(q)) out.push(effectiveDid);
+            if (JSON.stringify(doc).toLowerCase().includes(normalizedQuery)) out.push(effectiveDid);
         }
         out.sort();
 

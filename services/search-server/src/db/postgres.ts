@@ -1360,7 +1360,7 @@ export default class Postgres implements DIDsDb {
                 `WITH matches AS MATERIALIZED (
                     SELECT did
                     FROM did_docs
-                    WHERE doc::text LIKE '%' || $1 || '%' ESCAPE '!'
+                    WHERE doc::text ILIKE '%' || $1 || '%' ESCAPE '!'
                  )
                  SELECT dc.prefix || ':' || dc.suffix AS did,
                         dc.prefix_ambiguous AS "prefixAmbiguous"
