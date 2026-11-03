@@ -2400,7 +2400,7 @@ describe('DidIndexer published credential indexing', () => {
         await (indexer as any).refreshIndex();
         await (indexer as any).refreshIndex();
 
-        expect(logger.error).toHaveBeenCalledWith({ error }, 'Error in refreshIndex');
+        expect(logger.error).toHaveBeenCalledWith({ err: error }, 'Error in refreshIndex');
         expect(await db.loadSyncState('index.lastSyncError')).toBeNull();
         expect(await db.loadSyncState('index.snapshot.complete')).toBe('true');
     });
@@ -2433,7 +2433,7 @@ describe('DidIndexer published credential indexing', () => {
             await intervalCallback!();
 
             expect(logger.error).toHaveBeenCalledWith(
-                { error: expect.any(Error) },
+                { err: expect.any(Error) },
                 'refreshIndex error'
             );
 

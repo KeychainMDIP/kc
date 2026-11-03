@@ -321,7 +321,7 @@ describe('DidIndexer gatekeeper read boundary', () => {
 
         await expect(Promise.all([starting, indexer.stopIndexing()])).resolves.toBeDefined();
         expect(logger.error).toHaveBeenCalledWith(
-            { error: 'connection reset' },
+            { err: 'connection reset' },
             'Error in refreshIndex'
         );
         expect(await db.loadSyncState('index.lastSyncError')).toBe('connection reset');

@@ -118,7 +118,7 @@ export default class DidIndexer {
 
         this.timer = setInterval(() =>
             this.runRefresh().catch((err) => {
-                this.log.error({ error: err }, "refreshIndex error");
+                this.log.error({ err }, "refreshIndex error");
             }),
         this.intervalMs);
     }
@@ -192,10 +192,10 @@ export default class DidIndexer {
             }
             catch (saveError) {
                 if (this.yieldIfOwnershipLost(saveError)) return;
-                this.log.warn({ error: saveError }, "Could not save sync error state");
+                this.log.warn({ err: saveError }, "Could not save sync error state");
             }
 
-            this.log.error({ error: err }, "Error in refreshIndex");
+            this.log.error({ err }, "Error in refreshIndex");
         } finally {
             this.refreshInProgress = false;
         }
@@ -450,9 +450,9 @@ export default class DidIndexer {
             }
             catch (saveError) {
                 if (this.yieldIfOwnershipLost(saveError)) return;
-                this.log.warn({ error: saveError }, 'Could not save metrics error state');
+                this.log.warn({ err: saveError }, 'Could not save metrics error state');
             }
-            this.log.error({ error }, 'Network metrics rebuild error');
+            this.log.error({ err: error }, 'Network metrics rebuild error');
         }
     }
 

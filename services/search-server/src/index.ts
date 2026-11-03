@@ -179,7 +179,7 @@ async function main(shutdown: Shutdown) {
         try {
             res.json(await getSearchStatus(didDb, config.db));
         } catch (error: any) {
-            log.error({ error }, 'Status error');
+            log.error({ err: error }, 'Status error');
             res.status(error instanceof SearchUnavailableError ? 503 : 500).send({ error: error.toString() });
         }
     });
@@ -189,7 +189,7 @@ async function main(shutdown: Shutdown) {
             const target = await findDIDReadTarget(didDb, req.params.did, config.didPrefix);
             res.json(target.events);
         } catch (error) {
-            log.error({ error }, 'Get DID events error');
+            log.error({ err: error }, 'Get DID events error');
             res.status(error instanceof SearchUnavailableError ? 503 : 500).json({ error: String(error) });
         }
     });
@@ -250,7 +250,7 @@ async function main(shutdown: Shutdown) {
             });
             res.status(result.status).send(result.body);
         } catch (error) {
-            log.error({ error }, 'Get DID error');
+            log.error({ err: error }, 'Get DID error');
             res.status(error instanceof SearchUnavailableError ? 503 : 500).json({ error: String(error) });
         }
     });
@@ -276,7 +276,7 @@ async function main(shutdown: Shutdown) {
 
             res.json(result);
         } catch (error) {
-            log.error({ error }, '/events error');
+            log.error({ err: error }, '/events error');
             res.status(error instanceof SearchUnavailableError ? 503 : 500).json({ error: String(error) });
         }
     });
@@ -314,10 +314,10 @@ async function main(shutdown: Shutdown) {
             }));
         } catch (error) {
             if (error && typeof error === 'object' && 'code' in error && error.code === '57014') {
-                log.warn({ error }, '/api/search timed out');
+                log.warn({ err: error }, '/api/search timed out');
                 return res.status(503).json({ error: 'Search timed out' });
             }
-            log.error({ error }, '/api/search error');
+            log.error({ err: error }, '/api/search error');
             return res.status(error instanceof SearchUnavailableError ? 503 : 500).json({ error: String(error) });
         }
     });
@@ -336,7 +336,7 @@ async function main(shutdown: Shutdown) {
             );
             return res.json(dids);
         } catch (err) {
-            log.error({ error: err }, '/query error');
+            log.error({ err }, '/query error');
             res.status(err instanceof SearchUnavailableError ? 503 : 500).json({ error: String(err) });
         }
     });
@@ -358,7 +358,7 @@ async function main(shutdown: Shutdown) {
             }));
         }
         catch (error) {
-            log.error({ error }, '/identities error');
+            log.error({ err: error }, '/identities error');
             return res.status(error instanceof SearchUnavailableError ? 503 : 500).json({ error: String(error) });
         }
     });
@@ -377,7 +377,7 @@ async function main(shutdown: Shutdown) {
             );
             return res.json({ schemas });
         } catch (error) {
-            log.error({ error }, '/metrics/schemas/published error');
+            log.error({ err: error }, '/metrics/schemas/published error');
             return res.status(error instanceof SearchUnavailableError ? 503 : 500).json({ error: String(error) });
         }
     });
@@ -406,7 +406,7 @@ async function main(shutdown: Shutdown) {
             return res.status(result.status).json(result.body);
         }
         catch (error) {
-            log.error({ error }, 'Network metrics snapshot error');
+            log.error({ err: error }, 'Network metrics snapshot error');
             return res.status(error instanceof SearchUnavailableError ? 503 : 500).json({ error: String(error) });
         }
     };
@@ -458,7 +458,7 @@ async function main(shutdown: Shutdown) {
 
             res.json(result);
         } catch (error) {
-            log.error({ error }, '/metrics/credentials/published error');
+            log.error({ err: error }, '/metrics/credentials/published error');
             res.status(error instanceof SearchUnavailableError ? 503 : 500).json({ error: String(error) });
         }
     });
@@ -491,7 +491,7 @@ async function main(shutdown: Shutdown) {
 
             res.json(result);
         } catch (error) {
-            log.error({ error }, '/metrics/challenge-receipts error');
+            log.error({ err: error }, '/metrics/challenge-receipts error');
             res.status(error instanceof SearchUnavailableError ? 503 : 500).json({ error: String(error) });
         }
     });
@@ -524,7 +524,7 @@ async function main(shutdown: Shutdown) {
 
             res.json(result);
         } catch (error) {
-            log.error({ error }, '/metrics/challenge-receipts/usage error');
+            log.error({ err: error }, '/metrics/challenge-receipts/usage error');
             res.status(error instanceof SearchUnavailableError ? 503 : 500).json({ error: String(error) });
         }
     });
@@ -551,7 +551,7 @@ async function main(shutdown: Shutdown) {
     }
     log.info(`Listening on port ${port}`);
     server!.on('error', error => {
-        log.error({ error }, 'HTTP server error');
+        log.error({ err: error }, 'HTTP server error');
         void shutdown(1);
     });
 
@@ -567,7 +567,7 @@ async function main(shutdown: Shutdown) {
         if (dependencyRequests.signal.aborted) {
             return;
         }
-        log.error({ error }, 'Initial indexing failed');
+        log.error({ err: error }, 'Initial indexing failed');
         void shutdown(1);
     });
 }

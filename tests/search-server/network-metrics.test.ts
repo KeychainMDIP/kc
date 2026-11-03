@@ -994,11 +994,11 @@ describe('DidIndexer network metrics scheduling', () => {
         await (indexer as any).refreshNetworkMetricsIfDue();
 
         expect(log.warn).toHaveBeenCalledWith(
-            { error: stateFailure },
+            { err: stateFailure },
             'Could not save metrics error state'
         );
         expect(log.error).toHaveBeenCalledWith(
-            { error: metricsFailure },
+            { err: metricsFailure },
             'Network metrics rebuild error'
         );
         expect(await db.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsDidPrefix)).toBeNull();

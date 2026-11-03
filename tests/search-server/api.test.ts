@@ -348,7 +348,7 @@ describe('Search Server HTTP routes', () => {
             status: 503,
             body: { error: 'Search timed out' },
         });
-        expect(logger.warn).toHaveBeenCalledWith({ error }, '/api/search timed out');
+        expect(logger.warn).toHaveBeenCalledWith({ err: error }, '/api/search timed out');
     });
 
     it('resolves event histories and forwards version options, returning 404 for unresolved documents', async () => {
@@ -518,7 +518,7 @@ describe('Search Server HTTP routes', () => {
         expect(stopIndexing).toHaveBeenCalledTimes(1);
         expect(disconnect).toHaveBeenCalledTimes(1);
         expect(process.exit).toHaveBeenCalledWith(fail ? 1 : 0);
-        if (fail) expect(logger.error).toHaveBeenCalledWith({ error: expect.any(Error) }, 'Error during shutdown');
+        if (fail) expect(logger.error).toHaveBeenCalledWith({ err: expect.any(Error) }, 'Error during shutdown');
     });
 
     it('drains active HTTP requests before stopping indexing and disconnecting storage', async () => {
@@ -559,7 +559,7 @@ describe('Search Server HTTP routes', () => {
         expect(stopIndexing).toHaveBeenCalledTimes(1);
         expect(disconnect).toHaveBeenCalledTimes(1);
         expect(process.exit).toHaveBeenCalledWith(1);
-        expect(logger.error).toHaveBeenCalledWith({ error: expect.any(AggregateError) }, 'Error during shutdown');
+        expect(logger.error).toHaveBeenCalledWith({ err: expect.any(AggregateError) }, 'Error during shutdown');
     });
 
     it('routes HTTP listener errors through fatal cleanup', async () => {
@@ -572,7 +572,7 @@ describe('Search Server HTTP routes', () => {
         expect(stopIndexing).toHaveBeenCalledTimes(1);
         expect(disconnect).toHaveBeenCalledTimes(1);
         expect(process.exit).toHaveBeenCalledWith(1);
-        expect(logger.error).toHaveBeenCalledWith({ error: expect.any(Error) }, 'HTTP server error');
+        expect(logger.error).toHaveBeenCalledWith({ err: expect.any(Error) }, 'HTTP server error');
     });
 
     it('routes initial indexing failures through fatal cleanup', async () => {
@@ -586,7 +586,7 @@ describe('Search Server HTTP routes', () => {
         expect(stopIndexing).toHaveBeenCalledTimes(1);
         expect(disconnect).toHaveBeenCalledTimes(1);
         expect(process.exit).toHaveBeenCalledWith(1);
-        expect(logger.error).toHaveBeenCalledWith({ error: indexingError }, 'Initial indexing failed');
+        expect(logger.error).toHaveBeenCalledWith({ err: indexingError }, 'Initial indexing failed');
     });
 
     it('does not treat index cancellation during shutdown as fatal', async () => {
@@ -604,7 +604,7 @@ describe('Search Server HTTP routes', () => {
         await new Promise(resolve => setImmediate(resolve));
 
         expect(process.exit).toHaveBeenCalledWith(0);
-        expect(logger.error).not.toHaveBeenCalledWith({ error: expect.any(Error) }, 'Initial indexing failed');
+        expect(logger.error).not.toHaveBeenCalledWith({ err: expect.any(Error) }, 'Initial indexing failed');
     });
 
     it('routes asynchronous listen failures through startup cleanup', async () => {
@@ -622,7 +622,7 @@ describe('Search Server HTTP routes', () => {
         expect(stopIndexing).toHaveBeenCalledTimes(1);
         expect(disconnect).toHaveBeenCalledTimes(1);
         expect(process.exit).toHaveBeenCalledWith(1);
-        expect(logger.error).toHaveBeenCalledWith({ error: listenError }, '[search-server] Fatal error');
+        expect(logger.error).toHaveBeenCalledWith({ err: listenError }, '[search-server] Fatal error');
     });
 
     it('exits on startup failure without starting the HTTP listener', async () => {
@@ -633,7 +633,7 @@ describe('Search Server HTTP routes', () => {
         expect(startIndexing).not.toHaveBeenCalled();
         expect(disconnect).toHaveBeenCalledTimes(1);
         expect(process.exit).toHaveBeenCalledWith(1);
-        expect(logger.error).toHaveBeenCalledWith({ error: expect.any(Error) }, '[search-server] Fatal error');
+        expect(logger.error).toHaveBeenCalledWith({ err: expect.any(Error) }, '[search-server] Fatal error');
     });
 });
 
