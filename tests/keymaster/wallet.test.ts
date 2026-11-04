@@ -19,7 +19,7 @@ import { encMnemonic, decMnemonic } from '@mdip/keymaster/encryption';
 let ipfs: HeliaClient;
 let gatekeeper: Gatekeeper;
 let walletStore: WalletJsonMemory;
-let providerStore: WalletJsonMemory;
+let providerStore: import('@mdip/keymaster/types').WalletProviderStore;
 let cipher: CipherNode;
 let walletProvider: MnemonicHdWalletProvider;
 let keymaster: Keymaster;
@@ -365,7 +365,7 @@ describe('backupWallet', () => {
         const data = seedBank.didDocumentData as { wallet?: string };
 
         expect(did).toBe(doc.didDocument!.id);
-        expect(typeof doc.didDocumentData?.backup).toBe('string');
+        expect(typeof (doc.didDocumentData as { backup?: string })?.backup).toBe('string');
         expect(wallet.backupDid).toBe(did);
         expect(data.wallet).toBe(did);
     });
@@ -462,22 +462,20 @@ describe('recoverWallet', () => {
         expect(recovered.ids.Alice).toBeUndefined();
     });
 
-    it('should do nothing if wallet was not backed up', async () => {
+    it('should reject recovery if wallet was not backed up', async () => {
         await keymaster.createId('Bob');
         const current = await keymaster.loadWallet();
 
-        const recovered = await keymaster.recoverWallet();
-
-        expect(recovered).toStrictEqual(current);
+        await expect(keymaster.recoverWallet()).rejects.toThrow('No backup DID found');
+        expect(await keymaster.loadWallet()).toStrictEqual(current);
     });
 
-    it('should do nothing if backup DID is invalid', async () => {
+    it('should reject recovery if backup DID is invalid', async () => {
         await keymaster.createId('Bob');
         const current = await keymaster.loadWallet();
 
-        const recovered = await keymaster.recoverWallet('did:test:invalid');
-
-        expect(recovered).toStrictEqual(current);
+        await expect(keymaster.recoverWallet('did:test:invalid')).rejects.toThrow('Invalid DID');
+        expect(await keymaster.loadWallet()).toStrictEqual(current);
     });
 
     it('should not overwrite wallet metadata when recovered backup fingerprint mismatches', async () => {
@@ -487,10 +485,9 @@ describe('recoverWallet', () => {
         mismatched.provider.walletFingerprint = 'wrong-wallet-fingerprint';
         const backupDid = await keymaster.createAsset({ backup: mismatched });
 
-        const recovered = await keymaster.recoverWallet(backupDid);
-
-        expect(recovered).toStrictEqual(current);
-        expect(await keymaster.loadWallet()).toStrictEqual(current);
+        const before = JSON.parse(JSON.stringify(await keymaster.loadWallet()));
+        await expect(keymaster.recoverWallet(backupDid)).rejects.toThrow('Wallet provider does not match');
+        expect(await keymaster.loadWallet()).toStrictEqual(before);
     });
 
     it('should recover wallet from explicit backup DID after resetting metadata', async () => {
@@ -654,18 +651,16 @@ describe('fixWallet', () => {
         expect(namesRemoved).toBe(0);
     });
 
-    it('should remove deleted DIDs', async () => {
+    it('should retain missing DIDs until their histories can be resolved', async () => {
         const agentDID = await keymaster.createId('Alice');
         const schemaDID = await keymaster.createSchema();
         await keymaster.addName('schema', schemaDID);
+        const before = JSON.parse(JSON.stringify(await keymaster.loadWallet()));
         await gatekeeper.removeDIDs([agentDID, schemaDID]);
 
-        const { idsRemoved, ownedRemoved, heldRemoved, namesRemoved } = await keymaster.fixWallet();
-
-        expect(idsRemoved).toBe(1);
-        expect(ownedRemoved).toBe(0);
-        expect(heldRemoved).toBe(0);
-        expect(namesRemoved).toBe(1);
+        await expect(keymaster.fixWallet()).rejects.toThrow('Invalid DID: unknown');
+        expect(await keymaster.loadWallet()).toStrictEqual(before);
+        expect(await walletStore.loadWallet()).toStrictEqual(before);
     });
 
     it('should remove invalid DIDs', async () => {

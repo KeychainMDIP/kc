@@ -104,6 +104,24 @@ describe('generateDID', () => {
         expect(did.startsWith('did:custom:')).toBe(true);
     });
 
+    it.each(['invalid', 'did:UPPER', 'did:hyphen-name', 'did:test:extra', ''])(
+        'should reject invalid operation prefix %j',
+        async (prefix) => {
+            const operation: Operation = {
+                type: 'create',
+                mdip: {
+                    version: 1,
+                    type: 'asset',
+                    registry: 'mockRegistry',
+                    prefix,
+                },
+            };
+
+            await expect(gatekeeper.generateDID(operation))
+                .rejects.toThrow(`Invalid operation: mdip.prefix=${prefix}`);
+        }
+    );
+
     it('should create same DID from same operation with date included', async () => {
         const mockTxn: Operation = {
             type: "create",
@@ -267,7 +285,7 @@ describe('ipfs disabled', () => {
         await expect(gatekeeper.getJSON('cid')).rejects.toThrow('IPFS disabled');
     });
 
-    it('should still generate CID when save=true and disabled', async () => {
+    it('should still generate CID when disabled', async () => {
         const gatekeeper = new Gatekeeper({ db, ipfsEnabled: false });
         const operation: Operation = {
             type: "create",
@@ -279,7 +297,7 @@ describe('ipfs disabled', () => {
             }
         };
 
-        const cid = await gatekeeper.generateCID(operation, true);
+        const cid = await gatekeeper.generateCID(operation);
         expect(typeof cid).toBe('string');
     });
 
@@ -532,7 +550,7 @@ describe('Test operation validation errors', () => {
     it('create error with invalid signature', async () => {
         const keypair = cipher.generateRandomJwk();
         let agentOp = await helper.createAgentOp(keypair);
-        agentOp.mdip!.prefix = "dummy";
+        agentOp.mdip!.prefix = "did:dummy";
 
         try {
             await gatekeeper.createDID(agentOp);
@@ -545,24 +563,23 @@ describe('Test operation validation errors', () => {
 });
 
 describe('gatekeeper.db', () => {
-    it('getEvents should return empty list on invalid did', async () => {
-        // @ts-expect-error Testing invalid DID
-        const events = await gatekeeper.db.getEvents(null);
-
-        expect(events).toStrictEqual([]);
+    it('getEvents should reject an invalid did', async () => {
+        await expect(
+            // @ts-expect-error Testing invalid DID
+            db.getEvents(null)
+        ).rejects.toThrow('Invalid DID');
     });
 
-    it('getEvents should return empty list on malformed DID with no suffix', async () => {
-        // @ts-expect-error Testing invalid DID
-        const events = await gatekeeper.db.getEvents("did:test:");
-
-        expect(events).toStrictEqual([]);
+    it('getEvents should reject a malformed DID with no suffix', async () => {
+        await expect(
+            db.getEvents("did:test:")
+        ).rejects.toThrow('Invalid DID');
     });
 
     it('addEvent should throw exception on invalid did', async () => {
         try {
             // @ts-expect-error Testing invalid DID
-            await gatekeeper.db.addEvent(null);
+            await db.addEvent(null);
             throw new ExpectedExceptionError();
         } catch (error: any) {
             expect(error.message).toBe('Invalid DID');

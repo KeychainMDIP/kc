@@ -19,13 +19,6 @@ export interface DecodedLegacyJsonMessagesResult {
     error?: string;
 }
 
-export function supportsLegacyRawTransportMessage(messageType: string): boolean {
-    return messageType === 'ping'
-        || messageType === 'sync'
-        || messageType === 'batch'
-        || messageType === 'queue';
-}
-
 function isJsonWhitespace(byte: number): boolean {
     return byte === 0x20 || byte === 0x09 || byte === 0x0a || byte === 0x0d;
 }

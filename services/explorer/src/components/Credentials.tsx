@@ -28,6 +28,10 @@ import {
     type PublishedSchemaMetric,
 } from "../api/searchClient.js";
 import { useSnackbar } from "../contexts/SnackbarProvider.js";
+import {
+    findCredentialManifestEntry,
+    hasSameDIDSuffix,
+} from "../shared/credential-manifest.js";
 import type { MdipDocument } from "@mdip/gatekeeper/types";
 
 type CredentialDetailDocument = MdipDocument | Record<string, unknown>;
@@ -147,7 +151,10 @@ function getManifestEntryFromDoc(
         return null;
     }
 
-    const entry = (manifest as Record<string, unknown>)[credentialDid];
+    const entry = findCredentialManifestEntry(
+        manifest as Record<string, unknown>,
+        credentialDid
+    );
 
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
         return null;
@@ -258,7 +265,7 @@ function Credentials() {
     );
 
     const selectedSchemaCount = useMemo(
-        () => schemaCounts.find(row => row.schemaDid === schemaDid)?.count ?? 0,
+        () => schemaCounts.find(row => hasSameDIDSuffix(row.schemaDid, schemaDid))?.count ?? 0,
         [schemaCounts, schemaDid]
     );
 
@@ -343,10 +350,11 @@ function Credentials() {
 
     useEffect(() => {
         let ignore = false;
+        const controller = new AbortController();
 
         async function fetchSchemaCounts() {
             try {
-                const schemas = await fetchPublishedSchemaMetrics();
+                const schemas = await fetchPublishedSchemaMetrics(controller.signal);
 
                 if (!ignore) {
                     setSchemaCounts(schemas);
@@ -363,11 +371,13 @@ function Credentials() {
 
         return () => {
             ignore = true;
+            controller.abort();
         };
     }, [setError]);
 
     useEffect(() => {
         let ignore = false;
+        const controller = new AbortController();
 
         async function fetchCredentials() {
             if (!schemaDid) {
@@ -381,7 +391,7 @@ function Credentials() {
                     schemaDid,
                     limit: pageSize,
                     offset: page * pageSize,
-                });
+                }, controller.signal);
 
                 const total = result.total;
 
@@ -406,6 +416,7 @@ function Credentials() {
 
         return () => {
             ignore = true;
+            controller.abort();
         };
     }, [page, pageSize, schemaDid, setError, updateParams]);
 
@@ -435,6 +446,7 @@ function Credentials() {
 
     useEffect(() => {
         let ignore = false;
+        const controller = new AbortController();
 
         async function fetchDetail() {
             if (!selectedDetailDid) {
@@ -457,7 +469,7 @@ function Credentials() {
                         schemaDid: schemaDid || undefined,
                         limit: 1,
                         offset: 0,
-                    });
+                    }, controller.signal);
 
                     const fetchedRow = result.credentials[0];
                     if (fetchedRow) {
@@ -470,7 +482,11 @@ function Credentials() {
                 }
 
                 if (nextDetailRecord) {
-                    const subjectDoc = await fetchDIDDocument(nextDetailRecord.subjectDid);
+                    const subjectDoc = await fetchDIDDocument(
+                        nextDetailRecord.subjectDid,
+                        {},
+                        controller.signal
+                    );
                     const manifestEntry = subjectDoc
                         ? getManifestEntryFromDoc({
                             doc: subjectDoc,
@@ -491,7 +507,7 @@ function Credentials() {
                     return;
                 }
 
-                const response = await fetchDIDDocument(selectedDetailDid);
+                const response = await fetchDIDDocument(selectedDetailDid, {}, controller.signal);
 
                 if (!ignore) {
                     if (!response) {
@@ -528,6 +544,7 @@ function Credentials() {
 
         return () => {
             ignore = true;
+            controller.abort();
         };
     }, [listDetailRecord, schemaDid, selectedDetailDid, setError]);
 
@@ -594,12 +611,13 @@ function Credentials() {
                 </>
             ) : !schemaDid ? (
                 <>
-                    <Box sx={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", mb: 2, gap: 2, flexWrap: "wrap" }}>
-                        <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", flex: "1 1 620px" }}>
-                            <SummaryCard label="Total Published" value={totalPublished} />
-                            <SummaryCard label="Schemas In Use" value={filteredSchemaCounts.length} />
-                        </Box>
-                        <Box sx={{ display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap", ml: "auto" }}>
+                    <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", mb: 2 }}>
+                        <SummaryCard label="Total Credentials" value={totalPublished} />
+                        <SummaryCard label="Schemas In Use" value={filteredSchemaCounts.length} />
+                    </Box>
+
+                    <Box sx={{ display: "flex", alignItems: "center", justifyContent: "flex-end", mb: 2, gap: 2, flexWrap: "wrap" }}>
+                        <Box sx={{ display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap" }}>
                             {hasMultipleSchemaPrefixes && (
                                 <FormControl size="small" sx={{ minWidth: 140 }}>
                                     <Select
@@ -662,7 +680,7 @@ function Credentials() {
                                 <TableHead>
                                     <TableRow>
                                         <TableCell>Schema</TableCell>
-                                        <TableCell width={140}>Published</TableCell>
+                                        <TableCell width={140}>Credentials</TableCell>
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>

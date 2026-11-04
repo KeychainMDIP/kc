@@ -5,16 +5,17 @@ import { fileURLToPath } from 'url';
 import rateLimit from 'express-rate-limit';
 
 import GatekeeperClient from '@mdip/gatekeeper/client';
+import type { ResolveDIDOptions } from '@mdip/gatekeeper/types';
 import Keymaster, { MnemonicHdWalletProvider } from '@mdip/keymaster';
 import SearchClient from '@mdip/keymaster/search';
-import { KeymasterStore, MdipWalletBundle, WalletProviderStore } from '@mdip/keymaster/types';
+import { KeymasterStore, WalletProviderStore } from '@mdip/keymaster/types';
 import WalletJson from '@mdip/keymaster/wallet/json';
 import WalletRedis from '@mdip/keymaster/wallet/redis';
 import WalletMongo from '@mdip/keymaster/wallet/mongo';
 import WalletSQLite from '@mdip/keymaster/wallet/sqlite';
 import WalletPostgres from '@mdip/keymaster/wallet/postgres';
 import CipherNode from '@mdip/cipher/node';
-import { InvalidParameterError, KeymasterError } from '@mdip/common/errors';
+import { InvalidParameterError } from '@mdip/common/errors';
 import { childLogger } from '@mdip/common/logger';
 import config from './config.js';
 
@@ -183,12 +184,68 @@ else {
 }
 
 app.use(logRequest);
-app.use(express.json());
+app.use(express.json({ limit: config.jsonLimit }));
 
 // Define __dirname in ES module scope
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const DIDNotFound = { error: 'DID not found' };
+
+function optionalQueryString(value: unknown, name: string): string | undefined {
+    if (value === undefined) {
+        return undefined;
+    }
+    if (typeof value !== 'string' || !value) {
+        throw new InvalidParameterError(name);
+    }
+    return value;
+}
+
+function parseResolveOptions(query: express.Request['query']): ResolveDIDOptions {
+    const { versionTime, versionSequence } = query;
+    const options: ResolveDIDOptions = {};
+
+    if (versionTime !== undefined) {
+        if (typeof versionTime !== 'string') {
+            throw new InvalidParameterError('versionTime');
+        }
+
+        const parts = /^(\d{4})-(\d{2})-(\d{2})T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/i.exec(versionTime);
+        if (!parts || !Number.isFinite(Date.parse(versionTime))) {
+            throw new InvalidParameterError('versionTime');
+        }
+
+        const calendarDate = new Date(0);
+        calendarDate.setUTCFullYear(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]));
+        if (calendarDate.getUTCFullYear() !== Number(parts[1])
+            || calendarDate.getUTCMonth() + 1 !== Number(parts[2])
+            || calendarDate.getUTCDate() !== Number(parts[3])) {
+            throw new InvalidParameterError('versionTime');
+        }
+        options.versionTime = versionTime;
+    }
+
+    if (versionSequence !== undefined) {
+        if (typeof versionSequence !== 'string'
+            || !/^[1-9]\d*$/.test(versionSequence)
+            || !Number.isSafeInteger(Number(versionSequence))) {
+            throw new InvalidParameterError('versionSequence');
+        }
+        options.versionSequence = Number(versionSequence);
+    }
+
+    for (const name of ['confirm', 'verify'] as const) {
+        const value = query[name];
+        if (value !== undefined) {
+            if (value !== 'true' && value !== 'false') {
+                throw new InvalidParameterError(name);
+            }
+            options[name] = value === 'true';
+        }
+    }
+
+    return options;
+}
 
 const serveClient = (process.env.KC_KEYMASTER_SERVE_CLIENT ?? 'true').toLowerCase() === 'true';
 
@@ -362,36 +419,11 @@ v1router.get('/wallet', async (req, res) => {
  *             type: object
  *             properties:
  *               wallet:
- *                 type: object
- *                 properties:
- *                   version:
- *                     type: integer
- *                   provider:
- *                     type: object
- *                     properties:
- *                       type:
- *                         type: string
- *                       walletFingerprint:
- *                         type: string
- *                   ids:
- *                     type: object
- *                     additionalProperties:
- *                       type: object
- *                       properties:
- *                         did:
- *                           type: string
- *                         keyRef:
- *                           type: string
- *                         owned:
- *                           type: array
- *                           items:
- *                             type: string
- *                   current:
- *                     type: string
- *                   names:
- *                     type: object
- *                     additionalProperties:
- *                       type: string
+ *                 $ref: '#/components/schemas/StoredWallet'
+ *               overwrite:
+ *                 type: boolean
+ *                 default: true
+ *                 description: Whether to replace an existing wallet.
  *             required:
  *               - wallet
  *     responses:
@@ -404,6 +436,15 @@ v1router.get('/wallet', async (req, res) => {
  *               properties:
  *                 ok:
  *                   type: boolean
+ *       400:
+ *         description: The overwrite value must be a boolean.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
  *       500:
  *         description: Internal server error.
  *         content:
@@ -416,11 +457,14 @@ v1router.get('/wallet', async (req, res) => {
  */
 v1router.put('/wallet', async (req, res) => {
     try {
-        const { wallet } = req.body;
-        const ok = await keymaster.saveWallet(wallet);
+        const { wallet, overwrite } = req.body;
+        if (overwrite !== undefined && typeof overwrite !== 'boolean') {
+            throw new InvalidParameterError('overwrite');
+        }
+        const ok = await keymaster.saveWallet(wallet, overwrite);
         res.json({ ok });
     } catch (error: any) {
-        res.status(500).send({ error: error.toString() });
+        res.status(error instanceof InvalidParameterError ? 400 : 500).send({ error: error.toString() });
     }
 });
 
@@ -494,46 +538,13 @@ v1router.put('/wallet', async (req, res) => {
  */
 v1router.post('/wallet/new', async (req, res) => {
     try {
-        const { mnemonic, overwrite } = req.body;
+        const { mnemonic, overwrite } = req.body ?? {};
         const wallet = await keymaster.newWallet(mnemonic, overwrite);
         res.json({ wallet });
     } catch (error: any) {
         res.status(500).send({ error: error.toString() });
     }
 });
-
-function isMdipWalletBundle(bundle: unknown): bundle is MdipWalletBundle {
-    if (!isRecord(bundle)
-        || bundle.version !== 1
-        || bundle.type !== 'mdip-wallet-bundle'
-        || !isRecord(bundle.keymaster)
-        || !isRecord(bundle.provider)) {
-        return false;
-    }
-
-    const metadata = bundle.keymaster;
-    const providerMetadata = metadata.provider;
-    const provider = bundle.provider;
-
-    return metadata.version === 2
-        && isRecord(providerMetadata)
-        && provider.version === 1
-        && provider.type === 'mnemonic-hd';
-}
-
-async function validateWalletBundleImport(bundle: unknown): Promise<MdipWalletBundle> {
-    if (!isMdipWalletBundle(bundle)) {
-        throw new InvalidParameterError('bundle');
-    }
-
-    const providerFingerprint = await walletProvider.getFingerprintForWallet(bundle.provider);
-    if (bundle.keymaster.provider.type !== walletProvider.type
-        || bundle.keymaster.provider.walletFingerprint !== providerFingerprint) {
-        throw new KeymasterError('Wallet provider does not match stored metadata.');
-    }
-
-    return bundle;
-}
 
 /**
  * @swagger
@@ -562,14 +573,7 @@ async function validateWalletBundleImport(bundle: unknown): Promise<MdipWalletBu
  */
 v1router.get('/wallet/bundle', async (req, res) => {
     try {
-        const wallet = await keymaster.loadWallet();
-        const provider = await walletProvider.backupWallet();
-        const bundle: MdipWalletBundle = {
-            version: 1,
-            type: 'mdip-wallet-bundle',
-            keymaster: wallet,
-            provider,
-        };
+        const bundle = await keymaster.exportWalletBundle();
         res.json({ bundle });
     } catch (error: any) {
         res.status(500).send({ error: error.toString() });
@@ -614,32 +618,8 @@ v1router.get('/wallet/bundle', async (req, res) => {
  */
 v1router.put('/wallet/bundle', async (req, res) => {
     try {
-        const bundle = await validateWalletBundleImport(req.body?.bundle);
-        const previousProvider = await walletProvider.backupWallet().catch(() => null);
-        let providerSaved = false;
-
-        const providerOk = await walletProvider.saveWallet(bundle.provider, true);
-        if (!providerOk) {
-            throw new Error('save provider wallet failed');
-        }
-        providerSaved = true;
-
-        let ok = false;
-        try {
-            ok = await keymaster.saveWallet(bundle.keymaster, true);
-            if (!ok) {
-                throw new Error('save wallet failed');
-            }
-        }
-        catch (error) {
-            if (providerSaved && previousProvider) {
-                await walletProvider.saveWallet(previousProvider, true);
-            }
-            throw error;
-        }
-
-        const wallet = await keymaster.loadWallet();
-        res.json({ ok, wallet });
+        const wallet = await keymaster.importWalletBundle(req.body?.bundle);
+        res.json({ ok: true, wallet });
     } catch (error: any) {
         res.status(500).send({ error: error.toString() });
     }
@@ -685,6 +665,15 @@ v1router.post('/wallet/backup', async (req, res) => {
  * /wallet/recover:
  *   post:
  *     summary: Recover the wallet from an existing backup.
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               did:
+ *                 type: string
+ *                 description: The optional DID of the wallet backup.
  *     responses:
  *       200:
  *         description: The recovered wallet object.
@@ -884,6 +873,7 @@ v1router.get('/wallet/mnemonic', async (req, res) => {
  *           format: date-time
  *         description: >
  *           Timestamp to return the state of the DID as of this specific time (RFC3339/ISO8601 format).
+ *           A time before the create operation resolves as `notFound`.
  *       - in: query
  *         name: versionSequence
  *         required: false
@@ -897,7 +887,8 @@ v1router.get('/wallet/mnemonic', async (req, res) => {
  *         schema:
  *           type: boolean
  *         description: >
- *           If true, returns the DID Document only if it is fully confirmed on the registry it references.
+ *           If true, requires the create and all applied later events to be confirmed by the DID's native registry.
+ *           An unconfirmed create resolves as `notFound`.
  *       - in: query
  *         name: verify
  *         required: false
@@ -918,9 +909,6 @@ v1router.get('/wallet/mnemonic', async (req, res) => {
  *                   type: object
  *                   description: The resolved DID Document and its metadata.
  *                   properties:
- *                     "@context":
- *                       type: string
- *                       description: DID resolution context (usually "https://w3id.org/did-resolution/v1").
  *                     didDocument:
  *                       type: object
  *                       description: The actual DID Document, if it exists.
@@ -970,7 +958,7 @@ v1router.get('/wallet/mnemonic', async (req, res) => {
  *                           type: string
  *                           format: date-time
  *                         version:
- *                           type: integer
+ *                           type: string
  *                         versionId:
  *                           type: string
  *                           description: A CID or similar identifier for the version.
@@ -980,9 +968,24 @@ v1router.get('/wallet/mnemonic', async (req, res) => {
  *                           type: boolean
  *                         deactivated:
  *                           type: boolean
+ *                         isOwned:
+ *                           type: boolean
+ *                           description: Whether the resolved DID is controlled by an identity in the current wallet.
+ *                         timestamp:
+ *                           type: object
+ *                           description: Optional blockchain timestamp bounds for the current operation.
  *                     didDocumentData:
+ *                       description: Arbitrary JSON data attached to the DID (only present for assets).
+ *                     didResolutionMetadata:
  *                       type: object
- *                       description: Arbitrary data attached to the DID (only present for assets).
+ *                       description: Metadata describing the resolution result.
+ *                       properties:
+ *                         retrieved:
+ *                           type: string
+ *                           format: date-time
+ *                         error:
+ *                           type: string
+ *                           enum: [ "invalidDid", "notFound" ]
  *                     mdip:
  *                       type: object
  *                       description: MDIP-specific metadata fields.
@@ -992,14 +995,25 @@ v1router.get('/wallet/mnemonic', async (req, res) => {
  *                           enum: [ "agent", "asset" ]
  *                         registry:
  *                           type: string
- *                           enum: [ "local", "hyperswarm", "TBTC", "TFTC" ]
+ *                           enum: [ "local", "hyperswarm", "TESS", "TBTC", "TFTC", "Signet", "Signet-Inscription", "BTC-Inscription" ]
  *                         version:
  *                           type: integer
+ *                         prefix:
+ *                           type: string
  *                         validUntil:
  *                           type: string
  *                           format: date-time
- *                         registration:
+ *                         created:
  *                           type: string
+ *       400:
+ *         description: Invalid DID resolution options.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
  *       404:
  *         description: DID not found or cannot be resolved.
  *         content:
@@ -1021,10 +1035,15 @@ v1router.get('/wallet/mnemonic', async (req, res) => {
  */
 v1router.get('/did/:id', async (req, res) => {
     try {
-        const docs = await keymaster.resolveDID(req.params.id, req.query);
+        const docs = await keymaster.resolveDID(req.params.id, parseResolveOptions(req.query));
         res.json({ docs });
-    } catch {
-        res.status(404).send(DIDNotFound);
+    } catch (error) {
+        if (error instanceof InvalidParameterError) {
+            res.status(400).send({ error: error.toString() });
+        }
+        else {
+            res.status(404).send(DIDNotFound);
+        }
     }
 });
 
@@ -1657,42 +1676,6 @@ v1router.delete('/names/:name', async (req, res) => {
 /**
  * @swagger
  * /challenge:
- *   get:
- *     summary: Create a default challenge DID with no parameters.
- *     responses:
- *       200:
- *         description: A DID representing the newly created challenge.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 did:
- *                   type: string
- *                   description: The DID for the newly created challenge.
- *       500:
- *         description: Internal server error.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- */
-v1router.get('/challenge', async (req, res) => {
-    try {
-        const did = await keymaster.createChallenge();
-        res.json({ did });
-    } catch (error: any) {
-        res.status(500).send({ error: error.toString() });
-    }
-});
-
-
-/**
- * @swagger
- * /challenge:
  *   post:
  *     summary: Create a challenge DID with custom data or options.
  *     requestBody:
@@ -1868,6 +1851,10 @@ v1router.post('/response', async (req, res) => {
  *                     type: integer
  *                     description: How many milliseconds to wait between resolution retries.
  *                     default: 1000
+ *                   publish:
+ *                     type: boolean
+ *                     description: Publish challenge receipts when the response matches.
+ *                     default: true
  *                   versionTime:
  *                     type: string
  *                     format: date-time
@@ -1946,6 +1933,56 @@ v1router.post('/response/verify', async (req, res) => {
  * /response/receipts:
  *   post:
  *     summary: Publish challenge usage receipts for a verified response.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - response
+ *             properties:
+ *               response:
+ *                 type: string
+ *                 description: DID of the verified challenge response.
+ *               options:
+ *                 type: object
+ *                 properties:
+ *                   verification:
+ *                     type: object
+ *                     description: Existing verification result. Otherwise, the response is verified first.
+ *                   retries:
+ *                     type: integer
+ *                   delay:
+ *                     type: integer
+ *                   registry:
+ *                     type: string
+ *                   validUntil:
+ *                     type: string
+ *                     format: date-time
+ *                   name:
+ *                     type: string
+ *     responses:
+ *       200:
+ *         description: DIDs of the published challenge receipts.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 dids:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *       400:
+ *         description: The response or options were invalid.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
  */
 v1router.post('/response/receipts', async (req, res) => {
     try {
@@ -2586,7 +2623,7 @@ v1router.post('/schemas/:id/test', async (req, res) => {
  *               properties:
  *                 test:
  *                   type: boolean
- *                   description: true if the DID is an agent; otherwise `false`.
+ *                   description: true if the DID is an agent. Otherwise, `false`.
  *       400:
  *         description: Invalid request or DID.
  *         content:
@@ -2674,7 +2711,14 @@ v1router.post('/credentials/bind', async (req, res) => {
  * @swagger
  * /credentials/held:
  *   get:
- *     summary: List all credentials currently held by the active ID.
+ *     summary: List credentials held by an ID.
+ *     parameters:
+ *       - in: query
+ *         name: id
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: The name or DID of the holder. Defaults to the active ID.
  *     responses:
  *       200:
  *         description: The list of held credential DIDs.
@@ -2687,6 +2731,8 @@ v1router.post('/credentials/bind', async (req, res) => {
  *                   type: array
  *                   items:
  *                     type: string
+ *       400:
+ *         description: Invalid holder query parameter.
  *       500:
  *         description: Internal server error.
  *         content:
@@ -2699,10 +2745,11 @@ v1router.post('/credentials/bind', async (req, res) => {
  */
 v1router.get('/credentials/held', async (req, res) => {
     try {
-        const held = await keymaster.listCredentials();
+        const id = optionalQueryString(req.query.id, 'id');
+        const held = await keymaster.listCredentials(id);
         res.json({ held });
     } catch (error: any) {
-        res.status(500).send({ error: error.toString() });
+        res.status(error instanceof InvalidParameterError ? 400 : 500).send({ error: error.toString() });
     }
 });
 
@@ -2949,10 +2996,17 @@ v1router.post('/credentials/held/:did/unpublish', async (req, res) => {
  * @swagger
  * /credentials/issued:
  *   get:
- *     summary: List all credentials issued by the current ID.
+ *     summary: List credentials issued by an ID.
+ *     parameters:
+ *       - in: query
+ *         name: issuer
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: The name or DID of the issuer. Defaults to the active ID.
  *     responses:
  *       200:
- *         description: The list of credential DIDs issued by the current ID.
+ *         description: The list of credential DIDs issued by the selected ID.
  *         content:
  *           application/json:
  *             schema:
@@ -2962,6 +3016,8 @@ v1router.post('/credentials/held/:did/unpublish', async (req, res) => {
  *                   type: array
  *                   items:
  *                     type: string
+ *       400:
+ *         description: Invalid issuer query parameter.
  *       500:
  *         description: Internal server error.
  *         content:
@@ -2974,10 +3030,11 @@ v1router.post('/credentials/held/:did/unpublish', async (req, res) => {
  */
 v1router.get('/credentials/issued', async (req, res) => {
     try {
-        const issued = await keymaster.listIssued();
+        const issuer = optionalQueryString(req.query.issuer, 'issuer');
+        const issued = await keymaster.listIssued(issuer);
         res.json({ issued });
     } catch (error: any) {
-        res.status(500).send({ error: error.toString() });
+        res.status(error instanceof InvalidParameterError ? 400 : 500).send({ error: error.toString() });
     }
 });
 
@@ -3120,6 +3177,25 @@ v1router.get('/credentials/issued/:did', async (req, res) => {
  *         schema:
  *           type: string
  *         description: The DID of the issued credential to send.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               options:
+ *                 type: object
+ *                 properties:
+ *                   registry:
+ *                     type: string
+ *                   controller:
+ *                     type: string
+ *                   validUntil:
+ *                     type: string
+ *                     format: date-time
+ *                   name:
+ *                     type: string
  *     responses:
  *       200:
  *         description: The DID of the created notice, or null if the credential was not found.
@@ -3607,7 +3683,7 @@ v1router.post('/keys/sign', async (req, res) => {
  *               properties:
  *                 ok:
  *                   type: boolean
- *                   description: true if the signature is valid; otherwise `false`.
+ *                   description: true if the signature is valid. Otherwise, `false`.
  *       500:
  *         description: Internal server error (verification failure or unexpected error).
  *         content:
@@ -3653,16 +3729,6 @@ v1router.post('/keys/verify', async (req, res) => {
  *                 template:
  *                   type: object
  *                   description: A skeleton object containing placeholder values that conform to the schema.
- *       404:
- *         description: Schema not found.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- *                   description: Error message indicating the schema was not found.
  *       500:
  *         description: Internal server error (e.g., invalid schema format or processing error).
  *         content:
@@ -3749,7 +3815,14 @@ v1router.post('/assets', async (req, res) => {
  * @swagger
  * /assets:
  *   get:
- *     summary: List all asset DIDs owned by the current ID.
+ *     summary: List asset DIDs owned by an ID.
+ *     parameters:
+ *       - in: query
+ *         name: owner
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: The name or DID of the owner. Defaults to the active ID.
  *     responses:
  *       200:
  *         description: A list of asset DIDs.
@@ -3762,6 +3835,8 @@ v1router.post('/assets', async (req, res) => {
  *                   type: array
  *                   items:
  *                     type: string
+ *       400:
+ *         description: Invalid owner query parameter.
  *       500:
  *         description: Internal server error.
  *         content:
@@ -3774,10 +3849,11 @@ v1router.post('/assets', async (req, res) => {
  */
 v1router.get('/assets', async (req, res) => {
     try {
-        const assets = await keymaster.listAssets();
+        const owner = optionalQueryString(req.query.owner, 'owner');
+        const assets = await keymaster.listAssets(owner);
         res.json({ assets });
     } catch (error: any) {
-        res.status(500).send({ error: error.toString() });
+        res.status(error instanceof InvalidParameterError ? 400 : 500).send({ error: error.toString() });
     }
 });
 
@@ -3793,6 +3869,32 @@ v1router.get('/assets', async (req, res) => {
  *         schema:
  *           type: string
  *         description: The asset name or DID to resolve.
+ *       - in: query
+ *         name: versionTime
+ *         required: false
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Timestamp at which to resolve the asset.
+ *       - in: query
+ *         name: versionSequence
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *         description: Specific asset version to resolve.
+ *       - in: query
+ *         name: confirm
+ *         required: false
+ *         schema:
+ *           type: boolean
+ *         description: Whether to require the create and all applied later events to be confirmed by the asset's native registry.
+ *       - in: query
+ *         name: verify
+ *         required: false
+ *         schema:
+ *           type: boolean
+ *         description: Whether to verify operation signatures while resolving the asset.
  *     responses:
  *       200:
  *         description: The resolved asset data.
@@ -3804,6 +3906,15 @@ v1router.get('/assets', async (req, res) => {
  *                 asset:
  *                   type: object
  *                   description: The `didDocumentData` for the asset, or null if not found.
+ *       400:
+ *         description: Invalid asset resolution options.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
  *       404:
  *         description: Asset not found or is deactivated.
  *         content:
@@ -3816,10 +3927,15 @@ v1router.get('/assets', async (req, res) => {
  */
 v1router.get('/assets/:id', async (req, res) => {
     try {
-        const asset = await keymaster.resolveAsset(req.params.id);
+        const asset = await keymaster.resolveAsset(req.params.id, parseResolveOptions(req.query));
         res.json({ asset });
-    } catch {
-        res.status(404).send({ error: 'Asset not found' });
+    } catch (error) {
+        if (error instanceof InvalidParameterError) {
+            res.status(400).send({ error: error.toString() });
+        }
+        else {
+            res.status(404).send({ error: 'Asset not found' });
+        }
     }
 });
 
@@ -4603,12 +4719,9 @@ v1router.post('/polls/:poll/unpublish', async (req, res) => {
  *       500:
  *         description: Internal server error.
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *               type: string
  */
 // eslint-disable-next-line
 v1router.post('/images', express.raw({ type: 'application/octet-stream', limit: '10mb' }), async (req, res) => {
@@ -4660,12 +4773,9 @@ v1router.post('/images', express.raw({ type: 'application/octet-stream', limit: 
  *       500:
  *         description: Internal server error.
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *               type: string
  */
 v1router.put('/images/:id', express.raw({ type: 'application/octet-stream', limit: '10mb' }), async (req, res) => {
     try {
@@ -4822,12 +4932,9 @@ v1router.post('/images/:id/test', async (req, res) => {
  *       500:
  *         description: Internal server error.
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *               type: string
  */
 v1router.post('/documents', express.raw({ type: 'application/octet-stream', limit: '10mb' }), async (req, res) => {
     try {
@@ -4886,12 +4993,9 @@ v1router.post('/documents', express.raw({ type: 'application/octet-stream', limi
  *       500:
  *         description: Internal server error.
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *               type: string
  */
 v1router.put('/documents/:id', express.raw({ type: 'application/octet-stream', limit: '10mb' }), async (req, res) => {
     try {
@@ -5029,25 +5133,43 @@ v1router.post('/documents/:id/test', async (req, res) => {
  *       404:
  *         description: Data not found
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
  *               type: string
- *               example: "Not Found"
  *       500:
- *         description: Internal Server Error
+ *         description: Gatekeeper failed to retrieve the data
  *         content:
- *           application/json:
+ *           text/html:
+ *             schema:
+ *               type: string
+ *       502:
+ *         description: Gatekeeper is unavailable
+ *         content:
+ *           text/html:
+ *             schema:
+ *               type: string
+ *       503:
+ *         description: Content addressable storage is unavailable
+ *         content:
+ *           text/html:
  *             schema:
  *               type: string
  */
 v1router.get('/cas/data/:cid', async (req, res) => {
     try {
-        const response = await gatekeeper.getData(req.params.cid);
-        // eslint-disable-next-line
-        res.set('Content-Type', 'application/octet-stream');
-        res.send(response);
-    } catch (error: any) {
-        res.status(404).send(error.toString());
+        const url = `${config.gatekeeperURL}/api/v1/cas/data/${encodeURIComponent(req.params.cid)}`;
+        const response = await fetch(url);
+        const contentType = response.headers.get('content-type');
+        const data = Buffer.from(await response.arrayBuffer());
+
+        if (contentType) {
+            res.set('Content-Type', contentType);
+        }
+
+        res.status(response.status).send(data);
+    }
+    catch (error) {
+        res.status(502).send(String(error));
     }
 });
 
@@ -5089,12 +5211,9 @@ v1router.get('/cas/data/:cid', async (req, res) => {
  *       500:
  *         description: Internal server error.
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *               type: string
  */
 v1router.post('/groupVaults', async (req, res) => {
     try {
@@ -5147,13 +5266,9 @@ v1router.post('/groupVaults', async (req, res) => {
  *       404:
  *         description: Group vault not found.
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- *                   description: Error message indicating why the group vault could not be retrieved.
+ *               type: string
  */
 v1router.get('/groupVaults/:id', async (req, res) => {
     try {
@@ -5191,13 +5306,9 @@ v1router.get('/groupVaults/:id', async (req, res) => {
  *       404:
  *         description: Group vault not found or invalid.
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- *                   description: Error message indicating why the group vault could not be tested.
+ *               type: string
  */
 v1router.post('/groupVaults/:id/test', async (req, res) => {
     try {
@@ -5247,13 +5358,9 @@ v1router.post('/groupVaults/:id/test', async (req, res) => {
  *       404:
  *         description: Group vault not found, member not found, or caller is not authorized.
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- *                   description: Error message indicating why the member could not be added.
+ *               type: string
  */
 v1router.post('/groupVaults/:id/members', async (req, res) => {
     try {
@@ -5299,13 +5406,9 @@ v1router.post('/groupVaults/:id/members', async (req, res) => {
  *       404:
  *         description: Member not found, group vault not found, or caller is not authorized.
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- *                   description: Error message indicating why the member could not be removed.
+ *               type: string
  */
 v1router.delete('/groupVaults/:id/members/:member', async (req, res) => {
     try {
@@ -5347,13 +5450,9 @@ v1router.delete('/groupVaults/:id/members/:member', async (req, res) => {
  *       404:
  *         description: Group vault not found or caller is not authorized.
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- *                   description: Error message indicating why the members could not be listed.
+ *               type: string
  */
 v1router.get('/groupVaults/:id/members', async (req, res) => {
     try {
@@ -5393,7 +5492,7 @@ v1router.get('/groupVaults/:id/members', async (req, res) => {
  *           schema:
  *             type: string
  *             format: binary
- *           description: The binary data to store as an item in the group vault.
+ *             description: The binary data to store as an item in the group vault.
  *     responses:
  *       200:
  *         description: Indicates whether the item was successfully added.
@@ -5408,12 +5507,9 @@ v1router.get('/groupVaults/:id/members', async (req, res) => {
  *       500:
  *         description: Internal server error.
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *               type: string
  */
 v1router.post('/groupVaults/:id/items', express.raw({ type: 'application/octet-stream', limit: '10mb' }), async (req, res) => {
     try {
@@ -5462,13 +5558,9 @@ v1router.post('/groupVaults/:id/items', express.raw({ type: 'application/octet-s
  *       404:
  *         description: Item not found, group vault not found, or caller is not a member.
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- *                   description: Error message indicating why the item could not be removed.
+ *               type: string
  */
 // eslint-disable-next-line
 v1router.delete('/groupVaults/:id/items/:name', async (req, res) => {
@@ -5512,13 +5604,9 @@ v1router.delete('/groupVaults/:id/items/:name', async (req, res) => {
  *       404:
  *         description: Group vault not found or caller is not a member.
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- *                   description: Error message indicating why the items could not be listed.
+ *               type: string
  */
 v1router.get('/groupVaults/:id/items', async (req, res) => {
     try {
@@ -5560,13 +5648,9 @@ v1router.get('/groupVaults/:id/items', async (req, res) => {
  *       404:
  *         description: Item not found or caller is not a member of the group vault.
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- *                   description: Error message indicating why the item could not be retrieved.
+ *               type: string
  */
 v1router.get('/groupVaults/:id/items/:name', async (req, res) => {
     try {
@@ -5584,15 +5668,8 @@ v1router.get('/groupVaults/:id/items/:name', async (req, res) => {
  * @swagger
  * /dmail:
  *   get:
- *     summary: List all Dmail messages for the current or specified owner.
- *     description: Returns a mapping of Dmail DIDs to Dmail item objects for the current wallet or for the specified owner.
- *     parameters:
- *       - in: query
- *         name: owner
- *         required: false
- *         schema:
- *           type: string
- *         description: The name or DID of the owner whose Dmail messages should be listed.
+ *     summary: List all Dmail messages for the current wallet identity.
+ *     description: Returns a mapping of Dmail DIDs to Dmail item objects for the current wallet identity.
  *     responses:
  *       200:
  *         description: A mapping of Dmail DIDs to Dmail item objects.
@@ -5611,7 +5688,10 @@ v1router.get('/groupVaults/:id/items/:name', async (req, res) => {
  *         content:
  *           application/json:
  *             schema:
- *               type: string
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
  */
 v1router.get('/dmail', async (req, res) => {
     try {
@@ -5986,7 +6066,7 @@ v1router.post('/dmail/:id/file', async (req, res) => {
  *       404:
  *         description: Dmail message or attachments not found.
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
  *               type: string
  */
@@ -6029,7 +6109,7 @@ v1router.get('/dmail/:id/attachments', async (req, res) => {
  *           schema:
  *             type: string
  *             format: binary
- *           description: The binary data of the attachment to upload.
+ *             description: The binary data of the attachment to upload.
  *     responses:
  *       200:
  *         description: Indicates whether the attachment was successfully added.
@@ -6044,7 +6124,7 @@ v1router.get('/dmail/:id/attachments', async (req, res) => {
  *       500:
  *         description: Internal server error.
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
  *               type: string
  */
@@ -6095,7 +6175,7 @@ v1router.post('/dmail/:id/attachments', express.raw({ type: 'application/octet-s
  *       404:
  *         description: Dmail message or attachment not found.
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
  *               type: string
  */
@@ -6140,7 +6220,7 @@ v1router.delete('/dmail/:id/attachments/:name', async (req, res) => {
  *       404:
  *         description: Attachment or Dmail message not found.
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
  *               type: string
  */
@@ -6323,10 +6403,6 @@ process.on('unhandledRejection', (reason, promise) => {
 async function waitForNodeId() {
     let isReady = false;
 
-    if (!config.nodeID) {
-        throw new Error('KC_NODE_ID is not set in the configuration.');
-    }
-
     const ids = await keymaster.listIds();
 
     if (!ids.includes(config.nodeID)) {
@@ -6393,12 +6469,14 @@ async function initWalletProviderStore() {
 }
 
 const port = config.keymasterPort;
+const dependencyRequests = new AbortController();
 
-const server = app.listen(port, async () => {
+async function initialize() {
     gatekeeper = new GatekeeperClient();
 
     await gatekeeper.connect({
         url: config.gatekeeperURL,
+        signal: dependencyRequests.signal,
         waitUntilReady: true,
         intervalSeconds: 5,
         chatty: true,
@@ -6411,6 +6489,7 @@ const server = app.listen(port, async () => {
 
         await search.connect({
             url: config.searchURL,
+            signal: dependencyRequests.signal,
             waitUntilReady: true,
             intervalSeconds: 5,
             chatty: true,
@@ -6428,20 +6507,27 @@ const server = app.listen(port, async () => {
         cipher,
         passphrase: config.walletProviderPassphrase,
     });
-    keymaster = new Keymaster({ gatekeeper, store: wallet, walletProvider, cipher, search, defaultRegistry });
+    keymaster = new Keymaster({ gatekeeper, store: wallet, walletProvider, cipher, search, defaultRegistry, didPrefix: config.didPrefix });
     log.info(`Keymaster server running on port ${port}`);
     log.info(`Keymaster server persisting to ${config.db}`);
 
-    try {
-        await waitForNodeId();
-        serverReady = true;
-    }
-    catch (error) {
-        log.error({ error }, 'Failed to wait for node ID');
-    }
+    await waitForNodeId();
+    serverReady = true;
+}
+
+const server = app.listen(port, () => {
+    initialize().catch((error) => {
+        if (dependencyRequests.signal.aborted) {
+            return;
+        }
+        log.error({ error }, 'Failed to initialize Keymaster server');
+        server.close();
+        process.exit(1);
+    });
 });
 
 const shutdown = async () => {
+    dependencyRequests.abort();
     try {
         server.close();
     } catch (error: any) {

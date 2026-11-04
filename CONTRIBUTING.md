@@ -1,5 +1,10 @@
 # Contributing to the MDIP Keychain open source project
 
+AI coding agents should start with [AGENTS.md](AGENTS.md) and the canonical
+[agent guide](.agents/README.md). Update that guide in the same PR when a
+change alters repository architecture, ownership, commands, or development
+conventions.
+
 1. [Create an issue](https://github.com/KeychainMDIP/kc/issues) first
     - Requirements and acceptance criteria should be discussed in the issue
 2. Create a development branch from the issue

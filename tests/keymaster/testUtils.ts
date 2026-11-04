@@ -30,6 +30,7 @@ export function createTestKeymaster(
         providerStore?: WalletProviderStore;
         passphrase?: string;
         defaultRegistry?: string;
+        didPrefix?: string;
         search?: SearchEngine;
     } = {},
 ) {
@@ -42,6 +43,7 @@ export function createTestKeymaster(
         walletProvider,
         cipher,
         defaultRegistry: options.defaultRegistry,
+        didPrefix: options.didPrefix,
         search: options.search,
     });
 

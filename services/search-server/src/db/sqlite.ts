@@ -11,19 +11,40 @@ import {
     ChallengeReceiptUsageOptions,
     ChallengeReceiptUsageResult,
     DIDsDb,
+    DIDEventHistory,
     DIDEventListOptions,
     DIDEventListResult,
+    IdentityListOptions,
+    IdentityListResult,
+    NetworkMetricSnapshot,
     PublishedCredentialListOptions,
     PublishedCredentialListResult,
     PublishedCredentialRecord,
     PublishedCredentialSchemaCount,
+    SearchDocsOptions,
+    SearchDocsResult,
     GatekeeperEvent,
 } from "../types.js";
 import { getEventDisplayTime, stableStringify } from './db-utils.js';
+import { deduplicateDIDPrefixReferences, extractIdentity, extractIdentityFields } from '../published-credentials.js';
+import {
+    AMBIGUOUS_DID_PREFIX,
+    classifyDIDPrefix,
+    getDIDPrefix,
+    getDIDSuffix,
+    isAgentDID,
+} from '../did-aliases.js';
+
+interface HistoryEventRow {
+    did: string;
+    eventIndex: number;
+    event: string;
+}
 
 export default class Sqlite implements DIDsDb {
     private readonly dbFile: string;
     private db: Database | null = null;
+    private _lock: Promise<void> = Promise.resolve();
     private static readonly ARRAY_WILDCARD_END = /\[\*]$/;
     private static readonly ARRAY_WILDCARD_MID = /\[\*]\./;
 
@@ -35,6 +56,13 @@ export default class Sqlite implements DIDsDb {
 
     constructor(dbFileName: string = 'dids.db', dataFolder: string = 'data') {
         this.dbFile = `${dataFolder}/${dbFileName}`;
+    }
+
+    // ponytail: identity reads wait for index pages, use a separate read connection if latency becomes an issue.
+    private runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+        const chained = this._lock.then(fn);
+        this._lock = chained.then(() => undefined, () => undefined);
+        return chained;
     }
 
     async connect(): Promise<void> {
@@ -63,6 +91,20 @@ export default class Sqlite implements DIDsDb {
             CREATE INDEX IF NOT EXISTS idx_did_events_registry_time
                 ON did_events (registry, time);
 
+            CREATE TABLE IF NOT EXISTS did_classifications (
+                suffix TEXT PRIMARY KEY,
+                did TEXT NOT NULL UNIQUE,
+                prefix TEXT NOT NULL,
+                prefix_authoritative INTEGER NOT NULL,
+                is_agent INTEGER NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_did_classifications_prefix
+                ON did_classifications (prefix);
+
+            CREATE INDEX IF NOT EXISTS idx_did_classifications_agents
+                ON did_classifications (is_agent, prefix, suffix);
+
             CREATE TABLE IF NOT EXISTS did_docs (
                                                     did TEXT PRIMARY KEY,
                                                     doc TEXT NOT NULL
@@ -82,41 +124,108 @@ export default class Sqlite implements DIDsDb {
 
             CREATE TABLE IF NOT EXISTS published_credentials (
                 holder_did TEXT NOT NULL,
-                credential_did TEXT NOT NULL,
-                schema_did TEXT NOT NULL,
+                credential_suffix TEXT NOT NULL,
+                schema_suffix TEXT NOT NULL,
                 issuer_did TEXT NOT NULL,
                 subject_did TEXT NOT NULL,
                 revealed INTEGER,
                 updated_at TEXT NOT NULL,
-                PRIMARY KEY (holder_did, credential_did)
+                PRIMARY KEY (holder_did, credential_suffix)
             );
 
-            CREATE INDEX IF NOT EXISTS idx_published_credentials_schema
-                ON published_credentials (schema_did);
+            CREATE INDEX IF NOT EXISTS idx_published_credentials_suffixes
+                ON published_credentials (credential_suffix, schema_suffix);
 
-            CREATE INDEX IF NOT EXISTS idx_published_credentials_schema_issuer
-                ON published_credentials (schema_did, issuer_did);
+            CREATE TABLE IF NOT EXISTS identity_schemas (
+                did TEXT NOT NULL,
+                schema_suffix TEXT NOT NULL,
+                PRIMARY KEY (did, schema_suffix)
+            );
 
-            CREATE INDEX IF NOT EXISTS idx_published_credentials_schema_subject
-                ON published_credentials (schema_did, subject_did);
+            CREATE TABLE IF NOT EXISTS identity_fields (
+                did TEXT NOT NULL,
+                field TEXT NOT NULL,
+                schema_suffix TEXT NOT NULL,
+                PRIMARY KEY (did, field, schema_suffix)
+            );
+
+            CREATE TABLE IF NOT EXISTS did_prefix_references (
+                source_did TEXT NOT NULL,
+                suffix TEXT NOT NULL,
+                prefix TEXT NOT NULL,
+                PRIMARY KEY (source_did, suffix, prefix)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_did_prefix_references_suffix_prefix
+                ON did_prefix_references (suffix, prefix);
+
+            DROP VIEW IF EXISTS published_credentials_classified;
+            DROP VIEW IF EXISTS did_classifications_effective;
+            DROP VIEW IF EXISTS did_reference_prefixes;
+
+            CREATE VIEW did_reference_prefixes AS
+                SELECT suffix,
+                       CASE WHEN MIN(prefix) = MAX(prefix)
+                           THEN MIN(prefix)
+                           ELSE '${AMBIGUOUS_DID_PREFIX}'
+                       END AS prefix,
+                       COUNT(DISTINCT prefix) AS prefix_count
+                FROM did_prefix_references
+                GROUP BY suffix;
+
+            CREATE VIEW did_classifications_effective AS
+                SELECT dc.suffix,
+                       dc.did,
+                       CASE WHEN dc.prefix_authoritative OR dc.is_agent THEN dc.prefix
+                           ELSE COALESCE(rp.prefix, '${AMBIGUOUS_DID_PREFIX}')
+                       END AS prefix,
+                       CASE WHEN NOT dc.prefix_authoritative
+                                      AND (dc.is_agent OR COALESCE(rp.prefix_count, 0) <> 1)
+                           THEN 1 ELSE 0
+                       END AS prefix_ambiguous
+                FROM did_classifications dc
+                LEFT JOIN did_reference_prefixes rp ON rp.suffix = dc.suffix;
+
+            CREATE VIEW published_credentials_classified AS
+                SELECT pc.*,
+                       CASE WHEN cc.prefix_authoritative OR cc.is_agent THEN cc.prefix ELSE cr.prefix END AS credential_effective_prefix,
+                       CASE WHEN sc.prefix_authoritative OR sc.is_agent THEN sc.prefix ELSE sr.prefix END AS schema_effective_prefix,
+                       CASE WHEN cc.suffix IS NULL THEN COALESCE(cr.prefix_count, 0) <> 1
+                            WHEN NOT cc.prefix_authoritative
+                                     AND (cc.is_agent OR COALESCE(cr.prefix_count, 0) <> 1) THEN 1
+                            ELSE 0
+                       END AS credential_prefix_ambiguous,
+                       CASE WHEN sc.suffix IS NULL THEN COALESCE(sr.prefix_count, 0) <> 1
+                            WHEN NOT sc.prefix_authoritative
+                                     AND (sc.is_agent OR COALESCE(sr.prefix_count, 0) <> 1) THEN 1
+                            ELSE 0
+                       END AS schema_prefix_ambiguous
+                FROM published_credentials pc
+                LEFT JOIN did_classifications cc ON cc.suffix = pc.credential_suffix
+                LEFT JOIN did_classifications sc ON sc.suffix = pc.schema_suffix
+                JOIN did_reference_prefixes cr ON cr.suffix = pc.credential_suffix
+                JOIN did_reference_prefixes sr ON sr.suffix = pc.schema_suffix;
 
             CREATE TABLE IF NOT EXISTS challenge_receipts (
                 receipt_did TEXT PRIMARY KEY,
                 attester_did TEXT NOT NULL,
+                attester_suffix TEXT NOT NULL,
                 schema_did TEXT NOT NULL,
+                schema_suffix TEXT NOT NULL,
                 requester_did TEXT NOT NULL,
+                requester_suffix TEXT NOT NULL,
                 response_commitment TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
 
             CREATE INDEX IF NOT EXISTS idx_challenge_receipts_attester
-                ON challenge_receipts (attester_did);
+                ON challenge_receipts (attester_suffix);
 
             CREATE INDEX IF NOT EXISTS idx_challenge_receipts_schema
-                ON challenge_receipts (schema_did);
+                ON challenge_receipts (schema_suffix);
 
             CREATE INDEX IF NOT EXISTS idx_challenge_receipts_requester
-                ON challenge_receipts (requester_did);
+                ON challenge_receipts (requester_suffix);
 
             CREATE INDEX IF NOT EXISTS idx_challenge_receipts_commitment
                 ON challenge_receipts (response_commitment);
@@ -125,19 +234,28 @@ export default class Sqlite implements DIDsDb {
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
-        `);
 
-        await this.db.exec(`
-            CREATE INDEX IF NOT EXISTS idx_published_credentials_schema_revealed
-                ON published_credentials (schema_did, revealed)
+            CREATE TABLE IF NOT EXISTS network_metric_snapshots (
+                snapshot_date TEXT PRIMARY KEY,
+                did_count INTEGER NOT NULL CHECK (did_count >= 0),
+                did_counts_by_prefix TEXT NOT NULL DEFAULT '{}',
+                agent_did_count INTEGER NOT NULL CHECK (agent_did_count >= 0),
+                agent_did_counts_by_prefix TEXT NOT NULL DEFAULT '{}',
+                credential_count INTEGER NOT NULL CHECK (credential_count >= 0),
+                credential_did_counts_by_prefix TEXT NOT NULL DEFAULT '{}',
+                schema_counts TEXT NOT NULL DEFAULT '[]',
+                rebuilt_at TEXT NOT NULL
+            );
         `);
     }
 
     async disconnect(): Promise<void> {
-        if (this.db) {
-            await this.db.close();
-            this.db = null;
-        }
+        await this.runExclusive(async () => {
+            if (this.db) {
+                await this.db.close();
+                this.db = null;
+            }
+        });
     }
 
     async loadSyncState(key: string): Promise<string | null> {
@@ -184,6 +302,41 @@ export default class Sqlite implements DIDsDb {
         return rows.map(row => JSON.parse(row.event) as GatekeeperEvent);
     }
 
+    async findDIDBySuffix(suffix: string, didPrefix?: string): Promise<string | null> {
+        if (!this.db) {
+            throw new Error('DB not connected');
+        }
+
+        const prefixFilter = didPrefix ? 'AND prefix = ?' : '';
+        const row = await this.db.get<{ did: string }>(
+            `SELECT did FROM did_classifications_effective
+             WHERE suffix = ? ${prefixFilter}
+             LIMIT 1`,
+            didPrefix ? [suffix, didPrefix] : [suffix]
+        );
+        return row?.did ?? null;
+    }
+
+    async findAmbiguousDIDBySuffix(suffix: string): Promise<string | null> {
+        if (!this.db) {
+            throw new Error('DB not connected');
+        }
+
+        const row = await this.db.get<{ did: string }>(
+            `SELECT dc.did FROM did_classifications dc
+             WHERE dc.suffix = ?
+               AND dc.prefix_authoritative = 0
+               AND (dc.is_agent = 1 OR (
+                   SELECT COUNT(DISTINCT dpr.prefix)
+                   FROM did_prefix_references dpr
+                   WHERE dpr.suffix = dc.suffix
+               ) <> 1)
+             LIMIT 1`,
+            [suffix]
+        );
+        return row?.did ?? null;
+    }
+
     async getBlock(registry: string, blockId?: BlockId): Promise<BlockInfo | null> {
         if (!this.db) {
             throw new Error('DB not connected');
@@ -214,6 +367,10 @@ export default class Sqlite implements DIDsDb {
     }
 
     async applyIndexPage(page: ApplyIndexPageOptions): Promise<ApplyIndexPageResult> {
+        return this.runExclusive(() => this.applyIndexPageUnlocked(page));
+    }
+
+    private async applyIndexPageUnlocked(page: ApplyIndexPageOptions): Promise<ApplyIndexPageResult> {
         if (!this.db) {
             throw new Error('DB not connected');
         }
@@ -262,6 +419,22 @@ export default class Sqlite implements DIDsDb {
             }
 
             for (const record of page.dids) {
+                const suffix = getDIDSuffix(record.did);
+                const previous = await this.db.get<{ did: string }>(
+                    'SELECT did FROM did_classifications WHERE suffix = ?',
+                    [suffix]
+                );
+                if (previous && previous.did !== record.did) {
+                    await this.db.run('DELETE FROM did_events WHERE did = ?', [previous.did]);
+                    await this.db.run('DELETE FROM did_docs WHERE did = ?', [previous.did]);
+                    await this.db.run('DELETE FROM published_credentials WHERE holder_did = ?', [previous.did]);
+                    await this.db.run('DELETE FROM identity_schemas WHERE did = ?', [previous.did]);
+                    await this.db.run('DELETE FROM identity_fields WHERE did = ?', [previous.did]);
+                    await this.db.run('DELETE FROM did_prefix_references WHERE source_did = ?', [previous.did]);
+                    await this.db.run('DELETE FROM challenge_receipts WHERE receipt_did = ?', [previous.did]);
+                    await this.db.run('DELETE FROM did_classifications WHERE suffix = ?', [suffix]);
+                }
+
                 const changed = eventChanges.get(record.did) === true;
 
                 if (!changed && !record.removed) {
@@ -274,10 +447,24 @@ export default class Sqlite implements DIDsDb {
                 if (record.removed) {
                     await this.db.run('DELETE FROM did_docs WHERE did = ?', [record.did]);
                     await this.db.run('DELETE FROM published_credentials WHERE holder_did = ?', [record.did]);
+                    await this.db.run('DELETE FROM identity_schemas WHERE did = ?', [record.did]);
+                    await this.db.run('DELETE FROM identity_fields WHERE did = ?', [record.did]);
+                    await this.db.run('DELETE FROM did_prefix_references WHERE source_did = ?', [record.did]);
                     await this.db.run('DELETE FROM challenge_receipts WHERE receipt_did = ?', [record.did]);
+                    await this.db.run('DELETE FROM did_classifications WHERE suffix = ?', [suffix]);
                     result.removedDids += 1;
                     continue;
                 }
+
+                const classification = classifyDIDPrefix(record.events);
+                await this.db.run(`
+                    INSERT INTO did_classifications (suffix, did, prefix, prefix_authoritative, is_agent) VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(suffix) DO UPDATE SET
+                        did=excluded.did,
+                        prefix=excluded.prefix,
+                        prefix_authoritative=excluded.prefix_authoritative,
+                        is_agent=excluded.is_agent
+                `, [suffix, record.did, classification.prefix, classification.authoritative ? 1 : 0, isAgentDID(record.events) ? 1 : 0]);
 
                 for (const [index, event] of record.events.entries()) {
                     await this.db.run(
@@ -294,6 +481,21 @@ export default class Sqlite implements DIDsDb {
                 }
 
                 await this.replacePublishedCredentialsInTx(record.did, record.publishedCredentials ?? []);
+                await this.db.run('DELETE FROM identity_schemas WHERE did = ?', [record.did]);
+                for (const schemaSuffix of new Set((record.publishedCredentials ?? []).map(item => getDIDSuffix(item.schemaDid)))) {
+                    await this.db.run('INSERT INTO identity_schemas (did, schema_suffix) VALUES (?, ?)', [record.did, schemaSuffix]);
+                }
+                await this.db.run('DELETE FROM identity_fields WHERE did = ?', [record.did]);
+                for (const [suffix, fields] of extractIdentityFields(record.doc ?? {}, record.publishedCredentials ?? [])) {
+                    for (const field of fields) {
+                        await this.db.run('INSERT INTO identity_fields (did, field, schema_suffix) VALUES (?, ?, ?)', [record.did, field, suffix]);
+                    }
+                }
+                await this.replaceDIDPrefixReferencesInTx(
+                    record.did,
+                    record.didPrefixReferences ?? [],
+                    record.publishedCredentials ?? []
+                );
                 await this.replaceChallengeReceiptsInTx(record.did, record.challengeReceipts ?? []);
             }
 
@@ -329,17 +531,88 @@ export default class Sqlite implements DIDsDb {
         return JSON.parse(row.doc);
     }
 
-    async getPublishedCredentialCountsBySchema(): Promise<PublishedCredentialSchemaCount[]> {
+    async listIdentities(options: IdentityListOptions = {}): Promise<IdentityListResult> {
+        return this.runExclusive(() => this.listIdentitiesUnlocked(options));
+    }
+
+    private async listIdentitiesUnlocked(options: IdentityListOptions): Promise<IdentityListResult> {
+        if (!this.db) {
+            throw new Error('SQLite DB not connected');
+        }
+        const { didPrefix, includeAmbiguous = false, schemaDid, fields = [], limit = 50, offset = 0 } = options;
+        const scopeFilter = didPrefix
+            ? includeAmbiguous
+                ? 'AND (dc.prefix = ? OR dc.prefix_authoritative = 0)'
+                : 'AND dc.prefix = ?'
+            : '';
+        let from = `FROM did_classifications dc
+            JOIN did_docs d ON d.did = dc.did
+            WHERE dc.is_agent = 1 ${scopeFilter}`;
+        const params = didPrefix ? [didPrefix] : [];
+        if (fields.length > 0) {
+            from += ` AND EXISTS (
+                SELECT 1 FROM identity_fields idf
+                WHERE idf.did = dc.did AND idf.field IN (${fields.map(() => '?').join(',')})
+                ${schemaDid ? 'AND idf.schema_suffix = ?' : ''}
+            )`;
+            params.push(...fields);
+            if (schemaDid) params.push(getDIDSuffix(schemaDid));
+        }
+        else if (schemaDid) {
+            from += ` AND EXISTS (
+                SELECT 1 FROM identity_schemas ids
+                WHERE ids.did = dc.did AND ids.schema_suffix = ?
+            )`;
+            params.push(getDIDSuffix(schemaDid));
+        }
+        const count = await this.db.get<{ total: number }>(`SELECT COUNT(*) AS total ${from}`, params);
+        const rows = await this.db.all<{ did: string; prefixAmbiguous: number; doc: string }[]>(
+            `SELECT dc.prefix || ':' || dc.suffix AS did,
+                    NOT dc.prefix_authoritative AS prefixAmbiguous,
+                    d.doc ${from}
+             ORDER BY ${didPrefix ? 'dc.suffix' : 'dc.prefix, dc.suffix'} LIMIT ? OFFSET ?`,
+            [...params, Math.max(0, limit), Math.max(0, offset)]
+        );
+        return {
+            total: count!.total,
+            identities: rows.map(row => extractIdentity(
+                includeAmbiguous && didPrefix && row.prefixAmbiguous
+                    ? `${didPrefix}:${getDIDSuffix(row.did)}`
+                    : row.did,
+                JSON.parse(row.doc),
+                options
+            )),
+        };
+    }
+
+    async getPublishedCredentialCountsBySchema(
+        didPrefix?: string,
+        includeAmbiguous = false
+    ): Promise<PublishedCredentialSchemaCount[]> {
         if (!this.db) {
             throw new Error('DB not connected');
         }
 
+        const schemaPrefix = didPrefix && includeAmbiguous
+            ? 'CASE WHEN pc.schema_prefix_ambiguous = 1 THEN ? ELSE pc.schema_effective_prefix END'
+            : 'pc.schema_effective_prefix';
+        const credentialScope = includeAmbiguous
+            ? '(pc.credential_effective_prefix = ? OR pc.credential_prefix_ambiguous = 1)'
+            : 'pc.credential_effective_prefix = ?';
+        const schemaScope = includeAmbiguous
+            ? '(pc.schema_effective_prefix = ? OR pc.schema_prefix_ambiguous = 1)'
+            : 'pc.schema_effective_prefix = ?';
+        const params = didPrefix
+            ? [...(includeAmbiguous ? [didPrefix] : []), didPrefix, didPrefix]
+            : [];
         const rows = await this.db.all<PublishedCredentialSchemaCount[]>(`
-            SELECT schema_did AS schemaDid, COUNT(*) AS count
-            FROM published_credentials
-            GROUP BY schema_did
+            SELECT ${schemaPrefix} || ':' || pc.schema_suffix AS schemaDid,
+                   COUNT(*) AS count
+            FROM published_credentials_classified pc
+            ${didPrefix ? `WHERE ${credentialScope} AND ${schemaScope}` : ''}
+            GROUP BY schemaDid
             ORDER BY count DESC, schemaDid ASC
-        `);
+        `, params);
 
         return rows.map(row => ({
             schemaDid: row.schemaDid,
@@ -355,6 +628,8 @@ export default class Sqlite implements DIDsDb {
         }
 
         const {
+            didPrefix,
+            includeAmbiguous = false,
             credentialDid,
             schemaDid,
             issuerDid,
@@ -367,35 +642,47 @@ export default class Sqlite implements DIDsDb {
         const clauses: string[] = [];
         const params: unknown[] = [];
 
+        if (didPrefix) {
+            clauses.push(includeAmbiguous
+                ? '(pc.credential_effective_prefix = ? OR pc.credential_prefix_ambiguous = 1)'
+                : 'pc.credential_effective_prefix = ?');
+            params.push(didPrefix);
+        }
+
         if (credentialDid) {
-            clauses.push('credential_did = ?');
-            params.push(credentialDid);
+            clauses.push('pc.credential_suffix = ?');
+            params.push(getDIDSuffix(credentialDid));
         }
 
         if (schemaDid) {
-            clauses.push('schema_did = ?');
-            params.push(schemaDid);
+            clauses.push('pc.schema_suffix = ?');
+            params.push(getDIDSuffix(schemaDid));
         }
 
         if (issuerDid) {
-            clauses.push('issuer_did = ?');
-            params.push(issuerDid);
+            clauses.push("substr(pc.issuer_did, -(length(?) + 1)) = ':' || ?");
+            const suffix = getDIDSuffix(issuerDid);
+            params.push(suffix, suffix);
         }
 
         if (subjectDid) {
-            clauses.push('subject_did = ?');
-            params.push(subjectDid);
+            clauses.push(`pc.subject_did = (
+                SELECT did FROM did_classifications WHERE suffix = ?
+            )`);
+            params.push(getDIDSuffix(subjectDid));
         }
 
         if (typeof revealed === 'boolean') {
-            clauses.push('revealed = ?');
+            clauses.push('pc.revealed = ?');
             params.push(revealed ? 1 : 0);
         }
 
         const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
 
         const totalRow = await this.db.get<{ total: number | string }>(
-            `SELECT COUNT(*) AS total FROM published_credentials ${where}`,
+            `SELECT COUNT(*) AS total
+             FROM published_credentials_classified pc
+             ${where}`,
             params
         );
 
@@ -407,18 +694,22 @@ export default class Sqlite implements DIDsDb {
             subjectDid: string;
             revealed: number | null;
             updatedAt: string;
+            credentialPrefixAmbiguous: number;
+            schemaPrefixAmbiguous: number;
         }[]>(
             `SELECT
-                holder_did AS holderDid,
-                credential_did AS credentialDid,
-                schema_did AS schemaDid,
-                issuer_did AS issuerDid,
-                subject_did AS subjectDid,
-                revealed AS revealed,
-                updated_at AS updatedAt
-             FROM published_credentials
+                pc.holder_did AS holderDid,
+                pc.credential_effective_prefix || ':' || pc.credential_suffix AS credentialDid,
+                pc.schema_effective_prefix || ':' || pc.schema_suffix AS schemaDid,
+                pc.issuer_did AS issuerDid,
+                pc.subject_did AS subjectDid,
+                pc.revealed AS revealed,
+                pc.updated_at AS updatedAt,
+                pc.credential_prefix_ambiguous AS credentialPrefixAmbiguous,
+                pc.schema_prefix_ambiguous AS schemaPrefixAmbiguous
+             FROM published_credentials_classified pc
              ${where}
-             ORDER BY updated_at DESC, credential_did ASC
+             ORDER BY pc.updated_at DESC, ${didPrefix ? 'pc.credential_suffix' : 'credentialDid'} ASC
              LIMIT ? OFFSET ?`,
             [...params, Math.max(0, limit), Math.max(0, offset)]
         );
@@ -427,8 +718,12 @@ export default class Sqlite implements DIDsDb {
             total: Number(totalRow?.total ?? 0),
             credentials: rows.map(row => ({
                 holderDid: row.holderDid,
-                credentialDid: row.credentialDid,
-                schemaDid: row.schemaDid,
+                credentialDid: includeAmbiguous && didPrefix && row.credentialPrefixAmbiguous
+                    ? `${didPrefix}:${getDIDSuffix(row.credentialDid)}`
+                    : row.credentialDid,
+                schemaDid: includeAmbiguous && didPrefix && row.schemaPrefixAmbiguous
+                    ? `${didPrefix}:${getDIDSuffix(row.schemaDid)}`
+                    : row.schemaDid,
                 issuerDid: row.issuerDid,
                 subjectDid: row.subjectDid,
                 revealed: row.revealed === 1,
@@ -450,7 +745,10 @@ export default class Sqlite implements DIDsDb {
         } = options;
         const { where, params } = this.buildChallengeReceiptWhere(options);
         const totalRow = await this.db.get<{ total: number | string }>(
-            `SELECT COUNT(*) AS total FROM challenge_receipts ${where}`,
+            `SELECT COUNT(*) AS total
+             FROM challenge_receipts cr
+             JOIN did_classifications_effective dc ON dc.did = cr.receipt_did
+             ${where}`,
             params
         );
         const rows = await this.db.all<{
@@ -460,17 +758,20 @@ export default class Sqlite implements DIDsDb {
             requesterDid: string;
             responseCommitment: string;
             updatedAt: string;
+            prefixAmbiguous: number;
         }[]>(
             `SELECT
-                receipt_did AS receiptDid,
-                attester_did AS attesterDid,
-                schema_did AS schemaDid,
-                requester_did AS requesterDid,
-                response_commitment AS responseCommitment,
-                updated_at AS updatedAt
-             FROM challenge_receipts
+                dc.prefix || ':' || dc.suffix AS receiptDid,
+                cr.attester_did AS attesterDid,
+                cr.schema_did AS schemaDid,
+                cr.requester_did AS requesterDid,
+                cr.response_commitment AS responseCommitment,
+                cr.updated_at AS updatedAt,
+                dc.prefix_ambiguous AS prefixAmbiguous
+             FROM challenge_receipts cr
+             JOIN did_classifications_effective dc ON dc.did = cr.receipt_did
              ${where}
-             ORDER BY updated_at DESC, receipt_did ASC
+             ORDER BY cr.updated_at DESC, ${options.didPrefix ? 'dc.suffix' : 'receiptDid'} ASC
              LIMIT ? OFFSET ?`,
             [...params, Math.max(0, limit), Math.max(0, offset)]
         );
@@ -478,7 +779,9 @@ export default class Sqlite implements DIDsDb {
         return {
             total: Number(totalRow?.total ?? 0),
             receipts: rows.map(row => ({
-                receiptDid: row.receiptDid,
+                receiptDid: options.includeAmbiguous && options.didPrefix && row.prefixAmbiguous
+                    ? `${options.didPrefix}:${getDIDSuffix(row.receiptDid)}`
+                    : row.receiptDid,
                 attesterDid: row.attesterDid,
                 schemaDid: row.schemaDid,
                 requesterDid: row.requesterDid,
@@ -504,9 +807,10 @@ export default class Sqlite implements DIDsDb {
             `SELECT COUNT(*) AS total
              FROM (
                 SELECT 1
-                FROM challenge_receipts
+                FROM challenge_receipts cr
+                JOIN did_classifications_effective dc ON dc.did = cr.receipt_did
                 ${where}
-                GROUP BY attester_did, schema_did, requester_did
+                GROUP BY cr.attester_suffix, cr.schema_suffix, cr.requester_suffix
              )`,
             params
         );
@@ -519,16 +823,17 @@ export default class Sqlite implements DIDsDb {
             lastUpdatedAt: string;
         }[]>(
             `SELECT
-                attester_did AS attesterDid,
-                schema_did AS schemaDid,
-                requester_did AS requesterDid,
-                COUNT(DISTINCT response_commitment) AS count,
-                MIN(updated_at) AS firstUpdatedAt,
-                MAX(updated_at) AS lastUpdatedAt
-             FROM challenge_receipts
+                MIN(cr.attester_did) AS attesterDid,
+                MIN(cr.schema_did) AS schemaDid,
+                MIN(cr.requester_did) AS requesterDid,
+                COUNT(DISTINCT cr.response_commitment) AS count,
+                MIN(cr.updated_at) AS firstUpdatedAt,
+                MAX(cr.updated_at) AS lastUpdatedAt
+             FROM challenge_receipts cr
+             JOIN did_classifications_effective dc ON dc.did = cr.receipt_did
              ${where}
-             GROUP BY attester_did, schema_did, requester_did
-             ORDER BY count DESC, schema_did ASC, requester_did ASC
+             GROUP BY cr.attester_suffix, cr.schema_suffix, cr.requester_suffix
+             ORDER BY count DESC, schemaDid ASC, requesterDid ASC
              LIMIT ? OFFSET ?`,
             [...params, Math.max(0, limit), Math.max(0, offset)]
         );
@@ -548,6 +853,8 @@ export default class Sqlite implements DIDsDb {
         }
 
         const {
+            didPrefix,
+            includeAmbiguous = false,
             registry,
             updatedAfter,
             updatedBefore,
@@ -557,24 +864,34 @@ export default class Sqlite implements DIDsDb {
         const clauses: string[] = [];
         const params: unknown[] = [];
 
+        if (didPrefix) {
+            clauses.push(includeAmbiguous
+                ? '(dc.prefix = ? OR dc.prefix_ambiguous = 1)'
+                : 'dc.prefix = ?');
+            params.push(didPrefix);
+        }
+
         if (registry) {
-            clauses.push('registry = ?');
+            clauses.push('e.registry = ?');
             params.push(registry);
         }
 
         if (updatedAfter) {
-            clauses.push('time > ?');
+            clauses.push('e.time > ?');
             params.push(updatedAfter);
         }
 
         if (updatedBefore) {
-            clauses.push('time < ?');
+            clauses.push('e.time < ?');
             params.push(updatedBefore);
         }
 
         const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
         const totalRow = await this.db.get<{ total: number | string }>(
-            `SELECT COUNT(*) AS total FROM did_events ${where}`,
+            `SELECT COUNT(*) AS total
+             FROM did_events e
+             JOIN did_classifications_effective dc ON dc.did = e.did
+             ${where}`,
             params
         );
         const rows = await this.db.all<{
@@ -582,11 +899,17 @@ export default class Sqlite implements DIDsDb {
             registry: string;
             time: string;
             event: string;
+            prefixAmbiguous: number;
         }[]>(
-            `SELECT did, registry, time, event
-             FROM did_events
+            `SELECT dc.prefix || ':' || dc.suffix AS did,
+                    e.registry,
+                    e.time,
+                    e.event,
+                    dc.prefix_ambiguous AS prefixAmbiguous
+             FROM did_events e
+             JOIN did_classifications_effective dc ON dc.did = e.did
              ${where}
-             ORDER BY time DESC, did ASC, event_index ASC
+             ORDER BY e.time DESC, ${didPrefix ? 'dc.suffix' : 'did'} ASC, e.event_index ASC
              LIMIT ? OFFSET ?`,
             [...params, Math.max(0, limit), Math.max(0, offset)]
         );
@@ -594,7 +917,9 @@ export default class Sqlite implements DIDsDb {
         return {
             total: Number(totalRow?.total ?? 0),
             events: rows.map(row => ({
-                did: row.did,
+                did: includeAmbiguous && didPrefix && row.prefixAmbiguous
+                    ? `${didPrefix}:${getDIDSuffix(row.did)}`
+                    : row.did,
                 registry: row.registry,
                 time: row.time,
                 event: JSON.parse(row.event) as GatekeeperEvent,
@@ -602,19 +927,200 @@ export default class Sqlite implements DIDsDb {
         };
     }
 
-    async searchDocs(q: string): Promise<string[]> {
+    async *iterateDIDEventHistories(pageSize = 500): AsyncIterable<DIDEventHistory> {
+        const db = this.db;
+        if (!db) {
+            throw new Error('DB not connected');
+        }
+
+        const limit = Math.max(1, pageSize);
+        let cursorDid: string | null = null;
+        let cursorIndex = -1;
+        let currentDid: string | null = null;
+        let currentEvents: GatekeeperEvent[] = [];
+
+        while (true) {
+            const rows: HistoryEventRow[] = cursorDid === null
+                ? await db.all<HistoryEventRow[]>(
+                    `SELECT did, event_index AS eventIndex, event
+                     FROM did_events
+                     ORDER BY did ASC, event_index ASC
+                     LIMIT ?`,
+                    [limit]
+                )
+                : await db.all<HistoryEventRow[]>(
+                    `SELECT did, event_index AS eventIndex, event
+                     FROM did_events
+                     WHERE did > ? OR (did = ? AND event_index > ?)
+                     ORDER BY did ASC, event_index ASC
+                     LIMIT ?`,
+                    [cursorDid, cursorDid, cursorIndex, limit]
+                );
+
+            if (rows.length === 0) {
+                break;
+            }
+
+            for (const row of rows) {
+                if (currentDid !== null && row.did !== currentDid) {
+                    yield { did: currentDid, events: currentEvents };
+                    currentEvents = [];
+                }
+
+                currentDid = row.did;
+                currentEvents.push(JSON.parse(row.event) as GatekeeperEvent);
+            }
+
+            const last: HistoryEventRow = rows[rows.length - 1];
+            cursorDid = last.did;
+            cursorIndex = last.eventIndex;
+
+            if (rows.length < limit) {
+                break;
+            }
+        }
+
+        if (currentDid !== null) {
+            yield { did: currentDid, events: currentEvents };
+        }
+    }
+
+    async replaceNetworkMetricSnapshots(snapshots: NetworkMetricSnapshot[]): Promise<void> {
         if (!this.db) {
             throw new Error('DB not connected');
         }
-        const rows = await this.db.all<{ did: string }[]>(
-            `SELECT did FROM did_docs WHERE doc LIKE '%' || ? || '%'`,
-            [q]
-        );
 
-        return rows.map(row => row.did);
+        await this.db.exec('BEGIN');
+        try {
+            await this.db.run('DELETE FROM network_metric_snapshots');
+            for (const snapshot of snapshots) {
+                await this.db.run(
+                    `INSERT INTO network_metric_snapshots (
+                        snapshot_date,
+                        did_count,
+                        did_counts_by_prefix,
+                        agent_did_count,
+                        agent_did_counts_by_prefix,
+                        credential_count,
+                        credential_did_counts_by_prefix,
+                        schema_counts,
+                        rebuilt_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    [
+                        snapshot.date,
+                        snapshot.didCount,
+                        JSON.stringify(snapshot.didCountsByPrefix),
+                        snapshot.agentDidCount,
+                        JSON.stringify(snapshot.agentDidCountsByPrefix),
+                        snapshot.credentialCount,
+                        JSON.stringify(snapshot.credentialDidCountsByPrefix),
+                        JSON.stringify(snapshot.schemas),
+                        snapshot.rebuiltAt,
+                    ]
+                );
+            }
+            await this.db.exec('COMMIT');
+        }
+        catch (error) {
+            await this.db.exec('ROLLBACK');
+            throw error;
+        }
     }
 
-    async queryDocs(where: Record<string, unknown>): Promise<string[]> {
+    async getNetworkMetricSnapshot(date: string): Promise<NetworkMetricSnapshot | null> {
+        if (!this.db) {
+            throw new Error('DB not connected');
+        }
+
+        const row = await this.db.get<{
+            date: string;
+            didCount: number | string;
+            didCountsByPrefix: string;
+            agentDidCount: number | string;
+            agentDidCountsByPrefix: string;
+            credentialCount: number | string;
+            credentialDidCountsByPrefix: string;
+            schemaCounts: string;
+            rebuiltAt: string;
+        }>(
+            `SELECT
+                snapshot_date AS date,
+                did_count AS didCount,
+                did_counts_by_prefix AS didCountsByPrefix,
+                agent_did_count AS agentDidCount,
+                agent_did_counts_by_prefix AS agentDidCountsByPrefix,
+                credential_count AS credentialCount,
+                credential_did_counts_by_prefix AS credentialDidCountsByPrefix,
+                schema_counts AS schemaCounts,
+                rebuilt_at AS rebuiltAt
+             FROM network_metric_snapshots
+             WHERE snapshot_date = ?`,
+            [date]
+        );
+
+        return row ? {
+            date: row.date,
+            didCount: Number(row.didCount),
+            didCountsByPrefix: JSON.parse(row.didCountsByPrefix) as Record<string, number>,
+            agentDidCount: Number(row.agentDidCount),
+            agentDidCountsByPrefix: JSON.parse(row.agentDidCountsByPrefix) as Record<string, number>,
+            credentialCount: Number(row.credentialCount),
+            credentialDidCountsByPrefix: JSON.parse(row.credentialDidCountsByPrefix) as Record<string, number>,
+            schemas: JSON.parse(row.schemaCounts) as PublishedCredentialSchemaCount[],
+            rebuiltAt: row.rebuiltAt,
+        } : null;
+    }
+
+    async searchDocs(q: string, options: SearchDocsOptions): Promise<SearchDocsResult> {
+        if (!this.db) {
+            throw new Error('DB not connected');
+        }
+        const { didPrefix, includeAmbiguous = false, limit, cursor } = options;
+        const escapedQuery = q.replace(/[!%_]/g, '!$&');
+        const params: unknown[] = [escapedQuery];
+        const filters: string[] = [];
+        if (didPrefix) {
+            filters.push(includeAmbiguous
+                ? '(dc.prefix = ? OR dc.prefix_ambiguous = 1)'
+                : 'dc.prefix = ?');
+            params.push(didPrefix);
+        }
+        if (cursor) {
+            filters.push(didPrefix
+                ? 'dc.suffix COLLATE BINARY > ?'
+                : "(dc.prefix || ':' || dc.suffix) COLLATE BINARY > ?");
+            params.push(didPrefix ? getDIDSuffix(cursor) : cursor);
+        }
+        params.push(limit + 1);
+
+        const rows = await this.db.all<{ did: string; prefixAmbiguous: number }[]>(
+            `SELECT dc.prefix || ':' || dc.suffix AS did,
+                    dc.prefix_ambiguous AS prefixAmbiguous
+             FROM did_docs d
+             JOIN did_classifications_effective dc ON dc.did = d.did
+             WHERE d.doc LIKE '%' || ? || '%' ESCAPE '!'
+             ${filters.length ? `AND ${filters.join(' AND ')}` : ''}
+             ORDER BY ${didPrefix ? 'dc.suffix' : 'did'} COLLATE BINARY
+             LIMIT ?`,
+            params
+        );
+
+        const dids = rows.slice(0, limit).map(row =>
+            includeAmbiguous && didPrefix && row.prefixAmbiguous
+                ? `${didPrefix}:${getDIDSuffix(row.did)}`
+                : row.did
+        );
+        return {
+            dids,
+            nextCursor: rows.length > limit ? dids[dids.length - 1] : null,
+        };
+    }
+
+    async queryDocs(
+        where: Record<string, unknown>,
+        didPrefix?: string,
+        includeAmbiguous = false
+    ): Promise<string[]> {
         if (!this.db) {
             throw new Error('DB not connected');
         }
@@ -693,22 +1199,40 @@ export default class Sqlite implements DIDsDb {
             params = [path, ...list];
         }
 
-        const rows = await this.db.all<{ did: string }[]>(sql, params);
-        return rows.map(r => r.did);
+        sql = `SELECT dc.prefix || ':' || dc.suffix AS did,
+                      dc.prefix_ambiguous AS prefixAmbiguous
+               FROM (${sql}) matches
+               JOIN did_classifications_effective dc ON dc.did = matches.did
+               ${didPrefix
+        ? `WHERE (dc.prefix = ?${includeAmbiguous ? ' OR dc.prefix_ambiguous = 1' : ''})`
+        : ''}`;
+        if (didPrefix) params.push(didPrefix);
+
+        const rows = await this.db.all<{ did: string; prefixAmbiguous: number }[]>(sql, params);
+        return rows.map(row => includeAmbiguous && didPrefix && row.prefixAmbiguous
+            ? `${didPrefix}:${getDIDSuffix(row.did)}`
+            : row.did);
     }
 
     async wipeDb(): Promise<void> {
-        if (!this.db) {
-            throw new Error('DB not connected');
-        }
-        await this.db.exec(`
-            DELETE FROM did_docs;
-            DELETE FROM did_events;
-            DELETE FROM blocks;
-            DELETE FROM published_credentials;
-            DELETE FROM challenge_receipts;
-            DELETE FROM sync_state;
-        `);
+        await this.runExclusive(async () => {
+            if (!this.db) {
+                throw new Error('DB not connected');
+            }
+            await this.db.exec(`
+                DELETE FROM did_docs;
+                DELETE FROM did_events;
+                DELETE FROM did_classifications;
+                DELETE FROM blocks;
+                DELETE FROM published_credentials;
+                DELETE FROM identity_schemas;
+                DELETE FROM identity_fields;
+                DELETE FROM did_prefix_references;
+                DELETE FROM challenge_receipts;
+                DELETE FROM network_metric_snapshots;
+                DELETE FROM sync_state;
+            `);
+        });
     }
 
     private buildChallengeReceiptWhere(
@@ -719,38 +1243,45 @@ export default class Sqlite implements DIDsDb {
         const receiptDid = 'receiptDid' in options ? options.receiptDid : undefined;
         const responseCommitment = 'responseCommitment' in options ? options.responseCommitment : undefined;
 
+        if (options.didPrefix) {
+            clauses.push(options.includeAmbiguous
+                ? '(dc.prefix = ? OR dc.prefix_ambiguous = 1)'
+                : 'dc.prefix = ?');
+            params.push(options.didPrefix);
+        }
+
         if (receiptDid) {
-            clauses.push('receipt_did = ?');
-            params.push(receiptDid);
+            clauses.push('dc.suffix = ?');
+            params.push(getDIDSuffix(receiptDid));
         }
 
         if (options.attesterDid) {
-            clauses.push('attester_did = ?');
-            params.push(options.attesterDid);
+            clauses.push('cr.attester_suffix = ?');
+            params.push(getDIDSuffix(options.attesterDid));
         }
 
         if (options.schemaDid) {
-            clauses.push('schema_did = ?');
-            params.push(options.schemaDid);
+            clauses.push('cr.schema_suffix = ?');
+            params.push(getDIDSuffix(options.schemaDid));
         }
 
         if (options.requesterDid) {
-            clauses.push('requester_did = ?');
-            params.push(options.requesterDid);
+            clauses.push('cr.requester_suffix = ?');
+            params.push(getDIDSuffix(options.requesterDid));
         }
 
         if (responseCommitment) {
-            clauses.push('response_commitment = ?');
+            clauses.push('cr.response_commitment = ?');
             params.push(responseCommitment);
         }
 
         if (options.updatedAfter) {
-            clauses.push('updated_at >= ?');
+            clauses.push('cr.updated_at >= ?');
             params.push(options.updatedAfter);
         }
 
         if (options.updatedBefore) {
-            clauses.push('updated_at <= ?');
+            clauses.push('cr.updated_at <= ?');
             params.push(options.updatedBefore);
         }
 
@@ -773,28 +1304,43 @@ export default class Sqlite implements DIDsDb {
             await this.db!.run(`
                 INSERT INTO published_credentials (
                     holder_did,
-                    credential_did,
-                    schema_did,
+                    credential_suffix,
+                    schema_suffix,
                     issuer_did,
                     subject_did,
                     revealed,
                     updated_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(holder_did, credential_did) DO UPDATE SET
-                    schema_did = excluded.schema_did,
+                ON CONFLICT(holder_did, credential_suffix) DO UPDATE SET
+                    schema_suffix = excluded.schema_suffix,
                     issuer_did = excluded.issuer_did,
                     subject_did = excluded.subject_did,
                     revealed = excluded.revealed,
                     updated_at = excluded.updated_at
             `, [
                 record.holderDid,
-                record.credentialDid,
-                record.schemaDid,
+                getDIDSuffix(record.credentialDid),
+                getDIDSuffix(record.schemaDid),
                 record.issuerDid,
                 record.subjectDid,
                 record.revealed ? 1 : 0,
                 record.updatedAt,
             ]);
+        }
+    }
+
+    private async replaceDIDPrefixReferencesInTx(
+        sourceDid: string,
+        references: string[],
+        publishedCredentials: PublishedCredentialRecord[]
+    ): Promise<void> {
+        await this.db!.run('DELETE FROM did_prefix_references WHERE source_did = ?', [sourceDid]);
+
+        for (const did of deduplicateDIDPrefixReferences(references, publishedCredentials)) {
+            await this.db!.run(
+                'INSERT INTO did_prefix_references (source_did, suffix, prefix) VALUES (?, ?, ?)',
+                [sourceDid, getDIDSuffix(did), getDIDPrefix(did)]
+            );
         }
     }
 
@@ -812,22 +1358,31 @@ export default class Sqlite implements DIDsDb {
                 INSERT INTO challenge_receipts (
                     receipt_did,
                     attester_did,
+                    attester_suffix,
                     schema_did,
+                    schema_suffix,
                     requester_did,
+                    requester_suffix,
                     response_commitment,
                     updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(receipt_did) DO UPDATE SET
                     attester_did = excluded.attester_did,
+                    attester_suffix = excluded.attester_suffix,
                     schema_did = excluded.schema_did,
+                    schema_suffix = excluded.schema_suffix,
                     requester_did = excluded.requester_did,
+                    requester_suffix = excluded.requester_suffix,
                     response_commitment = excluded.response_commitment,
                     updated_at = excluded.updated_at
             `, [
                 record.receiptDid,
                 record.attesterDid,
+                getDIDSuffix(record.attesterDid),
                 record.schemaDid,
+                getDIDSuffix(record.schemaDid),
                 record.requesterDid,
+                getDIDSuffix(record.requesterDid),
                 record.responseCommitment,
                 record.updatedAt,
             ]);

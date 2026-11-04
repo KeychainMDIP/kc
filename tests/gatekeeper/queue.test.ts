@@ -1,8 +1,12 @@
 import CipherNode from '@mdip/cipher/node';
 import Gatekeeper from '@mdip/gatekeeper';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory.ts';
+import DbSqlite from '@mdip/gatekeeper/db/sqlite.ts';
 import { ExpectedExceptionError } from '@mdip/common/errors';
 import HeliaClient from '@mdip/ipfs/helia';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import TestHelper from './helper.ts';
 
 const mockConsole = {
@@ -30,7 +34,56 @@ beforeEach(async () => {
     await gatekeeper.resetDb();  // Reset database for each test to ensure isolation
 });
 
+describe('atomic event publication', () => {
+    it('should roll back an event when a publication queue write fails', async () => {
+        const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gatekeeper-publication-'));
+        const sqliteDb = new DbSqlite('atomic', tempDir);
+        await sqliteDb.start();
+
+        try {
+            const operation = await helper.createAgentOp(cipher.generateRandomJwk(), { registry: 'TFTC' });
+            const did = await gatekeeper.generateDID(operation);
+            const event = {
+                registry: 'local',
+                time: operation.created!,
+                ordinal: [0],
+                operation,
+                did,
+            };
+            await (sqliteDb as any).db.exec(`
+                CREATE TRIGGER fail_publication_queue
+                BEFORE INSERT ON queue
+                BEGIN
+                    SELECT RAISE(FAIL, 'queue insert failed');
+                END;
+            `);
+
+            await expect(sqliteDb.addEventAndQueue(
+                did,
+                event,
+                ['hyperswarm', 'TFTC']
+            )).rejects.toThrow('queue insert failed');
+            await expect(sqliteDb.getEvents(did)).resolves.toStrictEqual([]);
+            await expect(sqliteDb.getQueue('hyperswarm')).resolves.toStrictEqual([]);
+            await expect(sqliteDb.getQueue('TFTC')).resolves.toStrictEqual([]);
+        }
+        finally {
+            await sqliteDb.stop();
+            fs.rmSync(tempDir, { recursive: true, force: true });
+        }
+    });
+});
+
 describe('getQueue', () => {
+
+    it('should queue an operation for each publication registry', async () => {
+        const operation = await helper.createAgentOp(cipher.generateRandomJwk(), { registry: 'TFTC' });
+
+        await gatekeeper.queueOperation('TFTC', operation);
+
+        await expect(gatekeeper.getQueue('hyperswarm')).resolves.toStrictEqual([operation]);
+        await expect(gatekeeper.getQueue('TFTC')).resolves.toStrictEqual([operation]);
+    });
 
     it('should return empty list when no events in queue', async () => {
         const registry = 'TFTC';

@@ -24,43 +24,15 @@ describe('hyperswarm config', () => {
         jest.resetModules();
     });
 
-    it('throws when both negentropy and legacy sync are disabled', async () => {
-        process.env.KC_HYPR_NEGENTROPY_ENABLE = 'false';
-        process.env.KC_HYPR_LEGACY_SYNC_ENABLE = 'false';
-
-        await expect(
-            jest.isolateModulesAsync(async () => {
-                await import(CONFIG_PATH);
-            })
-        ).rejects.toThrow(
-            'Invalid sync configuration; at least one of KC_HYPR_NEGENTROPY_ENABLE or KC_HYPR_LEGACY_SYNC_ENABLE must be true'
-        );
-    });
-
-    it('allows startup when at least one sync mode is enabled', async () => {
-        process.env.KC_HYPR_NEGENTROPY_ENABLE = 'false';
-        process.env.KC_HYPR_LEGACY_SYNC_ENABLE = 'true';
-
-        const config = await importConfigIsolated();
-
-        expect(config.negentropyEnabled).toBe(false);
-        expect(config.legacySyncEnabled).toBe(true);
-    });
-
     it('uses defaults when optional env vars are empty', async () => {
         process.env.KC_HYPR_EXPORT_INTERVAL = '';
-        process.env.KC_HYPR_NEGENTROPY_ENABLE = '';
-        process.env.KC_HYPR_LEGACY_SYNC_ENABLE = '';
 
         const config = await importConfigIsolated();
 
         expect(config.exportInterval).toBe(2);
-        expect(config.negentropyEnabled).toBe(true);
-        expect(config.legacySyncEnabled).toBe(true);
     });
 
     it('uses built-in defaults when basic service env vars are blank', async () => {
-        process.env.KC_DEBUG = '';
         process.env.KC_GATEKEEPER_URL = '';
         process.env.KC_KEYMASTER_URL = '';
         process.env.KC_IPFS_URL = '';
@@ -71,7 +43,6 @@ describe('hyperswarm config', () => {
 
         const config = await importConfigIsolated();
 
-        expect(config.debug).toBe(false);
         expect(config.gatekeeperURL).toBe('http://localhost:4224');
         expect(config.keymasterURL).toBe('http://localhost:4226');
         expect(config.ipfsURL).toBe('http://localhost:5001/api/v0');
@@ -82,7 +53,6 @@ describe('hyperswarm config', () => {
     });
 
     it('uses explicit env values for basic service and node settings', async () => {
-        process.env.KC_DEBUG = 'true';
         process.env.KC_GATEKEEPER_URL = 'http://gatekeeper:4224';
         process.env.KC_KEYMASTER_URL = 'http://keymaster:4226';
         process.env.KC_IPFS_URL = 'http://ipfs:5001/api/v0';
@@ -93,7 +63,6 @@ describe('hyperswarm config', () => {
 
         const config = await importConfigIsolated();
 
-        expect(config.debug).toBe(true);
         expect(config.gatekeeperURL).toBe('http://gatekeeper:4224');
         expect(config.keymasterURL).toBe('http://keymaster:4226');
         expect(config.ipfsURL).toBe('http://ipfs:5001/api/v0');
@@ -158,15 +127,12 @@ describe('hyperswarm config', () => {
         expect(config.negentropyFrameSizeLimit).toBe(4096);
     });
 
-    it('throws on invalid boolean env values', async () => {
-        process.env.KC_HYPR_NEGENTROPY_ENABLE = 'maybe';
-        process.env.KC_HYPR_LEGACY_SYNC_ENABLE = 'true';
+    it('uses an explicit Negentropy window size', async () => {
+        process.env.KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW = '500';
 
-        await expect(
-            jest.isolateModulesAsync(async () => {
-                await import(CONFIG_PATH);
-            })
-        ).rejects.toThrow('Invalid KC_HYPR_NEGENTROPY_ENABLE; expected true or false');
+        const config = await importConfigIsolated();
+
+        expect(config.negentropyMaxRecordsPerWindow).toBe(500);
     });
 
     it('throws when KC_HYPR_DB is empty or whitespace', async () => {

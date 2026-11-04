@@ -154,7 +154,7 @@ function AuthTab() {
             return;
         }
         try {
-            const verify = await keymaster.verifyResponse(response);
+            const verify = await keymaster.verifyResponse(response, { publish: false });
 
             if (verify.match) {
                 setWarning("Response is VALID");

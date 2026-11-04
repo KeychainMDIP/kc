@@ -37,6 +37,7 @@ export async function seedDID(
     options: {
         events?: GatekeeperEvent[];
         doc?: object;
+        didPrefixReferences?: string[];
         publishedCredentials?: PublishedCredentialRecord[];
         challengeReceipts?: ChallengeReceiptRecord[];
         removed?: boolean;
@@ -47,6 +48,7 @@ export async function seedDID(
             did,
             events: options.removed ? [] : options.events ?? [createSeedEvent(did)],
             doc: options.doc,
+            didPrefixReferences: options.didPrefixReferences,
             publishedCredentials: options.publishedCredentials,
             challengeReceipts: options.challengeReceipts,
             removed: options.removed,

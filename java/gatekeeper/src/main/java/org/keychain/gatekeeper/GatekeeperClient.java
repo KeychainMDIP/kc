@@ -1,14 +1,31 @@
 package org.keychain.gatekeeper;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.EOFException;
 import java.io.IOException;
+import java.io.InterruptedIOException;
+import java.net.ProtocolException;
+import java.net.SocketException;
+import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.TimeUnit;
+import javax.net.ssl.SSLException;
+import okhttp3.Call;
 import okhttp3.HttpUrl;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -23,6 +40,8 @@ import org.keychain.gatekeeper.model.GatekeeperEvent;
 import org.keychain.gatekeeper.model.GetDIDOptions;
 import org.keychain.gatekeeper.model.GetStatusResult;
 import org.keychain.gatekeeper.model.ImportBatchResult;
+import org.keychain.gatekeeper.model.IndexExportRequest;
+import org.keychain.gatekeeper.model.IndexExportResponse;
 import org.keychain.gatekeeper.model.MdipDocument;
 import org.keychain.gatekeeper.model.Operation;
 import org.keychain.gatekeeper.model.ProcessEventsResult;
@@ -30,16 +49,20 @@ import org.keychain.gatekeeper.model.ResolveDIDOptions;
 import org.keychain.gatekeeper.model.VerifyDbOptions;
 import org.keychain.gatekeeper.model.VerifyDbResult;
 
-public class GatekeeperClient implements GatekeeperInterface {
+public class GatekeeperClient implements GatekeeperInterface, AutoCloseable {
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
     private static final MediaType OCTET_STREAM = MediaType.get("application/octet-stream");
     private static final MediaType TEXT_PLAIN = MediaType.get("text/plain; charset=utf-8");
+    private static final Set<Integer> RETRYABLE_STATUSES = Set.of(408, 425, 429, 500, 502, 503, 504);
 
     private final OkHttpClient http;
     private final ObjectMapper mapper;
     private final HttpUrl baseUrl;
-    private String headerName;
-    private String headerValue;
+    private final Map<String, String> customHeaders = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+    private final Object lifecycleLock = new Object();
+    private final Set<Call> activeCalls = new HashSet<>();
+    private boolean closed;
+    private Runnable removeCancellationListener = () -> {};
 
     public GatekeeperClient(GatekeeperClientOptions options) {
         Objects.requireNonNull(options, "options is required");
@@ -48,6 +71,9 @@ public class GatekeeperClient implements GatekeeperInterface {
                 JsonInclude.Value.construct(JsonInclude.Include.NON_NULL, JsonInclude.Include.ALWAYS)
             );
         String base = options.url != null ? options.url : options.baseUrl;
+        if (base == null) {
+            throw new IllegalArgumentException("baseUrl is required");
+        }
         if (base.endsWith("/api/v1")) {
             base = base.substring(0, base.length() - "/api/v1".length());
         } else if (base.endsWith("/api/v1/")) {
@@ -60,29 +86,64 @@ public class GatekeeperClient implements GatekeeperInterface {
 
         Duration connectTimeout = options.connectTimeout != null ? options.connectTimeout : Duration.ofSeconds(10);
         Duration readTimeout = options.readTimeout != null ? options.readTimeout : Duration.ofSeconds(30);
+        Duration callTimeout = options.callTimeout != null ? options.callTimeout : Duration.ofSeconds(60);
+        long callTimeoutMillis;
+        try {
+            callTimeoutMillis = callTimeout.toMillis();
+        } catch (ArithmeticException e) {
+            throw new IllegalArgumentException("callTimeout is too large", e);
+        }
+        if (callTimeoutMillis <= 0 || callTimeoutMillis > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("callTimeout must be between 1 and 2147483647 milliseconds");
+        }
 
         this.http = new OkHttpClient.Builder()
             .connectTimeout(connectTimeout)
             .readTimeout(readTimeout)
+            .callTimeout(callTimeoutMillis, TimeUnit.MILLISECONDS)
+            .retryOnConnectionFailure(true)
+            .addNetworkInterceptor(chain -> {
+                Response response;
+                try {
+                    response = chain.proceed(chain.request());
+                } catch (IOException e) {
+                    // Allow connection fallback, but never replay a possibly transmitted request.
+                    throw new IllegalStateException("Gatekeeper request failed", e);
+                }
+                // Keep HTTP retries in the readiness loop without bypassing normal response decoding.
+                return response.code() == 408 || response.code() == 503
+                    ? response.newBuilder().header("Retry-After", "1").build() : response;
+            })
             .build();
 
-        this.headerName = options.headerName;
-        this.headerValue = options.headerValue;
+        if (options.headerName != null && options.headerValue != null) {
+            customHeaders.put(options.headerName, options.headerValue);
+        }
 
-        if (Boolean.TRUE.equals(options.waitUntilReady)) {
-            waitUntilReady(options);
+        try {
+            if (options.cancellation != null) {
+                synchronized (lifecycleLock) {
+                    removeCancellationListener = options.cancellation.onCancel(this::close);
+                }
+            }
+            checkOpen();
+            if (Boolean.TRUE.equals(options.waitUntilReady)) {
+                waitUntilReady(options);
+            }
+            checkOpen();
+        } catch (RuntimeException | Error e) {
+            close();
+            throw e;
         }
     }
 
-    public void addCustomHeader(String header, String value) {
-        this.headerName = header;
-        this.headerValue = value;
+    public synchronized void addCustomHeader(String header, String value) {
+        customHeaders.put(header, value);
     }
 
-    public void removeCustomHeader(String header) {
-        if (header != null && header.equals(this.headerName)) {
-            this.headerName = null;
-            this.headerValue = null;
+    public synchronized void removeCustomHeader(String header) {
+        if (header != null) {
+            customHeaders.remove(header);
         }
     }
 
@@ -96,30 +157,67 @@ public class GatekeeperClient implements GatekeeperInterface {
     }
 
     public boolean isReady() {
-        HttpUrl url = baseUrl.newBuilder()
-            .addPathSegment("ready")
-            .build();
         try {
-            Boolean ok = getJson(url, Boolean.class);
-            return Boolean.TRUE.equals(ok);
-        } catch (Exception e) {
-            return false;
+            return probeReadiness();
+        } catch (RuntimeException e) {
+            if (isRetryableFailure(e)) {
+                return false;
+            }
+            throw e;
         }
     }
 
+    private boolean probeReadiness() {
+        HttpUrl url = baseUrl.newBuilder()
+            .addPathSegment("ready")
+            .build();
+        JsonNode ready = executeRequest(new Request.Builder().url(url).get().build(), response ->
+            mapper.readerFor(JsonNode.class).with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+                .readValue(response.body() != null ? response.body().string() : ""));
+        if (ready == null || !ready.isBoolean()) {
+            throw new IllegalStateException("Gatekeeper readiness response must be a boolean");
+        }
+        return ready.booleanValue();
+    }
+
     public void waitUntilReady(GatekeeperClientOptions options) {
+        Objects.requireNonNull(options, "options is required");
+        Runnable removeListener = options.cancellation != null
+            ? options.cancellation.onCancel(this::close) : () -> {};
+        try {
+            waitForReadiness(options);
+        } finally {
+            removeListener.run();
+        }
+    }
+
+    private void waitForReadiness(GatekeeperClientOptions options) {
         int intervalSeconds = options.intervalSeconds != null ? options.intervalSeconds : 5;
         boolean chatty = Boolean.TRUE.equals(options.chatty);
         int becomeChattyAfter = options.becomeChattyAfter != null ? options.becomeChattyAfter : 0;
         int maxRetries = options.maxRetries != null ? options.maxRetries : 0;
-        int retries = 0;
+        long attempts = 0;
 
         if (chatty) {
             System.out.println("Connecting to gatekeeper at " + baseUrl);
         }
 
         while (true) {
-            if (isReady()) {
+            checkOpen();
+            attempts += 1;
+            RuntimeException lastFailure = null;
+            boolean ready;
+            try {
+                ready = probeReadiness();
+            } catch (RuntimeException e) {
+                if (!isRetryableFailure(e)) {
+                    throw e;
+                }
+                lastFailure = e;
+                ready = false;
+            }
+            if (ready) {
+                checkOpen();
                 if (chatty) {
                     System.out.println("Gatekeeper service is ready!");
                 }
@@ -130,22 +228,15 @@ public class GatekeeperClient implements GatekeeperInterface {
                 System.out.println("Waiting for Gatekeeper to be ready...");
             }
 
-            retries += 1;
-            if (maxRetries > 0 && retries > maxRetries) {
-                return;
+            if (maxRetries > 0 && attempts > maxRetries) {
+                throw new IllegalStateException("Gatekeeper did not become ready after " + attempts + " attempts", lastFailure);
             }
-            if (!chatty && becomeChattyAfter > 0 && retries > becomeChattyAfter) {
+            if (!chatty && becomeChattyAfter > 0 && attempts > becomeChattyAfter) {
                 System.out.println("Connecting to gatekeeper at " + baseUrl);
                 chatty = true;
             }
 
-            try {
-                //noinspection BusyWait
-                Thread.sleep(Math.max(1, intervalSeconds) * 1000L);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return;
-            }
+            waitForRetry(Math.max(0, intervalSeconds) * 1000L);
         }
     }
 
@@ -231,6 +322,11 @@ public class GatekeeperClient implements GatekeeperInterface {
     }
 
     @Override
+    public IndexExportResponse exportIndex(IndexExportRequest request) {
+        return postJson("/index/export", Objects.requireNonNull(request, "request is required"), IndexExportResponse.class);
+    }
+
+    @Override
     public ImportBatchResult importDIDs(java.util.List<java.util.List<GatekeeperEvent>> dids) {
         return postJson("/dids/import", dids, ImportBatchResult.class);
     }
@@ -268,9 +364,13 @@ public class GatekeeperClient implements GatekeeperInterface {
     }
 
     @Override
-    public boolean clearQueue(String registry, java.util.List<Operation> events) {
-        String path = "/queue/" + registry + "/clear";
-        return postJson(path, events, Boolean.class);
+    public boolean clearQueue(String registry, java.util.List<?> eventsOrHashes) {
+        HttpUrl url = baseUrl.newBuilder()
+            .addPathSegment("queue")
+            .addPathSegment(registry)
+            .addPathSegment("clear")
+            .build();
+        return postJson(url, eventsOrHashes, Boolean.class);
     }
 
     @Override
@@ -366,8 +466,11 @@ public class GatekeeperClient implements GatekeeperInterface {
 
     @Override
     public boolean addBlock(String registry, BlockInfo blockInfo) {
-        String path = "/block/" + registry;
-        return postJson(path, blockInfo, Boolean.class);
+        HttpUrl url = baseUrl.newBuilder()
+            .addPathSegment("block")
+            .addPathSegment(registry)
+            .build();
+        return postJson(url, blockInfo, Boolean.class);
     }
 
     @Override
@@ -376,21 +479,27 @@ public class GatekeeperClient implements GatekeeperInterface {
     }
 
     private <T> T postJson(String path, Object body, Class<T> responseType) {
-        Request request = buildPostRequest(path, body);
+        HttpUrl url = baseUrl.newBuilder().addPathSegments(trimLeadingSlash(path)).build();
+        return postJson(url, body, responseType);
+    }
+
+    private <T> T postJson(HttpUrl url, Object body, Class<T> responseType) {
+        Request request = buildPostRequest(url, body);
         return execute(request, responseType);
     }
 
     private <T> T postJsonType(String path, Object body, TypeReference<T> typeRef) {
-        Request request = buildPostRequest(path, body);
+        HttpUrl url = baseUrl.newBuilder().addPathSegments(trimLeadingSlash(path)).build();
+        Request request = buildPostRequest(url, body);
         return execute(request, typeRef);
     }
 
-    private Request buildPostRequest(String path, Object body) {
+    private Request buildPostRequest(HttpUrl url, Object body) {
         try {
-            String json = mapper.writeValueAsString(body);
+            byte[] json = mapper.writeValueAsBytes(body);
             RequestBody requestBody = RequestBody.create(json, JSON);
             return new Request.Builder()
-                    .url(baseUrl.newBuilder().addPathSegments(trimLeadingSlash(path)).build())
+                    .url(url)
                     .post(requestBody)
                     .build();
         } catch (IOException e) {
@@ -424,17 +533,8 @@ public class GatekeeperClient implements GatekeeperInterface {
     }
 
     private <T> T execute(Request request, Class<T> responseType) {
-        Request.Builder builder = request.newBuilder();
-        if (headerName != null && headerValue != null) {
-            builder.addHeader(headerName, headerValue);
-        }
-
-        try (Response response = http.newCall(builder.build()).execute()) {
+        return executeRequest(request, response -> {
             String body = response.body() != null ? response.body().string() : "";
-            if (!response.isSuccessful()) {
-                GatekeeperError error = GatekeeperErrorParser.parse(body);
-                throw new GatekeeperClientException("Gatekeeper request failed", response.code(), error);
-            }
 
             if (responseType == String.class) {
                 try {
@@ -449,30 +549,17 @@ public class GatekeeperClient implements GatekeeperInterface {
             }
 
             return mapper.readValue(body, responseType);
-        } catch (IOException e) {
-            throw new IllegalStateException("Gatekeeper request failed", e);
-        }
+        });
     }
 
     private <T> T execute(Request request, TypeReference<T> typeRef) {
-        Request.Builder builder = request.newBuilder();
-        if (headerName != null && headerValue != null) {
-            builder.addHeader(headerName, headerValue);
-        }
-
-        try (Response response = http.newCall(builder.build()).execute()) {
+        return executeRequest(request, response -> {
             String body = response.body() != null ? response.body().string() : "";
-            if (!response.isSuccessful()) {
-                GatekeeperError error = GatekeeperErrorParser.parse(body);
-                throw new GatekeeperClientException("Gatekeeper request failed", response.code(), error);
-            }
             if (body.isEmpty()) {
                 return null;
             }
             return mapper.readValue(body, typeRef);
-        } catch (IOException e) {
-            throw new IllegalStateException("Gatekeeper request failed", e);
-        }
+        });
     }
 
     private byte[] getBytes(HttpUrl url) {
@@ -480,23 +567,147 @@ public class GatekeeperClient implements GatekeeperInterface {
             .url(url)
             .get()
             .build();
-        Request.Builder builder = request.newBuilder();
-        if (headerName != null && headerValue != null) {
-            builder.addHeader(headerName, headerValue);
-        }
-
-        try (Response response = http.newCall(builder.build()).execute()) {
+        return executeRequest(request, response -> {
             ResponseBody responseBody = response.body();
             byte[] bytes = responseBody != null ? responseBody.bytes() : new byte[0];
-            if (!response.isSuccessful()) {
-                String body = new String(bytes, StandardCharsets.UTF_8);
-                GatekeeperError error = GatekeeperErrorParser.parse(body);
-                throw new GatekeeperClientException("Gatekeeper request failed", response.code(), error);
-            }
             return bytes;
-        } catch (IOException e) {
-            throw new IllegalStateException("Gatekeeper request failed", e);
+        });
+    }
+
+    @FunctionalInterface
+    private interface ResponseReader<T> {
+        T read(Response response) throws IOException;
+    }
+
+    private <T> T executeRequest(Request request, ResponseReader<T> reader) {
+        Request prepared = withCustomHeaders(request);
+        Call call;
+        synchronized (lifecycleLock) {
+            checkOpen();
+            call = http.newCall(prepared);
+            activeCalls.add(call);
         }
+        try (Response response = call.execute()) {
+            checkOpen();
+            if (!response.isSuccessful()) {
+                throw httpFailure(response);
+            }
+            T result = reader.read(response);
+            checkOpen();
+            return result;
+        } catch (RuntimeException e) {
+            checkOpen();
+            if (!(e instanceof GatekeeperClientException) && e.getCause() instanceof IOException && call.isCanceled()) {
+                InterruptedIOException timeout = new InterruptedIOException("Gatekeeper call timed out");
+                timeout.initCause(e.getCause());
+                throw new IllegalStateException("Gatekeeper request failed", timeout);
+            }
+            throw e;
+        } catch (IOException e) {
+            synchronized (lifecycleLock) {
+                if (closed || Thread.currentThread().isInterrupted()) {
+                    CancellationException cancelled = new CancellationException("Gatekeeper request cancelled");
+                    cancelled.initCause(e);
+                    throw cancelled;
+                }
+            }
+            throw new IllegalStateException("Gatekeeper request failed", e);
+        } finally {
+            synchronized (lifecycleLock) {
+                activeCalls.remove(call);
+            }
+        }
+    }
+
+    private static GatekeeperClientException httpFailure(Response response) {
+        try {
+            String body = response.body() != null ? response.body().string() : "";
+            GatekeeperError error = GatekeeperErrorParser.parse(body);
+            return new GatekeeperClientException("Gatekeeper request failed", response.code(), error);
+        } catch (IOException e) {
+            GatekeeperClientException failure = new GatekeeperClientException("Gatekeeper request failed", response.code(), null);
+            failure.initCause(e);
+            return failure;
+        }
+    }
+
+    private void checkOpen() {
+        synchronized (lifecycleLock) {
+            if (closed || Thread.currentThread().isInterrupted()) {
+                throw new CancellationException("Gatekeeper client is closed or the thread was interrupted");
+            }
+        }
+    }
+
+    private void waitForRetry(long millis) {
+        synchronized (lifecycleLock) {
+            checkOpen();
+            long duration = TimeUnit.MILLISECONDS.toNanos(millis);
+            long started = System.nanoTime();
+            long remaining = duration;
+            while (remaining > 0) {
+                try {
+                    TimeUnit.NANOSECONDS.timedWait(lifecycleLock, remaining);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("Interrupted while waiting for Gatekeeper readiness", e);
+                }
+                checkOpen();
+                remaining = duration - (System.nanoTime() - started);
+            }
+        }
+    }
+
+    private static boolean isRetryableFailure(RuntimeException error) {
+        if (error instanceof GatekeeperClientException) {
+            return RETRYABLE_STATUSES.contains(((GatekeeperClientException) error).statusCode);
+        }
+        if (error instanceof CancellationException) {
+            return false;
+        }
+        boolean retryable = false;
+        List<Throwable> failures = new ArrayList<>();
+        Set<Throwable> seen = new HashSet<>();
+        failures.add(error);
+        for (int i = 0; i < failures.size(); i++) {
+            Throwable cause = failures.get(i);
+            if (cause == null || !seen.add(cause)) {
+                continue;
+            }
+            // shortcut: DNS failures stay permanent until a resolver exposes temporary failure codes.
+            if (cause instanceof JsonProcessingException || cause instanceof SSLException
+                || cause instanceof ProtocolException || cause instanceof UnknownHostException) {
+                return false;
+            }
+            if (cause instanceof SocketException || cause instanceof InterruptedIOException || cause instanceof EOFException) {
+                retryable = true;
+            }
+            failures.add(cause.getCause());
+            for (Throwable suppressed : cause.getSuppressed()) {
+                failures.add(suppressed);
+            }
+        }
+        return retryable;
+    }
+
+    @Override
+    public final void close() {
+        List<Call> calls;
+        Runnable removeListener;
+        synchronized (lifecycleLock) {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            calls = new ArrayList<>(activeCalls);
+            removeListener = removeCancellationListener;
+            removeCancellationListener = () -> {};
+            lifecycleLock.notifyAll();
+        }
+        calls.forEach(Call::cancel);
+        removeListener.run();
+        http.connectionPool().evictAll();
+        http.dispatcher().executorService().shutdown();
     }
 
     private String getText(HttpUrl url) {
@@ -505,6 +716,12 @@ public class GatekeeperClient implements GatekeeperInterface {
             .get()
             .build();
         return execute(request, String.class);
+    }
+
+    private synchronized Request withCustomHeaders(Request request) {
+        Request.Builder builder = request.newBuilder();
+        customHeaders.forEach(builder::header);
+        return builder.build();
     }
 
     private static String trimLeadingSlash(String path) {

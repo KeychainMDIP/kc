@@ -2,7 +2,9 @@ import CipherNode from '@mdip/cipher/node';
 import Gatekeeper from '@mdip/gatekeeper';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory.ts';
 import { ExpectedExceptionError } from '@mdip/common/errors';
+import { copyJSON } from '@mdip/common/utils';
 import HeliaClient from '@mdip/ipfs/helia';
+import { jest } from '@jest/globals';
 import TestHelper from './helper.ts';
 
 const mockConsole = {
@@ -40,6 +42,24 @@ describe('createDID', () => {
         expect(did.startsWith('did:test:')).toBe(true);
     });
 
+    it('should not persist a DID when its publication queues cannot be committed', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await helper.createAgentOp(keypair, { registry: 'TFTC' });
+        const did = await gatekeeper.generateDID(agentOp);
+        const addEvent = jest.spyOn(db, 'addEventAndQueue').mockRejectedValueOnce(new Error('queue failure'));
+
+        await expect(gatekeeper.createDID(agentOp)).rejects.toThrow('queue failure');
+        addEvent.mockRestore();
+
+        await expect(gatekeeper.exportDID(did)).resolves.toStrictEqual([]);
+        await expect(gatekeeper.getQueue('hyperswarm')).resolves.toStrictEqual([]);
+        await expect(gatekeeper.getQueue('TFTC')).resolves.toStrictEqual([]);
+
+        await expect(gatekeeper.createDID(agentOp)).resolves.toBe(did);
+        await expect(gatekeeper.getQueue('hyperswarm')).resolves.toStrictEqual([agentOp]);
+        await expect(gatekeeper.getQueue('TFTC')).resolves.toStrictEqual([agentOp]);
+    });
+
     it('should create DID for local registry', async () => {
         const keypair = cipher.generateRandomJwk();
         const agentOp = await helper.createAgentOp(keypair, { version: 1, registry: 'local' });
@@ -47,6 +67,23 @@ describe('createDID', () => {
         const did = await gatekeeper.createDID(agentOp);
 
         expect(did.startsWith('did:test:')).toBe(true);
+    });
+
+    it('should reject an asset create that completes a controller cycle', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agent = await gatekeeper.createDID(await helper.createAgentOp(keypair));
+        const assetOp = await helper.createAssetOp(agent, keypair);
+        const asset = await gatekeeper.generateDID(assetOp);
+
+        const agentDoc = await gatekeeper.resolveDID(agent);
+        agentDoc.didDocument!.controller = asset;
+        expect(await gatekeeper.updateDID(
+            await helper.createUpdateOp(keypair, agent, agentDoc)
+        )).toBe(true);
+
+        await expect(gatekeeper.verifyOperation(assetOp)).resolves.toBe(false);
+        await expect(gatekeeper.createDID(assetOp)).rejects.toThrow('Invalid operation: controller cycle');
+        await expect(gatekeeper.exportDID(asset)).resolves.toStrictEqual([]);
     });
 
     it('should throw exception on invalid version', async () => {
@@ -101,6 +138,15 @@ describe('createDID', () => {
         } catch (error: any) {
             expect(error.message).toBe('Invalid operation: mdip.type=mock');
         }
+    });
+
+    it('should reject an operation prefix that is not a DID method prefix', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await helper.createAgentOp(keypair, { prefix: 'invalid' });
+
+        await expect(gatekeeper.createDID(agentOp))
+            .rejects.toThrow('Invalid operation: mdip.prefix=invalid');
+        await expect(gatekeeper.getDIDs()).resolves.toStrictEqual([]);
     });
 
     it('should throw exception on invalid create agent operation', async () => {
@@ -172,9 +218,12 @@ describe('createDID', () => {
     });
 
     it('should throw exception on create op size exceeding limit', async () => {
-        const gk = new Gatekeeper({ db, ipfs, console: mockConsole, maxOpBytes: 100 });
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await helper.createAgentOp(keypair);
+        const agentOp = await helper.createAgentOp(keypair, { prefix: 'did:tést' });
+        const json = JSON.stringify(agentOp);
+        const gk = new Gatekeeper({ db, ipfs, console: mockConsole, maxOpBytes: json.length });
+
+        expect(Buffer.byteLength(json, 'utf8')).toBeGreaterThan(json.length);
 
         try {
             await gk.createDID(agentOp);
@@ -345,23 +394,13 @@ describe('resolveDID', () => {
         expect(updatedDoc).toStrictEqual(expected);
     });
 
-    it('should resolve confirmed version when specified', async () => {
-
+    it('should not resolve an unconfirmed create when confirmation is specified', async () => {
         const keypair = cipher.generateRandomJwk();
-        const agentOp = await helper.createAgentOp(keypair, { version: 1, registry: 'hyperswarm' }); // Specify hyperswarm registry for this agent
+        const agentOp = await helper.createAgentOp(keypair, { version: 1, registry: 'hyperswarm' });
         const did = await gatekeeper.createDID(agentOp);
-        const expected = await gatekeeper.resolveDID(did);
-        const update = await gatekeeper.resolveDID(did);
-        update.didDocumentData = { mock: 1 };
-        const updateOp = await helper.createUpdateOp(keypair, did, update);
-        const ok = await gatekeeper.updateDID(updateOp);
         const confirmedDoc = await gatekeeper.resolveDID(did, { confirm: true });
 
-        // Update expected to match the new retrieved timestamp
-        expected!.didResolutionMetadata!.retrieved = expect.any(String);
-
-        expect(ok).toBe(true);
-        expect(confirmedDoc).toStrictEqual(expected);
+        expect(confirmedDoc.didResolutionMetadata?.error).toBe('notFound');
     });
 
     it('should resolve verified version after an update', async () => {
@@ -701,6 +740,316 @@ describe('updateDID', () => {
         expect(updatedDoc).toStrictEqual(doc);
     });
 
+    it('should reject invalid replacement documents without changing the DID', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const did = await gatekeeper.createDID(await helper.createAgentOp(keypair));
+        const otherDid = await gatekeeper.createDID(
+            await helper.createAgentOp(keypair, { prefix: 'did:mdip' })
+        );
+        const original = await gatekeeper.resolveDID(did);
+        const missingData = copyJSON(original);
+        const missingDid = copyJSON(original);
+        const missingMdip = copyJSON(original);
+        const invalidVersion = copyJSON(original);
+        const wrongDid = copyJSON(original);
+        const wrongType = copyJSON(original);
+        const wrongRegistry = copyJSON(original);
+
+        delete missingData.didDocumentData;
+        delete missingDid.didDocument!.id;
+        delete missingMdip.mdip;
+        invalidVersion.mdip!.version = 2;
+        wrongDid.didDocument!.id = otherDid;
+        wrongType.mdip!.type = 'asset';
+        wrongRegistry.mdip!.registry = 'hyperswarm';
+
+        for (const replacement of [
+            {},
+            missingData,
+            missingDid,
+            missingMdip,
+            invalidVersion,
+            wrongDid,
+            wrongType,
+            wrongRegistry,
+        ]) {
+            const operation = await helper.createUpdateOp(keypair, did, replacement);
+            await expect(gatekeeper.updateDID(operation)).resolves.toBe(false);
+        }
+
+        await expect(gatekeeper.exportDID(did)).resolves.toHaveLength(1);
+        await expect(gatekeeper.resolveDID(did)).resolves.toMatchObject({
+            didDocument: { id: did },
+            didDocumentData: {},
+            mdip: { type: 'agent', registry: 'local' },
+        });
+    });
+
+    it('should reject an operation of the wrong kind or for another DID', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const did = await gatekeeper.createDID(await helper.createAgentOp(keypair));
+        const otherDid = await gatekeeper.createDID(
+            await helper.createAgentOp(keypair, { prefix: 'did:mdip' })
+        );
+        const doc = await gatekeeper.resolveDID(did);
+        const operation = await helper.createUpdateOp(keypair, did, doc);
+        operation.type = 'create';
+        delete operation.signature;
+        const hash = cipher.hashJSON(operation);
+        operation.signature = {
+            signer: did,
+            signed: new Date().toISOString(),
+            hash,
+            value: cipher.signHash(hash, keypair.privateJwk),
+        };
+
+        await expect(gatekeeper.verifyUpdateOperation(operation, doc)).resolves.toBe(false);
+        await expect(gatekeeper.verifyUpdateOperation(
+            await helper.createUpdateOp(keypair, did, doc),
+            await gatekeeper.resolveDID(otherDid)
+        )).resolves.toBe(false);
+    });
+
+    it('should accept an update whose DID uses another valid prefix', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const did = await gatekeeper.createDID(await helper.createAgentOp(keypair));
+        const alias = `did:mdip:${did.split(':').pop()}`;
+        const doc = await gatekeeper.resolveDID(did);
+        doc.didDocumentData = { updated: true };
+        const operation = await helper.createUpdateOp(keypair, alias, doc);
+
+        await expect(gatekeeper.updateDID(operation)).resolves.toBe(true);
+        await expect(gatekeeper.resolveDID(did)).resolves.toMatchObject({
+            didDocument: { id: did },
+            didDocumentData: { updated: true },
+        });
+    });
+
+    it('should reject cyclic asset controller chains', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agent = await gatekeeper.createDID(await helper.createAgentOp(keypair));
+        const assetA = await gatekeeper.createDID(await helper.createAssetOp(agent, keypair));
+        const assetB = await gatekeeper.createDID(await helper.createAssetOp(agent, keypair));
+
+        const assetADoc = await gatekeeper.resolveDID(assetA);
+        assetADoc.didDocument!.controller = assetB;
+        expect(await gatekeeper.updateDID(await helper.createUpdateOp(keypair, assetA, assetADoc))).toBe(true);
+
+        const nextAssetADoc = await gatekeeper.resolveDID(assetA);
+        nextAssetADoc.didDocumentData = { updated: true };
+        expect(await gatekeeper.updateDID(await helper.createUpdateOp(keypair, assetA, nextAssetADoc))).toBe(true);
+
+        const assetBDoc = await gatekeeper.resolveDID(assetB);
+        assetBDoc.didDocument!.controller = assetA;
+        const cycle = await helper.createUpdateOp(keypair, assetB, assetBDoc);
+        expect(await gatekeeper.updateDID(cycle)).toBe(false);
+        expect((await gatekeeper.resolveDID(assetB)).didDocument!.controller).toBe(agent);
+
+        const events = await db.getEvents(assetB);
+        events.push({
+            registry: 'local',
+            time: cycle.signature!.signed,
+            operation: cycle,
+            did: assetB,
+        });
+        await db.setEvents(assetB, events);
+
+        const cyclicAssetADoc = await gatekeeper.resolveDID(assetA);
+        cyclicAssetADoc.didDocumentData = { updated: false };
+        const update = await helper.createUpdateOp(keypair, assetA, cyclicAssetADoc);
+        expect(await gatekeeper.updateDID(update)).toBe(false);
+    });
+
+    it('should reject a cycle through an unconfirmed controller update', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agent = await gatekeeper.createDID(await helper.createAgentOp(keypair, { registry: 'hyperswarm' }));
+        const assetA = await gatekeeper.createDID(
+            await helper.createAssetOp(agent, keypair, { registry: 'hyperswarm' })
+        );
+        const assetB = await gatekeeper.createDID(
+            await helper.createAssetOp(agent, keypair, { registry: 'hyperswarm' })
+        );
+        const creates = (await gatekeeper.exportDIDs([agent, assetA, assetB]))
+            .flat()
+            .map(event => ({ ...event, registry: 'hyperswarm' }));
+        await gatekeeper.importBatch(creates);
+        await gatekeeper.processEvents();
+
+        const assetADoc = await gatekeeper.resolveDID(assetA);
+        assetADoc.didDocument!.controller = assetB;
+        expect(await gatekeeper.updateDID(await helper.createUpdateOp(keypair, assetA, assetADoc))).toBe(true);
+        expect((await gatekeeper.resolveDID(assetA, { confirm: true })).didDocument!.controller).toBe(agent);
+
+        const assetBDoc = await gatekeeper.resolveDID(assetB);
+        assetBDoc.didDocument!.controller = assetA;
+        expect(await gatekeeper.updateDID(await helper.createUpdateOp(keypair, assetB, assetBDoc))).toBe(false);
+    });
+
+    it('should reject a cycle created with a backdated signature', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agent = await gatekeeper.createDID(await helper.createAgentOp(keypair));
+        const assetA = await gatekeeper.createDID(await helper.createAssetOp(agent, keypair));
+        const assetB = await gatekeeper.createDID(await helper.createAssetOp(agent, keypair));
+
+        const assetADoc = await gatekeeper.resolveDID(assetA);
+        assetADoc.didDocument!.controller = assetB;
+        const updateA = await helper.createUpdateOp(keypair, assetA, assetADoc);
+        expect(await gatekeeper.updateDID(updateA)).toBe(true);
+
+        const assetBDoc = await gatekeeper.resolveDID(assetB);
+        assetBDoc.didDocument!.controller = assetA;
+        const updateB = await helper.createUpdateOp(keypair, assetB, assetBDoc);
+        updateB.signature!.signed = new Date(
+            new Date(updateA.signature!.signed).getTime() - 1
+        ).toISOString();
+        const unsignedUpdateB = copyJSON(updateB);
+        delete unsignedUpdateB.signature;
+        updateB.signature!.hash = cipher.hashJSON(unsignedUpdateB);
+        updateB.signature!.value = cipher.signHash(updateB.signature!.hash, keypair.privateJwk);
+
+        expect(await gatekeeper.verifyOperation(updateB)).toBe(false);
+        expect(await gatekeeper.updateDID(updateB)).toBe(false);
+    });
+
+    it('should serialize concurrent controller changes', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agent = await gatekeeper.createDID(await helper.createAgentOp(keypair));
+        const assetA = await gatekeeper.createDID(await helper.createAssetOp(agent, keypair));
+        const assetB = await gatekeeper.createDID(await helper.createAssetOp(agent, keypair));
+
+        const assetADoc = await gatekeeper.resolveDID(assetA);
+        assetADoc.didDocument!.controller = assetB;
+        const updateA = await helper.createUpdateOp(keypair, assetA, assetADoc);
+        const assetBDoc = await gatekeeper.resolveDID(assetB);
+        assetBDoc.didDocument!.controller = assetA;
+        const updateB = await helper.createUpdateOp(keypair, assetB, assetBDoc);
+
+        const originalAddEventAndQueue = db.addEventAndQueue.bind(db);
+        let signalStarted: () => void = () => { };
+        let releaseFirst: () => void = () => { };
+        const started = new Promise<void>(resolve => (signalStarted = resolve));
+        const release = new Promise<void>(resolve => (releaseFirst = resolve));
+        let pauseFirst = true;
+        const addEvent = jest.spyOn(db, 'addEventAndQueue').mockImplementation(async (did, event, registries) => {
+            if (pauseFirst && did === assetA && event.operation.type === 'update') {
+                pauseFirst = false;
+                signalStarted();
+                await release;
+            }
+            return originalAddEventAndQueue(did, event, registries);
+        });
+
+        try {
+            const first = gatekeeper.updateDID(updateA);
+            await started;
+            const second = gatekeeper.updateDID(updateB);
+            releaseFirst();
+
+            await expect(Promise.all([first, second])).resolves.toStrictEqual([true, false]);
+            expect((await gatekeeper.resolveDID(assetA)).didDocument!.controller).toBe(assetB);
+            expect((await gatekeeper.resolveDID(assetB)).didDocument!.controller).toBe(agent);
+        }
+        finally {
+            releaseFirst();
+            addEvent.mockRestore();
+        }
+    });
+
+    it('should detect a legacy controller cycle when document IDs are missing', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agent = await gatekeeper.createDID(await helper.createAgentOp(keypair));
+        const assetA = await gatekeeper.createDID(await helper.createAssetOp(agent, keypair));
+        const assetB = await gatekeeper.createDID(await helper.createAssetOp(agent, keypair));
+
+        const assetADoc = await gatekeeper.resolveDID(assetA);
+        delete assetADoc.didDocument!.id;
+        assetADoc.didDocument!.controller = assetB;
+        const legacyUpdate = await helper.createUpdateOp(keypair, assetA, assetADoc);
+        const assetAEvents = await db.getEvents(assetA);
+        assetAEvents.push({
+            registry: 'local',
+            time: legacyUpdate.signature!.signed,
+            operation: legacyUpdate,
+            did: assetA,
+        });
+        await db.setEvents(assetA, assetAEvents);
+
+        const assetBDoc = await gatekeeper.resolveDID(assetB);
+        delete assetBDoc.didDocument!.id;
+        assetBDoc.didDocument!.controller = assetA;
+        const cycle = await helper.createUpdateOp(keypair, assetB, assetBDoc);
+        const events = await db.getEvents(assetB);
+        events.push({
+            registry: 'local',
+            time: cycle.signature!.signed,
+            operation: cycle,
+            did: assetB,
+        });
+        await db.setEvents(assetB, events);
+
+        const updateDoc = await gatekeeper.resolveDID(assetA);
+        updateDoc.didDocument!.id = assetA;
+        updateDoc.didDocumentData = { updated: true };
+        const update = await helper.createUpdateOp(keypair, assetA, updateDoc);
+        expect(await gatekeeper.updateDID(update)).toBe(false);
+    });
+
+    it('should not persist an update when its publication queues cannot be committed', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const agentOp = await helper.createAgentOp(keypair, { registry: 'TFTC' });
+        const did = await gatekeeper.createDID(agentOp);
+        await gatekeeper.clearQueue('hyperswarm', [agentOp]);
+        await gatekeeper.clearQueue('TFTC', [agentOp]);
+        const doc = await gatekeeper.resolveDID(did);
+        doc.didDocumentData = { mock: 1 };
+        const updateOp = await helper.createUpdateOp(keypair, did, doc);
+        const addEvent = jest.spyOn(db, 'addEventAndQueue').mockRejectedValueOnce(new Error('queue failure'));
+
+        await expect(gatekeeper.updateDID(updateOp)).rejects.toThrow('queue failure');
+        addEvent.mockRestore();
+
+        await expect(gatekeeper.exportDID(did)).resolves.toHaveLength(1);
+        await expect(gatekeeper.getQueue('hyperswarm')).resolves.toStrictEqual([]);
+        await expect(gatekeeper.getQueue('TFTC')).resolves.toStrictEqual([]);
+
+        await expect(gatekeeper.updateDID(updateOp)).resolves.toBe(true);
+        await expect(gatekeeper.exportDID(did)).resolves.toHaveLength(2);
+        await expect(gatekeeper.getQueue('hyperswarm')).resolves.toStrictEqual([updateOp]);
+        await expect(gatekeeper.getQueue('TFTC')).resolves.toStrictEqual([updateOp]);
+    });
+
+    it('should reject an update whose previd is no longer current', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const did = await gatekeeper.createDID(await helper.createAgentOp(keypair));
+        const firstDoc = await gatekeeper.resolveDID(did);
+        const staleDoc = await gatekeeper.resolveDID(did);
+        firstDoc.didDocumentData = { member: 'Alice' };
+        staleDoc.didDocumentData = { member: 'Bob' };
+        const first = await helper.createUpdateOp(keypair, did, firstDoc);
+        const stale = await helper.createUpdateOp(keypair, did, staleDoc);
+
+        expect(await gatekeeper.updateDID(first)).toBe(true);
+        expect(await gatekeeper.updateDID(stale)).toBe(false);
+        expect((await gatekeeper.resolveDID(did)).didDocumentData).toEqual({ member: 'Alice' });
+        expect((await db.getEvents(did))).toHaveLength(2);
+    });
+
+    it('should still update a DID whose earlier operation had no previd', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const did = await gatekeeper.createDID(await helper.createAgentOp(keypair));
+        const legacyDoc = await gatekeeper.resolveDID(did);
+        legacyDoc.didDocumentData = { member: 'Alice' };
+        const legacy = await helper.createUpdateOp(keypair, did, legacyDoc, { excludePrevid: true });
+        expect(await gatekeeper.updateDID(legacy)).toBe(true);
+
+        const current = await gatekeeper.resolveDID(did);
+        current.didDocumentData = { member: 'Bob' };
+        const next = await helper.createUpdateOp(keypair, did, current);
+        expect(next.previd).toBe(current.didDocumentMetadata?.versionId);
+        expect(await gatekeeper.updateDID(next)).toBe(true);
+        expect((await gatekeeper.resolveDID(did, { verify: true })).didDocumentData).toEqual({ member: 'Bob' });
+    });
+
     it('should increment version with each update', async () => {
         const keypair = cipher.generateRandomJwk();
         const agentOp = await helper.createAgentOp(keypair);
@@ -761,10 +1110,14 @@ describe('updateDID', () => {
         const agentOp = await helper.createAgentOp(keypair);
         const did = await gatekeeper.createDID(agentOp);
         const doc = await gatekeeper.resolveDID(did);
+        doc.didDocumentData = 'é';
+        const updateOp = await helper.createUpdateOp(keypair, did, doc);
+        const json = JSON.stringify(updateOp);
+        const gk = new Gatekeeper({ db, ipfs, console: mockConsole, maxOpBytes: json.length });
+
+        expect(Buffer.byteLength(json, 'utf8')).toBeGreaterThan(json.length);
 
         try {
-            const gk = new Gatekeeper({ db, ipfs, console: mockConsole, maxOpBytes: 100 });
-            const updateOp = await helper.createUpdateOp(keypair, did, doc);
             await gk.updateDID(updateOp);
             throw new ExpectedExceptionError();
         } catch (error: any) {

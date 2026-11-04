@@ -9,9 +9,6 @@ interface MaybeChallengeReceipt {
 }
 
 interface MaybeMdipDocument {
-    didDocument?: {
-        id?: unknown;
-    };
     didDocumentData?: {
         challengeReceipt?: unknown;
     };
@@ -44,9 +41,7 @@ export function extractChallengeReceipts(
     doc: object
 ): ChallengeReceiptRecord[] {
     const mdipDoc = doc as MaybeMdipDocument;
-    const receiptDid = isDid(mdipDoc.didDocument?.id)
-        ? mdipDoc.didDocument.id
-        : defaultReceiptDid;
+    const receiptDid = defaultReceiptDid;
 
     if (!isDid(receiptDid)) {
         return [];

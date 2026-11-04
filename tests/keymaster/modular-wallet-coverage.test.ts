@@ -246,14 +246,13 @@ describe('Keymaster modular wallet coverage', () => {
             {
                 backup: expect.objectContaining({
                     ...current,
-                    backupDid: 'did:test:backup',
                 }),
             },
             { registry: 'hyperswarm' },
         );
     });
 
-    it('falls back to the current wallet when backup asset data is missing or malformed', async () => {
+    it('rejects recovery when backup asset data is missing or malformed', async () => {
         const provider = new DummyWalletProvider();
         const current = await makeWalletFile(provider);
         const store = new MemoryKeymasterStore(current);
@@ -261,13 +260,13 @@ describe('Keymaster modular wallet coverage', () => {
         const resolveAsset = jest.spyOn(keymaster, 'resolveAsset');
 
         resolveAsset.mockResolvedValueOnce(null);
-        await expect(keymaster.recoverWallet('did:test:empty')).resolves.toEqual(current);
+        await expect(keymaster.recoverWallet('did:test:empty')).rejects.toThrow();
 
         resolveAsset.mockResolvedValueOnce({} as any);
-        await expect(keymaster.recoverWallet('did:test:missing')).resolves.toEqual(current);
+        await expect(keymaster.recoverWallet('did:test:missing')).rejects.toThrow();
 
         resolveAsset.mockResolvedValueOnce({ backup: 'not-json' } as any);
-        await expect(keymaster.recoverWallet('did:test:malformed')).resolves.toEqual(current);
+        await expect(keymaster.recoverWallet('did:test:malformed')).rejects.toThrow();
     });
 
     it('rejects v2 metadata when the active provider identity does not match', async () => {
@@ -454,7 +453,7 @@ describe('Keymaster modular wallet coverage', () => {
         await expect((keymaster as any).getActiveKeyRef(id)).resolves.toBe('opaque-current');
     });
 
-    it('falls back to the current wallet when bundle recovery cannot save provider state', async () => {
+    it('rejects recovery when bundle recovery cannot save provider state', async () => {
         const cipher = new CipherNode();
         const store = new MemoryKeymasterStore();
         const walletProvider = new MnemonicHdWalletProvider({
@@ -474,11 +473,11 @@ describe('Keymaster modular wallet coverage', () => {
         jest.spyOn(keymaster, 'resolveAsset').mockResolvedValue({ backup: bundle } as any);
         jest.spyOn(walletProvider, 'saveWallet').mockResolvedValue(false);
 
-        await expect(keymaster.recoverWallet('did:test:bundle')).resolves.toEqual(current);
+        await expect(keymaster.recoverWallet('did:test:bundle')).rejects.toThrow();
         await expect(keymaster.loadWallet()).resolves.toStrictEqual(current);
     });
 
-    it('falls back to the current wallet when bundle recovery cannot save keymaster metadata', async () => {
+    it('rejects recovery when bundle recovery cannot save keymaster metadata', async () => {
         const cipher = new CipherNode();
         const store = new MemoryKeymasterStore();
         const walletProvider = new MnemonicHdWalletProvider({
@@ -496,13 +495,13 @@ describe('Keymaster modular wallet coverage', () => {
         };
 
         jest.spyOn(keymaster, 'resolveAsset').mockResolvedValue({ backup: bundle } as any);
-        jest.spyOn(keymaster, 'saveWallet').mockResolvedValue(false as any);
+        jest.spyOn(store, 'saveWallet').mockResolvedValueOnce(false);
 
-        await expect(keymaster.recoverWallet('did:test:bundle')).resolves.toEqual(current);
+        await expect(keymaster.recoverWallet('did:test:bundle')).rejects.toThrow();
         await expect(keymaster.loadWallet()).resolves.toStrictEqual(current);
     });
 
-    it('falls back to the current wallet when a non-mnemonic provider receives a bundle backup', async () => {
+    it('rejects recovery when a non-mnemonic provider receives a bundle backup', async () => {
         const provider = new DummyWalletProvider();
         const current = await makeWalletFile(provider);
         const store = new MemoryKeymasterStore(current);
@@ -516,7 +515,7 @@ describe('Keymaster modular wallet coverage', () => {
 
         jest.spyOn(keymaster, 'resolveAsset').mockResolvedValue({ backup: bundle } as any);
 
-        await expect(keymaster.recoverWallet('did:test:bundle')).resolves.toEqual(current);
+        await expect(keymaster.recoverWallet('did:test:bundle')).rejects.toThrow();
     });
 });
 

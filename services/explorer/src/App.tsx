@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import JsonViewer from "./components/JsonViewer.js";
 import Events from "./components/Events.js";
+import Network from "./components/Network.js";
 import Credentials from "./components/Credentials.js";
 import ChallengeReceipts from "./components/ChallengeReceipts.js";
 import {
@@ -8,10 +9,11 @@ import {
     Typography,
 } from "@mui/material";
 import Header from "./components/Header.js";
-import { Routes, Route, useNavigate, Navigate } from "react-router-dom";
+import { Routes, Route, useMatch, useNavigate, Navigate } from "react-router-dom";
 import type { GatekeeperEvent } from "@mdip/gatekeeper/types";
 import { useSnackbar } from "./contexts/SnackbarProvider.js";
 import { useExplorerContext } from "./contexts/ExplorerProvider.js";
+import { startPolling } from "./lifecycle.js";
 
 function App() {
     const { setError } = useSnackbar();
@@ -37,21 +39,20 @@ function App() {
     });
 
     const navigate = useNavigate();
+    const isEventsRoute = Boolean(useMatch("/events"));
 
     function handleViewDid(did: string) {
         navigate(`/search?did=${encodeURIComponent(did)}`);
     }
 
     useEffect(() => {
-        if (!isReady) {
+        if (!isReady || !isEventsRoute) {
             return;
         }
 
-        let isMounted = true;
-        let intervalId: ReturnType<typeof setInterval> | undefined;
-
-        async function fetchRecent() {
-            try {
+        return startPolling({
+            intervalMs: config.eventsPollIntervalMs,
+            async run(signal) {
                 let updatedAfter: string | undefined;
                 let updatedBefore: string | undefined;
 
@@ -71,7 +72,7 @@ function App() {
                     updatedBefore,
                     limit: eventCount,
                     offset: page * eventCount,
-                });
+                }, signal);
                 const pageEvents = result.events.map(({ did, registry, time, event }) => ({
                     ...event,
                     did: event.did ?? did,
@@ -79,28 +80,30 @@ function App() {
                     time: time || event.time,
                 }));
 
-                if (isMounted) {
-                    setEvents(pageEvents);
-                    setTotal(result.total);
-                }
-            } catch (err: unknown) {
-                if (isMounted) {
-                    setError(err);
-                }
-            }
-        }
-
-        fetchRecent();
-
-        intervalId = setInterval(fetchRecent, config.eventsPollIntervalMs);
-
-        return () => {
-            isMounted = false;
-            if (intervalId) {
-                clearInterval(intervalId);
-            }
-        };
-    }, [config.eventsPollIntervalMs, isReady, eventCount, page, registry, dateFrom, dateTo, searchClient, setError]);
+                return { pageEvents, total: result.total };
+            },
+            onResult(result) {
+                setEvents(result.pageEvents);
+                setTotal(result.total);
+                return true;
+            },
+            onError(error) {
+                setError(error);
+                return true;
+            },
+        });
+    }, [
+        config.eventsPollIntervalMs,
+        isReady,
+        eventCount,
+        page,
+        registry,
+        dateFrom,
+        dateTo,
+        isEventsRoute,
+        searchClient,
+        setError,
+    ]);
 
     const totalPages = Math.ceil(total / eventCount);
     const waiting = <Typography sx={{ mt: 3 }}>{readinessMessage}</Typography>;
@@ -148,6 +151,14 @@ function App() {
                                     setDateTo={setDateTo}
                                     onDidClick={handleViewDid}
                                 />
+                            ) : (
+                                waiting
+                            )}
+                        />
+                        <Route
+                            path="/network"
+                            element={isReady ? (
+                                <Network />
                             ) : (
                                 waiting
                             )}

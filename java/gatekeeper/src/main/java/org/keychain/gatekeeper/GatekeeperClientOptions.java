@@ -12,6 +12,8 @@ public class GatekeeperClientOptions {
     public Integer maxRetries;
     public Duration connectTimeout;
     public Duration readTimeout;
+    public Duration callTimeout;
+    public GatekeeperClientCancellation cancellation;
     public String headerName;
     public String headerValue;
 
@@ -19,5 +21,6 @@ public class GatekeeperClientOptions {
         this.baseUrl = "http://localhost:4224";
         this.connectTimeout = Duration.ofSeconds(10);
         this.readTimeout = Duration.ofSeconds(30);
+        this.callTimeout = Duration.ofSeconds(60);
     }
 }

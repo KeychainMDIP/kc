@@ -107,6 +107,7 @@ describe('verifyRecipientList', () => {
         const verified = await keymaster.verifyRecipientList(to);
 
         expect(verified).toStrictEqual([alice, bob, charles]);
+        expect((await keymaster.loadWallet()).names).toStrictEqual({ Chuck: charles });
     });
 
     it('should throw an exception on invalid list', async () => {
@@ -245,6 +246,7 @@ describe('listDmail', () => {
         };
 
         const did = await keymaster.createDmail(mock);
+        await keymaster.addName('friend', alice);
         const dmails = await keymaster.listDmail();
 
         expect(dmails).toBeDefined();
@@ -255,6 +257,7 @@ describe('listDmail', () => {
         expect(dmails[did].to).toStrictEqual(['Alice']);
         expect(dmails[did].cc).toStrictEqual(['Bob']);
         expect(dmails[did].tags).toStrictEqual(['draft']);
+        expect((await keymaster.loadWallet()).names).toStrictEqual({ friend: alice });
     });
 
     it('should leave intact unknown DIDs', async () => {

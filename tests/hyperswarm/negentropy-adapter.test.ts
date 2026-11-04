@@ -98,6 +98,32 @@ describe('NegentropyAdapter', () => {
         expect(stats.durationMs).toBeGreaterThanOrEqual(0);
     });
 
+    it('builds from sorted keys without loading full records', async () => {
+        const store = new InMemoryOperationSyncStore();
+        await seedStore(store, [
+            { id: h('a'), ts: 1000, op: makeOp('a', '2026-02-09T10:00:00.000Z') },
+        ]);
+        const iterateSortedKeys = store.iterateSortedKeys.bind(store);
+        let keyReads = 0;
+
+        store.iterateSortedKeys = async options => {
+            keyReads += 1;
+            return iterateSortedKeys(options);
+        };
+        store.iterateSorted = async () => {
+            throw new Error('full records must not be loaded');
+        };
+
+        const adapter = await NegentropyAdapter.create({
+            syncStore: store,
+            frameSizeLimit: 0,
+        });
+
+        await expect(adapter.getEarliestTimestamp()).resolves.toBe(1000);
+        expect(adapter.getStats().loaded).toBe(1);
+        expect(keyReads).toBeGreaterThanOrEqual(2);
+    });
+
     it('uses constructor defaults when optional settings are omitted', async () => {
         const store = new InMemoryOperationSyncStore();
         await seedStore(store, [
@@ -240,25 +266,38 @@ describe('NegentropyAdapter', () => {
         const validTs = toEpochSeconds('2026-02-13T00:00:00.000Z');
         const validOp = makeOp('a', '2026-02-13T00:00:00.000Z');
         const rows: SyncOperationRecord[] = [
-            { id: 'invalid-id', ts: validTs, operation: validOp, insertedAt: 1 },
-            { id: validId, ts: Number.NaN, operation: validOp, insertedAt: 2 },
-            { id: validId, ts: validTs, operation: validOp, insertedAt: 3 },
+            { id: 'invalid-id', ts: validTs, signedTs: validTs, operation: validOp, insertedAt: 1 },
+            { id: validId, ts: Number.NaN, signedTs: validTs, operation: validOp, insertedAt: 2 },
+            { id: validId, ts: validTs, signedTs: validTs, operation: validOp, insertedAt: 3 },
         ];
 
         const stubStore: OperationSyncStore = {
             start: async () => undefined,
             stop: async () => undefined,
             reset: async () => undefined,
-            upsertMany: async () => 0,
+            deleteBySyncOrder: async () => 0,
+            upsertMany: async () => ({ inserted: 0, updated: 0 }),
+            applySyncPage: async () => ({ inserted: 0, updated: 0, deleted: 0 }),
+            loadSyncState: async () => null,
+            saveSyncState: async () => undefined,
             getByIds: async () => [],
             has: async () => false,
             count: async () => rows.length,
+            countOrdered: async () => 0,
+            getLatestSignedTimestamp: async () => validTs,
+            iterateSortedKeys: async (options: SyncStoreListOptions = {}) => {
+                if (options.after) {
+                    return [];
+                }
+                return rows.map(({ id, ts }) => ({ id, ts }));
+            },
             iterateSorted: async (options: SyncStoreListOptions = {}) => {
                 if (options.after) {
                     return [];
                 }
                 return rows;
             },
+            iterateOrdered: async () => [],
         };
 
         const adapter = await NegentropyAdapter.create({
@@ -388,27 +427,40 @@ describe('NegentropyAdapter', () => {
 
     it('does not let skipped rows consume capped window capacity', async () => {
         const rows = [
-            { id: 'not-a-sync-id', ts: 1000, operation: makeOp('a', '2026-02-09T10:00:00.000Z'), insertedAt: 0 },
-            { id: h('b'), ts: 2000, operation: makeOp('b', '2026-02-09T11:00:00.000Z'), insertedAt: 0 },
-            { id: h('c'), ts: Number.NaN, operation: makeOp('c', '2026-02-09T12:00:00.000Z'), insertedAt: 0 },
-            { id: h('d'), ts: 4000, operation: makeOp('d', '2026-02-09T13:00:00.000Z'), insertedAt: 0 },
-            { id: h('e'), ts: 5000, operation: makeOp('e', '2026-02-09T14:00:00.000Z'), insertedAt: 0 },
+            { id: 'not-a-sync-id', ts: 1000, signedTs: 1000, operation: makeOp('a', '2026-02-09T10:00:00.000Z'), insertedAt: 0 },
+            { id: h('b'), ts: 2000, signedTs: 2000, operation: makeOp('b', '2026-02-09T11:00:00.000Z'), insertedAt: 0 },
+            { id: h('c'), ts: Number.NaN, signedTs: 3000, operation: makeOp('c', '2026-02-09T12:00:00.000Z'), insertedAt: 0 },
+            { id: h('d'), ts: 4000, signedTs: 4000, operation: makeOp('d', '2026-02-09T13:00:00.000Z'), insertedAt: 0 },
+            { id: h('e'), ts: 5000, signedTs: 5000, operation: makeOp('e', '2026-02-09T14:00:00.000Z'), insertedAt: 0 },
         ];
 
         const stubStore: OperationSyncStore = {
             async start() {},
             async stop() {},
             async reset() {},
-            async upsertMany() { return 0; },
+            async deleteBySyncOrder() { return 0; },
+            async upsertMany() { return { inserted: 0, updated: 0 }; },
+            async applySyncPage() { return { inserted: 0, updated: 0, deleted: 0 }; },
+            async loadSyncState() { return null; },
+            async saveSyncState() {},
             async getByIds() { return []; },
             async has() { return false; },
             async count() { return rows.length; },
+            async countOrdered() { return 0; },
+            async getLatestSignedTimestamp() { return 5000; },
+            async iterateSortedKeys(options: SyncStoreListOptions = {}) {
+                if (options.after) {
+                    return [];
+                }
+                return rows.map(({ id, ts }) => ({ id, ts }));
+            },
             async iterateSorted(options: SyncStoreListOptions = {}) {
                 if (options.after) {
                     return [];
                 }
                 return rows;
             },
+            async iterateOrdered() { return []; },
         };
 
         const adapter = await NegentropyAdapter.create({

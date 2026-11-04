@@ -118,8 +118,12 @@ def load_wallet():
     return response["wallet"]
 
 
-def save_wallet(wallet):
-    response = proxy_request("PUT", f"{_keymaster_api}/wallet", json={"wallet": wallet})
+def save_wallet(wallet, overwrite=True):
+    response = proxy_request(
+        "PUT",
+        f"{_keymaster_api}/wallet",
+        json={"wallet": wallet, "overwrite": overwrite},
+    )
     return response["ok"]
 
 
@@ -179,8 +183,21 @@ def resolve_did(name):
     return response["docs"]
 
 
-def resolve_asset(name):
-    response = proxy_request("GET", f"{_keymaster_api}/assets/{name}")
+def list_assets(owner=None):
+    response = proxy_request(
+        "GET", f"{_keymaster_api}/assets", params={"owner": owner}
+    )
+    return response["assets"]
+
+
+def resolve_asset(name, options=None):
+    params = {
+        key: str(value).lower() if isinstance(value, bool) else value
+        for key, value in (options or {}).items()
+    }
+    response = proxy_request(
+        "GET", f"{_keymaster_api}/assets/{name}", params=params
+    )
     return response["asset"]
 
 
@@ -282,10 +299,11 @@ def get_credential(did):
     return response["credential"]
 
 
-def list_credentials():
+def list_credentials(identifier=None):
     response = proxy_request(
         "GET",
         f"{_keymaster_api}/credentials/held",
+        params={"id": identifier},
     )
     return response["held"]
 
@@ -325,10 +343,11 @@ def revoke_credential(did):
     return response["ok"]
 
 
-def list_issued():
+def list_issued(issuer=None):
     response = proxy_request(
         "GET",
         f"{_keymaster_api}/credentials/issued",
+        params={"issuer": issuer},
     )
     return response["issued"]
 
@@ -407,9 +426,8 @@ def create_response(challenge, options=None):
     return response["did"]
 
 
-def verify_response(response, options=None):
-    if options is None:
-        options = {}
+def verify_response(response, options=None, publish=True):
+    options = {**(options or {}), "publish": publish}
     response = proxy_request(
         "POST",
         f"{_keymaster_api}/response/verify",

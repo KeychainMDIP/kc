@@ -61,6 +61,7 @@ async function main() {
             walletProvider,
             cipher,
             search: searchClient,
+            didPrefix: process.env.KC_KEYMASTER_DID_PREFIX || 'did:test',
         });
     }
 

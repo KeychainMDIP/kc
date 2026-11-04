@@ -50,6 +50,7 @@ import {
 
 const gatekeeper = new GatekeeperClient();
 const cipher = new CipherWeb();
+const DID_PREFIX = 'did:test';
 
 const KEYMASTER_STORE_NAME = "mdip-keymaster";
 const WALLET_PROVIDER_STORE_NAME = "mdip-wallet-provider";
@@ -208,6 +209,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             gatekeeper,
             store,
             walletProvider,
+            didPrefix: DID_PREFIX,
             cipher,
             search,
         });
@@ -239,7 +241,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         try {
             if (pendingMnemonic) {
                 await instance.newWallet(pendingMnemonic, true);
-                await instance.recoverWallet();
             } else {
                 await instance.loadWallet();
             }
@@ -256,14 +257,22 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         const providerStore = createProviderStore();
         const walletStore = createMetadataStore();
 
+        const previousProvider = await providerStore.loadWallet();
         const providerOk = await providerStore.saveWallet(providerState, true);
         if (!providerOk) {
             throw new Error("save provider wallet failed");
         }
 
-        const walletOk = await walletStore.saveWallet(wallet, true);
-        if (!walletOk) {
-            throw new Error("save wallet failed");
+        try {
+            const walletOk = await walletStore.saveWallet(wallet, true);
+            if (!walletOk) {
+                throw new Error("save wallet failed");
+            }
+        } catch (error) {
+            if (previousProvider && !await providerStore.saveWallet(previousProvider, true)) {
+                throw new Error("restore provider wallet failed");
+            }
+            throw error;
         }
     }
 
@@ -283,9 +292,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         const memoryProviderStore = createMemoryProviderStore();
         const { instance, walletProvider } = createKeymaster(passphrase, memoryStore, memoryProviderStore);
 
-        await memoryStore.saveWallet(bundle.keymaster, true);
-        await walletProvider.saveWallet(bundle.provider, true);
-        const normalized = await instance.loadWallet();
+        const normalized = await instance.importWalletBundle(bundle);
         const providerState = await walletProvider.backupWallet();
         await persistWalletData(normalized, providerState);
     }
@@ -505,7 +512,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
                 const updatedProviderState = await recoveryProvider.backupWallet();
 
                 if (isMdipWalletBundle(pendingWallet)) {
-                    await persistWalletData(pendingWallet.keymaster, updatedProviderState);
+                    await importWalletBundle({ ...pendingWallet, provider: updatedProviderState }, newPassphrase);
                 } else {
                     const wallet = await walletStore.loadWallet();
                     if (!wallet || !isV2Wallet(wallet)) {

@@ -13,6 +13,11 @@ public final class Base64Url {
     }
 
     public static byte[] decode(String data) {
-        return DECODER.decode(data);
+        int end = data.length();
+        while (end > 0 && data.charAt(end - 1) == '=') end--;
+        String unpadded = data.substring(0, end);
+        byte[] bytes = DECODER.decode(unpadded);
+        if (!encode(bytes).equals(unpadded)) throw new IllegalArgumentException("Invalid base64url encoding");
+        return bytes;
     }
 }

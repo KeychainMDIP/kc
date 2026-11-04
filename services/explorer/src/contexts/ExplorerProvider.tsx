@@ -1,34 +1,36 @@
-import React, { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, ReactNode, useContext, useEffect, useMemo, useState } from "react";
 import * as config from "../config.js";
 import {
     isSearchServerReady,
     searchClient,
 } from "../api/searchClient.js";
+import { isRetryableHttpStatus, startPolling } from "../lifecycle.js";
 
 interface ExplorerContextValue {
     config: typeof config;
     searchClient: typeof searchClient;
     isReady: boolean;
     readinessMessage: string;
-    refreshReadiness: () => Promise<boolean>;
 }
 
 interface ReadinessResult {
     ready: boolean;
     message: string;
+    retry: boolean;
 }
 
 const ExplorerContext = createContext<ExplorerContextValue | null>(null);
 
-async function getReadinessResult(): Promise<ReadinessResult> {
+async function getReadinessResult(signal: AbortSignal): Promise<ReadinessResult> {
     try {
-        const status = await searchClient.fetchSearchServerStatus();
+        const status = await searchClient.fetchSearchServerStatus(signal);
         const ready = isSearchServerReady(status);
 
         if (ready) {
             return {
                 ready,
                 message: "",
+                retry: true,
             };
         }
 
@@ -37,12 +39,23 @@ async function getReadinessResult(): Promise<ReadinessResult> {
             message: status.sync?.lastSyncError
                 ? "Search Server sync error. Retrying..."
                 : "Waiting for Search Server sync...",
+            retry: true,
         };
     }
-    catch {
+    catch (error: any) {
+        if (signal.aborted) {
+            throw error;
+        }
+
+        const status = error?.response?.status;
+        const retry = isRetryableHttpStatus(status);
+
         return {
             ready: false,
-            message: "Waiting for Search Server...",
+            message: retry
+                ? "Waiting for Search Server..."
+                : `Search Server request failed (HTTP ${status}). Check Explorer configuration.`,
+            retry,
         };
     }
 }
@@ -51,47 +64,19 @@ export function ExplorerProvider({ children }: { children: ReactNode }) {
     const [isReady, setIsReady] = useState<boolean>(false);
     const [readinessMessage, setReadinessMessage] = useState<string>("Waiting for Search Server...");
 
-    const refreshReadiness = useCallback(async (): Promise<boolean> => {
-        const result = await getReadinessResult();
-
-        setIsReady(result.ready);
-        if (!result.ready) {
-            setReadinessMessage(result.message);
-        }
-
-        return result.ready;
-    }, []);
-
     useEffect(() => {
-        let cancelled = false;
-        let interval: ReturnType<typeof setInterval> | undefined;
-
-        async function checkReadiness() {
-            const result = await getReadinessResult();
-
-            if (cancelled) {
-                return;
-            }
-
-            setIsReady(result.ready);
-            if (!result.ready) {
+        return startPolling({
+            intervalMs: config.readinessPollIntervalMs,
+            run: getReadinessResult,
+            onResult(result) {
+                setIsReady(result.ready);
                 setReadinessMessage(result.message);
-            }
-
-            if (result.ready && interval) {
-                clearInterval(interval);
-            }
-        }
-
-        void checkReadiness();
-        interval = setInterval(checkReadiness, config.readinessPollIntervalMs);
-
-        return () => {
-            cancelled = true;
-            if (interval) {
-                clearInterval(interval);
-            }
-        };
+                return result.retry;
+            },
+            onError() {
+                return true;
+            },
+        });
     }, []);
 
     const value = useMemo<ExplorerContextValue>(() => ({
@@ -99,8 +84,7 @@ export function ExplorerProvider({ children }: { children: ReactNode }) {
         searchClient,
         isReady,
         readinessMessage,
-        refreshReadiness,
-    }), [isReady, readinessMessage, refreshReadiness]);
+    }), [isReady, readinessMessage]);
 
     return (
         <ExplorerContext.Provider value={value}>

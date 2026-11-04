@@ -1,4 +1,5 @@
 import { Redis } from 'ioredis';
+import { randomUUID } from 'crypto';
 import { InvalidDIDError } from '@mdip/common/errors';
 import { childLogger } from '@mdip/common/logger';
 import {
@@ -10,7 +11,8 @@ import {
     IndexChangeRecord,
     IndexExportSnapshotOptions,
     IndexExportResponse,
-    IndexExportChangesOptions
+    IndexExportChangesOptions,
+    SetEventsOptions,
 } from '../types.js'
 import {
     buildIndexChangesResponse,
@@ -18,6 +20,7 @@ import {
     normalizeIndexExportLimit,
     parseIndexExportCursor
 } from './index-export.js';
+import { withHealthCheckTimeout } from './health.js';
 
 const REDIS_NOT_STARTED_ERROR = 'Redis not started. Call start() first.';
 const log = childLogger({ service: 'gatekeeper-db', module: 'redis' });
@@ -41,13 +44,14 @@ export default class DbRedis implements GatekeeperDb {
         try {
             await this.redis.ping();
             await this.ensureDidIndex();
+            await this.ensureIndexEpoch();
         }
         catch (error) {
             try {
                 await this.redis.quit();
             }
             catch {
-                // Preserve the migration error.
+                // Preserve the startup/bootstrap error.
             }
             finally {
                 this.redis.removeAllListeners('error');
@@ -67,6 +71,26 @@ export default class DbRedis implements GatekeeperDb {
             finally {
                 redis.removeAllListeners('error');
             }
+        }
+    }
+
+    async isReady(): Promise<boolean> {
+        if (!this.redis) {
+            return false;
+        }
+        if (this.redis.status !== 'ready') {
+            return false;
+        }
+
+        try {
+            const response = await withHealthCheckTimeout(
+                this.redis.ping(),
+                'Redis readiness check timed out'
+            );
+            return response === 'PONG';
+        }
+        catch {
+            return false;
         }
     }
 
@@ -99,10 +123,16 @@ export default class DbRedis implements GatekeeperDb {
             }
         } while (cursor !== '0'); // Continue scanning until cursor returns to 0
 
+        await this.redis.set(this.indexEpochKey(), randomUUID());
+
         return totalDeleted;
     }
 
     async addEvent(did: string, event: GatekeeperEvent): Promise<number> {
+        return this.addEventAndQueue(did, event, []);
+    }
+
+    async addEventAndQueue(did: string, event: GatekeeperEvent, queueRegistries: string[]): Promise<number> {
         if (!this.redis) {
             throw new Error(REDIS_NOT_STARTED_ERROR)
         }
@@ -110,27 +140,36 @@ export default class DbRedis implements GatekeeperDb {
         const key = this.didKey(did);
         const id = this.didId(did);
         const val = JSON.stringify(event);
+        const change = JSON.stringify({
+            kind: 'did',
+            did,
+            event,
+        });
+        const queueKeys = queueRegistries.map(registry => this.queueKey(registry));
         const script = `
-            ${this.checkRedisTypesScript(['list', 'string', 'zset', 'zset'])}
+            ${this.checkRedisTypesScript(['list', 'string', 'zset', 'zset', ...queueKeys.map(() => 'list')])}
             local change = cjson.decode(ARGV[2])
             local seq = redis.call('INCR', KEYS[2])
             local count = redis.call('RPUSH', KEYS[1], ARGV[1])
             change.seq = seq
             redis.call('ZADD', KEYS[3], seq, cjson.encode(change))
             redis.call('ZADD', KEYS[4], 0, ARGV[3])
+            for i = 5, #KEYS do
+                redis.call('RPUSH', KEYS[i], ARGV[4])
+            end
             return count
         `;
 
         const result = await this.evalAtomicMutation(
             script,
-            [key, this.indexSeqKey(), this.indexChangesKey(), this.didIndexKey()],
-            [val, JSON.stringify({ kind: 'did', did }), id]
+            [key, this.indexSeqKey(), this.indexChangesKey(), this.didIndexKey(), ...queueKeys],
+            [val, change, id, ...(queueKeys.length > 0 ? [JSON.stringify(event.operation)] : [])]
         );
 
         return Number(result ?? 0);
     }
 
-    async setEvents(did: string, events: GatekeeperEvent[]): Promise<void> {
+    async setEvents(did: string, events: GatekeeperEvent[], options?: SetEventsOptions): Promise<void> {
         if (!this.redis) {
             throw new Error(REDIS_NOT_STARTED_ERROR)
         }
@@ -138,24 +177,42 @@ export default class DbRedis implements GatekeeperDb {
         const key = this.didKey(did);
         const id = this.didId(did);
         const payloads = events.map(e => JSON.stringify(e));
+        const operationEvents = options?.operationEvents ?? [];
+        const changes = operationEvents.length === 0
+            ? [JSON.stringify({ kind: 'did', did })]
+            : operationEvents.map(event => JSON.stringify({
+                kind: 'did',
+                did,
+                event,
+            }));
 
         const script = `
             ${this.checkRedisTypesScript(['list', 'string', 'zset', 'zset'])}
-            local count = tonumber(ARGV[1])
-            if count == nil then
+            local eventCount = tonumber(ARGV[1])
+            local changeCount = tonumber(ARGV[2])
+            if eventCount == nil then
                 error('invalid event count')
             end
-            local change = cjson.decode(ARGV[count + 2])
-            local id = ARGV[count + 3]
-            local seq = redis.call('INCR', KEYS[2])
-            redis.call('DEL', KEYS[1])
-            for i = 1, count do
-                redis.call('RPUSH', KEYS[1], ARGV[i + 1])
+            if changeCount == nil then
+                error('invalid change count')
             end
-            change.seq = seq
-            redis.call('ZADD', KEYS[3], seq, cjson.encode(change))
+            local changes = {}
+            for i = 1, changeCount do
+                changes[i] = cjson.decode(ARGV[2 + eventCount + i])
+            end
+            local id = ARGV[2 + eventCount + changeCount + 1]
+            redis.call('DEL', KEYS[1])
+            for i = 1, eventCount do
+                redis.call('RPUSH', KEYS[1], ARGV[i + 2])
+            end
+            for i = 1, changeCount do
+                local change = changes[i]
+                local seq = redis.call('INCR', KEYS[2])
+                change.seq = seq
+                redis.call('ZADD', KEYS[3], seq, cjson.encode(change))
+            end
             redis.call('ZADD', KEYS[4], 0, id)
-            return count
+            return eventCount
         `;
 
         await this.evalAtomicMutation(
@@ -163,8 +220,9 @@ export default class DbRedis implements GatekeeperDb {
             [key, this.indexSeqKey(), this.indexChangesKey(), this.didIndexKey()],
             [
                 payloads.length.toString(),
+                changes.length.toString(),
                 ...payloads,
-                JSON.stringify({ kind: 'did', did }),
+                ...changes,
                 id,
             ]
         );
@@ -191,6 +249,10 @@ export default class DbRedis implements GatekeeperDb {
 
     private indexChangesKey(): string {
         return `${this.dbName}/index/changes/zset`;
+    }
+
+    private indexEpochKey(): string {
+        return `${this.dbName}/index/epoch`;
     }
 
     private didIndexKey(): string {
@@ -271,6 +333,25 @@ export default class DbRedis implements GatekeeperDb {
         }
     }
 
+    private async ensureIndexEpoch(): Promise<string> {
+        const redis = this.assertStarted();
+        const key = this.indexEpochKey();
+        const existing = await redis.get(key);
+        if (existing) {
+            return existing;
+        }
+
+        const epoch = randomUUID();
+        const result = await redis.set(key, epoch, 'NX');
+        return result === 'OK'
+            ? epoch
+            : await redis.get(key) ?? epoch;
+    }
+
+    private async getIndexEpoch(): Promise<string> {
+        return this.ensureIndexEpoch();
+    }
+
     private async evalAtomicMutation(script: string, keys: string[], args: string[]): Promise<unknown> {
         const redis = this.assertStarted();
         return redis.eval(script, keys.length, ...keys, ...args);
@@ -307,12 +388,22 @@ export default class DbRedis implements GatekeeperDb {
             ${this.checkRedisTypesScript(['list', 'string', 'zset', 'zset'])}
             local change = cjson.decode(ARGV[1])
             local id = ARGV[2]
+            local events = redis.call('LRANGE', KEYS[1], 0, -1)
             local removed = redis.call('DEL', KEYS[1])
             redis.call('ZREM', KEYS[4], id)
             if removed > 0 then
-                local seq = redis.call('INCR', KEYS[2])
-                change.seq = seq
-                redis.call('ZADD', KEYS[3], seq, cjson.encode(change))
+                if #events == 0 then
+                    local seq = redis.call('INCR', KEYS[2])
+                    change.seq = seq
+                    redis.call('ZADD', KEYS[3], seq, cjson.encode(change))
+                else
+                    for _, event in ipairs(events) do
+                        local seq = redis.call('INCR', KEYS[2])
+                        change.seq = seq
+                        change.event = cjson.decode(event)
+                        redis.call('ZADD', KEYS[3], seq, cjson.encode(change))
+                    end
+                end
             end
             return removed
         `;
@@ -351,6 +442,7 @@ export default class DbRedis implements GatekeeperDb {
         const limit = normalizeIndexExportLimit(options.limit);
         const cursor = options.cursor ?? null;
         const checkpointCursor = options.checkpointCursor ?? await this.getIndexCheckpointCursor();
+        const indexEpoch = await this.getIndexEpoch();
         const min = cursor ? `(${cursor}` : '-';
         const ids = await this.redis.zrangebylex(
             this.didIndexKey(),
@@ -365,7 +457,8 @@ export default class DbRedis implements GatekeeperDb {
             ids,
             id => this.getEvents(id),
             options,
-            checkpointCursor
+            checkpointCursor,
+            indexEpoch
         );
     }
 
@@ -377,6 +470,8 @@ export default class DbRedis implements GatekeeperDb {
         const options = _options ?? {};
         const afterSeq = parseIndexExportCursor(options.cursor);
         const limit = normalizeIndexExportLimit(options.limit);
+        const checkpointCursor = await this.getIndexCheckpointCursor();
+        const indexEpoch = await this.getIndexEpoch();
         const payloads = await this.redis.zrangebyscore(
             this.indexChangesKey(),
             `(${afterSeq}`,
@@ -392,7 +487,9 @@ export default class DbRedis implements GatekeeperDb {
             page,
             payloads.length > limit,
             options,
-            did => this.getEvents(did)
+            checkpointCursor,
+            did => this.getEvents(did),
+            indexEpoch
         );
     }
 

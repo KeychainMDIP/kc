@@ -1,6 +1,6 @@
 {
   "name": "@mdip/cipher",
-  "version": "1.4.0",
+  "version": "2.2.0",
   "description": "MDIP cipher lib",
   "type": "module",
   "main": "./dist/cjs/cipher-web.cjs",
@@ -68,7 +68,7 @@
   "dependencies": {
     "@mdip/browser-hdkey": "^0.1.8",
     "@noble/ciphers": "^2.1.1",
-    "@noble/hashes": "^2.0.1",
+    "@noble/hashes": "^2.2.0",
     "@noble/secp256k1": "^3.0.0",
     "bip39": "^3.1.0",
     "buffer": "^6.0.3",

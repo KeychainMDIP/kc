@@ -1,9 +1,13 @@
 import type { SyncStoreCursor } from '../db/types.js';
-import type { ReconciliationWindow } from './adapter.js';
+import type {
+    NegentropyWindowSnapshot,
+    NegentropyWindowStats,
+    ReconciliationWindow,
+} from './adapter.js';
 
 export const MDIP_EPOCH_SECONDS = 1_704_067_200; // 2024-01-01T00:00:00Z
 
-function cloneCursor(cursor?: SyncStoreCursor | null): SyncStoreCursor | null {
+export function cloneCursor(cursor?: SyncStoreCursor | null): SyncStoreCursor | null {
     if (!cursor) {
         return null;
     }
@@ -12,6 +16,44 @@ function cloneCursor(cursor?: SyncStoreCursor | null): SyncStoreCursor | null {
         ts: cursor.ts,
         id: cursor.id,
     };
+}
+
+export function cloneWindowStats(stats: NegentropyWindowStats | null): NegentropyWindowStats | null {
+    return stats
+        ? {
+            ...stats,
+            lastCursor: cloneCursor(stats.lastCursor),
+        }
+        : null;
+}
+
+export function cloneWindow(window: ReconciliationWindow): ReconciliationWindow {
+    return {
+        ...window,
+        after: cloneCursor(window.after) ?? undefined,
+    };
+}
+
+export function cloneWindowSnapshot(snapshot: NegentropyWindowSnapshot | null): NegentropyWindowSnapshot | null {
+    if (!snapshot) {
+        return null;
+    }
+
+    return {
+        window: cloneWindow(snapshot.window),
+        stats: cloneWindowStats(snapshot.stats)!,
+        storage: snapshot.storage,
+    };
+}
+
+export function makeWindowId(window: ReconciliationWindow): string {
+    const after = window.after ? `${window.after.ts}:${window.after.id}` : 'none';
+    return `${window.order}:${window.name}:${window.fromTs}:${window.toTs}:${window.maxRecords}:${after}`;
+}
+
+export function windowLabel(window: ReconciliationWindow): string {
+    const suffix = window.after ? ` after=${window.after.ts}:${window.after.id}` : '';
+    return `${window.name}[${window.fromTs},${window.toTs}]${suffix}`;
 }
 
 export function buildInitialHistoryWindow(

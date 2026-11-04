@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import nock from 'nock';
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import { ExpectedExceptionError } from '@mdip/common/errors';
@@ -62,6 +63,34 @@ afterAll(() => {
 });
 
 describe('isReady', () => {
+    it('configures a finite request timeout', async () => {
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+
+        expect((gatekeeper as any).axios.defaults.timeout).toBe(60_000);
+    });
+
+    it.each([0, -1, Number.POSITIVE_INFINITY, Number.NaN])(
+        'rejects invalid request timeout %s',
+        async timeoutMs => {
+            await expect(GatekeeperClient.create({ timeoutMs })).rejects.toThrow(
+                'timeoutMs must be a positive finite number',
+            );
+        },
+    );
+
+    it('should time out a stalled request', async () => {
+        nock(GatekeeperURL)
+            .get(Endpoints.version)
+            .delayConnection(100)
+            .reply(200, '1');
+        const gatekeeper = await GatekeeperClient.create({
+            url: GatekeeperURL,
+            timeoutMs: 10,
+        });
+
+        await expect(gatekeeper.getVersion()).rejects.toEqual(expect.stringContaining('timeout'));
+    });
+
     it('should return ready flag', async () => {
         nock(GatekeeperURL)
             .get(Endpoints.ready)
@@ -84,6 +113,51 @@ describe('isReady', () => {
         expect(isReady).toBe(false);
     });
 
+    it('should return false when service is not ready', async () => {
+        nock(GatekeeperURL)
+            .get(Endpoints.ready)
+            .reply(503, 'false');
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        const isReady = await gatekeeper.isReady();
+
+        expect(isReady).toBe(false);
+    });
+
+    it('should throw on a permanent readiness error', async () => {
+        nock(GatekeeperURL)
+            .get(Endpoints.ready)
+            .reply(401, { message: 'Unauthorized' });
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+
+        await expect(gatekeeper.isReady()).rejects.toThrow('Request failed with status code 401');
+    });
+
+    it('should throw on an invalid URL without retrying', async () => {
+        await expect(GatekeeperClient.create({
+            url: 'http://[invalid',
+            waitUntilReady: true,
+            intervalSeconds: 0,
+            maxRetries: 1,
+        })).rejects.toMatchObject({ code: 'ERR_INVALID_URL' });
+    });
+
+    it('should retry a transient service failure', async () => {
+        nock(GatekeeperURL)
+            .get(Endpoints.ready)
+            .reply(503, 'false')
+            .get(Endpoints.ready)
+            .reply(200, 'true');
+
+        await expect(GatekeeperClient.create({
+            url: GatekeeperURL,
+            waitUntilReady: true,
+            intervalSeconds: 0,
+            maxRetries: 1,
+        })).resolves.toBeInstanceOf(GatekeeperClient);
+    });
+
     it('should wait until ready', async () => {
         nock(GatekeeperURL)
             .get(Endpoints.ready)
@@ -99,22 +173,86 @@ describe('isReady', () => {
         expect(gatekeeper != null).toBe(true);
     });
 
-    it('should timeout if not ready', async () => {
+    it('should reject when max retries are exhausted', async () => {
         nock(GatekeeperURL)
             .get(Endpoints.ready)
             .times(3)
             .reply(200, 'false');
 
-        const gatekeeper = await GatekeeperClient.create({
+        await expect(GatekeeperClient.create({
             url: GatekeeperURL,
             waitUntilReady: true,
-            intervalSeconds: 0.1,
+            intervalSeconds: 0,
             maxRetries: 2,
             becomeChattyAfter: 1,
             console: mockConsole
+        })).rejects.toThrow('Gatekeeper did not become ready after 3 attempts');
+    });
+
+    it('should succeed when ready on the last retry', async () => {
+        nock(GatekeeperURL)
+            .get(Endpoints.ready)
+            .times(2)
+            .reply(200, 'false')
+            .get(Endpoints.ready)
+            .reply(200, 'true');
+
+        await expect(GatekeeperClient.create({
+            url: GatekeeperURL,
+            waitUntilReady: true,
+            intervalSeconds: 0,
+            maxRetries: 2,
+        })).resolves.toBeInstanceOf(GatekeeperClient);
+    });
+
+    it('should cancel the wait between readiness checks', async () => {
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        const isReady = jest.spyOn(gatekeeper, 'isReady').mockResolvedValue(false);
+        const controller = new AbortController();
+        const connecting = gatekeeper.waitUntilReady({
+            signal: controller.signal,
+            intervalSeconds: 60,
         });
 
-        expect(gatekeeper != null).toBe(true);
+        while (isReady.mock.calls.length === 0) {
+            await new Promise(resolve => setImmediate(resolve));
+        }
+        await new Promise(resolve => setImmediate(resolve));
+        expect(isReady).toHaveBeenCalledWith(controller.signal);
+        controller.abort();
+
+        await expect(connecting).rejects.toMatchObject({ name: 'AbortError' });
+    });
+
+    it('should cancel an active readiness request when waitUntilReady is called directly', async () => {
+        nock(GatekeeperURL)
+            .get(Endpoints.ready)
+            .delay(1_000)
+            .reply(200, 'true');
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        const controller = new AbortController();
+
+        const waiting = gatekeeper.waitUntilReady({ signal: controller.signal });
+        controller.abort();
+
+        await expect(waiting).rejects.toMatchObject({ code: 'ERR_CANCELED' });
+    });
+
+    it('should cancel an active request', async () => {
+        nock(GatekeeperURL)
+            .get(Endpoints.version)
+            .delay(1_000)
+            .reply(200, '1');
+        const controller = new AbortController();
+        const gatekeeper = await GatekeeperClient.create({
+            url: GatekeeperURL,
+            signal: controller.signal,
+        });
+
+        const request = gatekeeper.getVersion();
+        controller.abort();
+
+        await expect(request).rejects.toEqual(expect.stringContaining('canceled'));
     });
 });
 
@@ -522,7 +660,9 @@ describe('exportIndex', () => {
     it('should return index export response', async () => {
         const exportResponse = {
             mode: 'changes',
+            indexEpoch: 'epoch-test',
             cursor: '1',
+            checkpointCursor: '1',
             hasMore: false,
             dids: [],
             blocks: [],
@@ -552,6 +692,22 @@ describe('exportIndex', () => {
         catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
+    });
+
+    it('should throw database unavailable payload on exportIndex 503', async () => {
+        const unavailable = {
+            error: 'database_unavailable',
+            message: 'Gatekeeper database is unavailable while exporting index',
+        };
+
+        nock(GatekeeperURL)
+            .post(Endpoints.index.export)
+            .reply(503, unavailable);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+
+        await expect(gatekeeper.exportIndex({ mode: 'changes' }))
+            .rejects.toStrictEqual(unavailable);
     });
 });
 
@@ -977,6 +1133,18 @@ describe('getBlock', () => {
         const block = await gatekeeper.getBlock(mockRegistry, mockBlock.height);
 
         expect(block).toStrictEqual(mockBlock);
+    });
+
+    it('should return the block at height zero', async () => {
+        const genesisBlock = { ...mockBlock, height: 0 };
+        nock(GatekeeperURL)
+            .get(`${Endpoints.block}/${mockRegistry}/0`)
+            .reply(200, genesisBlock);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        const block = await gatekeeper.getBlock(mockRegistry, 0);
+
+        expect(block).toStrictEqual(genesisBlock);
     });
 
     it('should throw exception on getBlock server error', async () => {

@@ -26,6 +26,8 @@ globalThis.Buffer = Buffer;
 
 const gatekeeper = new GatekeeperClient();
 const cipher = new CipherWeb();
+const DID_PREFIX = import.meta.env.VITE_GATEKEEPER_DID_PREFIX || 'did:test';
+const SEARCH_PORT = import.meta.env.VITE_SEARCH_PORT || '4002';
 
 const KEYMASTER_STORE_NAME = 'mdip-keymaster';
 const WALLET_PROVIDER_STORE_NAME = 'mdip-wallet-provider';
@@ -54,7 +56,7 @@ function createMnemonicWalletProvider(passphrase, store = createProviderStore())
 
 async function createSearchClient() {
     const { protocol, hostname } = window.location;
-    return SearchClient.create({ url: `${protocol}//${hostname}:4002` });
+    return SearchClient.create({ url: `${protocol}//${hostname}:${SEARCH_PORT}` });
 }
 
 function isMdipWalletBundle(wallet) {
@@ -163,6 +165,7 @@ function App() {
             gatekeeper,
             store,
             walletProvider: nextWalletProvider,
+            didPrefix: DID_PREFIX,
             cipher,
             search,
         });
@@ -189,7 +192,6 @@ function App() {
         try {
             if (pendingMnemonic) {
                 await instance.newWallet(pendingMnemonic, true);
-                await instance.recoverWallet();
             }
             else {
                 await instance.loadWallet();
@@ -208,14 +210,22 @@ function App() {
         const providerStore = createProviderStore();
         const walletStore = createMetadataStore();
 
+        const previousProvider = await providerStore.loadWallet();
         const providerOk = await providerStore.saveWallet(providerState, true);
         if (!providerOk) {
             throw new Error('save provider wallet failed');
         }
 
-        const walletOk = await walletStore.saveWallet(wallet, true);
-        if (!walletOk) {
-            throw new Error('save wallet failed');
+        try {
+            const walletOk = await walletStore.saveWallet(wallet, true);
+            if (!walletOk) {
+                throw new Error("save wallet failed");
+            }
+        } catch (error) {
+            if (previousProvider && !await providerStore.saveWallet(previousProvider, true)) {
+                throw new Error("restore provider wallet failed");
+            }
+            throw error;
         }
     }
 
@@ -243,9 +253,7 @@ function App() {
             memoryProviderStore,
         );
 
-        await memoryStore.saveWallet(bundle.keymaster, true);
-        await memoryWalletProvider.saveWallet(bundle.provider, true);
-        const normalized = await instance.loadWallet();
+        const normalized = await instance.importWalletBundle(bundle);
         const providerState = await memoryWalletProvider.backupWallet();
         await persistWalletData(normalized, providerState);
     }
@@ -427,7 +435,7 @@ function App() {
                 const updatedProviderState = await recoveryProvider.backupWallet();
 
                 if (isMdipWalletBundle(pendingWallet)) {
-                    await persistWalletData(pendingWallet.keymaster, updatedProviderState);
+                    await importWalletBundle({ ...pendingWallet, provider: updatedProviderState }, newPassphrase);
                 }
                 else {
                     const wallet = await walletStore.loadWallet();

@@ -15,6 +15,9 @@ import {
     buildDIDProjectionUpdate,
     ProjectionBlockLookup,
 } from "./projections.js";
+import { buildNetworkMetricSnapshots } from './network-metrics.js';
+import { canonicalDID, getDIDSuffix } from './did-aliases.js';
+import { IndexOwnershipLostError } from './db/coordination.js';
 
 export interface GatekeeperIndexClient {
     isReady(): Promise<boolean>;
@@ -24,6 +27,8 @@ export interface GatekeeperIndexClient {
 export interface DidIndexerOptions {
     intervalMs: number;
     pageLimit?: number;
+    metricsRefreshIntervalMs?: number;
+    didPrefix?: string;
 }
 
 export const INDEX_SYNC_STATE_KEYS = {
@@ -38,6 +43,9 @@ export const INDEX_SYNC_STATE_KEYS = {
     lastPagesProcessed: 'index.lastPagesProcessed',
     lastDidsChanged: 'index.lastDidsChanged',
     lastBlocksStored: 'index.lastBlocksStored',
+    metricsLastRebuiltAt: 'metrics.lastRebuiltAt',
+    metricsLastError: 'metrics.lastError',
+    metricsDidPrefix: 'metrics.didPrefix',
 } as const;
 
 interface SyncRunStats {
@@ -49,13 +57,33 @@ interface SyncRunStats {
     removedDids: number;
 }
 
+const INITIAL_METRICS_QUIET_RUNS = 2;
+
+function isCancellationError(error: unknown): boolean {
+    if (error === 'canceled') {
+        return true;
+    }
+
+    if (!error || typeof error !== 'object') {
+        return false;
+    }
+
+    const { code, name } = error as { code?: unknown; name?: unknown };
+    return code === 'ERR_CANCELED' || name === 'AbortError' || name === 'CanceledError';
+}
+
 export default class DidIndexer {
     private gatekeeper: GatekeeperIndexClient;
     private db: DIDsDb;
     private readonly intervalMs: number;
     private readonly pageLimit: number;
+    private readonly metricsRefreshIntervalMs: number | null;
+    private readonly didPrefix?: string;
     private timer: NodeJS.Timeout | null;
+    private activeRefresh: Promise<void> | null;
     private refreshInProgress: boolean;
+    private stopped: boolean;
+    private initialMetricsQuietRuns: number;
     private log = childLogger({ service: 'search-server', module: 'DidIndexer' });
 
     constructor(
@@ -67,26 +95,67 @@ export default class DidIndexer {
         this.db = db;
         this.intervalMs = options.intervalMs;
         this.pageLimit = options.pageLimit ?? 500;
+        this.metricsRefreshIntervalMs = options.metricsRefreshIntervalMs ?? null;
+        this.didPrefix = options.didPrefix;
         this.timer = null;
+        this.activeRefresh = null;
         this.refreshInProgress = false;
+        this.stopped = false;
+        this.initialMetricsQuietRuns = 0;
     }
 
     async startIndexing(): Promise<void> {
-        this.log.info("Starting indexing...");
-        await this.refreshIndex();
+        if (this.stopped) {
+            return;
+        }
 
-        this.timer = setInterval(() => {
-            this.refreshIndex().catch((err) => {
-                this.log.error({ error: err }, "refreshIndex error");
-            });
-        }, this.intervalMs);
+        this.log.info("Starting indexing...");
+        await this.runRefresh();
+
+        if (this.stopped || this.timer) {
+            return;
+        }
+
+        this.timer = setInterval(() =>
+            this.runRefresh().catch((err) => {
+                this.log.error({ err }, "refreshIndex error");
+            }),
+        this.intervalMs);
     }
 
-    stopIndexing(): void {
+    beginStopping(): void {
+        this.stopped = true;
+
         if (this.timer) {
             clearInterval(this.timer);
             this.timer = null;
         }
+    }
+
+    async stopIndexing(): Promise<void> {
+        this.beginStopping();
+
+        await this.activeRefresh;
+    }
+
+    private runRefresh(): Promise<void> {
+        if (this.stopped) {
+            return Promise.resolve();
+        }
+
+        if (!this.activeRefresh) {
+            this.activeRefresh = this.refreshIndex()
+                .catch(error => {
+                    if (!this.stopped || !isCancellationError(error)) {
+                        throw error;
+                    }
+                })
+                .finally(() => {
+                    this.activeRefresh = null;
+                });
+        }
+
+        return this.activeRefresh;
     }
 
     private async refreshIndex(): Promise<void> {
@@ -106,20 +175,27 @@ export default class DidIndexer {
 
             await this.saveRunStats(stats);
             await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.lastSyncError, null);
+            await this.refreshNetworkMetricsIfDue(stats);
 
             this.log.info(
                 `Indexed ${stats.changedDids} changed DIDs from ${stats.pages} ${stats.mode} page(s). ` +
                 `Stored ${stats.storedBlocks} block(s).`
             );
         } catch (err) {
+            if (this.yieldIfOwnershipLost(err)) return;
+            if (this.stopped && isCancellationError(err)) {
+                return;
+            }
+
             try {
                 await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.lastSyncError, String(err));
             }
             catch (saveError) {
-                this.log.warn({ error: saveError }, "Could not save sync error state");
+                if (this.yieldIfOwnershipLost(saveError)) return;
+                this.log.warn({ err: saveError }, "Could not save sync error state");
             }
 
-            this.log.error({ error: err }, "Error in refreshIndex");
+            this.log.error({ err }, "Error in refreshIndex");
         } finally {
             this.refreshInProgress = false;
         }
@@ -235,7 +311,10 @@ export default class DidIndexer {
         const dids: DIDProjectionUpdate[] = [];
 
         for (const record of response.dids) {
-            dids.push(await buildDIDProjectionUpdate(this.db, record.did, record.events, {
+            const did = record.removed
+                ? await this.db.findDIDBySuffix(getDIDSuffix(record.did)) ?? record.did
+                : canonicalDID(record.did, record.events);
+            dids.push(await buildDIDProjectionUpdate(this.db, did, record.events, {
                 removed: record.removed,
                 getBlock,
             }));
@@ -304,5 +383,83 @@ export default class DidIndexer {
         await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.lastPagesProcessed, stats.pages.toString());
         await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.lastDidsChanged, stats.changedDids.toString());
         await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.lastBlocksStored, stats.storedBlocks.toString());
+    }
+
+    private async refreshNetworkMetricsIfDue(syncRun?: SyncRunStats): Promise<void> {
+        if (this.metricsRefreshIntervalMs === null) {
+            return;
+        }
+
+        try {
+            if (!await this.isSnapshotComplete()) {
+                return;
+            }
+
+            const now = new Date();
+            const lastRebuiltAt = await this.db.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsLastRebuiltAt);
+            if (!lastRebuiltAt && syncRun) {
+                const isQuietChangesRun = syncRun.mode === 'changes' && syncRun.changedDids === 0;
+                this.initialMetricsQuietRuns = isQuietChangesRun
+                    ? this.initialMetricsQuietRuns + 1
+                    : 0;
+                if (this.initialMetricsQuietRuns < INITIAL_METRICS_QUIET_RUNS) {
+                    return;
+                }
+            }
+            const metricsDidPrefix = await this.db.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsDidPrefix);
+            const currentMetricsDidPrefix = this.didPrefix ?? '';
+            const lastRebuiltMs = lastRebuiltAt ? new Date(lastRebuiltAt).getTime() : Number.NaN;
+            if (Number.isFinite(lastRebuiltMs) &&
+                metricsDidPrefix === currentMetricsDidPrefix &&
+                now.getTime() - lastRebuiltMs < this.metricsRefreshIntervalMs) {
+                return;
+            }
+
+            this.log.info({
+                previousDidPrefix: metricsDidPrefix,
+                didPrefix: currentMetricsDidPrefix,
+            }, 'Rebuilding network metrics');
+
+            if (metricsDidPrefix !== currentMetricsDidPrefix) {
+                await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.metricsDidPrefix, null);
+            }
+
+            const histories = this.db.iterateDIDEventHistories(this.pageLimit);
+            const result = await buildNetworkMetricSnapshots(histories, now, this.didPrefix);
+            await this.db.replaceNetworkMetricSnapshots(result.snapshots);
+            await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.metricsLastRebuiltAt, now.toISOString());
+            await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.metricsDidPrefix, currentMetricsDidPrefix);
+            await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.metricsLastError, null);
+            this.initialMetricsQuietRuns = 0;
+            this.log.info({
+                snapshots: result.snapshots.length,
+                agentsWithConflictingPrefixes: result.agentsWithConflictingPrefixes,
+                invalidCreatedTimes: result.invalidCreatedTimes,
+                futureCreatedOperations: result.futureCreatedOperations,
+                credentialsDatedByOperationCreated: result.credentialsDatedByOperationCreated,
+                credentialsDatedByValidFrom: result.credentialsDatedByValidFrom,
+                credentialsWithoutUsableDate: result.credentialsWithoutUsableDate,
+                credentialsWithConflictingSchemas: result.credentialsWithConflictingSchemas,
+                futureCredentialValidFrom: result.futureCredentialValidFrom,
+            }, 'Rebuilt network metrics');
+        }
+        catch (error) {
+            if (this.yieldIfOwnershipLost(error)) return;
+            try {
+                await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.metricsLastError, String(error));
+            }
+            catch (saveError) {
+                if (this.yieldIfOwnershipLost(saveError)) return;
+                this.log.warn({ err: saveError }, 'Could not save metrics error state');
+            }
+            this.log.error({ err: error }, 'Network metrics rebuild error');
+        }
+    }
+
+    private yieldIfOwnershipLost(error: unknown): boolean {
+        if (!(error instanceof IndexOwnershipLostError)) return false;
+        this.beginStopping();
+        this.log.info('Indexing handed over to another Search Server. Continuing as an HTTP reader');
+        return true;
     }
 }

@@ -165,8 +165,7 @@ program
     .description('Create new wallet from a recovery phrase')
     .action(async (recoveryPhrase) => {
         try {
-            await keymaster.newWallet(recoveryPhrase, true);
-            const wallet = await keymaster.recoverWallet();
+            const wallet = await keymaster.newWallet(recoveryPhrase, true);
             console.log(JSON.stringify(wallet, null, 4));
         }
         catch (error) {
@@ -1156,7 +1155,7 @@ program
     .description('Vote in a poll')
     .action(async (poll, vote, spoil) => {
         try {
-            const did = await keymaster.votePoll(poll, vote, spoil);
+            const did = await keymaster.votePoll(poll, Number(vote), { spoil: spoil !== undefined });
             console.log(did);
         }
         catch (error) {

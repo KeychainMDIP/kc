@@ -1,3 +1,4 @@
+import { mockPostgresPool } from './postgres-mock.ts';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -5,15 +6,16 @@ import { jest } from '@jest/globals';
 import { setLogger } from '../../packages/common/src/logger.ts';
 import DIDsDbMemory from '../../services/search-server/src/db/json-memory.ts';
 import Sqlite from '../../services/search-server/src/db/sqlite.ts';
-import DidIndexer from '../../services/search-server/src/DidIndexer.ts';
+import DidIndexer, { type GatekeeperIndexClient } from '../../services/search-server/src/DidIndexer.ts';
 import { extractPublishedCredentials } from '../../services/search-server/src/published-credentials.ts';
 import type {
+    ApplyIndexPageResult,
     DIDsDb,
     GatekeeperEvent,
     PublishedCredentialRecord,
     PublishedCredentialSchemaCount,
 } from '../../services/search-server/src/types.ts';
-import { seedDID } from './db-seed.ts';
+import { createSeedEvent, seedDID } from './db-seed.ts';
 
 function createPublishedCredential(
     schemaDid: string,
@@ -91,15 +93,33 @@ function createAssetEvent(
 }
 
 function createSnapshotResponse(did: string, data: unknown) {
+    const create = createAssetEvent(did, {});
+    create.operation.mdip!.type = 'agent';
+
     return {
         mode: 'snapshot' as const,
+        indexEpoch: 'epoch-test',
         cursor: did,
         checkpointCursor: '0',
         hasMore: false,
         blocks: [],
         dids: [{
             did,
-            events: [createAssetEvent(did, data)],
+            events: [
+                create,
+                {
+                    ...create,
+                    operation: {
+                        type: 'update' as const,
+                        did,
+                        doc: {
+                            didDocument: { id: did },
+                            didDocumentData: data,
+                            mdip: { version: 1, type: 'agent' as const, registry: 'local' },
+                        },
+                    },
+                },
+            ],
         }],
     };
 }
@@ -107,6 +127,7 @@ function createSnapshotResponse(did: string, data: unknown) {
 function createEmptySnapshotResponse() {
     return {
         mode: 'snapshot' as const,
+        indexEpoch: 'epoch-test',
         cursor: null,
         checkpointCursor: '0',
         hasMore: false,
@@ -183,6 +204,8 @@ const adapterFactories = [
         },
     },
 ] as const;
+
+const completeSearchPage = (dids: string[]) => ({ dids, nextCursor: null });
 
 beforeEach(() => {
     const logger = {
@@ -265,6 +288,36 @@ describe('extractPublishedCredentials', () => {
                 updatedAt: '2026-03-31T11:00:00.000Z',
             },
         ]);
+    });
+
+    it('normalizes a subject prefix alias to the canonical holder DID', () => {
+        const holderDid = 'did:test:subject-1';
+        const holderAlias = 'did:mdip:subject-1';
+        const credentialDid = 'did:mdip:credential-1';
+        const schemaDid = 'did:mdip:schema-1';
+        const issuerDid = 'did:mdip:issuer-1';
+        const doc = createSubjectDoc(holderAlias, {
+            [credentialDid]: createPublishedCredential(schemaDid, issuerDid, holderAlias),
+        });
+
+        expect(extractPublishedCredentials(holderDid, doc)).toStrictEqual([
+            expect.objectContaining({
+                holderDid,
+                subjectDid: holderDid,
+            }),
+        ]);
+    });
+
+    it('rejects a manifest without a valid canonical holder DID', () => {
+        const holderDid = 'did:test:subject-1';
+
+        expect(extractPublishedCredentials('not-a-did', createSubjectDoc(holderDid, {
+            'did:test:credential-1': createPublishedCredential(
+                'did:test:schema-1',
+                'did:test:issuer-1',
+                holderDid
+            ),
+        }))).toStrictEqual([]);
     });
 
     it('ignores malformed or mismatched manifest entries', () => {
@@ -720,7 +773,7 @@ describe.each(adapterFactories)('$name query and utility behavior', ({ create })
             expect((await db.getDID(did1) as any).didDocumentData.profile.name).toBe('Needle Alpha');
             expect(await db.getDID('did:test:missing')).toBeNull();
 
-            expect(await db.searchDocs('Needle')).toStrictEqual([did1]);
+            expect(await db.searchDocs('Needle', { limit: 50 })).toStrictEqual(completeSearchPage([did1]));
             expect(await db.queryDocs({
                 '$.didDocument.id': { $in: [did1] },
             })).toStrictEqual([did1]);
@@ -744,13 +797,449 @@ describe.each(adapterFactories)('$name query and utility behavior', ({ create })
             await db.wipeDb();
 
             expect(await db.loadSyncState('test.cursor')).toBeNull();
-            expect(await db.searchDocs('Needle')).toStrictEqual([]);
+            expect(await db.searchDocs('Needle', { limit: 50 })).toStrictEqual(completeSearchPage([]));
             expect(await db.getDID(did1)).toBeNull();
             expect(await db.getPublishedCredentialCountsBySchema()).toStrictEqual([]);
             expect(await db.listPublishedCredentials({ limit: 10, offset: 0 })).toStrictEqual({
                 total: 0,
                 credentials: [],
             });
+        }
+        finally {
+            await cleanup();
+        }
+    });
+
+    it('treats SQL wildcard characters as literal search text', async () => {
+        const { db, cleanup } = await create();
+        const matchingDid = 'did:test:literal-search';
+
+        try {
+            await seedDID(db, matchingDid, {
+                doc: { didDocumentData: { value: '100%_complete!' } },
+            });
+            await seedDID(db, 'did:test:other-search', {
+                doc: { didDocumentData: { value: 'ordinary text' } },
+            });
+
+            expect(await db.searchDocs('%', { limit: 50 })).toStrictEqual(completeSearchPage([matchingDid]));
+            expect(await db.searchDocs('_', { limit: 50 })).toStrictEqual(completeSearchPage([matchingDid]));
+            expect(await db.searchDocs('!', { limit: 50 })).toStrictEqual(completeSearchPage([matchingDid]));
+        }
+        finally {
+            await cleanup();
+        }
+    });
+
+    it('returns deterministic cursor-based search pages', async () => {
+        const { db, cleanup } = await create();
+        const dids = ['did:test:page-c', 'did:test:page-a', 'did:test:page-b'];
+
+        try {
+            for (const did of dids) {
+                await seedDID(db, did, { doc: { didDocumentData: { value: 'paged search' } } });
+            }
+
+            const first = await db.searchDocs('paged search', { limit: 2 });
+            expect(first).toStrictEqual({
+                dids: ['did:test:page-a', 'did:test:page-b'],
+                nextCursor: 'did:test:page-b',
+            });
+            expect(await db.searchDocs('paged search', { limit: 2, cursor: first.nextCursor! }))
+                .toStrictEqual(completeSearchPage(['did:test:page-c']));
+        }
+        finally {
+            await cleanup();
+        }
+    });
+
+    it('filters indexed results by canonical DID prefix', async () => {
+        const { db, cleanup } = await create();
+        const testHolder = 'did:test:test-holder';
+        const mdipHolder = 'did:mdip:mdip-holder';
+        const testCredential = 'did:test:test-credential';
+        const mdipCredential = 'did:mdip:mdip-credential';
+        const testSchema = 'did:test:test-schema';
+        const mdipSchema = 'did:mdip:mdip-schema';
+        const testPublishedCredential = {
+            holderDid: testHolder,
+            credentialDid: testCredential,
+            schemaDid: testSchema,
+            issuerDid: testHolder,
+            subjectDid: testHolder,
+            revealed: true,
+            updatedAt: '2026-04-01T12:00:00.000Z',
+        };
+        const mdipPublishedCredential = {
+            holderDid: mdipHolder,
+            credentialDid: mdipCredential,
+            schemaDid: mdipSchema,
+            issuerDid: mdipHolder,
+            subjectDid: mdipHolder,
+            revealed: true,
+            updatedAt: '2026-04-01T12:00:00.000Z',
+        };
+        const explicitCreate = (did: string) => {
+            const event = createSeedEvent(did);
+            event.operation.mdip!.prefix = did.split(':', 2).join(':');
+            return event;
+        };
+
+        try {
+            for (const did of [testCredential, mdipCredential, testSchema, mdipSchema]) {
+                await seedDID(db, did, { events: [explicitCreate(did)] });
+            }
+            await seedDID(db, testHolder, {
+                events: [explicitCreate(testHolder)],
+                doc: { didDocumentData: { searchable: 'shared-network-value' } },
+                publishedCredentials: [
+                    testPublishedCredential,
+                    {
+                        ...testPublishedCredential,
+                        credentialDid: 'did:mdip:test-credential',
+                        schemaDid: 'did:mdip:test-schema',
+                    },
+                ],
+            });
+            await seedDID(db, mdipHolder, {
+                events: [explicitCreate(mdipHolder)],
+                doc: { didDocumentData: { searchable: 'shared-network-value' } },
+                publishedCredentials: [
+                    mdipPublishedCredential,
+                    {
+                        ...mdipPublishedCredential,
+                        credentialDid: 'did:test:mdip-credential',
+                        schemaDid: 'did:test:mdip-schema',
+                    },
+                ],
+            });
+
+            expect(await db.searchDocs('shared-network-value', { didPrefix: 'did:mdip', limit: 50 }))
+                .toStrictEqual(completeSearchPage([mdipHolder]));
+            expect(await db.queryDocs({
+                'didDocumentData.searchable': { $in: ['shared-network-value'] },
+            }, 'did:test')).toStrictEqual([testHolder]);
+            expect((await db.listEvents({ didPrefix: 'did:mdip' })).events.every(
+                event => event.did.startsWith('did:mdip:')
+            )).toBe(true);
+            expect(await db.findDIDBySuffix('mdip-holder', 'did:test')).toBeNull();
+            expect(await db.findDIDBySuffix('mdip-holder', 'did:mdip')).toBe(mdipHolder);
+            expect(await db.findAmbiguousDIDBySuffix('test-holder')).toBeNull();
+            expect(await db.findAmbiguousDIDBySuffix('mdip-holder')).toBeNull();
+            expect(await db.listPublishedCredentials({ didPrefix: 'did:test', limit: 1, offset: 1 }))
+                .toStrictEqual({ total: 1, credentials: [] });
+            expect(await db.getPublishedCredentialCountsBySchema('did:test')).toStrictEqual([
+                { schemaDid: testSchema, count: 1 },
+            ]);
+            expect(await db.getPublishedCredentialCountsBySchema('did:mdip')).toStrictEqual([
+                { schemaDid: mdipSchema, count: 1 },
+            ]);
+
+            await seedDID(db, 'did:test:reclassified');
+            await seedDID(db, 'did:mdip:reclassified');
+            expect(await db.getDIDEvents('did:test:reclassified')).toStrictEqual([]);
+            expect(await db.findDIDBySuffix('reclassified')).toBe('did:mdip:reclassified');
+        }
+        finally {
+            await cleanup();
+        }
+    });
+
+    it('matches subjectDid and issuerDid aliases by CID suffix', async () => {
+        const { db, cleanup } = await create();
+        const holderDid = 'did:mdip:alias-holder';
+        const holderAlias = 'did:test:alias-holder';
+        const credential = {
+            holderDid,
+            credentialDid: 'did:mdip:alias-credential',
+            schemaDid: 'did:mdip:alias-schema',
+            issuerDid: holderDid,
+            subjectDid: holderDid,
+            revealed: false,
+            updatedAt: '2026-04-01T12:00:00.000Z',
+        };
+        const event = createSeedEvent(holderDid);
+        event.operation.mdip!.type = 'agent';
+        event.operation.mdip!.prefix = 'did:mdip';
+
+        try {
+            await seedDID(db, holderDid, {
+                events: [event],
+                publishedCredentials: [credential],
+            });
+
+            expect(await db.listPublishedCredentials({ subjectDid: holderAlias })).toStrictEqual({
+                total: 1,
+                credentials: [credential],
+            });
+            expect(await db.listPublishedCredentials({ issuerDid: holderAlias })).toStrictEqual({
+                total: 1,
+                credentials: [credential],
+            });
+            expect(await db.listPublishedCredentials({ subjectDid: 'did:test:other-holder' }))
+                .toStrictEqual({ total: 0, credentials: [] });
+        }
+        finally {
+            await cleanup();
+        }
+    });
+
+    it('uses unique published references for prefix-less credential and schema assets', async () => {
+        const { db, cleanup } = await create();
+        const holderDid = 'did:test:legacy-holder';
+        const storedCredentialDid = 'did:test:legacy-credential';
+        const storedSchemaDid = 'did:test:legacy-schema';
+        const publishedCredentialDid = 'did:mdip:legacy-credential';
+        const publishedSchemaDid = 'did:mdip:legacy-schema';
+        const holderEvents = [createSeedEvent(holderDid)];
+
+        try {
+            await seedDID(db, storedCredentialDid);
+            await seedDID(db, storedSchemaDid, {
+                doc: { didDocumentData: { searchable: 'legacy-network-schema' } },
+            });
+            expect(await db.findAmbiguousDIDBySuffix('legacy-credential')).toBe(storedCredentialDid);
+            expect(await db.findAmbiguousDIDBySuffix('legacy-schema')).toBe(storedSchemaDid);
+            expect(await db.findAmbiguousDIDBySuffix('missing')).toBeNull();
+            await seedDID(db, 'did:test:uniquely-referenced-test');
+            await seedDID(db, 'did:test:uniquely-referenced-other');
+            await seedDID(db, 'did:test:reference-source', {
+                didPrefixReferences: [
+                    'did:test:uniquely-referenced-test',
+                    'did:other:uniquely-referenced-other',
+                ],
+            });
+            expect(await db.findAmbiguousDIDBySuffix('uniquely-referenced-test')).toBeNull();
+            expect(await db.findAmbiguousDIDBySuffix('uniquely-referenced-other')).toBeNull();
+            await seedDID(db, holderDid, {
+                events: holderEvents,
+                publishedCredentials: [{
+                    holderDid,
+                    credentialDid: publishedCredentialDid,
+                    schemaDid: publishedSchemaDid,
+                    issuerDid: holderDid,
+                    subjectDid: holderDid,
+                    revealed: false,
+                    updatedAt: '2026-04-01T12:00:00.000Z',
+                }],
+            });
+
+            expect(await db.getPublishedCredentialCountsBySchema('did:mdip')).toStrictEqual([
+                { schemaDid: publishedSchemaDid, count: 1 },
+            ]);
+            expect(await db.listPublishedCredentials({ didPrefix: 'did:mdip' })).toMatchObject({
+                total: 1,
+                credentials: [{
+                    credentialDid: publishedCredentialDid,
+                    schemaDid: publishedSchemaDid,
+                }],
+            });
+            expect(await db.findDIDBySuffix('legacy-schema', 'did:mdip')).toBe(storedSchemaDid);
+            expect(await db.findDIDBySuffix('legacy-schema', 'did:test')).toBeNull();
+            expect(await db.findAmbiguousDIDBySuffix('legacy-credential')).toBeNull();
+            expect(await db.findAmbiguousDIDBySuffix('legacy-schema')).toBeNull();
+            expect(await db.searchDocs('legacy-network-schema', { didPrefix: 'did:mdip', limit: 50 }))
+                .toStrictEqual(completeSearchPage([publishedSchemaDid]));
+            expect(await db.searchDocs('legacy-network-schema', { didPrefix: 'did:test', limit: 50 }))
+                .toStrictEqual(completeSearchPage([]));
+            expect(await db.queryDocs({
+                'didDocumentData.searchable': { $in: ['legacy-network-schema'] },
+            }, 'did:mdip')).toStrictEqual([publishedSchemaDid]);
+            expect((await db.listEvents({ didPrefix: 'did:mdip' })).events.some(
+                event => event.did === publishedSchemaDid
+            )).toBe(true);
+            expect((await db.listEvents({ didPrefix: 'did:test' })).events.some(
+                event => event.did.endsWith(':legacy-schema')
+            )).toBe(false);
+
+            await seedDID(db, holderDid, {
+                events: [...holderEvents, {
+                    ...holderEvents[0],
+                    time: '2026-04-01T13:00:00.000Z',
+                    operation: {
+                        type: 'update',
+                        did: holderDid,
+                        doc: {
+                            didDocument: { id: holderDid },
+                            didDocumentData: { manifest: {} },
+                        },
+                    },
+                }],
+                didPrefixReferences: [publishedCredentialDid, publishedSchemaDid],
+                publishedCredentials: [],
+            });
+
+            expect(await db.getPublishedCredentialCountsBySchema('did:mdip')).toStrictEqual([]);
+            expect(await db.findDIDBySuffix('legacy-schema', 'did:mdip')).toBe(storedSchemaDid);
+            expect(await db.findDIDBySuffix('legacy-schema', 'did:test')).toBeNull();
+            expect(await db.searchDocs('legacy-network-schema', { didPrefix: 'did:mdip', limit: 50 }))
+                .toStrictEqual(completeSearchPage([publishedSchemaDid]));
+
+            await seedDID(db, 'did:test:conflicting-reference-holder', {
+                didPrefixReferences: ['did:test:legacy-schema'],
+            });
+            expect(await db.findAmbiguousDIDBySuffix('legacy-schema')).toBe(storedSchemaDid);
+        }
+        finally {
+            await cleanup();
+        }
+    });
+
+    it('does not let manifest references reclassify AgentDIDs', async () => {
+        const { db, cleanup } = await create();
+        const holderDid = 'did:test:agent-holder';
+        const credentialDid = 'did:test:credential-agent';
+        const schemaDid = 'did:test:schema-agent';
+        const mdipCredentialDid = credentialDid.replace('did:test:', 'did:mdip:');
+        const mdipSchemaDid = schemaDid.replace('did:test:', 'did:mdip:');
+        const agentEvent = (did: string) => {
+            const event = createSeedEvent(did);
+            event.operation.mdip!.type = 'agent';
+            return event;
+        };
+
+        try {
+            await seedDID(db, credentialDid, {
+                events: [agentEvent(credentialDid)],
+                doc: { didDocumentData: { searchable: 'credential-agent-collision' } },
+            });
+            await seedDID(db, schemaDid, {
+                events: [agentEvent(schemaDid)],
+                doc: { didDocumentData: { searchable: 'schema-agent-collision' } },
+            });
+            await seedDID(db, holderDid, {
+                events: [agentEvent(holderDid)],
+                didPrefixReferences: [mdipCredentialDid, mdipSchemaDid],
+                publishedCredentials: [{
+                    holderDid,
+                    credentialDid: mdipCredentialDid,
+                    schemaDid: mdipSchemaDid,
+                    issuerDid: holderDid,
+                    subjectDid: holderDid,
+                    revealed: false,
+                    updatedAt: '2026-04-01T12:00:00.000Z',
+                }],
+            });
+
+            expect(await db.findDIDBySuffix('credential-agent', 'did:test')).toBe(credentialDid);
+            expect(await db.findDIDBySuffix('credential-agent', 'did:mdip')).toBeNull();
+            expect(await db.findAmbiguousDIDBySuffix('credential-agent')).toBe(credentialDid);
+            expect(await db.findAmbiguousDIDBySuffix('schema-agent')).toBe(schemaDid);
+            expect(await db.searchDocs('credential-agent-collision', { didPrefix: 'did:test', limit: 50 }))
+                .toStrictEqual(completeSearchPage([credentialDid]));
+            expect(await db.searchDocs('credential-agent-collision', { didPrefix: 'did:mdip', limit: 50 }))
+                .toStrictEqual(completeSearchPage([]));
+            expect(await db.searchDocs('credential-agent-collision', {
+                didPrefix: 'did:mdip', includeAmbiguous: true, limit: 50,
+            })).toStrictEqual(completeSearchPage([mdipCredentialDid]));
+            expect(await db.searchDocs('credential-agent-collision', {
+                didPrefix: 'did:mdip',
+                includeAmbiguous: true,
+                limit: 50,
+                cursor: 'did:mdip:before-credential-agent',
+            })).toStrictEqual(completeSearchPage([mdipCredentialDid]));
+            expect(await db.queryDocs({
+                'didDocumentData.searchable': { $in: ['schema-agent-collision'] },
+            }, 'did:test')).toStrictEqual([schemaDid]);
+            expect(await db.queryDocs({
+                'didDocumentData.searchable': { $in: ['schema-agent-collision'] },
+            }, 'did:mdip', true)).toStrictEqual([mdipSchemaDid]);
+            expect((await db.listEvents({ didPrefix: 'did:mdip' })).events.some(
+                event => event.did === mdipCredentialDid || event.did === mdipSchemaDid
+            )).toBe(false);
+            expect((await db.listEvents({ didPrefix: 'did:mdip', includeAmbiguous: true })).events).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({ did: mdipCredentialDid }),
+                    expect.objectContaining({ did: mdipSchemaDid }),
+                ])
+            );
+            expect(await db.listPublishedCredentials({ didPrefix: 'did:test' })).toMatchObject({
+                total: 1,
+                credentials: [{ credentialDid, schemaDid }],
+            });
+            expect(await db.listPublishedCredentials({ didPrefix: 'did:mdip' })).toMatchObject({ total: 0 });
+            expect(await db.listPublishedCredentials({ didPrefix: 'did:mdip', includeAmbiguous: true }))
+                .toMatchObject({
+                    total: 1,
+                    credentials: [{ credentialDid: mdipCredentialDid, schemaDid: mdipSchemaDid }],
+                });
+            expect(await db.getPublishedCredentialCountsBySchema('did:test')).toStrictEqual([
+                { schemaDid, count: 1 },
+            ]);
+            expect(await db.getPublishedCredentialCountsBySchema('did:mdip')).toStrictEqual([]);
+            expect(await db.getPublishedCredentialCountsBySchema('did:mdip', true)).toStrictEqual([
+                { schemaDid: mdipSchemaDid, count: 1 },
+            ]);
+        }
+        finally {
+            await cleanup();
+        }
+    });
+
+    it('keeps conflicting operation prefixes in the test network despite mdip manifest evidence', async () => {
+        const { db, cleanup } = await create();
+        const holderDid = 'did:test:conflicting-holder';
+        const credentialDid = 'did:test:conflicting-credential';
+        const schemaDid = 'did:test:conflicting-schema';
+        const mdipCredentialDid = credentialDid.replace('did:test:', 'did:mdip:');
+        const mdipSchemaDid = schemaDid.replace('did:test:', 'did:mdip:');
+        const conflictingEvents = (did: string): GatekeeperEvent[] => {
+            const create = createSeedEvent(did);
+
+            return [
+                create,
+                {
+                    ...create,
+                    operation: { type: 'update', did },
+                },
+                {
+                    ...create,
+                    operation: { type: 'update', did: did.replace('did:test:', 'did:mdip:') },
+                },
+            ];
+        };
+
+        try {
+            await seedDID(db, credentialDid, { events: conflictingEvents(credentialDid) });
+            await seedDID(db, schemaDid, {
+                events: conflictingEvents(schemaDid),
+                doc: { didDocumentData: { searchable: 'conflicting-prefix-schema' } },
+            });
+            await seedDID(db, holderDid, {
+                didPrefixReferences: [mdipCredentialDid, mdipSchemaDid],
+                publishedCredentials: [{
+                    holderDid,
+                    credentialDid: mdipCredentialDid,
+                    schemaDid: mdipSchemaDid,
+                    issuerDid: holderDid,
+                    subjectDid: holderDid,
+                    revealed: false,
+                    updatedAt: '2026-04-01T12:00:00.000Z',
+                }],
+            });
+
+            expect(await db.findDIDBySuffix('conflicting-credential', 'did:test')).toBe(credentialDid);
+            expect(await db.findDIDBySuffix('conflicting-credential', 'did:mdip')).toBeNull();
+            expect(await db.findAmbiguousDIDBySuffix('conflicting-credential')).toBeNull();
+            expect(await db.listPublishedCredentials({ didPrefix: 'did:test' })).toMatchObject({
+                total: 1,
+                credentials: [{ credentialDid, schemaDid }],
+            });
+            expect(await db.listPublishedCredentials({ didPrefix: 'did:mdip' })).toMatchObject({ total: 0 });
+            expect(await db.getPublishedCredentialCountsBySchema('did:test')).toStrictEqual([
+                { schemaDid, count: 1 },
+            ]);
+            expect(await db.getPublishedCredentialCountsBySchema('did:mdip')).toStrictEqual([]);
+            expect(await db.searchDocs('conflicting-prefix-schema', { didPrefix: 'did:test', limit: 50 }))
+                .toStrictEqual(completeSearchPage([schemaDid]));
+            expect(await db.searchDocs('conflicting-prefix-schema', { didPrefix: 'did:mdip', limit: 50 }))
+                .toStrictEqual(completeSearchPage([]));
+            expect(await db.searchDocs('conflicting-prefix-schema', {
+                didPrefix: 'did:mdip', includeAmbiguous: true, limit: 50,
+            })).toStrictEqual(completeSearchPage([]));
+            expect(await db.listPublishedCredentials({
+                didPrefix: 'did:mdip', includeAmbiguous: true,
+            })).toMatchObject({ total: 0 });
         }
         finally {
             await cleanup();
@@ -816,7 +1305,7 @@ describe('sqlite adapter disconnected behavior', () => {
             await expect(db.getDID('did:test:doc')).rejects.toThrow('DB not connected');
             await expect(db.getPublishedCredentialCountsBySchema()).rejects.toThrow('DB not connected');
             await expect(db.listPublishedCredentials()).rejects.toThrow('DB not connected');
-            await expect(db.searchDocs('doc')).rejects.toThrow('DB not connected');
+            await expect(db.searchDocs('doc', { limit: 50 })).rejects.toThrow('DB not connected');
             await expect(db.queryDocs({
                 'didDocument.id': { $in: ['did:test:doc'] },
             })).rejects.toThrow('DB not connected');
@@ -969,11 +1458,24 @@ describe('postgres adapter with mocked pool', () => {
                         subjectDid: 'did:test:subject-1',
                         revealed: true,
                         updatedAt: '2026-04-02T09:05:00.000Z',
+                        credentialPrefixAmbiguous: true,
+                        schemaPrefixAmbiguous: true,
                     }],
                 };
             }
-            if (text.includes("WHERE doc::text LIKE '%' || $1 || '%'")) {
-                return { rowCount: 1, rows: [{ did: 'did:test:search-1' }] };
+            if (text.includes("doc::text LIKE '%' || $1 || '%'")) {
+                const rows = params?.[0] === 'paged'
+                    ? [{ did: 'did:test:search-1', prefixAmbiguous: true }, { did: 'did:test:search-2', prefixAmbiguous: true }]
+                    : [{ did: 'did:test:search-1', prefixAmbiguous: true }];
+                return { rowCount: rows.length, rows };
+            }
+            if (text.includes('did AS "storedDid"')) {
+                const dids = params?.[0] as string[];
+                const prefix = params?.[1] as string | undefined;
+                const rows = dids
+                    .filter(did => text.includes('OR prefix_ambiguous') || !prefix || did.startsWith(`${prefix}:`))
+                    .map(did => ({ storedDid: did, did, prefixAmbiguous: true }));
+                return { rowCount: rows.length, rows };
             }
             if (text.includes('JOIN LATERAL jsonb_array_elements') && text.includes('elem.value = expected.value::jsonb')) {
                 return { rowCount: 1, rows: [{ did: 'did:test:array-tail' }] };
@@ -1001,18 +1503,19 @@ describe('postgres adapter with mocked pool', () => {
 
             return { rowCount: 0, rows: [] };
         });
+        const clientQuery = jest.fn((sql: string, params?: unknown[]) => poolQuery(sql, params));
         const mockClient = {
-            query: jest.fn(),
+            query: clientQuery,
             release: jest.fn(),
         };
         const mockPool = {
             query: poolQuery,
-            connect: jest.fn().mockResolvedValue(mockClient),
-            end: jest.fn().mockResolvedValue(undefined),
+            connect: jest.fn<() => Promise<typeof mockClient>>().mockResolvedValue(mockClient),
+            end: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
         };
         const Postgres = await loadPostgresModule();
         const db = new Postgres('postgresql://example');
-        (db as any).pool = mockPool;
+        (db as any).pool = mockPostgresPool(db, mockPool);
 
         expect(await db.loadSyncState('test.cursor')).toBeNull();
         expect(await db.saveSyncState('test.cursor', '2026-04-02T09:00:00.000Z')).toBeUndefined();
@@ -1036,10 +1539,19 @@ describe('postgres adapter with mocked pool', () => {
         expect(await db.getPublishedCredentialCountsBySchema()).toStrictEqual([
             { schemaDid: 'did:test:schema-1', count: 2 },
         ]);
+        expect(await db.getPublishedCredentialCountsBySchema('did:test')).toStrictEqual([
+            { schemaDid: 'did:test:schema-1', count: 2 },
+        ]);
+        await db.getPublishedCredentialCountsBySchema('did:mdip', true);
+        expect(poolQuery).toHaveBeenCalledWith(
+            expect.stringContaining('pc.credential_effective_prefix = $1 OR pc.credential_prefix_ambiguous'),
+            ['did:mdip']
+        );
         expect(await db.listPublishedCredentials({
+            didPrefix: 'did:test',
             credentialDid: 'did:test:credential-1',
             schemaDid: 'did:test:schema-1',
-            issuerDid: 'did:test:issuer-1',
+            issuerDid: 'did:mdip:issuer-1',
             subjectDid: 'did:test:subject-1',
             revealed: true,
             limit: 5,
@@ -1056,7 +1568,54 @@ describe('postgres adapter with mocked pool', () => {
                 updatedAt: '2026-04-02T09:05:00.000Z',
             }],
         });
-        expect(await db.searchDocs('search')).toStrictEqual(['did:test:search-1']);
+        expect(await db.listPublishedCredentials({
+            didPrefix: 'did:mdip', includeAmbiguous: true,
+        })).toMatchObject({
+            total: 1,
+            credentials: [{
+                credentialDid: 'did:mdip:credential-1',
+                schemaDid: 'did:mdip:schema-1',
+            }],
+        });
+        expect(await db.searchDocs('search', { limit: 50 }))
+            .toStrictEqual(completeSearchPage(['did:test:search-1']));
+        expect(await db.searchDocs('search', { limit: 50, cursor: 'did:test:cursor' }))
+            .toStrictEqual(completeSearchPage(['did:test:search-1']));
+        expect(await db.searchDocs('search', {
+            didPrefix: 'did:test',
+            limit: 25,
+            cursor: 'did:test:cursor',
+        })).toStrictEqual(completeSearchPage(['did:test:search-1']));
+        expect(await db.searchDocs('search', {
+            didPrefix: 'did:mdip', includeAmbiguous: true, limit: 25,
+        })).toStrictEqual(completeSearchPage(['did:mdip:search-1']));
+        expect(await db.searchDocs('100%_complete!', { limit: 50 }))
+            .toStrictEqual(completeSearchPage(['did:test:search-1']));
+        expect(await db.searchDocs('paged', { limit: 1 })).toStrictEqual({
+            dids: ['did:test:search-1'],
+            nextCursor: 'did:test:search-1',
+        });
+
+        const searchCalls = poolQuery.mock.calls.filter(([sql]) =>
+            String(sql).includes('WITH matches AS MATERIALIZED')
+        );
+        expect(searchCalls).toHaveLength(6);
+        expect(searchCalls[0][0]).toContain("ESCAPE '!'");
+        expect(searchCalls[0][0]).not.toContain('WHERE dc.prefix = $2');
+        expect(searchCalls[0][0]).toContain('ORDER BY');
+        expect(searchCalls[0][1]).toStrictEqual(['search', 51]);
+        expect(searchCalls[1][0]).not.toContain('WHERE dc.prefix');
+        expect(searchCalls[1][1]).toStrictEqual(['search', 'did:test:cursor', 51]);
+        expect(searchCalls[2][0]).toContain('dc.prefix = $2');
+        expect(searchCalls[2][0]).toContain('> $3');
+        expect(searchCalls[2][1]).toStrictEqual(['search', 'did:test', 'cursor', 26]);
+        expect(searchCalls[3][0]).toContain('OR dc.prefix_ambiguous');
+        expect(searchCalls[3][1]).toStrictEqual(['search', 'did:mdip', 26]);
+        expect(searchCalls[4][1]).toStrictEqual(['100!%!_complete!!', 51]);
+        expect(searchCalls[5][1]).toStrictEqual(['paged', 2]);
+        expect(clientQuery).toHaveBeenCalledWith('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+        expect(clientQuery.mock.calls.filter(([sql]) => sql === "SET LOCAL statement_timeout = '5000ms'"))
+            .toHaveLength(6);
 
         expect(await db.queryDocs({})).toStrictEqual([]);
         await expect(db.queryDocs({ '$.didDocument.id': {} } as any)).rejects.toThrow('Only {$in:[…]} supported');
@@ -1066,6 +1625,12 @@ describe('postgres adapter with mocked pool', () => {
         expect(await db.queryDocs({ '$.didDocumentData.manifest.*': { $in: ['cred'] } })).toStrictEqual(['did:test:key-wildcard']);
         expect(await db.queryDocs({ '$.didDocumentData.manifest.*.issuer': { $in: ['issuer'] } })).toStrictEqual(['did:test:value-wildcard']);
         expect(await db.queryDocs({ '$.didDocument.id': { $in: ['did:test:plain-path'] } })).toStrictEqual(['did:test:plain-path']);
+        expect(await db.queryDocs({
+            '$.didDocument.id': { $in: ['did:test:plain-path'] },
+        }, 'did:mdip')).toStrictEqual([]);
+        expect(await db.queryDocs({
+            '$.didDocument.id': { $in: ['did:test:plain-path'] },
+        }, 'did:mdip', true)).toStrictEqual(['did:mdip:plain-path']);
 
         await db.wipeDb();
         await db.disconnect();
@@ -1079,6 +1644,12 @@ describe('postgres adapter with mocked pool', () => {
         const defaultPathCall = poolQuery.mock.calls.find(([sql]) =>
             String(sql).includes('did_docs.doc #> $1::text[] = expected.value::jsonb')
         );
+        const subjectFilterCall = poolQuery.mock.calls.find(([sql]) =>
+            String(sql).includes('SELECT did FROM did_classifications WHERE suffix = $5')
+        );
+        const issuerFilterCall = poolQuery.mock.calls.find(([sql]) =>
+            String(sql).includes("right(pc.issuer_did, length($4) + 1) = ':' || $4")
+        );
 
         expect(arrayTailCall?.[1]).toStrictEqual([
             ['didDocumentData', 'tags'],
@@ -1088,22 +1659,24 @@ describe('postgres adapter with mocked pool', () => {
             ['didDocument', 'id'],
             ['"did:test:plain-path"'],
         ]);
+        expect(subjectFilterCall?.[1]).toContain('subject-1');
+        expect(issuerFilterCall?.[1]).toContain('issuer-1');
     });
 
     it('throws when disconnected and rolls back failed replacements', async () => {
         const clientError = new Error('insert failed');
         const mockClient = {
-            query: jest.fn()
-                .mockResolvedValueOnce(undefined)
-                .mockResolvedValueOnce(undefined)
-                .mockRejectedValueOnce(clientError)
-                .mockResolvedValueOnce(undefined),
+            query: jest.fn(async (sql: string) => {
+                if (sql.includes('INSERT INTO published_credentials')) throw clientError;
+                return { rowCount: 0, rows: [] };
+            }),
             release: jest.fn(),
         };
         const mockPool = {
-            query: jest.fn().mockResolvedValue({ rowCount: 0, rows: [] }),
-            connect: jest.fn().mockResolvedValue(mockClient),
-            end: jest.fn().mockResolvedValue(undefined),
+            query: jest.fn<(...args: unknown[]) => Promise<unknown>>()
+                .mockResolvedValue({ rowCount: 0, rows: [] }),
+            connect: jest.fn<() => Promise<typeof mockClient>>().mockResolvedValue(mockClient),
+            end: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
         };
         const Postgres = await loadPostgresModule();
         const disconnectedDb = new Postgres('postgresql://example');
@@ -1111,7 +1684,7 @@ describe('postgres adapter with mocked pool', () => {
         await expect(disconnectedDb.loadSyncState('test.cursor')).rejects.toThrow('Postgres DB not connected');
 
         const db = new Postgres('postgresql://example');
-        (db as any).pool = mockPool;
+        (db as any).pool = mockPostgresPool(db, mockPool);
 
         await expect(db.applyIndexPage({
             dids: [{
@@ -1133,27 +1706,56 @@ describe('postgres adapter with mocked pool', () => {
         })).rejects.toThrow(clientError);
 
         expect(mockClient.query).toHaveBeenNthCalledWith(1, 'BEGIN');
-        expect(mockClient.query).toHaveBeenNthCalledWith(
-            2,
-            'DELETE FROM did_events WHERE did = $1',
-            ['did:test:subject-1']
+        expect(mockClient.query).toHaveBeenCalledWith(
+            'DELETE FROM did_events WHERE did = $1', ['did:test:subject-1']
         );
-        expect(mockClient.query).toHaveBeenNthCalledWith(4, 'ROLLBACK');
+        expect(mockClient.query).toHaveBeenLastCalledWith('ROLLBACK');
         expect(mockClient.release).toHaveBeenCalledTimes(1);
+    });
+
+    it('preserves database errors during role checks and releases the read transaction', async () => {
+        const failure = Object.assign(new Error('permission denied for table search_index_control'), { code: '42501' });
+        const client = {
+            query: jest.fn(async (sql: string) => {
+                if (sql.includes('pg_try_advisory_')) return { rows: [{ acquired: true }] };
+                if (sql.includes('FROM search_index_control')) throw failure;
+                if (sql.includes('pg_advisory_unlock')) return { rows: [{ released: true }] };
+                return { rows: [] };
+            }),
+            release: jest.fn(),
+        };
+        const Postgres = await loadPostgresModule();
+        const db = new Postgres('postgresql://example');
+        (db as any).pool = { connect: jest.fn(async () => client) };
+
+        await expect(db.getRole()).rejects.toBe(failure);
+
+        expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+        expect(client.query).toHaveBeenLastCalledWith(
+            expect.stringContaining('pg_advisory_unlock_shared'), ['search-server', 'index-schema']
+        );
+        expect(client.release).toHaveBeenCalledWith(false);
     });
 
     it('covers static create plus real connect and disconnect branches with spied pool methods', async () => {
         const Postgres = await loadPostgresModule();
+        const mockClient = {
+            query: jest.fn<(...args: unknown[]) => Promise<unknown>>()
+                .mockResolvedValue({ rowCount: 0, rows: [] }),
+            release: jest.fn(),
+        };
         const mockPool = {
-            query: jest.fn().mockResolvedValue({ rowCount: 0, rows: [] }),
-            end: jest.fn().mockResolvedValue(undefined),
+            query: jest.fn<(...args: unknown[]) => Promise<unknown>>()
+                .mockResolvedValue({ rowCount: 0, rows: [] }),
+            connect: jest.fn().mockResolvedValue(mockClient as never),
+            end: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
         };
 
         class TestPostgres extends Postgres {
             static readonly sharedPool = mockPool;
 
             protected createPool(): any {
-                return TestPostgres.sharedPool;
+                return mockPostgresPool(this, TestPostgres.sharedPool);
             }
         }
 
@@ -1163,26 +1765,157 @@ describe('postgres adapter with mocked pool', () => {
         await db.disconnect();
         await db.disconnect();
 
-        expect(mockPool.query).toHaveBeenCalledTimes(2);
+        expect(mockPool.query).not.toHaveBeenCalled();
+        expect(mockClient.query).toHaveBeenCalledWith('BEGIN');
+        expect(mockClient.query).toHaveBeenCalledWith(expect.stringContaining('CREATE TABLE IF NOT EXISTS did_events'));
+        expect(mockClient.query).toHaveBeenCalledWith('CREATE EXTENSION IF NOT EXISTS pg_trgm');
+        expect(mockClient.query).toHaveBeenCalledWith(
+            expect.stringContaining('WHERE idx.oid = to_regclass($1)'),
+            ['idx_did_docs_doc_trgm', 'did_docs']
+        );
+        expect(mockClient.query).toHaveBeenCalledWith(
+            expect.stringContaining('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_did_docs_doc_trgm')
+        );
+        expect(mockClient.query).toHaveBeenCalledWith('ANALYZE did_docs');
+        expect(mockClient.release).toHaveBeenCalledWith(false);
         expect(mockPool.end).toHaveBeenCalledTimes(1);
 
         const disconnectedDb = new TestPostgres('postgresql://example');
         await disconnectedDb.disconnect();
     });
 
-    it('commits successful replacements and covers path helper fallbacks', async () => {
+    it.each([
+        { usable: true, matchesDefinition: true, hasStatistics: true, dropped: false, analyzed: false },
+        { usable: true, matchesDefinition: true, hasStatistics: false, dropped: false, analyzed: true },
+        { usable: false, matchesDefinition: true, hasStatistics: false, dropped: true, analyzed: true },
+        { usable: true, matchesDefinition: false, hasStatistics: true, dropped: true, analyzed: true },
+    ])('keeps only usable search indexes with the expected definition: %j', async status => {
+        const Postgres = await loadPostgresModule();
         const mockClient = {
-            query: jest.fn().mockResolvedValue(undefined),
+            query: jest.fn(async (sql: string) => ({
+                rowCount: 0,
+                rows: sql.includes('FROM pg_class idx') ? [{ isIndex: true, ...status }] : [],
+            })),
             release: jest.fn(),
         };
         const mockPool = {
-            query: jest.fn().mockResolvedValue({ rowCount: 0, rows: [] }),
-            connect: jest.fn().mockResolvedValue(mockClient),
-            end: jest.fn().mockResolvedValue(undefined),
+            query: jest.fn().mockResolvedValue({ rowCount: 0, rows: [] } as never),
+            connect: jest.fn().mockResolvedValue(mockClient as never),
+            end: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+        };
+
+        class TestPostgres extends Postgres {
+            protected createPool(): any {
+                return mockPostgresPool(this, mockPool);
+            }
+        }
+
+        const db = await TestPostgres.create('postgresql://example');
+        const statements = mockClient.query.mock.calls.map(([sql]) => sql);
+
+        expect(statements.some(sql => sql.includes('DROP INDEX CONCURRENTLY'))).toBe(status.dropped);
+        expect(statements.some(sql => sql.includes('CREATE INDEX CONCURRENTLY'))).toBe(status.dropped);
+        expect(statements.includes('ANALYZE did_docs')).toBe(status.analyzed);
+        expect(mockClient.release).toHaveBeenCalledWith(false);
+        await db.disconnect();
+    });
+
+    it('rejects a non-index object using the trigram index name', async () => {
+        const Postgres = await loadPostgresModule();
+        const mockClient = {
+            query: jest.fn(async (sql: string) => ({
+                rowCount: 0,
+                rows: sql.includes('FROM pg_class idx')
+                    ? [{ isIndex: false, usable: false, matchesDefinition: false, hasStatistics: false }]
+                    : [],
+            })),
+            release: jest.fn(),
+        };
+        const mockPool = {
+            query: jest.fn().mockResolvedValue({ rowCount: 0, rows: [] } as never),
+            connect: jest.fn().mockResolvedValue(mockClient as never),
+            end: jest.fn(),
+        };
+
+        class TestPostgres extends Postgres {
+            protected createPool(): any {
+                return mockPostgresPool(this, mockPool);
+            }
+        }
+
+        await expect(TestPostgres.create('postgresql://example'))
+            .rejects.toThrow('Database object idx_did_docs_doc_trgm exists but is not an index');
+        expect(mockClient.release).toHaveBeenCalledWith(true);
+    });
+
+    it('destroys the startup connection when schema initialization fails', async () => {
+        const Postgres = await loadPostgresModule();
+        const failure = new Error('lock failed');
+        const mockClient = {
+            query: jest.fn().mockRejectedValue(failure as never),
+            release: jest.fn(),
+        };
+        const mockPool = {
+            query: jest.fn().mockResolvedValue({ rowCount: 0, rows: [] } as never),
+            connect: jest.fn().mockResolvedValue(mockClient as never),
+            end: jest.fn(),
+        };
+
+        class TestPostgres extends Postgres {
+            protected createPool(): any {
+                return mockPostgresPool(this, mockPool);
+            }
+        }
+
+        await expect(TestPostgres.create('postgresql://example')).rejects.toBe(failure);
+        expect(mockClient.release).toHaveBeenCalledWith(true);
+    });
+
+    it('destroys the migration connection when releasing the advisory lock fails', async () => {
+        const Postgres = await loadPostgresModule();
+        const mockClient = {
+            query: jest.fn(async (sql: string) => {
+                if (sql.includes('pg_advisory_unlock')) throw new Error('connection lost');
+                return {
+                    rowCount: 0,
+                    rows: sql.includes('FROM pg_class idx')
+                        ? [{ isIndex: true, usable: true, matchesDefinition: true, hasStatistics: true }]
+                        : [],
+                };
+            }),
+            release: jest.fn(),
+        };
+        const mockPool = {
+            query: jest.fn().mockResolvedValue({ rowCount: 0, rows: [] } as never),
+            connect: jest.fn().mockResolvedValue(mockClient as never),
+            end: jest.fn(),
+        };
+
+        class TestPostgres extends Postgres {
+            protected createPool(): any {
+                return mockPostgresPool(this, mockPool, new Error('connection lost'));
+            }
+        }
+
+        await expect(TestPostgres.create('postgresql://example')).rejects.toThrow('connection lost');
+        expect(mockClient.release).toHaveBeenCalledWith(true);
+    });
+
+    it('commits successful replacements and covers path helper fallbacks', async () => {
+        const mockClient = {
+            query: jest.fn<(...args: unknown[]) => Promise<unknown>>()
+                .mockResolvedValue({ rowCount: 0, rows: [] }),
+            release: jest.fn(),
+        };
+        const mockPool = {
+            query: jest.fn<(...args: unknown[]) => Promise<unknown>>()
+                .mockResolvedValue({ rowCount: 0, rows: [] }),
+            connect: jest.fn<() => Promise<typeof mockClient>>().mockResolvedValue(mockClient),
+            end: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
         };
         const Postgres = await loadPostgresModule();
         const db = new Postgres('postgresql://example');
-        (db as any).pool = mockPool;
+        (db as any).pool = mockPostgresPool(db, mockPool);
 
         await db.applyIndexPage({
             dids: [{
@@ -1204,6 +1937,10 @@ describe('postgres adapter with mocked pool', () => {
         });
 
         expect(mockClient.query).toHaveBeenNthCalledWith(1, 'BEGIN');
+        expect(mockClient.query).toHaveBeenCalledWith(
+            expect.stringContaining('ON CONFLICT (holder_did, credential_suffix)'),
+            expect.any(Array)
+        );
         expect(mockClient.query).toHaveBeenCalledWith('COMMIT');
         expect(mockClient.release).toHaveBeenCalledTimes(1);
 
@@ -1237,11 +1974,11 @@ describe('postgres adapter with mocked pool', () => {
         });
         const mockPool = {
             query: poolQuery,
-            end: jest.fn().mockResolvedValue(undefined),
+            end: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
         };
         const Postgres = await loadPostgresModule();
         const db = new Postgres('postgresql://example');
-        (db as any).pool = mockPool;
+        (db as any).pool = mockPostgresPool(db, mockPool);
 
         expect(await db.listPublishedCredentials()).toStrictEqual({
             total: 0,
@@ -1260,13 +1997,95 @@ describe('postgres adapter with mocked pool', () => {
         expect(rowsCall?.[1]).toStrictEqual([50, 0]);
     });
 
-    it('constructs a real pool instance in createPool without connecting', async () => {
+    it('configures the PostgreSQL connection timeout', async () => {
+        const previous = process.env.KC_POSTGRES_CONNECTION_TIMEOUT_MS;
+
+        try {
+            delete process.env.KC_POSTGRES_CONNECTION_TIMEOUT_MS;
+            const Postgres = await loadPostgresModule();
+            const defaultPool = (new Postgres('postgresql://example') as any).createPool();
+            expect(defaultPool.options.connectionTimeoutMillis).toBe(3_000);
+            await defaultPool.end();
+
+            process.env.KC_POSTGRES_CONNECTION_TIMEOUT_MS = '2000';
+            const configuredPool = (new Postgres('postgresql://example') as any).createPool();
+            expect(configuredPool.options.connectionTimeoutMillis).toBe(2_000);
+            await configuredPool.end();
+
+            for (const invalid of ['', '1.5', '0']) {
+                process.env.KC_POSTGRES_CONNECTION_TIMEOUT_MS = invalid;
+                expect(() => (new Postgres('postgresql://example') as any).createPool())
+                    .toThrow('KC_POSTGRES_CONNECTION_TIMEOUT_MS must be a positive integer');
+            }
+        }
+        finally {
+            if (previous === undefined) {
+                delete process.env.KC_POSTGRES_CONNECTION_TIMEOUT_MS;
+            }
+            else {
+                process.env.KC_POSTGRES_CONNECTION_TIMEOUT_MS = previous;
+            }
+        }
+    });
+
+    it('configures the PostgreSQL search timeout', async () => {
+        const previous = process.env.KC_SEARCH_SERVER_SEARCH_TIMEOUT_MS;
+
+        try {
+            process.env.KC_SEARCH_SERVER_SEARCH_TIMEOUT_MS = '2000';
+            const Postgres = await loadPostgresModule();
+            const query = jest.fn(async (_sql: string) => ({ rowCount: 0, rows: [] }));
+            const client = { query, release: jest.fn() };
+            const db = new Postgres('postgresql://example');
+            (db as any).pool = mockPostgresPool(db, { connect: jest.fn(async () => client) });
+
+            await expect(db.searchDocs('search', { limit: 50 })).resolves.toStrictEqual({
+                dids: [],
+                nextCursor: null,
+            });
+            expect(query).toHaveBeenCalledWith("SET LOCAL statement_timeout = '2000ms'");
+            expect(query.mock.calls.map(([sql]) => sql)).toStrictEqual([
+                'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY',
+                "SET LOCAL statement_timeout = '2000ms'",
+                expect.stringContaining('WITH matches AS MATERIALIZED'),
+                'COMMIT',
+            ]);
+            expect(client.release).toHaveBeenCalledWith(false);
+
+            for (const invalid of ['', '1.5', '0']) {
+                process.env.KC_SEARCH_SERVER_SEARCH_TIMEOUT_MS = invalid;
+                expect(() => new Postgres('postgresql://example'))
+                    .toThrow('KC_SEARCH_SERVER_SEARCH_TIMEOUT_MS must be a positive integer');
+            }
+        }
+        finally {
+            if (previous === undefined) {
+                delete process.env.KC_SEARCH_SERVER_SEARCH_TIMEOUT_MS;
+            }
+            else {
+                process.env.KC_SEARCH_SERVER_SEARCH_TIMEOUT_MS = previous;
+            }
+        }
+    });
+
+    it.each([false, true])('rolls back failed PostgreSQL searches (rollback failure: %s)', async rollbackFails => {
+        const failure = Object.assign(new Error('search timed out'), { code: '57014' });
+        const rollbackFailure = new Error('rollback failed');
+        const client = {
+            query: jest.fn(async (sql: string) => {
+                if (sql.includes('WITH matches AS MATERIALIZED')) throw failure;
+                if (sql === 'ROLLBACK' && rollbackFails) throw rollbackFailure;
+                return { rowCount: 0, rows: [] };
+            }),
+            release: jest.fn(),
+        };
         const Postgres = await loadPostgresModule();
         const db = new Postgres('postgresql://example');
-        const pool = (db as any).createPool();
+        (db as any).pool = mockPostgresPool(db, { connect: jest.fn(async () => client) });
 
-        expect(pool).toBeTruthy();
-        await pool.end();
+        await expect(db.searchDocs('search', { limit: 50 })).rejects.toBe(failure);
+        expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+        expect(client.release).toHaveBeenCalledWith(rollbackFails);
     });
 });
 
@@ -1283,15 +2102,16 @@ describe('DidIndexer published credential indexing', () => {
             },
         };
         const gatekeeper = {
-            isReady: jest.fn().mockResolvedValue(true),
-            exportIndex: jest.fn().mockResolvedValue(createSnapshotResponse(holderDid, data)),
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>()
+                .mockResolvedValue(createSnapshotResponse(holderDid, data)),
             getDIDs: jest.fn(),
             resolveDID: jest.fn(),
         };
         const indexer = new DidIndexer(gatekeeper as any, db, { intervalMs: 60_000 });
 
         await indexer.startIndexing();
-        indexer.stopIndexing();
+        await indexer.stopIndexing();
 
         expect(gatekeeper.exportIndex).toHaveBeenCalledWith({
             mode: 'snapshot',
@@ -1301,7 +2121,7 @@ describe('DidIndexer published credential indexing', () => {
         expect(gatekeeper.getDIDs).not.toHaveBeenCalled();
         expect(gatekeeper.resolveDID).not.toHaveBeenCalled();
         expect(await db.loadSyncState('index.snapshot.complete')).toBe('true');
-        expect(await db.getDIDEvents(holderDid)).toHaveLength(1);
+        expect(await db.getDIDEvents(holderDid)).toHaveLength(2);
         expect(await db.getPublishedCredentialCountsBySchema()).toStrictEqual([
             { schemaDid, count: 1 },
         ]);
@@ -1333,6 +2153,7 @@ describe('DidIndexer published credential indexing', () => {
             },
         };
         const event = createAssetEvent(holderDid, data);
+        event.operation.mdip!.type = 'agent';
 
         await db.saveSyncState('index.snapshot.complete', 'true');
         await seedDID(db, holderDid, {
@@ -1352,10 +2173,12 @@ describe('DidIndexer published credential indexing', () => {
         });
 
         const gatekeeper = {
-            isReady: jest.fn().mockResolvedValue(true),
-            exportIndex: jest.fn().mockResolvedValue({
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>().mockResolvedValue({
                 mode: 'changes' as const,
+                indexEpoch: 'epoch-test',
                 cursor: '1',
+                checkpointCursor: '1',
                 hasMore: false,
                 blocks: [],
                 dids: [{
@@ -1368,7 +2191,7 @@ describe('DidIndexer published credential indexing', () => {
         const applySpy = jest.spyOn(db, 'applyIndexPage');
 
         await indexer.startIndexing();
-        indexer.stopIndexing();
+        await indexer.stopIndexing();
 
         expect(gatekeeper.exportIndex).toHaveBeenCalledWith({
             mode: 'changes',
@@ -1376,7 +2199,7 @@ describe('DidIndexer published credential indexing', () => {
             limit: 500,
         });
         expect(applySpy.mock.results[0].type).toBe('return');
-        const result = await applySpy.mock.results[0].value;
+        const result = await applySpy.mock.results[0].value as ApplyIndexPageResult;
         expect(result.changedDids).toStrictEqual([]);
         expect(await db.loadSyncState('index.changes.cursor')).toBe('1');
         expect(await db.getPublishedCredentialCountsBySchema()).toStrictEqual([
@@ -1395,10 +2218,11 @@ describe('DidIndexer published credential indexing', () => {
         await db.saveSyncState('index.snapshot.cursor', savedCursor);
         await db.saveSyncState('index.snapshot.checkpointCursor', checkpointCursor);
         const gatekeeper = {
-            isReady: jest.fn().mockResolvedValue(true),
-            exportIndex: jest.fn()
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>()
                 .mockResolvedValueOnce({
                     mode: 'snapshot' as const,
+                    indexEpoch: 'epoch-test',
                     cursor: firstPageCursor,
                     checkpointCursor,
                     hasMore: true,
@@ -1410,6 +2234,7 @@ describe('DidIndexer published credential indexing', () => {
                 })
                 .mockResolvedValueOnce({
                     mode: 'snapshot' as const,
+                    indexEpoch: 'epoch-test',
                     cursor: secondPageCursor,
                     checkpointCursor,
                     hasMore: false,
@@ -1446,9 +2271,10 @@ describe('DidIndexer published credential indexing', () => {
         const db = new DIDsDbMemory();
         const did = 'did:test:z3v8Auah2NPDigFc3qKx183QKL6vY8fJYQk6NeLz7KF2RFtC9c8';
         const gatekeeper = {
-            isReady: jest.fn().mockResolvedValue(true),
-            exportIndex: jest.fn().mockResolvedValue({
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>().mockResolvedValue({
                 mode: 'snapshot' as const,
+                indexEpoch: 'epoch-test',
                 cursor: did,
                 checkpointCursor: '0',
                 hasMore: false,
@@ -1484,9 +2310,10 @@ describe('DidIndexer published credential indexing', () => {
             time: 1775037600,
         };
         const gatekeeper = {
-            isReady: jest.fn().mockResolvedValue(true),
-            exportIndex: jest.fn().mockResolvedValue({
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>().mockResolvedValue({
                 mode: 'snapshot' as const,
+                indexEpoch: 'epoch-test',
                 cursor: did,
                 checkpointCursor: '0',
                 hasMore: false,
@@ -1519,8 +2346,8 @@ describe('DidIndexer published credential indexing', () => {
     it('skips refresh work when gatekeeper is not ready', async () => {
         const db = new DIDsDbMemory();
         const gatekeeper = {
-            isReady: jest.fn().mockResolvedValue(false),
-            exportIndex: jest.fn(),
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(false),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>(),
         };
         const indexer = new DidIndexer(gatekeeper as any, db, { intervalMs: 60_000 });
 
@@ -1537,8 +2364,9 @@ describe('DidIndexer published credential indexing', () => {
         });
         const db = new DIDsDbMemory();
         const gatekeeper = {
-            isReady: jest.fn().mockResolvedValue(true),
-            exportIndex: jest.fn().mockReturnValue(exportIndexPromise),
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>()
+                .mockReturnValue(exportIndexPromise),
         };
         const indexer = new DidIndexer(gatekeeper as any, db, { intervalMs: 60_000 });
 
@@ -1562,8 +2390,8 @@ describe('DidIndexer published credential indexing', () => {
         const db = new DIDsDbMemory();
         const error = new Error('boom');
         const gatekeeper = {
-            isReady: jest.fn().mockResolvedValue(true),
-            exportIndex: jest.fn()
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>()
                 .mockRejectedValueOnce(error)
                 .mockResolvedValueOnce(createEmptySnapshotResponse()),
         };
@@ -1572,7 +2400,7 @@ describe('DidIndexer published credential indexing', () => {
         await (indexer as any).refreshIndex();
         await (indexer as any).refreshIndex();
 
-        expect(logger.error).toHaveBeenCalledWith({ error }, 'Error in refreshIndex');
+        expect(logger.error).toHaveBeenCalledWith({ err: error }, 'Error in refreshIndex');
         expect(await db.loadSyncState('index.lastSyncError')).toBeNull();
         expect(await db.loadSyncState('index.snapshot.complete')).toBe('true');
     });
@@ -1583,8 +2411,9 @@ describe('DidIndexer published credential indexing', () => {
 
         const db = new DIDsDbMemory();
         const gatekeeper = {
-            isReady: jest.fn().mockResolvedValue(true),
-            exportIndex: jest.fn().mockResolvedValue(createEmptySnapshotResponse()),
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>()
+                .mockResolvedValue(createEmptySnapshotResponse()),
         };
         const setIntervalSpy = jest.spyOn(global, 'setInterval');
         const clearIntervalSpy = jest.spyOn(global, 'clearInterval').mockImplementation(() => undefined as any);
@@ -1598,16 +2427,20 @@ describe('DidIndexer published credential indexing', () => {
         try {
             const indexer = new DidIndexer(gatekeeper as any, db as any, { intervalMs: 60_000 });
             await indexer.startIndexing();
-            (indexer as any).refreshIndex = jest.fn().mockRejectedValue(new Error('timer boom'));
+            (indexer as any).refreshIndex = jest.fn<() => Promise<void>>()
+                .mockRejectedValue(new Error('timer boom'));
 
             await intervalCallback!();
 
             expect(logger.error).toHaveBeenCalledWith(
-                { error: expect.any(Error) },
+                { err: expect.any(Error) },
                 'refreshIndex error'
             );
 
-            indexer.stopIndexing();
+            await indexer.stopIndexing();
+            gatekeeper.isReady.mockClear();
+            await intervalCallback!();
+            expect(gatekeeper.isReady).not.toHaveBeenCalled();
         }
         finally {
             setIntervalSpy.mockRestore();

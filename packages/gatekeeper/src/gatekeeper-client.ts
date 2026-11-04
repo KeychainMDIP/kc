@@ -1,5 +1,6 @@
 import axiosModule, { AxiosError, type AxiosInstance, type AxiosStatic } from 'axios';
 import { childLogger, createConsoleLogger, type LoggerLike } from '@mdip/common/logger';
+import { isRetryableHttpError, waitForTimeout } from '@mdip/common/utils';
 import {
     BlockId,
     BlockInfo,
@@ -19,6 +20,7 @@ import {
 } from './types.js';
 
 const VERSION = '/api/v1';
+const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
 
 function throwError(error: AxiosError | any): never {
     if (error.response) {
@@ -45,7 +47,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
             (axiosModule as AxiosInstance);
 
         this.API = VERSION;
-        this.axios = axios.create();
+        this.axios = axios.create({ timeout: DEFAULT_REQUEST_TIMEOUT_MS });
     }
 
     addCustomHeader(header: string, value: string): void {
@@ -57,6 +59,14 @@ export default class GatekeeperClient implements GatekeeperInterface {
     }
 
     async connect(options?: GatekeeperClientOptions) {
+        const timeoutMs = options?.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+        if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+            throw new Error('timeoutMs must be a positive finite number');
+        }
+
+        this.axios.defaults.signal = options?.signal;
+        this.axios.defaults.timeout = timeoutMs;
+
         if (options?.url) {
             this.API = `${options.url}${VERSION}`;
         }
@@ -82,20 +92,19 @@ export default class GatekeeperClient implements GatekeeperInterface {
         }
 
         while (!ready) {
-            ready = await this.isReady();
+            ready = await this.isReady(options.signal);
+
+            retries += 1;
+
+            if (!ready && maxRetries > 0 && retries > maxRetries) {
+                throw new Error(`Gatekeeper did not become ready after ${retries} attempts`);
+            }
 
             if (!ready) {
                 if (chatty) {
                     this.log.debug('Waiting for Gatekeeper to be ready...');
                 }
-                // wait for 1 second before checking again
-                await new Promise(resolve => setTimeout(resolve, intervalSeconds * 1000));
-            }
-
-            retries += 1;
-
-            if (maxRetries > 0 && retries > maxRetries) {
-                return;
+                await waitForTimeout(intervalSeconds * 1000, options.signal);
             }
 
             if (!chatty && becomeChattyAfter > 0 && retries > becomeChattyAfter) {
@@ -139,13 +148,16 @@ export default class GatekeeperClient implements GatekeeperInterface {
         }
     }
 
-    async isReady(): Promise<boolean> {
+    async isReady(signal?: AbortSignal): Promise<boolean> {
         try {
-            const response = await this.axios.get(`${this.API}/ready`);
+            const response = await this.axios.get(`${this.API}/ready`, signal ? { signal } : undefined);
             return response.data;
         }
-        catch {
-            return false;
+        catch (error) {
+            if (isRetryableHttpError(error)) {
+                return false;
+            }
+            throw error;
         }
     }
 
@@ -394,7 +406,7 @@ export default class GatekeeperClient implements GatekeeperInterface {
 
     async getBlock(registry: string, block?: BlockId): Promise<BlockInfo | null> {
         try {
-            const url = block
+            const url = block !== undefined
                 ? `${this.API}/block/${registry}/${block}`
                 : `${this.API}/block/${registry}/latest`;
             const response = await this.axios.get(url);

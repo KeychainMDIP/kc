@@ -35,12 +35,10 @@ import {
 import { Buffer } from 'buffer';
 import axiosModule, { AxiosError, type AxiosInstance, type AxiosStatic } from 'axios';
 import { childLogger, createConsoleLogger, type LoggerLike } from '@mdip/common/logger';
-
-const axios =
-    (axiosModule as AxiosStatic & { default?: AxiosInstance })?.default ??
-    (axiosModule as AxiosInstance);
+import { isRetryableHttpError, waitForTimeout } from '@mdip/common/utils';
 
 const VERSION = '/api/v1';
+const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
 
 function throwError(error: AxiosError | any): never {
     if (error.response) {
@@ -52,7 +50,16 @@ function throwError(error: AxiosError | any): never {
 
 export default class KeymasterClient implements KeymasterInterface {
     private API: string = "/api/v1";
+    private axios: AxiosInstance;
     private log: LoggerLike = childLogger({ service: 'keymaster-client' });
+
+    constructor() {
+        const axios =
+            (axiosModule as AxiosStatic & { default?: AxiosInstance })?.default ??
+            (axiosModule as AxiosInstance);
+
+        this.axios = axios.create({ timeout: DEFAULT_REQUEST_TIMEOUT_MS });
+    }
 
     // Factory method
     static async create(options: KeymasterClientOptions): Promise<KeymasterClient> {
@@ -62,6 +69,14 @@ export default class KeymasterClient implements KeymasterInterface {
     }
 
     async connect(options: KeymasterClientOptions = {}): Promise<void> {
+        const timeoutMs = options.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+        if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+            throw new Error('timeoutMs must be a positive finite number');
+        }
+
+        this.axios.defaults.signal = options.signal;
+        this.axios.defaults.timeout = timeoutMs;
+
         if (options.url) {
             this.API = `${options.url}${VERSION}`;
         }
@@ -87,20 +102,19 @@ export default class KeymasterClient implements KeymasterInterface {
         }
 
         while (!ready) {
-            ready = await this.isReady();
+            ready = await this.isReady(options.signal);
+
+            retries += 1;
+
+            if (!ready && maxRetries > 0 && retries > maxRetries) {
+                throw new Error(`Keymaster did not become ready after ${retries} attempts`);
+            }
 
             if (!ready) {
                 if (chatty) {
                     this.log.debug('Waiting for Keymaster to be ready...');
                 }
-                // wait for 1 second before checking again
-                await new Promise(resolve => setTimeout(resolve, intervalSeconds * 1000));
-            }
-
-            retries += 1;
-
-            if (maxRetries > 0 && retries > maxRetries) {
-                return;
+                await waitForTimeout(intervalSeconds * 1000, options.signal);
             }
 
             if (!chatty && becomeChattyAfter > 0 && retries > becomeChattyAfter) {
@@ -114,19 +128,22 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     }
 
-    async isReady(): Promise<boolean> {
+    async isReady(signal?: AbortSignal): Promise<boolean> {
         try {
-            const response = await axios.get(`${this.API}/ready`);
+            const response = await this.axios.get(`${this.API}/ready`, signal ? { signal } : undefined);
             return response.data.ready;
         }
-        catch {
-            return false;
+        catch (error) {
+            if (isRetryableHttpError(error)) {
+                return false;
+            }
+            throw error;
         }
     }
 
     async loadWallet(): Promise<WalletFile> {
         try {
-            const response = await axios.get(`${this.API}/wallet`);
+            const response = await this.axios.get(`${this.API}/wallet`);
             return response.data.wallet;
         }
         catch (error) {
@@ -135,10 +152,11 @@ export default class KeymasterClient implements KeymasterInterface {
     }
 
     async saveWallet(
-        wallet: StoredWallet
+        wallet: StoredWallet,
+        overwrite?: boolean
     ): Promise<boolean> {
         try {
-            const response = await axios.put(`${this.API}/wallet`, { wallet });
+            const response = await this.axios.put(`${this.API}/wallet`, { wallet, overwrite });
             return response.data.ok;
         }
         catch (error) {
@@ -151,7 +169,7 @@ export default class KeymasterClient implements KeymasterInterface {
         overwrite = false
     ): Promise<WalletFile> {
         try {
-            const response = await axios.post(`${this.API}/wallet/new`, { mnemonic, overwrite });
+            const response = await this.axios.post(`${this.API}/wallet/new`, { mnemonic, overwrite });
             return response.data.wallet;
         }
         catch (error) {
@@ -161,7 +179,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async decryptMnemonic(): Promise<string> {
         try {
-            const response = await axios.get(`${this.API}/wallet/mnemonic`);
+            const response = await this.axios.get(`${this.API}/wallet/mnemonic`);
             return response.data.mnemonic;
         }
         catch (error) {
@@ -171,7 +189,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async backupWallet(): Promise<string> {
         try {
-            const response = await axios.post(`${this.API}/wallet/backup`);
+            const response = await this.axios.post(`${this.API}/wallet/backup`);
             return response.data.did;
         }
         catch (error) {
@@ -181,7 +199,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async recoverWallet(did?: string): Promise<WalletFile> {
         try {
-            const response = await axios.post(`${this.API}/wallet/recover`, { did });
+            const response = await this.axios.post(`${this.API}/wallet/recover`, { did });
             return response.data.wallet;
         }
         catch (error) {
@@ -191,7 +209,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async exportWalletBundle(): Promise<MdipWalletBundle> {
         try {
-            const response = await axios.get(`${this.API}/wallet/bundle`);
+            const response = await this.axios.get(`${this.API}/wallet/bundle`);
             return response.data.bundle;
         }
         catch (error) {
@@ -201,7 +219,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async importWalletBundle(bundle: MdipWalletBundle): Promise<WalletFile> {
         try {
-            const response = await axios.put(`${this.API}/wallet/bundle`, { bundle });
+            const response = await this.axios.put(`${this.API}/wallet/bundle`, { bundle });
             return response.data.wallet;
         }
         catch (error) {
@@ -211,7 +229,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async checkWallet(): Promise<CheckWalletResult> {
         try {
-            const response = await axios.post(`${this.API}/wallet/check`);
+            const response = await this.axios.post(`${this.API}/wallet/check`);
             return response.data.check;
         }
         catch (error) {
@@ -221,7 +239,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async fixWallet(): Promise<FixWalletResult> {
         try {
-            const response = await axios.post(`${this.API}/wallet/fix`);
+            const response = await this.axios.post(`${this.API}/wallet/fix`);
             return response.data.fix;
         }
         catch (error) {
@@ -231,7 +249,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async listRegistries(): Promise<string[]> {
         try {
-            const response = await axios.get(`${this.API}/registries`);
+            const response = await this.axios.get(`${this.API}/registries`);
             return response.data.registries;
         }
         catch (error) {
@@ -241,7 +259,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async getCurrentId(): Promise<string | undefined> {
         try {
-            const response = await axios.get(`${this.API}/ids/current`);
+            const response = await this.axios.get(`${this.API}/ids/current`);
             return response.data.current;
         }
         catch (error) {
@@ -251,7 +269,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async setCurrentId(name: string): Promise<boolean> {
         try {
-            const response = await axios.put(`${this.API}/ids/current`, { name });
+            const response = await this.axios.put(`${this.API}/ids/current`, { name });
             return response.data.ok;
         }
         catch (error) {
@@ -261,7 +279,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async listIds(): Promise<string[]> {
         try {
-            const response = await axios.get(`${this.API}/ids`);
+            const response = await this.axios.get(`${this.API}/ids`);
             return response.data.ids;
         }
         catch (error) {
@@ -271,7 +289,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async rotateKeys(): Promise<boolean> {
         try {
-            const response = await axios.post(`${this.API}/keys/rotate`);
+            const response = await this.axios.post(`${this.API}/keys/rotate`);
             return response.data.ok;
         }
         catch (error) {
@@ -285,7 +303,7 @@ export default class KeymasterClient implements KeymasterInterface {
         options: EncryptOptions = {}
     ) {
         try {
-            const response = await axios.post(`${this.API}/keys/encrypt/message`, { msg, receiver, options });
+            const response = await this.axios.post(`${this.API}/keys/encrypt/message`, { msg, receiver, options });
             return response.data.did;
         }
         catch (error) {
@@ -295,7 +313,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async decryptMessage(did: string): Promise<string> {
         try {
-            const response = await axios.post(`${this.API}/keys/decrypt/message`, { did });
+            const response = await this.axios.post(`${this.API}/keys/decrypt/message`, { did });
             return response.data.message;
         }
         catch (error) {
@@ -309,7 +327,7 @@ export default class KeymasterClient implements KeymasterInterface {
         options?: EncryptOptions
     ): Promise<string> {
         try {
-            const response = await axios.post(`${this.API}/keys/encrypt/json`, { json, receiver, options });
+            const response = await this.axios.post(`${this.API}/keys/encrypt/json`, { json, receiver, options });
             return response.data.did;
         }
         catch (error) {
@@ -319,7 +337,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async decryptJSON(did: string): Promise<unknown> {
         try {
-            const response = await axios.post(`${this.API}/keys/decrypt/json`, { did });
+            const response = await this.axios.post(`${this.API}/keys/decrypt/json`, { did });
             return response.data.json;
         }
         catch (error) {
@@ -332,7 +350,7 @@ export default class KeymasterClient implements KeymasterInterface {
         options?: { registry?: string }
     ): Promise<string> {
         try {
-            const response = await axios.post(`${this.API}/ids`, { name, options });
+            const response = await this.axios.post(`${this.API}/ids`, { name, options });
             return response.data.did;
         }
         catch (error) {
@@ -342,7 +360,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     public async removeId(id: string): Promise<boolean> {
         try {
-            const response = await axios.delete(`${this.API}/ids/${id}`);
+            const response = await this.axios.delete(`${this.API}/ids/${encodeURIComponent(id)}`);
             return response.data.ok;
         }
         catch (error) {
@@ -355,7 +373,7 @@ export default class KeymasterClient implements KeymasterInterface {
         name: string
     ): Promise<boolean> {
         try {
-            const response = await axios.post(`${this.API}/ids/${id}/rename`, { name });
+            const response = await this.axios.post(`${this.API}/ids/${encodeURIComponent(id)}/rename`, { name });
             return response.data.ok;
         }
         catch (error) {
@@ -368,7 +386,7 @@ export default class KeymasterClient implements KeymasterInterface {
             if (!id) {
                 id = await this.getCurrentId();
             }
-            const response = await axios.post(`${this.API}/ids/${id}/backup`);
+            const response = await this.axios.post(`${this.API}/ids/${encodeURIComponent(String(id))}/backup`);
             return response.data.ok;
         }
         catch (error) {
@@ -378,7 +396,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async recoverId(did: string): Promise<string> {
         try {
-            const response = await axios.post(`${this.API}/ids/${did}/recover`);
+            const response = await this.axios.post(`${this.API}/ids/${encodeURIComponent(did)}/recover`);
             return response.data.recovered;
         }
         catch (error) {
@@ -388,7 +406,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async listNames(): Promise<Record<string, string>> {
         try {
-            const response = await axios.get(`${this.API}/names`);
+            const response = await this.axios.get(`${this.API}/names`);
             return response.data.names;
         }
         catch (error) {
@@ -398,7 +416,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async addName(name: string, did: string): Promise<boolean> {
         try {
-            const response = await axios.post(`${this.API}/names`, { name, did });
+            const response = await this.axios.post(`${this.API}/names`, { name, did });
             return response.data.ok;
         }
         catch (error) {
@@ -408,7 +426,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async getName(name: string): Promise<string | null> {
         try {
-            const response = await axios.get(`${this.API}/names/${name}`);
+            const response = await this.axios.get(`${this.API}/names/${encodeURIComponent(name)}`);
             return response.data.did;
         }
         catch (error) {
@@ -418,7 +436,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async removeName(name: string): Promise<boolean> {
         try {
-            const response = await axios.delete(`${this.API}/names/${name}`);
+            const response = await this.axios.delete(`${this.API}/names/${encodeURIComponent(name)}`);
             return response.data.ok;
         }
         catch (error) {
@@ -433,11 +451,11 @@ export default class KeymasterClient implements KeymasterInterface {
         try {
             if (options) {
                 const queryParams = new URLSearchParams(options as Record<string, string>);
-                const response = await axios.get(`${this.API}/did/${id}?${queryParams.toString()}`);
+                const response = await this.axios.get(`${this.API}/did/${encodeURIComponent(id)}?${queryParams.toString()}`);
                 return response.data.docs;
             }
             else {
-                const response = await axios.get(`${this.API}/did/${id}`);
+                const response = await this.axios.get(`${this.API}/did/${encodeURIComponent(id)}`);
                 return response.data.docs;
             }
         }
@@ -448,7 +466,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async revokeDID(id: string): Promise<boolean> {
         try {
-            const response = await axios.delete(`${this.API}/did/${id}`);
+            const response = await this.axios.delete(`${this.API}/did/${encodeURIComponent(id)}`);
             return response.data.ok;
         }
         catch (error) {
@@ -461,7 +479,7 @@ export default class KeymasterClient implements KeymasterInterface {
         options?: CreateAssetOptions
     ): Promise<string> {
         try {
-            const response = await axios.post(`${this.API}/assets`, { data, options });
+            const response = await this.axios.post(`${this.API}/assets`, { data, options });
             return response.data.did;
         }
         catch (error) {
@@ -474,7 +492,7 @@ export default class KeymasterClient implements KeymasterInterface {
         options?: CreateAssetOptions
     ): Promise<string> {
         try {
-            const response = await axios.post(`${this.API}/assets/${id}/clone`, { options });
+            const response = await this.axios.post(`${this.API}/assets/${encodeURIComponent(id)}/clone`, { options });
             return response.data.did;
         }
         catch (error) {
@@ -482,9 +500,9 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     }
 
-    async listAssets(): Promise<string[]> {
+    async listAssets(owner?: string): Promise<string[]> {
         try {
-            const response = await axios.get(`${this.API}/assets`);
+            const response = await this.axios.get(`${this.API}/assets`, { params: { owner } });
             return response.data.assets;
         }
         catch (error) {
@@ -496,11 +514,11 @@ export default class KeymasterClient implements KeymasterInterface {
         try {
             if (options) {
                 const queryParams = new URLSearchParams(options as Record<string, string>);
-                const response = await axios.get(`${this.API}/assets/${id}?${queryParams.toString()}`);
+                const response = await this.axios.get(`${this.API}/assets/${encodeURIComponent(id)}?${queryParams.toString()}`);
                 return response.data.asset;
             }
             else {
-                const response = await axios.get(`${this.API}/assets/${id}`);
+                const response = await this.axios.get(`${this.API}/assets/${encodeURIComponent(id)}`);
                 return response.data.asset;
             }
         }
@@ -511,7 +529,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async updateAsset(id: string, data: Record<string, unknown>): Promise<boolean> {
         try {
-            const response = await axios.put(`${this.API}/assets/${id}`, { data });
+            const response = await this.axios.put(`${this.API}/assets/${encodeURIComponent(id)}`, { data });
             return response.data.ok;
         }
         catch (error) {
@@ -521,7 +539,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async transferAsset(id: string, controller: string): Promise<boolean> {
         try {
-            const response = await axios.post(`${this.API}/assets/${id}/transfer`, { controller });
+            const response = await this.axios.post(`${this.API}/assets/${encodeURIComponent(id)}/transfer`, { controller });
             return response.data.ok;
         }
         catch (error) {
@@ -531,7 +549,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async createChallenge(challenge: Challenge = {}, options: { registry?: string; validUntil?: string } = {}) {
         try {
-            const response = await axios.post(`${this.API}/challenge`, { challenge, options });
+            const response = await this.axios.post(`${this.API}/challenge`, { challenge, options });
             return response.data.did;
         }
         catch (error) {
@@ -544,7 +562,7 @@ export default class KeymasterClient implements KeymasterInterface {
         options?: CreateResponseOptions
     ): Promise<string> {
         try {
-            const response = await axios.post(`${this.API}/response`, { challenge, options });
+            const response = await this.axios.post(`${this.API}/response`, { challenge, options });
             return response.data.did;
         }
         catch (error) {
@@ -554,10 +572,10 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async verifyResponse(
         responseDID: string,
-        options?: { retries?: number; delay?: number }
+        options?: { retries?: number; delay?: number; publish?: boolean }
     ): Promise<ChallengeResponse> {
         try {
-            const response = await axios.post(`${this.API}/response/verify`, { response: responseDID, options });
+            const response = await this.axios.post(`${this.API}/response/verify`, { response: responseDID, options });
             return response.data.verify;
         }
         catch (error) {
@@ -570,7 +588,7 @@ export default class KeymasterClient implements KeymasterInterface {
         options?: PublishChallengeReceiptOptions
     ): Promise<string[]> {
         try {
-            const response = await axios.post(`${this.API}/response/receipts`, { response: responseDID, options });
+            const response = await this.axios.post(`${this.API}/response/receipts`, { response: responseDID, options });
             return response.data.dids;
         }
         catch (error) {
@@ -583,7 +601,7 @@ export default class KeymasterClient implements KeymasterInterface {
         options?: CreateAssetOptions
     ): Promise<string> {
         try {
-            const response = await axios.post(`${this.API}/groups`, { name, options });
+            const response = await this.axios.post(`${this.API}/groups`, { name, options });
             return response.data.did;
         }
         catch (error) {
@@ -593,7 +611,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async getGroup(group: string): Promise<Group | null> {
         try {
-            const response = await axios.get(`${this.API}/groups/${group}`);
+            const response = await this.axios.get(`${this.API}/groups/${encodeURIComponent(group)}`);
             return response.data.group;
         }
         catch (error) {
@@ -606,7 +624,7 @@ export default class KeymasterClient implements KeymasterInterface {
         member: string
     ): Promise<boolean> {
         try {
-            const response = await axios.post(`${this.API}/groups/${group}/add`, { member });
+            const response = await this.axios.post(`${this.API}/groups/${encodeURIComponent(group)}/add`, { member });
             return response.data.ok;
         }
         catch (error) {
@@ -619,7 +637,7 @@ export default class KeymasterClient implements KeymasterInterface {
         member: string
     ): Promise<boolean> {
         try {
-            const response = await axios.post(`${this.API}/groups/${group}/remove`, { member });
+            const response = await this.axios.post(`${this.API}/groups/${encodeURIComponent(group)}/remove`, { member });
             return response.data.ok;
         }
         catch (error) {
@@ -632,7 +650,7 @@ export default class KeymasterClient implements KeymasterInterface {
         member?: string
     ): Promise<boolean> {
         try {
-            const response = await axios.post(`${this.API}/groups/${group}/test`, { member });
+            const response = await this.axios.post(`${this.API}/groups/${encodeURIComponent(group)}/test`, { member });
             return response.data.test;
         }
         catch (error) {
@@ -643,11 +661,11 @@ export default class KeymasterClient implements KeymasterInterface {
     async listGroups(owner?: string): Promise<string[]> {
         try {
             if (owner) {
-                const response = await axios.get(`${this.API}/groups?owner=${owner}`);
+                const response = await this.axios.get(`${this.API}/groups?owner=${encodeURIComponent(owner)}`);
                 return response.data.groups;
             }
             else {
-                const response = await axios.get(`${this.API}/groups`);
+                const response = await this.axios.get(`${this.API}/groups`);
                 return response.data.groups;
             }
         }
@@ -661,7 +679,7 @@ export default class KeymasterClient implements KeymasterInterface {
         options?: CreateAssetOptions
     ): Promise<string> {
         try {
-            const response = await axios.post(`${this.API}/schemas`, { schema, options });
+            const response = await this.axios.post(`${this.API}/schemas`, { schema, options });
             return response.data.did;
         }
         catch (error) {
@@ -671,7 +689,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async getSchema(id: string): Promise<unknown | null> {
         try {
-            const response = await axios.get(`${this.API}/schemas/${id}`);
+            const response = await this.axios.get(`${this.API}/schemas/${encodeURIComponent(id)}`);
             return response.data.schema;
         }
         catch (error) {
@@ -684,7 +702,7 @@ export default class KeymasterClient implements KeymasterInterface {
         schema: unknown
     ): Promise<boolean> {
         try {
-            const response = await axios.put(`${this.API}/schemas/${id}`, { schema });
+            const response = await this.axios.put(`${this.API}/schemas/${encodeURIComponent(id)}`, { schema });
             return response.data.ok;
         }
         catch (error) {
@@ -694,7 +712,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async testSchema(id: string): Promise<boolean> {
         try {
-            const response = await axios.post(`${this.API}/schemas/${id}/test`);
+            const response = await this.axios.post(`${this.API}/schemas/${encodeURIComponent(id)}/test`);
             return response.data.test;
         }
         catch (error) {
@@ -705,11 +723,11 @@ export default class KeymasterClient implements KeymasterInterface {
     async listSchemas(owner?: string): Promise<string[]> {
         try {
             if (owner) {
-                const response = await axios.get(`${this.API}/schemas?owner=${owner}`);
+                const response = await this.axios.get(`${this.API}/schemas?owner=${encodeURIComponent(owner)}`);
                 return response.data.schemas;
             }
             else {
-                const response = await axios.get(`${this.API}/schemas`);
+                const response = await this.axios.get(`${this.API}/schemas`);
                 return response.data.schemas;
             }
 
@@ -721,7 +739,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async createTemplate(schemaId: string): Promise<Record<string, unknown>> {
         try {
-            const response = await axios.post(`${this.API}/schemas/${schemaId}/template`);
+            const response = await this.axios.post(`${this.API}/schemas/${encodeURIComponent(schemaId)}/template`);
             return response.data.template;
         }
         catch (error) {
@@ -731,7 +749,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async testAgent(id: string): Promise<boolean> {
         try {
-            const response = await axios.post(`${this.API}/agents/${id}/test`);
+            const response = await this.axios.post(`${this.API}/agents/${encodeURIComponent(id)}/test`);
             return response.data.test;
         }
         catch (error) {
@@ -749,7 +767,7 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     ): Promise<VerifiableCredential> {
         try {
-            const response = await axios.post(`${this.API}/credentials/bind`, { schema, subject, options });
+            const response = await this.axios.post(`${this.API}/credentials/bind`, { schema, subject, options });
             return response.data.credential;
         }
         catch (error) {
@@ -762,7 +780,7 @@ export default class KeymasterClient implements KeymasterInterface {
         options?: IssueCredentialsOptions
     ): Promise<string> {
         try {
-            const response = await axios.post(`${this.API}/credentials/issued`, { credential, options });
+            const response = await this.axios.post(`${this.API}/credentials/issued`, { credential, options });
             return response.data.did;
         }
         catch (error) {
@@ -775,7 +793,7 @@ export default class KeymasterClient implements KeymasterInterface {
         options?: CreateAssetOptions
     ): Promise<string | null> {
         try {
-            const response = await axios.post(`${this.API}/credentials/issued/${did}/send`, { options });
+            const response = await this.axios.post(`${this.API}/credentials/issued/${encodeURIComponent(did)}/send`, { options });
             return response.data.did;
         }
         catch (error) {
@@ -788,7 +806,7 @@ export default class KeymasterClient implements KeymasterInterface {
         credential: VerifiableCredential
     ): Promise<boolean> {
         try {
-            const response = await axios.post(`${this.API}/credentials/issued/${did}`, { credential });
+            const response = await this.axios.post(`${this.API}/credentials/issued/${encodeURIComponent(did)}`, { credential });
             return response.data.ok;
         }
         catch (error) {
@@ -796,9 +814,9 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     }
 
-    async listCredentials(): Promise<string[]> {
+    async listCredentials(id?: string): Promise<string[]> {
         try {
-            const response = await axios.get(`${this.API}/credentials/held`);
+            const response = await this.axios.get(`${this.API}/credentials/held`, { params: { id } });
             return response.data.held;
         }
         catch (error) {
@@ -808,7 +826,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async acceptCredential(did: string): Promise<boolean> {
         try {
-            const response = await axios.post(`${this.API}/credentials/held`, { did });
+            const response = await this.axios.post(`${this.API}/credentials/held`, { did });
             return response.data.ok;
         }
         catch (error) {
@@ -818,7 +836,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async getCredential(did: string): Promise<VerifiableCredential | null> {
         try {
-            const response = await axios.get(`${this.API}/credentials/held/${did}`);
+            const response = await this.axios.get(`${this.API}/credentials/held/${encodeURIComponent(did)}`);
             return response.data.credential;
         }
         catch (error) {
@@ -828,7 +846,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async removeCredential(did: string): Promise<boolean> {
         try {
-            const response = await axios.delete(`${this.API}/credentials/held/${did}`);
+            const response = await this.axios.delete(`${this.API}/credentials/held/${encodeURIComponent(did)}`);
             return response.data.ok;
         }
         catch (error) {
@@ -841,7 +859,7 @@ export default class KeymasterClient implements KeymasterInterface {
         options?: { reveal?: boolean }
     ): Promise<boolean> {
         try {
-            const response = await axios.post(`${this.API}/credentials/held/${did}/publish`, { options });
+            const response = await this.axios.post(`${this.API}/credentials/held/${encodeURIComponent(did)}/publish`, { options });
             return response.data.ok;
         }
         catch (error) {
@@ -851,7 +869,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async unpublishCredential(did: string): Promise<boolean> {
         try {
-            const response = await axios.post(`${this.API}/credentials/held/${did}/unpublish`);
+            const response = await this.axios.post(`${this.API}/credentials/held/${encodeURIComponent(did)}/unpublish`);
             return response.data.ok;
         }
         catch (error) {
@@ -859,9 +877,9 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     }
 
-    async listIssued(): Promise<string[]> {
+    async listIssued(issuer?: string): Promise<string[]> {
         try {
-            const response = await axios.get(`${this.API}/credentials/issued`);
+            const response = await this.axios.get(`${this.API}/credentials/issued`, { params: { issuer } });
             return response.data.issued;
         }
         catch (error) {
@@ -871,7 +889,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async revokeCredential(did: string): Promise<boolean> {
         try {
-            const response = await axios.delete(`${this.API}/credentials/issued/${did}`);
+            const response = await this.axios.delete(`${this.API}/credentials/issued/${encodeURIComponent(did)}`);
             return response.data.ok;
         }
         catch (error) {
@@ -881,7 +899,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async pollTemplate(): Promise<Poll> {
         try {
-            const response = await axios.get(`${this.API}/templates/poll`);
+            const response = await this.axios.get(`${this.API}/templates/poll`);
             return response.data.template;
         }
         catch (error) {
@@ -894,7 +912,7 @@ export default class KeymasterClient implements KeymasterInterface {
         options?: CreateAssetOptions
     ): Promise<string> {
         try {
-            const response = await axios.post(`${this.API}/polls`, { poll, options });
+            const response = await this.axios.post(`${this.API}/polls`, { poll, options });
             return response.data.did;
         }
         catch (error) {
@@ -904,7 +922,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     public async getPoll(pollId: string): Promise<Poll | null> {
         try {
-            const response = await axios.get(`${this.API}/polls/${pollId}`);
+            const response = await this.axios.get(`${this.API}/polls/${encodeURIComponent(pollId)}`);
             return response.data.poll;
         }
         catch (error) {
@@ -914,7 +932,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async viewPoll(pollId: string): Promise<ViewPollResult> {
         try {
-            const response = await axios.get(`${this.API}/polls/${pollId}/view`);
+            const response = await this.axios.get(`${this.API}/polls/${encodeURIComponent(pollId)}/view`);
             return response.data.poll;
         }
         catch (error) {
@@ -932,7 +950,7 @@ export default class KeymasterClient implements KeymasterInterface {
         }
     ): Promise<string> {
         try {
-            const response = await axios.post(`${this.API}/polls/${pollId}/vote`, { vote, options });
+            const response = await this.axios.post(`${this.API}/polls/${encodeURIComponent(pollId)}/vote`, { vote, options });
             return response.data.did;
         }
         catch (error) {
@@ -942,7 +960,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async updatePoll(ballot: string): Promise<boolean> {
         try {
-            const response = await axios.put(`${this.API}/polls/update`, { ballot });
+            const response = await this.axios.put(`${this.API}/polls/update`, { ballot });
             return response.data.ok;
         }
         catch (error) {
@@ -955,7 +973,7 @@ export default class KeymasterClient implements KeymasterInterface {
         options?: { reveal?: boolean }
     ): Promise<boolean> {
         try {
-            const response = await axios.post(`${this.API}/polls/${pollId}/publish`, { options });
+            const response = await this.axios.post(`${this.API}/polls/${encodeURIComponent(pollId)}/publish`, { options });
             return response.data.ok;
         }
         catch (error) {
@@ -965,7 +983,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async unpublishPoll(pollId: string): Promise<boolean> {
         try {
-            const response = await axios.post(`${this.API}/polls/${pollId}/unpublish`);
+            const response = await this.axios.post(`${this.API}/polls/${encodeURIComponent(pollId)}/unpublish`);
             return response.data.ok;
         }
         catch (error) {
@@ -978,7 +996,7 @@ export default class KeymasterClient implements KeymasterInterface {
         options: CreateAssetOptions = {}
     ): Promise<string> {
         try {
-            const response = await axios.post(`${this.API}/images`, data, {
+            const response = await this.axios.post(`${this.API}/images`, data, {
                 headers: {
                     // eslint-disable-next-line
                     'Content-Type': 'application/octet-stream',
@@ -997,7 +1015,7 @@ export default class KeymasterClient implements KeymasterInterface {
         data: Buffer
     ): Promise<boolean> {
         try {
-            const response = await axios.put(`${this.API}/images/${id}`, data, {
+            const response = await this.axios.put(`${this.API}/images/${encodeURIComponent(id)}`, data, {
                 headers: {
                     'Content-Type': 'application/octet-stream'
                 }
@@ -1011,7 +1029,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async getImage(id: string): Promise<ImageAsset | null> {
         try {
-            const response = await axios.get(`${this.API}/images/${id}`);
+            const response = await this.axios.get(`${this.API}/images/${encodeURIComponent(id)}`);
             return response.data.image;
         }
         catch (error) {
@@ -1021,7 +1039,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async testImage(id: string): Promise<boolean> {
         try {
-            const response = await axios.post(`${this.API}/images/${id}/test`);
+            const response = await this.axios.post(`${this.API}/images/${encodeURIComponent(id)}/test`);
             return response.data.test;
         }
         catch (error) {
@@ -1034,7 +1052,7 @@ export default class KeymasterClient implements KeymasterInterface {
         options: FileAssetOptions = {}
     ): Promise<string> {
         try {
-            const response = await axios.post(`${this.API}/documents`, data, {
+            const response = await this.axios.post(`${this.API}/documents`, data, {
                 headers: {
                     'Content-Type': 'application/octet-stream',
                     'X-Options': JSON.stringify(options), // Pass options as a custom header
@@ -1053,7 +1071,7 @@ export default class KeymasterClient implements KeymasterInterface {
         options: FileAssetOptions = {}
     ): Promise<boolean> {
         try {
-            const response = await axios.put(`${this.API}/documents/${id}`, data, {
+            const response = await this.axios.put(`${this.API}/documents/${encodeURIComponent(id)}`, data, {
                 headers: {
                     'Content-Type': 'application/octet-stream',
                     'X-Options': JSON.stringify(options), // Pass options as a custom header
@@ -1068,7 +1086,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async getDocument(id: string): Promise<FileAsset | null> {
         try {
-            const response = await axios.get(`${this.API}/documents/${id}`);
+            const response = await this.axios.get(`${this.API}/documents/${encodeURIComponent(id)}`);
             return response.data.document;
         }
         catch (error) {
@@ -1078,7 +1096,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async testDocument(id: string): Promise<boolean> {
         try {
-            const response = await axios.post(`${this.API}/documents/${id}/test`);
+            const response = await this.axios.post(`${this.API}/documents/${encodeURIComponent(id)}/test`);
             return response.data.test;
         }
         catch (error) {
@@ -1088,7 +1106,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async createGroupVault(options: GroupVaultOptions = {}): Promise<string> {
         try {
-            const response = await axios.post(`${this.API}/groupVaults`, { options });
+            const response = await this.axios.post(`${this.API}/groupVaults`, { options });
             return response.data.did;
         }
         catch (error) {
@@ -1100,11 +1118,11 @@ export default class KeymasterClient implements KeymasterInterface {
         try {
             if (options) {
                 const queryParams = new URLSearchParams(options as Record<string, string>);
-                const response = await axios.get(`${this.API}/groupVaults/${id}?${queryParams.toString()}`);
+                const response = await this.axios.get(`${this.API}/groupVaults/${encodeURIComponent(id)}?${queryParams.toString()}`);
                 return response.data.groupVault;
             }
             else {
-                const response = await axios.get(`${this.API}/groupVaults/${id}`);
+                const response = await this.axios.get(`${this.API}/groupVaults/${encodeURIComponent(id)}`);
                 return response.data.groupVault;
             }
         }
@@ -1115,7 +1133,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async testGroupVault(id: string, options?: ResolveDIDOptions): Promise<boolean> {
         try {
-            const response = await axios.post(`${this.API}/groupVaults/${id}/test`, { options });
+            const response = await this.axios.post(`${this.API}/groupVaults/${encodeURIComponent(id)}/test`, { options });
             return response.data.test;
         }
         catch (error) {
@@ -1128,7 +1146,7 @@ export default class KeymasterClient implements KeymasterInterface {
         memberId: string
     ): Promise<boolean> {
         try {
-            const response = await axios.post(`${this.API}/groupVaults/${vaultId}/members`, { memberId });
+            const response = await this.axios.post(`${this.API}/groupVaults/${encodeURIComponent(vaultId)}/members`, { memberId });
             return response.data.ok;
         }
         catch (error) {
@@ -1141,7 +1159,7 @@ export default class KeymasterClient implements KeymasterInterface {
         memberId: string
     ): Promise<boolean> {
         try {
-            const response = await axios.delete(`${this.API}/groupVaults/${vaultId}/members/${memberId}`);
+            const response = await this.axios.delete(`${this.API}/groupVaults/${encodeURIComponent(vaultId)}/members/${encodeURIComponent(memberId)}`);
             return response.data.ok;
         }
         catch (error) {
@@ -1151,7 +1169,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async listGroupVaultMembers(vaultId: string): Promise<Record<string, any>> {
         try {
-            const response = await axios.get(`${this.API}/groupVaults/${vaultId}/members`);
+            const response = await this.axios.get(`${this.API}/groupVaults/${encodeURIComponent(vaultId)}/members`);
             return response.data.members;
         }
         catch (error) {
@@ -1165,7 +1183,7 @@ export default class KeymasterClient implements KeymasterInterface {
         buffer: Buffer
     ): Promise<boolean> {
         try {
-            const response = await axios.post(`${this.API}/groupVaults/${vaultId}/items`, buffer, {
+            const response = await this.axios.post(`${this.API}/groupVaults/${encodeURIComponent(vaultId)}/items`, buffer, {
                 headers: {
                     // eslint-disable-next-line
                     'Content-Type': 'application/octet-stream',
@@ -1184,7 +1202,7 @@ export default class KeymasterClient implements KeymasterInterface {
         name: string
     ): Promise<boolean> {
         try {
-            const response = await axios.delete(`${this.API}/groupVaults/${vaultId}/items/${name}`);
+            const response = await this.axios.delete(`${this.API}/groupVaults/${encodeURIComponent(vaultId)}/items/${encodeURIComponent(name)}`);
             return response.data.ok;
         }
         catch (error) {
@@ -1196,11 +1214,11 @@ export default class KeymasterClient implements KeymasterInterface {
         try {
             if (options) {
                 const queryParams = new URLSearchParams(options as Record<string, string>);
-                const response = await axios.get(`${this.API}/groupVaults/${vaultId}/items?${queryParams.toString()}`);
+                const response = await this.axios.get(`${this.API}/groupVaults/${encodeURIComponent(vaultId)}/items?${queryParams.toString()}`);
                 return response.data.items;
             }
             else {
-                const response = await axios.get(`${this.API}/groupVaults/${vaultId}/items`);
+                const response = await this.axios.get(`${this.API}/groupVaults/${encodeURIComponent(vaultId)}/items`);
                 return response.data.items;
             }
         }
@@ -1211,13 +1229,13 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async getGroupVaultItem(vaultId: string, name: string, options?: ResolveDIDOptions): Promise<Buffer | null> {
         try {
-            let url = `${this.API}/groupVaults/${vaultId}/items/${name}`;
+            let url = `${this.API}/groupVaults/${encodeURIComponent(vaultId)}/items/${encodeURIComponent(name)}`;
             if (options) {
                 const queryParams = new URLSearchParams(options as Record<string, string>);
                 url += `?${queryParams.toString()}`;
             }
 
-            const response = await axios.get(url, {
+            const response = await this.axios.get(url, {
                 responseType: 'arraybuffer'
             });
 
@@ -1245,7 +1263,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async listDmail(): Promise<Record<string, DmailItem>> {
         try {
-            const response = await axios.get(`${this.API}/dmail`);
+            const response = await this.axios.get(`${this.API}/dmail`);
             return response.data.dmail;
         } catch (error) {
             throwError(error);
@@ -1257,7 +1275,7 @@ export default class KeymasterClient implements KeymasterInterface {
         options: GroupVaultOptions = {}
     ): Promise<string> {
         try {
-            const response = await axios.post(`${this.API}/dmail`, { message, options });
+            const response = await this.axios.post(`${this.API}/dmail`, { message, options });
             return response.data.did;
         }
         catch (error) {
@@ -1270,7 +1288,7 @@ export default class KeymasterClient implements KeymasterInterface {
         message: DmailMessage
     ): Promise<boolean> {
         try {
-            const response = await axios.put(`${this.API}/dmail/${did}`, { message });
+            const response = await this.axios.put(`${this.API}/dmail/${encodeURIComponent(did)}`, { message });
             return response.data.ok;
         }
         catch (error) {
@@ -1280,7 +1298,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async sendDmail(did: string): Promise<string | null> {
         try {
-            const response = await axios.post(`${this.API}/dmail/${did}/send`);
+            const response = await this.axios.post(`${this.API}/dmail/${encodeURIComponent(did)}/send`);
             return response.data.did;
         }
         catch (error) {
@@ -1293,7 +1311,7 @@ export default class KeymasterClient implements KeymasterInterface {
         tags: string[]
     ): Promise<boolean> {
         try {
-            const response = await axios.post(`${this.API}/dmail/${did}/file`, { tags });
+            const response = await this.axios.post(`${this.API}/dmail/${encodeURIComponent(did)}/file`, { tags });
             return response.data.ok;
         }
         catch (error) {
@@ -1303,7 +1321,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async removeDmail(did: string): Promise<boolean> {
         try {
-            const response = await axios.delete(`${this.API}/dmail/${did}`);
+            const response = await this.axios.delete(`${this.API}/dmail/${encodeURIComponent(did)}`);
             return response.data.ok;
         }
         catch (error) {
@@ -1315,11 +1333,11 @@ export default class KeymasterClient implements KeymasterInterface {
         try {
             if (options) {
                 const queryParams = new URLSearchParams(options as Record<string, string>);
-                const response = await axios.get(`${this.API}/dmail/${did}?${queryParams.toString()}`);
+                const response = await this.axios.get(`${this.API}/dmail/${encodeURIComponent(did)}?${queryParams.toString()}`);
                 return response.data.message;
             }
             else {
-                const response = await axios.get(`${this.API}/dmail/${did}`);
+                const response = await this.axios.get(`${this.API}/dmail/${encodeURIComponent(did)}`);
                 return response.data.message;
             }
         }
@@ -1332,11 +1350,11 @@ export default class KeymasterClient implements KeymasterInterface {
         try {
             if (options) {
                 const queryParams = new URLSearchParams(options as Record<string, string>);
-                const response = await axios.get(`${this.API}/dmail/${did}/attachments?${queryParams.toString()}`);
+                const response = await this.axios.get(`${this.API}/dmail/${encodeURIComponent(did)}/attachments?${queryParams.toString()}`);
                 return response.data.attachments;
             }
             else {
-                const response = await axios.get(`${this.API}/dmail/${did}/attachments`);
+                const response = await this.axios.get(`${this.API}/dmail/${encodeURIComponent(did)}/attachments`);
                 return response.data.attachments;
             }
         }
@@ -1347,7 +1365,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async addDmailAttachment(did: string, name: string, buffer: Buffer): Promise<boolean> {
         try {
-            const response = await axios.post(`${this.API}/dmail/${did}/attachments`, buffer, {
+            const response = await this.axios.post(`${this.API}/dmail/${encodeURIComponent(did)}/attachments`, buffer, {
                 headers: {
                     // eslint-disable-next-line
                     'Content-Type': 'application/octet-stream',
@@ -1363,7 +1381,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async removeDmailAttachment(did: string, name: string): Promise<boolean> {
         try {
-            const response = await axios.delete(`${this.API}/dmail/${did}/attachments/${name}`);
+            const response = await this.axios.delete(`${this.API}/dmail/${encodeURIComponent(did)}/attachments/${encodeURIComponent(name)}`);
             return response.data.ok;
         }
         catch (error) {
@@ -1373,7 +1391,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async getDmailAttachment(did: string, name: string): Promise<Buffer | null> {
         try {
-            const response = await axios.get(`${this.API}/dmail/${did}/attachments/${name}`, {
+            const response = await this.axios.get(`${this.API}/dmail/${encodeURIComponent(did)}/attachments/${encodeURIComponent(name)}`, {
                 responseType: 'arraybuffer'
             });
 
@@ -1401,7 +1419,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async importDmail(did: string): Promise<boolean> {
         try {
-            const response = await axios.post(`${this.API}/dmail/import`, { did });
+            const response = await this.axios.post(`${this.API}/dmail/import`, { did });
             return response.data.ok;
         }
         catch (error) {
@@ -1414,7 +1432,7 @@ export default class KeymasterClient implements KeymasterInterface {
         options: CreateAssetOptions = {}
     ): Promise<string> {
         try {
-            const response = await axios.post(`${this.API}/notices`, { message, options });
+            const response = await this.axios.post(`${this.API}/notices`, { message, options });
             return response.data.did;
         }
         catch (error) {
@@ -1427,7 +1445,7 @@ export default class KeymasterClient implements KeymasterInterface {
         message: NoticeMessage
     ): Promise<boolean> {
         try {
-            const response = await axios.put(`${this.API}/notices/${did}`, { message });
+            const response = await this.axios.put(`${this.API}/notices/${encodeURIComponent(did)}`, { message });
             return response.data.ok;
         }
         catch (error) {
@@ -1437,7 +1455,7 @@ export default class KeymasterClient implements KeymasterInterface {
 
     async refreshNotices(): Promise<boolean> {
         try {
-            const response = await axios.post(`${this.API}/notices/refresh`);
+            const response = await this.axios.post(`${this.API}/notices/refresh`);
             return response.data.ok;
         }
         catch (error) {

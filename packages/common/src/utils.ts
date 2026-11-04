@@ -28,3 +28,57 @@ export function compareOrdinals(a: number[], b: number[]): -1 | 0 | 1 {
 
     return 0;
 }
+
+const retryableHttpStatuses = new Set([408, 425, 429, 500, 502, 503, 504]);
+const retryableNetworkCodes = new Set([
+    'ECONNABORTED',
+    'ECONNREFUSED',
+    'ECONNRESET',
+    'EAI_AGAIN',
+    'EHOSTUNREACH',
+    'ENETUNREACH',
+    'ERR_NETWORK',
+    'ESOCKETTIMEDOUT',
+    'ETIMEDOUT',
+]);
+
+export function isRetryableHttpError(error: unknown): boolean {
+    if (!error || typeof error !== 'object') {
+        return false;
+    }
+
+    const { code, response } = error as {
+        code?: unknown;
+        response?: { status?: unknown };
+    };
+
+    if (response) {
+        return typeof response.status === 'number' && retryableHttpStatuses.has(response.status);
+    }
+
+    return typeof code === 'string' && retryableNetworkCodes.has(code);
+}
+
+export function waitForTimeout(ms: number, signal?: AbortSignal): Promise<void> {
+    return new Promise((resolve, reject) => {
+        let timeout: ReturnType<typeof setTimeout> | undefined;
+        const abort = () => {
+            if (timeout !== undefined) {
+                clearTimeout(timeout);
+            }
+            reject(signal?.reason ?? Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }));
+        };
+
+        if (signal?.aborted) {
+            abort();
+            return;
+        }
+
+        timeout = setTimeout(() => {
+            signal?.removeEventListener('abort', abort);
+            resolve();
+        }, ms);
+
+        signal?.addEventListener('abort', abort, { once: true });
+    });
+}

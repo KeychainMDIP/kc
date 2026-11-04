@@ -1,3 +1,4 @@
+import { mockPostgresPool } from './postgres-mock.ts';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -123,6 +124,8 @@ describe('search DB branch behavior', () => {
 
         await seedDID(db, eventDid, { events: [didEventA] });
         expect(await db.getDIDEvents(eventDid)).toStrictEqual([didEventA]);
+        expect(await db.findDIDBySuffix('event-storage')).toBe(eventDid);
+        expect(await db.findDIDBySuffix('missing')).toBeNull();
         const unchanged = await db.applyIndexPage({
             dids: [{ did: eventDid, events: [didEventA] }],
             blocks: [],
@@ -365,6 +368,9 @@ describe('search DB branch behavior', () => {
             await defaultDb.disconnect();
             const disconnected = new Sqlite();
             await expect(disconnected.getDIDEvents(eventDid)).rejects.toThrow('DB not connected');
+            await expect(disconnected.findDIDBySuffix('event-storage')).rejects.toThrow('DB not connected');
+            await expect(disconnected.findAmbiguousDIDBySuffix('event-storage'))
+                .rejects.toThrow('DB not connected');
             await expect(disconnected.getBlock('TFTC')).rejects.toThrow('DB not connected');
             await expect(disconnected.listEvents()).rejects.toThrow('DB not connected');
         }
@@ -427,7 +433,7 @@ describe('search DB branch behavior', () => {
 
             if (text.includes('COUNT(*)::int AS total') ||
                 text.includes('receipt_did AS "receiptDid"') ||
-                text.includes('attester_did AS "attesterDid"')) {
+                text.includes('MIN(cr.attester_did) AS "attesterDid"')) {
                 return { rowCount: 0, rows: [] };
             }
 
@@ -435,13 +441,13 @@ describe('search DB branch behavior', () => {
         });
         const mockPool = {
             query: poolQuery,
-            connect: jest.fn(),
+            connect: jest.fn().mockResolvedValue({ query: poolQuery, release: jest.fn() } as never),
             end: jest.fn().mockResolvedValue(undefined as never),
         };
 
         class TestPostgres extends Postgres {
             protected createPool(): any {
-                return mockPool;
+                return mockPostgresPool(this, mockPool);
             }
         }
 
@@ -463,7 +469,10 @@ describe('search DB branch behavior', () => {
         const blocks = new Map<string, BlockInfo>();
         const syncState = new Map<string, string>();
         const publishedCredentials = new Map<string, PublishedCredentialRecord[]>();
+        const identitySchemas = new Map<string, Set<string>>();
+        const identityFields = new Map<string, Set<string>>();
         const challengeReceipts = new Map<string, ChallengeReceiptRecord[]>();
+        const classifications = new Map<string, string>();
 
         function blockKey(registry: string, hash: string): string {
             return `${registry}\u0000${hash}`;
@@ -482,6 +491,13 @@ describe('search DB branch behavior', () => {
             return rows
                 .filter(row => {
                     let paramIndex = 0;
+
+                    if (sql.includes('dc.prefix =')) {
+                        const prefix = String(params[paramIndex++]);
+                        if (!sql.includes('OR dc.prefix_ambiguous') && !row.did.startsWith(`${prefix}:`)) {
+                            return false;
+                        }
+                    }
 
                     if (sql.includes('registry =')) {
                         if (row.registry !== params[paramIndex++]) {
@@ -506,8 +522,11 @@ describe('search DB branch behavior', () => {
         const query = jest.fn(async (sql: string, params: unknown[] = []) => {
             const text = String(sql);
 
-            if (text.includes('CREATE TABLE') || text.includes('CREATE INDEX') ||
-                text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK') {
+            if (text.includes('CREATE TABLE') || text.includes('CREATE EXTENSION') ||
+                text.includes('CREATE INDEX') || text.includes('pg_advisory_') ||
+                text.includes('FROM pg_class idx') ||
+                text === 'ANALYZE did_docs' ||
+                text.startsWith('BEGIN') || text === 'COMMIT' || text === 'ROLLBACK') {
                 return { rowCount: 0, rows: [] };
             }
 
@@ -524,6 +543,27 @@ describe('search DB branch behavior', () => {
             if (text.includes('INSERT INTO sync_state')) {
                 syncState.set(String(params[0]), String(params[1]));
                 return { rowCount: 1, rows: [] };
+            }
+
+            if (text.includes('COUNT(DISTINCT dpr.prefix)')) {
+                const did = classifications.get(String(params[0]));
+                return did ? { rowCount: 1, rows: [{ did }] } : { rowCount: 0, rows: [] };
+            }
+
+            if (text.includes('SELECT did FROM did_classifications')) {
+                const did = classifications.get(String(params[0]));
+                const matchesPrefix = params.length < 2 || did?.startsWith(`${String(params[1])}:`);
+                return did
+                    && matchesPrefix ? { rowCount: 1, rows: [{ did }] }
+                    : { rowCount: 0, rows: [] };
+            }
+
+            if (text.includes('SELECT did FROM did_classifications_effective')) {
+                const did = classifications.get(String(params[0]));
+                const matchesPrefix = params.length < 2 || did?.startsWith(`${String(params[1])}:`);
+                return did && matchesPrefix
+                    ? { rowCount: 1, rows: [{ did }] }
+                    : { rowCount: 0, rows: [] };
             }
 
             if (text.includes('SELECT event FROM did_events')) {
@@ -573,9 +613,11 @@ describe('search DB branch behavior', () => {
             }
 
             if (text.includes('INSERT INTO blocks')) {
-                const block = JSON.parse(String(params[4])) as BlockInfo;
-                blocks.set(blockKey(String(params[0]), String(params[1])), block);
-                return { rowCount: 1, rows: [] };
+                for (let index = 0; index < params.length; index += 5) {
+                    const block = JSON.parse(String(params[index + 4])) as BlockInfo;
+                    blocks.set(blockKey(String(params[index]), String(params[index + 1])), block);
+                }
+                return { rowCount: params.length / 5, rows: [] };
             }
 
             if (text.includes('DELETE FROM did_events')) {
@@ -583,14 +625,29 @@ describe('search DB branch behavior', () => {
                 return { rowCount: deleted ? 1 : 0, rows: [] };
             }
 
-            if (text.includes('INSERT INTO did_events')) {
-                const did = String(params[0]);
-                const eventIndex = Number(params[1]);
-                const event = JSON.parse(String(params[4])) as GatekeeperEvent;
-                const didEvents = events.get(did) ?? [];
-                didEvents[eventIndex] = event;
-                events.set(did, didEvents);
+            if (text.includes('INSERT INTO did_classifications')) {
+                for (let index = 0; index < params.length; index += 5) {
+                    classifications.set(String(params[index]), String(params[index + 1]));
+                }
+                return { rowCount: params.length / 5, rows: [] };
+            }
+
+            if (text.includes('DELETE FROM did_classifications')) {
+                if (params.length === 0) classifications.clear();
+                else classifications.delete(String(params[0]));
                 return { rowCount: 1, rows: [] };
+            }
+
+            if (text.includes('INSERT INTO did_events')) {
+                for (let index = 0; index < params.length; index += 5) {
+                    const did = String(params[index]);
+                    const eventIndex = Number(params[index + 1]);
+                    const event = JSON.parse(String(params[index + 4])) as GatekeeperEvent;
+                    const didEvents = events.get(did) ?? [];
+                    didEvents[eventIndex] = event;
+                    events.set(did, didEvents);
+                }
+                return { rowCount: params.length / 5, rows: [] };
             }
 
             if (text.includes('DELETE FROM did_docs')) {
@@ -599,8 +656,10 @@ describe('search DB branch behavior', () => {
             }
 
             if (text.includes('INSERT INTO did_docs')) {
-                docs.set(String(params[0]), JSON.parse(String(params[1])) as object);
-                return { rowCount: 1, rows: [] };
+                for (let index = 0; index < params.length; index += 2) {
+                    docs.set(String(params[index]), JSON.parse(String(params[index + 1])) as object);
+                }
+                return { rowCount: params.length / 2, rows: [] };
             }
 
             if (text.includes('DELETE FROM published_credentials')) {
@@ -609,17 +668,58 @@ describe('search DB branch behavior', () => {
             }
 
             if (text.includes('INSERT INTO published_credentials')) {
-                const holderDid = String(params[0]);
-                publishedCredentials.set(holderDid, [{
-                    holderDid,
-                    credentialDid: String(params[1]),
-                    schemaDid: String(params[2]),
-                    issuerDid: String(params[3]),
-                    subjectDid: String(params[4]),
-                    revealed: Boolean(params[5]),
-                    updatedAt: String(params[6]),
-                }]);
+                for (let index = 0; index < params.length; index += 7) {
+                    const holderDid = String(params[index]);
+                    const records = publishedCredentials.get(holderDid) ?? [];
+                    records.push({
+                        holderDid,
+                        credentialDid: String(params[index + 1]),
+                        schemaDid: String(params[index + 2]),
+                        issuerDid: String(params[index + 3]),
+                        subjectDid: String(params[index + 4]),
+                        revealed: Boolean(params[index + 5]),
+                        updatedAt: String(params[index + 6]),
+                    });
+                    publishedCredentials.set(holderDid, records);
+                }
+                return { rowCount: params.length / 7, rows: [] };
+            }
+
+            if (text.includes('DELETE FROM did_prefix_references') ||
+                text.includes('INSERT INTO did_prefix_references')) {
                 return { rowCount: 1, rows: [] };
+            }
+
+            if (text.includes('DELETE FROM identity_schemas')) {
+                if (params.length === 0) identitySchemas.clear();
+                else identitySchemas.delete(String(params[0]));
+                return { rowCount: 1, rows: [] };
+            }
+
+            if (text.includes('INSERT INTO identity_schemas')) {
+                for (let index = 0; index < params.length; index += 2) {
+                    const did = String(params[index]);
+                    const schemas = identitySchemas.get(did) ?? new Set<string>();
+                    schemas.add(String(params[index + 1]));
+                    identitySchemas.set(did, schemas);
+                }
+                return { rowCount: params.length / 2, rows: [] };
+            }
+
+            if (text.includes('DELETE FROM identity_fields')) {
+                if (params.length === 0) identityFields.clear();
+                else identityFields.delete(String(params[0]));
+                return { rowCount: 1, rows: [] };
+            }
+
+            if (text.includes('INSERT INTO identity_fields')) {
+                for (let index = 0; index < params.length; index += 3) {
+                    const did = String(params[index]);
+                    const fields = identityFields.get(did) ?? new Set<string>();
+                    fields.add(JSON.stringify(params.slice(index + 1, index + 3)));
+                    identityFields.set(did, fields);
+                }
+                return { rowCount: params.length / 3, rows: [] };
             }
 
             if (text.includes('DELETE FROM challenge_receipts')) {
@@ -628,19 +728,23 @@ describe('search DB branch behavior', () => {
             }
 
             if (text.includes('INSERT INTO challenge_receipts')) {
-                const receiptDid = String(params[0]);
-                challengeReceipts.set(receiptDid, [{
-                    receiptDid,
-                    attesterDid: String(params[1]),
-                    schemaDid: String(params[2]),
-                    requesterDid: String(params[3]),
-                    responseCommitment: String(params[4]),
-                    updatedAt: String(params[5]),
-                }]);
-                return { rowCount: 1, rows: [] };
+                for (let index = 0; index < params.length; index += 9) {
+                    const receiptDid = String(params[index]);
+                    const records = challengeReceipts.get(receiptDid) ?? [];
+                    records.push({
+                        receiptDid,
+                        attesterDid: String(params[index + 1]),
+                        schemaDid: String(params[index + 3]),
+                        requesterDid: String(params[index + 5]),
+                        responseCommitment: String(params[index + 7]),
+                        updatedAt: String(params[index + 8]),
+                    });
+                    challengeReceipts.set(receiptDid, records);
+                }
+                return { rowCount: params.length / 9, rows: [] };
             }
 
-            if (text.includes('SELECT COUNT(*)::int AS total FROM did_events')) {
+            if (text.includes('COUNT(*)::int AS total') && text.includes('FROM did_events e')) {
                 if (params.length === 0) {
                     return { rowCount: 0, rows: [] };
                 }
@@ -648,7 +752,8 @@ describe('search DB branch behavior', () => {
                 return { rowCount: 1, rows: [{ total: filterEvents(params, text).length }] };
             }
 
-            if (text.includes('SELECT did, registry, time, event')) {
+            if (text.includes("dc.prefix || ':' || dc.suffix AS did") &&
+                text.includes('FROM did_events e')) {
                 const limit = Number(params[params.length - 2]);
                 const offset = Number(params[params.length - 1]);
                 return {
@@ -660,6 +765,7 @@ describe('search DB branch behavior', () => {
                             registry: row.registry,
                             time: row.time,
                             event: params.length === 2 ? row.event : JSON.stringify(row.event),
+                            prefixAmbiguous: text.includes('OR dc.prefix_ambiguous'),
                         })),
                 };
             }
@@ -677,7 +783,7 @@ describe('search DB branch behavior', () => {
 
         class TestPostgres extends Postgres {
             protected createPool(): any {
-                return mockPool;
+                return mockPostgresPool(this, mockPool);
             }
         }
 
@@ -694,7 +800,9 @@ describe('search DB branch behavior', () => {
             dids: [{
                 did: eventDid,
                 events: [didEventA, didEventB],
-                doc: { didDocument: { id: eventDid } },
+                doc: { didDocument: { id: eventDid }, didDocumentData: { manifest: {
+                    [publishedCredentialA.credentialDid]: { credential: { publicName: 'Alice' } },
+                } } },
                 publishedCredentials: [{ ...publishedCredentialA, holderDid: eventDid }],
                 challengeReceipts: [{ ...challengeReceipt, receiptDid: eventDid }],
             }],
@@ -709,6 +817,12 @@ describe('search DB branch behavior', () => {
             changedDids: [eventDid],
             storedBlocks: 1,
         });
+        expect(identitySchemas.get(eventDid)).toEqual(new Set(['schema-a']));
+        expect(identityFields.get(eventDid)).toEqual(new Set(['["publicName","schema-a"]']));
+        expect(await db.findDIDBySuffix('event-storage')).toBe(eventDid);
+        expect(await db.findDIDBySuffix('missing')).toBeNull();
+        expect(await db.findAmbiguousDIDBySuffix('event-storage')).toBe(eventDid);
+        expect(await db.findAmbiguousDIDBySuffix('missing')).toBeNull();
         expect(await db.getDIDEvents(eventDid)).toStrictEqual([didEventA, didEventB]);
         expect(await db.getDIDEvents('did:test:object-event')).toStrictEqual([didEventA]);
         expect(await db.getBlock('TFTC')).toStrictEqual(blockA);
@@ -735,6 +849,7 @@ describe('search DB branch behavior', () => {
         });
 
         expect(await db.listEvents({
+            didPrefix: 'did:test',
             registry: 'local',
             updatedAfter: didEventA.time,
             updatedBefore: '2026-04-01T12:00:00.000Z',
@@ -749,6 +864,10 @@ describe('search DB branch behavior', () => {
                 event: didEventB,
             }],
         });
+        expect((await db.listEvents({
+            didPrefix: 'did:mdip',
+            includeAmbiguous: true,
+        })).events.every(event => event.did === 'did:mdip:event-storage')).toBe(true);
 
         expect(await db.applyIndexPage({
             dids: [{ did: eventDid, events: [didEventA, didEventB] }],
@@ -780,8 +899,120 @@ describe('search DB branch behavior', () => {
             removedDids: 1,
         });
         expect(await db.getDIDEvents(eventDid)).toStrictEqual([]);
+        expect(identitySchemas.size).toBe(0);
+        expect(identityFields.size).toBe(0);
+
+        const reclassifiedDid = eventDid.replace('did:test:', 'did:mdip:');
+        await db.applyIndexPage({
+            dids: [{ did: eventDid, events: [didEventA],
+                doc: { didDocumentData: { manifest: { [publishedCredentialA.credentialDid]: { credential: { publicName: 'Alice' } } } } },
+                publishedCredentials: [{ ...publishedCredentialA, holderDid: eventDid }] }],
+            blocks: [],
+        });
+        const reclassifiedEvent = structuredClone(didEventA);
+        reclassifiedEvent.operation.mdip!.prefix = 'did:mdip';
+        await db.applyIndexPage({
+            dids: [{ did: reclassifiedDid, events: [reclassifiedEvent] }],
+            blocks: [],
+        });
+        expect(await db.getDIDEvents(eventDid)).toStrictEqual([]);
+        expect(await db.findDIDBySuffix('event-storage', 'did:mdip')).toBe(reclassifiedDid);
+        expect(identitySchemas.size).toBe(0);
+        expect(identityFields.size).toBe(0);
 
         await db.disconnect();
         expect(mockPool.end).toHaveBeenCalledTimes(1);
+    });
+
+    it('batches postgres index inserts in groups of 500 rows', async () => {
+        jest.resetModules();
+        const Postgres = (await import('../../services/search-server/src/db/postgres.ts')).default;
+        const poolQuery = jest.fn(async () => ({ rowCount: 0, rows: [] }));
+        const clientQuery = jest.fn(async (_sql: string, _params?: unknown[]) => ({ rowCount: 0, rows: [] }));
+        const mockPool = {
+            query: poolQuery,
+            connect: jest.fn(async () => ({ query: clientQuery, release: jest.fn() })),
+        };
+        const db = new Postgres('postgresql://example');
+        (db as any).pool = mockPostgresPool(db, mockPool);
+        const didA = 'did:test:batch-a';
+        const didB = 'did:test:batch-b';
+        const events = (did: string, count: number) => Array.from({ length: count }, (_, index) => ({
+            ...didEventA,
+            did,
+            time: new Date(Date.parse(didEventA.time) + index).toISOString(),
+        }));
+
+        await db.applyIndexPage({
+            dids: [
+                { did: didA, events: events(didA, 250), doc: { didDocument: { id: didA } } },
+                { did: didB, events: events(didB, 251), doc: { didDocument: { id: didB } } },
+            ],
+            blocks: [],
+        });
+
+        const eventInserts = clientQuery.mock.calls.filter(([sql]) =>
+            String(sql).includes('INSERT INTO did_events'));
+        const classificationInserts = clientQuery.mock.calls.filter(([sql]) =>
+            String(sql).includes('INSERT INTO did_classifications'));
+        const docInserts = clientQuery.mock.calls.filter(([sql]) =>
+            String(sql).includes('INSERT INTO did_docs'));
+
+        expect(eventInserts).toHaveLength(2);
+        expect(eventInserts.map(([, params]) => (params as unknown[]).length)).toStrictEqual([2500, 5]);
+        expect(classificationInserts).toHaveLength(1);
+        expect(classificationInserts[0][1]).toHaveLength(10);
+        expect(docInserts).toHaveLength(1);
+        expect(docInserts[0][1]).toHaveLength(4);
+        expect(clientQuery).toHaveBeenCalledWith('COMMIT');
+    });
+
+    it('deduplicates credential aliases before a postgres batch insert', async () => {
+        jest.resetModules();
+        const Postgres = (await import('../../services/search-server/src/db/postgres.ts')).default;
+        const clientQuery = jest.fn(async (_sql: string, _params?: unknown[]) => ({ rowCount: 0, rows: [] }));
+        const db = new Postgres('postgresql://example');
+        (db as any).pool = mockPostgresPool(db, {
+            query: jest.fn(async () => ({ rowCount: 0, rows: [] })),
+            connect: jest.fn(async () => ({ query: clientQuery, release: jest.fn() })),
+        });
+        const holderDid = 'did:test:holder';
+
+        await db.applyIndexPage({
+            dids: [{
+                did: holderDid,
+                events: [didEventA],
+                publishedCredentials: [
+                    {
+                        ...publishedCredentialA,
+                        holderDid,
+                        credentialDid: 'did:test:credential',
+                        issuerDid: 'did:test:first-issuer',
+                    },
+                    {
+                        ...publishedCredentialA,
+                        holderDid,
+                        credentialDid: 'did:mdip:credential',
+                        issuerDid: 'did:test:last-issuer',
+                    },
+                ],
+            }],
+            blocks: [],
+        });
+
+        const inserts = clientQuery.mock.calls.filter(([sql]) =>
+            String(sql).includes('INSERT INTO published_credentials'));
+
+        expect(inserts).toHaveLength(1);
+        expect(inserts[0][1]).toStrictEqual([
+            holderDid,
+            'credential',
+            'schema-a',
+            'did:test:last-issuer',
+            'did:test:subject-1',
+            true,
+            '2026-04-01T10:00:00.000Z',
+        ]);
+        expect(clientQuery).toHaveBeenCalledWith('COMMIT');
     });
 });
