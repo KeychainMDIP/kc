@@ -50,8 +50,9 @@ maintenance disabled. It runs the original live workflows and two cross-language
 credential/response scenarios, then stops the service and removes its test data.
 It never joins Hyperswarm or touches an existing node. The reference scenarios
 exchange encrypted wallets, signatures, receipts and index-export responses.
-They also execute the shared browser cipher primitives under Node. They do not
-launch a browser.
+Wallet interchange uses Java's supported v1 encrypted format; the reference
+fixture maps mnemonic-provider metadata to that format. They also execute the
+shared browser cipher primitives under Node. They do not launch a browser.
 
 Gatekeeper startup is limited to 60 seconds, each live test to 60 seconds and
 the whole runner to 15 minutes. Test reports and the service log are under
