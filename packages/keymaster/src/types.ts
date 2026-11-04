@@ -256,6 +256,7 @@ export interface KeymasterOptions {
     cipher: Cipher;
     search?: SearchEngine;
     defaultRegistry?: string;
+    didPrefix?: string;
     maxNameLength?: number;
 }
 
@@ -274,6 +275,8 @@ export interface PossiblySigned {
 export interface RestClientOptions {
     url?: string;
     console?: any;
+    signal?: AbortSignal;
+    timeoutMs?: number;
     waitUntilReady?: boolean;
     intervalSeconds?: number;
     chatty?: boolean;
@@ -288,6 +291,7 @@ export interface SearchClientOptions extends RestClientOptions {
 }
 
 export interface WaitUntilReadyOptions {
+    signal?: AbortSignal;
     intervalSeconds?: number;
     chatty?: boolean;
     becomeChattyAfter?: number;
@@ -324,7 +328,7 @@ export interface KeymasterInterface {
     saveWallet(wallet: StoredWallet, overwrite?: boolean): Promise<boolean>;
     newWallet(mnemonic?: string, overwrite?: boolean): Promise<WalletFile>;
     backupWallet(): Promise<boolean | string>;
-    recoverWallet(): Promise<WalletFile>;
+    recoverWallet(did?: string): Promise<WalletFile>;
     checkWallet(): Promise<CheckWalletResult>;
     fixWallet(): Promise<FixWalletResult>;
     decryptMnemonic(): Promise<string>;
@@ -408,7 +412,7 @@ export interface KeymasterInterface {
     // Challenges
     createChallenge(challenge?: Challenge, options?: { registry?: string; validUntil?: string }): Promise<string>;
     createResponse(challengeDid: string, options?: CreateResponseOptions): Promise<string>;
-    verifyResponse(responseDid: string, options?: { retries?: number; delay?: number }): Promise<ChallengeResponse>;
+    verifyResponse(responseDid: string, options?: { retries?: number; delay?: number; publish?: boolean }): Promise<ChallengeResponse>;
     publishChallengeReceipts(responseDid: string, options?: PublishChallengeReceiptOptions): Promise<string[]>;
 
     // Polls

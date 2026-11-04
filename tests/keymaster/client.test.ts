@@ -1,9 +1,12 @@
+import { jest } from '@jest/globals';
 import nock from 'nock';
 import KeymasterClient from '@mdip/keymaster/client';
+import SearchClient from '../../packages/keymaster/src/search-client.ts';
 import { ExpectedExceptionError } from '@mdip/common/errors';
 import {Seed, WalletEncFile, WalletFile} from "@mdip/keymaster/types";
 
 const KeymasterURL = 'http://keymaster.org';
+const SearchURL = 'http://search.org';
 const ServerError = { message: 'Server error' };
 const Endpoints = {
     ready: '/api/v1/ready',
@@ -89,6 +92,34 @@ const mockCredential = {
 };
 
 describe('isReady', () => {
+    it('configures a finite request timeout', async () => {
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        expect((keymaster as any).axios.defaults.timeout).toBe(60_000);
+    });
+
+    it.each([0, -1, Number.POSITIVE_INFINITY, Number.NaN])(
+        'rejects invalid request timeout %s',
+        async timeoutMs => {
+            await expect(KeymasterClient.create({ timeoutMs })).rejects.toThrow(
+                'timeoutMs must be a positive finite number',
+            );
+        },
+    );
+
+    it('should time out a stalled request', async () => {
+        nock(KeymasterURL)
+            .get(Endpoints.wallet)
+            .delayConnection(100)
+            .reply(200, { wallet: {} });
+        const keymaster = await KeymasterClient.create({
+            url: KeymasterURL,
+            timeoutMs: 10,
+        });
+
+        await expect(keymaster.loadWallet()).rejects.toMatchObject({ code: 'ECONNABORTED' });
+    });
+
     it('should return ready flag', async () => {
         nock(KeymasterURL)
             .get(Endpoints.ready)
@@ -111,6 +142,16 @@ describe('isReady', () => {
         expect(isReady).toBe(false);
     });
 
+    it('should throw on a permanent readiness error', async () => {
+        nock(KeymasterURL)
+            .get(Endpoints.ready)
+            .reply(404, { message: 'Not found' });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+
+        await expect(keymaster.isReady()).rejects.toThrow('Request failed with status code 404');
+    });
+
     it('should wait until ready', async () => {
         nock(KeymasterURL)
             .get(Endpoints.ready)
@@ -126,23 +167,180 @@ describe('isReady', () => {
         expect(keymaster != null).toBe(true);
     });
 
-    it('should timeout if not ready', async () => {
+    it('should reject when max retries are exhausted', async () => {
         nock(KeymasterURL)
             .get(Endpoints.ready)
             .times(3)
             .reply(200, { ready: false });
 
-        const keymaster = await KeymasterClient.create({
+        await expect(KeymasterClient.create({
             url: KeymasterURL,
             waitUntilReady: true,
-            intervalSeconds: 0.1,
+            intervalSeconds: 0,
             maxRetries: 2,
             chatty: false,
             becomeChattyAfter: 1,
             console: mockConsole
+        })).rejects.toThrow('Keymaster did not become ready after 3 attempts');
+    });
+
+    it('should succeed when ready on the last retry', async () => {
+        nock(KeymasterURL)
+            .get(Endpoints.ready)
+            .times(2)
+            .reply(200, { ready: false })
+            .get(Endpoints.ready)
+            .reply(200, { ready: true });
+
+        await expect(KeymasterClient.create({
+            url: KeymasterURL,
+            waitUntilReady: true,
+            intervalSeconds: 0,
+            maxRetries: 2,
+        })).resolves.toBeInstanceOf(KeymasterClient);
+    });
+
+    it('should cancel the wait between readiness checks', async () => {
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const isReady = jest.spyOn(keymaster, 'isReady').mockResolvedValue(false);
+        const controller = new AbortController();
+        const connecting = keymaster.waitUntilReady({
+            signal: controller.signal,
+            intervalSeconds: 60,
         });
 
-        expect(keymaster != null).toBe(true);
+        while (isReady.mock.calls.length === 0) {
+            await new Promise(resolve => setImmediate(resolve));
+        }
+        await new Promise(resolve => setImmediate(resolve));
+        expect(isReady).toHaveBeenCalledWith(controller.signal);
+        controller.abort();
+
+        await expect(connecting).rejects.toMatchObject({ name: 'AbortError' });
+    });
+
+    it('should cancel an active request', async () => {
+        nock(KeymasterURL)
+            .get(Endpoints.wallet)
+            .delay(1_000)
+            .reply(200, { wallet: {} });
+        const controller = new AbortController();
+        const keymaster = await KeymasterClient.create({
+            url: KeymasterURL,
+            signal: controller.signal,
+        });
+
+        const request = keymaster.loadWallet();
+        controller.abort();
+
+        await expect(request).rejects.toMatchObject({ code: 'ERR_CANCELED' });
+    });
+});
+
+describe('SearchClient waitUntilReady', () => {
+    it('configures a finite request timeout', async () => {
+        const search = await SearchClient.create({ url: SearchURL });
+
+        expect((search as any).axios.defaults.timeout).toBe(60_000);
+    });
+
+    it.each([0, -1, Number.POSITIVE_INFINITY, Number.NaN])(
+        'rejects invalid request timeout %s',
+        async timeoutMs => {
+            await expect(SearchClient.create({ timeoutMs })).rejects.toThrow(
+                'timeoutMs must be a positive finite number',
+            );
+        },
+    );
+
+    it('should time out a stalled request', async () => {
+        nock(SearchURL)
+            .post('/api/v1/query')
+            .delayConnection(100)
+            .reply(200, []);
+        const search = await SearchClient.create({
+            url: SearchURL,
+            timeoutMs: 10,
+        });
+
+        await expect(search.search({})).rejects.toMatchObject({ code: 'ECONNABORTED' });
+    });
+
+    it('should throw on a permanent readiness error', async () => {
+        nock(SearchURL)
+            .get(Endpoints.ready)
+            .reply(404, { message: 'Not found' });
+
+        await expect(SearchClient.create({
+            url: SearchURL,
+            waitUntilReady: true,
+        })).rejects.toThrow('Request failed with status code 404');
+    });
+
+    it('should reject when max retries are exhausted', async () => {
+        nock(SearchURL)
+            .get(Endpoints.ready)
+            .times(3)
+            .reply(200, { ready: false });
+
+        await expect(SearchClient.create({
+            url: SearchURL,
+            waitUntilReady: true,
+            intervalSeconds: 0,
+            maxRetries: 2,
+        })).rejects.toThrow('Search Server did not become ready after 3 attempts');
+    });
+
+    it('should succeed when ready on the last retry', async () => {
+        nock(SearchURL)
+            .get(Endpoints.ready)
+            .times(2)
+            .reply(200, { ready: false })
+            .get(Endpoints.ready)
+            .reply(200, { ready: true });
+
+        await expect(SearchClient.create({
+            url: SearchURL,
+            waitUntilReady: true,
+            intervalSeconds: 0,
+            maxRetries: 2,
+        })).resolves.toBeInstanceOf(SearchClient);
+    });
+
+    it('should cancel the wait between readiness checks', async () => {
+        const search = await SearchClient.create({ url: SearchURL });
+        const isReady = jest.spyOn(search, 'isReady').mockResolvedValue(false);
+        const controller = new AbortController();
+        const connecting = search.waitUntilReady({
+            signal: controller.signal,
+            intervalSeconds: 60,
+        });
+
+        while (isReady.mock.calls.length === 0) {
+            await new Promise(resolve => setImmediate(resolve));
+        }
+        await new Promise(resolve => setImmediate(resolve));
+        expect(isReady).toHaveBeenCalledWith(controller.signal);
+        controller.abort();
+
+        await expect(connecting).rejects.toMatchObject({ name: 'AbortError' });
+    });
+
+    it('should cancel an active request', async () => {
+        nock(SearchURL)
+            .post('/api/v1/query')
+            .delay(1_000)
+            .reply(200, []);
+        const controller = new AbortController();
+        const search = await SearchClient.create({
+            url: SearchURL,
+            signal: controller.signal,
+        });
+
+        const request = search.search({});
+        controller.abort();
+
+        await expect(request).rejects.toMatchObject({ code: 'ERR_CANCELED' });
     });
 });
 
@@ -198,11 +396,11 @@ describe('saveWallet', () => {
 
     it('should save wallet', async () => {
         nock(KeymasterURL)
-            .put(Endpoints.wallet)
+            .put(Endpoints.wallet, { wallet: mockWallet, overwrite: false })
             .reply(200, { ok: true });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
-        const ok = await keymaster.saveWallet(mockWallet);
+        const ok = await keymaster.saveWallet(mockWallet, false);
 
         expect(ok).toStrictEqual(true);
     });
@@ -286,14 +484,26 @@ describe('backupWallet', () => {
 
 describe('recoverWallet', () => {
     const mockWallet = { seed: 1 };
+    const mockDID = 'did:mock:backup';
 
     it('should recover wallet', async () => {
         nock(KeymasterURL)
-            .post(Endpoints.wallet_recover)
+            .post(Endpoints.wallet_recover, {})
             .reply(200, { wallet: mockWallet });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
         const wallet = await keymaster.recoverWallet();
+
+        expect(wallet).toStrictEqual(mockWallet);
+    });
+
+    it('should recover wallet from a backup DID', async () => {
+        nock(KeymasterURL)
+            .post(Endpoints.wallet_recover, { did: mockDID })
+            .reply(200, { wallet: mockWallet });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const wallet = await keymaster.recoverWallet(mockDID);
 
         expect(wallet).toStrictEqual(mockWallet);
     });
@@ -996,7 +1206,7 @@ describe('resolveDID', () => {
 
     it('should resolve DID', async () => {
         nock(KeymasterURL)
-            .get(`${Endpoints.did}/${mockDID}`)
+            .get(`${Endpoints.did}/${encodeURIComponent(mockDID)}`)
             .reply(200, { docs: mockDocument });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -1007,7 +1217,7 @@ describe('resolveDID', () => {
 
     it('should resolve specified DID', async () => {
         nock(KeymasterURL)
-            .get(`${Endpoints.did}/${mockDID}?confirm=true`)
+            .get(`${Endpoints.did}/${encodeURIComponent(mockDID)}?confirm=true`)
             .reply(200, { docs: mockDocument });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -1018,7 +1228,7 @@ describe('resolveDID', () => {
 
     it('should throw exception on resolveDID server error', async () => {
         nock(KeymasterURL)
-            .get(`${Endpoints.did}/${mockDID}`)
+            .get(`${Endpoints.did}/${encodeURIComponent(mockDID)}`)
             .reply(500, ServerError);
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -1038,7 +1248,7 @@ describe('revokeDID', () => {
 
     it('should revoke DID', async () => {
         nock(KeymasterURL)
-            .delete(`${Endpoints.did}/${mockDID}`)
+            .delete(`${Endpoints.did}/${encodeURIComponent(mockDID)}`)
             .reply(200, { ok: true });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -1049,7 +1259,7 @@ describe('revokeDID', () => {
 
     it('should throw exception on revokeDID server error', async () => {
         nock(KeymasterURL)
-            .delete(`${Endpoints.did}/${mockDID}`)
+            .delete(`${Endpoints.did}/${encodeURIComponent(mockDID)}`)
             .reply(500, ServerError);
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -1102,10 +1312,11 @@ describe('listAssets', () => {
     it('should list assets', async () => {
         nock(KeymasterURL)
             .get(Endpoints.assets)
+            .query({ owner: 'Alice' })
             .reply(200, { assets: mockAssets });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
-        const assets = await keymaster.listAssets();
+        const assets = await keymaster.listAssets('Alice');
 
         expect(assets).toStrictEqual(mockAssets);
     });
@@ -1147,11 +1358,13 @@ describe('resolveAsset', () => {
 
         nock(KeymasterURL)
             .get(`${Endpoints.assets}/${mockAssetId}`)
-            .query((query) => query.versionTime === versionTime && query.confirm === 'true')
+            .query((query) => query.versionTime === versionTime
+                && query.versionSequence === '1'
+                && query.confirm === 'true')
             .reply(200, { asset: mockAsset });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
-        const asset = await keymaster.resolveAsset(mockAssetId, { versionTime, confirm: true });
+        const asset = await keymaster.resolveAsset(mockAssetId, { versionTime, versionSequence: 1, confirm: true });
 
         expect(asset).toStrictEqual(mockAsset);
     });
@@ -1211,7 +1424,7 @@ describe('cloneAsset', () => {
 
     it('should clone asset', async () => {
         nock(KeymasterURL)
-            .post(`${Endpoints.assets}/${mockDID}/clone`)
+            .post(`${Endpoints.assets}/${encodeURIComponent(mockDID)}/clone`)
             .reply(200, { did: cloneDID });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -1222,7 +1435,7 @@ describe('cloneAsset', () => {
 
     it('should throw exception on cloneAsset server error', async () => {
         nock(KeymasterURL)
-            .post(`${Endpoints.assets}/${mockDID}/clone`)
+            .post(`${Endpoints.assets}/${encodeURIComponent(mockDID)}/clone`)
             .reply(500, ServerError);
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -1243,7 +1456,7 @@ describe('transferAsset', () => {
 
     it('should transfer asset', async () => {
         nock(KeymasterURL)
-            .post(`${Endpoints.assets}/${mockDID}/transfer`)
+            .post(`${Endpoints.assets}/${encodeURIComponent(mockDID)}/transfer`)
             .reply(200, { ok: true });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -1254,7 +1467,7 @@ describe('transferAsset', () => {
 
     it('should throw exception on transferAsset server error', async () => {
         nock(KeymasterURL)
-            .post(`${Endpoints.assets}/${mockDID}/transfer`)
+            .post(`${Endpoints.assets}/${encodeURIComponent(mockDID)}/transfer`)
             .reply(500, ServerError);
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -1343,6 +1556,20 @@ describe('verifyResponse', () => {
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
         const verification = await keymaster.verifyResponse(mockResponse);
+
+        expect(verification).toStrictEqual(mockVerification);
+    });
+
+    it('should forward the publish option', async () => {
+        nock(KeymasterURL)
+            .post(Endpoints.response_verify, {
+                response: mockResponse,
+                options: { publish: false },
+            })
+            .reply(200, { verify: mockVerification });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        const verification = await keymaster.verifyResponse(mockResponse, { publish: false });
 
         expect(verification).toStrictEqual(mockVerification);
     });
@@ -1775,7 +2002,7 @@ describe('createTemplate', () => {
 
     it('should create a template from the schema', async () => {
         nock(KeymasterURL)
-            .post(`${Endpoints.schemas}/${mockDID}/template`)
+            .post(`${Endpoints.schemas}/${encodeURIComponent(mockDID)}/template`)
             .reply(200, { template: mockTemplate });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -1786,7 +2013,7 @@ describe('createTemplate', () => {
 
     it('should throw exception on createTemplate server error', async () => {
         nock(KeymasterURL)
-            .post(`${Endpoints.schemas}/${mockDID}/template`)
+            .post(`${Endpoints.schemas}/${encodeURIComponent(mockDID)}/template`)
             .reply(500, ServerError);
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -1920,7 +2147,7 @@ describe('sendCredential', () => {
 
     it('should send credential DID', async () => {
         nock(KeymasterURL)
-            .post(`${Endpoints.credentials_issued}/${mockCredential}/send`)
+            .post(`${Endpoints.credentials_issued}/${encodeURIComponent(mockCredential)}/send`)
             .reply(200, { did: mockNotice });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -1931,7 +2158,7 @@ describe('sendCredential', () => {
 
     it('should throw exception on sendCredential server error', async () => {
         nock(KeymasterURL)
-            .post(`${Endpoints.credentials_issued}/${mockCredential}/send`)
+            .post(`${Endpoints.credentials_issued}/${encodeURIComponent(mockCredential)}/send`)
             .reply(500, ServerError);
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -1983,10 +2210,11 @@ describe('listCredentials', () => {
     it('should list credentials', async () => {
         nock(KeymasterURL)
             .get(Endpoints.credentials_held)
+            .query({ id: 'Alice' })
             .reply(200, { held: mockCredentials });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
-        const credentials = await keymaster.listCredentials();
+        const credentials = await keymaster.listCredentials('Alice');
 
         expect(credentials).toStrictEqual(mockCredentials);
     });
@@ -2170,10 +2398,11 @@ describe('listIssued', () => {
     it('should list issued credentials', async () => {
         nock(KeymasterURL)
             .get(Endpoints.credentials_issued)
+            .query({ issuer: 'Alice' })
             .reply(200, { issued: mockCredentials });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
-        const issued = await keymaster.listIssued();
+        const issued = await keymaster.listIssued('Alice');
 
         expect(issued).toStrictEqual(mockCredentials);
     });
@@ -2528,7 +2757,7 @@ describe('updateImage', () => {
 
     it('should create an image asset', async () => {
         nock(KeymasterURL)
-            .put(`${Endpoints.images}/${mockDID}`)
+            .put(`${Endpoints.images}/${encodeURIComponent(mockDID)}`)
             .reply(200, { ok: true });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -2539,7 +2768,7 @@ describe('updateImage', () => {
 
     it('should throw exception on updateImage server error', async () => {
         nock(KeymasterURL)
-            .put(`${Endpoints.images}/${mockDID}`)
+            .put(`${Endpoints.images}/${encodeURIComponent(mockDID)}`)
             .reply(500, ServerError);
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -2655,7 +2884,7 @@ describe('updateDocument', () => {
 
     it('should update a document asset', async () => {
         nock(KeymasterURL)
-            .put(`${Endpoints.documents}/${mockDID}`)
+            .put(`${Endpoints.documents}/${encodeURIComponent(mockDID)}`)
             .reply(200, { ok: true });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -2666,7 +2895,7 @@ describe('updateDocument', () => {
 
     it('should throw exception on updateDocument server error', async () => {
         nock(KeymasterURL)
-            .put(`${Endpoints.documents}/${mockDID}`)
+            .put(`${Endpoints.documents}/${encodeURIComponent(mockDID)}`)
             .reply(500, ServerError);
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -2889,7 +3118,7 @@ describe('removeGroupVaultMember', () => {
 
     it('should remove vault member', async () => {
         nock(KeymasterURL)
-            .delete(`${Endpoints.groupVaults}/${mockVaultId}/members/${mockMember}`)
+            .delete(`${Endpoints.groupVaults}/${mockVaultId}/members/${encodeURIComponent(mockMember)}`)
             .reply(200, { ok: true });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -2900,7 +3129,7 @@ describe('removeGroupVaultMember', () => {
 
     it('should throw exception on removeGroupVaultMember server error', async () => {
         nock(KeymasterURL)
-            .delete(`${Endpoints.groupVaults}/${mockVaultId}/members/${mockMember}`)
+            .delete(`${Endpoints.groupVaults}/${mockVaultId}/members/${encodeURIComponent(mockMember)}`)
             .reply(500, ServerError);
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -3161,7 +3390,7 @@ describe('createDmail', () => {
 describe('updateDmail', () => {
     it('should update dmail DID', async () => {
         nock(KeymasterURL)
-            .put(`${Endpoints.dmail}/${mockDmailId}`)
+            .put(`${Endpoints.dmail}/${encodeURIComponent(mockDmailId)}`)
             .reply(200, { ok: true });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -3172,7 +3401,7 @@ describe('updateDmail', () => {
 
     it('should throw exception on updateDmail server error', async () => {
         nock(KeymasterURL)
-            .put(`${Endpoints.dmail}/${mockDmailId}`)
+            .put(`${Endpoints.dmail}/${encodeURIComponent(mockDmailId)}`)
             .reply(500, ServerError);
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -3192,7 +3421,7 @@ describe('sendDmail', () => {
 
     it('should send dmail DID', async () => {
         nock(KeymasterURL)
-            .post(`${Endpoints.dmail}/${mockDmailId}/send`)
+            .post(`${Endpoints.dmail}/${encodeURIComponent(mockDmailId)}/send`)
             .reply(200, { did: mockNotice });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -3203,7 +3432,7 @@ describe('sendDmail', () => {
 
     it('should throw exception on sendDmail server error', async () => {
         nock(KeymasterURL)
-            .post(`${Endpoints.dmail}/${mockDmailId}/send`)
+            .post(`${Endpoints.dmail}/${encodeURIComponent(mockDmailId)}/send`)
             .reply(500, ServerError);
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -3221,7 +3450,7 @@ describe('sendDmail', () => {
 describe('fileDmail', () => {
     it('should file dmail DID', async () => {
         nock(KeymasterURL)
-            .post(`${Endpoints.dmail}/${mockDmailId}/file`)
+            .post(`${Endpoints.dmail}/${encodeURIComponent(mockDmailId)}/file`)
             .reply(200, { ok: true });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -3232,7 +3461,7 @@ describe('fileDmail', () => {
 
     it('should throw exception on fileDmail server error', async () => {
         nock(KeymasterURL)
-            .post(`${Endpoints.dmail}/${mockDmailId}/file`)
+            .post(`${Endpoints.dmail}/${encodeURIComponent(mockDmailId)}/file`)
             .reply(500, ServerError);
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -3250,7 +3479,7 @@ describe('fileDmail', () => {
 describe('removeDmail', () => {
     it('should remove dmail DID', async () => {
         nock(KeymasterURL)
-            .delete(`${Endpoints.dmail}/${mockDmailId}`)
+            .delete(`${Endpoints.dmail}/${encodeURIComponent(mockDmailId)}`)
             .reply(200, { ok: true });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -3261,7 +3490,7 @@ describe('removeDmail', () => {
 
     it('should throw exception on removeDmail server error', async () => {
         nock(KeymasterURL)
-            .delete(`${Endpoints.dmail}/${mockDmailId}`)
+            .delete(`${Endpoints.dmail}/${encodeURIComponent(mockDmailId)}`)
             .reply(500, ServerError);
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -3473,7 +3702,7 @@ describe('importDmail', () => {
 describe('getDmailMessage', () => {
     it('should get message', async () => {
         nock(KeymasterURL)
-            .get(`${Endpoints.dmail}/${mockDmailId}`)
+            .get(`${Endpoints.dmail}/${encodeURIComponent(mockDmailId)}`)
             .reply(200, { message: mockDmail });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -3485,7 +3714,7 @@ describe('getDmailMessage', () => {
     it('should get message at a version time', async () => {
         const options = { versionTime: '2026-06-01T00:00:00.000Z' };
         nock(KeymasterURL)
-            .get(`${Endpoints.dmail}/${mockDmailId}`)
+            .get(`${Endpoints.dmail}/${encodeURIComponent(mockDmailId)}`)
             .query(options)
             .reply(200, { message: mockDmail });
 
@@ -3497,7 +3726,7 @@ describe('getDmailMessage', () => {
 
     it('should throw exception on getDmailMessage server error', async () => {
         nock(KeymasterURL)
-            .get(`${Endpoints.dmail}/${mockDmailId}`)
+            .get(`${Endpoints.dmail}/${encodeURIComponent(mockDmailId)}`)
             .reply(500, ServerError);
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -3578,7 +3807,7 @@ describe('createNotice', () => {
 describe('updateNotice', () => {
     it('should update notice DID', async () => {
         nock(KeymasterURL)
-            .put(`${Endpoints.notices}/${mockNoticeId}`)
+            .put(`${Endpoints.notices}/${encodeURIComponent(mockNoticeId)}`)
             .reply(200, { ok: true });
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });
@@ -3589,7 +3818,7 @@ describe('updateNotice', () => {
 
     it('should throw exception on updateNotice server error', async () => {
         nock(KeymasterURL)
-            .put(`${Endpoints.notices}/${mockNoticeId}`)
+            .put(`${Endpoints.notices}/${encodeURIComponent(mockNoticeId)}`)
             .reply(500, ServerError);
 
         const keymaster = await KeymasterClient.create({ url: KeymasterURL });

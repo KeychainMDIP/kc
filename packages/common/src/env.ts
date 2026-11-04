@@ -122,5 +122,9 @@ export function loadEnv(options: LoadEnvOptions = {}): string[] {
         loadedFiles.push(envFile);
     }
 
+    if (process.env.KC_POSTGRES_PASSWORD !== undefined) {
+        process.env.PGPASSWORD ??= process.env.KC_POSTGRES_PASSWORD;
+    }
+
     return loadedFiles;
 }

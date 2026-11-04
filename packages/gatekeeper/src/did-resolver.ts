@@ -27,6 +27,10 @@ export const ValidRegistries = [
 
 const cipher = new CipherNode();
 
+export function isValidDIDPrefix(prefix: unknown): prefix is string {
+    return typeof prefix === 'string' && /^did:[a-z0-9]+$/.test(prefix);
+}
+
 export async function generateOperationCID(operation: unknown): Promise<string> {
     const canonical = cipher.canonicalizeJSON(operation);
     return generateCID(JSON.parse(canonical));
@@ -39,6 +43,10 @@ export async function generateDIDFromOperation(
         generateCID?: GenerateCID;
     }
 ): Promise<string> {
+    if (operation.mdip?.prefix !== undefined && !isValidDIDPrefix(operation.mdip.prefix)) {
+        throw new InvalidOperationError(`mdip.prefix=${operation.mdip.prefix}`);
+    }
+
     const generateOperationCIDForDID = options?.generateCID ?? generateOperationCID;
     const cid = await generateOperationCIDForDID(operation);
     const prefix = operation.mdip?.prefix || options?.didPrefix || 'did:test';
@@ -183,14 +191,19 @@ export async function resolveDIDFromEvents(params: ResolveDIDFromEventsParams): 
         generateDID: generateDIDForDoc,
     });
 
-    if (versionTime && doc.mdip?.created && new Date(doc.mdip.created) > new Date(versionTime)) {
-        // TBD What to return if DID was created after specified time?
+    if (versionTime && doc.didDocumentMetadata?.created &&
+        new Date(doc.didDocumentMetadata.created) > new Date(versionTime)) {
+        return notFoundDIDDocument();
     }
 
     const created = generateStandardDatetime(doc.didDocumentMetadata?.created);
     const canonicalId = doc.didDocumentMetadata?.canonicalId;
     let versionNum = 1;
-    let confirmed = true;
+    let confirmed = doc.mdip?.registry === anchor.registry;
+
+    if (confirm && !confirmed) {
+        return notFoundDIDDocument();
+    }
 
     for (const { time, operation, registry, blockchain, opid } of events) {
         const versionId = opid || await generateOperationCIDForVersion(operation);

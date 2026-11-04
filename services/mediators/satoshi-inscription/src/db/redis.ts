@@ -25,7 +25,7 @@ export default class JsonRedis extends AbstractDB {
 
     async disconnect(): Promise<void> {
         if (this.redis) {
-            await this.redis.quit();
+            this.redis.disconnect();
             this.redis = undefined;
         }
     }

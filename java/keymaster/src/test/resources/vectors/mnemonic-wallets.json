@@ -1,0 +1,32 @@
+[
+  {
+    "mnemonic": "abandon  abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+    "xpriv": "xprv9s21ZrQH143K27YXzDcZfRitFt6TfVAiS3mr79B6V5a12fksdBGWne7GKdi1c1L7GZz3NWJQc8ogQPMwhTBXKZJSF67Buk5MfV5MVTZtHZB",
+    "wallet": {
+      "version": 1,
+      "seed": {
+        "mnemonicEnc": {
+          "salt": "7i5M/040SKhEwuTtub+oAQ==",
+          "iv": "NpFXtZV654Z06gUC",
+          "data": "kU44l2XRgAWtDJHX5NRAkmtyNaDgDCyarebrTgtvLo59p34kAF9eJsehi1PDJpCCejND4xEyo8IW/nleEC9kRNwXzLaNzXS9n4fD6n0kXfEdJtuvTAMz6o9lyDXYEPQbnwCmgvU16A8vJFqzfWI="
+        }
+      },
+      "enc": "GQa1wn4qwP9ewV48eM9DoWt7lLz1caemZ9Yq8j1S0LP3H3CeoY8Nt2V7eom9WvyfwDuiYKoNoj_wxqgWoek"
+    }
+  },
+  {
+    "mnemonic": "ａｂａｎｄｏｎ abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+    "xpriv": "xprv9s21ZrQH143K3GJpoapnV8SFfukcVBSfeCficPSGfubmSFDxo1kuHnLisriDvSnRRuL2Qrg5ggqHKNVpxR86QEC8w35uxmGoggxtQTPvfUu",
+    "wallet": {
+      "version": 1,
+      "seed": {
+        "mnemonicEnc": {
+          "salt": "MHDYGwbHW0SNzDTRsKa4/Q==",
+          "iv": "4+xkIEEtkTN7Nw9W",
+          "data": "XN5x9w0eKmpMBaxSA+dM5Q6LzFhA+rBVCMCNWKdZsM4gh7G68kLIYl6KSml+4JcWMZoul9bT/Rj8sEICXkLQQMiS08OwLWbia8JtNQgKfnIHw/OHjSppivcK01NR8Vr+ykSzCW+Ykm7JVJud+iocazPADXC9SeahHMDx"
+        }
+      },
+      "enc": "LhO4aseLvRkgm9HvembVOnXe9xFJ48JbwzXkf9tIbjrCqJCzwpXV4ptEYa6fUA0HggoWJi7_GnFOMLK8tDs"
+    }
+  }
+]

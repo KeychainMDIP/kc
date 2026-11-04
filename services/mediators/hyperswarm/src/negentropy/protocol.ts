@@ -1,18 +1,38 @@
 import { Operation } from '@mdip/gatekeeper/types';
+import type { SyncStoreCursor } from '../db/types.js';
+import type { ReconciliationWindow } from './adapter.js';
 
-export type SyncMode = 'legacy' | 'negentropy';
+export type SyncMode = 'negentropy';
 export type NegentropyFrameEncoding = 'utf8' | 'base64';
 export const NEG_SYNC_ID_RE = /^[a-f0-9]{64}$/i;
 
 export interface PeerCapabilities {
     negentropy?: boolean;
     negentropyVersion?: number;
+    orderedCatchup?: boolean;
+    orderedCatchupVersion?: number;
+    orderedCatchupReady?: boolean;
+    operationCount?: number;
+    orderedOperationCount?: number;
+    latestSignedTimestamp?: number;
+}
+
+export interface OrderedCatchupCapabilityOptions {
+    version: number;
+    operationCount: number;
+    orderedOperationCount: number;
 }
 
 export interface NegotiatedPeerCapabilities {
     advertised: boolean;
     negentropy: boolean;
     version: number | null;
+    orderedCatchup: boolean;
+    orderedCatchupVersion: number | null;
+    orderedCatchupReady: boolean;
+    operationCount: number | null;
+    orderedOperationCount: number | null;
+    latestSignedTimestamp: number | null;
 }
 
 export type ConnectSyncModeReason =
@@ -20,7 +40,7 @@ export type ConnectSyncModeReason =
     | 'missing_capabilities'
     | 'negentropy_disabled'
     | 'version_mismatch'
-    | 'legacy_disabled';
+    | 'transport_framing_unsupported';
 
 export interface ConnectSyncModeDecision {
     mode: SyncMode | null;
@@ -32,21 +52,115 @@ export interface NegentropyFrame {
     data: string;
 }
 
+export interface NegentropyWindowPayload {
+    name: string;
+    fromTs: number;
+    toTs: number;
+    maxRecords: number;
+    order: number;
+    after?: {
+        ts: number;
+        id: string;
+    };
+}
+
+export function parseRemoteWindow(
+    raw: NegentropyWindowPayload,
+    maxRecordsLimit: number,
+): ReconciliationWindow | null {
+    if (!raw || typeof raw !== 'object') {
+        return null;
+    }
+
+    const fromTs = Number(raw.fromTs);
+    const toTs = Number(raw.toTs);
+    const order = Number(raw.order);
+    const remoteMaxRecords = Number(raw.maxRecords);
+    const maxRecords = Number.isInteger(remoteMaxRecords) && remoteMaxRecords > 0
+        ? Math.min(remoteMaxRecords, maxRecordsLimit)
+        : maxRecordsLimit;
+
+    if (!Number.isFinite(fromTs) || !Number.isFinite(toTs) || fromTs > toTs) {
+        return null;
+    }
+
+    if (!Number.isInteger(order) || order < 0) {
+        return null;
+    }
+
+    let after: SyncStoreCursor | undefined;
+    if (raw.after !== undefined) {
+        const afterTs = Number(raw.after?.ts);
+        const afterId = String(raw.after?.id ?? '').toLowerCase();
+
+        if (!Number.isInteger(afterTs) || !NEG_SYNC_ID_RE.test(afterId)) {
+            return null;
+        }
+
+        after = {
+            ts: afterTs,
+            id: afterId,
+        };
+    }
+
+    return {
+        name: String(raw.name || `window_${order}`),
+        fromTs,
+        toTs,
+        order,
+        maxRecords,
+        after,
+    };
+}
+
 export function normalizePeerCapabilities(capabilities?: PeerCapabilities): NegotiatedPeerCapabilities {
     if (!capabilities) {
         return {
             advertised: false,
             negentropy: false,
             version: null,
+            orderedCatchup: false,
+            orderedCatchupVersion: null,
+            orderedCatchupReady: false,
+            operationCount: null,
+            orderedOperationCount: null,
+            latestSignedTimestamp: null,
         };
     }
 
     return {
         advertised: true,
         negentropy: capabilities.negentropy === true,
-        version: typeof capabilities.negentropyVersion === 'number'
-            ? capabilities.negentropyVersion
-            : null,
+        version: normalizeNonNegativeInteger(capabilities.negentropyVersion),
+        orderedCatchup: capabilities.orderedCatchup === true,
+        orderedCatchupVersion: normalizeNonNegativeInteger(capabilities.orderedCatchupVersion),
+        orderedCatchupReady: capabilities.orderedCatchupReady === true,
+        operationCount: normalizeNonNegativeInteger(capabilities.operationCount),
+        orderedOperationCount: normalizeNonNegativeInteger(capabilities.orderedOperationCount),
+        latestSignedTimestamp: normalizeNonNegativeInteger(capabilities.latestSignedTimestamp),
+    };
+}
+
+function normalizeNonNegativeInteger(value: unknown): number | null {
+    return Number.isSafeInteger(value) && (value as number) >= 0
+        ? (value as number)
+        : null;
+}
+
+export function buildOrderedCatchupCapabilities(
+    options: OrderedCatchupCapabilityOptions,
+): Pick<
+    PeerCapabilities,
+    'orderedCatchup' | 'orderedCatchupVersion' | 'orderedCatchupReady' | 'operationCount' | 'orderedOperationCount'
+> {
+    const operationCount = normalizeNonNegativeInteger(options.operationCount) ?? 0;
+    const orderedOperationCount = normalizeNonNegativeInteger(options.orderedOperationCount) ?? 0;
+    return {
+        orderedCatchup: true,
+        orderedCatchupVersion: options.version,
+        orderedCatchupReady: operationCount > 0 && operationCount === orderedOperationCount,
+        operationCount,
+        orderedOperationCount,
     };
 }
 
@@ -69,36 +183,35 @@ export function chooseSyncMode(
 
     return supportsPeerNegentropy(capabilities, requiredVersion)
         ? 'negentropy'
-        : 'legacy';
+        : null;
 }
 
 export function chooseConnectSyncMode(
     capabilities: NegotiatedPeerCapabilities,
     requiredVersion: number,
-    legacySyncEnabled: boolean,
-    negentropyEnabled = true,
+    transportFramingSupported = true,
 ): ConnectSyncModeDecision {
-    if (negentropyEnabled && supportsPeerNegentropy(capabilities, requiredVersion)) {
+    const unavailable = (reason: ConnectSyncModeReason): ConnectSyncModeDecision => ({
+        mode: null,
+        reason,
+    });
+
+    if (supportsPeerNegentropy(capabilities, requiredVersion)) {
+        if (!transportFramingSupported) {
+            return unavailable('transport_framing_unsupported');
+        }
         return { mode: 'negentropy', reason: 'negentropy_supported' };
     }
 
-    if (!legacySyncEnabled) {
-        return { mode: null, reason: 'legacy_disabled' };
-    }
-
-    if (!negentropyEnabled) {
-        return { mode: 'legacy', reason: 'negentropy_disabled' };
-    }
-
     if (!capabilities.advertised) {
-        return { mode: 'legacy', reason: 'missing_capabilities' };
+        return unavailable('missing_capabilities');
     }
 
     if (!capabilities.negentropy) {
-        return { mode: 'legacy', reason: 'negentropy_disabled' };
+        return unavailable('negentropy_disabled');
     }
 
-    return { mode: 'legacy', reason: 'version_mismatch' };
+    return unavailable('version_mismatch');
 }
 
 export function encodeNegentropyFrame(frame: string | Uint8Array): NegentropyFrame {

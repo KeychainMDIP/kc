@@ -2,6 +2,8 @@ import {
     GatekeeperEvent,
     IndexChangeRecord,
     IndexExportDIDRecord,
+    IndexExportOperationRecord,
+    IndexExportRemovedOperationRecord,
     IndexExportResponse,
     IndexExportChangesOptions,
     IndexExportSnapshotOptions,
@@ -30,6 +32,12 @@ export function parseIndexExportCursor(cursor?: string | null): number {
     }
 
     return parsed;
+}
+
+function getOperationHash(event: GatekeeperEvent): string | undefined {
+    return typeof event.operation?.signature?.hash === 'string'
+        ? event.operation.signature.hash
+        : undefined;
 }
 
 function getDidFromEvents(key: string, events: GatekeeperEvent[]): string {
@@ -62,7 +70,8 @@ export async function buildIndexSnapshotResponseFromPageKeys(
     keys: string[],
     getEvents: (did: string) => Promise<GatekeeperEvent[]>,
     options: IndexExportSnapshotOptions = {},
-    checkpointCursor: string | null
+    checkpointCursor: string | null,
+    indexEpoch: string
 ): Promise<IndexExportResponse> {
     const limit = normalizeIndexExportLimit(options.limit);
     const pageKeys = keys.slice(0, limit);
@@ -78,6 +87,7 @@ export async function buildIndexSnapshotResponseFromPageKeys(
 
     return {
         mode: 'snapshot',
+        indexEpoch,
         cursor: pageKeys.length > 0
             ? pageKeys[pageKeys.length - 1]
             : options.cursor ?? null,
@@ -92,11 +102,16 @@ export async function exportIndexSnapshotFromAllKeysForLocalDb(
     getAllKeys: () => Promise<string[]>,
     getEvents: (did: string) => Promise<GatekeeperEvent[]>,
     options: IndexExportSnapshotOptions = {},
-    getCheckpointCursor?: () => Promise<string | null>
+    getCheckpointCursor?: () => Promise<string | null>,
+    getIndexEpoch?: () => Promise<string>
 ): Promise<IndexExportResponse> {
     const limit = normalizeIndexExportLimit(options.limit);
     const cursor = options.cursor ?? null;
     const checkpointCursor = options.checkpointCursor ?? (getCheckpointCursor ? await getCheckpointCursor() : null);
+    if (!getIndexEpoch) {
+        throw new Error('Index export response missing indexEpoch');
+    }
+    const indexEpoch = await getIndexEpoch();
     const keys = await getAllKeys();
     const records: IndexExportDIDRecord[] = [];
 
@@ -120,6 +135,7 @@ export async function exportIndexSnapshotFromAllKeysForLocalDb(
 
     return {
         mode: 'snapshot',
+        indexEpoch,
         cursor: nextCursor,
         checkpointCursor,
         hasMore: filtered.length > limit,
@@ -132,17 +148,42 @@ export async function buildIndexChangesResponse(
     changes: IndexChangeRecord[],
     hasMore: boolean,
     options: IndexExportChangesOptions = {},
-    getEvents: (did: string) => Promise<GatekeeperEvent[]>
+    checkpointCursor: string | null,
+    getEvents: (did: string) => Promise<GatekeeperEvent[]>,
+    indexEpoch: string
 ): Promise<IndexExportResponse> {
     const afterSeq = parseIndexExportCursor(options.cursor);
     const cursor = changes.length > 0
         ? changes[changes.length - 1].seq.toString()
         : afterSeq.toString();
+    const operations: IndexExportOperationRecord[] | undefined = options.includeOperations
+        ? changes
+            .filter(change => change.kind === 'did' && change.did && change.event && !change.removed)
+            .map(change => ({
+                seq: change.seq,
+                did: change.did!,
+                event: change.event!,
+                operationHash: getOperationHash(change.event!),
+            }))
+        : undefined;
+    const removedOperations: IndexExportRemovedOperationRecord[] | undefined = options.includeOperations
+        ? changes.flatMap(change => {
+            const operationHash = change.event && getOperationHash(change.event);
+            return change.kind === 'did' && change.did && change.removed && operationHash
+                ? [{
+                    seq: change.seq,
+                    did: change.did,
+                    operationHash: operationHash.toLowerCase(),
+                }]
+                : [];
+        })
+        : undefined;
     const didChanges = new Map<string, IndexChangeRecord>();
     const blockChanges = new Map<string, IndexChangeRecord>();
 
     for (const change of changes) {
         if (change.kind === 'did' && change.did) {
+            didChanges.delete(change.did);
             didChanges.set(change.did, change);
         }
 
@@ -151,11 +192,12 @@ export async function buildIndexChangesResponse(
         }
     }
 
-    const dids: IndexExportDIDRecord[] = [];
+    const dids = new Map<string, IndexExportDIDRecord>();
+    const eventsByDid = new Map<string, GatekeeperEvent[]>();
 
     for (const [did, change] of didChanges.entries()) {
         if (change.removed) {
-            dids.push({
+            dids.set(did, {
                 did,
                 events: [],
                 removed: true,
@@ -163,10 +205,11 @@ export async function buildIndexChangesResponse(
             continue;
         }
 
-        dids.push({
-            did,
-            events: await getEvents(did),
-        });
+        const events = eventsByDid.get(did) ?? await getEvents(did);
+        eventsByDid.set(did, events);
+        const canonicalDid = getDidFromEvents(did, events);
+        dids.delete(canonicalDid);
+        dids.set(canonicalDid, { did: canonicalDid, events });
     }
 
     const blocks = Array.from(blockChanges.values())
@@ -177,11 +220,22 @@ export async function buildIndexChangesResponse(
             removed: change.removed,
         }));
 
-    return {
+    const response: IndexExportResponse = {
         mode: 'changes',
+        indexEpoch,
         cursor,
+        checkpointCursor,
         hasMore,
-        dids,
+        dids: Array.from(dids.values()),
         blocks,
     };
+
+    if (operations) {
+        response.operations = operations;
+        if (removedOperations && removedOperations.length > 0) {
+            response.removedOperations = removedOperations;
+        }
+    }
+
+    return response;
 }

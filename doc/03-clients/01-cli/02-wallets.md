@@ -15,14 +15,15 @@ Creating a wallet generates a unique seed that is used to derive a hierarchical-
 > [!NOTE]
 > `kc create-wallet` does nothing when you already have a wallet, like the one created by `create-id`.
 
-```json
+```console
 $ kc create-wallet
 {
+    "version": 1,
     "seed": {
-        "mnemonic": "P6f40acil4qA1oIHhoK_qNfBPjvdiTn8djxLtcIGMmu5ojQ0g-fAGLLn33Ix5TavvQTzvc6kXax509bQBZZiXjb7ibTToGyUn0oPeBvSV0RcvHOSXWRmATqIqd7dpQrdXqWAwVuxeQ3vy95e2NU",
-        "hdkey": {
-            "xpriv": "xprv9s21ZrQH143K2x2kGfQ7tgaVHZYQkQVQKbuHgQ4wG7qjfsBoMQD35Ly6rupdEDED1ZBWKtRGWnjwcf9Wxbyvwn4idCPe1kayCrBoLAp8Hvb",
-            "xpub": "xpub661MyMwAqRbcFS7DNgw8FpXDqbNu9sDFgpptUnUYpTNiYfWwtwXHd9HaiD1pEfLtMGVBKpCR9D6Vtriqkv7co4W72stnzpLdxPRmuLWJUHS"
+        "mnemonicEnc": {
+            "salt": "...",
+            "iv": "...",
+            "data": "..."
         }
     },
     "counter": 0,
@@ -30,16 +31,17 @@ $ kc create-wallet
 }
 ```
 
-Use the command `show-wallet` to view the contents of your wallet; initially, the wallet is empty, but we will see private content added to the wallet as we create MDIP identities and operations:
+Use the command `show-wallet` to view the contents of your wallet. Initially, the wallet is empty, but we will see private content added to the wallet as we create MDIP identities and operations:
 
-```json
+```console
 $ kc show-wallet
 {
+    "version": 1,
     "seed": {
-        "mnemonic": "BeSI1tnY5TtWweCdEHESV98MXc8CUCu0pFNZ1tLR-0XaP9PvtCcbcUrGfwwIy4qakOkL0hT88xl4Ko3SXbL3U6pEBY4rcROqEwnUuKUN2z9Dx4nKGNz29SDy1GaLV14NbYc1AEa01TEULJr1xzD5",
-        "hdkey": {
-            "xpriv": "xprv9s21ZrQH143K3MtcqnFrvMQKXVjV37BpYtZo47Vpy9xt44godPRrhcHgrejDPhBCnBk2K8z6CRzPGMDmeDmQGeuDsFwkmE14mrTEv4R33xy",
-            "xpub": "xpub661MyMwAqRbcFqy5wonsHVM45XZySZufv7VPrVuSXVVrvs1xAvk7FQcAhxLja5tXXhAv3nPqqftr3E7TmfbUKRXohhHb53N7AiN1iQvwa8p"
+        "mnemonicEnc": {
+            "salt": "...",
+            "iv": "...",
+            "data": "..."
         }
     },
     "counter": 0,
@@ -49,9 +51,7 @@ $ kc show-wallet
 
 ## Backing Up and Recovering a Wallet
 
-To recover a wallet from a backup, you need two pieces of information:
-- the seed phrase, aka mnemonic,
-- the backup DID.
+To recover the latest DID backup, you need the seed phrase, also called the mnemonic. Keymaster derives a seed-bank DID from that phrase and follows the seed bank's link to the latest wallet backup. Keep the backup DID returned below as a record of the backup, even though `recover-wallet-did` does not require it as an argument.
 
 The mnemonic consists of 12 short words (BIP-39) that are used to generate the wallet's private keys:
 
@@ -63,20 +63,21 @@ know soon mind pen polar pulse patient salmon wage friend equip rotate
 Creating a wallet backup encrypts the current state of a user wallet content in a DID Document:
 
 ```sh 
-$ kc backup-wallet
-did:mdip:test:z3v8Auairrc7XjSdoA1QvuytZXmGdmjcaFsPb2xKjM6TzowPKRn
+$ kc backup-wallet-did
+did:test:z3v8Auairrc7XjSdoA1QvuytZXmGdmjcaFsPb2xKjM6TzowPKRn
 ```
 
 If you lose the wallet file, you can regenerate the private keys from the mnemonic:
 
-```json
+```console
 $ kc import-wallet "know soon mind pen polar pulse patient salmon wage friend equip rotate"
 {
+    "version": 1,
     "seed": {
-        "mnemonic": "8PnD0nzyjd9TphttasCFXg_HNDntYdQlx_JHG6Y8K-U7nZUmkxeB4BLYv8xA9af-r6OChSul1Lp6gRPve7qnU_pOVTOE9c7qew-X7Nv_Vd6by-3IxI03ryHkgNjNTOxHlA6iae0D9wA6sFak",
-        "hdkey": {
-            "xpriv": "xprv9s21ZrQH143K4Yd3NBDr5kALF4foaGBbiocmBv9UuMeet9urHgi1LKaB51ud1SrRtfxhtbRTxjjTQMQei1BewYnBVnu3Wp5G13Ab768K7qF",
-            "xpub": "xpub661MyMwAqRbcH2hWUCkrSt74o6WHyiuT62YMzJZ6ThBdkxEzqE2Ft7tevKxzKH4xLdXpUqd32whgcTE3TJTmCgJYqoXvXn6sdaEsWAUCBbZ"
+        "mnemonicEnc": {
+            "salt": "...",
+            "iv": "...",
+            "data": "..."
         }
     },
     "counter": 0,
@@ -84,22 +85,23 @@ $ kc import-wallet "know soon mind pen polar pulse patient salmon wage friend eq
 }
 ```
 
-Once a wallet's keys are recreated from the mnemonic, you can recover its contents from a backup DID generated using the backup process above:
+Once the wallet's keys are recreated from the mnemonic, recover its contents from the latest backup linked by the seed bank:
 
-```json
-$ kc recover-wallet did:mdip:z3v8AuaXcTg74E4nWXDkX3wtZXjGjvp55z7QYixWSUHyG89qFTy
+```console
+$ kc recover-wallet-did
 {
+    "version": 1,
     "seed": {
-        "mnemonic": "P6f40acil4qA1oIHhoK_qNfBPjvdiTn8djxLtcIGMmu5ojQ0g-fAGLLn33Ix5TavvQTzvc6kXax509bQBZZiXjb7ibTToGyUn0oPeBvSV0RcvHOSXWRmATqIqd7dpQrdXqWAwVuxeQ3vy95e2NU",
-        "hdkey": {
-            "xpriv": "xprv9s21ZrQH143K2x2kGfQ7tgaVHZYQkQVQKbuHgQ4wG7qjfsBoMQD35Ly6rupdEDED1ZBWKtRGWnjwcf9Wxbyvwn4idCPe1kayCrBoLAp8Hvb",
-            "xpub": "xpub661MyMwAqRbcFS7DNgw8FpXDqbNu9sDFgpptUnUYpTNiYfWwtwXHd9HaiD1pEfLtMGVBKpCR9D6Vtriqkv7co4W72stnzpLdxPRmuLWJUHS"
+        "mnemonicEnc": {
+            "salt": "...",
+            "iv": "...",
+            "data": "..."
         }
     },
     "counter": 1,
     "ids": {
         "extropy": {
-            "did": "did:mdip:test:z3v8AuaiyHqG3KMpcoBoqvUpMrtCsGsu8iPU1oTEfcsUNxtGyt4",
+            "did": "did:test:z3v8AuaiyHqG3KMpcoBoqvUpMrtCsGsu8iPU1oTEfcsUNxtGyt4",
             "account": 0,
             "index": 0
         }
@@ -108,9 +110,4 @@ $ kc recover-wallet did:mdip:z3v8AuaXcTg74E4nWXDkX3wtZXjGjvp55z7QYixWSUHyG89qFTy
 }
 ```
 
-> [!NOTE]
-> You can also run `kc recover-wallet` Without specifying a backup DID, and `kc` will choose the most recent backup.
-
-`recover-wallet` does not overwrite the existing wallet, it only prints the contents of the backup. The output should be redirected to a temporary `wallet.json` file, which can then be copied over the existing wallet in the `./data` folder.
-
-Do not redirect or pipe the output directly to the existing `wallet.json` file, which will cause an error.
+On success, `recover-wallet-did` replaces the Keymaster service's current wallet and prints the recovered contents. Back up any wallet state that must be preserved before running it.

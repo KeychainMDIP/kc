@@ -1,4 +1,5 @@
 import { MongoClient, Db, ClientSession } from 'mongodb';
+import { randomUUID } from 'crypto';
 import { InvalidDIDError } from '@mdip/common/errors';
 import { childLogger } from '@mdip/common/logger';
 import {
@@ -10,7 +11,8 @@ import {
     IndexChangeRecord,
     IndexExportSnapshotOptions,
     IndexExportResponse,
-    IndexExportChangesOptions
+    IndexExportChangesOptions,
+    SetEventsOptions,
 } from '../types.js'
 import {
     buildIndexChangesResponse,
@@ -18,6 +20,7 @@ import {
     normalizeIndexExportLimit,
     parseIndexExportCursor
 } from './index-export.js';
+import { DB_HEALTH_TIMEOUT_MS, withHealthCheckTimeout } from './health.js';
 
 interface DidsDoc {
     id: string
@@ -29,9 +32,20 @@ interface QueueDoc {
     ops: Operation[]
 }
 
+interface DuplicateQueueDoc {
+    _id: string
+    operationBatches: Operation[][]
+    count: number
+}
+
 interface CounterDoc {
     id: string;
     value: number;
+}
+
+interface MetadataDoc {
+    id: string;
+    value: string;
 }
 
 interface MongoIndexInfo {
@@ -47,6 +61,13 @@ function isNamespaceNotFoundError(error: unknown): boolean {
             ('code' in error && error.code === 26)
             || ('codeName' in error && error.codeName === 'NamespaceNotFound')
         );
+}
+
+function isDuplicateKeyError(error: unknown): boolean {
+    return typeof error === 'object'
+        && error !== null
+        && 'code' in error
+        && error.code === 11000;
 }
 
 const MONGO_NOT_STARTED_ERROR = 'Mongo not started. Call start() first.';
@@ -83,10 +104,14 @@ export default class DbMongo implements GatekeeperDb {
             await this.verifyTransactionSupport();
             this.db = this.client.db(this.dbName);
             await this.ensureIndex('dids', { id: 1 }, { name: 'dids_id_unique', unique: true });
+            await this.ensureQueueIndex();
             await this.ensureIndex('blocks', { registry: 1, height: -1 }, { name: 'blocks_registry_height' });  // for latest and height lookups
             await this.ensureIndex('blocks', { registry: 1, hash: 1 }, { name: 'blocks_registry_hash_unique', unique: true });  // for hash lookup
             await this.ensureIndex('counters', { id: 1 }, { name: 'counters_id_unique', unique: true });
+            await this.ensureIndex('metadata', { id: 1 }, { name: 'metadata_id_unique', unique: true });
             await this.ensureIndex('index_changes', { seq: 1 }, { name: 'index_changes_seq_unique', unique: true });
+            await this.ensureIndexSeqCounter();
+            await this.ensureIndexEpoch();
         }
         catch (error) {
             await this.client.close();
@@ -104,6 +129,26 @@ export default class DbMongo implements GatekeeperDb {
         }
     }
 
+    async isReady(): Promise<boolean> {
+        if (!this.client || !this.db) {
+            return false;
+        }
+
+        try {
+            await withHealthCheckTimeout(
+                this.client.db('admin').command(
+                    { ping: 1 },
+                    { timeoutMS: DB_HEALTH_TIMEOUT_MS }
+                ),
+                'Mongo readiness check timed out'
+            );
+            return true;
+        }
+        catch {
+            return false;
+        }
+    }
+
     async resetDb(): Promise<void> {
         if (!this.db) {
             throw new Error(MONGO_NOT_STARTED_ERROR)
@@ -114,6 +159,11 @@ export default class DbMongo implements GatekeeperDb {
         await this.db.collection('blocks').deleteMany({});
         await this.db.collection('index_changes').deleteMany({});
         await this.db.collection('counters').deleteMany({});
+        await this.db.collection<MetadataDoc>('metadata').updateOne(
+            { id: 'indexEpoch' },
+            { $set: { value: randomUUID() } },
+            { upsert: true }
+        );
     }
 
     private indexKeyMatches(actual: Record<string, unknown> | undefined, expected: Record<string, 1 | -1>): boolean {
@@ -166,6 +216,119 @@ export default class DbMongo implements GatekeeperDb {
         }
 
         await collection.createIndex(key, options);
+    }
+
+    private async ensureQueueIndex(): Promise<void> {
+        try {
+            await this.ensureIndex('queue', { id: 1 }, { name: 'queue_id_unique', unique: true });
+        }
+        catch (error) {
+            if (!isDuplicateKeyError(error)) {
+                throw error;
+            }
+
+            await this.mergeDuplicateQueues();
+            await this.ensureIndex('queue', { id: 1 }, { name: 'queue_id_unique', unique: true });
+        }
+    }
+
+    private async mergeDuplicateQueues(): Promise<void> {
+        if (!this.db) {
+            throw new Error(MONGO_NOT_STARTED_ERROR);
+        }
+
+        const collection = this.db.collection<QueueDoc>('queue');
+        const duplicates = await collection.aggregate<DuplicateQueueDoc>([
+            { $sort: { _id: 1 } },
+            {
+                $group: {
+                    _id: '$id',
+                    operationBatches: { $push: '$ops' },
+                    count: { $sum: 1 },
+                }
+            },
+            { $match: { count: { $gt: 1 } } },
+        ]).toArray();
+
+        if (duplicates.length === 0) {
+            return;
+        }
+
+        await this.withTransaction(async session => {
+            for (const duplicate of duplicates) {
+                await collection.deleteMany({ id: duplicate._id }, { session });
+                await collection.insertOne({
+                    id: duplicate._id,
+                    ops: duplicate.operationBatches.flat(),
+                }, { session });
+            }
+        });
+    }
+
+    private isValidCounterValue(value: unknown): value is number {
+        return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+    }
+
+    private async getMaxIndexChangeSeq(): Promise<number> {
+        if (!this.db) {
+            throw new Error(MONGO_NOT_STARTED_ERROR);
+        }
+
+        const row = await this.db.collection<IndexChangeRecord>('index_changes')
+            .find({}, { projection: { seq: 1 } })
+            .sort({ seq: -1 })
+            .limit(1)
+            .next();
+
+        return this.isValidCounterValue(row?.seq) ? row.seq : 0;
+    }
+
+    private async ensureIndexSeqCounter(): Promise<void> {
+        if (!this.db) {
+            throw new Error(MONGO_NOT_STARTED_ERROR);
+        }
+
+        const maxSeq = await this.getMaxIndexChangeSeq();
+        const counters = this.db.collection<CounterDoc>('counters');
+        const counter = await counters.findOne({ id: 'indexSeq' });
+
+        if (this.isValidCounterValue(counter?.value) && counter.value >= maxSeq) {
+            return;
+        }
+
+        await counters.updateOne(
+            { id: 'indexSeq' },
+            { $set: { value: maxSeq } },
+            { upsert: true }
+        );
+    }
+
+    private async ensureIndexEpoch(): Promise<string> {
+        if (!this.db) {
+            throw new Error(MONGO_NOT_STARTED_ERROR);
+        }
+
+        const metadata = this.db.collection<MetadataDoc>('metadata');
+        const existing = await metadata.findOne({ id: 'indexEpoch' });
+        if (typeof existing?.value === 'string' && existing.value.length > 0) {
+            return existing.value;
+        }
+
+        const epoch = randomUUID();
+        await metadata.updateOne(
+            { id: 'indexEpoch' },
+            { $setOnInsert: { value: epoch } },
+            { upsert: true }
+        );
+
+        const saved = await metadata.findOne({ id: 'indexEpoch' });
+        return typeof saved?.value === 'string' && saved.value.length > 0
+            ? saved.value
+            : epoch;
+    }
+
+    private async getIndexEpoch(): Promise<string> {
+        return this.ensureIndexEpoch();
     }
 
     private async verifyTransactionSupport(): Promise<void> {
@@ -223,6 +386,10 @@ export default class DbMongo implements GatekeeperDb {
     }
 
     async addEvent(did: string, event: GatekeeperEvent): Promise<number> {
+        return this.addEventAndQueue(did, event, []);
+    }
+
+    async addEventAndQueue(did: string, event: GatekeeperEvent, queueRegistries: string[]): Promise<number> {
         if (!this.db) {
             throw new Error(MONGO_NOT_STARTED_ERROR)
         }
@@ -242,12 +409,23 @@ export default class DbMongo implements GatekeeperDb {
 
             // Return how many docs were modified
             const count = result.modifiedCount + (result.upsertedCount ?? 0);
-            await this.recordIndexChange({ kind: 'did', did }, session);
+            await this.recordIndexChange({
+                kind: 'did',
+                did,
+                event,
+            }, session);
+            for (const registry of queueRegistries) {
+                await this.db!.collection<QueueDoc>('queue').updateOne(
+                    { id: registry },
+                    { $push: { ops: event.operation } },
+                    { upsert: true, session }
+                );
+            }
             return count
         });
     }
 
-    async setEvents(did: string, events: GatekeeperEvent[]): Promise<void> {
+    async setEvents(did: string, events: GatekeeperEvent[], options?: SetEventsOptions): Promise<void> {
         if (!this.db) {
             throw new Error(MONGO_NOT_STARTED_ERROR)
         }
@@ -262,7 +440,23 @@ export default class DbMongo implements GatekeeperDb {
                     { $set: { events } },
                     { upsert: true, session }
                 );
-            await this.recordIndexChange({ kind: 'did', did }, session);
+            const operationEvents = options?.operationEvents ?? [];
+
+            if (operationEvents.length === 0) {
+                await this.recordIndexChange({
+                    kind: 'did',
+                    did,
+                }, session);
+                return;
+            }
+
+            for (const event of operationEvents) {
+                await this.recordIndexChange({
+                    kind: 'did',
+                    did,
+                    event,
+                }, session);
+            }
         });
     }
 
@@ -272,15 +466,9 @@ export default class DbMongo implements GatekeeperDb {
         }
 
         const id = this.splitSuffix(did);
-
-        try {
-
-            const row = await this.db.collection('dids').findOne({ id });
-            return row?.events ?? [];
-        }
-        catch {
-            return [];
-        }
+        const row = await this.db.collection<DidsDoc>('dids')
+            .findOne({ id }, { timeoutMS: DB_HEALTH_TIMEOUT_MS });
+        return row?.events ?? [];
     }
 
     async deleteEvents(did: string): Promise<number> {
@@ -291,13 +479,15 @@ export default class DbMongo implements GatekeeperDb {
         const id = this.splitSuffix(did);
 
         return this.withTransaction(async session => {
+            const row = await this.db!.collection<DidsDoc>('dids').findOne({ id }, { session });
             const result = await this.db!.collection('dids').deleteOne({ id }, { session });
             if ((result.deletedCount ?? 0) > 0) {
-                await this.recordIndexChange({
-                    kind: 'did',
-                    did,
-                    removed: true,
-                }, session);
+                if (!row || row.events.length === 0) {
+                    await this.recordIndexChange({ kind: 'did', did, removed: true }, session);
+                }
+                for (const event of row?.events ?? []) {
+                    await this.recordIndexChange({ kind: 'did', did, event, removed: true }, session);
+                }
             }
             return result.deletedCount ?? 0
         });
@@ -321,8 +511,12 @@ export default class DbMongo implements GatekeeperDb {
         const limit = normalizeIndexExportLimit(options.limit);
         const cursor = options.cursor ?? null;
         const checkpointCursor = options.checkpointCursor ?? await this.getIndexCheckpointCursor();
+        const indexEpoch = await this.getIndexEpoch();
         const docs = await this.db.collection<DidsDoc>('dids')
-            .find(cursor ? { id: { $gt: cursor } } : {}, { projection: { id: 1 } })
+            .find(
+                cursor ? { id: { $gt: cursor } } : {},
+                { projection: { id: 1 }, timeoutMS: DB_HEALTH_TIMEOUT_MS }
+            )
             .sort({ id: 1 })
             .limit(limit + 1)
             .toArray();
@@ -331,7 +525,8 @@ export default class DbMongo implements GatekeeperDb {
             docs.map(doc => doc.id),
             id => this.getEvents(id),
             options,
-            checkpointCursor
+            checkpointCursor,
+            indexEpoch
         );
     }
 
@@ -341,7 +536,7 @@ export default class DbMongo implements GatekeeperDb {
         }
 
         const row = await this.db.collection<IndexChangeRecord>('index_changes')
-            .find()
+            .find({}, { timeoutMS: DB_HEALTH_TIMEOUT_MS })
             .sort({ seq: -1 })
             .limit(1)
             .next();
@@ -357,8 +552,10 @@ export default class DbMongo implements GatekeeperDb {
         const options = _options ?? {};
         const afterSeq = parseIndexExportCursor(options.cursor);
         const limit = normalizeIndexExportLimit(options.limit);
+        const checkpointCursor = await this.getIndexCheckpointCursor();
+        const indexEpoch = await this.getIndexEpoch();
         const rows = await this.db.collection<IndexChangeRecord>('index_changes')
-            .find({ seq: { $gt: afterSeq } })
+            .find({ seq: { $gt: afterSeq } }, { timeoutMS: DB_HEALTH_TIMEOUT_MS })
             .sort({ seq: 1 })
             .limit(limit + 1)
             .toArray();
@@ -368,7 +565,9 @@ export default class DbMongo implements GatekeeperDb {
             page,
             rows.length > limit,
             options,
-            did => this.getEvents(did)
+            checkpointCursor,
+            did => this.getEvents(did),
+            indexEpoch
         );
     }
 

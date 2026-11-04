@@ -41,6 +41,25 @@ describe('createAsset', () => {
         expect(doc.didDocument!.id).toBe(dataDid);
         expect(doc.didDocument!.controller).toBe(ownerDid);
         expect(doc.didDocumentData).toStrictEqual(mockAnchor);
+        expect(doc.mdip).not.toHaveProperty('prefix');
+    });
+
+    it('should create assets with the configured DID prefix', async () => {
+        const didPrefix = 'did:mdip';
+        const customKeymaster = new Keymaster({
+            gatekeeper,
+            wallet,
+            cipher,
+            didPrefix,
+            passphrase: 'passphrase'
+        });
+        await customKeymaster.createId('Bob');
+
+        const did = await customKeymaster.createAsset({ name: 'prefixed' });
+        const doc = await customKeymaster.resolveDID(did);
+
+        expect(did.startsWith(`${didPrefix}:`)).toBe(true);
+        expect(doc.mdip!.prefix).toBe(didPrefix);
     });
 
     it('should create DID from a string anchor', async () => {

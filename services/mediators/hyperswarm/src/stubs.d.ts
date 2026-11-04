@@ -1,7 +1,3 @@
-declare module 'graceful-goodbye' {
-    export default function goodbye(handler: () => void): void;
-}
-
 declare module 'hyperswarm' {
     export interface HyperswarmConnection {
         remotePublicKey: Buffer;

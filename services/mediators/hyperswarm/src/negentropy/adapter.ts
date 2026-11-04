@@ -384,7 +384,7 @@ export default class NegentropyAdapter {
     }
 
     async getEarliestTimestamp(): Promise<number | null> {
-        const rows = await this.syncStore.iterateSorted({ limit: 1 });
+        const rows = await this.syncStore.iterateSortedKeys({ limit: 1 });
         if (rows.length === 0) {
             return null;
         }
@@ -446,7 +446,7 @@ export default class NegentropyAdapter {
         let lastCursor = cloneCursor(window.after);
 
         while (true) {
-            const rows = await this.syncStore.iterateSorted({
+            const rows = await this.syncStore.iterateSortedKeys({
                 after,
                 limit: this.iterateLimit,
                 fromTs: window.fromTs,

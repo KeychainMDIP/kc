@@ -30,7 +30,7 @@ public final class Secp256k1Sign {
 
         byte[] msg = Hex.decode(msgHashHex);
         byte[] privBytes = Base64Url.decode(privateJwk.d);
-        BigInteger d = new BigInteger(1, privBytes);
+        BigInteger d = Secp256k1Jwk.privateScalar(privBytes);
 
         ECDSASigner signer = new ECDSASigner(new HMacDSAKCalculator(new SHA256Digest()));
         signer.init(true, new ECPrivateKeyParameters(d, DOMAIN));
@@ -60,7 +60,7 @@ public final class Secp256k1Sign {
         byte[] msg = Hex.decode(msgHashHex);
         byte[] sig = Hex.decode(sigCompactHex);
         if (sig.length != 64) {
-            return false;
+            throw new IllegalArgumentException("signature must be 64 bytes");
         }
 
         byte[] rBytes = new byte[32];
@@ -71,14 +71,16 @@ public final class Secp256k1Sign {
         BigInteger r = new BigInteger(1, rBytes);
         BigInteger s = new BigInteger(1, sBytes);
 
-        ECPoint q = DOMAIN.getCurve().createPoint(
-            new BigInteger(1, Base64Url.decode(publicJwk.x)),
-            new BigInteger(1, Base64Url.decode(publicJwk.y))
-        );
-
-        ECDSASigner verifier = new ECDSASigner();
-        verifier.init(false, new ECPublicKeyParameters(q, DOMAIN));
-        return verifier.verifySignature(msg, r, s);
+        byte[] compressed = Secp256k1Jwk.toCompressed(publicJwk);
+        try {
+            if (s.compareTo(DOMAIN.getN().shiftRight(1)) > 0) return false;
+            ECPoint q = DOMAIN.getCurve().decodePoint(compressed);
+            ECDSASigner verifier = new ECDSASigner();
+            verifier.init(false, new ECPublicKeyParameters(q, DOMAIN));
+            return verifier.verifySignature(msg, r, s);
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
     }
 
     private static byte[] toFixedLength(BigInteger value) {

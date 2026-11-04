@@ -53,7 +53,9 @@ import {
 import {
     isV1WithEnc,
     isV1Decrypted,
-    isLegacyV0
+    isLegacyV0,
+    isValidIDInfo,
+    isValidWalletPayload,
 } from './db/typeGuards.js';
 import {
     Cipher,
@@ -62,6 +64,7 @@ import {
     EcdsaJwkPublic,
 } from '@mdip/cipher/types';
 import { isValidDID } from '@mdip/ipfs/utils';
+import { copyJSON } from '@mdip/common/utils';
 import { decMnemonic, encMnemonic } from "./encryption.js";
 
 const DefaultSchema = {
@@ -107,12 +110,14 @@ export default class Keymaster implements KeymasterInterface {
     private cipher: Cipher;
     private searchEngine: SearchEngine | undefined;
     private readonly defaultRegistry: string;
+    private readonly didPrefix: string | undefined;
     private readonly ephemeralRegistry: string;
     private readonly maxNameLength: number;
     private readonly maxDataLength: number;
     private _walletCache?: WalletFile;
-    private _walletMutationLock: Promise<void> = Promise.resolve();
-    private _hdkeyCache?: any;
+    private _walletLock: Promise<void> = Promise.resolve();
+    private _hdkeyCache?: ReturnType<Cipher['generateHDKey']>;
+    private _hdkeyCacheSeed?: string;
 
     constructor(options: KeymasterOptions) {
         if (!options || !options.gatekeeper || !options.gatekeeper.createDID) {
@@ -138,6 +143,7 @@ export default class Keymaster implements KeymasterInterface {
         this.searchEngine = options.search;
 
         this.defaultRegistry = options.defaultRegistry || 'hyperswarm';
+        this.didPrefix = options.didPrefix;
         this.ephemeralRegistry = 'hyperswarm';
         this.maxNameLength = options.maxNameLength || 32;
         this.maxDataLength = 8 * 1024; // 8 KB max data to store in a JSON object
@@ -147,18 +153,19 @@ export default class Keymaster implements KeymasterInterface {
         return this.gatekeeper.listRegistries();
     }
 
+    private runWalletExclusive<T>(fn: () => Promise<T>): Promise<T> {
+        const chained = this._walletLock.then(fn, fn);
+        this._walletLock = chained.then(() => undefined, () => undefined);
+        return chained;
+    }
+
     private async mutateWallet(
         mutator: (wallet: WalletFile) => void | Promise<void>
     ): Promise<void> {
-        const run = async () => {
-            // Create wallet if none and make sure _walletCache is set
-            if (!this._walletCache) {
-                await this.loadWallet();
-            }
-
-            const decrypted = this._walletCache!;
-
-            const before = JSON.stringify(decrypted);
+        return this.runWalletExclusive(async () => {
+            const wallet = await this.loadWalletUnlocked();
+            const before = JSON.stringify(wallet);
+            const decrypted: WalletFile = JSON.parse(before);
             await mutator(decrypted);
             const after = JSON.stringify(decrypted);
 
@@ -166,29 +173,29 @@ export default class Keymaster implements KeymasterInterface {
                 return;
             }
 
-            const reenc = await this.encryptWalletForStorage(decrypted);
+            const hdkey = await this.getHDKeyFromCacheOrMnemonic(decrypted);
+            const reenc = await this.encryptWalletForStorage(decrypted, hdkey);
             const ok = await this.db.saveWallet(reenc, true);
             if (!ok) {
                 throw new KeymasterError('save wallet failed');
             }
 
+            this._hdkeyCache = hdkey;
+            this._hdkeyCacheSeed = JSON.stringify(reenc.seed.mnemonicEnc);
             this._walletCache = decrypted;
-        };
-
-        const chained = this._walletMutationLock.then(run, run);
-        this._walletMutationLock = chained.catch(() => { });
-        return chained;
+        });
     }
 
-    async loadWallet(): Promise<WalletFile> {
+    private async loadWalletUnlocked(): Promise<WalletFile> {
         if (this._walletCache) {
             return this._walletCache;
         }
 
-        let stored = await this.db.loadWallet() as WalletFile | null;
+        const stored = await this.db.loadWallet() as WalletFile | null;
 
         if (!stored) {
-            stored = await this.newWallet();
+            await this.newWalletUnlocked();
+            return this._walletCache!;
         }
 
         const upgraded: WalletFile = await this.upgradeWallet(stored);
@@ -196,21 +203,38 @@ export default class Keymaster implements KeymasterInterface {
         return this._walletCache;
     }
 
-    async saveWallet(
+    async loadWallet(): Promise<WalletFile> {
+        if (this._walletCache) {
+            return this._walletCache;
+        }
+        return this.runWalletExclusive(() => this.loadWalletUnlocked());
+    }
+
+    private async saveWalletUnlocked(
         wallet: StoredWallet,
-        overwrite = true
+        overwrite: boolean
     ): Promise<boolean> {
-        let upgraded: WalletFile = await this.upgradeWallet(wallet);
-        let toStore: WalletEncFile = await this.encryptWallet(upgraded);
+        const upgraded: WalletFile = await this.upgradeWallet(wallet, false);
+        const toStore: WalletEncFile = await this.encryptWallet(upgraded);
+        const { wallet: decrypted, hdkey } = await this.decryptWalletFromStorage(toStore);
 
         const ok = await this.db.saveWallet(toStore, overwrite);
         if (ok) {
-            this._walletCache = await this.decryptWalletFromStorage(toStore);
+            this._hdkeyCache = hdkey;
+            this._hdkeyCacheSeed = JSON.stringify(toStore.seed.mnemonicEnc);
+            this._walletCache = decrypted;
         }
         return ok;
     }
 
-    async newWallet(
+    async saveWallet(
+        wallet: StoredWallet,
+        overwrite = true
+    ): Promise<boolean> {
+        return this.runWalletExclusive(() => this.saveWalletUnlocked(wallet, overwrite));
+    }
+
+    private async newWalletUnlocked(
         mnemonic?: string,
         overwrite = false
     ): Promise<WalletFile> {
@@ -219,7 +243,8 @@ export default class Keymaster implements KeymasterInterface {
                 mnemonic = this.cipher.generateMnemonic();
             }
 
-            this._hdkeyCache = this.cipher.generateHDKey(mnemonic);
+            // Validate without replacing the active wallet's cached key.
+            this.cipher.generateHDKey(mnemonic);
         } catch {
             throw new InvalidParameterError('mnemonic');
         }
@@ -232,12 +257,19 @@ export default class Keymaster implements KeymasterInterface {
             ids: {}
         };
 
-        const ok = await this.saveWallet(wallet, overwrite)
+        const ok = await this.saveWalletUnlocked(wallet, overwrite)
         if (!ok) {
             throw new KeymasterError('save wallet failed');
         }
 
         return wallet;
+    }
+
+    async newWallet(
+        mnemonic?: string,
+        overwrite = false
+    ): Promise<WalletFile> {
+        return this.runWalletExclusive(() => this.newWalletUnlocked(mnemonic, overwrite));
     }
 
     async decryptMnemonic(): Promise<string> {
@@ -331,27 +363,30 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async fixWallet(): Promise<FixWalletResult> {
+        const shouldRemove = async (did: string): Promise<boolean> => {
+            if (!isValidDID(did)) {
+                return true;
+            }
+
+            const doc = await this.resolveDID(did);
+            if (doc.didResolutionMetadata?.error) {
+                throw new KeymasterError(`DID resolution failed: ${doc.didResolutionMetadata.error}`);
+            }
+            return !!doc.didDocumentMetadata?.deactivated;
+        };
+
         let idsRemoved = 0;
         let ownedRemoved = 0;
         let heldRemoved = 0;
         let namesRemoved = 0;
 
         await this.mutateWallet(async (wallet) => {
-
             for (const name of Object.keys(wallet.ids)) {
-                let remove = false;
-                try {
-                    const doc = await this.resolveDID(wallet.ids[name].did);
-
-                    if (doc.didDocumentMetadata?.deactivated) {
-                        remove = true;
-                    }
-                } catch {
-                    remove = true;
-                }
-
-                if (remove) {
+                if (await shouldRemove(wallet.ids[name]?.did)) {
                     delete wallet.ids[name];
+                    if (wallet.current === name) {
+                        wallet.current = Object.keys(wallet.ids)[0] || '';
+                    }
                     idsRemoved++;
                 }
             }
@@ -359,18 +394,7 @@ export default class Keymaster implements KeymasterInterface {
             for (const id of Object.values(wallet.ids)) {
                 if (id.owned) {
                     for (let i = 0; i < id.owned.length; i++) {
-                        let remove = false;
-                        try {
-                            const doc = await this.resolveDID(id.owned[i]);
-
-                            if (doc.didDocumentMetadata?.deactivated) {
-                                remove = true;
-                            }
-                        } catch {
-                            remove = true;
-                        }
-
-                        if (remove) {
+                        if (await shouldRemove(id.owned[i])) {
                             id.owned.splice(i, 1);
                             i--;
                             ownedRemoved++;
@@ -380,18 +404,7 @@ export default class Keymaster implements KeymasterInterface {
 
                 if (id.held) {
                     for (let i = 0; i < id.held.length; i++) {
-                        let remove = false;
-                        try {
-                            const doc = await this.resolveDID(id.held[i]);
-
-                            if (doc.didDocumentMetadata?.deactivated) {
-                                remove = true;
-                            }
-                        } catch {
-                            remove = true;
-                        }
-
-                        if (remove) {
+                        if (await shouldRemove(id.held[i])) {
                             id.held.splice(i, 1);
                             i--;
                             heldRemoved++;
@@ -402,18 +415,7 @@ export default class Keymaster implements KeymasterInterface {
 
             if (wallet.names) {
                 for (const name of Object.keys(wallet.names)) {
-                    let remove = false;
-                    try {
-                        const doc = await this.resolveDID(wallet.names[name]);
-
-                        if (doc.didDocumentMetadata?.deactivated) {
-                            remove = true;
-                        }
-                    } catch {
-                        remove = true;
-                    }
-
-                    if (remove) {
+                    if (await shouldRemove(wallet.names[name])) {
                         delete wallet.names[name];
                         namesRemoved++;
                     }
@@ -501,6 +503,7 @@ export default class Keymaster implements KeymasterInterface {
                 version: 1,
                 type: "asset",
                 registry: registry,
+                ...(this.didPrefix ? { prefix: this.didPrefix } : {}),
             },
             controller: seedBank.didDocument?.id,
             data: { backup: backup },
@@ -531,63 +534,56 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async recoverWallet(did?: string): Promise<WalletFile> {
-        try {
+        if (!did) {
+            const seedBank = await this.resolveSeedBank();
+            if (seedBank.didDocumentData && typeof seedBank.didDocumentData === 'object' && !Array.isArray(seedBank.didDocumentData)) {
+                const data = seedBank.didDocumentData as { wallet?: string };
+                did = data.wallet;
+            }
             if (!did) {
-                const seedBank = await this.resolveSeedBank();
-                if (seedBank.didDocumentData && typeof seedBank.didDocumentData === 'object' && !Array.isArray(seedBank.didDocumentData)) {
-                    const data = seedBank.didDocumentData as { wallet?: string };
-                    did = data.wallet;
-                }
-                if (!did) {
-                    throw new InvalidParameterError('No backup DID found');
-                }
+                throw new InvalidParameterError('No backup DID found');
             }
-
-            const keypair = await this.hdKeyPair();
-            const data = await this.resolveAsset(did);
-            if (!data) {
-                throw new InvalidParameterError('No asset data found');
-            }
-
-            const castData = data as { backup?: string };
-
-            if (typeof castData.backup !== 'string') {
-                throw new InvalidParameterError('Asset "backup" is missing or not a string');
-            }
-
-            const backup = this.cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, castData.backup);
-            let wallet = JSON.parse(backup);
-
-            if (isV1Decrypted(wallet)) {
-                const mnemonic = await this.decryptMnemonic();
-                // Backup might have a different mnemonic passphase so re-encrypt
-                wallet.seed.mnemonicEnc = await encMnemonic(mnemonic, this.passphrase);
-            }
-
-            await this.mutateWallet(async (current) => {
-                // Clear all existing properties from the current wallet
-                // This ensures a clean slate before restoring the recovered wallet
-                for (const k in current) {
-                    delete current[k as keyof StoredWallet];
-                }
-
-                // Upgrade the recovered wallet to the latest version if needed
-                wallet = await this.upgradeWallet(wallet);
-
-                // Decrypt the wallet if needed
-                wallet = isV1WithEnc(wallet) ? await this.decryptWalletFromStorage(wallet) : wallet;
-
-                // Copy all properties from the recovered wallet into the cleared current wallet
-                // This effectively replaces the current wallet with the recovered one
-                Object.assign(current, wallet);
-            });
-
-            return this.loadWallet();
         }
-        catch {
-            // If we can't recover the wallet, just return the current one
-            return this.loadWallet();
+
+        const keypair = await this.hdKeyPair();
+        const data = await this.resolveAsset(did);
+        if (!data) {
+            throw new InvalidParameterError('No asset data found');
         }
+
+        const castData = data as { backup?: string };
+
+        if (typeof castData.backup !== 'string') {
+            throw new InvalidParameterError('Asset "backup" is missing or not a string');
+        }
+
+        const backup = this.cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, castData.backup);
+        let wallet = JSON.parse(backup);
+
+        if (isV1Decrypted(wallet)) {
+            const mnemonic = await this.decryptMnemonic();
+            // Backup might have a different mnemonic passphase so re-encrypt
+            wallet.seed.mnemonicEnc = await encMnemonic(mnemonic, this.passphrase);
+        }
+
+        await this.mutateWallet(async (current) => {
+            // Validate and decrypt the backup before replacing the candidate.
+            // mutateWallet performs the only recovery write.
+            wallet = await this.upgradeWallet(wallet, false);
+            wallet = await this.decryptWallet(wallet);
+
+            // Clear all existing properties from the current wallet
+            // This ensures a clean slate before restoring the recovered wallet
+            for (const k in current) {
+                delete current[k as keyof StoredWallet];
+            }
+
+            // Copy all properties from the recovered wallet into the cleared current wallet
+            // This effectively replaces the current wallet with the recovered one
+            Object.assign(current, wallet);
+        });
+
+        return this.loadWallet();
     }
 
     async listIds(): Promise<string[]> {
@@ -680,11 +676,24 @@ export default class Keymaster implements KeymasterInterface {
         return publicKeyJwk;
     }
 
+    private async resolveIdentityForCryptography(did: string, versionTime?: string): Promise<MdipDocument> {
+        try {
+            return await this.resolveDID(did, { confirm: true, versionTime });
+        }
+        catch (error) {
+            if (!(error instanceof InvalidDIDError) || error.detail !== 'unknown') {
+                throw error;
+            }
+            // The immutable create key remains usable locally while registry confirmation is pending.
+            return this.resolveDID(did, { versionSequence: 1, versionTime });
+        }
+    }
+
     async fetchKeyPair(name?: string): Promise<EcdsaJwkPair | null> {
         const wallet = await this.loadWallet();
-        const id = await this.fetchIdInfo(name);
+        const id = await this.fetchIdInfo(name, wallet);
         const hdkey = await this.getHDKeyFromCacheOrMnemonic(wallet);
-        const doc = await this.resolveDID(id.did, { confirm: true });
+        const doc = await this.resolveIdentityForCryptography(id.did);
         const confirmedPublicKeyJwk = this.getPublicKeyJwk(doc);
 
         for (let i = id.index; i >= 0; i--) {
@@ -706,6 +715,15 @@ export default class Keymaster implements KeymasterInterface {
         data: unknown,
         options: CreateAssetOptions = {}
     ): Promise<string> {
+        const owner = await this.fetchIdInfo();
+        return this.createAssetFor(data, owner.did, options);
+    }
+
+    private async createAssetFor(
+        data: unknown,
+        owner: string,
+        options: CreateAssetOptions = {}
+    ): Promise<string> {
         let { registry = this.defaultRegistry, controller, validUntil, name } = options;
 
         if (validUntil) {
@@ -725,7 +743,7 @@ export default class Keymaster implements KeymasterInterface {
             throw new InvalidParameterError('data');
         }
 
-        const id = await this.fetchIdInfo(controller);
+        const id = await this.fetchIdInfo(controller || owner);
         const block = await this.gatekeeper.getBlock(registry);
         const blockid = block?.hash;
 
@@ -737,18 +755,19 @@ export default class Keymaster implements KeymasterInterface {
                 version: 1,
                 type: "asset",
                 registry,
-                validUntil
+                validUntil,
+                ...(this.didPrefix ? { prefix: this.didPrefix } : {}),
             },
             controller: id.did,
             data,
         };
 
-        const signed = await this.addSignature(operation, controller);
+        const signed = await this.addSignature(operation, id.did);
         const did = await this.gatekeeper.createDID(signed);
 
         // Keep assets that will be garbage-collected out of the owned list
         if (!validUntil) {
-            await this.addToOwned(did);
+            await this.addToOwned(did, owner);
         }
 
         if (name) {
@@ -762,28 +781,30 @@ export default class Keymaster implements KeymasterInterface {
         id: string,
         options: CreateAssetOptions = {}
     ): Promise<string> {
+        const wallet = await this.loadWallet();
         const assetDoc = await this.resolveDID(id);
 
         if (assetDoc.mdip?.type !== 'asset') {
             throw new InvalidParameterError('id');
         }
 
+        const owner = await this.fetchIdInfo(undefined, wallet);
         const assetData = assetDoc.didDocumentData || {};
         const cloneData = { ...assetData, cloned: assetDoc.didDocument!.id };
 
-        return this.createAsset(cloneData, options);
+        return this.createAssetFor(cloneData, owner.did, options);
     }
 
-    async generateImageAsset(buffer: Buffer): Promise<ImageAsset> {
-        let metadata;
-
+    private getImageMetadata(buffer: Buffer) {
         try {
-            metadata = imageSize(buffer);
+            return imageSize(buffer);
         }
         catch {
             throw new InvalidParameterError('buffer');
         }
+    }
 
+    private async storeImageAsset(buffer: Buffer, metadata: ReturnType<typeof imageSize>): Promise<ImageAsset> {
         const cid = await this.gatekeeper.addData(buffer);
         const image: ImageAsset = {
             cid,
@@ -795,13 +816,19 @@ export default class Keymaster implements KeymasterInterface {
         return image;
     }
 
+    async generateImageAsset(buffer: Buffer): Promise<ImageAsset> {
+        return this.storeImageAsset(buffer, this.getImageMetadata(buffer));
+    }
+
     async createImage(
         buffer: Buffer,
         options: CreateAssetOptions = {}
     ): Promise<string> {
-        const image = await this.generateImageAsset(buffer);
+        const metadata = this.getImageMetadata(buffer);
+        const owner = await this.fetchIdInfo();
+        const image = await this.storeImageAsset(buffer, metadata);
 
-        return this.createAsset({ image }, options);
+        return this.createAssetFor({ image }, owner.did, options);
     }
 
     async updateImage(
@@ -884,10 +911,11 @@ export default class Keymaster implements KeymasterInterface {
         buffer: Buffer,
         options: FileAssetOptions = {}
     ): Promise<string> {
+        const owner = await this.fetchIdInfo();
         const filename = options.filename || 'document';
         const document = await this.generateFileAsset(filename, buffer);
 
-        return this.createAsset({ document }, options);
+        return this.createAssetFor({ document }, owner.did, options);
     }
 
     async updateDocument(
@@ -922,18 +950,28 @@ export default class Keymaster implements KeymasterInterface {
         receiver: string,
         options: EncryptOptions = {}
     ): Promise<string> {
+        const sender = await this.fetchIdInfo();
+        return this.encryptMessageFor(msg, receiver, sender.did, options);
+    }
+
+    private async encryptMessageFor(
+        msg: string,
+        receiver: string,
+        sender: string,
+        options: EncryptOptions = {}
+    ): Promise<string> {
         const {
             encryptForSender = true,
             includeHash = false,
         } = options;
 
-        const id = await this.fetchIdInfo();
-        const senderKeypair = await this.fetchKeyPair();
+        const id = await this.fetchIdInfo(sender);
+        const senderKeypair = await this.fetchKeyPair(id.did);
         if (!senderKeypair) {
             throw new KeymasterError('No valid sender keypair');
         }
 
-        const doc = await this.resolveDID(receiver, { confirm: true });
+        const doc = await this.resolveIdentityForCryptography(receiver);
         const receivePublicJwk = this.getPublicKeyJwk(doc);
 
         const cipher_sender = encryptForSender ? this.cipher.encryptMessage(senderKeypair.publicJwk, senderKeypair.privateJwk, msg) : null;
@@ -948,7 +986,7 @@ export default class Keymaster implements KeymasterInterface {
             cipher_receiver,
         }
 
-        return await this.createAsset({ encrypted }, options);
+        return this.createAssetFor({ encrypted }, id.did, options);
     }
 
     private async decryptWithDerivedKeys(wallet: WalletFile, id: IDInfo, senderPublicJwk: EcdsaJwkPublic, ciphertext: string): Promise<string> {
@@ -972,8 +1010,13 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async decryptMessage(did: string): Promise<string> {
-        const wallet = await this.loadWallet();
         const id = await this.fetchIdInfo();
+        return this.decryptMessageFor(did, id.did);
+    }
+
+    private async decryptMessageFor(did: string, recipient: string): Promise<string> {
+        const wallet = await this.loadWallet();
+        const id = await this.fetchIdInfo(recipient, wallet);
         const asset = await this.resolveAsset(did);
 
         if (!asset) {
@@ -987,7 +1030,7 @@ export default class Keymaster implements KeymasterInterface {
 
         const crypt = (castAsset.encrypted ? castAsset.encrypted : castAsset) as EncryptedMessage;
 
-        const doc = await this.resolveDID(crypt.sender, { confirm: true, versionTime: crypt.created });
+        const doc = await this.resolveIdentityForCryptography(crypt.sender, crypt.created);
         const senderPublicJwk = this.getPublicKeyJwk(doc);
 
         const ciphertext = (crypt.sender === id.did && crypt.cipher_sender) ? crypt.cipher_sender : crypt.cipher_receiver;
@@ -999,12 +1042,27 @@ export default class Keymaster implements KeymasterInterface {
         did: string,
         options: EncryptOptions = {}
     ): Promise<string> {
+        const sender = await this.fetchIdInfo();
+        return this.encryptJSONFor(json, did, sender.did, options);
+    }
+
+    private async encryptJSONFor(
+        json: unknown,
+        did: string,
+        sender: string,
+        options: EncryptOptions = {}
+    ): Promise<string> {
         const plaintext = JSON.stringify(json);
-        return this.encryptMessage(plaintext, did, options);
+        return this.encryptMessageFor(plaintext, did, sender, options);
     }
 
     async decryptJSON(did: string): Promise<unknown> {
-        const plaintext = await this.decryptMessage(did);
+        const recipient = await this.fetchIdInfo();
+        return this.decryptJSONFor(did, recipient.did);
+    }
+
+    private async decryptJSONFor(did: string, recipient: string): Promise<unknown> {
+        const plaintext = await this.decryptMessageFor(did, recipient);
 
         try {
             return JSON.parse(plaintext);
@@ -1024,7 +1082,7 @@ export default class Keymaster implements KeymasterInterface {
 
         // Fetches current ID if name is missing
         const id = await this.fetchIdInfo(controller);
-        const keypair = await this.fetchKeyPair(controller);
+        const keypair = await this.fetchKeyPair(id.did);
 
         if (!keypair) {
             throw new KeymasterError('addSignature: no keypair');
@@ -1085,24 +1143,33 @@ export default class Keymaster implements KeymasterInterface {
             throw new InvalidParameterError('doc.didDocument.id');
         }
 
+        const expectedPrevid = doc.didDocumentMetadata?.versionId;
         const current = await this.resolveDID(did);
-        const previd = current.didDocumentMetadata?.versionId;
+
+        if (expectedPrevid !== undefined && expectedPrevid !== current.didDocumentMetadata?.versionId) {
+            return false;
+        }
+
+        const previd = expectedPrevid ?? current.didDocumentMetadata?.versionId;
 
         // Compare the hashes of the current and updated documents without the metadata
-        delete current.didDocumentMetadata;
-        delete current.didResolutionMetadata;
+        const currentForHash = copyJSON(current);
+        const update = copyJSON(doc);
+        delete currentForHash.didDocumentMetadata;
+        delete currentForHash.didResolutionMetadata;
+        delete update.didDocumentMetadata;
+        delete update.didResolutionMetadata;
 
-        delete doc.didDocumentMetadata;
-        delete doc.didResolutionMetadata;
-
-        const currentHash = this.cipher.hashJSON(current);
-        const updateHash = this.cipher.hashJSON(doc);
+        const currentHash = this.cipher.hashJSON(currentForHash);
+        const updateHash = this.cipher.hashJSON(update);
 
         // If no change, return immediately without updating
         // Maybe add a force update option later if needed?
         if (currentHash === updateHash) {
             return true;
         }
+
+        update.didDocumentMetadata = {};
 
         const block = await this.gatekeeper.getBlock(current.mdip!.registry);
         const blockid = block?.hash;
@@ -1112,7 +1179,7 @@ export default class Keymaster implements KeymasterInterface {
             did,
             previd,
             blockid,
-            doc,
+            doc: update,
         };
 
         let controller;
@@ -1192,8 +1259,13 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async addToHeld(did: string): Promise<boolean> {
-        await this.mutateWallet((wallet) => {
-            const id = wallet.ids[wallet.current!];
+        const holder = await this.fetchIdInfo();
+        return this.addToHeldFor(did, holder.did);
+    }
+
+    private async addToHeldFor(did: string, holder: string): Promise<boolean> {
+        await this.mutateWallet(async (wallet) => {
+            const id = await this.fetchIdInfo(holder, wallet);
             const held = new Set(id.held);
             held.add(did);
             id.held = Array.from(held);
@@ -1202,9 +1274,14 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async removeFromHeld(did: string): Promise<boolean> {
+        const holder = await this.fetchIdInfo();
+        return this.removeFromHeldFor(did, holder.did);
+    }
+
+    private async removeFromHeldFor(did: string, holder: string): Promise<boolean> {
         let changed = false;
-        await this.mutateWallet((wallet) => {
-            const id = wallet.ids[wallet.current!];
+        await this.mutateWallet(async (wallet) => {
+            const id = await this.fetchIdInfo(holder, wallet);
             const held = new Set(id.held);
             if (held.delete(did)) {
                 id.held = Array.from(held);
@@ -1357,6 +1434,10 @@ export default class Keymaster implements KeymasterInterface {
 
         name = name.trim(); // Remove leading/trailing whitespace
 
+        if (name === '.' || name === '..') {
+            throw new InvalidParameterError('name cannot be "." or ".."');
+        }
+
         if (name.length > this.maxNameLength) {
             throw new InvalidParameterError(`name too long`);
         }
@@ -1367,12 +1448,17 @@ export default class Keymaster implements KeymasterInterface {
 
         const alreadyUsedError = 'name already used';
 
-        if (wallet && wallet.names && name in wallet.names) {
-            throw new InvalidParameterError(alreadyUsedError);
-        }
+        if (wallet) {
+            const storedNames = [
+                ...Object.keys(wallet.names ?? {}),
+                ...Object.keys(wallet.ids),
+            ];
 
-        if (wallet && wallet.ids && name in wallet.ids) {
-            throw new InvalidParameterError(alreadyUsedError);
+            if (name in (wallet.names ?? {})
+                || name in wallet.ids
+                || storedNames.some(storedName => storedName.trim() === name)) {
+                throw new InvalidParameterError(alreadyUsedError);
+            }
         }
 
         return name;
@@ -1384,14 +1470,20 @@ export default class Keymaster implements KeymasterInterface {
     ): Promise<string> {
         let did = '';
         await this.mutateWallet(async (wallet) => {
+            name = this.validateName(name, wallet);
             const account = wallet.counter;
             const index = 0;
             const signed = await this.createIdOperation(name, account, options);
 
+            wallet.counter += 1;
+            const reserved = await this.saveWalletUnlocked(wallet, true);
+            if (!reserved) {
+                throw new KeymasterError('save wallet failed');
+            }
+
             did = await this.gatekeeper.createDID(signed);
 
             wallet.ids[name] = { did, account, index };
-            wallet.counter += 1;
             wallet.current = name;
         });
 
@@ -1423,7 +1515,8 @@ export default class Keymaster implements KeymasterInterface {
             mdip: {
                 version: 1,
                 type: 'agent',
-                registry
+                registry,
+                ...(this.didPrefix ? { prefix: this.didPrefix } : {}),
             },
             publicJwk: keypair.publicJwk,
         };
@@ -1459,13 +1552,10 @@ export default class Keymaster implements KeymasterInterface {
         name: string
     ): Promise<boolean> {
         await this.mutateWallet((wallet) => {
-            name = this.validateName(name);
+            name = this.validateName(name, wallet);
 
             if (!(id in wallet.ids)) {
                 throw new UnknownIDError();
-            }
-            if (name in wallet.ids) {
-                throw new InvalidParameterError('name already used');
             }
 
             wallet.ids[name] = wallet.ids[id];
@@ -1481,6 +1571,7 @@ export default class Keymaster implements KeymasterInterface {
     async backupId(id?: string): Promise<boolean> {
         // Backs up current ID if id is not provided
         const wallet = await this.loadWallet();
+        const owner = await this.fetchIdInfo(undefined, wallet);
         const name = id || wallet.current;
         const idInfo = await this.fetchIdInfo(name, wallet);
         const keypair = await this.hdKeyPair();
@@ -1496,7 +1587,7 @@ export default class Keymaster implements KeymasterInterface {
             throw new InvalidParameterError('no registry found for agent DID');
         }
 
-        const vaultDid = await this.createAsset({ backup: backup }, { registry, controller: name });
+        const vaultDid = await this.createAssetFor({ backup: backup }, owner.did, { registry, controller: name });
 
         if (doc.didDocumentData) {
             const docData = doc.didDocumentData as { vault: string };
@@ -1522,18 +1613,47 @@ export default class Keymaster implements KeymasterInterface {
             }
 
             const backup = this.cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, vault.backup);
-            const data = JSON.parse(backup) as { name: string; id: IDInfo };
+            const data = JSON.parse(backup) as { name?: unknown; id?: unknown };
+            if (!data || typeof data !== 'object' || Array.isArray(data)
+                || typeof data.name !== 'string' || !isValidIDInfo(data.id)) {
+                throw new InvalidDIDError('invalid identity backup');
+            }
 
-            await this.mutateWallet((wallet) => {
-                if (wallet.ids[data.name]) {
-                    throw new KeymasterError(`${data.name} already exists in wallet`);
+            let name = data.name;
+            const id = data.id;
+            const vmethod = doc.didDocument?.verificationMethod?.[0];
+            const currentPublicKey = vmethod?.publicKeyJwk;
+
+            if (!currentPublicKey) {
+                throw new InvalidDIDError('current key cannot be reconciled with backup');
+            }
+
+            await this.mutateWallet(async (wallet) => {
+                if (wallet.ids[name]) {
+                    throw new KeymasterError(`${name} already exists in wallet`);
                 }
-                wallet.ids[data.name] = data.id;
-                wallet.current = data.name;
-                wallet.counter += 1;
+                name = this.validateName(name, wallet);
+
+                const keyId = vmethod?.id?.match(/^#key-([1-9]\d*)$/);
+                const indexedKey = Number(keyId?.[1]) - 1;
+                const currentIndex = Number.isSafeInteger(indexedKey) && indexedKey > id.index
+                    ? indexedKey
+                    : id.index;
+                const hdkey = await this.getHDKeyFromCacheOrMnemonic(wallet);
+                const path = `m/44'/0'/${id.account}'/0/${currentIndex}`;
+                const didkey = hdkey.derive(path);
+                const recoveredKey = this.cipher.generateJwk(didkey.privateKey!).publicJwk;
+                if (recoveredKey.x !== currentPublicKey.x || recoveredKey.y !== currentPublicKey.y) {
+                    throw new InvalidDIDError('current key does not belong to wallet');
+                }
+
+                id.index = currentIndex;
+                wallet.ids[name] = id;
+                wallet.current = name;
+                wallet.counter = Math.max(wallet.counter, id.account + 1);
             });
 
-            return data.name;
+            return name;
         } catch (error: any) {
             if (error.type === 'Keymaster') {
                 throw error;
@@ -1548,6 +1668,7 @@ export default class Keymaster implements KeymasterInterface {
 
         await this.mutateWallet(async (wallet) => {
             const id = wallet.ids[wallet.current!];
+            const cachedId = this._walletCache!.ids[wallet.current!];
             const nextIndex = id.index + 1;
 
             const hdkey = await this.getHDKeyFromCacheOrMnemonic(wallet);
@@ -1557,7 +1678,8 @@ export default class Keymaster implements KeymasterInterface {
 
             const doc = await this.resolveDID(id.did);
 
-            if (!doc.didDocumentMetadata?.confirmed) {
+            // The immutable create key may rotate before registry confirmation.
+            if (!doc.didDocumentMetadata?.confirmed && doc.didDocumentMetadata?.version !== '1') {
                 throw new KeymasterError('Cannot rotate keys');
             }
             if (!doc.didDocument?.verificationMethod) {
@@ -1575,6 +1697,9 @@ export default class Keymaster implements KeymasterInterface {
             }
 
             id.index = nextIndex; // persist in same mutation
+            // Gatekeeper has accepted the rotation. Keep its key accessible in
+            // memory even if the wallet save fails.
+            cachedId.index = nextIndex;
         });
 
         return ok;
@@ -1587,7 +1712,7 @@ export default class Keymaster implements KeymasterInterface {
     ): Promise<Record<string, string>> {
         const { includeIDs = false } = options;
         const wallet = await this.loadWallet();
-        const names = wallet.names || {};
+        const names = { ...wallet.names };
 
         if (includeIDs) {
             for (const [name, id] of Object.entries(wallet.ids || {})) {
@@ -1646,13 +1771,26 @@ export default class Keymaster implements KeymasterInterface {
             credential?: Record<string, unknown>;
         } = {}
     ): Promise<VerifiableCredential> {
+        const issuer = await this.fetchIdInfo();
+        return this.bindCredentialFor(schemaId, subjectId, issuer.did, options);
+    }
+
+    private async bindCredentialFor(
+        schemaId: string,
+        subjectId: string,
+        issuer: string,
+        options: {
+            validFrom?: string;
+            validUntil?: string;
+            credential?: Record<string, unknown>;
+        } = {}
+    ): Promise<VerifiableCredential> {
         let { validFrom, validUntil, credential } = options;
 
         if (!validFrom) {
             validFrom = new Date().toISOString();
         }
 
-        const id = await this.fetchIdInfo();
         const type = await this.lookupDID(schemaId);
         const subjectDID = await this.lookupDID(subjectId);
 
@@ -1667,7 +1805,7 @@ export default class Keymaster implements KeymasterInterface {
                 "https://www.w3.org/ns/credentials/examples/v2"
             ],
             type: ["VerifiableCredential", type],
-            issuer: id.did,
+            issuer,
             validFrom,
             validUntil,
             credentialSubject: {
@@ -1684,22 +1822,29 @@ export default class Keymaster implements KeymasterInterface {
         const id = await this.fetchIdInfo();
 
         if (options.schema && options.subject) {
-            credential = await this.bindCredential(options.schema, options.subject, { credential, ...options });
+            credential = await this.bindCredentialFor(options.schema, options.subject, id.did, { credential, ...options });
         }
 
         if (credential.issuer !== id.did) {
             throw new InvalidParameterError('credential.issuer');
         }
 
-        const signed = await this.addSignature(credential);
-        return this.encryptJSON(signed, credential.credentialSubject!.id, { ...options, includeHash: true });
+        const unsigned = { ...credential };
+        delete unsigned.signature;
+        const signed = await this.addSignature(unsigned, id.did);
+        if (!this.isVerifiableCredential(signed)) {
+            throw new InvalidParameterError('credential');
+        }
+
+        return this.encryptJSONFor(signed, credential.credentialSubject!.id, id.did, { ...options, includeHash: true });
     }
 
     async sendCredential(
         did: string,
         options: CreateAssetOptions = {}
     ): Promise<string | null> {
-        const vc = await this.getCredential(did);
+        const sender = await this.fetchIdInfo();
+        const vc = await this.getCredentialFor(did, sender.did);
 
         if (!vc) {
             return null;
@@ -1713,25 +1858,126 @@ export default class Keymaster implements KeymasterInterface {
             dids: [did],
         };
 
-        return this.createNotice(message, { registry, validUntil, ...options });
+        return this.createNoticeFor(message, sender.did, { registry, validUntil, ...options });
     }
 
     private isVerifiableCredential(obj: unknown): obj is VerifiableCredential {
-        if (typeof obj !== 'object' || !obj) {
+        if (typeof obj !== 'object' || !obj || Array.isArray(obj)) {
             return false;
         }
 
         const vc = obj as Partial<VerifiableCredential>;
+        const subject = vc.credentialSubject;
+        const signature = vc.signature;
+        const validFrom = vc.validFrom == null ? null : this.credentialTimestamp(vc.validFrom);
+        const validUntil = vc.validUntil == null ? null : this.credentialTimestamp(vc.validUntil);
 
-        return !(!Array.isArray(vc["@context"]) || !Array.isArray(vc.type) || !vc.issuer || !vc.credentialSubject);
+        // ponytail: Portable URL check; revisit IPv6, IDN, and malformed IP hosts in a URL-validation PR.
+        const contextURL = /^https?:\/\/[a-z\d](?:[a-z\d.-]*[a-z\d])?(?::(\d{1,5}))?(?:[/?#]|$)/i;
+        return Array.isArray(vc["@context"])
+            && vc["@context"][0] === 'https://www.w3.org/ns/credentials/v2'
+            && vc["@context"].every(context => {
+                if (typeof context !== 'string') return false;
+                const match = contextURL.exec(context);
+                return !!match && (!match[1] || Number(match[1]) <= 65535);
+            })
+            && Array.isArray(vc.type)
+            && vc.type.includes('VerifiableCredential')
+            && vc.type.every(type => typeof type === 'string' && type.length > 0)
+            && typeof vc.issuer === 'string' && isValidDID(vc.issuer)
+            && (validFrom === null || Number.isFinite(validFrom))
+            && (validUntil === null || Number.isFinite(validUntil))
+            && (validFrom === null || validUntil === null
+                || this.credentialPeriodOrdered(vc.validFrom!, vc.validUntil!, validFrom, validUntil))
+            && !!subject && typeof subject === 'object' && !Array.isArray(subject)
+            && typeof subject.id === 'string' && isValidDID(subject.id)
+            && !!signature && typeof signature === 'object' && !Array.isArray(signature)
+            && typeof signature.signer === 'string' && isValidDID(signature.signer)
+            && Number.isFinite(this.credentialTimestamp(signature.signed))
+            && (signature.hash === undefined || typeof signature.hash === 'string' && signature.hash.length > 0)
+            && typeof signature.value === 'string' && signature.value.length > 0;
+    }
+
+    private async verifyCredentialSignature(obj: unknown): Promise<boolean> {
+        const vc = obj as Partial<VerifiableCredential> | null | undefined;
+        if (typeof vc?.issuer !== 'string' ||
+            typeof vc?.signature?.signer !== 'string' ||
+            vc.signature.signer !== vc.issuer) {
+            return false;
+        }
+
+        return this.verifySignature(vc);
+    }
+
+    private credentialTimestamp(value: unknown): number {
+        if (typeof value !== 'string') {
+            return NaN;
+        }
+
+        // Require an XSD dateTimeStamp with an explicit timezone.
+        const match = /^(-?(?:[1-9]\d{3,}|0\d{3}))-(\d{2})-(\d{2})T(\d{2}):([0-5]\d):([0-5]\d)(?:\.(\d+))?(Z|[+-]\d{2}:[0-5]\d)$/.exec(value);
+        if (!match || match[0] !== value) {
+            return NaN;
+        }
+
+        const [, year, month, day, hour, minute, second, fraction = '', zone] = match;
+        if (Number(hour) > 24 || (hour === '24' && (minute !== '00' || second !== '00' || /[1-9]/.test(fraction)))) {
+            return NaN;
+        }
+
+        const date = new Date(0);
+        date.setUTCFullYear(Number(year), Number(month) - 1, Number(day));
+        if (date.getUTCDate() !== Number(day) || date.getUTCMonth() !== Number(month) - 1) {
+            return NaN;
+        }
+
+        date.setUTCHours(Number(hour), Number(minute), Number(second), Number(fraction.slice(0, 3).padEnd(3, '0')));
+        let offset = 0;
+        if (zone !== 'Z') {
+            offset = (Number(zone.slice(1, 3)) * 60 + Number(zone.slice(4, 6))) * 60_000;
+            if (offset > 14 * 60 * 60_000) {
+                return NaN;
+            }
+            if (zone[0] === '-') {
+                offset = -offset;
+            }
+        }
+
+        // Round up to the first integer millisecond at or after the boundary.
+        // This preserves both comparisons against the integer Date.now() clock.
+        return date.getTime() - offset + Number(/[1-9]/.test(fraction.slice(3)));
+    }
+
+    private credentialPeriodOrdered(fromValue: string, untilValue: string, from: number, until: number): boolean {
+        if (from !== until) return from < until;
+
+        // A submillisecond reversal can be hidden when both boundaries round to the same millisecond.
+        const remainder = (value: string) => /\.(\d+)(?:Z|[+-]\d{2}:[0-5]\d)$/.exec(value)?.[1].slice(3) ?? '';
+        const fromRemainder = remainder(fromValue);
+        const untilRemainder = remainder(untilValue);
+        const fromBase = from - Number(/[1-9]/.test(fromRemainder));
+        const untilBase = until - Number(/[1-9]/.test(untilRemainder));
+        if (fromBase !== untilBase) return fromBase < untilBase;
+
+        const length = Math.max(fromRemainder.length, untilRemainder.length);
+        return fromRemainder.padEnd(length, '0') <= untilRemainder.padEnd(length, '0');
+    }
+
+    private isCredentialCurrent(credential: VerifiableCredential, now: number): boolean {
+        const { validFrom, validUntil } = credential;
+
+        // Legacy credentials use null for an absent validity bound.
+        return (validFrom == null || this.credentialTimestamp(validFrom) <= now)
+            && (validUntil == null || now < this.credentialTimestamp(validUntil));
     }
 
     async updateCredential(
         did: string,
         credential: VerifiableCredential
     ): Promise<boolean> {
+        const id = await this.fetchIdInfo();
         did = await this.lookupDID(did);
-        const originalVC = await this.decryptJSON(did);
+        const originalVC = await this.decryptJSONFor(did, id.did);
 
         if (!this.isVerifiableCredential(originalVC)) {
             throw new InvalidParameterError("did is not a credential");
@@ -1744,18 +1990,25 @@ export default class Keymaster implements KeymasterInterface {
             throw new InvalidParameterError('credential');
         }
 
-        delete credential.signature;
-        const signed = await this.addSignature(credential);
+        if (credential.issuer !== id.did) {
+            throw new InvalidParameterError('credential.issuer');
+        }
+
+        const unsigned = { ...credential };
+        delete unsigned.signature;
+        const signed = await this.addSignature(unsigned, id.did);
+        if (!this.isVerifiableCredential(signed)) {
+            throw new InvalidParameterError('credential');
+        }
         const msg = JSON.stringify(signed);
 
-        const id = await this.fetchIdInfo();
-        const senderKeypair = await this.fetchKeyPair();
+        const senderKeypair = await this.fetchKeyPair(id.did);
         if (!senderKeypair) {
             throw new KeymasterError('No valid sender keypair');
         }
 
         const holder = credential.credentialSubject.id;
-        const holderDoc = await this.resolveDID(holder, { confirm: true });
+        const holderDoc = await this.resolveIdentityForCryptography(holder);
         const receivePublicJwk = this.getPublicKeyJwk(holderDoc);
         const cipher_sender = this.cipher.encryptMessage(senderKeypair.publicJwk, senderKeypair.privateJwk, msg);
         const cipher_receiver = this.cipher.encryptMessage(receivePublicJwk, senderKeypair.privateJwk, msg);
@@ -1785,7 +2038,7 @@ export default class Keymaster implements KeymasterInterface {
         if (id.owned) {
             for (const did of id.owned) {
                 try {
-                    const credential = await this.decryptJSON(did);
+                    const credential = await this.decryptJSONFor(did, id.did);
 
                     if (this.isVerifiableCredential(credential) &&
                         credential.issuer === id.did) {
@@ -1801,16 +2054,26 @@ export default class Keymaster implements KeymasterInterface {
 
     async acceptCredential(did: string): Promise<boolean> {
         try {
-            const id = await this.fetchIdInfo();
-            const credential = await this.lookupDID(did);
-            const vc = await this.decryptJSON(credential);
+            const holder = await this.fetchIdInfo();
+            return this.acceptCredentialFor(did, holder.did);
+        }
+        catch {
+            return false;
+        }
+    }
 
-            if (this.isVerifiableCredential(vc) &&
-                vc.credentialSubject?.id !== id.did) {
+    private async acceptCredentialFor(did: string, holder: string): Promise<boolean> {
+        try {
+            const credential = await this.lookupDID(did);
+            const vc = await this.decryptJSONFor(credential, holder);
+
+            if (!this.isVerifiableCredential(vc) ||
+                vc.credentialSubject?.id !== holder ||
+                !await this.verifyCredentialSignature(vc)) {
                 return false;
             }
 
-            return this.addToHeld(credential);
+            return this.addToHeldFor(credential, holder);
         }
         catch {
             return false;
@@ -1818,9 +2081,16 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async getCredential(id: string): Promise<VerifiableCredential | null> {
+        const wallet = await this.loadWallet();
+        const did = await this.lookupDID(id);
+        const holder = await this.fetchIdInfo(undefined, wallet);
+        return this.getCredentialFor(did, holder.did);
+    }
+
+    private async getCredentialFor(id: string, holder: string): Promise<VerifiableCredential | null> {
         const did = await this.lookupDID(id);
 
-        const vc = await this.decryptJSON(did);
+        const vc = await this.decryptJSONFor(did, holder);
 
         if (!this.isVerifiableCredential(vc)) {
             return null;
@@ -1830,8 +2100,10 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async removeCredential(id: string): Promise<boolean> {
+        const wallet = await this.loadWallet();
         const did = await this.lookupDID(id);
-        return this.removeFromHeld(did);
+        const holder = await this.fetchIdInfo(undefined, wallet);
+        return this.removeFromHeldFor(did, holder.did);
     }
 
     async listCredentials(id?: string): Promise<string[]> {
@@ -1847,7 +2119,7 @@ export default class Keymaster implements KeymasterInterface {
 
         const id = await this.fetchIdInfo();
         const credential = await this.lookupDID(did);
-        const vc = await this.decryptJSON(credential);
+        const vc = await this.decryptJSONFor(credential, id.did);
         if (!this.isVerifiableCredential(vc)) {
             throw new InvalidParameterError("did is not a credential");
         }
@@ -1891,7 +2163,9 @@ export default class Keymaster implements KeymasterInterface {
 
         if (credential && data.manifest && credential in data.manifest) {
             delete data.manifest[credential];
-            await this.updateDID(doc);
+            if (!await this.updateDID(doc)) {
+                throw new KeymasterError('update DID failed');
+            }
 
             return `OK credential ${did} removed from manifest`;
         }
@@ -1931,9 +2205,11 @@ export default class Keymaster implements KeymasterInterface {
         credential: {
             schema: string;
             issuers?: string[]
-        }
+        },
+        now: number,
+        holder: string
     ): Promise<string | undefined> {
-        const id = await this.fetchIdInfo();
+        const id = await this.fetchIdInfo(holder);
 
         if (!id.held) {
             return;
@@ -1941,7 +2217,7 @@ export default class Keymaster implements KeymasterInterface {
 
         for (let did of id.held) {
             try {
-                const doc = await this.decryptJSON(did);
+                const doc = await this.decryptJSONFor(did, id.did);
 
                 if (!this.isVerifiableCredential(doc)) {
                     continue;
@@ -1952,17 +2228,24 @@ export default class Keymaster implements KeymasterInterface {
                     continue;
                 }
 
-                if (credential.issuers && !credential.issuers.includes(doc.issuer)) {
+                if (credential.issuers?.length && !credential.issuers.includes(doc.issuer)) {
                     // Attestor not trusted by Verifier
                     continue;
                 }
 
-                if (doc.type && !doc.type.includes(credential.schema)) {
+                if (doc.type[1] !== credential.schema) {
                     // Wrong type
                     continue;
                 }
 
-                // TBD test for VC expiry too
+                if (!this.isCredentialCurrent(doc, now)) {
+                    continue;
+                }
+
+                if (!await this.verifyCredentialSignature(doc)) {
+                    continue;
+                }
+
                 return did;
             }
             catch {
@@ -1975,6 +2258,7 @@ export default class Keymaster implements KeymasterInterface {
         challengeDID: string,
         options: CreateResponseOptions = {}
     ): Promise<string> {
+        const responder = await this.fetchIdInfo();
         let { retries = 0, delay = 1000 } = options;
 
         if (!options.registry) {
@@ -2021,10 +2305,11 @@ export default class Keymaster implements KeymasterInterface {
         // TBD check challenge isValid for expired?
 
         const matches = [];
+        const now = Date.now();
 
         if (challenge.credentials) {
             for (let credential of challenge.credentials) {
-                const vc = await this.findMatchingCredential(credential);
+                const vc = await this.findMatchingCredential(credential, now, responder.did);
 
                 if (vc) {
                     matches.push(vc);
@@ -2035,8 +2320,8 @@ export default class Keymaster implements KeymasterInterface {
         const pairs = [];
 
         for (let vcDid of matches) {
-            const plaintext = await this.decryptMessage(vcDid);
-            const vpDid = await this.encryptMessage(plaintext, requestor, { ...options, includeHash: true });
+            const plaintext = await this.decryptMessageFor(vcDid, responder.did);
+            const vpDid = await this.encryptMessageFor(plaintext, requestor, responder.did, { ...options, includeHash: true });
             pairs.push({ vc: vcDid, vp: vpDid });
         }
 
@@ -2054,14 +2339,23 @@ export default class Keymaster implements KeymasterInterface {
             responseNonce
         };
 
-        return await this.encryptJSON({ response }, requestor!, options);
+        return this.encryptJSONFor({ response }, requestor, responder.did, options);
     }
 
     async verifyResponse(
         responseDID: string,
-        options: { retries?: number; delay?: number } = {}
+        options: { retries?: number; delay?: number; publish?: boolean } = {}
     ): Promise<ChallengeResponse> {
-        let { retries = 0, delay = 1000 } = options;
+        const verifier = await this.fetchIdInfo();
+        return this.verifyResponseFor(responseDID, verifier.did, options);
+    }
+
+    private async verifyResponseFor(
+        responseDID: string,
+        verifier: string,
+        options: { retries?: number; delay?: number; publish?: boolean } = {}
+    ): Promise<ChallengeResponse> {
+        let { retries = 0, delay = 1000, publish = true } = options;
 
         let responseDoc;
 
@@ -2079,25 +2373,62 @@ export default class Keymaster implements KeymasterInterface {
             throw new InvalidParameterError('responseDID does not resolve');
         }
 
-        const wrapper = await this.decryptJSON(responseDID);
+        const asset = responseDoc.didDocumentData as { encrypted?: EncryptedMessage; cipher_hash?: string } | undefined;
+        if (responseDoc.didDocumentMetadata?.deactivated || !asset || (!asset.encrypted && !asset.cipher_hash)) {
+            throw new InvalidParameterError('did not encrypted');
+        }
+
+        const responder = responseDoc.didDocument?.controller;
+        if (typeof responder !== 'string' || !responder) {
+            throw new InvalidParameterError('response controller');
+        }
+
+        const crypt = (asset.encrypted ? asset.encrypted : asset) as EncryptedMessage;
+        if (crypt.sender !== responder) {
+            throw new InvalidParameterError('response sender');
+        }
+
+        // Decrypt the same response version whose controller and sender were checked.
+        const wallet = await this.loadWallet();
+        const id = await this.fetchIdInfo(verifier, wallet);
+        const senderDoc = await this.resolveIdentityForCryptography(crypt.sender, crypt.created);
+        const senderPublicJwk = this.getPublicKeyJwk(senderDoc);
+        const ciphertext = (crypt.sender === id.did && crypt.cipher_sender) ? crypt.cipher_sender : crypt.cipher_receiver;
+        const plaintext = await this.decryptWithDerivedKeys(wallet, id, senderPublicJwk, ciphertext!);
+
+        let wrapper: unknown;
+        try {
+            wrapper = JSON.parse(plaintext);
+        }
+        catch {
+            throw new InvalidParameterError('did not encrypted JSON');
+        }
+
         if (typeof wrapper !== 'object' || !wrapper || !('response' in wrapper)) {
             throw new InvalidParameterError('responseDID not a valid challenge response');
         }
         const { response } = wrapper as { response: ChallengeResponse };
 
-        const result = await this.resolveAsset(response.challenge);
-        if (!result) {
-            throw new InvalidParameterError('challenge not found');
-        }
-
-        const challenge = (result as { challenge?: Challenge }).challenge;
-        if (!challenge) {
+        const challengeDoc = await this.resolveDID(response.challenge);
+        const challenge = (challengeDoc.didDocumentData as { challenge?: Challenge } | undefined)?.challenge;
+        if (challengeDoc.didDocumentMetadata?.deactivated || !challenge) {
             throw new InvalidParameterError('challengeDID');
         }
 
-        const vps: VerifiableCredential[] = [];
+        if (challengeDoc.didDocument?.controller !== id.did) {
+            throw new InvalidParameterError('requesterDid');
+        }
+
+        const requestedCredentials = challenge.credentials ?? [];
+        const matchedPresentations = new Set<string>();
+        const candidates: { vp: VerifiableCredential; credentialIndexes: number[] }[] = [];
+        const now = Date.now();
 
         for (let credential of response.credentials) {
+            if (matchedPresentations.has(credential.vp)) {
+                continue;
+            }
+
             const vcData = await this.resolveAsset(credential.vc);
             const vpData = await this.resolveAsset(credential.vp);
 
@@ -2117,38 +2448,85 @@ export default class Keymaster implements KeymasterInterface {
                 continue;
             }
 
-            const vp = await this.decryptJSON(credential.vp) as VerifiableCredential;
-            const isValid = await this.verifySignature(vp);
+            const vpPlaintext = await this.decryptMessageFor(credential.vp, id.did);
+            let vp: unknown;
 
-            if (!isValid) {
+            try {
+                vp = JSON.parse(vpPlaintext);
+            }
+            catch {
+                throw new InvalidParameterError('did not encrypted JSON');
+            }
+
+            if (this.cipher.hashMessage(vpPlaintext) !== vcHash.cipher_hash) {
                 continue;
             }
 
-            if (!vp.type || !Array.isArray(vp.type)) {
+            if (!this.isVerifiableCredential(vp) || !await this.verifyCredentialSignature(vp)) {
                 continue;
             }
 
-            // Check VP against VCs specified in challenge
-            if (vp.type.length >= 2 && vp.type[1].startsWith('did:')) {
-                const schema = vp.type[1];
-                const credential = challenge.credentials?.find(item => item.schema === schema);
-
-                if (!credential) {
-                    continue;
-                }
-
-                // Check if issuer of VP is in the trusted issuer list
-                if (credential.issuers && credential.issuers.length > 0 && !credential.issuers.includes(vp.issuer)) {
-                    continue;
-                }
+            if (!this.isCredentialCurrent(vp, now)) {
+                continue;
             }
 
-            vps.push(vp);
+            if (vp.credentialSubject?.id !== responder) {
+                continue;
+            }
+
+            const schema = vp.type[1];
+            if (typeof schema !== 'string' || !schema.startsWith('did:')) {
+                continue;
+            }
+
+            const credentialIndexes: number[] = [];
+            requestedCredentials.forEach((item, index) => {
+                if (item.schema === schema && (!item.issuers?.length || item.issuers.includes(vp.issuer))) {
+                    credentialIndexes.push(index);
+                }
+            });
+
+            if (credentialIndexes.length === 0) {
+                continue;
+            }
+
+            matchedPresentations.add(credential.vp);
+            candidates.push({ vp, credentialIndexes });
         }
 
+        const matchedCredentials = new Map<number, number>();
+        const assignPresentation = (presentationIndex: number, visited: Set<number>): boolean => {
+            for (const credentialIndex of candidates[presentationIndex].credentialIndexes) {
+                if (visited.has(credentialIndex)) {
+                    continue;
+                }
+
+                visited.add(credentialIndex);
+                const assignedPresentation = matchedCredentials.get(credentialIndex);
+
+                if (assignedPresentation === undefined || assignPresentation(assignedPresentation, visited)) {
+                    matchedCredentials.set(credentialIndex, presentationIndex);
+                    return true;
+                }
+            }
+
+            return false;
+        };
+
+        candidates.forEach((_, index) => assignPresentation(index, new Set()));
+
+        const matchedCandidateIndexes = new Set(matchedCredentials.values());
+        const vps = candidates
+            .filter((_, index) => matchedCandidateIndexes.has(index))
+            .map(candidate => candidate.vp);
+
         response.vps = vps;
-        response.match = vps.length === (challenge.credentials?.length ?? 0);
-        response.responder = responseDoc.didDocument?.controller;
+        response.match = matchedCredentials.size === requestedCredentials.length;
+        response.responder = responder;
+
+        if (publish && response.match) {
+            await this.publishChallengeReceiptsFor(responseDID, id.did, { verification: response });
+        }
 
         return response;
     }
@@ -2162,10 +2540,11 @@ export default class Keymaster implements KeymasterInterface {
 
     private async buildChallengeReceipts(
         responseDID: string,
+        requester: string,
         options: BuildChallengeReceiptOptions = {}
     ): Promise<ChallengeReceipt[]> {
         const { verification, retries, delay } = options;
-        const response = verification ?? await this.verifyResponse(responseDID, { retries, delay });
+        const response = verification ?? await this.verifyResponseFor(responseDID, requester, { retries, delay, publish: false });
 
         if (!response.match) {
             throw new InvalidParameterError('verification.match');
@@ -2181,8 +2560,7 @@ export default class Keymaster implements KeymasterInterface {
             throw new InvalidParameterError('requesterDid');
         }
 
-        const id = await this.fetchIdInfo();
-        if (id.did !== requesterDid) {
+        if (requester !== requesterDid) {
             throw new InvalidParameterError('requesterDid');
         }
 
@@ -2226,17 +2604,27 @@ export default class Keymaster implements KeymasterInterface {
         responseDID: string,
         options: PublishChallengeReceiptOptions = {}
     ): Promise<string[]> {
+        const requester = await this.fetchIdInfo();
+        return this.publishChallengeReceiptsFor(responseDID, requester.did, options);
+    }
+
+    private async publishChallengeReceiptsFor(
+        responseDID: string,
+        requester: string,
+        options: PublishChallengeReceiptOptions = {}
+    ): Promise<string[]> {
         const { registry, validUntil, name, ...receiptOptions } = options;
 
-        const receipts = await this.buildChallengeReceipts(responseDID, receiptOptions);
+        const receipts = await this.buildChallengeReceipts(responseDID, requester, receiptOptions);
         if (name && receipts.length !== 1) {
             throw new InvalidParameterError('options.name');
         }
 
         const receiptDIDs: string[] = [];
         for (const challengeReceipt of receipts) {
-            const receiptDID = await this.createAsset(
+            const receiptDID = await this.createAssetFor(
                 { challengeReceipt },
+                requester,
                 { registry, validUntil, name }
             );
             receiptDIDs.push(receiptDID);
@@ -2257,24 +2645,27 @@ export default class Keymaster implements KeymasterInterface {
         return this.createAsset({ group }, options);
     }
 
-    async getGroup(id: string): Promise<Group | null> {
-        const asset = await this.resolveAsset(id);
+    private async resolveGroupDocument(id: string): Promise<{ doc: MdipDocument; group: Group | null }> {
+        const doc = await this.resolveDID(id);
+        const asset = doc.didDocument?.controller && !doc.didDocumentMetadata?.deactivated
+            ? doc.didDocumentData
+            : null;
         if (!asset) {
-            return null;
+            return { doc, group: null };
         }
 
         // TEMP during did:test, return old version groups
         const castOldAsset = asset as Group;
         if (castOldAsset.members) {
-            return castOldAsset;
+            return { doc, group: castOldAsset };
         }
 
         const castAsset = asset as { group?: Group };
-        if (!castAsset.group) {
-            return null;
-        }
+        return { doc, group: castAsset.group ?? null };
+    }
 
-        return castAsset.group;
+    async getGroup(id: string): Promise<Group | null> {
+        return (await this.resolveGroupDocument(id)).group;
     }
 
     async addGroupMember(
@@ -2297,29 +2688,29 @@ export default class Keymaster implements KeymasterInterface {
             throw new InvalidParameterError('memberId');
         }
 
-        const group = await this.getGroup(groupId);
+        const { doc, group } = await this.resolveGroupDocument(groupDID);
 
         if (!group?.members) {
             throw new InvalidParameterError('groupId');
         }
 
-        // If already a member, return immediately
         if (group.members.includes(memberDID)) {
             return true;
         }
 
-        // Can't add a mutual membership relation
-        const isMember = await this.testGroup(memberId, groupId);
-
-        if (isMember) {
+        if (await this.testGroup(memberId, groupId)) {
             throw new InvalidParameterError("can't create mutual membership");
         }
 
-        const members = new Set(group.members);
-        members.add(memberDID);
-        group.members = Array.from(members);
+        group.members = [...new Set([...group.members, memberDID])];
+        doc.didDocumentData = (doc.didDocumentData as Group)?.members
+            ? group
+            : { ...(doc.didDocumentData as Record<string, unknown>), group };
 
-        return this.updateAsset(groupDID, { group });
+        if (!await this.updateDID(doc)) {
+            throw new KeymasterError('DID update was rejected. Please try again.');
+        }
+        return true;
     }
 
     async removeGroupMember(
@@ -2328,12 +2719,6 @@ export default class Keymaster implements KeymasterInterface {
     ): Promise<boolean> {
         const groupDID = await this.lookupDID(groupId);
         const memberDID = await this.lookupDID(memberId);
-        const group = await this.getGroup(groupDID);
-
-        if (!group?.members) {
-            throw new InvalidParameterError('groupId');
-        }
-
         try {
             // test for valid member DID
             await this.resolveDID(memberDID);
@@ -2342,24 +2727,47 @@ export default class Keymaster implements KeymasterInterface {
             throw new InvalidParameterError('memberId');
         }
 
-        // If not already a member, return immediately
+        const { doc, group } = await this.resolveGroupDocument(groupDID);
+
+        if (!group?.members) {
+            throw new InvalidParameterError('groupId');
+        }
+
         if (!group.members.includes(memberDID)) {
             return true;
         }
 
-        const members = new Set(group.members);
-        members.delete(memberDID);
-        group.members = Array.from(members);
+        group.members = group.members.filter(member => member !== memberDID);
+        doc.didDocumentData = (doc.didDocumentData as Group)?.members
+            ? group
+            : { ...(doc.didDocumentData as Record<string, unknown>), group };
 
-        return this.updateAsset(groupDID, { group });
+        if (!await this.updateDID(doc)) {
+            throw new KeymasterError('DID update was rejected. Please try again.');
+        }
+        return true;
     }
 
     async testGroup(
         groupId: string,
         memberId?: string
     ): Promise<boolean> {
+        return this.testGroupRecursive(groupId, memberId, new Set<string>());
+    }
+
+    private async testGroupRecursive(
+        groupId: string,
+        memberId: string | undefined,
+        visited: Set<string>
+    ): Promise<boolean> {
         try {
-            const group = await this.getGroup(groupId);
+            const groupDID = await this.lookupDID(groupId);
+            if (visited.has(groupDID)) {
+                return false;
+            }
+            visited.add(groupDID);
+
+            const group = await this.getGroup(groupDID);
 
             if (!group) {
                 return false;
@@ -2374,7 +2782,7 @@ export default class Keymaster implements KeymasterInterface {
 
             if (!isMember) {
                 for (const did of group.members) {
-                    isMember = await this.testGroup(did, didMember);
+                    isMember = await this.testGroupRecursive(did, didMember, visited);
 
                     if (isMember) {
                         break;
@@ -2569,6 +2977,8 @@ export default class Keymaster implements KeymasterInterface {
             throw new InvalidParameterError('poll.roster');
         }
 
+        const wallet = await this.loadWallet();
+
         try {
             const isValidGroup = await this.testGroup(poll.roster);
 
@@ -2595,7 +3005,8 @@ export default class Keymaster implements KeymasterInterface {
             throw new InvalidParameterError('poll.deadline');
         }
 
-        return this.createAsset({ poll }, options);
+        const owner = await this.fetchIdInfo(undefined, wallet);
+        return this.createAssetFor({ poll }, owner.did, options);
     }
 
     async getPoll(id: string): Promise<Poll | null> {
@@ -2641,7 +3052,12 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async viewPoll(pollId: string): Promise<ViewPollResult> {
-        const id = await this.fetchIdInfo();
+        const viewer = await this.fetchIdInfo();
+        return this.viewPollFor(pollId, viewer.did);
+    }
+
+    private async viewPollFor(pollId: string, viewer: string): Promise<ViewPollResult> {
+        const id = await this.fetchIdInfo(viewer);
         const poll = await this.getPoll(pollId);
 
         if (!poll) {
@@ -2692,7 +3108,7 @@ export default class Keymaster implements KeymasterInterface {
 
             for (let voter in poll.ballots) {
                 const ballot = poll.ballots[voter];
-                const decrypted = await this.decryptJSON(ballot.ballot);
+                const decrypted = await this.decryptJSONFor(ballot.ballot, id.did);
                 const vote = (decrypted as { vote: number }).vote;
                 if (results.ballots) {
                     results.ballots.push({
@@ -2775,11 +3191,16 @@ export default class Keymaster implements KeymasterInterface {
         }
 
         // Encrypt for receiver only
-        return await this.encryptJSON(ballot, owner, { ...options, encryptForSender: false });
+        return this.encryptJSONFor(ballot, owner, id.did, { ...options, encryptForSender: false });
     }
 
     async updatePoll(ballot: string): Promise<boolean> {
-        const id = await this.fetchIdInfo();
+        const owner = await this.fetchIdInfo();
+        return this.updatePollFor(ballot, owner.did);
+    }
+
+    private async updatePollFor(ballot: string, owner: string): Promise<boolean> {
+        const id = await this.fetchIdInfo(owner);
 
         const didBallot = await this.lookupDID(ballot);
         const docBallot = await this.resolveDID(ballot);
@@ -2787,7 +3208,7 @@ export default class Keymaster implements KeymasterInterface {
         let dataBallot: { poll: string; vote: number };
 
         try {
-            dataBallot = await this.decryptJSON(didBallot) as { poll: string; vote: number };
+            dataBallot = await this.decryptJSONFor(didBallot, id.did) as { poll: string; vote: number };
 
             if (!dataBallot.poll || !dataBallot.vote) {
                 throw new InvalidParameterError('ballot');
@@ -2845,9 +3266,18 @@ export default class Keymaster implements KeymasterInterface {
         pollId: string,
         options: { reveal?: boolean } = {}
     ): Promise<boolean> {
+        const owner = await this.fetchIdInfo();
+        return this.publishPollFor(pollId, owner.did, options);
+    }
+
+    private async publishPollFor(
+        pollId: string,
+        ownerDid: string,
+        options: { reveal?: boolean } = {}
+    ): Promise<boolean> {
         const { reveal = false } = options;
 
-        const id = await this.fetchIdInfo();
+        const id = await this.fetchIdInfo(ownerDid);
         const doc = await this.resolveDID(pollId);
         const owner = doc.didDocument?.controller;
 
@@ -2855,7 +3285,7 @@ export default class Keymaster implements KeymasterInterface {
             throw new InvalidParameterError('only owner can publish a poll');
         }
 
-        const view = await this.viewPoll(pollId);
+        const view = await this.viewPollFor(pollId, id.did);
 
         if (!view.results?.final) {
             throw new InvalidParameterError('poll not final');
@@ -2897,8 +3327,13 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async createGroupVault(options: GroupVaultOptions = {}): Promise<string> {
-        const id = await this.fetchIdInfo();
-        const idKeypair = await this.fetchKeyPair();
+        const owner = await this.fetchIdInfo();
+        return this.createGroupVaultFor(owner.did, options);
+    }
+
+    private async createGroupVaultFor(owner: string, options: GroupVaultOptions = {}): Promise<string> {
+        const id = await this.fetchIdInfo(owner);
+        const idKeypair = await this.fetchKeyPair(id.did);
         // version defaults to 1. To make version undefined (unit testing), set options.version to 0
         const version = typeof options.version === 'undefined'
             ? 1
@@ -2923,7 +3358,7 @@ export default class Keymaster implements KeymasterInterface {
         };
 
         await this.addMemberKey(groupVault, id.did, vaultKeypair.privateJwk);
-        return this.createAsset({ groupVault }, options);
+        return this.createAssetFor({ groupVault }, id.did, options);
     }
 
     async getGroupVault(groupVaultId: string, options?: ResolveDIDOptions): Promise<GroupVault> {
@@ -2955,9 +3390,9 @@ export default class Keymaster implements KeymasterInterface {
         return this.cipher.hashMessage(groupVault.salt + suffix);
     }
 
-    private async decryptGroupVault(groupVault: GroupVault) {
+    private async decryptGroupVault(groupVault: GroupVault, actor: string) {
         const wallet = await this.loadWallet();
-        const id = await this.fetchIdInfo();
+        const id = await this.fetchIdInfo(actor, wallet);
         const myMemberId = this.generateSaltedId(groupVault, id.did);
         const myVaultKey = groupVault.keys[myMemberId];
 
@@ -3010,8 +3445,8 @@ export default class Keymaster implements KeymasterInterface {
         };
     }
 
-    private async checkGroupVaultOwner(vaultId: string): Promise<string> {
-        const id = await this.fetchIdInfo();
+    private async checkGroupVaultOwner(vaultId: string, actor: string): Promise<string> {
+        const id = await this.fetchIdInfo(actor);
         const vaultDoc = await this.resolveDID(vaultId);
         const controller = vaultDoc.didDocument?.controller;
 
@@ -3023,32 +3458,48 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     private async addMemberKey(groupVault: GroupVault, memberDID: string, privateJwk: EcdsaJwkPrivate): Promise<void> {
-        const memberDoc = await this.resolveDID(memberDID, { confirm: true });
+        const memberDoc = await this.resolveIdentityForCryptography(memberDID);
         const memberPublicJwk = this.getPublicKeyJwk(memberDoc);
         const memberKey = this.cipher.encryptMessage(memberPublicJwk, privateJwk, JSON.stringify(privateJwk));
         const memberKeyId = this.generateSaltedId(groupVault, memberDID);
         groupVault.keys[memberKeyId] = memberKey;
     }
 
-    private async checkVaultVersion(vaultId: string, groupVault: GroupVault): Promise<void> {
+    private async checkVaultVersion(vaultId: string, groupVault: GroupVault, actor: string): Promise<void> {
         if (groupVault.version === 1) {
             return;
         }
 
         if (!groupVault.version) {
-            const id = await this.fetchIdInfo();
-            const { privateJwk, members } = await this.decryptGroupVault(groupVault);
+            const id = await this.fetchIdInfo(actor);
+            const doc = await this.resolveDID(vaultId);
+            const currentVault = doc.didDocument?.controller && !doc.didDocumentMetadata?.deactivated
+                ? (doc.didDocumentData as { groupVault?: GroupVault })?.groupVault
+                : undefined;
 
-            groupVault.version = 1;
-            groupVault.keys = {};
-
-            await this.addMemberKey(groupVault, id.did, privateJwk);
-
-            for (const memberDID of Object.keys(members)) {
-                await this.addMemberKey(groupVault, memberDID, privateJwk);
+            if (!currentVault) {
+                throw new InvalidParameterError('groupVaultId');
+            }
+            if (currentVault.version === 1) {
+                return;
+            }
+            if (currentVault.version) {
+                throw new KeymasterError('Unsupported group vault version');
             }
 
-            await this.updateAsset(vaultId, { groupVault });
+            const { privateJwk, members } = await this.decryptGroupVault(currentVault, id.did);
+            currentVault.version = 1;
+            currentVault.keys = {};
+
+            await this.addMemberKey(currentVault, id.did, privateJwk);
+
+            for (const memberDID of Object.keys(members)) {
+                await this.addMemberKey(currentVault, memberDID, privateJwk);
+            }
+
+            if (!await this.updateDID(doc)) {
+                throw new KeymasterError('DID update was rejected. Please try again.');
+            }
             return;
         }
 
@@ -3070,12 +3521,17 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async addGroupVaultMember(vaultId: string, memberId: string): Promise<boolean> {
-        const owner = await this.checkGroupVaultOwner(vaultId);
+        const actor = await this.fetchIdInfo();
+        return this.addGroupVaultMemberFor(vaultId, memberId, actor.did);
+    }
 
-        const idKeypair = await this.fetchKeyPair();
+    private async addGroupVaultMemberFor(vaultId: string, memberId: string, actor: string): Promise<boolean> {
+        const owner = await this.checkGroupVaultOwner(vaultId, actor);
+
+        const idKeypair = await this.fetchKeyPair(actor);
         const groupVault = await this.getGroupVault(vaultId);
-        const { privateJwk, config, members } = await this.decryptGroupVault(groupVault);
-        const memberDoc = await this.resolveDID(memberId, { confirm: true });
+        const { privateJwk, config, members } = await this.decryptGroupVault(groupVault, actor);
+        const memberDoc = await this.resolveIdentityForCryptography(memberId);
         const memberDID = this.getAgentDID(memberDoc);
 
         // Don't allow adding the vault owner
@@ -3092,12 +3548,17 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async removeGroupVaultMember(vaultId: string, memberId: string): Promise<boolean> {
-        const owner = await this.checkGroupVaultOwner(vaultId);
+        const actor = await this.fetchIdInfo();
+        return this.removeGroupVaultMemberFor(vaultId, memberId, actor.did);
+    }
 
-        const idKeypair = await this.fetchKeyPair();
+    private async removeGroupVaultMemberFor(vaultId: string, memberId: string, actor: string): Promise<boolean> {
+        const owner = await this.checkGroupVaultOwner(vaultId, actor);
+
+        const idKeypair = await this.fetchKeyPair(actor);
         const groupVault = await this.getGroupVault(vaultId);
-        const { privateJwk, config, members } = await this.decryptGroupVault(groupVault);
-        const memberDoc = await this.resolveDID(memberId, { confirm: true });
+        const { privateJwk, config, members } = await this.decryptGroupVault(groupVault, actor);
+        const memberDoc = await this.resolveIdentityForCryptography(memberId);
         const memberDID = this.getAgentDID(memberDoc);
 
         // Don't allow removing the vault owner
@@ -3116,21 +3577,31 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async listGroupVaultMembers(vaultId: string): Promise<Record<string, any>> {
+        const actor = await this.fetchIdInfo();
+        return this.listGroupVaultMembersFor(vaultId, actor.did);
+    }
+
+    private async listGroupVaultMembersFor(vaultId: string, actor: string): Promise<Record<string, any>> {
         const groupVault = await this.getGroupVault(vaultId);
-        const { members, isOwner } = await this.decryptGroupVault(groupVault);
+        const { members, isOwner } = await this.decryptGroupVault(groupVault, actor);
 
         if (isOwner) {
-            await this.checkVaultVersion(vaultId, groupVault);
+            await this.checkVaultVersion(vaultId, groupVault, actor);
         }
 
         return members;
     }
 
     async addGroupVaultItem(vaultId: string, name: string, buffer: Buffer): Promise<boolean> {
-        await this.checkGroupVaultOwner(vaultId);
+        const actor = await this.fetchIdInfo();
+        return this.addGroupVaultItemFor(vaultId, name, buffer, actor.did);
+    }
+
+    private async addGroupVaultItemFor(vaultId: string, name: string, buffer: Buffer, actor: string): Promise<boolean> {
+        await this.checkGroupVaultOwner(vaultId, actor);
 
         const groupVault = await this.getGroupVault(vaultId);
-        const { privateJwk, items } = await this.decryptGroupVault(groupVault);
+        const { privateJwk, items } = await this.decryptGroupVault(groupVault, actor);
         const validName = this.validateName(name);
         const encryptedData = this.cipher.encryptBytes(groupVault.publicJwk, privateJwk, buffer);
         const cid = await this.gatekeeper.addText(encryptedData);
@@ -3154,10 +3625,15 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async removeGroupVaultItem(vaultId: string, name: string): Promise<boolean> {
-        await this.checkGroupVaultOwner(vaultId);
+        const actor = await this.fetchIdInfo();
+        return this.removeGroupVaultItemFor(vaultId, name, actor.did);
+    }
+
+    private async removeGroupVaultItemFor(vaultId: string, name: string, actor: string): Promise<boolean> {
+        await this.checkGroupVaultOwner(vaultId, actor);
 
         const groupVault = await this.getGroupVault(vaultId);
-        const { privateJwk, items } = await this.decryptGroupVault(groupVault);
+        const { privateJwk, items } = await this.decryptGroupVault(groupVault, actor);
 
         delete items[name];
 
@@ -3167,16 +3643,31 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async listGroupVaultItems(vaultId: string, options?: ResolveDIDOptions): Promise<Record<string, any>> {
+        const actor = await this.fetchIdInfo();
+        return this.listGroupVaultItemsFor(vaultId, actor.did, options);
+    }
+
+    private async listGroupVaultItemsFor(vaultId: string, actor: string, options?: ResolveDIDOptions): Promise<Record<string, any>> {
         const groupVault = await this.getGroupVault(vaultId, options);
-        const { items } = await this.decryptGroupVault(groupVault);
+        const { items } = await this.decryptGroupVault(groupVault, actor);
 
         return items;
     }
 
     async getGroupVaultItem(vaultId: string, name: string, options?: ResolveDIDOptions): Promise<Buffer | null> {
         try {
+            const actor = await this.fetchIdInfo();
+            return this.getGroupVaultItemFor(vaultId, name, actor.did, options);
+        }
+        catch {
+            return null;
+        }
+    }
+
+    private async getGroupVaultItemFor(vaultId: string, name: string, actor: string, options?: ResolveDIDOptions): Promise<Buffer | null> {
+        try {
             const groupVault = await this.getGroupVault(vaultId, options);
-            const { privateJwk, items } = await this.decryptGroupVault(groupVault);
+            const { privateJwk, items } = await this.decryptGroupVault(groupVault, actor);
 
             if (items[name]) {
                 const encryptedData = items[name].data || await this.gatekeeper.getText(items[name].cid);
@@ -3206,7 +3697,7 @@ export default class Keymaster implements KeymasterInterface {
         }, {} as Record<string, string>);
 
         for (const did of Object.keys(list)) {
-            const message = await this.getDmailMessage(did);
+            const message = await this.getDmailMessageFor(did, id.did);
 
             if (!message) {
                 continue; // Skip if no dmail found for this DID
@@ -3219,7 +3710,7 @@ export default class Keymaster implements KeymasterInterface {
             const date = docs.didDocumentMetadata?.updated ?? '';
             const to = message.to.map(did => didToName[did] ?? did);
             const cc = message.cc.map(did => didToName[did] ?? did);
-            const attachments = await this.listDmailAttachments(did);
+            const attachments = await this.listDmailAttachmentsFor(did, id.did);
 
             dmailList[did] = {
                 message,
@@ -3259,9 +3750,18 @@ export default class Keymaster implements KeymasterInterface {
         did: string,
         tags: string[]
     ): Promise<boolean> {
+        const owner = await this.fetchIdInfo();
+        return this.fileDmailFor(did, tags, owner.did);
+    }
+
+    private async fileDmailFor(
+        did: string,
+        tags: string[],
+        owner: string
+    ): Promise<boolean> {
         const verifiedTags = this.verifyTagList(tags);
         await this.mutateWallet(async (wallet) => {
-            const id = await this.fetchIdInfo(undefined, wallet);
+            const id = await this.fetchIdInfo(owner, wallet);
             if (!id.dmail) {
                 id.dmail = {};
             }
@@ -3271,8 +3771,13 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async removeDmail(did: string): Promise<boolean> {
+        const owner = await this.fetchIdInfo();
+        return this.removeDmailFor(did, owner.did);
+    }
+
+    private async removeDmailFor(did: string, owner: string): Promise<boolean> {
         await this.mutateWallet(async (wallet) => {
-            const id = await this.fetchIdInfo(undefined, wallet);
+            const id = await this.fetchIdInfo(owner, wallet);
             if (!id.dmail || !id.dmail[did]) {
                 return;
             }
@@ -3344,20 +3849,29 @@ export default class Keymaster implements KeymasterInterface {
         message: DmailMessage,
         options: GroupVaultOptions = {}
     ): Promise<string> {
+        const owner = await this.fetchIdInfo();
+        return this.createDmailFor(message, owner.did, options);
+    }
+
+    private async createDmailFor(
+        message: DmailMessage,
+        owner: string,
+        options: GroupVaultOptions = {}
+    ): Promise<string> {
         const dmail = await this.verifyDmail(message);
-        const did = await this.createGroupVault(options);
+        const did = await this.createGroupVaultFor(owner, options);
 
         for (const toDID of dmail.to) {
-            await this.addGroupVaultMember(did, toDID);
+            await this.addGroupVaultMemberFor(did, toDID, owner);
         }
 
         for (const ccDID of dmail.cc) {
-            await this.addGroupVaultMember(did, ccDID);
+            await this.addGroupVaultMemberFor(did, ccDID, owner);
         }
 
         const buffer = Buffer.from(JSON.stringify({ dmail }), 'utf-8');
-        await this.addGroupVaultItem(did, DmailTags.DMAIL, buffer);
-        await this.fileDmail(did, [DmailTags.DRAFT]);
+        await this.addGroupVaultItemFor(did, DmailTags.DMAIL, buffer, owner);
+        await this.fileDmailFor(did, [DmailTags.DRAFT], owner);
 
         return did;
     }
@@ -3366,22 +3880,38 @@ export default class Keymaster implements KeymasterInterface {
         did: string,
         message: DmailMessage
     ): Promise<boolean> {
+        const owner = await this.fetchIdInfo();
+        return this.updateDmailFor(did, message, owner.did);
+    }
+
+    private async updateDmailFor(
+        did: string,
+        message: DmailMessage,
+        owner: string
+    ): Promise<boolean> {
         const dmail = await this.verifyDmail(message);
 
         for (const toDID of dmail.to) {
-            await this.addGroupVaultMember(did, toDID);
+            await this.addGroupVaultMemberFor(did, toDID, owner);
         }
 
         for (const ccDID of dmail.cc) {
-            await this.addGroupVaultMember(did, ccDID);
+            await this.addGroupVaultMemberFor(did, ccDID, owner);
         }
 
         const buffer = Buffer.from(JSON.stringify({ dmail }), 'utf-8');
-        return this.addGroupVaultItem(did, DmailTags.DMAIL, buffer);
+        return this.addGroupVaultItemFor(did, DmailTags.DMAIL, buffer, owner);
     }
 
     async sendDmail(did: string): Promise<string | null> {
-        const dmail = await this.getDmailMessage(did);
+        let sender;
+        try {
+            sender = await this.fetchIdInfo();
+        }
+        catch {
+            return null;
+        }
+        const dmail = await this.getDmailMessageFor(did, sender.did);
 
         if (!dmail) {
             return null;
@@ -3394,23 +3924,33 @@ export default class Keymaster implements KeymasterInterface {
             dids: [did],
         };
 
-        const notice = await this.createNotice(message, { registry, validUntil });
+        const notice = await this.createNoticeFor(message, sender.did, { registry, validUntil });
 
         if (notice) {
-            await this.fileDmail(did, [DmailTags.SENT]);
+            await this.fileDmailFor(did, [DmailTags.SENT], sender.did);
         }
 
         return notice;
     }
 
     async getDmailMessage(did: string, options?: ResolveDIDOptions): Promise<DmailMessage | null> {
+        try {
+            const reader = await this.fetchIdInfo();
+            return this.getDmailMessageFor(did, reader.did, options);
+        }
+        catch {
+            return null;
+        }
+    }
+
+    private async getDmailMessageFor(did: string, reader: string, options?: ResolveDIDOptions): Promise<DmailMessage | null> {
         const isGroupVault = await this.testGroupVault(did, options);
 
         if (!isGroupVault) {
             return null;
         }
 
-        const buffer = await this.getGroupVaultItem(did, DmailTags.DMAIL, options);
+        const buffer = await this.getGroupVaultItemFor(did, DmailTags.DMAIL, reader, options);
 
         if (!buffer) {
             return null;
@@ -3426,7 +3966,12 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async listDmailAttachments(did: string, options?: ResolveDIDOptions): Promise<Record<string, any>> {
-        let items = await this.listGroupVaultItems(did, options);
+        const reader = await this.fetchIdInfo();
+        return this.listDmailAttachmentsFor(did, reader.did, options);
+    }
+
+    private async listDmailAttachmentsFor(did: string, reader: string, options?: ResolveDIDOptions): Promise<Record<string, any>> {
+        const items = await this.listGroupVaultItemsFor(did, reader, options);
 
         delete items[DmailTags.DMAIL]; // Remove the dmail item itself from attachments
 
@@ -3464,13 +4009,23 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async importDmail(did: string): Promise<boolean> {
-        const dmail = await this.getDmailMessage(did);
+        try {
+            const recipient = await this.fetchIdInfo();
+            return this.importDmailFor(did, recipient.did);
+        }
+        catch {
+            return false;
+        }
+    }
+
+    private async importDmailFor(did: string, recipient: string): Promise<boolean> {
+        const dmail = await this.getDmailMessageFor(did, recipient);
 
         if (!dmail) {
             return false;
         }
 
-        return this.fileDmail(did, [DmailTags.INBOX, DmailTags.UNREAD]);
+        return this.fileDmailFor(did, [DmailTags.INBOX, DmailTags.UNREAD], recipient);
     }
 
     async verifyDIDList(didList: string[]): Promise<string[]> {
@@ -3506,8 +4061,17 @@ export default class Keymaster implements KeymasterInterface {
         message: NoticeMessage,
         options: CreateAssetOptions = {}
     ): Promise<string> {
+        const sender = await this.fetchIdInfo();
+        return this.createNoticeFor(message, sender.did, options);
+    }
+
+    private async createNoticeFor(
+        message: NoticeMessage,
+        sender: string,
+        options: CreateAssetOptions = {}
+    ): Promise<string> {
         const notice = await this.verifyNotice(message);
-        return this.createAsset({ notice }, options);
+        return this.createAssetFor({ notice }, sender, options);
     }
 
     async updateNotice(
@@ -3522,9 +4086,18 @@ export default class Keymaster implements KeymasterInterface {
         did: string,
         tags: string[]
     ): Promise<boolean> {
+        const owner = await this.fetchIdInfo();
+        return this.addToNoticesFor(did, tags, owner.did);
+    }
+
+    private async addToNoticesFor(
+        did: string,
+        tags: string[],
+        owner: string
+    ): Promise<boolean> {
         const verifiedTags = this.verifyTagList(tags);
         await this.mutateWallet(async (wallet) => {
-            const id = await this.fetchIdInfo(undefined, wallet);
+            const id = await this.fetchIdInfo(owner, wallet);
             if (!id.notices) id.notices = {};
             id.notices[did] = { tags: verifiedTags };
         });
@@ -3532,8 +4105,13 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async importNotice(did: string): Promise<boolean> {
+        const recipient = await this.fetchIdInfo();
+        return this.importNoticeFor(did, recipient.did);
+    }
+
+    private async importNoticeFor(did: string, recipient: string): Promise<boolean> {
         const wallet = await this.loadWallet();
-        const id = await this.fetchIdInfo(undefined, wallet);
+        const id = await this.fetchIdInfo(recipient, wallet);
 
         if (id.notices && id.notices[did]) {
             return true; // Already imported
@@ -3549,31 +4127,35 @@ export default class Keymaster implements KeymasterInterface {
             return false; // Not for this user
         }
 
+        let tags: string[] = [];
+
         for (const noticeDID of asset.notice.dids) {
-            const dmail = await this.getDmailMessage(noticeDID);
+            const dmail = await this.getDmailMessageFor(noticeDID, recipient);
 
             if (dmail) {
-                const imported = await this.importDmail(noticeDID);
+                const imported = await this.importDmailFor(noticeDID, recipient);
 
-                if (imported) {
-                    await this.addToNotices(did, [NoticeTags.DMAIL]);
+                if (!imported) {
+                    return false;
                 }
 
+                tags = [NoticeTags.DMAIL];
                 continue;
             }
 
-            const isBallot = await this.isBallot(noticeDID);
+            const isBallot = await this.isBallot(noticeDID, recipient);
 
             if (isBallot) {
                 let imported = false;
                 try {
-                    imported = await this.updatePoll(noticeDID);
+                    imported = await this.updatePollFor(noticeDID, recipient);
                 } catch { }
 
-                if (imported) {
-                    await this.addToNotices(did, [NoticeTags.BALLOT]);
+                if (!imported) {
+                    return false;
                 }
 
+                tags = [NoticeTags.BALLOT];
                 continue;
             }
 
@@ -3582,21 +4164,27 @@ export default class Keymaster implements KeymasterInterface {
             if (poll) {
                 const names = await this.listNames();
                 if (!Object.values(names).includes(noticeDID)) {
-                    await this.addUnnamedPoll(noticeDID);
+                    if (!await this.addUnnamedPoll(noticeDID)) {
+                        return false;
+                    }
                 }
-                await this.addToNotices(did, [NoticeTags.POLL]);
+                tags = [NoticeTags.POLL];
 
                 continue;
             }
 
-            const isCredential = await this.acceptCredential(noticeDID);
+            const isCredential = await this.acceptCredentialFor(noticeDID, recipient);
 
             if (isCredential) {
-                await this.addToNotices(did, [NoticeTags.CREDENTIAL]);
+                tags = [NoticeTags.CREDENTIAL];
                 continue;
             }
 
             return false;
+        }
+
+        if (tags.length > 0) {
+            await this.addToNoticesFor(did, tags, recipient);
         }
 
         return true;
@@ -3604,10 +4192,19 @@ export default class Keymaster implements KeymasterInterface {
 
     async searchNotices(): Promise<boolean> {
         if (!this.searchEngine) {
+            return false;
+        }
+
+        const recipient = await this.fetchIdInfo();
+        return this.searchNoticesFor(recipient.did);
+    }
+
+    private async searchNoticesFor(recipient: string): Promise<boolean> {
+        if (!this.searchEngine) {
             return false; // Search engine not available
         }
 
-        const id = await this.fetchIdInfo();
+        const id = await this.fetchIdInfo(recipient);
 
         if (!id.notices) {
             id.notices = {};
@@ -3636,7 +4233,7 @@ export default class Keymaster implements KeymasterInterface {
             }
 
             try {
-                await this.importNotice(notice);
+                await this.importNoticeFor(notice, recipient);
             } catch {
                 continue; // Skip if notice is expired or invalid
             }
@@ -3646,20 +4243,38 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async cleanupNotices(): Promise<boolean> {
+        const recipient = await this.fetchIdInfo();
+        return this.cleanupNoticesFor(recipient.did);
+    }
+
+    private async cleanupNoticesFor(recipient: string): Promise<boolean> {
         await this.mutateWallet(async (wallet) => {
-            const id = await this.fetchIdInfo(undefined, wallet);
+            const id = await this.fetchIdInfo(recipient, wallet);
             if (!id.notices) {
                 return;
             }
 
-            for (const nDid of Object.keys(id.notices)) {
-                try {
-                    const asset = await this.resolveAsset(nDid) as { notice?: NoticeMessage };
-                    if (!asset || !asset.notice) {
-                        delete id.notices[nDid]; // revoked or invalid
-                    }
-                } catch {
-                    delete id.notices[nDid]; // expired/unresolvable
+            for (const did of Object.keys(id.notices)) {
+                if (!isValidDID(did)) {
+                    delete id.notices[did];
+                    continue;
+                }
+
+                const doc = await this.gatekeeper.resolveDID(did);
+                if (doc.didResolutionMetadata?.error === 'notFound') {
+                    continue;
+                }
+                if (doc.didResolutionMetadata?.error) {
+                    throw new KeymasterError(`DID resolution failed: ${doc.didResolutionMetadata.error}`);
+                }
+                if (doc.didDocument?.id !== did) {
+                    throw new KeymasterError(`DID resolution failed: ${did}`);
+                }
+
+                const asset = doc.didDocumentData as { notice?: NoticeMessage } | undefined;
+                if (doc.didDocumentMetadata?.deactivated || !doc.didDocument?.controller || !asset?.notice
+                    || (doc.mdip?.validUntil && Date.parse(doc.mdip.validUntil) <= Date.now())) {
+                    delete id.notices[did];
                 }
             }
         });
@@ -3667,8 +4282,9 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async refreshNotices(): Promise<boolean> {
-        await this.searchNotices();
-        return this.cleanupNotices();
+        const recipient = await this.fetchIdInfo();
+        await this.searchNoticesFor(recipient.did);
+        return this.cleanupNoticesFor(recipient.did);
     }
 
     async exportEncryptedWallet(): Promise<WalletEncFile> {
@@ -3676,10 +4292,10 @@ export default class Keymaster implements KeymasterInterface {
         return this.encryptWalletForStorage(wallet);
     }
 
-    private async isBallot(ballotDid: string): Promise<boolean> {
+    private async isBallot(ballotDid: string, recipient: string): Promise<boolean> {
         let payload: any;
         try {
-            payload = await this.decryptJSON(ballotDid);
+            payload = await this.decryptJSONFor(ballotDid, recipient);
         } catch {
             return false;
         }
@@ -3687,15 +4303,17 @@ export default class Keymaster implements KeymasterInterface {
         return payload && typeof payload.poll === "string" && typeof payload.vote === "number";
     }
 
-    private async addUnnamedPoll(did: string): Promise<void> {
+    private async addUnnamedPoll(did: string): Promise<boolean> {
         const fallbackName = did.slice(-32);
         try {
-            await this.addName(fallbackName, did);
-        } catch { }
+            return await this.addName(fallbackName, did);
+        } catch {
+            return false;
+        }
     }
 
     private async getHDKeyFromCacheOrMnemonic(wallet: WalletFile) {
-        if (this._hdkeyCache) {
+        if (this._hdkeyCache && this._hdkeyCacheSeed === JSON.stringify(wallet.seed.mnemonicEnc)) {
             return this._hdkeyCache;
         }
 
@@ -3703,12 +4321,15 @@ export default class Keymaster implements KeymasterInterface {
         return this.cipher.generateHDKey(mnemonic);
     }
 
-    private async encryptWalletForStorage(decrypted: WalletFile): Promise<WalletEncFile> {
+    private async encryptWalletForStorage(
+        decrypted: WalletFile,
+        hdkey?: ReturnType<Cipher['generateHDKey']>
+    ): Promise<WalletEncFile> {
         const { version, seed, ...rest } = decrypted;
 
         const safeSeed: Seed = { mnemonicEnc: seed.mnemonicEnc };
 
-        const hdkey = await this.getHDKeyFromCacheOrMnemonic(decrypted);
+        hdkey ??= await this.getHDKeyFromCacheOrMnemonic(decrypted);
         const { publicJwk, privateJwk } = this.cipher.generateJwk(hdkey.privateKey!);
 
         const plaintext = JSON.stringify(rest);
@@ -3717,7 +4338,10 @@ export default class Keymaster implements KeymasterInterface {
         return { version: version!, seed: safeSeed, enc };
     }
 
-    private async decryptWalletFromStorage(stored: WalletEncFile): Promise<WalletFile> {
+    private async decryptWalletFromStorage(stored: WalletEncFile): Promise<{
+        wallet: WalletFile;
+        hdkey: ReturnType<Cipher['generateHDKey']>;
+    }> {
         let mnemonic: string;
         try {
             mnemonic = await decMnemonic(stored.seed.mnemonicEnc!, this.passphrase);
@@ -3725,19 +4349,28 @@ export default class Keymaster implements KeymasterInterface {
             throw new KeymasterError('Incorrect passphrase.');
         }
 
-        this._hdkeyCache = this.cipher.generateHDKey(mnemonic);
-        const { publicJwk, privateJwk } = this.cipher.generateJwk(this._hdkeyCache.privateKey!);
+        const hdkey = this._hdkeyCache && this._hdkeyCacheSeed === JSON.stringify(stored.seed.mnemonicEnc)
+            ? this._hdkeyCache
+            : this.cipher.generateHDKey(mnemonic);
+        const { publicJwk, privateJwk } = this.cipher.generateJwk(hdkey.privateKey!);
 
         const plaintext = this.cipher.decryptMessage(publicJwk, privateJwk, stored.enc);
         const data = JSON.parse(plaintext);
 
+        if (!isValidWalletPayload(data)) {
+            throw new KeymasterError('Invalid wallet data.');
+        }
+
         const wallet: WalletFile = { version: stored.version, seed: stored.seed, ...data };
-        return wallet;
+        return { wallet, hdkey };
     }
 
     private async decryptWallet(wallet: WalletFile): Promise<WalletFile> {
         if (isV1WithEnc(wallet)) {
-            wallet = await this.decryptWalletFromStorage(wallet);
+            const decrypted = await this.decryptWalletFromStorage(wallet);
+            this._hdkeyCache = decrypted.hdkey;
+            this._hdkeyCacheSeed = JSON.stringify(wallet.seed.mnemonicEnc);
+            wallet = decrypted.wallet;
         }
 
         if (!isV1Decrypted(wallet)) {
@@ -3754,7 +4387,7 @@ export default class Keymaster implements KeymasterInterface {
         return wallet;
     }
 
-    private async upgradeWallet(wallet: any): Promise<WalletFile> {
+    private async upgradeWallet(wallet: any, persist = true): Promise<WalletFile> {
         if (isLegacyV0(wallet)) {
             const hdkey = this.cipher.generateHDKeyJSON(wallet.seed.hdkey!);
             const keypair = this.cipher.generateJwk(hdkey.privateKey!);
@@ -3762,9 +4395,10 @@ export default class Keymaster implements KeymasterInterface {
             const mnemonicEnc = await encMnemonic(plaintext, this.passphrase);
             const { seed, version, ...rest } = wallet;
             const newWallet = { version: 1, seed: { mnemonicEnc }, ...rest };
-            this._hdkeyCache = this.cipher.generateHDKey(plaintext);
             wallet = await this.encryptWallet(newWallet);
-            await this.db.saveWallet(wallet, true);
+            if (persist) {
+                await this.db.saveWallet(wallet, true);
+            }
         }
 
         if (wallet.version !== 1) {

@@ -9,6 +9,11 @@ import { searchServerUrl } from "../config.js";
 
 const apiVersion = "/api/v1";
 const apiBaseUrl = `${searchServerUrl}${apiVersion}`;
+const requestTimeoutMs = 10_000;
+const api = axios.create({
+    baseURL: apiBaseUrl,
+    timeout: requestTimeoutMs,
+});
 
 export interface SearchServerSyncStatus {
     snapshotComplete: boolean;
@@ -42,6 +47,16 @@ export interface SearchServerEventListResult {
     events: SearchServerEventRecord[];
 }
 
+export interface SearchDocumentsOptions {
+    limit?: number;
+    cursor?: string;
+}
+
+export interface SearchDocumentsResult {
+    dids: string[];
+    nextCursor: string | null;
+}
+
 export type FetchDIDDocumentOptions = Pick<ResolveDIDOptions, "versionSequence" | "versionTime">;
 
 export interface FetchEventsOptions {
@@ -55,6 +70,14 @@ export interface FetchEventsOptions {
 export interface PublishedSchemaMetric {
     schemaDid: string;
     count: number;
+}
+
+export interface NetworkMetricSnapshot {
+    agentDidCount: number;
+    agentDidCountsByPrefix: Record<string, number>;
+    credentialCount: number;
+    credentialDidCountsByPrefix: Record<string, number>;
+    schemas: PublishedSchemaMetric[];
 }
 
 export interface PublishedCredentialRow {
@@ -138,6 +161,16 @@ function toNumber(value: unknown, fallback = 0): number {
     return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function mapPrefixCounts(value: unknown): Record<string, number> {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return {};
+    }
+
+    return Object.fromEntries(
+        Object.entries(value).map(([prefix, count]) => [prefix, toNumber(count)])
+    );
+}
+
 function mapPublishedCredentialRow(row: any): PublishedCredentialRow {
     return {
         holderDid: row.holderDid,
@@ -176,15 +209,16 @@ export function isSearchServerReady(status: SearchServerStatus): boolean {
     return status.ready === true && status.sync?.snapshotComplete === true;
 }
 
-export async function fetchSearchServerStatus(): Promise<SearchServerStatus> {
-    const response = await axios.get(`${apiBaseUrl}/status`);
+export async function fetchSearchServerStatus(signal?: AbortSignal): Promise<SearchServerStatus> {
+    const response = await api.get("/status", { signal });
 
     return response.data as SearchServerStatus;
 }
 
 export async function fetchDIDDocument(
     did: string,
-    options: FetchDIDDocumentOptions = {}
+    options: FetchDIDDocumentOptions = {},
+    signal?: AbortSignal
 ): Promise<MdipDocument | null> {
     const params: Record<string, string | number> = {};
 
@@ -197,9 +231,9 @@ export async function fetchDIDDocument(
     }
 
     try {
-        const response = await axios.get(
-            `${apiBaseUrl}/did/${encodeURIComponent(did)}`,
-            { params }
+        const response = await api.get(
+            `/did/${encodeURIComponent(did)}`,
+            { params, signal }
         );
 
         return response.data as MdipDocument;
@@ -213,25 +247,32 @@ export async function fetchDIDDocument(
 }
 
 export async function fetchSearchServerEvents(
-    options: FetchEventsOptions = {}
+    options: FetchEventsOptions = {},
+    signal?: AbortSignal
 ): Promise<SearchServerEventListResult> {
-    const response = await axios.get(`${apiBaseUrl}/events`, {
+    const response = await api.get("/events", {
         params: options,
+        signal,
     });
 
     return response.data as SearchServerEventListResult;
 }
 
-export async function searchDIDDocuments(query: string): Promise<string[]> {
-    const response = await axios.get(`${apiBaseUrl}/search`, {
-        params: { q: query }
+export async function searchDIDDocuments(
+    query: string,
+    options: SearchDocumentsOptions = {},
+    signal?: AbortSignal
+): Promise<SearchDocumentsResult> {
+    const response = await api.get("/search", {
+        params: { q: query, ...options },
+        signal,
     });
 
-    return response.data as string[];
+    return response.data as SearchDocumentsResult;
 }
 
-export async function fetchPublishedSchemaMetrics(): Promise<PublishedSchemaMetric[]> {
-    const response = await axios.get(`${apiBaseUrl}/metrics/schemas/published`);
+export async function fetchPublishedSchemaMetrics(signal?: AbortSignal): Promise<PublishedSchemaMetric[]> {
+    const response = await api.get("/metrics/schemas/published", { signal });
 
     return (response.data.schemas ?? []).map((row: any) => ({
         schemaDid: row.schemaDid,
@@ -239,11 +280,40 @@ export async function fetchPublishedSchemaMetrics(): Promise<PublishedSchemaMetr
     }));
 }
 
+export async function fetchNetworkMetricSnapshot(
+    date: string,
+    signal?: AbortSignal
+): Promise<NetworkMetricSnapshot | null> {
+    try {
+        const response = await api.get(`/metrics/snapshots/${encodeURIComponent(date)}`, { signal });
+
+        return {
+            agentDidCount: toNumber(response.data.agentDidCount),
+            agentDidCountsByPrefix: mapPrefixCounts(response.data.agentDidCountsByPrefix),
+            credentialCount: toNumber(response.data.credentialCount),
+            credentialDidCountsByPrefix: mapPrefixCounts(response.data.credentialDidCountsByPrefix),
+            schemas: (response.data.schemas ?? []).map((row: any) => ({
+                schemaDid: row.schemaDid,
+                count: toNumber(row.count),
+            })),
+        };
+    }
+    catch (error: any) {
+        if (error?.response?.status === 404) {
+            return null;
+        }
+
+        throw error;
+    }
+}
+
 export async function fetchPublishedCredentials(
-    options: FetchPublishedCredentialsOptions = {}
+    options: FetchPublishedCredentialsOptions = {},
+    signal?: AbortSignal
 ): Promise<PublishedCredentialsResult> {
-    const response = await axios.get(`${apiBaseUrl}/metrics/credentials/published`, {
+    const response = await api.get("/metrics/credentials/published", {
         params: options,
+        signal,
     });
 
     return {
@@ -253,10 +323,12 @@ export async function fetchPublishedCredentials(
 }
 
 export async function fetchChallengeReceipts(
-    options: FetchChallengeReceiptsOptions = {}
+    options: FetchChallengeReceiptsOptions = {},
+    signal?: AbortSignal
 ): Promise<ChallengeReceiptsResult> {
-    const response = await axios.get(`${apiBaseUrl}/metrics/challenge-receipts`, {
+    const response = await api.get("/metrics/challenge-receipts", {
         params: options,
+        signal,
     });
 
     return {
@@ -266,10 +338,12 @@ export async function fetchChallengeReceipts(
 }
 
 export async function fetchChallengeReceiptUsage(
-    options: FetchChallengeReceiptUsageOptions
+    options: FetchChallengeReceiptUsageOptions,
+    signal?: AbortSignal
 ): Promise<ChallengeReceiptUsageResult> {
-    const response = await axios.get(`${apiBaseUrl}/metrics/challenge-receipts/usage`, {
+    const response = await api.get("/metrics/challenge-receipts/usage", {
         params: options,
+        signal,
     });
 
     return {
@@ -284,6 +358,7 @@ export const searchClient = {
     fetchSearchServerEvents,
     searchDIDDocuments,
     fetchPublishedSchemaMetrics,
+    fetchNetworkMetricSnapshot,
     fetchPublishedCredentials,
     fetchChallengeReceipts,
     fetchChallengeReceiptUsage,

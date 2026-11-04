@@ -30,11 +30,9 @@ export default class JsonMongo extends AbstractDB {
     }
 
     async disconnect(): Promise<void> {
-        if (this.collection) {
-            await this.client.close();
-            this.collection = undefined;
-            this.db = undefined;
-        }
+        await this.client.close();
+        this.collection = undefined;
+        this.db = undefined;
     }
 
     async saveDb(data: MediatorDb): Promise<boolean> {

@@ -1,3 +1,4 @@
+import { mockPostgresPool } from './postgres-mock.ts';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -5,7 +6,7 @@ import { jest } from '@jest/globals';
 import { setLogger } from '../../packages/common/src/logger.ts';
 import DIDsDbMemory from '../../services/search-server/src/db/json-memory.ts';
 import Sqlite from '../../services/search-server/src/db/sqlite.ts';
-import DidIndexer from '../../services/search-server/src/DidIndexer.ts';
+import DidIndexer, { type GatekeeperIndexClient } from '../../services/search-server/src/DidIndexer.ts';
 import { extractChallengeReceipts } from '../../services/search-server/src/challenge-receipts.ts';
 import type {
     ChallengeReceiptRecord,
@@ -79,6 +80,7 @@ function createAssetEvent(
 function createSnapshotResponse(did: string, data: unknown) {
     return {
         mode: 'snapshot' as const,
+        indexEpoch: 'epoch-test',
         cursor: did,
         checkpointCursor: '0',
         hasMore: false,
@@ -154,6 +156,17 @@ describe('extractChallengeReceipts', () => {
                 responseCommitment: 'mock-commitment-1',
                 updatedAt: '2026-04-01T10:01:00.000Z',
             },
+        ]);
+    });
+
+    it('uses the canonical receipt DID when the document uses a prefix alias', () => {
+        const receiptDid = 'did:test:receipt-1';
+
+        expect(extractChallengeReceipts(
+            receiptDid,
+            createReceiptDoc('did:mdip:receipt-1')
+        )).toStrictEqual([
+            expect.objectContaining({ receiptDid }),
         ]);
     });
 
@@ -235,6 +248,7 @@ describe.each(adapterFactories)('$name challenge receipt storage', ({ create }) 
             }
 
             expect(await db.listChallengeReceipts({
+                didPrefix: 'did:test',
                 attesterDid: 'did:test:attester-1',
                 schemaDid: 'did:test:schema-1',
                 requesterDid: 'did:test:requester-1',
@@ -302,6 +316,159 @@ describe.each(adapterFactories)('$name challenge receipt storage', ({ create }) 
             })).toStrictEqual({
                 total: 0,
                 usage: [],
+            });
+        }
+        finally {
+            await cleanup();
+        }
+    });
+
+    it('filters and returns receipts using their effective DID prefix', async () => {
+        const { db, cleanup } = await create();
+        const storedReceiptDid = 'did:test:manifest-classified-receipt';
+        const effectiveReceiptDid = 'did:mdip:manifest-classified-receipt';
+        const holderDid = 'did:test:manifest-holder';
+        const holderEvent = createAssetEvent(holderDid, {});
+        holderEvent.operation.mdip!.type = 'agent';
+        const receipt: ChallengeReceiptRecord = {
+            receiptDid: storedReceiptDid,
+            attesterDid: 'did:test:attester-1',
+            schemaDid: 'did:test:schema-1',
+            requesterDid: 'did:test:requester-1',
+            responseCommitment: 'manifest-classified-commitment',
+            updatedAt: '2026-04-01T10:01:00.000Z',
+        };
+
+        try {
+            await seedDID(db, storedReceiptDid, { challengeReceipts: [receipt] });
+            await seedDID(db, holderDid, {
+                events: [holderEvent],
+                didPrefixReferences: [effectiveReceiptDid],
+            });
+
+            expect(await db.findDIDBySuffix('manifest-classified-receipt', 'did:mdip'))
+                .toBe(storedReceiptDid);
+            expect(await db.listChallengeReceipts({
+                didPrefix: 'did:mdip',
+                receiptDid: effectiveReceiptDid,
+                attesterDid: 'did:mdip:attester-1',
+                schemaDid: 'did:mdip:schema-1',
+                requesterDid: 'did:mdip:requester-1',
+            })).toStrictEqual({
+                total: 1,
+                receipts: [{ ...receipt, receiptDid: effectiveReceiptDid }],
+            });
+            expect(await db.listChallengeReceipts({
+                didPrefix: 'did:mdip',
+                receiptDid: storedReceiptDid,
+            })).toMatchObject({ total: 1 });
+            expect(await db.listChallengeReceipts({ didPrefix: 'did:test' }))
+                .toStrictEqual({ total: 0, receipts: [] });
+            expect(await db.getChallengeReceiptUsage({
+                didPrefix: 'did:mdip',
+                attesterDid: 'did:mdip:attester-1',
+                schemaDid: 'did:mdip:schema-1',
+                requesterDid: 'did:mdip:requester-1',
+            })).toMatchObject({ total: 1 });
+            expect(await db.getChallengeReceiptUsage({
+                didPrefix: 'did:test',
+                attesterDid: receipt.attesterDid,
+            })).toStrictEqual({ total: 0, usage: [] });
+        }
+        finally {
+            await cleanup();
+        }
+    });
+
+    it('optionally includes receipts without an authoritative prefix', async () => {
+        const { db, cleanup } = await create();
+        const ambiguousDid = 'did:test:ambiguous-receipt';
+        const scopedAmbiguousDid = 'did:mdip:ambiguous-receipt';
+        const authoritativeDid = 'did:test:authoritative-receipt';
+        const common = {
+            attesterDid: 'did:test:attester',
+            schemaDid: 'did:test:schema',
+            requesterDid: 'did:test:requester',
+        };
+        const ambiguousReceipt: ChallengeReceiptRecord = {
+            receiptDid: ambiguousDid,
+            ...common,
+            responseCommitment: 'ambiguous-commitment',
+            updatedAt: '2026-04-01T10:00:00.000Z',
+        };
+        const authoritativeReceipt: ChallengeReceiptRecord = {
+            receiptDid: authoritativeDid,
+            ...common,
+            responseCommitment: 'authoritative-commitment',
+            updatedAt: '2026-04-01T11:00:00.000Z',
+        };
+        const authoritativeEvent = createAssetEvent(authoritativeDid, {});
+        authoritativeEvent.operation.mdip!.prefix = 'did:test';
+
+        try {
+            await seedDID(db, ambiguousDid, { challengeReceipts: [ambiguousReceipt] });
+            await seedDID(db, authoritativeDid, {
+                events: [authoritativeEvent],
+                challengeReceipts: [authoritativeReceipt],
+            });
+
+            expect(await db.listChallengeReceipts({ didPrefix: 'did:mdip' }))
+                .toStrictEqual({ total: 0, receipts: [] });
+            expect(await db.listChallengeReceipts({
+                didPrefix: 'did:mdip', includeAmbiguous: true,
+            })).toStrictEqual({
+                total: 1,
+                receipts: [{ ...ambiguousReceipt, receiptDid: scopedAmbiguousDid }],
+            });
+            expect(await db.getChallengeReceiptUsage({
+                didPrefix: 'did:mdip', includeAmbiguous: true, attesterDid: common.attesterDid,
+            })).toMatchObject({ total: 1, usage: [{ count: 1 }] });
+        }
+        finally {
+            await cleanup();
+        }
+    });
+
+    it('deduplicates challenge receipt usage across DID prefix aliases', async () => {
+        const { db, cleanup } = await create();
+        const rows: ChallengeReceiptRecord[] = [
+            {
+                receiptDid: 'did:test:receipt-test',
+                attesterDid: 'did:test:attester',
+                schemaDid: 'did:test:schema',
+                requesterDid: 'did:test:requester',
+                responseCommitment: 'commitment-test',
+                updatedAt: '2026-04-02T10:00:00.000Z',
+            },
+            {
+                receiptDid: 'did:test:receipt-mdip',
+                attesterDid: 'did:mdip:attester',
+                schemaDid: 'did:mdip:schema',
+                requesterDid: 'did:mdip:requester',
+                responseCommitment: 'commitment-mdip',
+                updatedAt: '2026-04-01T10:00:00.000Z',
+            },
+        ];
+
+        try {
+            for (const row of rows) {
+                await seedDID(db, row.receiptDid, { challengeReceipts: [row] });
+            }
+
+            expect(await db.getChallengeReceiptUsage({
+                attesterDid: 'did:test:attester',
+                schemaDid: 'did:mdip:schema',
+                requesterDid: 'did:test:requester',
+            })).toStrictEqual({
+                total: 1,
+                usage: [{
+                    attesterDid: 'did:mdip:attester',
+                    schemaDid: 'did:mdip:schema',
+                    requesterDid: 'did:mdip:requester',
+                    count: 2,
+                    firstUpdatedAt: '2026-04-01T10:00:00.000Z',
+                    lastUpdatedAt: '2026-04-02T10:00:00.000Z',
+                }],
             });
         }
         finally {
@@ -494,22 +661,22 @@ describe('postgres challenge receipt adapter with mocked pool', () => {
             responseCommitment: 'mock-commitment-1',
             updatedAt: '2026-04-01T10:01:00.000Z',
         };
-        const poolQuery = jest.fn(async (sql: string) => {
+        const poolQuery = jest.fn(async (sql: string, _params?: unknown[]) => {
             const text = String(sql);
 
             if (text.includes('CREATE TABLE IF NOT EXISTS challenge_receipts')) {
                 return { rowCount: 0, rows: [] };
             }
-            if (text.includes('COUNT(*)::int AS total') && text.includes('GROUP BY attester_did')) {
+            if (text.includes('COUNT(*)::int AS total') && text.includes('GROUP BY cr.attester_suffix')) {
                 return { rowCount: 1, rows: [{ total: 1 }] };
             }
             if (text.includes('COUNT(*)::int AS total')) {
                 return { rowCount: 1, rows: [{ total: 1 }] };
             }
-            if (text.includes('receipt_did AS "receiptDid"')) {
-                return { rowCount: 1, rows: [record] };
+            if (text.includes('AS "receiptDid"')) {
+                return { rowCount: 1, rows: [{ ...record, prefixAmbiguous: true }] };
             }
-            if (text.includes('attester_did AS "attesterDid"')) {
+            if (text.includes('MIN(cr.attester_did) AS "attesterDid"')) {
                 return {
                     rowCount: 1,
                     rows: [{
@@ -531,19 +698,20 @@ describe('postgres challenge receipt adapter with mocked pool', () => {
             return { rowCount: 0, rows: [] };
         });
         const mockClient = {
-            query: jest.fn().mockResolvedValue(undefined),
+            query: jest.fn(async (sql: string, params?: unknown[]) => sql.startsWith('SELECT')
+                ? poolQuery(sql, params) : { rowCount: 0, rows: [] }),
             release: jest.fn(),
         };
         const mockPool = {
             query: poolQuery,
-            connect: jest.fn().mockResolvedValue(mockClient),
-            end: jest.fn().mockResolvedValue(undefined),
+            connect: jest.fn<() => Promise<typeof mockClient>>().mockResolvedValue(mockClient),
+            end: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
         };
         const Postgres = await loadPostgresModule();
 
         class TestPostgres extends Postgres {
             protected createPool(): any {
-                return mockPool;
+                return mockPostgresPool(this, mockPool);
             }
         }
 
@@ -559,10 +727,11 @@ describe('postgres challenge receipt adapter with mocked pool', () => {
         });
 
         expect(await db.listChallengeReceipts({
+            didPrefix: 'did:test',
             receiptDid: record.receiptDid,
-            attesterDid: record.attesterDid,
-            schemaDid: record.schemaDid,
-            requesterDid: record.requesterDid,
+            attesterDid: 'did:mdip:attester-1',
+            schemaDid: 'did:mdip:schema-1',
+            requesterDid: 'did:mdip:requester-1',
             responseCommitment: record.responseCommitment,
             updatedAfter: '2026-04-01T00:00:00.000Z',
             updatedBefore: '2026-04-02T00:00:00.000Z',
@@ -574,9 +743,10 @@ describe('postgres challenge receipt adapter with mocked pool', () => {
         });
 
         expect(await db.getChallengeReceiptUsage({
-            attesterDid: record.attesterDid,
-            schemaDid: record.schemaDid,
-            requesterDid: record.requesterDid,
+            didPrefix: 'did:test',
+            attesterDid: 'did:mdip:attester-1',
+            schemaDid: 'did:mdip:schema-1',
+            requesterDid: 'did:mdip:requester-1',
             updatedAfter: '2026-04-01T00:00:00.000Z',
             updatedBefore: '2026-04-02T00:00:00.000Z',
             limit: 5,
@@ -592,6 +762,17 @@ describe('postgres challenge receipt adapter with mocked pool', () => {
                 lastUpdatedAt: record.updatedAt,
             }],
         });
+        expect(await db.listChallengeReceipts({
+            didPrefix: 'did:mdip', includeAmbiguous: true,
+        })).toMatchObject({
+            total: 1,
+            receipts: [{ receiptDid: 'did:mdip:receipt-1' }],
+        });
+        await db.getChallengeReceiptUsage({
+            didPrefix: 'did:mdip', includeAmbiguous: true, attesterDid: record.attesterDid,
+        });
+        expect(poolQuery.mock.calls.filter(([sql]) => String(sql).includes('OR dc.prefix_ambiguous')))
+            .toHaveLength(4);
 
         await db.wipeDb();
         await db.disconnect();
@@ -605,13 +786,31 @@ describe('postgres challenge receipt adapter with mocked pool', () => {
             [
                 record.receiptDid,
                 record.attesterDid,
+                'attester-1',
                 record.schemaDid,
+                'schema-1',
                 record.requesterDid,
+                'requester-1',
                 record.responseCommitment,
                 record.updatedAt,
             ]
         );
-        expect(poolQuery).toHaveBeenCalledWith('DELETE FROM challenge_receipts');
+        expect(mockClient.query).toHaveBeenCalledWith('DELETE FROM challenge_receipts');
+        expect(poolQuery).toHaveBeenCalledWith(
+            expect.stringContaining("dc.prefix || ':' || dc.suffix AS \"receiptDid\""),
+            [
+                'did:test',
+                'receipt-1',
+                'attester-1',
+                'schema-1',
+                'requester-1',
+                record.responseCommitment,
+                '2026-04-01T00:00:00.000Z',
+                '2026-04-02T00:00:00.000Z',
+                5,
+                10,
+            ]
+        );
         expect(mockPool.end).toHaveBeenCalledTimes(1);
     });
 
@@ -644,12 +843,15 @@ describe('postgres challenge receipt adapter with mocked pool', () => {
 
         class TestPostgres extends Postgres {
             protected createPool(): any {
-                return mockPool;
+                return mockPostgresPool(this, mockPool);
             }
         }
 
         const db = new TestPostgres('postgresql://example');
         await db.connect();
+        mockClient.query.mockClear();
+        mockClient.release.mockClear();
+        mockPool.connect.mockClear();
 
         await expect(db.applyIndexPage({
             dids: [{
@@ -683,15 +885,16 @@ describe('DidIndexer challenge receipt indexing', () => {
             },
         };
         const gatekeeper = {
-            isReady: jest.fn().mockResolvedValue(true),
-            exportIndex: jest.fn().mockResolvedValue(createSnapshotResponse(receiptDid, data)),
+            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
+            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>()
+                .mockResolvedValue(createSnapshotResponse(receiptDid, data)),
             getDIDs: jest.fn(),
             resolveDID: jest.fn(),
         };
         const indexer = new DidIndexer(gatekeeper as any, db, { intervalMs: 60_000 });
 
         await indexer.startIndexing();
-        indexer.stopIndexing();
+        await indexer.stopIndexing();
 
         expect(gatekeeper.getDIDs).not.toHaveBeenCalled();
         expect(gatekeeper.resolveDID).not.toHaveBeenCalled();

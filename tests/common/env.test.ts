@@ -70,6 +70,22 @@ describe('loadEnv', () => {
         expect(process.env.ROOT_ONLY).toBe('mounted');
     });
 
+    test('maps KC_POSTGRES_PASSWORD to PGPASSWORD without overriding PGPASSWORD', () => {
+        const envFile = path.join(tempDir, '.env');
+
+        fs.writeFileSync(envFile, 'KC_POSTGRES_PASSWORD=postgres-password\n');
+
+        loadEnv({ cwd: tempDir });
+
+        expect(process.env.PGPASSWORD).toBe('postgres-password');
+
+        process.env = { ...ORIGINAL_ENV, PGPASSWORD: 'explicit-password' };
+
+        loadEnv({ cwd: tempDir });
+
+        expect(process.env.PGPASSWORD).toBe('explicit-password');
+    });
+
     test('deduplicates KC_ENV_FILE when it matches a discovered env file', () => {
         const workspaceDir = path.join(tempDir, 'repo');
         const serviceDir = path.join(workspaceDir, 'services', 'search-server');

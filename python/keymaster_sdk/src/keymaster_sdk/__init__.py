@@ -43,6 +43,7 @@ from .keymaster_sdk import (
     is_ready,
     issue_credential,
     KeymasterError,
+    list_assets,
     list_credentials,
     list_dmail,
     list_dmail_attachments,

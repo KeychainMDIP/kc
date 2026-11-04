@@ -1,9 +1,11 @@
+import { readDatabase } from './db/db-utils.js';
 import type { Request } from "express";
 import { BlockList, isIP } from "net";
 
 import { childLogger } from "@mdip/common/logger";
+import { isValidDID } from "@mdip/ipfs/utils";
 import { INDEX_SYNC_STATE_KEYS } from "./DidIndexer.js";
-import type { DIDsDb } from "./types.js";
+import type { DIDsDb, IdentityListOptions } from "./types.js";
 
 const log = childLogger({ service: 'search-server' });
 
@@ -115,6 +117,34 @@ export function parseNonNegativeInteger(value: unknown, fallback: number): numbe
     return fallback;
 }
 
+export function parseIdentityListOptions(query: Record<string, unknown>): IdentityListOptions {
+    const { schemaDid } = query;
+    if (schemaDid !== undefined && (typeof schemaDid !== 'string' || !isValidDID(schemaDid))) {
+        throw new Error('schemaDid must be a DID');
+    }
+
+    const fields = query.fields === undefined ? []
+        : Array.isArray(query.fields) ? query.fields : [query.fields];
+    if (fields.some(field => typeof field !== 'string' || field.length === 0)) {
+        throw new Error('fields must contain non-empty field names');
+    }
+
+    for (const name of ['limit', 'offset']) {
+        const value = query[name];
+        if (value !== undefined && (typeof value !== 'string' || !/^\d+$/.test(value)
+            || !Number.isSafeInteger(Number(value)))) {
+            throw new Error(`${name} must be a non-negative integer`);
+        }
+    }
+
+    return {
+        schemaDid,
+        fields: [...new Set(fields as string[])],
+        limit: Math.min(Number(query.limit ?? 50), 500),
+        offset: Number(query.offset ?? 0),
+    };
+}
+
 export function parseOptionalBoolean(value: unknown): boolean | undefined {
     if (typeof value !== 'string') {
         return undefined;
@@ -147,32 +177,39 @@ export function parseOptionalPositiveInteger(value: unknown, fieldName: string):
 }
 
 export async function getSearchStatus(didDb: DIDsDb, dbName: string) {
-    const sync = {
-        snapshotComplete: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.snapshotComplete) === 'true',
-        snapshotCursor: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.snapshotCursor),
-        snapshotCheckpointCursor: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.snapshotCheckpointCursor),
-        changesCursor: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.changesCursor),
-        lastSyncStartedAt: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastSyncStartedAt),
-        lastSyncCompletedAt: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastSyncCompletedAt),
-        lastSyncError: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastSyncError),
-        lastSyncMode: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastSyncMode),
-        lastPagesProcessed: Number.parseInt(
-            await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastPagesProcessed) ?? '0',
-            10
-        ),
-        lastDidsChanged: Number.parseInt(
-            await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastDidsChanged) ?? '0',
-            10
-        ),
-        lastBlocksStored: Number.parseInt(
-            await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastBlocksStored) ?? '0',
-            10
-        ),
-    };
+    return readDatabase(didDb, async () => {
+        const sync = {
+            snapshotComplete: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.snapshotComplete) === 'true',
+            snapshotCursor: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.snapshotCursor),
+            snapshotCheckpointCursor: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.snapshotCheckpointCursor),
+            changesCursor: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.changesCursor),
+            lastSyncStartedAt: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastSyncStartedAt),
+            lastSyncCompletedAt: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastSyncCompletedAt),
+            lastSyncError: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastSyncError),
+            lastSyncMode: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastSyncMode),
+            lastPagesProcessed: Number.parseInt(
+                await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastPagesProcessed) ?? '0',
+                10
+            ),
+            lastDidsChanged: Number.parseInt(
+                await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastDidsChanged) ?? '0',
+                10
+            ),
+            lastBlocksStored: Number.parseInt(
+                await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastBlocksStored) ?? '0',
+                10
+            ),
+        };
 
-    return {
-        ready: true,
-        db: dbName,
-        sync,
-    };
+        return {
+            ready: true,
+            db: dbName,
+            role: await didDb.getRole?.() ?? 'writer',
+            sync,
+            metrics: {
+                lastRebuiltAt: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsLastRebuiltAt),
+                lastError: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsLastError),
+            },
+        };
+    });
 }

@@ -6,7 +6,6 @@ import CipherWeb from '@mdip/cipher/web';
 import Keymaster from '@mdip/keymaster';
 import SearchClient from '@mdip/keymaster/search';
 import WalletWeb from '@mdip/keymaster/wallet/web';
-import WalletCache from '@mdip/keymaster/wallet/cache';
 import WalletJsonMemory from "@mdip/keymaster/wallet/json-memory";
 import { isV1WithEnc, isLegacyV0 } from '@mdip/keymaster/wallet/typeGuards';
 import type { KeymasterInterface, StoredWallet, WalletBase } from '@mdip/keymaster/types';
@@ -21,13 +20,15 @@ globalThis.Buffer = Buffer;
 
 const gatekeeper = new GatekeeperClient();
 const cipher = new CipherWeb();
+const DID_PREFIX = import.meta.env.VITE_GATEKEEPER_DID_PREFIX || 'did:test';
+const SEARCH_PORT = import.meta.env.VITE_SEARCH_PORT || '4002';
 
 type ModalAction = 'set-passphrase' | 'decrypt' | null;
 type UploadAction = 'upload-plain-v0' | 'upload-enc-v1' | null;
 
 async function createSearchClient(): Promise<SearchClient> {
     const { protocol, hostname } = window.location;
-    return SearchClient.create({ url: `${protocol}//${hostname}:4002` });
+    return SearchClient.create({ url: `${protocol}//${hostname}:${SEARCH_PORT}` });
 }
 
 function App() {
@@ -83,7 +84,7 @@ function App() {
 
     const buildKeymaster = async (wallet: WalletBase, passphrase: string) => {
         const search = await getSearchClient();
-        const instance = new Keymaster({gatekeeper, wallet, cipher, search, passphrase});
+        const instance = new Keymaster({gatekeeper, wallet, cipher, search, passphrase, didPrefix: DID_PREFIX});
 
         try {
             // check pass & convert to v1 if needed
@@ -104,8 +105,7 @@ function App() {
 
     async function rebuildKeymaster(passphrase: string) {
         const walletWeb = new WalletWeb();
-        const walletCached = new WalletCache(walletWeb);
-        await buildKeymaster(walletCached, passphrase);
+        await buildKeymaster(walletWeb, passphrase);
     }
 
     async function handlePassphraseSubmit(passphrase: string) {
@@ -120,7 +120,7 @@ function App() {
                 await walletMemory.saveWallet(pendingWallet, true);
 
                 try {
-                    const km = new Keymaster({ gatekeeper, wallet: walletMemory, cipher, search, passphrase });
+                    const km = new Keymaster({ gatekeeper, wallet: walletMemory, cipher, search, passphrase, didPrefix: DID_PREFIX });
                     // check pass
                     await km.loadWallet();
                     await walletWeb.saveWallet(pendingWallet, true);
@@ -166,7 +166,7 @@ function App() {
         try {
             const walletWeb = new WalletWeb();
             const search = await getSearchClient();
-            const km = new Keymaster({ gatekeeper, wallet: walletWeb, cipher, search, passphrase: newPassphrase });
+            const km = new Keymaster({ gatekeeper, wallet: walletWeb, cipher, search, passphrase: newPassphrase, didPrefix: DID_PREFIX });
             await km.newWallet(undefined, true);
             setShowResetSetup(false);
             await rebuildKeymaster(newPassphrase);

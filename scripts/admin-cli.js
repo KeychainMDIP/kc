@@ -317,7 +317,7 @@ program
 
 program
     .command('verify-db')
-    .description('Verify all the DIDs in the db')
+    .description('Check all the DIDs in the db and remove expired dependencies')
     .action(async () => {
         try {
             const response = await gatekeeper.verifyDb();

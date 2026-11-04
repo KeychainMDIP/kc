@@ -170,10 +170,7 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({ isOpen, onClose }) 
                 return;
             }
 
-            const randomId = typeof crypto !== "undefined" && "randomUUID" in crypto
-                ? crypto.randomUUID()
-                : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-            const groupId = `${LOCAL_GROUP_ID_PREFIX}:${randomId}`;
+            const groupId = `${LOCAL_GROUP_ID_PREFIX}:${crypto.randomUUID()}`;
             const updatedAt = new Date().toISOString();
             const body = stringifyChatPayload({
                 type: GROUP_MEMBERSHIP_PAYLOAD_TYPE,

@@ -1,16 +1,96 @@
 import type { NextFunction, Request, Response } from 'express';
+import type { Server } from 'http';
 import { BlockList, isIP } from 'net';
 
-import type { IndexExportRequest } from '@mdip/gatekeeper/types';
+import type { GatekeeperDb, IndexExportRequest, IndexExportResponse } from '@mdip/gatekeeper/types';
 import { childLogger } from '@mdip/common/logger';
 
 const log = childLogger({ service: 'gatekeeper-server' });
+
+export const DATABASE_UNAVAILABLE_ERROR = 'database_unavailable';
+export const DATABASE_UNAVAILABLE_MESSAGE = 'Gatekeeper database is unavailable while exporting index';
+
+const DB_CONNECTIVITY_ERROR_NAMES = new Set([
+    'MongoServerSelectionError',
+    'MongoNetworkError',
+    'MongoNetworkTimeoutError',
+    'MongoNotConnectedError',
+    'MongoOperationTimeoutError',
+    'MongoServerClosedError',
+    'MongoTopologyClosedError',
+    'MongoClientClosedError',
+    'MongoTimeoutError',
+]);
+
+const DB_CONNECTIVITY_ERROR_CODES = new Set([
+    'ENOTFOUND',
+    'ECONNREFUSED',
+    'ECONNRESET',
+    'ETIMEDOUT',
+]);
+
+export interface DatabaseUnavailableResponse {
+    error: typeof DATABASE_UNAVAILABLE_ERROR;
+    message: typeof DATABASE_UNAVAILABLE_MESSAGE;
+}
+
+export class DatabaseUnavailableError extends Error {
+    readonly cause?: unknown;
+
+    constructor(cause?: unknown) {
+        super(DATABASE_UNAVAILABLE_MESSAGE);
+        this.name = 'DatabaseUnavailableError';
+        this.cause = cause;
+    }
+}
 
 export const rateLimitWindowUnits = {
     second: 1000,
     minute: 60 * 1000,
     hour: 60 * 60 * 1000,
 } as const;
+
+export async function drainServer(
+    server: Server,
+    activeWork: Set<Promise<unknown>>,
+): Promise<void> {
+    const close = new Promise<void>((resolve, reject) => {
+        server.close(error => error ? reject(error) : resolve());
+    });
+    const [closeResult] = await Promise.allSettled([close]);
+
+    while (activeWork.size > 0) {
+        const work = [...activeWork];
+        await Promise.allSettled(work);
+        work.forEach(task => activeWork.delete(task));
+    }
+
+    if (closeResult.status === 'rejected') {
+        throw closeResult.reason;
+    }
+}
+
+export async function stopGatekeeper(
+    server: Server | undefined,
+    activeWork: Set<Promise<unknown>>,
+    db: Pick<GatekeeperDb, 'stop'>,
+): Promise<void> {
+    if (server) {
+        try {
+            await drainServer(server, activeWork);
+        }
+        catch (error) {
+            log.error({ error }, 'Error closing Gatekeeper server');
+        }
+    }
+
+    try {
+        await db.stop();
+    }
+    catch (error) {
+        log.error({ error }, 'Error stopping Gatekeeper database');
+    }
+}
 
 export function logRequest(req: Request, res: Response, next: NextFunction): void {
     const startTime = process.hrtime.bigint();
@@ -129,6 +209,100 @@ export function shouldSkipRateLimitPath(req: Request, skipPaths: string[]): bool
         pathOnly === skipPath || pathOnly.startsWith(`${skipPath}/`));
 }
 
+export async function isGatekeeperReady(
+    serverReady: boolean,
+    db: Pick<GatekeeperDb, 'isReady'>
+): Promise<boolean> {
+    if (!serverReady) {
+        return false;
+    }
+
+    try {
+        return await db.isReady();
+    }
+    catch {
+        return false;
+    }
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+}
+
+function stringField(value: Record<string, unknown>, field: string): string | undefined {
+    const fieldValue = value[field];
+    return typeof fieldValue === 'string' ? fieldValue : undefined;
+}
+
+function errorHasConnectivitySignal(error: Record<string, unknown>): boolean {
+    const name = stringField(error, 'name');
+    const code = stringField(error, 'code');
+    const message = stringField(error, 'message');
+
+    return (name !== undefined && DB_CONNECTIVITY_ERROR_NAMES.has(name))
+        || (code !== undefined && DB_CONNECTIVITY_ERROR_CODES.has(code))
+        || (message !== undefined && Array.from(DB_CONNECTIVITY_ERROR_CODES).some(errorCode =>
+            message.includes(errorCode)))
+        || (message !== undefined && message.toLowerCase().includes('server selection timed out'));
+}
+
+export function isDatabaseConnectivityError(error: unknown): boolean {
+    const pending: unknown[] = [error];
+    const seen = new Set<unknown>();
+
+    while (pending.length > 0) {
+        const current = pending.pop();
+        if (!isObject(current) || seen.has(current)) {
+            continue;
+        }
+
+        seen.add(current);
+
+        if (errorHasConnectivitySignal(current)) {
+            return true;
+        }
+
+        if ('cause' in current) {
+            pending.push(current.cause);
+        }
+
+        if (Array.isArray(current.errors)) {
+            pending.push(...current.errors);
+        }
+    }
+
+    return false;
+}
+
+export function databaseUnavailableResponse(): DatabaseUnavailableResponse {
+    return {
+        error: DATABASE_UNAVAILABLE_ERROR,
+        message: DATABASE_UNAVAILABLE_MESSAGE,
+    };
+}
+
+export async function exportIndexWithReadiness(
+    db: Pick<GatekeeperDb, 'isReady' | 'exportIndexSnapshot' | 'exportIndexChanges'>,
+    request: IndexExportRequest
+): Promise<IndexExportResponse> {
+    if (!await db.isReady()) {
+        throw new DatabaseUnavailableError();
+    }
+
+    try {
+        return request.mode === 'snapshot'
+            ? await db.exportIndexSnapshot(request)
+            : await db.exportIndexChanges(request);
+    }
+    catch (error) {
+        if (isDatabaseConnectivityError(error)) {
+            throw new DatabaseUnavailableError(error);
+        }
+
+        throw error;
+    }
+}
+
 export function parseOptionalString(value: unknown, fieldName: string): string | null | undefined {
     if (value === undefined) {
         return undefined;
@@ -159,6 +333,26 @@ export function parseOptionalPositiveInteger(value: unknown, fieldName: string):
     }
 
     return parsed;
+}
+
+export function parseOptionalBoolean(value: unknown, fieldName: string): boolean | undefined {
+    if (value === undefined || value === null) {
+        return undefined;
+    }
+
+    if (typeof value === 'boolean') {
+        return value;
+    }
+
+    if (value === 'true') {
+        return true;
+    }
+
+    if (value === 'false') {
+        return false;
+    }
+
+    throw new Error(`${fieldName} must be a boolean`);
 }
 
 export function parseIndexExportRequest(body: unknown): IndexExportRequest {
@@ -194,6 +388,7 @@ export function parseIndexExportRequest(body: unknown): IndexExportRequest {
             mode,
             cursor: parseOptionalString(raw.cursor, 'cursor'),
             limit: parseOptionalPositiveInteger(raw.limit, 'limit'),
+            includeOperations: parseOptionalBoolean(raw.includeOperations, 'includeOperations'),
         };
     }
 

@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { type RequestHandler } from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -24,11 +24,16 @@ import {
     createWhitelistBlockList,
     formatBytes,
     formatDuration,
+    DatabaseUnavailableError,
+    databaseUnavailableResponse,
+    exportIndexWithReadiness,
     isRateLimitWhitelistedRequest,
+    isGatekeeperReady,
     logRequest,
     parseIndexExportRequest,
     rateLimitWindowUnits,
     shouldSkipRateLimitPath,
+    stopGatekeeper,
 } from './helpers.js';
 
 EventEmitter.defaultMaxListeners = 100;
@@ -44,13 +49,9 @@ const db = (() => {
     case 'postgres': return new DbPostgres(dbName);
     case 'json':
     case 'json-cache': return new DbJsonCache(dbName);
-    default: return null;
+    default: throw new Error(`Unsupported DB type: ${config.db}`);
     }
 })();
-
-if (!db) {
-    throw new Error(`Unsupported DB type: ${config.db}`);
-}
 
 await db.start();
 
@@ -164,17 +165,31 @@ let serverReady = false;
  *       200:
  *         description: Gatekeeper service is ready.
  *         content:
- *           text/plain:
+ *           application/json:
  *             schema:
  *               type: boolean
+ *       503:
+ *         description: Gatekeeper service is not ready.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: boolean
+ *               example: false
+ *       500:
+ *         description: The readiness check failed.
+ *         content:
+ *           text/html:
+ *             schema:
+ *               type: string
  */
-v1router.get('/ready', async (req, res) => {
+v1router.get('/ready', trackedRoute(async (req, res) => {
     try {
-        res.json(serverReady);
+        const ready = await isGatekeeperReady(serverReady, db);
+        res.status(ready ? 200 : 503).json(ready);
     } catch (error: any) {
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -190,14 +205,18 @@ v1router.get('/ready', async (req, res) => {
  *               type: integer
  *       500:
  *         description: Internal Server Error.
+ *         content:
+ *           text/html:
+ *             schema:
+ *               type: string
  */
-v1router.get('/version', async (req, res) => {
+v1router.get('/version', trackedRoute(async (req, res) => {
     try {
         res.json(1);
     } catch (error: any) {
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -278,15 +297,19 @@ v1router.get('/version', async (req, res) => {
  *                       description: Memory allocated for ArrayBuffers and SharedArrayBuffers.
  *       500:
  *         description: Internal Server Error.
+ *         content:
+ *           text/html:
+ *             schema:
+ *               type: string
  */
-v1router.get('/status', async (req, res) => {
+v1router.get('/status', trackedRoute(async (req, res) => {
     try {
         const status = await getStatus();
         res.json(status);
     } catch (error: any) {
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -325,6 +348,10 @@ v1router.get('/status', async (req, res) => {
  *                       registry:
  *                         type: string
  *                         description: Registry where the DID is created.
+ *                       prefix:
+ *                         type: string
+ *                         pattern: '^did:[a-z0-9]+$'
+ *                         description: Optional `did:<method>` prefix override using lowercase letters and digits. If omitted, the server default is used.
  *                       validUntil:
  *                         type: string
  *                         format: date-time
@@ -333,7 +360,7 @@ v1router.get('/status', async (req, res) => {
  *                   signature:
  *                     type: object
  *                     description: Cryptographic signature verifying the create operation.
- *                     required: [ value, signed ]
+ *                     required: [ value, signed, hash ]
  *                     properties:
  *                       value:
  *                         type: string
@@ -347,16 +374,21 @@ v1router.get('/status', async (req, res) => {
  *                         description: The DID of the signer (for asset creation, should match `controller`).
  *                       hash:
  *                         type: string
- *                         description: Hash of the operation payload, if applicable.
+ *                         description: SHA-256 hash of the operation payload.
  *                   publicJwk:
  *                     type: object
  *                     description: Required if mdip.type = "agent". Contains the public key in JWK format.
  *                   controller:
  *                     type: string
  *                     description: Required if mdip.type = "asset". Must match the `signer` in `signature`.
+ *                   data:
+ *                     description: Optional arbitrary JSON data for an asset DID.
+ *                   blockid:
+ *                     type: string
+ *                     description: Optional current block hash or identifier used when creating the DID.
  *
  *               - type: object
- *                 required: [ type, did, signature ]
+ *                 required: [ type, did, previd, signature ]
  *                 properties:
  *                   type:
  *                     type: string
@@ -367,13 +399,16 @@ v1router.get('/status', async (req, res) => {
  *                     description: The DID to update.
  *                   doc:
  *                     type: object
- *                     description: The updated DID document or subset of data.
+ *                     description: The complete DID document that replaces the current document.
  *                   previd:
  *                     type: string
  *                     description: Reference to the previous version CID/hash.
+ *                   blockid:
+ *                     type: string
+ *                     description: Optional current block hash or identifier.
  *                   signature:
  *                     type: object
- *                     required: [ value, signed ]
+ *                     required: [ value, signed, hash ]
  *                     description: Cryptographic signature verifying this update operation.
  *                     properties:
  *                       value:
@@ -388,10 +423,10 @@ v1router.get('/status', async (req, res) => {
  *                         description: The DID of the signer (often the same as `did`).
  *                       hash:
  *                         type: string
- *                         description: Optional hash of the operation payload.
+ *                         description: SHA-256 hash of the operation payload.
  *
  *               - type: object
- *                 required: [ type, did, signature ]
+ *                 required: [ type, did, previd, signature ]
  *                 properties:
  *                   type:
  *                     type: string
@@ -400,9 +435,15 @@ v1router.get('/status', async (req, res) => {
  *                   did:
  *                     type: string
  *                     description: The DID to deactivate.
+ *                   previd:
+ *                     type: string
+ *                     description: Reference to the previous version CID/hash.
+ *                   blockid:
+ *                     type: string
+ *                     description: Optional current block hash or identifier.
  *                   signature:
  *                     type: object
- *                     required: [ value, signed ]
+ *                     required: [ value, signed, hash ]
  *                     description: Cryptographic signature verifying this delete operation.
  *                     properties:
  *                       value:
@@ -417,7 +458,7 @@ v1router.get('/status', async (req, res) => {
  *                         description: The DID of the signer, who must have authority to delete.
  *                       hash:
  *                         type: string
- *                         description: Optional hash of the operation payload.
+ *                         description: SHA-256 hash of the operation payload.
  *
  *     responses:
  *       200:
@@ -425,7 +466,7 @@ v1router.get('/status', async (req, res) => {
  *           - If `type = "create"`, returns the newly created DID as a string.
  *           - Otherwise (for update or delete), returns a boolean value indicating success.
  *         content:
- *           text/plain:
+ *           application/json:
  *             schema:
  *               oneOf:
  *                 - type: string
@@ -437,11 +478,11 @@ v1router.get('/status', async (req, res) => {
  *       500:
  *         description: Internal Server Error.
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
  *               type: string
  */
-v1router.post('/did', async (req, res) => {
+v1router.post('/did', trackedRoute(async (req, res) => {
     try {
         const operation = req.body;
         let result;
@@ -456,7 +497,7 @@ v1router.post('/did', async (req, res) => {
         log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -501,7 +542,8 @@ v1router.post('/did', async (req, res) => {
  *                     example: local
  *                   prefix:
  *                     type: string
- *                     description: Optional DID prefix override. If omitted, server default is used.
+ *                     pattern: '^did:[a-z0-9]+$'
+ *                     description: Optional `did:<method>` prefix override using lowercase letters and digits. If omitted, server default is used.
  *                     example: did:test
  *                   validUntil:
  *                     type: string
@@ -537,7 +579,7 @@ v1router.post('/did', async (req, res) => {
  *                 error:
  *                   type: string
  */
-v1router.post("/did/generate", async (req, res) => {
+v1router.post("/did/generate", trackedRoute(async (req, res) => {
     try {
         const operation = req.body as Operation;
 
@@ -551,7 +593,7 @@ v1router.post("/did/generate", async (req, res) => {
     } catch (err: any) {
         res.status(400).json(err?.response?.data ?? err);
     }
-});
+}));
 
 /**
  * @swagger
@@ -574,6 +616,7 @@ v1router.post("/did/generate", async (req, res) => {
  *           format: date-time
  *         description: >
  *           Timestamp to return the state of the DID as of this specific time.
+ *           A time before the create operation resolves as `notFound`.
  *       - in: query
  *         name: versionSequence
  *         required: false
@@ -587,7 +630,8 @@ v1router.post("/did/generate", async (req, res) => {
  *         schema:
  *           type: boolean
  *         description: >
- *           If `true`, returns the DID Document if it is fully confirmed.
+ *           If `true`, requires the create and all applied later events to be confirmed by the DID's native registry.
+ *           An unconfirmed create resolves as `notFound`.
  *       - in: query
  *         name: verify
  *         required: false
@@ -598,16 +642,15 @@ v1router.post("/did/generate", async (req, res) => {
  *           If a signature is invalid, an error is thrown.
  *     responses:
  *       200:
- *         description: Successfully resolved DID Document.
+ *         description: >
+ *           The resolution result. Invalid or unknown DIDs are reported in
+ *           `didResolutionMetadata.error` with a 200 response.
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               description: The fully-resolved DID Document along with metadata describing its state.
  *               properties:
- *                 "@context":
- *                   type: string
- *                   description: DID resolution context.
  *                 didDocument:
  *                   type: object
  *                   description: The DID Document itself.
@@ -663,7 +706,7 @@ v1router.post("/did/generate", async (req, res) => {
  *                       format: date-time
  *                       description: Timestamp of when the DID was deleted (if it was deleted).
  *                     version:
- *                       type: integer
+ *                       type: string
  *                       description: Current version number of the DID Document.
  *                     versionId:
  *                       type: string
@@ -677,9 +720,23 @@ v1router.post("/did/generate", async (req, res) => {
  *                     deactivated:
  *                       type: boolean
  *                       description: Indicates if the DID is deactivated (via a delete operation).
- *                 didDocumentData:
+ *                     timestamp:
+ *                       type: object
+ *                       description: Optional blockchain timestamp bounds for the current operation.
+ *                 didResolutionMetadata:
  *                   type: object
- *                   description: Arbitrary data attached to the DID (for assets).
+ *                   description: Metadata describing the resolution result.
+ *                   properties:
+ *                     retrieved:
+ *                       type: string
+ *                       format: date-time
+ *                       description: Timestamp indicating when the DID was resolved.
+ *                     error:
+ *                       type: string
+ *                       enum: [ "invalidDid", "notFound" ]
+ *                       description: Resolution error for an invalid or unknown DID.
+ *                 didDocumentData:
+ *                   description: Arbitrary JSON data attached to the DID (for assets).
  *                 mdip:
  *                   type: object
  *                   description: MDIP-specific metadata fields.
@@ -690,20 +747,21 @@ v1router.post("/did/generate", async (req, res) => {
  *                       description: The MDIP type.
  *                     registry:
  *                       type: string
- *                       enum: [ "local", "hyperswarm", "TBTC", "TFTC" ]
+ *                       enum: [ "local", "hyperswarm", "TESS", "TBTC", "TFTC", "Signet", "Signet-Inscription", "BTC-Inscription" ]
  *                       description: Registry in which this DID is maintained.
  *                     version:
  *                       type: integer
  *                       description: Supported MDIP version.
+ *                     prefix:
+ *                       type: string
+ *                       pattern: '^did:[a-z0-9]+$'
+ *                       description: DID prefix embedded in the operation, using `did:<method>` with lowercase letters and digits.
  *                     validUntil:
  *                       type: string
  *                       format: date-time
  *                       description: Optional expiration timestamp for ephemeral DIDs.
- *                     registration:
- *                       type: string
- *                       description: Blockchain or other registry reference for an updated or deleted DID.
  *       404:
- *         description: DID not found. The DID either does not exist or cannot be resolved.
+ *         description: Resolution failed with an exception.
  *         content:
  *           application/json:
  *             schema:
@@ -711,10 +769,8 @@ v1router.post("/did/generate", async (req, res) => {
  *               properties:
  *                 error:
  *                   type: string
- *       500:
- *         description: Internal Server Error.
  */
-v1router.get('/did/:did', async (req, res) => {
+v1router.get('/did/:did', trackedRoute(async (req, res) => {
     try {
         const options: ResolveDIDOptions = {};
         const { versionTime, versionSequence, confirm, verify } = req.query;
@@ -743,7 +799,7 @@ v1router.get('/did/:did', async (req, res) => {
     } catch {
         res.status(404).send({ error: 'DID not found' });
     }
-});
+}));
 
 /**
  * @deprecated
@@ -770,7 +826,7 @@ v1router.get('/did/:did', async (req, res) => {
  *         application/json:
  *           schema:
  *             type: object
- *             required: [ type, did, signature ]
+ *             required: [ type, did, previd, signature ]
  *             properties:
  *               type:
  *                 type: string
@@ -781,7 +837,7 @@ v1router.get('/did/:did', async (req, res) => {
  *                 description: The DID being updated. Must match the path parameter `{did}`.
  *               doc:
  *                 type: object
- *                 description: The updated DID Document or subset of data for this DID.
+ *                 description: The complete DID Document that replaces the current document.
  *               previd:
  *                 type: string
  *                 description: Reference to the previous version.
@@ -799,11 +855,11 @@ v1router.get('/did/:did', async (req, res) => {
  *       500:
  *         description: Internal Server Error.
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
  *               type: string
  */
-v1router.post('/did/:did', async (req, res) => {
+v1router.post('/did/:did', trackedRoute(async (req, res) => {
     try {
         const operation = req.body;
         const ok = await gatekeeper.updateDID(operation);
@@ -812,7 +868,7 @@ v1router.post('/did/:did', async (req, res) => {
         log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @deprecated
@@ -837,7 +893,7 @@ v1router.post('/did/:did', async (req, res) => {
  *         application/json:
  *           schema:
  *             type: object
- *             required: [ type, did, signature ]
+ *             required: [ type, did, previd, signature ]
  *             properties:
  *               type:
  *                 type: string
@@ -861,8 +917,12 @@ v1router.post('/did/:did', async (req, res) => {
  *               type: boolean
  *       500:
  *         description: Internal Server Error.
+ *         content:
+ *           text/html:
+ *             schema:
+ *               type: string
  */
-v1router.delete('/did/:did', async (req, res) => {
+v1router.delete('/did/:did', trackedRoute(async (req, res) => {
     try {
         const operation = req.body;
         const ok = await gatekeeper.deleteDID(operation);
@@ -871,7 +931,7 @@ v1router.delete('/did/:did', async (req, res) => {
         log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -938,11 +998,11 @@ v1router.delete('/did/:did', async (req, res) => {
  *       500:
  *         description: Internal Server Error.
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
  *               type: string
  */
-v1router.post('/dids/', async (req, res) => {
+v1router.post('/dids/', trackedRoute(async (req, res) => {
     try {
         const dids = await gatekeeper.getDIDs(req.body);
         res.json(dids);
@@ -950,7 +1010,7 @@ v1router.post('/dids/', async (req, res) => {
         log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -980,6 +1040,9 @@ v1router.post('/dids/', async (req, res) => {
  *               limit:
  *                 type: integer
  *                 minimum: 1
+ *               includeOperations:
+ *                 type: boolean
+ *                 description: Changes-only. Include event-level operation records for consumers that need replay order.
  *
  *     responses:
  *       200:
@@ -989,11 +1052,14 @@ v1router.post('/dids/', async (req, res) => {
  *             schema:
  *               oneOf:
  *                 - type: object
- *                   required: [ mode, cursor, checkpointCursor, hasMore, dids, blocks ]
+ *                   required: [ mode, indexEpoch, cursor, checkpointCursor, hasMore, dids, blocks ]
  *                   properties:
  *                     mode:
  *                       type: string
  *                       enum: [ snapshot ]
+ *                     indexEpoch:
+ *                       type: string
+ *                       description: Local Gatekeeper index epoch. Changes when the backing index database is reset or replaced.
  *                     cursor:
  *                       type: string
  *                       nullable: true
@@ -1013,15 +1079,22 @@ v1router.post('/dids/', async (req, res) => {
  *                       items:
  *                         type: object
  *                 - type: object
- *                   required: [ mode, cursor, hasMore, dids, blocks ]
+ *                   required: [ mode, indexEpoch, cursor, checkpointCursor, hasMore, dids, blocks ]
  *                   properties:
  *                     mode:
  *                       type: string
  *                       enum: [ changes ]
+ *                     indexEpoch:
+ *                       type: string
+ *                       description: Local Gatekeeper index epoch. Changes when the backing index database is reset or replaced.
  *                     cursor:
  *                       type: string
  *                       nullable: true
  *                       description: Incremental change cursor.
+ *                     checkpointCursor:
+ *                       type: string
+ *                       nullable: true
+ *                       description: Change high-water cursor returned with the page.
  *                     hasMore:
  *                       type: boolean
  *                     dids:
@@ -1032,12 +1105,47 @@ v1router.post('/dids/', async (req, res) => {
  *                       type: array
  *                       items:
  *                         type: object
+ *                     operations:
+ *                       type: array
+ *                       description: Optional ordered operation records. Returned only when includeOperations is true.
+ *                       items:
+ *                         type: object
+ *                     removedOperations:
+ *                       type: array
+ *                       description: Optional ordered operation removals. Returned only when includeOperations is true.
+ *                       items:
+ *                         type: object
  *       400:
  *         description: Invalid request body.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *       503:
+ *         description: Gatekeeper database is unavailable.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                 message:
+ *                   type: string
  *       500:
  *         description: Internal Server Error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
  */
-v1router.post('/index/export', async (req, res) => {
+v1router.post('/index/export', trackedRoute(async (req, res) => {
     let request: ReturnType<typeof parseIndexExportRequest>;
 
     try {
@@ -1048,16 +1156,19 @@ v1router.post('/index/export', async (req, res) => {
     }
 
     try {
-        const response = request.mode === 'snapshot'
-            ? await db.exportIndexSnapshot(request)
-            : await db.exportIndexChanges(request);
-
+        const response = await exportIndexWithReadiness(db, request);
         res.json(response);
     } catch (error: any) {
+        if (error instanceof DatabaseUnavailableError) {
+            log.warn({ err: error.cause ?? error }, 'Index export database unavailable');
+            res.status(503).json(databaseUnavailableResponse());
+            return;
+        }
+
         log.error({ err: error }, 'Index export error');
         res.status(500).json({ error: error.toString() });
     }
-});
+}));
 
 /**
  * @swagger
@@ -1085,11 +1196,11 @@ v1router.post('/index/export', async (req, res) => {
  *       500:
  *         description: Internal Server Error.
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
  *               type: string
  */
-v1router.post('/dids/remove', async (req, res) => {
+v1router.post('/dids/remove', trackedRoute(async (req, res) => {
     try {
         const dids = req.body;
         const response = await gatekeeper.removeDIDs(dids);
@@ -1098,7 +1209,7 @@ v1router.post('/dids/remove', async (req, res) => {
         log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -1159,11 +1270,11 @@ v1router.post('/dids/remove', async (req, res) => {
  *       500:
  *         description: Internal Server Error.
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
  *               type: string
  */
-v1router.post('/dids/export', async (req, res) => {
+v1router.post('/dids/export', trackedRoute(async (req, res) => {
     try {
         const { dids } = req.body;
         const response = await gatekeeper.exportDIDs(dids);
@@ -1172,7 +1283,7 @@ v1router.post('/dids/export', async (req, res) => {
         log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -1267,11 +1378,11 @@ v1router.post('/dids/export', async (req, res) => {
  *       500:
  *         description: Internal Server Error.
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
  *               type: string
  */
-v1router.post('/dids/import', async (req, res) => {
+v1router.post('/dids/import', trackedRoute(async (req, res) => {
     try {
         const dids = req.body;
         const response = await gatekeeper.importDIDs(dids);
@@ -1280,7 +1391,7 @@ v1router.post('/dids/import', async (req, res) => {
         log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -1347,11 +1458,11 @@ v1router.post('/dids/import', async (req, res) => {
  *       500:
  *         description: Internal Server Error.
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
  *               type: string
  */
-v1router.post('/batch/export', async (req, res) => {
+v1router.post('/batch/export', trackedRoute(async (req, res) => {
     try {
         const dids = req.body?.dids;
         const response = await gatekeeper.exportBatch(dids);
@@ -1360,7 +1471,7 @@ v1router.post('/batch/export', async (req, res) => {
         log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -1449,11 +1560,11 @@ v1router.post('/batch/export', async (req, res) => {
  *       500:
  *         description: Internal Server Error.
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
  *               type: string
  */
-v1router.post('/batch/import', async (req, res) => {
+v1router.post('/batch/import', trackedRoute(async (req, res) => {
     try {
         const batch = req.body;
         const response = await gatekeeper.importBatch(batch);
@@ -1462,7 +1573,7 @@ v1router.post('/batch/import', async (req, res) => {
         log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -1526,11 +1637,11 @@ v1router.post('/batch/import', async (req, res) => {
  *       500:
  *         description: Internal Server Error.
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
  *               type: string
  */
-v1router.get('/queue/:registry', async (req, res) => {
+v1router.get('/queue/:registry', trackedRoute(async (req, res) => {
     try {
         const queue = await gatekeeper.getQueue(req.params.registry);
         res.json(queue);
@@ -1538,7 +1649,7 @@ v1router.get('/queue/:registry', async (req, res) => {
         log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -1583,7 +1694,7 @@ v1router.get('/queue/:registry', async (req, res) => {
  *                       description: The (optional) DID document content, present if type is "update" or "create" with doc data.
  *                     previd:
  *                       type: string
- *                       description: Reference to the previous version (optional).
+ *                       description: Reference to the previous version for update and delete operations.
  *                     signature:
  *                       type: object
  *                       description: Cryptographic signature.
@@ -1594,22 +1705,19 @@ v1router.get('/queue/:registry', async (req, res) => {
  *
  *     responses:
  *       200:
- *         description: The updated queue after clearing the specified events.
+ *         description: Whether the specified events were cleared successfully.
  *         content:
  *           application/json:
  *             schema:
- *               type: array
- *               description: An array of remaining events in the queue. Could be empty if all events were cleared.
- *               items:
- *                 type: object
+ *               type: boolean
  *       500:
  *         description: Internal Server Error.
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
  *               type: string
  */
-v1router.post('/queue/:registry/clear', async (req, res) => {
+v1router.post('/queue/:registry/clear', trackedRoute(async (req, res) => {
     try {
         const eventsOrHashes = req.body;
         const queue = await gatekeeper.clearQueue(req.params.registry, eventsOrHashes);
@@ -1618,7 +1726,7 @@ v1router.post('/queue/:registry/clear', async (req, res) => {
         log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -1637,11 +1745,11 @@ v1router.post('/queue/:registry/clear', async (req, res) => {
  *       500:
  *         description: Internal Server Error.
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
  *               type: string
  */
-v1router.get('/registries', async (req, res) => {
+v1router.get('/registries', trackedRoute(async (req, res) => {
     try {
         const registries = await gatekeeper.listRegistries();
         res.json(registries);
@@ -1649,7 +1757,7 @@ v1router.get('/registries', async (req, res) => {
         log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -1667,28 +1775,28 @@ v1router.get('/registries', async (req, res) => {
  *       500:
  *         description: Internal Server Error.
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
  *               type: string
  */
-v1router.get('/db/reset', async (req, res) => {
+v1router.get('/db/reset', trackedRoute(async (req, res) => {
     try {
         await gatekeeper.resetDb();
         res.json(true);
     } catch (error: any) {
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
  * /db/verify:
  *   get:
- *     summary: Verify all DIDs in the database
+ *     summary: Check all DIDs in the database
  *
  *     responses:
  *       200:
- *         description: Verification results for all DIDs in the database.
+ *         description: Resolution and expiry results for all DIDs in the database.
  *         content:
  *           application/json:
  *             schema:
@@ -1699,28 +1807,28 @@ v1router.get('/db/reset', async (req, res) => {
  *                   description: The total number of DIDs that were checked.
  *                 verified:
  *                   type: integer
- *                   description: The count of DIDs that passed verification.
+ *                   description: The count of cached or successfully resolved DIDs retained.
  *                 expired:
  *                   type: integer
- *                   description: The count of DIDs that had expired and were removed.
+ *                   description: The count of expired DIDs and their dependencies that were removed.
  *                 invalid:
  *                   type: integer
- *                   description: The count of DIDs that failed verification and were removed.
+ *                   description: The count of DIDs that failed resolution and were removed.
  *       500:
  *         description: Internal Server Error.
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
  *               type: string
  */
-v1router.get('/db/verify', async (req, res) => {
+v1router.get('/db/verify', trackedRoute(async (req, res) => {
     try {
         const response = await gatekeeper.verifyDb();
         res.json(response);
     } catch (error: any) {
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -1765,21 +1873,31 @@ v1router.get('/db/verify', async (req, res) => {
  *                       description: Lower-case signature hashes of events accepted during this processing run (added or merged).
  *                       items:
  *                         type: string
+ *                     acceptedEvents:
+ *                       type: array
+ *                       description: Events accepted during this processing run (added or merged).
+ *                       items:
+ *                         type: object
+ *                     rejectedOperations:
+ *                       type: array
+ *                       description: Operations rejected during this processing run.
+ *                       items:
+ *                         type: object
  *       500:
  *         description: Internal Server Error.
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
  *               type: string
  */
-v1router.post('/events/process', async (req, res) => {
+v1router.post('/events/process', trackedRoute(async (req, res) => {
     try {
         const response = await gatekeeper.processEvents();
         res.json(response);
     } catch (error: any) {
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -1799,7 +1917,7 @@ v1router.post('/events/process', async (req, res) => {
  *         description: >
  *           A CID (Content Identifier) for the added JSON object in base58btc format
  *         content:
- *           text/plain:
+ *           text/html:
  *             schema:
  *               type: string
  *               example: z3v8AuahvBGDMXvCTWedYbxnH6C9ZrsEtEJAvip2XPzcZb8yo6A
@@ -1807,11 +1925,17 @@ v1router.post('/events/process', async (req, res) => {
  *       500:
  *         description: Internal Server Error.
  *         content:
- *           application/json:
+ *           text/html:
+ *             schema:
+ *               type: string
+ *       503:
+ *         description: IPFS is disabled. The response body is `IPFS disabled`.
+ *         content:
+ *           text/html:
  *             schema:
  *               type: string
  */
-v1router.post('/cas/json', async (req, res) => {
+v1router.post('/cas/json', trackedRoute(async (req, res) => {
     try {
         const response = await gatekeeper.addJSON(req.body);
         res.send(response);
@@ -1823,7 +1947,7 @@ v1router.post('/cas/json', async (req, res) => {
         }
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -1844,21 +1968,20 @@ v1router.post('/cas/json', async (req, res) => {
  *           application/json:
  *             schema:
  *               type: object
- *       404:
- *         description: JSON object not found
- *         content:
- *           application/json:
- *             schema:
- *               type: string
- *               example: "Not Found"
  *       500:
  *         description: Internal Server Error
  *         content:
- *           application/json:
+ *           text/html:
+ *             schema:
+ *               type: string
+ *       503:
+ *         description: IPFS is disabled. The response body is `IPFS disabled`.
+ *         content:
+ *           text/html:
  *             schema:
  *               type: string
  */
-v1router.get('/cas/json/:cid', async (req, res) => {
+v1router.get('/cas/json/:cid', trackedRoute(async (req, res) => {
     try {
         const response = await gatekeeper.getJSON(req.params.cid);
         res.json(response);
@@ -1869,7 +1992,7 @@ v1router.get('/cas/json/:cid', async (req, res) => {
         }
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -1889,7 +2012,7 @@ v1router.get('/cas/json/:cid', async (req, res) => {
  *         description: >
  *           A CID (Content Identifier) for the added text in base58btc format
  *         content:
- *           text/plain:
+ *           text/html:
  *             schema:
  *               type: string
  *               example: zb2rhoVn27TzH1yQD1Bux7XKxaUBp3Rwzvd8Re9Shp4bEGokf
@@ -1897,11 +2020,17 @@ v1router.get('/cas/json/:cid', async (req, res) => {
  *       500:
  *         description: Internal Server Error.
  *         content:
- *           application/json:
+ *           text/html:
+ *             schema:
+ *               type: string
+ *       503:
+ *         description: IPFS is disabled. The response body is `IPFS disabled`.
+ *         content:
+ *           text/html:
  *             schema:
  *               type: string
  */
-v1router.post('/cas/text', express.text({ type: 'text/plain', limit: '10mb' }), async (req, res) => {
+v1router.post('/cas/text', express.text({ type: 'text/plain', limit: '10mb' }), trackedRoute(async (req, res) => {
     try {
         const response = await gatekeeper.addText(req.body);
         res.send(response);
@@ -1912,7 +2041,7 @@ v1router.post('/cas/text', express.text({ type: 'text/plain', limit: '10mb' }), 
         }
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -1930,24 +2059,23 @@ v1router.post('/cas/text', express.text({ type: 'text/plain', limit: '10mb' }), 
  *       200:
  *         description: Successfully retrieved the text
  *         content:
- *           text/plain:
+ *           text/html:
  *             schema:
  *               type: string
- *       404:
- *         description: Text not found
- *         content:
- *           application/json:
- *             schema:
- *               type: string
- *               example: "Not Found"
  *       500:
  *         description: Internal Server Error
  *         content:
- *           application/json:
+ *           text/html:
+ *             schema:
+ *               type: string
+ *       503:
+ *         description: IPFS is disabled. The response body is `IPFS disabled`.
+ *         content:
+ *           text/html:
  *             schema:
  *               type: string
  */
-v1router.get('/cas/text/:cid', async (req, res) => {
+v1router.get('/cas/text/:cid', trackedRoute(async (req, res) => {
     try {
         const response = await gatekeeper.getText(req.params.cid);
         res.send(response);
@@ -1958,7 +2086,7 @@ v1router.get('/cas/text/:cid', async (req, res) => {
         }
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -1979,7 +2107,7 @@ v1router.get('/cas/text/:cid', async (req, res) => {
  *         description: >
  *           A CID (Content Identifier) for the added data in base58btc format
  *         content:
- *           text/plain:
+ *           text/html:
  *             schema:
  *               type: string
  *               example: zdj7WnZAJEYaTTvvDRXCfDpN8raDkX63VrrZBTpV5fw4cVciw
@@ -1987,11 +2115,17 @@ v1router.get('/cas/text/:cid', async (req, res) => {
  *       500:
  *         description: Internal Server Error.
  *         content:
- *           application/json:
+ *           text/html:
+ *             schema:
+ *               type: string
+ *       503:
+ *         description: IPFS is disabled. The response body is `IPFS disabled`.
+ *         content:
+ *           text/html:
  *             schema:
  *               type: string
  */
-v1router.post('/cas/data', express.raw({ type: 'application/octet-stream', limit: '10mb' }), async (req, res) => {
+v1router.post('/cas/data', express.raw({ type: 'application/octet-stream', limit: '10mb' }), trackedRoute(async (req, res) => {
     try {
         const data = req.body;
         const response = await gatekeeper.addData(data);
@@ -2003,7 +2137,7 @@ v1router.post('/cas/data', express.raw({ type: 'application/octet-stream', limit
         }
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -2025,21 +2159,20 @@ v1router.post('/cas/data', express.raw({ type: 'application/octet-stream', limit
  *             schema:
  *               type: string
  *               format: binary
- *       404:
- *         description: Data not found
- *         content:
- *           application/json:
- *             schema:
- *               type: string
- *               example: "Not Found"
  *       500:
  *         description: Internal Server Error
  *         content:
- *           application/json:
+ *           text/html:
+ *             schema:
+ *               type: string
+ *       503:
+ *         description: IPFS is disabled. The response body is `IPFS disabled`.
+ *         content:
+ *           text/html:
  *             schema:
  *               type: string
  */
-v1router.get('/cas/data/:cid', async (req, res) => {
+v1router.get('/cas/data/:cid', trackedRoute(async (req, res) => {
     try {
         const response = await gatekeeper.getData(req.params.cid);
         res.set('Content-Type', 'application/octet-stream');
@@ -2051,7 +2184,7 @@ v1router.get('/cas/data/:cid', async (req, res) => {
         }
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -2085,11 +2218,11 @@ v1router.get('/cas/data/:cid', async (req, res) => {
  *       500:
  *         description: Internal Server Error.
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
  *               type: string
  */
-v1router.get('/block/:registry/latest', async (req, res) => {
+v1router.get('/block/:registry/latest', trackedRoute(async (req, res) => {
     try {
         const { registry } = req.params;
         const block = await gatekeeper.getBlock(registry);
@@ -2097,7 +2230,7 @@ v1router.get('/block/:registry/latest', async (req, res) => {
     } catch (error: any) {
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -2146,11 +2279,11 @@ v1router.get('/block/:registry/latest', async (req, res) => {
  *       500:
  *         description: Internal Server Error.
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
  *               type: string
  */
-v1router.get('/block/:registry/:blockId', async (req, res) => {
+v1router.get('/block/:registry/:blockId', trackedRoute(async (req, res) => {
     try {
         const { registry, blockId } = req.params;
         const parsedBlockId = /^\d+$/.test(blockId) ? parseInt(blockId, 10) : blockId;
@@ -2159,7 +2292,7 @@ v1router.get('/block/:registry/:blockId', async (req, res) => {
     } catch (error: any) {
         res.status(500).send(error.toString());
     }
-});
+}));
 
 /**
  * @swagger
@@ -2204,11 +2337,11 @@ v1router.get('/block/:registry/:blockId', async (req, res) => {
  *       500:
  *         description: Internal Server Error.
  *         content:
- *           application/json:
+ *           text/html:
  *             schema:
  *               type: string
  */
-v1router.post('/block/:registry', async (req, res) => {
+v1router.post('/block/:registry', trackedRoute(async (req, res) => {
     try {
         const { registry } = req.params;
         const block = req.body;
@@ -2217,7 +2350,7 @@ v1router.post('/block/:registry', async (req, res) => {
     } catch (error: any) {
         res.status(500).send(error.toString());
     }
-});
+}));
 
 if (apiRateLimiter) {
     app.use('/api', apiRateLimiter);
@@ -2230,6 +2363,66 @@ app.use('/api', (req, res) => {
     res.status(404).json({ message: 'Endpoint not found' });
 });
 
+let shuttingDown = false;
+let statusTimer: ReturnType<typeof setInterval> | undefined;
+let gcTimer: ReturnType<typeof setTimeout> | undefined;
+let server: ReturnType<typeof app.listen> | undefined;
+let shutdownPromise: Promise<void> | undefined;
+let shutdownExitCode = 0;
+const activeWork = new Set<Promise<unknown>>();
+
+function trackActiveWork<T>(task: Promise<T>) {
+    activeWork.add(task);
+    task.then(
+        () => activeWork.delete(task),
+        () => activeWork.delete(task),
+    );
+    return task;
+}
+
+function trackedRoute(
+    handler: RequestHandler<Record<string, string>>,
+): RequestHandler<Record<string, string>> {
+    return (req, res, next) =>
+        trackActiveWork(Promise.resolve(handler(req, res, next)));
+}
+
+function shutdown(exitCode = 0): Promise<void> {
+    shutdownExitCode = Math.max(shutdownExitCode, exitCode);
+
+    if (shutdownPromise) {
+        return shutdownPromise;
+    }
+
+    serverReady = false;
+    shuttingDown = true;
+
+    if (statusTimer) {
+        clearInterval(statusTimer);
+        statusTimer = undefined;
+    }
+    if (gcTimer) {
+        clearTimeout(gcTimer);
+        gcTimer = undefined;
+    }
+
+    shutdownPromise = stopGatekeeper(server, activeWork, db).finally(() => {
+        process.exit(shutdownExitCode);
+    });
+
+    return shutdownPromise;
+}
+
+function scheduleGc() {
+    if (!shuttingDown) {
+        gcTimer = setTimeout(() => {
+            if (!shuttingDown) {
+                trackActiveWork(gcLoop());
+            }
+        }, config.gcInterval * 60 * 1000);
+    }
+}
+
 async function gcLoop() {
     try {
         const response = await gatekeeper.verifyDb();
@@ -2239,7 +2432,7 @@ async function gcLoop() {
     catch (error: any) {
         log.error(`Error in DID garbage collection: ${error}`);
     }
-    setTimeout(gcLoop, config.gcInterval * 60 * 1000);
+    scheduleGc();
 }
 
 let didCheck: CheckDIDsResult;
@@ -2311,9 +2504,19 @@ async function main() {
     log.info(`Starting KeychainMDIP Gatekeeper with a db (${config.db}) check...`);
     await reportStatus();
 
+    if (shuttingDown) {
+        return;
+    }
+
     if (config.statusInterval > 0) {
         log.info(`Starting status update every ${config.statusInterval} minutes`);
-        setInterval(reportStatus, config.statusInterval * 60 * 1000);
+        statusTimer = setInterval(() => {
+            if (!shuttingDown) {
+                trackActiveWork(reportStatus()).catch((error: any) => {
+                    log.error({ error }, 'Error reporting status');
+                });
+            }
+        }, config.statusInterval * 60 * 1000);
     }
     else {
         log.info(`Status update disabled`);
@@ -2321,7 +2524,7 @@ async function main() {
 
     if (config.gcInterval > 0) {
         log.info(`Starting DID garbage collection in ${config.gcInterval} minutes`);
-        setTimeout(gcLoop, config.gcInterval * 60 * 1000);
+        scheduleGc();
     }
     else {
         log.info(`DID garbage collection disabled`);
@@ -2330,34 +2533,29 @@ async function main() {
     log.info(`DID prefix: ${JSON.stringify(gatekeeper.didPrefix)}`);
     log.info(`Supported registries: ${JSON.stringify(gatekeeper.supportedRegistries)}`);
 
-    const server = app.listen(config.port, () => {
+    server = app.listen(config.port, () => {
         log.info(`Server is running on port ${config.port}`);
         serverReady = true;
     });
-
-    const shutdown = async () => {
-        try {
-            server.close();
-            if (db) {
-                db.stop();
-            }
-        } catch (error: any) {
-            log.error({ error }, 'Error during shutdown');
-        } finally {
-            process.exit(0);
-        }
-    };
-
-    process.on('SIGTERM', shutdown);
-    process.on('SIGINT', shutdown);
 }
 
-main();
+process.on('SIGTERM', () => void shutdown());
+process.on('SIGINT', () => void shutdown());
 
 process.on('uncaughtException', (error) => {
     log.error({ error }, 'Unhandled exception caught');
+    void shutdown(1);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
     log.error({ reason, promise }, 'Unhandled rejection caught');
+    void shutdown(1);
+});
+
+main().catch((error) => {
+    if (shuttingDown) {
+        return;
+    }
+    log.error({ error }, 'Failed to start Gatekeeper server');
+    void shutdown(1);
 });

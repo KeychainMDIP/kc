@@ -14,39 +14,42 @@ Resolving a DID means fetching the documents associated with a DID. The document
 
 This example returns a Credential object that includes a schema in its `didDocumentData`:
 
-```json {14-30}
-$ ./kc resolve-did did:mdip:test:z3v8AuaYLYSWZJUa4bSadeoiNA3ps8dWDYtsmJNMDJhbFDjaKaX
+```console {14-30}
+$ ./kc resolve-did did:test:z3v8AuaYLYSWZJUa4bSadeoiNA3ps8dWDYtsmJNMDJhbFDjaKaX
 {
-    "@context": "https://w3id.org/did-resolution/v1",
     "didDocument": {
         "@context": [
             "https://www.w3.org/ns/did/v1"
         ],
-        "id": "did:mdip:test:z3v8AuaYLYSWZJUa4bSadeoiNA3ps8dWDYtsmJNMDJhbFDjaKaX",
-        "controller": "did:mdip:test:z3v8AuaaBKfwrt2Y7AAbDaGqLNgyn1BDhP7wUFpEMEngmwYwi17"
+        "id": "did:test:z3v8AuaYLYSWZJUa4bSadeoiNA3ps8dWDYtsmJNMDJhbFDjaKaX",
+        "controller": "did:test:z3v8AuaaBKfwrt2Y7AAbDaGqLNgyn1BDhP7wUFpEMEngmwYwi17"
     },
     "didDocumentMetadata": {
-        "created": "2024-03-21T20:26:01.826Z"
+        "created": "2024-03-21T20:26:01.826Z",
+        "canonicalId": "did:test:z3v8AuaYLYSWZJUa4bSadeoiNA3ps8dWDYtsmJNMDJhbFDjaKaX"
     },
     "didDocumentData": {
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "properties": {
-            "account": {
-                "format": "uri",
-                "type": "string"
+        "schema": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "properties": {
+                "account": {
+                    "format": "uri",
+                    "type": "string"
+                },
+                "service": {
+                    "type": "string"
+                }
             },
-            "service": {
-                "type": "string"
-            }
-        },
-        "required": [
-            "service",
-            "account"
-        ],
-        "type": "object"
+            "required": [
+                "service",
+                "account"
+            ],
+            "type": "object"
+        }
     },
     "mdip": {
         "registry": "hyperswarm",
+        "prefix": "did:test",
         "type": "asset",
         "version": 1
     }

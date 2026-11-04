@@ -24,7 +24,7 @@ This screen allows users to assign an Asset DID to an image file. The file is up
 
 ## DOCUMENTS Screen
 
-This screen allows users to assign an Asset DID to a document. The file is "notarized" on the registry selected by the user.
+This screen allows users to assign an Asset DID to a document. The file is stored in the node's IPFS-backed content-addressable storage, while the Asset DID's document data contains its CID and metadata.
 
 ![DOCUMENTS Screen](document-screen.png)
 

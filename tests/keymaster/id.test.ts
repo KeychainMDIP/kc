@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import Gatekeeper from '@mdip/gatekeeper';
 import Keymaster from '@mdip/keymaster';
 import CipherNode from '@mdip/cipher/node';
@@ -50,6 +51,47 @@ describe('createId', () => {
         expect(wallet.current).toBe(name);
     });
 
+    it('should normalize an ID name before storing it', async () => {
+        const did = await keymaster.createId(' Alice ');
+        let wallet = await keymaster.loadWallet();
+
+        expect(wallet.ids.Alice.did).toBe(did);
+        expect(wallet.ids).not.toHaveProperty(' Alice ');
+        expect(wallet.current).toBe('Alice');
+
+        await expect(keymaster.createId('Alice')).rejects.toThrow('Invalid parameter: name already used');
+
+        wallet = await keymaster.loadWallet();
+        expect(wallet.counter).toBe(1);
+        expect(await gatekeeper.getDIDs()).toHaveLength(1);
+    });
+
+    it('should reject names matching non-normalized legacy entries', async () => {
+        const bob = await keymaster.createId('Bob');
+        const carol = await keymaster.createId('Carol');
+        const legacy = JSON.parse(JSON.stringify(await keymaster.loadWallet()));
+        legacy.ids[' Bob '] = legacy.ids.Bob;
+        delete legacy.ids.Bob;
+        legacy.names = { ' Alice ': carol };
+        await keymaster.saveWallet(legacy);
+
+        await expect(keymaster.createId('Bob')).rejects.toThrow('Invalid parameter: name already used');
+        await expect(keymaster.createId('Alice')).rejects.toThrow('Invalid parameter: name already used');
+
+        const wallet = await keymaster.loadWallet();
+        expect(wallet.counter).toBe(2);
+        expect(wallet.ids[' Bob '].did).toBe(bob);
+        expect(await gatekeeper.getDIDs()).toHaveLength(2);
+    });
+
+    it.each(['.', '..', ' . ', ' .. '])('should reject the URL path segment name %p', async (name) => {
+        await expect(keymaster.createId(name)).rejects.toThrow('Invalid parameter: name cannot be "." or ".."');
+
+        const wallet = await keymaster.loadWallet();
+        expect(wallet.counter).toBe(0);
+        expect(await gatekeeper.getDIDs()).toStrictEqual([]);
+    });
+
     it('should create a new ID on default registry', async () => {
         const name = 'Bob';
         const did = await keymaster.createId(name);
@@ -93,6 +135,53 @@ describe('createId', () => {
         expect(wallet.ids[name1].did).toBe(did1);
         expect(wallet.ids[name2].did).toBe(did2);
         expect(wallet.current).toBe(name2);
+    });
+
+    it.each(['refusal', 'exception'])(
+        'should not reuse a published identity account after a wallet storage %s', async (failure) => {
+            await keymaster.loadWallet();
+            const persist = wallet.saveWallet.bind(wallet);
+            const save = jest.spyOn(wallet, 'saveWallet');
+            save.mockImplementationOnce(persist);
+            if (failure === 'refusal') {
+                save.mockResolvedValueOnce(false);
+            } else {
+                save.mockRejectedValueOnce(new Error('storage failed'));
+            }
+
+            await expect(keymaster.createId('Orphan', { registry: 'local' })).rejects.toThrow(
+                failure === 'refusal' ? 'save wallet failed' : 'storage failed'
+            );
+
+            const [orphan] = await gatekeeper.getDIDs() as string[];
+            const orphanDoc = await keymaster.resolveDID(orphan);
+            const restarted = new Keymaster({ gatekeeper, wallet, cipher, passphrase: 'passphrase' });
+            const recovered = await restarted.loadWallet();
+            expect(recovered.counter).toBe(1);
+            expect(recovered.ids).not.toHaveProperty('Orphan');
+
+            const alice = await restarted.createId('Alice', { registry: 'local' });
+            const aliceDoc = await restarted.resolveDID(alice);
+            expect(aliceDoc.didDocument!.verificationMethod![0].publicKeyJwk)
+                .not.toStrictEqual(orphanDoc.didDocument!.verificationMethod![0].publicKeyJwk);
+            const persisted = await restarted.loadWallet();
+            expect(persisted.counter).toBe(2);
+            expect(persisted.ids.Alice.account).toBe(1);
+        }
+    );
+
+    it('should not publish an identity when its account reservation cannot be saved', async () => {
+        const original = await keymaster.loadWallet();
+        jest.spyOn(wallet, 'saveWallet').mockResolvedValueOnce(false);
+        const publish = jest.spyOn(gatekeeper, 'createDID');
+
+        await expect(keymaster.createId('Alice', { registry: 'local' }))
+            .rejects.toThrow('save wallet failed');
+
+        expect(publish).not.toHaveBeenCalled();
+        expect(await keymaster.loadWallet()).toBe(original);
+        expect(original.counter).toBe(0);
+        expect(await gatekeeper.getDIDs()).toStrictEqual([]);
     });
 
     it('should not create an ID with an empty name', async () => {
@@ -175,6 +264,7 @@ describe('createIdOperation', () => {
         expect(operation.mdip!.version).toBe(1);
         expect(operation.mdip!.type).toBe('agent');
         expect(operation.mdip!.registry).toBe('hyperswarm'); // Default registry
+        expect(operation.mdip).not.toHaveProperty('prefix');
         expect(operation.publicJwk).toBeDefined();
         expect(operation.signature).toBeDefined();
         expect(operation.signature!.signed).toBeDefined();
@@ -299,6 +389,29 @@ describe('createIdOperation', () => {
 
         expect(operation.mdip!.registry).toBe(defaultRegistry);
     });
+
+    it('should include the configured DID prefix in the signed operation', async () => {
+        const didPrefix = 'did:mdip';
+        const customKeymaster = new Keymaster({
+            gatekeeper,
+            wallet,
+            cipher,
+            didPrefix,
+            passphrase: 'passphrase'
+        });
+
+        const operation = await customKeymaster.createIdOperation('Ivy');
+        const msgHash = cipher.hashJSON({
+            type: operation.type,
+            created: operation.created,
+            blockid: operation.blockid,
+            mdip: operation.mdip,
+            publicJwk: operation.publicJwk,
+        });
+
+        expect(operation.mdip!.prefix).toBe(didPrefix);
+        expect(operation.signature!.hash).toBe(msgHash);
+    });
 });
 
 describe('removeId', () => {
@@ -330,17 +443,71 @@ describe('removeId', () => {
 });
 
 describe('renameId', () => {
-    it('should rename an existing ID', async () => {
+    it.each(['Alice', ' Alice '])('should rename an existing ID to %p', async (newName) => {
         const name1 = 'Bob';
         const name2 = 'Alice';
         const did = await keymaster.createId(name1);
-        const ok = await keymaster.renameId(name1, name2);
+        const ok = await keymaster.renameId(name1, newName);
 
         const wallet = await keymaster.loadWallet();
 
         expect(ok).toBe(true);
         expect(wallet.ids[name2].did).toBe(did);
+        expect(wallet.ids).not.toHaveProperty(name1);
         expect(wallet.current).toBe(name2);
+        expect(await keymaster.lookupDID(name2)).toBe(did);
+        expect((await keymaster.fetchIdInfo(name2)).did).toBe(did);
+    });
+
+    it.each(['friend', ' friend ', 'Bob', ' Bob '])('should reject an existing alias or identity name (%p) without changing the wallet', async (name) => {
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        await keymaster.addName('friend', bob);
+        await keymaster.setCurrentId('Alice');
+        const before = JSON.stringify(await keymaster.loadWallet());
+        const stored = await wallet.loadWallet();
+
+        await expect(keymaster.renameId('Alice', name)).rejects.toThrow('Invalid parameter: name already used');
+
+        expect(JSON.stringify(await keymaster.loadWallet())).toBe(before);
+        expect(await wallet.loadWallet()).toStrictEqual(stored);
+        expect((await keymaster.fetchIdInfo('Alice')).did).toBe(alice);
+        expect(await keymaster.lookupDID('Alice')).toBe(alice);
+        expect(await keymaster.lookupDID('friend')).toBe(bob);
+    });
+
+    it.each(['Alice', 'Bob'])('should preserve unrelated aliases and selection when renaming with %s selected', async (current) => {
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        await keymaster.addName('friend', bob);
+        await keymaster.setCurrentId(current);
+
+        expect(await keymaster.renameId('Alice', 'Carol')).toBe(true);
+
+        const restarted = new Keymaster({ gatekeeper, wallet, cipher, passphrase: 'passphrase' });
+        expect(await restarted.listIds()).toStrictEqual(['Bob', 'Carol']);
+        expect(await restarted.listNames()).toStrictEqual({ friend: bob });
+        expect(await restarted.getCurrentId()).toBe(current === 'Alice' ? 'Carol' : 'Bob');
+        expect(await restarted.lookupDID('Carol')).toBe(alice);
+        expect((await restarted.fetchIdInfo('Carol')).did).toBe(alice);
+        expect(await restarted.lookupDID('friend')).toBe(bob);
+    });
+
+    it('should reject a rename when an earlier queued mutation claims the name', async () => {
+        const alice = await keymaster.createId('Alice');
+        const bob = await keymaster.createId('Bob');
+        const results = await Promise.allSettled([
+            keymaster.addName('friend', bob),
+            keymaster.renameId('Alice', 'friend'),
+        ]);
+
+        expect(results[0]).toStrictEqual({ status: 'fulfilled', value: true });
+        expect(results[1]).toMatchObject({
+            status: 'rejected',
+            reason: { message: 'Invalid parameter: name already used' },
+        });
+        expect((await keymaster.fetchIdInfo('Alice')).did).toBe(alice);
+        expect(await keymaster.lookupDID('friend')).toBe(bob);
     });
 
     it('should not rename from an non-existent ID', async () => {
@@ -442,6 +609,117 @@ describe('recoverId', () => {
         expect(wallet.ids[name]).toStrictEqual(bob);
         expect(wallet.current).toBe(name);
         expect(wallet.counter).toBe(1);
+    });
+
+    it.each([
+        { account: 1, identities: 2, reset: true, nextAccount: 2 },
+        { account: 3, identities: 4, reset: true, nextAccount: 4 },
+        { account: 1, identities: 2, reset: false, nextAccount: 2 },
+        { account: 1, identities: 4, reset: false, nextAccount: 4 },
+    ])('should use account $nextAccount after recovering account $account (identities=$identities, reset=$reset)', async ({ account, identities, reset, nextAccount }) => {
+        for (let index = 0; index < identities; index++) {
+            await keymaster.createId(`ID${index}`);
+        }
+
+        const name = `ID${account}`;
+        const did = (await keymaster.loadWallet()).ids[name].did;
+        const originalDoc = await keymaster.resolveDID(did);
+        expect(await keymaster.backupId(name)).toBe(true);
+
+        if (reset) {
+            const mnemonic = await keymaster.decryptMnemonic();
+            await keymaster.newWallet(mnemonic, true);
+        } else {
+            await keymaster.removeId(name);
+        }
+
+        expect(await keymaster.recoverId(did)).toBe(name);
+        const recovered = await keymaster.loadWallet();
+        expect(recovered.ids[name]).toMatchObject({ did, account, index: 0 });
+        expect(recovered.current).toBe(name);
+        expect(recovered.counter).toBe(nextAccount);
+
+        const restarted = new Keymaster({ gatekeeper, wallet, cipher, passphrase: 'passphrase' });
+        expect(await restarted.loadWallet()).toStrictEqual(recovered);
+
+        const nextDid = await restarted.createId('Next');
+        const nextWallet = await restarted.loadWallet();
+        expect(nextWallet.ids.Next.account).toBe(nextAccount);
+        expect(nextWallet.counter).toBe(nextAccount + 1);
+
+        const nextDoc = await restarted.resolveDID(nextDid);
+        expect(nextDoc.didDocument!.verificationMethod![0].publicKeyJwk)
+            .not.toStrictEqual(originalDoc.didDocument!.verificationMethod![0].publicKeyJwk);
+    });
+
+    it('should not recover an identity whose name is already an alias', async () => {
+        const alice = await keymaster.createId('Alice');
+        const mnemonic = await keymaster.decryptMnemonic();
+        await keymaster.backupId();
+        await keymaster.newWallet(mnemonic, true);
+        const bob = await keymaster.createId('Bob');
+        await keymaster.addName('Alice', bob);
+
+        await expect(keymaster.recoverId(alice)).rejects.toThrow(InvalidDIDError.type);
+
+        expect(await keymaster.listIds()).toStrictEqual(['Bob']);
+        expect(await keymaster.listNames()).toStrictEqual({ Alice: bob });
+        expect(await keymaster.lookupDID('Alice')).toBe(bob);
+    });
+
+    it('should not recover malformed identity data', async () => {
+        const did = await keymaster.createId('Bob');
+        const mnemonic = await keymaster.decryptMnemonic();
+        await keymaster.backupId();
+        await keymaster.newWallet(mnemonic, true);
+        jest.spyOn(cipher, 'decryptMessage').mockReturnValueOnce(JSON.stringify({
+            name: 'Bob',
+            id: { did, account: 0 },
+        }));
+        await expect(keymaster.recoverId(did)).rejects.toThrow(InvalidDIDError.type);
+        expect((await keymaster.loadWallet()).ids).toStrictEqual({});
+    });
+
+    it('should recover an older backup after multiple key rotations', async () => {
+        const did = await keymaster.createId('Bob', { registry: 'local' });
+        const mnemonic = await keymaster.decryptMnemonic();
+        await keymaster.backupId();
+        await keymaster.rotateKeys();
+        await keymaster.rotateKeys();
+        const currentKey = await keymaster.fetchKeyPair();
+
+        await keymaster.newWallet(mnemonic, true);
+        await keymaster.recoverId(did);
+
+        const restarted = new Keymaster({ gatekeeper, wallet, cipher, passphrase: 'passphrase' });
+        expect((await restarted.loadWallet()).ids.Bob.index).toBe(2);
+        expect(await restarted.fetchKeyPair()).toStrictEqual(currentKey);
+        const signed = await restarted.addSignature({ message: 'after recovery' });
+        expect(await restarted.verifySignature(signed)).toBe(true);
+        await expect(restarted.rotateKeys()).resolves.toBe(true);
+    });
+
+    it.each(['missing', 'unrelated'])('should reject a backup when the current key is %s', async (key) => {
+        const did = await keymaster.createId('Bob', { registry: 'local' });
+        const mnemonic = await keymaster.decryptMnemonic();
+        await keymaster.backupId();
+        const doc = await keymaster.resolveDID(did);
+        const vmethod = doc.didDocument!.verificationMethod![0];
+
+        if (key === 'missing') {
+            delete vmethod.publicKeyJwk;
+        } else {
+            const other = await keymaster.createId('Alice', { registry: 'local' });
+            const otherDoc = await keymaster.resolveDID(other);
+            vmethod.id = '#key-2';
+            vmethod.publicKeyJwk = otherDoc.didDocument!.verificationMethod![0].publicKeyJwk;
+        }
+
+        expect(await keymaster.updateDID(doc)).toBe(true);
+        await keymaster.newWallet(mnemonic, true);
+
+        await expect(keymaster.recoverId(did)).rejects.toThrow(InvalidDIDError.type);
+        expect((await keymaster.loadWallet()).ids).toStrictEqual({});
     });
 
     it('should not overwrite an id with the same name', async () => {

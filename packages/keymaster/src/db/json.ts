@@ -1,4 +1,5 @@
 import fs from 'fs';
+import { randomUUID } from 'crypto';
 import { StoredWallet, WalletBase } from '../types.js';
 
 export default class WalletJson implements WalletBase {
@@ -11,7 +12,8 @@ export default class WalletJson implements WalletBase {
     }
 
     async saveWallet(wallet: StoredWallet, overwrite: boolean = false): Promise<boolean> {
-        if (fs.existsSync(this.walletName) && !overwrite) {
+        const walletExists = fs.existsSync(this.walletName);
+        if (walletExists && !overwrite) {
             return false;
         }
 
@@ -19,7 +21,30 @@ export default class WalletJson implements WalletBase {
             fs.mkdirSync(this.dataFolder, { recursive: true });
         }
 
-        fs.writeFileSync(this.walletName, JSON.stringify(wallet, null, 4));
+        const tempName = `${this.walletName}.${randomUUID()}.tmp`;
+        const mode = walletExists ? fs.statSync(this.walletName).mode & 0o777 : 0o666;
+
+        try {
+            fs.writeFileSync(tempName, JSON.stringify(wallet, null, 4), {
+                flag: 'wx',
+                flush: true,
+                mode,
+            });
+            if (walletExists) {
+                fs.chmodSync(tempName, mode);
+            }
+            fs.renameSync(tempName, this.walletName);
+        }
+        catch (error) {
+            try {
+                fs.rmSync(tempName, { force: true });
+            }
+            catch {
+                // Preserve the original write error if temporary-file cleanup fails.
+            }
+            throw error;
+        }
+
         return true;
     }
 

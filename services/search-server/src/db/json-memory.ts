@@ -10,25 +10,45 @@ import {
     ChallengeReceiptUsageRecord,
     ChallengeReceiptUsageResult,
     DIDsDb,
+    DIDEventHistory,
     DIDEventListOptions,
     DIDEventListResult,
+    IdentityListOptions,
+    IdentityListResult,
+    NetworkMetricSnapshot,
     PublishedCredentialListOptions,
     PublishedCredentialListResult,
     PublishedCredentialRecord,
     PublishedCredentialSchemaCount,
+    SearchDocsOptions,
+    SearchDocsResult,
     GatekeeperEvent,
 } from "../types.js";
 import { copyJSON, getEventDisplayTime, stableStringify } from "./db-utils.js";
+import { deduplicateDIDPrefixReferences, extractIdentity, extractIdentityFields } from '../published-credentials.js';
+import {
+    AMBIGUOUS_DID_PREFIX,
+    classifyDIDPrefix,
+    getDIDPrefix,
+    getDIDSuffix,
+    isAgentDID,
+} from '../did-aliases.js';
 
 type JSONObject = Record<string, unknown>;
 
 export default class DIDsDbMemory implements DIDsDb {
     private docs = new Map<string, JSONObject>();
+    private didsBySuffix = new Map<string, string>();
+    private authoritativeDIDPrefixes = new Map<string, string>();
+    private agentDIDSuffixes = new Set<string>();
     private syncState = new Map<string, string>();
     private events = new Map<string, GatekeeperEvent[]>();
     private blocks = new Map<string, Map<string, BlockInfo>>();
     private publishedCredentials = new Map<string, PublishedCredentialRecord[]>();
+    private identityFields = new Map<string, Map<string, Set<string>>>();
+    private didPrefixReferences = new Map<string, string[]>();
     private challengeReceipts = new Map<string, ChallengeReceiptRecord[]>();
+    private networkMetricSnapshots = new Map<string, NetworkMetricSnapshot>();
     private static readonly ARRAY_WILDCARD_END = /\[\*]$/;
     private static readonly ARRAY_WILDCARD_MID = /\[\*]\./;
 
@@ -50,6 +70,26 @@ export default class DIDsDbMemory implements DIDsDb {
 
     async getDIDEvents(did: string): Promise<GatekeeperEvent[]> {
         return copyJSON(this.events.get(did) ?? []);
+    }
+
+    async findDIDBySuffix(suffix: string, didPrefix?: string): Promise<string | null> {
+        const did = this.didsBySuffix.get(suffix);
+        if (!did || !didPrefix) {
+            return did ?? null;
+        }
+
+        const prefix = this.effectiveDIDPrefix(suffix, this.publishedReferencePrefixes());
+        return prefix === didPrefix ? did : null;
+    }
+
+    async findAmbiguousDIDBySuffix(suffix: string): Promise<string | null> {
+        const did = this.didsBySuffix.get(suffix);
+        if (!did || this.authoritativeDIDPrefixes.has(suffix)) {
+            return null;
+        }
+
+        const referenceCount = this.publishedReferencePrefixes().get(suffix)?.size ?? 0;
+        return this.agentDIDSuffixes.has(suffix) || referenceCount !== 1 ? did : null;
     }
 
     async getBlock(registry: string, blockId?: BlockId): Promise<BlockInfo | null> {
@@ -105,6 +145,20 @@ export default class DIDsDbMemory implements DIDsDb {
         }
 
         for (const record of page.dids) {
+            const suffix = getDIDSuffix(record.did);
+            const previousDid = this.didsBySuffix.get(suffix);
+            if (previousDid && previousDid !== record.did) {
+                this.events.delete(previousDid);
+                this.docs.delete(previousDid);
+                this.publishedCredentials.delete(previousDid);
+                this.identityFields.delete(previousDid);
+                this.didPrefixReferences.delete(previousDid);
+                this.challengeReceipts.delete(previousDid);
+                this.didsBySuffix.delete(suffix);
+                this.authoritativeDIDPrefixes.delete(suffix);
+                this.agentDIDSuffixes.delete(suffix);
+            }
+
             const oldEvents = this.events.get(record.did) ?? [];
             const changed = stableStringify(oldEvents) !== stableStringify(record.events);
 
@@ -118,11 +172,32 @@ export default class DIDsDbMemory implements DIDsDb {
                 this.events.delete(record.did);
                 this.docs.delete(record.did);
                 this.publishedCredentials.delete(record.did);
+                this.identityFields.delete(record.did);
+                this.didPrefixReferences.delete(record.did);
                 this.challengeReceipts.delete(record.did);
+                if (this.didsBySuffix.get(suffix) === record.did) {
+                    this.didsBySuffix.delete(suffix);
+                    this.authoritativeDIDPrefixes.delete(suffix);
+                    this.agentDIDSuffixes.delete(suffix);
+                }
                 result.removedDids += 1;
                 continue;
             }
 
+            this.didsBySuffix.set(suffix, record.did);
+            const classification = classifyDIDPrefix(record.events);
+            if (classification.authoritative) {
+                this.authoritativeDIDPrefixes.set(suffix, classification.prefix);
+            }
+            else {
+                this.authoritativeDIDPrefixes.delete(suffix);
+            }
+            if (isAgentDID(record.events)) {
+                this.agentDIDSuffixes.add(suffix);
+            }
+            else {
+                this.agentDIDSuffixes.delete(suffix);
+            }
             this.events.set(record.did, copyJSON(record.events));
 
             if (record.doc) {
@@ -133,6 +208,11 @@ export default class DIDsDbMemory implements DIDsDb {
                 record.did,
                 copyJSON(record.publishedCredentials ?? [])
             );
+            this.identityFields.set(record.did, extractIdentityFields(record.doc ?? {}, record.publishedCredentials ?? []));
+            this.didPrefixReferences.set(record.did, deduplicateDIDPrefixReferences(
+                record.didPrefixReferences ?? [],
+                record.publishedCredentials
+            ));
             this.challengeReceipts.set(
                 record.did,
                 copyJSON(record.challengeReceipts ?? [])
@@ -151,10 +231,48 @@ export default class DIDsDbMemory implements DIDsDb {
         return v ? JSON.parse(JSON.stringify(v)) : null;
     }
 
-    async getPublishedCredentialCountsBySchema(): Promise<PublishedCredentialSchemaCount[]> {
+    async listIdentities(options: IdentityListOptions = {}): Promise<IdentityListResult> {
+        const { didPrefix, includeAmbiguous = false, schemaDid, fields = [], limit = 50, offset = 0 } = options;
+        const schemaSuffix = schemaDid ? getDIDSuffix(schemaDid) : undefined;
+        const publishedPrefixes = this.publishedReferencePrefixes();
+        const agents = [...this.agentDIDSuffixes].flatMap(suffix => {
+            const storedDid = this.didsBySuffix.get(suffix)!;
+            const scopedDid = this.scopedDID(storedDid, publishedPrefixes, didPrefix, includeAmbiguous);
+            if (!this.docs.has(storedDid) || !scopedDid) {
+                return [];
+            }
+            if (schemaSuffix && !this.publishedCredentials.get(storedDid)?.some(
+                record => getDIDSuffix(record.schemaDid) === schemaSuffix
+            )) {
+                return [];
+            }
+            if (fields.length > 0 && ![...(this.identityFields.get(storedDid) ?? [])].some(
+                ([suffix, names]) => (!schemaSuffix || suffix === schemaSuffix)
+                    && fields.some(field => names.has(field))
+            )) {
+                return [];
+            }
+            return [{ did: scopedDid, prefix: getDIDPrefix(scopedDid), storedDid }];
+        }).sort((a, b) => {
+            if (a.prefix !== b.prefix) return a.prefix < b.prefix ? -1 : 1;
+            return a.did < b.did ? -1 : a.did > b.did ? 1 : 0;
+        });
+
+        return {
+            total: agents.length,
+            identities: agents.slice(Math.max(0, offset), Math.max(0, offset) + Math.max(0, limit))
+                .map(({ did, storedDid }) => copyJSON(extractIdentity(did, this.docs.get(storedDid)!, options))),
+        };
+    }
+
+    async getPublishedCredentialCountsBySchema(
+        didPrefix?: string,
+        includeAmbiguous = false
+    ): Promise<PublishedCredentialSchemaCount[]> {
         const counts = new Map<string, number>();
 
-        for (const record of this.flattenPublishedCredentials()) {
+        for (const record of this.canonicalPublishedCredentials(didPrefix, includeAmbiguous)
+            .filter(record => !didPrefix || getDIDPrefix(record.schemaDid) === didPrefix)) {
             counts.set(record.schemaDid, (counts.get(record.schemaDid) ?? 0) + 1);
         }
 
@@ -167,6 +285,8 @@ export default class DIDsDbMemory implements DIDsDb {
         options: PublishedCredentialListOptions = {}
     ): Promise<PublishedCredentialListResult> {
         const {
+            didPrefix,
+            includeAmbiguous = false,
             credentialDid,
             schemaDid,
             issuerDid,
@@ -176,11 +296,11 @@ export default class DIDsDbMemory implements DIDsDb {
             offset = 0,
         } = options;
 
-        const filtered = this.flattenPublishedCredentials()
-            .filter(record => !credentialDid || record.credentialDid === credentialDid)
-            .filter(record => !schemaDid || record.schemaDid === schemaDid)
-            .filter(record => !issuerDid || record.issuerDid === issuerDid)
-            .filter(record => !subjectDid || record.subjectDid === subjectDid)
+        const filtered = this.canonicalPublishedCredentials(didPrefix, includeAmbiguous)
+            .filter(record => !credentialDid || getDIDSuffix(record.credentialDid) === getDIDSuffix(credentialDid))
+            .filter(record => !schemaDid || getDIDSuffix(record.schemaDid) === getDIDSuffix(schemaDid))
+            .filter(record => !issuerDid || getDIDSuffix(record.issuerDid) === getDIDSuffix(issuerDid))
+            .filter(record => !subjectDid || getDIDSuffix(record.subjectDid) === getDIDSuffix(subjectDid))
             .filter(record => typeof revealed !== 'boolean' || record.revealed === revealed)
             .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.credentialDid.localeCompare(b.credentialDid));
 
@@ -228,7 +348,9 @@ export default class DIDsDbMemory implements DIDsDb {
         }>();
 
         for (const record of this.filterChallengeReceipts(options)) {
-            const key = `${record.attesterDid}\u0000${record.schemaDid}\u0000${record.requesterDid}`;
+            const key = [record.attesterDid, record.schemaDid, record.requesterDid]
+                .map(getDIDSuffix)
+                .join('\u0000');
             const existing = groups.get(key);
 
             if (!existing) {
@@ -247,6 +369,15 @@ export default class DIDsDbMemory implements DIDsDb {
             }
 
             existing.commitments.add(record.responseCommitment);
+            if (record.attesterDid < existing.record.attesterDid) {
+                existing.record.attesterDid = record.attesterDid;
+            }
+            if (record.schemaDid < existing.record.schemaDid) {
+                existing.record.schemaDid = record.schemaDid;
+            }
+            if (record.requesterDid < existing.record.requesterDid) {
+                existing.record.requesterDid = record.requesterDid;
+            }
             existing.record.count = existing.commitments.size;
             if (record.updatedAt < existing.record.firstUpdatedAt) {
                 existing.record.firstUpdatedAt = record.updatedAt;
@@ -274,20 +405,26 @@ export default class DIDsDbMemory implements DIDsDb {
 
     async listEvents(options: DIDEventListOptions = {}): Promise<DIDEventListResult> {
         const {
+            didPrefix,
+            includeAmbiguous = false,
             registry,
             updatedAfter,
             updatedBefore,
             limit = 50,
             offset = 0,
         } = options;
+        const publishedPrefixes = this.publishedReferencePrefixes();
         const filtered = Array.from(this.events.entries())
             .flatMap(([did, events]) =>
-                events.map(event => ({
-                    did,
-                    registry: event.registry,
-                    time: getEventDisplayTime(event),
-                    event: copyJSON(event),
-                }))
+                events.flatMap(event => {
+                    const scopedDid = this.scopedDID(did, publishedPrefixes, didPrefix, includeAmbiguous);
+                    return scopedDid ? [{
+                        did: scopedDid,
+                        registry: event.registry,
+                        time: getEventDisplayTime(event),
+                        event: copyJSON(event),
+                    }] : [];
+                })
             )
             .filter(record => !registry || record.registry === registry)
             .filter(record => !updatedAfter || record.time > updatedAfter)
@@ -302,15 +439,47 @@ export default class DIDsDbMemory implements DIDsDb {
         };
     }
 
-    async searchDocs(q: string): Promise<string[]> {
-        const out: string[] = [];
-        for (const [did, doc] of this.docs.entries()) {
-            if (JSON.stringify(doc).includes(q)) out.push(did);
+    async *iterateDIDEventHistories(): AsyncIterable<DIDEventHistory> {
+        for (const [did, events] of Array.from(this.events.entries()).sort(([a], [b]) => a.localeCompare(b))) {
+            yield { did, events: copyJSON(events) };
         }
-        return out;
     }
 
-    async queryDocs(where: Record<string, unknown>): Promise<string[]> {
+    async replaceNetworkMetricSnapshots(snapshots: NetworkMetricSnapshot[]): Promise<void> {
+        this.networkMetricSnapshots = new Map(
+            snapshots.map(snapshot => [snapshot.date, copyJSON(snapshot)])
+        );
+    }
+
+    async getNetworkMetricSnapshot(date: string): Promise<NetworkMetricSnapshot | null> {
+        const snapshot = this.networkMetricSnapshots.get(date);
+        return snapshot ? copyJSON(snapshot) : null;
+    }
+
+    async searchDocs(q: string, options: SearchDocsOptions): Promise<SearchDocsResult> {
+        const { didPrefix, includeAmbiguous = false, limit, cursor } = options;
+        const out: string[] = [];
+        const publishedPrefixes = this.publishedReferencePrefixes();
+        for (const [did, doc] of this.docs.entries()) {
+            const effectiveDid = this.scopedDID(did, publishedPrefixes, didPrefix, includeAmbiguous);
+            if (!effectiveDid) continue;
+            if (cursor && effectiveDid <= cursor) continue;
+            if (JSON.stringify(doc).includes(q)) out.push(effectiveDid);
+        }
+        out.sort();
+
+        const dids = out.slice(0, limit);
+        return {
+            dids,
+            nextCursor: out.length > limit ? dids[dids.length - 1] : null,
+        };
+    }
+
+    async queryDocs(
+        where: Record<string, unknown>,
+        didPrefix?: string,
+        includeAmbiguous = false
+    ): Promise<string[]> {
         const entry = Object.entries(where)[0] as [string, any] | undefined;
         if (!entry) {
             return [];
@@ -327,8 +496,13 @@ export default class DIDsDbMemory implements DIDsDb {
         const isArrayMid = DIDsDbMemory.ARRAY_WILDCARD_MID.test(rawPath);
 
         const result: string[] = [];
+        const publishedPrefixes = this.publishedReferencePrefixes();
 
         for (const [did, doc] of this.docs.entries()) {
+            const effectiveDid = this.scopedDID(did, publishedPrefixes, didPrefix, includeAmbiguous);
+            if (!effectiveDid) {
+                continue;
+            }
             let match = false;
 
             if (isArrayTail) {
@@ -363,7 +537,7 @@ export default class DIDsDbMemory implements DIDsDb {
             }
 
             if (match) {
-                result.push(did);
+                result.push(effectiveDid);
             }
         }
 
@@ -372,17 +546,113 @@ export default class DIDsDbMemory implements DIDsDb {
 
     async wipeDb(): Promise<void> {
         this.docs.clear();
+        this.didsBySuffix.clear();
+        this.authoritativeDIDPrefixes.clear();
+        this.agentDIDSuffixes.clear();
         this.syncState.clear();
         this.events.clear();
         this.blocks.clear();
         this.publishedCredentials.clear();
+        this.identityFields.clear();
+        this.didPrefixReferences.clear();
         this.challengeReceipts.clear();
+        this.networkMetricSnapshots.clear();
     }
 
     private flattenPublishedCredentials(): PublishedCredentialRecord[] {
         return Array.from(this.publishedCredentials.values()).flatMap(records =>
             records.map(record => ({ ...record }))
         );
+    }
+
+    private publishedReferencePrefixes(): Map<string, Set<string>> {
+        const prefixes = new Map<string, Set<string>>();
+
+        for (const references of this.didPrefixReferences.values()) {
+            for (const did of references) {
+                const suffix = getDIDSuffix(did);
+                const found = prefixes.get(suffix) ?? new Set<string>();
+                found.add(getDIDPrefix(did));
+                prefixes.set(suffix, found);
+            }
+        }
+
+        return prefixes;
+    }
+
+    private publishedReferencePrefix(suffix: string, prefixes: Map<string, Set<string>>): string {
+        const found = prefixes.get(suffix);
+        return found?.size === 1
+            ? found.values().next().value as string
+            : AMBIGUOUS_DID_PREFIX;
+    }
+
+    private effectiveDIDPrefix(suffix: string, prefixes: Map<string, Set<string>>): string {
+        return this.authoritativeDIDPrefixes.get(suffix)
+            ?? (this.agentDIDSuffixes.has(suffix)
+                ? AMBIGUOUS_DID_PREFIX
+                : this.publishedReferencePrefix(suffix, prefixes));
+    }
+
+    private effectiveDID(did: string, prefixes: Map<string, Set<string>>): string {
+        const suffix = getDIDSuffix(did);
+        return `${this.effectiveDIDPrefix(suffix, prefixes)}:${suffix}`;
+    }
+
+    private isAmbiguousDIDSuffix(suffix: string, prefixes: Map<string, Set<string>>): boolean {
+        if (this.authoritativeDIDPrefixes.has(suffix)) {
+            return false;
+        }
+
+        return this.agentDIDSuffixes.has(suffix) || (prefixes.get(suffix)?.size ?? 0) !== 1;
+    }
+
+    private scopedDID(
+        did: string,
+        prefixes: Map<string, Set<string>>,
+        didPrefix?: string,
+        includeAmbiguous = false
+    ): string | null {
+        const suffix = getDIDSuffix(did);
+        const effectiveDid = this.effectiveDID(did, prefixes);
+        if (!didPrefix || getDIDPrefix(effectiveDid) === didPrefix) {
+            return effectiveDid;
+        }
+
+        return includeAmbiguous && this.isAmbiguousDIDSuffix(suffix, prefixes)
+            ? `${didPrefix}:${suffix}`
+            : null;
+    }
+
+    private canonicalPublishedCredentials(
+        didPrefix: string | undefined,
+        includeAmbiguous: boolean
+    ): PublishedCredentialRecord[] {
+        const credentials = new Map<string, PublishedCredentialRecord>();
+        const prefixes = this.publishedReferencePrefixes();
+
+        for (const record of this.flattenPublishedCredentials()) {
+            const credentialDid = this.scopedDID(
+                record.credentialDid,
+                prefixes,
+                didPrefix,
+                includeAmbiguous
+            );
+            if (!credentialDid) {
+                continue;
+            }
+            const schemaSuffix = getDIDSuffix(record.schemaDid);
+            const schemaDid = includeAmbiguous && didPrefix && this.isAmbiguousDIDSuffix(schemaSuffix, prefixes)
+                ? `${didPrefix}:${schemaSuffix}`
+                : this.effectiveDID(record.schemaDid, prefixes);
+            credentials.set(`${record.holderDid}\0${getDIDSuffix(record.credentialDid)}`, {
+                ...record,
+                credentialDid,
+                schemaDid,
+            });
+        }
+
+        return Array.from(credentials.values());
     }
 
     private flattenChallengeReceipts(): ChallengeReceiptRecord[] {
@@ -404,11 +674,25 @@ export default class DIDsDbMemory implements DIDsDb {
         const receiptDid = 'receiptDid' in options ? options.receiptDid : undefined;
         const responseCommitment = 'responseCommitment' in options ? options.responseCommitment : undefined;
 
+        const prefixes = this.publishedReferencePrefixes();
+
         return this.flattenChallengeReceipts()
-            .filter(record => !receiptDid || record.receiptDid === receiptDid)
-            .filter(record => !attesterDid || record.attesterDid === attesterDid)
-            .filter(record => !schemaDid || record.schemaDid === schemaDid)
-            .filter(record => !requesterDid || record.requesterDid === requesterDid)
+            .flatMap(record => {
+                const receiptDid = this.scopedDID(
+                    record.receiptDid,
+                    prefixes,
+                    options.didPrefix,
+                    options.includeAmbiguous
+                );
+                return receiptDid ? [{
+                    ...record,
+                    receiptDid,
+                }] : [];
+            })
+            .filter(record => !receiptDid || getDIDSuffix(record.receiptDid) === getDIDSuffix(receiptDid))
+            .filter(record => !attesterDid || getDIDSuffix(record.attesterDid) === getDIDSuffix(attesterDid))
+            .filter(record => !schemaDid || getDIDSuffix(record.schemaDid) === getDIDSuffix(schemaDid))
+            .filter(record => !requesterDid || getDIDSuffix(record.requesterDid) === getDIDSuffix(requesterDid))
             .filter(record => !responseCommitment || record.responseCommitment === responseCommitment)
             .filter(record => !updatedAfter || record.updatedAt >= updatedAfter)
             .filter(record => !updatedBefore || record.updatedAt <= updatedBefore);

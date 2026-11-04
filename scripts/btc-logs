@@ -1,2 +1,2 @@
 #!/usr/bin/env sh
-docker compose logs -f btc-node btc-mediator
+docker compose logs -f btc-node btc-ins-mediator

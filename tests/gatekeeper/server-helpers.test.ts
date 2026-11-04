@@ -1,6 +1,8 @@
 import { EventEmitter } from 'events';
+import { Server } from 'http';
 import { BlockList } from 'net';
 import { jest } from '@jest/globals';
+import type { GatekeeperDb, IndexExportResponse } from '@mdip/gatekeeper/types';
 
 /* eslint-disable sonarjs/no-hardcoded-ip */
 
@@ -139,6 +141,207 @@ describe('gatekeeper server helpers', () => {
         } as never, ['/api/v1/status'])).toBe(false);
     });
 
+    it('checks database liveness before reporting ready', async () => {
+        const db = {
+            isReady: jest.fn<() => Promise<boolean>>().mockResolvedValue(true),
+        };
+
+        await expect(helpers.isGatekeeperReady(false, db)).resolves.toBe(false);
+        expect(db.isReady).not.toHaveBeenCalled();
+
+        await expect(helpers.isGatekeeperReady(true, db)).resolves.toBe(true);
+        expect(db.isReady).toHaveBeenCalledTimes(1);
+
+        db.isReady.mockResolvedValue(false);
+        await expect(helpers.isGatekeeperReady(true, db)).resolves.toBe(false);
+
+        db.isReady.mockRejectedValue(new Error('db down'));
+        await expect(helpers.isGatekeeperReady(true, db)).resolves.toBe(false);
+    });
+
+    it('keeps database shutdown blocked for work added during draining', async () => {
+        let closeServer = () => {};
+        let finishFirst = () => {};
+        const server = {
+            close: jest.fn((callback: () => void) => {
+                closeServer = callback;
+                return server;
+            }),
+        } as unknown as Server;
+        const first = new Promise<void>(resolve => {
+            finishFirst = resolve;
+        });
+        const activeWork = new Set<Promise<unknown>>();
+        const stopDatabase = jest.fn<() => Promise<void>>().mockResolvedValue();
+        const shutdown = helpers.drainServer(server, activeWork).then(async () => {
+            await stopDatabase();
+        });
+
+        activeWork.add(first);
+        closeServer();
+        await Promise.resolve();
+        expect(stopDatabase).not.toHaveBeenCalled();
+
+        let finishSecond = () => {};
+        const second = new Promise<void>(resolve => {
+            finishSecond = resolve;
+        });
+        activeWork.add(second);
+        finishFirst();
+        await new Promise<void>(resolve => setImmediate(resolve));
+        expect(stopDatabase).not.toHaveBeenCalled();
+
+        finishSecond();
+        await shutdown;
+        expect(stopDatabase).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports a server close failure after maintenance drains', async () => {
+        const closeError = new Error('close failed');
+        let closeServer = () => {};
+        let finishMaintenance = () => {};
+        const server = {
+            close: jest.fn((callback: (error?: Error) => void) => {
+                closeServer = () => callback(closeError);
+                return server;
+            }),
+        } as unknown as Server;
+        const maintenance = new Promise<void>(resolve => {
+            finishMaintenance = resolve;
+        });
+        const drain = helpers.drainServer(server, new Set([maintenance]));
+
+        closeServer();
+        finishMaintenance();
+
+        await expect(drain).rejects.toBe(closeError);
+    });
+
+    it('stops the database when the server has not started', async () => {
+        const stop = jest.fn<() => Promise<void>>().mockResolvedValue();
+
+        await helpers.stopGatekeeper(undefined, new Set(), { stop });
+
+        expect(stop).toHaveBeenCalledTimes(1);
+    });
+
+    it('stops the database after a server close failure', async () => {
+        const closeError = new Error('close failed');
+        const server = {
+            close: jest.fn((callback: (error?: Error) => void) => {
+                callback(closeError);
+                return server;
+            }),
+        } as unknown as Server;
+        const stop = jest.fn<() => Promise<void>>().mockResolvedValue();
+
+        await helpers.stopGatekeeper(server, new Set(), { stop });
+
+        expect(mockLogger.error).toHaveBeenCalledWith(
+            { error: closeError },
+            'Error closing Gatekeeper server',
+        );
+        expect(stop).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports a database stop failure', async () => {
+        const stopError = new Error('stop failed');
+        const stop = jest.fn<() => Promise<void>>().mockRejectedValue(stopError);
+
+        await helpers.stopGatekeeper(undefined, new Set(), { stop });
+
+        expect(mockLogger.error).toHaveBeenCalledWith(
+            { error: stopError },
+            'Error stopping Gatekeeper database',
+        );
+    });
+
+    it('classifies database connectivity errors', () => {
+        expect(helpers.isDatabaseConnectivityError('ECONNREFUSED')).toBe(false);
+
+        expect(helpers.isDatabaseConnectivityError({
+            name: 'MongoServerSelectionError',
+            message: 'getaddrinfo ENOTFOUND mongodb',
+        })).toBe(true);
+
+        expect(helpers.isDatabaseConnectivityError({
+            name: 'Error',
+            cause: {
+                code: 'ECONNREFUSED',
+                message: 'connect ECONNREFUSED 127.0.0.1:27017',
+            },
+        })).toBe(true);
+
+        expect(helpers.isDatabaseConnectivityError({
+            name: 'AggregateError',
+            errors: [
+                { name: 'ValidationError', message: 'request body must be an object' },
+                { name: 'Error', message: 'connect ETIMEDOUT 127.0.0.1:27017' },
+            ],
+        })).toBe(true);
+
+        expect(helpers.isDatabaseConnectivityError({
+            name: 'ValidationError',
+            message: 'request body must be an object',
+        })).toBe(false);
+
+        expect(helpers.databaseUnavailableResponse()).toStrictEqual({
+            error: 'database_unavailable',
+            message: 'Gatekeeper database is unavailable while exporting index',
+        });
+    });
+
+    it('exports index only when the database is ready', async () => {
+        const response: IndexExportResponse = {
+            mode: 'changes',
+            indexEpoch: 'epoch-test',
+            cursor: '1',
+            checkpointCursor: '1',
+            hasMore: false,
+            dids: [],
+            blocks: [],
+        };
+        const db = {
+            isReady: jest.fn<() => Promise<boolean>>().mockResolvedValue(false),
+            exportIndexSnapshot: jest.fn<GatekeeperDb['exportIndexSnapshot']>(),
+            exportIndexChanges: jest.fn<GatekeeperDb['exportIndexChanges']>()
+                .mockResolvedValue(response),
+        };
+
+        await expect(helpers.exportIndexWithReadiness(db, { mode: 'changes' }))
+            .rejects.toBeInstanceOf(helpers.DatabaseUnavailableError);
+        expect(db.exportIndexChanges).not.toHaveBeenCalled();
+
+        db.isReady.mockResolvedValue(true);
+        await expect(helpers.exportIndexWithReadiness(db, { mode: 'changes', cursor: '0' }))
+            .resolves.toStrictEqual(response);
+        expect(db.exportIndexChanges).toHaveBeenCalledWith({ mode: 'changes', cursor: '0' });
+    });
+
+    it('converts export-time database connectivity errors to unavailable errors', async () => {
+        const mongoError = {
+            name: 'MongoServerSelectionError',
+            message: 'server selection timed out',
+        };
+        const applicationError = new Error('bad cursor');
+        const db = {
+            isReady: jest.fn<() => Promise<boolean>>().mockResolvedValue(true),
+            exportIndexSnapshot: jest.fn<GatekeeperDb['exportIndexSnapshot']>(),
+            exportIndexChanges: jest.fn<GatekeeperDb['exportIndexChanges']>()
+                .mockRejectedValueOnce(mongoError)
+                .mockRejectedValueOnce(applicationError),
+        };
+
+        await expect(helpers.exportIndexWithReadiness(db, { mode: 'changes' }))
+            .rejects.toMatchObject({
+                name: 'DatabaseUnavailableError',
+                cause: mongoError,
+            });
+
+        await expect(helpers.exportIndexWithReadiness(db, { mode: 'changes' }))
+            .rejects.toBe(applicationError);
+    });
+
     it('parses optional strings and positive integers', () => {
         expect(helpers.parseOptionalString(undefined, 'cursor')).toBeUndefined();
         expect(helpers.parseOptionalString(null, 'cursor')).toBeNull();
@@ -157,6 +360,17 @@ describe('gatekeeper server helpers', () => {
             .toThrow('limit must be a positive integer');
     });
 
+    it('parses optional booleans', () => {
+        expect(helpers.parseOptionalBoolean(undefined, 'includeOperations')).toBeUndefined();
+        expect(helpers.parseOptionalBoolean(null, 'includeOperations')).toBeUndefined();
+        expect(helpers.parseOptionalBoolean(true, 'includeOperations')).toBe(true);
+        expect(helpers.parseOptionalBoolean(false, 'includeOperations')).toBe(false);
+        expect(helpers.parseOptionalBoolean('true', 'includeOperations')).toBe(true);
+        expect(helpers.parseOptionalBoolean('false', 'includeOperations')).toBe(false);
+        expect(() => helpers.parseOptionalBoolean('yes', 'includeOperations'))
+            .toThrow('includeOperations must be a boolean');
+    });
+
     it('parses and rejects index export request shapes', () => {
         expect(helpers.parseIndexExportRequest({
             mode: 'snapshot',
@@ -171,10 +385,12 @@ describe('gatekeeper server helpers', () => {
             mode: 'changes',
             cursor: null,
             limit: 2,
+            includeOperations: true,
         })).toStrictEqual({
             mode: 'changes',
             cursor: null,
             limit: 2,
+            includeOperations: true,
         });
         expect(() => helpers.parseIndexExportRequest(null)).toThrow('request body must be an object');
         expect(() => helpers.parseIndexExportRequest([])).toThrow('request body must be an object');
@@ -182,6 +398,8 @@ describe('gatekeeper server helpers', () => {
             .toThrow('mode must be "snapshot" or "changes"');
         expect(() => helpers.parseIndexExportRequest({ mode: 'changes', cursor: 12 }))
             .toThrow('cursor must be a string or null');
+        expect(() => helpers.parseIndexExportRequest({ mode: 'changes', includeOperations: 'yes' }))
+            .toThrow('includeOperations must be a boolean');
         expect(() => helpers.parseIndexExportRequest({ mode: 'snapshot', limit: -1 }))
             .toThrow('limit must be a positive integer');
     });

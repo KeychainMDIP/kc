@@ -1,6 +1,6 @@
-import fs from 'fs';
 import {JsonDbFile} from '../types.js'
 import {AbstractJson} from "./abstract-json.js";
+import { loadJsonDbFile, writeJsonDbFile } from './json-file.js';
 
 export default class DbJson extends AbstractJson {
     constructor(name: string, folder: string = 'data') {
@@ -8,27 +8,18 @@ export default class DbJson extends AbstractJson {
     }
 
     protected loadDb(): JsonDbFile {
-        try {
-            return JSON.parse(fs.readFileSync(this.dbName, 'utf-8'));
-        }
-        catch {
-            const db = { dids: {} };
-            this.writeDb(db);
-            return db;
-        }
+        return loadJsonDbFile(this.dbName, this.dataFolder);
     }
 
     protected writeDb(db: JsonDbFile): void {
-        if (!fs.existsSync(this.dataFolder)) {
-            fs.mkdirSync(this.dataFolder, { recursive: true });
-        }
+        writeJsonDbFile(this.dbName, this.dataFolder, db);
+    }
 
-        fs.writeFileSync(this.dbName, JSON.stringify(db, null, 4));
+    async start(): Promise<void> {
+        this.loadDb();
     }
 
     async resetDb(): Promise<void> {
-        if (fs.existsSync(this.dbName)) {
-            fs.rmSync(this.dbName);
-        }
+        this.writeDb({ dids: {} });
     }
 }

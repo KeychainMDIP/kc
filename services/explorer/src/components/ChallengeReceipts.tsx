@@ -29,6 +29,11 @@ import {
     type ChallengeReceiptUsageRow,
 } from "../api/searchClient.js";
 import { useSnackbar } from "../contexts/SnackbarProvider.js";
+import {
+    countUniqueDIDSuffixes,
+    getDIDSuffix,
+    hasSameDIDSuffix,
+} from "../shared/credential-manifest.js";
 
 const receiptTableSx = {
     tableLayout: "fixed",
@@ -284,13 +289,14 @@ function groupReceiptsByAttester(receipts: ChallengeReceiptRow[]): AttesterUsage
     }>();
 
     for (const receipt of receipts) {
-        const existing = groups.get(receipt.attesterDid);
+        const attesterKey = getDIDSuffix(receipt.attesterDid);
+        const existing = groups.get(attesterKey);
 
         if (!existing) {
-            groups.set(receipt.attesterDid, {
+            groups.set(attesterKey, {
                 commitments: new Set([receipt.responseCommitment]),
-                requesters: new Set([receipt.requesterDid]),
-                templates: new Set([receipt.schemaDid]),
+                requesters: new Set([getDIDSuffix(receipt.requesterDid)]),
+                templates: new Set([getDIDSuffix(receipt.schemaDid)]),
                 row: {
                     attesterDid: receipt.attesterDid,
                     count: 1,
@@ -304,8 +310,11 @@ function groupReceiptsByAttester(receipts: ChallengeReceiptRow[]): AttesterUsage
         }
 
         existing.commitments.add(receipt.responseCommitment);
-        existing.requesters.add(receipt.requesterDid);
-        existing.templates.add(receipt.schemaDid);
+        existing.requesters.add(getDIDSuffix(receipt.requesterDid));
+        existing.templates.add(getDIDSuffix(receipt.schemaDid));
+        if (receipt.attesterDid < existing.row.attesterDid) {
+            existing.row.attesterDid = receipt.attesterDid;
+        }
         existing.row.count = existing.commitments.size;
         existing.row.requesterCount = existing.requesters.size;
         existing.row.templateCount = existing.templates.size;
@@ -472,7 +481,10 @@ function ChallengeReceipts() {
     }, [receiptPage, receiptPageSize, sortedReceipts]);
 
     const selectedUsageRow = useMemo(
-        () => usageRows.find(row => row.schemaDid === selectedSchemaDid && row.requesterDid === selectedRequesterDid) ?? null,
+        () => usageRows.find(row =>
+            hasSameDIDSuffix(row.schemaDid, selectedSchemaDid) &&
+            hasSameDIDSuffix(row.requesterDid, selectedRequesterDid)
+        ) ?? null,
         [selectedRequesterDid, selectedSchemaDid, usageRows]
     );
 
@@ -481,11 +493,11 @@ function ChallengeReceipts() {
         [usageRows]
     );
     const templateCount = useMemo(
-        () => new Set(usageRows.map(row => row.schemaDid)).size,
+        () => countUniqueDIDSuffixes(usageRows.map(row => row.schemaDid)),
         [usageRows]
     );
     const requesterCount = useMemo(
-        () => new Set(usageRows.map(row => row.requesterDid)).size,
+        () => countUniqueDIDSuffixes(usageRows.map(row => row.requesterDid)),
         [usageRows]
     );
 
@@ -599,6 +611,7 @@ function ChallengeReceipts() {
 
     useEffect(() => {
         let ignore = false;
+        const controller = new AbortController();
 
         async function fetchAttesterRows() {
             if (attesterDid) {
@@ -620,7 +633,7 @@ function ChallengeReceipts() {
                         updatedBefore,
                         limit: receiptBrowseFetchLimit,
                         offset,
-                    });
+                    }, controller.signal);
 
                     total = result.total;
                     allReceipts.push(...result.receipts);
@@ -648,11 +661,13 @@ function ChallengeReceipts() {
 
         return () => {
             ignore = true;
+            controller.abort();
         };
     }, [attesterDid, setError, updatedAfter, updatedBefore]);
 
     useEffect(() => {
         let ignore = false;
+        const controller = new AbortController();
 
         async function fetchUsageRows() {
             if (!attesterDid) {
@@ -675,7 +690,7 @@ function ChallengeReceipts() {
                         updatedBefore,
                         limit: usageFetchLimit,
                         offset,
-                    });
+                    }, controller.signal);
 
                     total = result.total;
                     allRows.push(...result.usage);
@@ -703,6 +718,7 @@ function ChallengeReceipts() {
 
         return () => {
             ignore = true;
+            controller.abort();
         };
     }, [attesterDid, setError, updatedAfter, updatedBefore]);
 
@@ -717,6 +733,7 @@ function ChallengeReceipts() {
 
     useEffect(() => {
         let ignore = false;
+        const controller = new AbortController();
 
         async function fetchReceiptRows() {
             if (!attesterDid || !selectedSchemaDid || !selectedRequesterDid) {
@@ -740,7 +757,7 @@ function ChallengeReceipts() {
                         updatedBefore,
                         limit: receiptBrowseFetchLimit,
                         offset,
-                    });
+                    }, controller.signal);
 
                     total = result.total;
                     allReceipts.push(...result.receipts);
@@ -773,6 +790,7 @@ function ChallengeReceipts() {
 
         return () => {
             ignore = true;
+            controller.abort();
         };
     }, [
         attesterDid,

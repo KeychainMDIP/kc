@@ -1,6 +1,7 @@
 import { Operation } from '@mdip/gatekeeper/types';
 import {
     NEG_SYNC_ID_RE,
+    buildOrderedCatchupCapabilities,
     chooseConnectSyncMode,
     chooseSyncMode,
     decodeNegentropyFrame,
@@ -24,7 +25,7 @@ function makeOp(hash: string): Operation {
 }
 
 describe('negentropy protocol helpers', () => {
-    const currentNegentropyVersion = 2;
+    const currentNegentropyVersion = 1;
 
     it('encodes and decodes utf8 frame payloads', () => {
         const payload = encodeNegentropyFrame('frame-message');
@@ -42,10 +43,18 @@ describe('negentropy protocol helpers', () => {
 
     it('normalizes peer capabilities and chooses sync mode', () => {
         const unknown = normalizePeerCapabilities();
+        expect(unknown).toMatchObject({
+            orderedCatchup: false,
+            orderedCatchupVersion: null,
+            orderedCatchupReady: false,
+            operationCount: null,
+            orderedOperationCount: null,
+            latestSignedTimestamp: null,
+        });
         expect(chooseSyncMode(unknown, currentNegentropyVersion)).toBeNull();
 
-        const legacy = normalizePeerCapabilities({ negentropy: false });
-        expect(chooseSyncMode(legacy, currentNegentropyVersion)).toBe('legacy');
+        const unsupported = normalizePeerCapabilities({ negentropy: false });
+        expect(chooseSyncMode(unsupported, currentNegentropyVersion)).toBeNull();
 
         const negentropy = normalizePeerCapabilities({
             negentropy: true,
@@ -53,48 +62,115 @@ describe('negentropy protocol helpers', () => {
         });
         expect(chooseSyncMode(negentropy, currentNegentropyVersion)).toBe('negentropy');
 
-        const oldVersion = normalizePeerCapabilities({ negentropy: true, negentropyVersion: 1 });
-        expect(chooseSyncMode(oldVersion, currentNegentropyVersion)).toBe('legacy');
-
         const missingVersion = normalizePeerCapabilities({ negentropy: true });
-        expect(chooseSyncMode(missingVersion, currentNegentropyVersion)).toBe('legacy');
+        expect(chooseSyncMode(missingVersion, currentNegentropyVersion)).toBeNull();
 
-        const newVersion = normalizePeerCapabilities({ negentropy: true, negentropyVersion: 3 });
-        expect(chooseSyncMode(newVersion, currentNegentropyVersion)).toBe('legacy');
+        const futureVersion = normalizePeerCapabilities({ negentropy: true, negentropyVersion: 2 });
+        expect(chooseSyncMode(futureVersion, currentNegentropyVersion)).toBeNull();
     });
 
-    it('chooses connect sync mode with explicit fallback reasons', () => {
-        const missing = normalizePeerCapabilities();
-        expect(chooseConnectSyncMode(missing, currentNegentropyVersion, true)).toStrictEqual({
-            mode: 'legacy',
-            reason: 'missing_capabilities',
+    it('normalizes ordered catch-up capability fields', () => {
+        const capabilities = normalizePeerCapabilities({
+            negentropy: true,
+            negentropyVersion: currentNegentropyVersion,
+            orderedCatchup: true,
+            orderedCatchupVersion: 1,
+            orderedCatchupReady: true,
+            operationCount: 25,
+            orderedOperationCount: 25,
         });
-        expect(chooseConnectSyncMode(missing, currentNegentropyVersion, false)).toStrictEqual({
+
+        expect(capabilities).toMatchObject({
+            orderedCatchup: true,
+            orderedCatchupVersion: 1,
+            orderedCatchupReady: true,
+            operationCount: 25,
+            orderedOperationCount: 25,
+        });
+    });
+
+    it('normalizes invalid ordered catch-up counts to null', () => {
+        const capabilities = normalizePeerCapabilities({
+            orderedCatchup: true,
+            orderedCatchupVersion: Number.NaN,
+            orderedCatchupReady: true,
+            operationCount: -1,
+            orderedOperationCount: 1.5,
+        });
+
+        expect(capabilities).toMatchObject({
+            orderedCatchup: true,
+            orderedCatchupVersion: null,
+            orderedCatchupReady: true,
+            operationCount: null,
+            orderedOperationCount: null,
+        });
+    });
+
+    it('normalizes the latest signed timestamp', () => {
+        expect(normalizePeerCapabilities({ latestSignedTimestamp: 2_000 }).latestSignedTimestamp).toBe(2_000);
+
+        for (const latestSignedTimestamp of [-1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1, '2000']) {
+            expect(normalizePeerCapabilities({
+                latestSignedTimestamp: latestSignedTimestamp as number,
+            }).latestSignedTimestamp).toBeNull();
+        }
+    });
+
+    it('builds ordered catch-up readiness only when all operations are ordered', () => {
+        expect(buildOrderedCatchupCapabilities({
+            version: 1,
+            operationCount: 3,
+            orderedOperationCount: 3,
+        })).toStrictEqual({
+            orderedCatchup: true,
+            orderedCatchupVersion: 1,
+            orderedCatchupReady: true,
+            operationCount: 3,
+            orderedOperationCount: 3,
+        });
+
+        expect(buildOrderedCatchupCapabilities({
+            version: 1,
+            operationCount: 3,
+            orderedOperationCount: 2,
+        })).toMatchObject({
+            orderedCatchupReady: false,
+            operationCount: 3,
+            orderedOperationCount: 2,
+        });
+
+        expect(buildOrderedCatchupCapabilities({
+            version: 1,
+            operationCount: 0,
+            orderedOperationCount: 0,
+        })).toMatchObject({
+            orderedCatchupReady: false,
+        });
+    });
+
+    it('chooses connect sync mode with explicit unavailability reasons', () => {
+        const missing = normalizePeerCapabilities();
+        expect(chooseConnectSyncMode(missing, currentNegentropyVersion)).toStrictEqual({
             mode: null,
-            reason: 'legacy_disabled',
+            reason: 'missing_capabilities',
         });
 
         const disabled = normalizePeerCapabilities({ negentropy: false, negentropyVersion: 1 });
-        expect(chooseConnectSyncMode(disabled, currentNegentropyVersion, true)).toStrictEqual({
-            mode: 'legacy',
+        expect(chooseConnectSyncMode(disabled, currentNegentropyVersion)).toStrictEqual({
+            mode: null,
             reason: 'negentropy_disabled',
         });
 
-        const oldVersion = normalizePeerCapabilities({ negentropy: true, negentropyVersion: 1 });
-        expect(chooseConnectSyncMode(oldVersion, currentNegentropyVersion, true)).toStrictEqual({
-            mode: 'legacy',
-            reason: 'version_mismatch',
-        });
-
         const missingVersion = normalizePeerCapabilities({ negentropy: true });
-        expect(chooseConnectSyncMode(missingVersion, currentNegentropyVersion, true)).toStrictEqual({
-            mode: 'legacy',
+        expect(chooseConnectSyncMode(missingVersion, currentNegentropyVersion)).toStrictEqual({
+            mode: null,
             reason: 'version_mismatch',
         });
 
-        const newVersion = normalizePeerCapabilities({ negentropy: true, negentropyVersion: 3 });
-        expect(chooseConnectSyncMode(newVersion, currentNegentropyVersion, true)).toStrictEqual({
-            mode: 'legacy',
+        const futureVersion = normalizePeerCapabilities({ negentropy: true, negentropyVersion: 2 });
+        expect(chooseConnectSyncMode(futureVersion, currentNegentropyVersion)).toStrictEqual({
+            mode: null,
             reason: 'version_mismatch',
         });
 
@@ -102,13 +178,13 @@ describe('negentropy protocol helpers', () => {
             negentropy: true,
             negentropyVersion: currentNegentropyVersion,
         });
-        expect(chooseConnectSyncMode(supported, currentNegentropyVersion, true)).toStrictEqual({
+        expect(chooseConnectSyncMode(supported, currentNegentropyVersion)).toStrictEqual({
             mode: 'negentropy',
             reason: 'negentropy_supported',
         });
-        expect(chooseConnectSyncMode(supported, currentNegentropyVersion, true, false)).toStrictEqual({
-            mode: 'legacy',
-            reason: 'negentropy_disabled',
+        expect(chooseConnectSyncMode(supported, currentNegentropyVersion, false)).toStrictEqual({
+            mode: null,
+            reason: 'transport_framing_unsupported',
         });
     });
 

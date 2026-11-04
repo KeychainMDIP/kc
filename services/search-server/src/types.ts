@@ -28,6 +28,8 @@ export interface PublishedCredentialSchemaCount {
 }
 
 export interface PublishedCredentialListOptions {
+    didPrefix?: string;
+    includeAmbiguous?: boolean;
     credentialDid?: string;
     schemaDid?: string;
     issuerDid?: string;
@@ -42,6 +44,31 @@ export interface PublishedCredentialListResult {
     credentials: PublishedCredentialRecord[];
 }
 
+export interface IdentityListOptions {
+    didPrefix?: string;
+    includeAmbiguous?: boolean;
+    schemaDid?: string;
+    fields?: string[];
+    limit?: number;
+    offset?: number;
+}
+
+export interface IdentityRecord {
+    did: string;
+    manifestSchemaDids: string[];
+    credentials?: {
+        credentialDid: string;
+        issuerDid: string;
+        updatedAt: string;
+        fields: Record<string, unknown>;
+    }[];
+}
+
+export interface IdentityListResult {
+    total: number;
+    identities: IdentityRecord[];
+}
+
 export interface ChallengeReceiptRecord {
     receiptDid: string;
     attesterDid: string;
@@ -52,6 +79,8 @@ export interface ChallengeReceiptRecord {
 }
 
 export interface ChallengeReceiptListOptions {
+    didPrefix?: string;
+    includeAmbiguous?: boolean;
     receiptDid?: string;
     attesterDid?: string;
     schemaDid?: string;
@@ -69,6 +98,8 @@ export interface ChallengeReceiptListResult {
 }
 
 export interface ChallengeReceiptUsageOptions {
+    didPrefix?: string;
+    includeAmbiguous?: boolean;
     attesterDid?: string;
     schemaDid?: string;
     requesterDid?: string;
@@ -100,6 +131,8 @@ export interface DIDEventRecord {
 }
 
 export interface DIDEventListOptions {
+    didPrefix?: string;
+    includeAmbiguous?: boolean;
     registry?: string;
     updatedAfter?: string;
     updatedBefore?: string;
@@ -112,11 +145,41 @@ export interface DIDEventListResult {
     events: DIDEventRecord[];
 }
 
+export interface DIDEventHistory {
+    did: string;
+    events: GatekeeperEvent[];
+}
+
+export interface NetworkMetricSnapshot {
+    date: string;
+    didCount: number;
+    didCountsByPrefix: Record<string, number>;
+    agentDidCount: number;
+    agentDidCountsByPrefix: Record<string, number>;
+    credentialCount: number;
+    credentialDidCountsByPrefix: Record<string, number>;
+    schemas: PublishedCredentialSchemaCount[];
+    rebuiltAt: string;
+}
+
+export interface SearchDocsOptions {
+    didPrefix?: string;
+    includeAmbiguous?: boolean;
+    limit: number;
+    cursor?: string;
+}
+
+export interface SearchDocsResult {
+    dids: string[];
+    nextCursor: string | null;
+}
+
 export interface DIDProjectionUpdate {
     did: string;
     events: GatekeeperEvent[];
     removed?: boolean;
     doc?: object;
+    didPrefixReferences?: string[];
     publishedCredentials?: PublishedCredentialRecord[];
     challengeReceipts?: ChallengeReceiptRecord[];
 }
@@ -137,20 +200,31 @@ export interface ApplyIndexPageResult {
 export interface DIDsDb {
     connect(): Promise<void>;
     disconnect(): Promise<void>;
+    withRead?<T>(work: () => Promise<T>): Promise<T>;
+    getRole?(): Promise<'writer' | 'reader'>;
 
     loadSyncState(key: string): Promise<string | null>;
     saveSyncState(key: string, value: string | null): Promise<void>;
 
     getDIDEvents(did: string): Promise<GatekeeperEvent[]>;
+    findDIDBySuffix(suffix: string, didPrefix?: string): Promise<string | null>;
+    findAmbiguousDIDBySuffix(suffix: string): Promise<string | null>;
     getBlock(registry: string, block?: BlockId): Promise<BlockInfo | null>;
     applyIndexPage(page: ApplyIndexPageOptions): Promise<ApplyIndexPageResult>;
     getDID(did: string): Promise<object | null>;
-    getPublishedCredentialCountsBySchema(): Promise<PublishedCredentialSchemaCount[]>;
+    listIdentities(options?: IdentityListOptions): Promise<IdentityListResult>;
+    getPublishedCredentialCountsBySchema(
+        didPrefix?: string,
+        includeAmbiguous?: boolean
+    ): Promise<PublishedCredentialSchemaCount[]>;
     listPublishedCredentials(options?: PublishedCredentialListOptions): Promise<PublishedCredentialListResult>;
     listChallengeReceipts(options?: ChallengeReceiptListOptions): Promise<ChallengeReceiptListResult>;
     getChallengeReceiptUsage(options?: ChallengeReceiptUsageOptions): Promise<ChallengeReceiptUsageResult>;
     listEvents(options?: DIDEventListOptions): Promise<DIDEventListResult>;
-    searchDocs(q: string): Promise<string[]>;
-    queryDocs(where: Record<string, unknown>): Promise<string[]>;
+    iterateDIDEventHistories(pageSize?: number): AsyncIterable<DIDEventHistory>;
+    replaceNetworkMetricSnapshots(snapshots: NetworkMetricSnapshot[]): Promise<void>;
+    getNetworkMetricSnapshot(date: string): Promise<NetworkMetricSnapshot | null>;
+    searchDocs(q: string, options: SearchDocsOptions): Promise<SearchDocsResult>;
+    queryDocs(where: Record<string, unknown>, didPrefix?: string, includeAmbiguous?: boolean): Promise<string[]>;
     wipeDb(): Promise<void>;
 }

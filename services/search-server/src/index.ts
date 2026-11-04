@@ -1,32 +1,91 @@
 import express from "express";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
+import type { Server } from 'node:http';
 import { resolveDIDFromEvents } from "@mdip/gatekeeper";
 import type { ResolveDIDOptions } from "@mdip/gatekeeper/types";
 import GatekeeperClient from "@mdip/gatekeeper/client";
 import DIDsSQLite from "./db/sqlite.js";
 import DIDsDbMemory from './db/json-memory.js';
 import DIDsPostgres from './db/postgres.js';
-import DidIndexer from "./DidIndexer.js";
-import {DIDsDb} from "./types.js";
+import DidIndexer, { INDEX_SYNC_STATE_KEYS } from "./DidIndexer.js";
+import type { DIDsDb, NetworkMetricSnapshot } from "./types.js";
 import { childLogger } from "@mdip/common/logger";
 import config from "./config.js";
+import { findDIDReadTarget } from './did-aliases.js';
 import {
     createWhitelistBlockList,
     getSearchStatus,
     isRateLimitWhitelistedRequest,
+    parseIdentityListOptions,
     parseNonNegativeInteger,
     parseOptionalBoolean,
     parseOptionalPositiveInteger,
     rateLimitWindowUnits,
     shouldSkipRateLimitPath,
 } from "./index-helpers.js";
+import { isNetworkMetricsScopeCurrent, parseSnapshotDate } from './network-metrics.js';
+import { readDatabase } from './db/db-utils.js';
+import { SearchUnavailableError } from './db/coordination.js';
+import { runService, type Shutdown } from './lifecycle.js';
 
 const log = childLogger({ service: 'search-server' });
+const SHUTDOWN_TIMEOUT_MS = 10_000;
+const DEFAULT_SEARCH_LIMIT = 50;
+const MAX_SEARCH_LIMIT = 500;
+const MIN_SEARCH_QUERY_LENGTH = 3;
 
-async function main() {
+let activeDb: DIDsDb | undefined;
+let activeIndexer: DidIndexer | undefined;
+let server: Server | undefined;
+let initialization: Promise<void> | undefined;
+const dependencyRequests = new AbortController();
+
+async function closeServer(httpServer: Server): Promise<void> {
+    if (!httpServer.listening) {
+        return;
+    }
+
+    await new Promise<void>((resolve, reject) => {
+        httpServer.close(error => error ? reject(error) : resolve());
+    });
+}
+
+async function cleanup(): Promise<void> {
+    activeIndexer?.beginStopping();
+    dependencyRequests.abort();
+    const errors: unknown[] = [];
+
+    for (const step of [
+        () => server ? closeServer(server) : Promise.resolve(),
+        () => initialization ? initialization.catch(() => {}) : Promise.resolve(),
+        () => activeIndexer ? activeIndexer.stopIndexing() : Promise.resolve(),
+        () => activeDb ? activeDb.disconnect() : Promise.resolve(),
+    ]) {
+        try {
+            await step();
+        }
+        catch (error) {
+            errors.push(error);
+        }
+    }
+
+    if (errors.length === 1) {
+        throw errors[0];
+    }
+    if (errors.length > 1) {
+        throw new AggregateError(errors, 'Search Server shutdown failed');
+    }
+}
+
+async function main(shutdown: Shutdown) {
     const app = express();
     const v1router = express.Router();
+    let initialized = false;
+    v1router.use((_req, res, next) => {
+        if (!initialized) return res.status(503).json({ ready: false, error: 'Search Server is initializing' });
+        next();
+    });
     const whitelistBlockList = createWhitelistBlockList(config.rateLimitWhitelist);
     const rateLimitWindowMs = config.rateLimitWindowValue * rateLimitWindowUnits[config.rateLimitWindowUnit];
 
@@ -82,34 +141,37 @@ async function main() {
     log.info(`Search Server persisting to ${config.db}`);
 
     if (config.db === 'sqlite') {
-        didDb = await DIDsSQLite.create();
+        didDb = new DIDsSQLite();
     } else if (config.db === 'postgres') {
-        didDb = await DIDsPostgres.create(config.postgresURL);
+        didDb = new DIDsPostgres(config.postgresURL);
     } else {
         didDb = new DIDsDbMemory();
     }
+    activeDb = didDb;
 
     const gatekeeper = new GatekeeperClient();
     await gatekeeper.connect({
         url: config.gatekeeperURL,
+        signal: dependencyRequests.signal,
         waitUntilReady: true,
         intervalSeconds: 5,
         chatty: true,
     });
+    if (dependencyRequests.signal.aborted) return;
 
     const indexer = new DidIndexer(gatekeeper, didDb, {
         intervalMs: config.refreshIntervalMs,
+        metricsRefreshIntervalMs: config.metricsRefreshIntervalMs,
+        didPrefix: config.didPrefix,
     });
-
-    // Let's not await here, we will continue and start
-    // the app while the indexer is indexing
-    indexer.startIndexing();
+    activeIndexer = indexer;
 
     v1router.get('/ready', async (req, res) => {
         try {
+            await didDb.getRole?.();
             res.json({ ready: true });
         } catch (error: any) {
-            res.status(500).send({ error: error.toString() });
+            res.status(503).json({ ready: false, error: String(error) });
         }
     });
 
@@ -117,8 +179,18 @@ async function main() {
         try {
             res.json(await getSearchStatus(didDb, config.db));
         } catch (error: any) {
-            log.error({ error }, 'Status error');
-            res.status(500).send({ error: error.toString() });
+            log.error({ err: error }, 'Status error');
+            res.status(error instanceof SearchUnavailableError ? 503 : 500).send({ error: error.toString() });
+        }
+    });
+
+    v1router.get("/did/:did/events", async (req, res) => {
+        try {
+            const target = await findDIDReadTarget(didDb, req.params.did, config.didPrefix);
+            res.json(target.events);
+        } catch (error) {
+            log.error({ err: error }, 'Get DID events error');
+            res.status(error instanceof SearchUnavailableError ? 503 : 500).json({ error: String(error) });
         }
     });
 
@@ -134,42 +206,52 @@ async function main() {
             }
             const versionTime = req.query.versionTime?.toString();
             const hasVersionQuery = versionSequence !== undefined || versionTime !== undefined;
-            const events = await didDb.getDIDEvents(did);
+            const result = await readDatabase(didDb, async () => {
+                const { storedDid, resolutionDid, events, scopeRejected } = await findDIDReadTarget(
+                    didDb,
+                    did,
+                    config.didPrefix
+                );
 
-            if (events.length === 0) {
-                if (!hasVersionQuery) {
-                    const cachedDoc = await didDb.getDID(did);
-                    if (cachedDoc) {
-                        return res.json(cachedDoc);
+                if (events.length === 0) {
+                    if (scopeRejected) {
+                        return { status: 404, body: "Not found" };
                     }
+                    if (!hasVersionQuery) {
+                        const cachedDoc = await didDb.getDID(storedDid);
+                        if (cachedDoc) {
+                            return { status: 200, body: cachedDoc };
+                        }
+                    }
+
+                    return { status: 404, body: "Not found" };
                 }
 
-                return res.status(404).send("Not found");
-            }
+                const options: ResolveDIDOptions = {};
+                if (versionSequence !== undefined) {
+                    options.versionSequence = versionSequence;
+                }
+                if (versionTime !== undefined) {
+                    options.versionTime = versionTime;
+                }
 
-            const options: ResolveDIDOptions = {};
-            if (versionSequence !== undefined) {
-                options.versionSequence = versionSequence;
-            }
-            if (versionTime !== undefined) {
-                options.versionTime = versionTime;
-            }
+                const doc = await resolveDIDFromEvents({
+                    did: resolutionDid,
+                    events,
+                    options,
+                    getBlock: (registry, block) => didDb.getBlock(registry, block),
+                });
 
-            const doc = await resolveDIDFromEvents({
-                did,
-                events,
-                options,
-                getBlock: (registry, block) => didDb.getBlock(registry, block),
+                if (doc.didResolutionMetadata?.error) {
+                    return { status: 404, body: "Not found" };
+                }
+
+                return { status: 200, body: doc };
             });
-
-            if (doc.didResolutionMetadata?.error) {
-                return res.status(404).send("Not found");
-            }
-
-            res.json(doc);
+            res.status(result.status).send(result.body);
         } catch (error) {
-            log.error({ error }, 'Get DID error');
-            res.status(500).json({ error: String(error) });
+            log.error({ err: error }, 'Get DID error');
+            res.status(error instanceof SearchUnavailableError ? 503 : 500).json({ error: String(error) });
         }
     });
 
@@ -178,10 +260,13 @@ async function main() {
             const registry = req.query.registry?.toString();
             const updatedAfter = req.query.updatedAfter?.toString();
             const updatedBefore = req.query.updatedBefore?.toString();
+            const includeAmbiguous = parseOptionalBoolean(req.query.includeAmbiguous);
             const limit = parseNonNegativeInteger(req.query.limit, 50);
             const offset = parseNonNegativeInteger(req.query.offset, 0);
 
             const result = await didDb.listEvents({
+                didPrefix: config.didPrefix,
+                includeAmbiguous,
                 registry,
                 updatedAfter,
                 updatedBefore,
@@ -191,23 +276,49 @@ async function main() {
 
             res.json(result);
         } catch (error) {
-            log.error({ error }, '/events error');
-            res.status(500).json({ error: String(error) });
+            log.error({ err: error }, '/events error');
+            res.status(error instanceof SearchUnavailableError ? 503 : 500).json({ error: String(error) });
         }
     });
 
     v1router.get("/search", async (req, res) => {
+        const rawQuery = req.query.q;
+        if (rawQuery !== undefined && (typeof rawQuery !== 'string'
+            || [...rawQuery].length < MIN_SEARCH_QUERY_LENGTH)) {
+            return res.status(400).json({
+                error: `q must contain at least ${MIN_SEARCH_QUERY_LENGTH} Unicode characters`,
+            });
+        }
+        const rawLimit = req.query.limit;
+        if (rawLimit !== undefined && (typeof rawLimit !== 'string' || !/^\d+$/.test(rawLimit)
+            || !Number.isSafeInteger(Number(rawLimit)) || Number(rawLimit) < 1
+            || Number(rawLimit) > MAX_SEARCH_LIMIT)) {
+            return res.status(400).json({ error: `limit must be an integer from 1 to ${MAX_SEARCH_LIMIT}` });
+        }
+        const cursor = req.query.cursor;
+        if (cursor !== undefined && (typeof cursor !== 'string' || cursor.length === 0)) {
+            return res.status(400).json({ error: 'cursor must be a non-empty string' });
+        }
+
         try {
-            const q = req.query.q?.toString() || "";
+            const q = rawQuery ?? "";
             if (!q) {
-                return res.json([]);
+                return res.json({ dids: [], nextCursor: null });
             }
 
-            const dids = await didDb.searchDocs(q);
-            return res.json(dids);
+            return res.json(await didDb.searchDocs(q, {
+                didPrefix: config.didPrefix,
+                includeAmbiguous: parseOptionalBoolean(req.query.includeAmbiguous),
+                limit: rawLimit === undefined ? DEFAULT_SEARCH_LIMIT : Number(rawLimit),
+                cursor,
+            }));
         } catch (error) {
-            log.error({ error }, '/api/search error');
-            return res.status(500).json({ error: String(error) });
+            if (error && typeof error === 'object' && 'code' in error && error.code === '57014') {
+                log.warn({ err: error }, '/api/search timed out');
+                return res.status(503).json({ error: 'Search timed out' });
+            }
+            log.error({ err: error }, '/api/search error');
+            return res.status(error instanceof SearchUnavailableError ? 503 : 500).json({ error: String(error) });
         }
     });
 
@@ -218,23 +329,110 @@ async function main() {
                 return res.status(400).json({ error: "`where` must be an object" });
             }
 
-            const dids = await didDb.queryDocs(where);
+            const dids = await didDb.queryDocs(
+                where,
+                config.didPrefix,
+                parseOptionalBoolean(req.query.includeAmbiguous)
+            );
             return res.json(dids);
         } catch (err) {
-            log.error({ error: err }, '/query error');
-            res.status(500).json({ error: String(err) });
+            log.error({ err }, '/query error');
+            res.status(err instanceof SearchUnavailableError ? 503 : 500).json({ error: String(err) });
+        }
+    });
+
+    v1router.get('/identities', async (req, res) => {
+        let options;
+        try {
+            options = parseIdentityListOptions(req.query);
+        }
+        catch (error) {
+            return res.status(400).json({ error: String(error) });
+        }
+
+        try {
+            return res.json(await didDb.listIdentities({
+                ...options,
+                didPrefix: config.didPrefix,
+                includeAmbiguous: parseOptionalBoolean(req.query.includeAmbiguous),
+            }));
+        }
+        catch (error) {
+            log.error({ err: error }, '/identities error');
+            return res.status(error instanceof SearchUnavailableError ? 503 : 500).json({ error: String(error) });
         }
     });
 
     v1router.get("/metrics/schemas/published", async (req, res) => {
         try {
-            const schemas = await didDb.getPublishedCredentialCountsBySchema();
-            res.json({ schemas });
+            if (req.query.date !== undefined) {
+                return res.status(400).json({
+                    error: 'Use /api/v1/metrics/snapshots/schemas/:date for historical snapshots',
+                });
+            }
+
+            const schemas = await didDb.getPublishedCredentialCountsBySchema(
+                config.didPrefix,
+                parseOptionalBoolean(req.query.includeAmbiguous)
+            );
+            return res.json({ schemas });
         } catch (error) {
-            log.error({ error }, '/metrics/schemas/published error');
-            res.status(500).json({ error: String(error) });
+            log.error({ err: error }, '/metrics/schemas/published error');
+            return res.status(error instanceof SearchUnavailableError ? 503 : 500).json({ error: String(error) });
         }
     });
+
+    const snapshotHandler = (
+        select: (snapshot: NetworkMetricSnapshot) => unknown
+    ) => async (req: express.Request, res: express.Response) => {
+        try {
+            const date = parseSnapshotDate(req.params.date);
+            if (!date) {
+                return res.status(400).json({ error: 'date must be a valid, non-future UTC date in YYYY-MM-DD format' });
+            }
+            const result = await readDatabase(didDb, async () => {
+                const storedDidPrefix = await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsDidPrefix);
+                if (!isNetworkMetricsScopeCurrent(storedDidPrefix, config.didPrefix)) {
+                    return { status: 503, body: { error: 'Network metrics are rebuilding for the configured DID prefix' } };
+                }
+
+                const snapshot = await didDb.getNetworkMetricSnapshot(date);
+                if (!snapshot) {
+                    return { status: 404, body: { error: 'Snapshot not found' } };
+                }
+
+                return { status: 200, body: select(snapshot) };
+            });
+            return res.status(result.status).json(result.body);
+        }
+        catch (error) {
+            log.error({ err: error }, 'Network metrics snapshot error');
+            return res.status(error instanceof SearchUnavailableError ? 503 : 500).json({ error: String(error) });
+        }
+    };
+
+    v1router.get('/metrics/snapshots/:date', snapshotHandler(snapshot => snapshot));
+    v1router.get('/metrics/snapshots/dids/:date', snapshotHandler(
+        snapshot => ({
+            didCount: snapshot.didCount,
+            didCountsByPrefix: snapshot.didCountsByPrefix,
+        })
+    ));
+    v1router.get('/metrics/snapshots/schemas/:date', snapshotHandler(
+        snapshot => ({ schemas: snapshot.schemas })
+    ));
+    v1router.get('/metrics/snapshots/agents/:date', snapshotHandler(
+        snapshot => ({
+            agentDidCount: snapshot.agentDidCount,
+            agentDidCountsByPrefix: snapshot.agentDidCountsByPrefix,
+        })
+    ));
+    v1router.get('/metrics/snapshots/credentials/:date', snapshotHandler(
+        snapshot => ({
+            credentialCount: snapshot.credentialCount,
+            credentialDidCountsByPrefix: snapshot.credentialDidCountsByPrefix,
+        })
+    ));
 
     v1router.get("/metrics/credentials/published", async (req, res) => {
         try {
@@ -243,9 +441,12 @@ async function main() {
             const issuerDid = req.query.issuerDid?.toString();
             const subjectDid = req.query.subjectDid?.toString();
             const revealed = parseOptionalBoolean(req.query.revealed);
-            const limit = parseNonNegativeInteger(req.query.limit, 50);
+            const includeAmbiguous = parseOptionalBoolean(req.query.includeAmbiguous);
+            const limit = Math.min(parseNonNegativeInteger(req.query.limit, 50), 500);
             const offset = parseNonNegativeInteger(req.query.offset, 0);
             const result = await didDb.listPublishedCredentials({
+                didPrefix: config.didPrefix,
+                includeAmbiguous,
                 credentialDid,
                 schemaDid,
                 issuerDid,
@@ -257,8 +458,8 @@ async function main() {
 
             res.json(result);
         } catch (error) {
-            log.error({ error }, '/metrics/credentials/published error');
-            res.status(500).json({ error: String(error) });
+            log.error({ err: error }, '/metrics/credentials/published error');
+            res.status(error instanceof SearchUnavailableError ? 503 : 500).json({ error: String(error) });
         }
     });
 
@@ -271,9 +472,12 @@ async function main() {
             const responseCommitment = req.query.responseCommitment?.toString();
             const updatedAfter = req.query.updatedAfter?.toString();
             const updatedBefore = req.query.updatedBefore?.toString();
+            const includeAmbiguous = parseOptionalBoolean(req.query.includeAmbiguous);
             const limit = parseNonNegativeInteger(req.query.limit, 50);
             const offset = parseNonNegativeInteger(req.query.offset, 0);
             const result = await didDb.listChallengeReceipts({
+                didPrefix: config.didPrefix,
+                includeAmbiguous,
                 receiptDid,
                 attesterDid,
                 schemaDid,
@@ -287,8 +491,8 @@ async function main() {
 
             res.json(result);
         } catch (error) {
-            log.error({ error }, '/metrics/challenge-receipts error');
-            res.status(500).json({ error: String(error) });
+            log.error({ err: error }, '/metrics/challenge-receipts error');
+            res.status(error instanceof SearchUnavailableError ? 503 : 500).json({ error: String(error) });
         }
     });
 
@@ -303,9 +507,12 @@ async function main() {
             const requesterDid = req.query.requesterDid?.toString();
             const updatedAfter = req.query.updatedAfter?.toString();
             const updatedBefore = req.query.updatedBefore?.toString();
+            const includeAmbiguous = parseOptionalBoolean(req.query.includeAmbiguous);
             const limit = parseNonNegativeInteger(req.query.limit, 50);
             const offset = parseNonNegativeInteger(req.query.offset, 0);
             const result = await didDb.getChallengeReceiptUsage({
+                didPrefix: config.didPrefix,
+                includeAmbiguous,
                 attesterDid,
                 schemaDid,
                 requesterDid,
@@ -317,8 +524,8 @@ async function main() {
 
             res.json(result);
         } catch (error) {
-            log.error({ error }, '/metrics/challenge-receipts/usage error');
-            res.status(500).json({ error: String(error) });
+            log.error({ err: error }, '/metrics/challenge-receipts/usage error');
+            res.status(error instanceof SearchUnavailableError ? 503 : 500).json({ error: String(error) });
         }
     });
 
@@ -329,27 +536,45 @@ async function main() {
     app.use('/api/v1', v1router);
 
     const port = config.port;
-    const server = app.listen(port, () => {
-        log.info(`Listening on port ${port}`);
+    await new Promise<void>((resolve, reject) => {
+        const onError = (error: Error) => reject(error);
+        server = app.listen(port, () => {
+            server!.off('error', onError);
+            resolve();
+        });
+        server.once('error', onError);
     });
 
-    const shutdown = async () => {
-        try {
-            server.close();
-            indexer.stopIndexing();
-            await didDb.disconnect();
-        } catch (error: any) {
-            log.error({ error }, 'Error during shutdown');
-        } finally {
-            process.exit(0);
-        }
-    };
+    if (dependencyRequests.signal.aborted) {
+        await closeServer(server!);
+        return;
+    }
+    log.info(`Listening on port ${port}`);
+    server!.on('error', error => {
+        log.error({ err: error }, 'HTTP server error');
+        void shutdown(1);
+    });
 
-    process.on('SIGTERM', shutdown);
-    process.on('SIGINT', shutdown);
+    initialization = config.db === 'postgres'
+        ? (didDb as DIDsPostgres).connect(dependencyRequests.signal)
+        : didDb.connect();
+    await initialization;
+    if (dependencyRequests.signal.aborted) return;
+    initialized = true;
+
+    // Start indexing without delaying HTTP availability.
+    indexer.startIndexing().catch(error => {
+        if (dependencyRequests.signal.aborted) {
+            return;
+        }
+        log.error({ err: error }, 'Initial indexing failed');
+        void shutdown(1);
+    });
 }
 
-main().catch((err) => {
-    log.error({ error: err }, '[search-server] Fatal error');
-    process.exit(1);
+runService({
+    start: main,
+    cleanup,
+    log,
+    timeoutMs: SHUTDOWN_TIMEOUT_MS,
 });

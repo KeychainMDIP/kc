@@ -28,24 +28,6 @@ function parseFrameSizeLimit() {
     return valueKb * 1024;
 }
 
-function parseBooleanEnv(varName, defaultValue) {
-    const raw = process.env[varName];
-    if (raw == null || raw === '') {
-        return defaultValue;
-    }
-
-    const normalized = raw.trim().toLowerCase();
-    if (normalized === 'true') {
-        return true;
-    }
-
-    if (normalized === 'false') {
-        return false;
-    }
-
-    throw new Error(`Invalid ${varName}; expected true or false`);
-}
-
 function parseSyncDbEnv() {
     const normalized = process.env.KC_HYPR_DB?.trim().toLowerCase();
     if (!normalized) {
@@ -59,8 +41,9 @@ function parseSyncDbEnv() {
     throw new Error('Invalid KC_HYPR_DB; expected sqlite or postgres');
 }
 
+const negentropyMaxRecordsPerWindow = parsePositiveIntEnv('KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW', 25000);
+
 const config = {
-    debug: process.env.KC_DEBUG ? process.env.KC_DEBUG === 'true' : false,
     gatekeeperURL: process.env.KC_GATEKEEPER_URL || 'http://localhost:4224',
     keymasterURL: process.env.KC_KEYMASTER_URL || 'http://localhost:4226',
     ipfsURL: process.env.KC_IPFS_URL || 'http://localhost:5001/api/v0',
@@ -69,22 +52,14 @@ const config = {
     nodeName: process.env.KC_NODE_NAME || 'anon',
     protocol: process.env.KC_MDIP_PROTOCOL || '/MDIP/v1.0-public',
     exportInterval: parsePositiveIntEnv('KC_HYPR_EXPORT_INTERVAL', 2),
-    negentropyEnabled: parseBooleanEnv('KC_HYPR_NEGENTROPY_ENABLE', true),
     negentropyFrameSizeLimit: parseFrameSizeLimit(),
-    negentropyMaxRecordsPerWindow: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW', 25000),
+    negentropyMaxRecordsPerWindow,
     negentropyMaxRoundsPerSession: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_MAX_ROUNDS_PER_SESSION', 64),
     negentropyIntervalSeconds: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_INTERVAL', 300),
-    legacySyncEnabled: parseBooleanEnv('KC_HYPR_LEGACY_SYNC_ENABLE', true),
     db: parseSyncDbEnv(),
     postgresURL: process.env.KC_HYPR_POSTGRES_URL
         || process.env.KC_POSTGRES_URL
         || 'postgresql://mdip:mdip@localhost:5432/mdip',
 };
-
-if (!config.negentropyEnabled && !config.legacySyncEnabled) {
-    throw new Error(
-        'Invalid sync configuration; at least one of KC_HYPR_NEGENTROPY_ENABLE or KC_HYPR_LEGACY_SYNC_ENABLE must be true'
-    );
-}
 
 export default config;

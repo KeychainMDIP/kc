@@ -31,12 +31,24 @@ KC_SEARCH_SERVER_GATEKEEPER_URL=http://localhost:4224
 # How often (in ms) to poll Gatekeeper for new or updated DIDs.
 KC_SEARCH_SERVER_REFRESH_INTERVAL_MS=5000
 
+# How often (in ms) to rebuild all daily network metric snapshots.
+KC_SEARCH_SERVER_METRICS_REFRESH_INTERVAL_MS=3600000
+
+# Optional network scope: did:test | did:mdip | empty for all networks
+KC_SEARCH_SERVER_DID_PREFIX=did:test
+
 # Database adapter: sqlite | postgres | memory
 KC_SEARCH_SERVER_DB=sqlite
 
 # Used when KC_SEARCH_SERVER_DB=postgres
 # Falls back to KC_POSTGRES_URL when unset
 KC_SEARCH_SERVER_POSTGRES_URL=postgresql://mdip:mdip@localhost:5432/mdip
+
+# Maximum time to establish or obtain a PostgreSQL connection
+KC_POSTGRES_CONNECTION_TIMEOUT_MS=3000
+
+# Maximum execution time for each PostgreSQL text search
+KC_SEARCH_SERVER_SEARCH_TIMEOUT_MS=5000
 
 # Trust proxy headers when determining req.ip
 KC_SEARCH_SERVER_TRUST_PROXY=false
@@ -53,24 +65,252 @@ KC_SEARCH_SERVER_RATE_LIMIT_SKIP_PATHS=/api/v1/ready,/api/v1/status
 KC_LOG_LEVEL=info
 ```
 
+The search database is a rebuildable index and this service does not migrate
+older table layouts. Reset an existing search-server database before deploying
+a release that changes its schema.
+
+PostgreSQL startup installs the `pg_trgm` extension and creates a concurrent
+GIN index for document text searches when it is missing. The first startup on
+an existing database waits for that index build to finish while compatible HTTP readers remain available. Index writes wait for
+startup to complete. This index addition does not require a database reset.
+Concurrent Search Server startups serialize this setup through PostgreSQL.
+Allow additional database storage and some indexing work when DID documents
+are synchronized. The PostgreSQL user must be permitted to create the extension
+and index.
+
+### Multiple Search Server instances
+
+Multiple Search Server processes can share one PostgreSQL Search database.
+Each successful startup takes over indexing. PostgreSQL serializes the handoff
+with active writes and checks the process's ownership on every later mutation.
+The previous process stops indexing and continues serving HTTP reads. Handoff
+preserves indexed data and synchronization cursors.
+
+All instances must use compatible versions, the same Gatekeeper index feed and
+compatible network-metric scope. Shared SQLite files are not supported for this
+setup. PostgreSQL must be reached directly or through a proxy with session
+pooling. Transaction and statement pooling do not preserve the session locks
+used during startup and reads.
+
+Only one instance indexes. Readers do not automatically promote themselves if
+the writer exits. Restart the writer through its supervisor, or restart a
+compatible reader to take over. Startup and schema-lock contention have bounded
+waits. Requests temporarily unable to access a compatible schema return 503.
+An incompatible schema is rejected without changing its data or ownership.
+Schema changes still require a coordinated rebuild with all incompatible
+instances stopped. Manual table drops while processes are running are unsafe.
+
+`GET /api/v1/status` adds `role`, either `"writer"` or `"reader"`, derived from
+the shared database. Healthy readers remain ready. `/api/v1/ready` returns 503
+while initialization is incomplete or the PostgreSQL database is unavailable
+or incompatible. Readiness does not mean indexing has caught up.
+
 ### Endpoints
+
+DID resolution, search, query, identity, event, and credential-metric endpoints apply
+`KC_SEARCH_SERVER_DID_PREFIX` when configured. Indexed DID results use the
+effective prefix determined by the precedence documented in
+[DID network classification](#did-network-classification), not necessarily a
+stored alias's prefix. The live discovery and metric endpoints documented below
+accept `includeAmbiguous=true` to also return legacy DIDs whose prefix cannot be
+determined authoritatively. Those DIDs are returned under the configured prefix;
+authoritative DIDs from another network remain excluded. This option does not
+reclassify stored DIDs and does not apply to historical metric snapshots.
+
+### `GET /api/v1/ready`
+- **Description**: Returns `{ "ready": true }` when initialization is complete and the database is usable. Returns 503 while unavailable.
+
+### `GET /api/v1/status`
+- **Description**: Returns the database adapter, index synchronization state,
+  the per-instance writer/reader role, and the last network-metrics rebuild time or error.
 
 ### `GET /api/v1/did/:did`
 - **Description**: Returns the DID Document
+- **Query Params**:
+    - `versionSequence` (optional, positive integer)
+    - `versionTime` (optional, timestamp accepted by Gatekeeper resolution)
+- **Notes**: Prefix aliases are matched by final CID suffix. A configured
+  network scope must match the DID's effective classification. For direct
+  lookup only, a legacy DID without conclusive operation or manifest prefix
+  evidence can be resolved in the configured scope by its CID suffix. This
+  does not reclassify the stored DID. Scoped listings, search, and live metrics
+  include it only when `includeAmbiguous=true` is supplied.
 - **Returns**:
     - `200 OK` + JSON DID Document if present.
+    - `400 Bad Request` for an invalid `versionSequence`.
     - `404 Not Found` if no cached doc is found for the given `:did`.
 
-### `GET /api/v1/search`
-- **Description**: Performs a text search across all DID documents. Returns an array of matching DIDs.
-- **Query Param**: q (string)
+### `GET /api/v1/did/:did/events`
+- **Description**: Returns all indexed events for the DID in operation order.
+- **Notes**: DID prefix aliases are matched by final CID suffix and validated
+  against the configured network scope. The direct legacy fallback described
+  above also applies, without changing the stored events or classification.
 - **Returns**:
-    - 200 OK + [] (empty array) if nothing matches, otherwise an array of DID strings.
+    - `200 OK` + an array of Gatekeeper events.
+    - `200 OK` + `[]` if the DID has no indexed events.
+
+### `GET /api/v1/events`
+- **Description**: Returns a paginated list of indexed DID events.
+- **Query Params**:
+    - `registry`, `updatedAfter`, `updatedBefore` (optional)
+    - `includeAmbiguous` (optional boolean, default `false`)
+    - `limit` (optional, default `50`)
+    - `offset` (optional, default `0`)
+- **Returns**:
+    - `200 OK` + `{ "total": 123, "events": [...] }`
+
+### `GET /api/v1/search`
+- **Description**: Performs a text search across indexed DID documents in the
+  configured network scope and returns matching effective DIDs.
+- **Query Params**:
+    - `q` (string containing at least three Unicode characters)
+    - `includeAmbiguous` (optional boolean, default `false`)
+    - `limit` (optional, default `50`, maximum `500`)
+    - `cursor` (optional, the `nextCursor` returned by the preceding page)
+- **Notes**: Search terms are literal. SQL wildcard characters `%` and `_` do
+  not broaden the search. Terms shorter than three Unicode characters are
+  rejected because PostgreSQL's trigram index cannot serve them efficiently.
+  Use structured endpoints for short values. Results are ordered by effective
+  DID. Pagination limits the response size but does not avoid the complete text
+  match performed by PostgreSQL's materialized query.
+- **Returns**:
+    - `200 OK` + `{ "dids": [...], "nextCursor": "did:..." }`.
+      `nextCursor` is `null` on the final page.
+    - `400 Bad Request` for a supplied `q` shorter than three Unicode
+      characters, or an invalid `limit` or `cursor`.
+    - `503 Service Unavailable` when a PostgreSQL search exceeds
+      `KC_SEARCH_SERVER_SEARCH_TIMEOUT_MS`.
+
+### `POST /api/v1/query`
+- **Description**: Queries indexed DID documents in the configured network
+  scope using a `where` object with an `$in` condition.
+- **Query Params**:
+    - `includeAmbiguous` (optional boolean, default `false`)
+- **Body**: `{ "where": { "didDocumentData.type": { "$in": ["value"] } } }`
+- **Returns**:
+    - `200 OK` + an array of matching effective DIDs.
+    - `400 Bad Request` when `where` is missing or is not an object.
+
+### `GET /api/v1/identities`
+
+Enumerates indexed agent DIDs with the schema DIDs in their current manifests.
+Use this instead of a generic `/query` on `mdip.type` to enumerate identities.
+SQLite and PostgreSQL use the agent-classification, identity-schema, and field-name
+indexes, then read documents only for the requested page. Assets are excluded,
+so there is no `isAgent` field. Existing SQLite and PostgreSQL Search Server
+databases must be reset when first upgrading to these filters so the
+`identity_schemas` and `identity_fields` tables can be populated by reindexing
+Gatekeeper.
+
+Query parameters:
+
+- `includeAmbiguous` (optional boolean, default `false`) includes legacy agent
+  DIDs without an authoritative prefix.
+- `limit` (optional, default `50`, maximum `500`) and `offset` (optional, default
+  `0`) are non-negative integers. `limit=0` returns only the total.
+- `schemaDid` (optional) filters identities to those with a published credential
+  of that schema in their current manifest, before counting and pagination.
+  It also selects the credential schema for field extraction. Prefix aliases
+  match by CID suffix. Omitting it searches across schemas.
+- `fields` (optional, repeated parameter) filters identities to those with a
+  revealed credential containing at least one requested field (OR, not AND).
+  It also selects which literal, top-level keys to return from the credential's
+  `credential` object, not its metadata. For example,
+  `fields=publicName&fields=faveFood` matches either field and returns both when
+  present. Field names are case-sensitive, and dots are literal characters
+  rather than nested-property paths. Matching uses key presence, so `0`,
+  `false`, an empty string, and `null` all count as present values.
+
+The filters are independently optional. With neither, all indexed agents in
+scope are returned. With only a schema, matching published credentials may be
+revealed or unrevealed. With only fields, matching revealed credentials may
+use any schema. When both are supplied, the same credential must match the
+schema and contain at least one requested field. Filtering happens before
+counting and pagination, and each matching identity is counted only once.
+
+With no fields requested, the response contains no credential values:
+
+```json
+{
+  "total": 123,
+  "identities": [
+    {
+      "did": "did:mdip:<identity-cid>",
+      "manifestSchemaDids": ["did:mdip:<profile-schema-cid>"]
+    }
+  ]
+}
+```
+
+For example, to request two claims defined by an application's schema:
+
+```bash
+curl --get 'http://localhost:4002/api/v1/identities' \
+  --data-urlencode 'schemaDid=did:mdip:<profile-schema-cid>' \
+  --data-urlencode 'fields=publicName' \
+  --data-urlencode 'fields=avatarUrl' \
+  --data-urlencode 'limit=50' \
+  --data-urlencode 'offset=0'
+```
+
+Omit `schemaDid` from this request to match the requested fields across schemas.
+
+Each identity then also has a `credentials` array:
+
+```json
+{
+  "did": "did:mdip:<identity-cid>",
+  "manifestSchemaDids": ["did:mdip:<profile-schema-cid>"],
+  "credentials": [
+    {
+      "credentialDid": "did:mdip:<credential-cid>",
+      "issuerDid": "did:mdip:<issuer-cid>",
+      "updatedAt": "2026-09-18T12:00:00.000Z",
+      "fields": { "publicName": "Alice", "avatarUrl": "https://example.org/alice.png" }
+    }
+  ]
+}
+```
+
+Missing fields are omitted. Matching revealed credentials are returned separately,
+ordered by credential DID, with only the requested claims. When fields are
+requested, credentials containing none of them are omitted, as are identities
+with no matching credential. Published but unrevealed credentials match a
+schema-only filter and contribute schema DIDs but cannot match a field filter
+or supply claim values. MDIP does not assign meaning to any schema or field,
+select a preferred credential, or verify the manifest's signatures or
+credential status on this read path.
+
+Each returned credential also includes `issuerDid` from its published `issuer`
+and `updatedAt`, using the same metadata as the published-credential metrics.
+`updatedAt` uses the published credential's `signature.signed`, falling back to
+the holder DID document's `updated` or `created` timestamp, or an empty string
+if none is available. It is not a publication timestamp and does not track
+changes to the underlying credential asset that the holder has not republished.
+These metadata fields are separate from the requested claims in `fields`.
+
+`manifestSchemaDids` is a sorted, unique list of schema strings as published in
+valid entries of the current identity manifest, using the same structural and
+subject checks as the published-credential metrics. It is not a list of all
+historically published schemas. Credential and schema DIDs in these manifest
+entries retain their published prefixes.
+
+Identities are ordered by effective prefix, then CID suffix, with one result
+per CID suffix. Ordering is case-sensitive and independent of locale.
+`total` counts matching indexed agents with a resolved document in the configured
+network scope. Without either filter, this includes deactivated agents whose
+manifests have been cleared.
+Pages reflect the current index, not a frozen snapshot across requests.
+Invalid `schemaDid`, `fields`, or pagination values return `400`, and database
+failures return `500`.
 
 ### `GET /api/v1/metrics/schemas/published`
-- **Description**: Returns counts of published credentials grouped by schema DID.
+- **Description**: Returns current published credential counts grouped by schema DID.
+- **Query Params**:
+    - `includeAmbiguous` (optional boolean, default `false`)
 - **Returns**:
     - `200 OK` + `{ "schemas": [{ "schemaDid": "...", "count": 42 }] }`
+    - `400 Bad Request` when the removed `date` query parameter is supplied.
 
 ### `GET /api/v1/metrics/credentials/published`
 - **Description**: Returns published credential rows with optional filtering and pagination.
@@ -79,18 +319,182 @@ KC_LOG_LEVEL=info
     - `schemaDid` (optional)
     - `issuerDid` (optional)
     - `subjectDid` (optional)
-    - `limit` (optional, default `50`)
+    - `revealed` (optional, `true` or `false`)
+    - `includeAmbiguous` (optional boolean, default `false`)
+    - `limit` (optional, default `50`, maximum `500`)
     - `offset` (optional, default `0`)
 - **Notes**:
     - `updatedAt` is derived from the credential manifest entry's `signature.signed` when available, with a fallback to the subject DID document timestamp.
+    - DID-valued filters match prefix aliases by CID suffix.
 - **Returns**:
     - `200 OK` + `{ "total": 123, "credentials": [{ "credentialDid": "...", "schemaDid": "...", "issuerDid": "...", "subjectDid": "...", "holderDid": "...", "updatedAt": "..." }] }`
+
+### `GET /api/v1/metrics/snapshots/dids/:date`
+- **Description**: Returns the cumulative total of all DIDs created through
+  one UTC day, regardless of DID type or document contents. DIDs are
+  deduplicated by CID suffix and filtered by `KC_SEARCH_SERVER_DID_PREFIX`.
+  Deleted DIDs remain part of the cumulative total.
+- **Path Param**:
+    - `date` (required, `YYYY-MM-DD`, must not be in the future)
+- **Returns**:
+    - `200 OK` + `{ "didCount": 123, "didCountsByPrefix": { "did:mdip": 23, "did:test": 100 } }`
+    - `400 Bad Request` for an invalid or future date.
+    - `404 Not Found` when no snapshot exists for the date.
+    - `503 Service Unavailable` while snapshots are rebuilding for the
+      configured network scope.
+
+### `GET /api/v1/metrics/snapshots/:date`
+- **Description**: Returns the complete cumulative network snapshot for one
+  UTC day in one database read. This keeps all totals and schema usage from the
+  same rebuild generation.
+- **Path Param**:
+    - `date` (required, `YYYY-MM-DD`, must not be in the future)
+- **Returns**:
+    - `200 OK` + the stored snapshot, including all-DID, AgentDID, credential,
+      and per-schema counts plus `date` and `rebuiltAt`.
+    - `400 Bad Request` for an invalid or future date.
+    - `404 Not Found` when no snapshot exists for the date.
+    - `503 Service Unavailable` while snapshots are rebuilding for the
+      configured network scope.
+
+### `GET /api/v1/metrics/snapshots/schemas/:date`
+- **Description**: Returns cumulative credential counts grouped by schema DID for one UTC day.
+- **Path Param**:
+    - `date` (required, `YYYY-MM-DD`, must not be in the future)
+- **Returns**:
+    - `200 OK` + `{ "schemas": [{ "schemaDid": "...", "count": 42 }] }`
+    - `400 Bad Request` for an invalid or future date.
+    - `404 Not Found` when no snapshot exists for the date.
+    - `503 Service Unavailable` while snapshots are rebuilding for the
+      configured network scope.
+
+### `GET /api/v1/metrics/snapshots/credentials/:date`
+- **Description**: Returns the cumulative credential total for one UTC day.
+- **Path Param**:
+    - `date` (required, `YYYY-MM-DD`, must not be in the future)
+- **Returns**:
+    - `200 OK` + `{ "credentialCount": 456, "credentialDidCountsByPrefix": { "did:mdip": 56, "did:test": 400 } }`
+    - `400 Bad Request` for an invalid or future date.
+    - `404 Not Found` when no snapshot exists for the date.
+    - `503 Service Unavailable` while snapshots are rebuilding for the
+      configured network scope.
+
+### `GET /api/v1/metrics/snapshots/agents/:date`
+- **Description**: Returns the cumulative AgentDID total for one UTC day.
+- **Path Param**:
+    - `date` (required, `YYYY-MM-DD`, must not be in the future)
+- **Returns**:
+    - `200 OK` + `{ "agentDidCount": 123, "agentDidCountsByPrefix": { "did:mdip": 23, "did:test": 100 } }`
+    - `400 Bad Request` for an invalid or future date.
+    - `404 Not Found` when no snapshot exists for the date.
+    - `503 Service Unavailable` while snapshots are rebuilding for the
+      configured network scope.
+
+### `GET /api/v1/metrics/challenge-receipts`
+- **Description**: Returns indexed challenge receipts with optional filtering
+  and pagination.
+- **Query Params**:
+    - `receiptDid`, `attesterDid`, `schemaDid`, `requesterDid`,
+      `responseCommitment`, `updatedAfter`, `updatedBefore` (optional)
+    - `includeAmbiguous` (optional boolean, default `false`)
+    - `limit` (optional, default `50`)
+    - `offset` (optional, default `0`)
+- **Notes**:
+    - DID-valued filters match prefix aliases by CID suffix.
+- **Returns**:
+    - `200 OK` + `{ "total": 123, "receipts": [...] }`
+
+### `GET /api/v1/metrics/challenge-receipts/usage`
+- **Description**: Groups challenge-receipt usage by attester, schema, and
+  requester.
+- **Query Params**:
+    - `attesterDid` (required)
+    - `schemaDid`, `requesterDid`, `updatedAfter`, `updatedBefore` (optional)
+    - `includeAmbiguous` (optional boolean, default `false`)
+    - `limit` (optional, default `50`)
+    - `offset` (optional, default `0`)
+- **Notes**:
+    - DID-valued filters match prefix aliases by CID suffix.
+    - Usage rows with prefix aliases for the same identities are grouped once.
+- **Returns**:
+    - `200 OK` + `{ "total": 123, "usage": [...] }`
+    - `400 Bad Request` when `attesterDid` is missing.
+
+### Network metric snapshots
+
+All-DID and AgentDID snapshot dates come only from the `created` timestamps on
+their `create` operations. The all-DID total includes every indexed DID
+regardless of MDIP type or document contents and deduplicates prefix aliases by
+CID suffix. Credentials are identified from valid historical AgentDID manifest
+entries and dated by the `created` timestamp on their asset `create` operation
+when available, falling back to the manifest credential's `validFrom`.
+Hyperswarm receipt times and operation signature timestamps are not used. DIDs
+and AgentDIDs remain counted after deletion, and credentials remain counted
+after revocation or unpublishing.
+Private credentials that have never been published cannot be counted by
+search-server.
+
+Historical snapshots are cumulative observations: a credential remains in
+snapshots after revocation or unpublishing. The live
+`/metrics/credentials/published` and `/metrics/schemas/published` endpoints only
+describe credentials in current AgentDID manifests, so their totals can fall.
+
+### DID network classification
+
+The effective prefix precedence is:
+
+1. The signed create operation's explicit `mdip.prefix`.
+2. One unique prefix referenced by that DID's update/delete `operation.did`
+   values when the create has no explicit prefix.
+3. For otherwise unclassified credential and schema assets, one unique prefix
+   observed in valid entries across complete historical AgentDID manifests.
+4. `did:test` when no unique evidence exists.
+
+Create and update/delete evidence takes precedence over manifest evidence.
+Conflicting update/delete prefixes are authoritatively classified as
+`did:test`, so manifest evidence cannot move them into another network.
+Manifest evidence is stored by source AgentDID during indexing and survives
+credential unpublishing, keeping historical schema links resolvable in the same
+network scope. Conflicting manifest prefixes fall back to `did:test`. Prefix
+aliases sharing a CID suffix are deduplicated.
+
+Set `KC_SEARCH_SERVER_DID_PREFIX` to any `did:<method>` prefix, such as
+`did:test`, `did:mdip`, or `did:arbitrary`, to return only that network from
+DID, search, event, credential, challenge-receipt, and metric endpoints.
+Explicit DIDs using another prefix are excluded from the configured scope.
+Leave the setting empty to return every indexed network.
+
+Changing the configured scope invalidates the stored snapshot scope before a
+rebuild begins. Snapshot endpoints return `503` until the replacement snapshots
+and new scope marker have both been saved. This also applies when changing
+between a blank scope and `did:test` or `did:mdip`.
+
+Each snapshot stores cumulative all-DID, AgentDID, and credential totals plus
+credential counts grouped by schema DID, ordered from most to least used.
+Request a complete snapshot from `/metrics/snapshots/:date`, or use the
+specialized `/metrics/snapshots/dids/:date`, `/agents/:date`,
+`/credentials/:date`, and `/schemas/:date` endpoints when only one metric is
+needed.
+`/metrics/schemas/published` describes only the credentials currently present
+in AgentDID manifests.
+Schema prefix aliases sharing the same DID suffix are combined under the
+schema asset's explicit classification or durable historical manifest evidence.
+
+Metric dates before the MDIP epoch are included in the `2024-01-01` legacy
+baseline. Future-dated entries and entries without a usable timestamp are
+omitted. Manifest `validFrom` fallback values must use canonical UTC form
+`YYYY-MM-DDTHH:mm:ss.sssZ`. The complete daily history is first rebuilt after
+two consecutive change polls report no DID changes, and then at
+`KC_SEARCH_SERVER_METRICS_REFRESH_INTERVAL_MS`, so late operations correct their
+metric day and every later snapshot. If a previously missing credential asset
+operation arrives, its `operation.created` replaces the `validFrom` fallback on
+the next rebuild.
 
 ### Published credential metrics
 
 `search-server` also derives metrics for publicly published credentials by reading
 subject DID manifests. These metrics only cover credentials that have been
-published into a subject DID document; privately held or merely issued
+published into a subject DID document. Privately held or merely issued
 credentials are not included.
 
 ### Known limitations

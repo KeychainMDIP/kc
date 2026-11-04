@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import Gatekeeper from '@mdip/gatekeeper';
 import Keymaster from '@mdip/keymaster';
 import { EncryptedMessage } from '@mdip/keymaster/types';
@@ -30,6 +31,10 @@ beforeEach(() => {
     wallet = new WalletJsonMemory();
     cipher = new CipherNode();
     keymaster = new Keymaster({ gatekeeper, wallet, cipher, passphrase: 'passphrase' });
+});
+
+afterEach(() => {
+    jest.restoreAllMocks();
 });
 
 function generateRandomString(length: number) {
@@ -68,6 +73,13 @@ describe('encryptMessage', () => {
         const msgHash = cipher.hashMessage(msg);
 
         expect((data as { encrypted: EncryptedMessage }).encrypted.cipher_hash).toBe(msgHash);
+    });
+
+    it('should throw when the sender keypair is unavailable', async () => {
+        const did = await keymaster.createId('Bob');
+        jest.spyOn(keymaster, 'fetchKeyPair').mockResolvedValueOnce(null);
+
+        await expect(keymaster.encryptMessage('Hi Bob!', did)).rejects.toThrow('Keymaster: No valid sender keypair');
     });
 });
 
@@ -150,6 +162,21 @@ describe('decryptMessage', () => {
             expect(error.message).toContain('did not encrypted');
         }
     });
+
+    it('should reject a revoked encrypted asset', async () => {
+        const did = await keymaster.createId('Bob');
+        const encrypted = await keymaster.encryptMessage('Hi Bob!', did);
+        await keymaster.revokeDID(encrypted);
+
+        await expect(keymaster.decryptMessage(encrypted)).rejects.toThrow('Invalid parameter: did not encrypted');
+    });
+
+    it('should reject missing asset data', async () => {
+        const did = await keymaster.createId('Bob');
+        jest.spyOn(keymaster, 'resolveAsset').mockResolvedValueOnce(null);
+
+        await expect(keymaster.decryptMessage(did)).rejects.toThrow('Invalid parameter: did not encrypted');
+    });
 });
 
 const mockJson = {
@@ -209,6 +236,22 @@ describe('addSignature', () => {
         } catch (error: any) {
             expect(error.message).toBe('Invalid parameter: obj');
         }
+    });
+
+    it('should throw when the signing keypair is unavailable', async () => {
+        await keymaster.createId('Bob');
+        jest.spyOn(keymaster, 'fetchKeyPair').mockResolvedValueOnce(null);
+
+        await expect(keymaster.addSignature(mockJson)).rejects.toThrow('Keymaster: addSignature: no keypair');
+    });
+
+    it('should reject an object that cannot be hashed', async () => {
+        await keymaster.createId('Bob');
+        jest.spyOn(cipher, 'hashJSON').mockImplementationOnce(() => {
+            throw new Error('Invalid object');
+        });
+
+        await expect(keymaster.addSignature(mockJson)).rejects.toThrow('Invalid parameter: obj');
     });
 });
 
