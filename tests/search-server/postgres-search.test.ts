@@ -4,7 +4,7 @@ import Postgres from '../../services/search-server/src/db/postgres.ts';
 import type { DIDProjectionUpdate } from '../../services/search-server/src/types.ts';
 import { createSeedEvent, seedDID } from './db-seed.ts';
 
-const postgresUrl = process.env.KC_SEARCH_SERVER_TEST_POSTGRES_URL;
+const postgresUrl = process.env.KC_SEARCH_TEST_POSTGRES_URL;
 const describePostgres = postgresUrl ? describe : describe.skip;
 
 describePostgres('PostgreSQL stored document search', () => {
@@ -12,6 +12,7 @@ describePostgres('PostgreSQL stored document search', () => {
     let admin: Pool;
     let inspection: Pool;
     let db: Postgres;
+    let createDatabase: () => Postgres;
 
     beforeEach(async () => {
         schema = `search_test_${randomUUID().replaceAll('-', '')}`;
@@ -23,7 +24,8 @@ describePostgres('PostgreSQL stored document search', () => {
                 return new Pool(options);
             }
         }
-        db = new TestPostgres(postgresUrl!);
+        createDatabase = () => new TestPostgres(postgresUrl!);
+        db = createDatabase();
         await admin.query('CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public');
         // eslint-disable-next-line sonarjs/sql-queries -- schema is a fixed prefix plus a generated hex UUID.
         await admin.query(`CREATE SCHEMA ${schema}`);
@@ -75,6 +77,7 @@ describePostgres('PostgreSQL stored document search', () => {
         expect(generated.rows).toEqual([{ correct: true }, { correct: true }, { correct: true }]);
 
         await db.disconnect();
+        db = createDatabase();
         await db.connect();
         const indexes = await inspection.query(`
             SELECT indexname, indexdef FROM pg_indexes

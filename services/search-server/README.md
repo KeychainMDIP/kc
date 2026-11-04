@@ -77,6 +77,33 @@ on document inserts and updates; the indexer still sends only the original
 document. This trades additional database storage and write work for faster
 searches.
 
+### Multiple Search Server instances
+
+Multiple Search Server processes can share one PostgreSQL Search database.
+Each successful startup takes over indexing. PostgreSQL serializes the handoff
+with active writes and checks the process's ownership on every later mutation.
+The previous process stops indexing and continues serving HTTP reads. Handoff
+preserves indexed data and synchronization cursors.
+
+All instances must use compatible versions, the same Gatekeeper index feed and
+compatible network-metric scope. Shared SQLite files are not supported for this
+setup. PostgreSQL must be reached directly or through a proxy with session
+pooling. Transaction and statement pooling do not preserve the session locks
+used during startup and reads.
+
+Only one instance indexes. Readers do not automatically promote themselves if
+the writer exits. Restart the writer through its supervisor, or restart a
+compatible reader to take over. Startup and schema-lock contention have bounded
+waits. Requests temporarily unable to access a compatible schema return 503.
+An incompatible schema is rejected without changing its data or ownership.
+Schema changes still require a coordinated rebuild with all incompatible
+instances stopped. Manual table drops while processes are running are unsafe.
+
+`GET /api/v1/status` adds `role`, either `"writer"` or `"reader"`, derived from
+the shared database. Healthy readers remain ready. `/api/v1/ready` returns 503
+while initialization is incomplete or the PostgreSQL database is unavailable
+or incompatible. Readiness does not mean indexing has caught up.
+
 ### Endpoints
 
 DID resolution, search, query, identity, event, and credential-metric endpoints apply
@@ -90,11 +117,11 @@ authoritative DIDs from another network remain excluded. This option does not
 reclassify stored DIDs and does not apply to historical metric snapshots.
 
 ### `GET /api/v1/ready`
-- **Description**: Returns `{ "ready": true }` once the HTTP service is available.
+- **Description**: Returns `{ "ready": true }` when initialization is complete and the database is usable. Returns 503 while unavailable.
 
 ### `GET /api/v1/status`
 - **Description**: Returns the database adapter, index synchronization state,
-  and the last network-metrics rebuild time or error.
+  the per-instance writer/reader role, and the last network-metrics rebuild time or error.
 
 ### `GET /api/v1/did/:did`
 - **Description**: Returns the DID Document

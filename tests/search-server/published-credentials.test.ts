@@ -1,3 +1,4 @@
+import { mockPostgresPool } from './postgres-mock.ts';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -1519,7 +1520,7 @@ describe('postgres adapter with mocked pool', () => {
         };
         const Postgres = await loadPostgresModule();
         const db = new Postgres('postgresql://example');
-        (db as any).pool = mockPool;
+        (db as any).pool = mockPostgresPool(db, mockPool);
 
         expect(await db.loadSyncState('test.cursor')).toBeNull();
         expect(await db.saveSyncState('test.cursor', '2026-04-02T09:00:00.000Z')).toBeUndefined();
@@ -1547,7 +1548,7 @@ describe('postgres adapter with mocked pool', () => {
             { schemaDid: 'did:test:schema-1', count: 2 },
         ]);
         await db.getPublishedCredentialCountsBySchema('did:mdip', true);
-        expect(poolQuery).toHaveBeenLastCalledWith(
+        expect(poolQuery).toHaveBeenCalledWith(
             expect.stringContaining('pc.credential_effective_prefix = $1 OR pc.credential_prefix_ambiguous'),
             ['did:mdip']
         );
@@ -1623,7 +1624,7 @@ describe('postgres adapter with mocked pool', () => {
         expect(searchCalls[3][1]).toStrictEqual(['search', 'did:mdip', 26]);
         expect(searchCalls[4][1]).toStrictEqual(['100!%!_COMPLETE!!', 51]);
         expect(searchCalls[5][1]).toStrictEqual(['paged', 2]);
-        expect(clientQuery.mock.calls.filter(([sql]) => sql === 'BEGIN READ ONLY')).toHaveLength(6);
+        expect(clientQuery).toHaveBeenCalledWith('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
         expect(clientQuery.mock.calls.filter(([sql]) => sql === "SET LOCAL statement_timeout = '5000ms'"))
             .toHaveLength(6);
 
@@ -1676,11 +1677,10 @@ describe('postgres adapter with mocked pool', () => {
     it('throws when disconnected and rolls back failed replacements', async () => {
         const clientError = new Error('insert failed');
         const mockClient = {
-            query: jest.fn<(...args: unknown[]) => Promise<unknown>>()
-                .mockResolvedValueOnce(undefined)
-                .mockResolvedValueOnce({ rowCount: 0, rows: [] })
-                .mockRejectedValueOnce(clientError)
-                .mockResolvedValueOnce(undefined),
+            query: jest.fn(async (sql: string) => {
+                if (sql.includes('INSERT INTO published_credentials')) throw clientError;
+                return { rowCount: 0, rows: [] };
+            }),
             release: jest.fn(),
         };
         const mockPool = {
@@ -1695,7 +1695,7 @@ describe('postgres adapter with mocked pool', () => {
         await expect(disconnectedDb.loadSyncState('test.cursor')).rejects.toThrow('Postgres DB not connected');
 
         const db = new Postgres('postgresql://example');
-        (db as any).pool = mockPool;
+        (db as any).pool = mockPostgresPool(db, mockPool);
 
         await expect(db.applyIndexPage({
             dids: [{
@@ -1717,13 +1717,35 @@ describe('postgres adapter with mocked pool', () => {
         })).rejects.toThrow(clientError);
 
         expect(mockClient.query).toHaveBeenNthCalledWith(1, 'BEGIN');
-        expect(mockClient.query).toHaveBeenNthCalledWith(
-            3,
-            'DELETE FROM did_events WHERE did = $1',
-            ['did:test:subject-1']
+        expect(mockClient.query).toHaveBeenCalledWith(
+            'DELETE FROM did_events WHERE did = $1', ['did:test:subject-1']
         );
-        expect(mockClient.query).toHaveBeenNthCalledWith(4, 'ROLLBACK');
+        expect(mockClient.query).toHaveBeenLastCalledWith('ROLLBACK');
         expect(mockClient.release).toHaveBeenCalledTimes(1);
+    });
+
+    it('preserves database errors during role checks and releases the read transaction', async () => {
+        const failure = Object.assign(new Error('permission denied for table search_index_control'), { code: '42501' });
+        const client = {
+            query: jest.fn(async (sql: string) => {
+                if (sql.includes('pg_try_advisory_')) return { rows: [{ acquired: true }] };
+                if (sql.includes('FROM search_index_control')) throw failure;
+                if (sql.includes('pg_advisory_unlock')) return { rows: [{ released: true }] };
+                return { rows: [] };
+            }),
+            release: jest.fn(),
+        };
+        const Postgres = await loadPostgresModule();
+        const db = new Postgres('postgresql://example');
+        (db as any).pool = { connect: jest.fn(async () => client) };
+
+        await expect(db.getRole()).rejects.toBe(failure);
+
+        expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+        expect(client.query).toHaveBeenLastCalledWith(
+            expect.stringContaining('pg_advisory_unlock_shared'), ['search-server', 'index-schema']
+        );
+        expect(client.release).toHaveBeenCalledWith(false);
     });
 
     it('covers static create plus real connect and disconnect branches with spied pool methods', async () => {
@@ -1744,7 +1766,7 @@ describe('postgres adapter with mocked pool', () => {
             static readonly sharedPool = mockPool;
 
             protected createPool(): any {
-                return TestPostgres.sharedPool;
+                return mockPostgresPool(this, TestPostgres.sharedPool);
             }
         }
 
@@ -1754,47 +1776,25 @@ describe('postgres adapter with mocked pool', () => {
         await db.disconnect();
         await db.disconnect();
 
-        expect(mockPool.query).toHaveBeenCalledTimes(1);
-        expect(mockPool.query).toHaveBeenCalledWith(expect.stringContaining(
+        expect(mockPool.query).not.toHaveBeenCalled();
+        expect(mockClient.query).toHaveBeenCalledWith('BEGIN');
+        expect(mockClient.query).toHaveBeenCalledWith(expect.stringContaining('CREATE TABLE IF NOT EXISTS did_events'));
+        expect(mockClient.query).toHaveBeenCalledWith(expect.stringContaining(
             'search_text TEXT GENERATED ALWAYS AS (lower(doc::text)) STORED'
         ));
-        expect(mockPool.query).not.toHaveBeenCalledWith(expect.stringContaining('ALTER TABLE'));
-        expect(mockClient.query).toHaveBeenCalledTimes(6);
-        expect(mockClient.query).toHaveBeenNthCalledWith(
-            1,
-            'SELECT pg_advisory_lock(hashtext($1), hashtext($2))',
-            ['search-server', 'idx_did_docs_search_text_trgm']
-        );
-        expect(mockClient.query).toHaveBeenNthCalledWith(
-            2,
-            'CREATE EXTENSION IF NOT EXISTS pg_trgm'
-        );
-        expect(mockClient.query).toHaveBeenNthCalledWith(
-            3,
+        expect(mockClient.query).not.toHaveBeenCalledWith(expect.stringContaining('ALTER TABLE'));
+        expect(mockClient.query).toHaveBeenCalledWith('CREATE EXTENSION IF NOT EXISTS pg_trgm');
+        expect(mockClient.query).toHaveBeenCalledWith(
             expect.stringContaining('WHERE idx.oid = to_regclass($1)'),
             ['idx_did_docs_search_text_trgm', 'did_docs']
         );
-        expect(mockClient.query).toHaveBeenNthCalledWith(
-            3,
-            expect.stringContaining('SELECT 1 FROM pg_stats stats'),
-            ['idx_did_docs_search_text_trgm', 'did_docs']
+        expect(mockClient.query).toHaveBeenCalledWith(
+            expect.stringContaining('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_did_docs_search_text_trgm')
         );
-        expect(mockClient.query).toHaveBeenNthCalledWith(
-            4,
-            expect.stringContaining(
-                'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_did_docs_search_text_trgm'
-            )
-        );
-        expect(mockClient.query).toHaveBeenNthCalledWith(
-            4,
+        expect(mockClient.query).toHaveBeenCalledWith(
             expect.stringContaining('ON did_docs USING gin (search_text gin_trgm_ops)')
         );
-        expect(mockClient.query).toHaveBeenNthCalledWith(5, 'ANALYZE did_docs');
-        expect(mockClient.query).toHaveBeenNthCalledWith(
-            6,
-            'SELECT pg_advisory_unlock(hashtext($1), hashtext($2))',
-            ['search-server', 'idx_did_docs_search_text_trgm']
-        );
+        expect(mockClient.query).toHaveBeenCalledWith('ANALYZE did_docs');
         expect(mockClient.release).toHaveBeenCalledWith(false);
         expect(mockPool.end).toHaveBeenCalledTimes(1);
 
@@ -1824,7 +1824,7 @@ describe('postgres adapter with mocked pool', () => {
 
         class TestPostgres extends Postgres {
             protected createPool(): any {
-                return mockPool;
+                return mockPostgresPool(this, mockPool);
             }
         }
 
@@ -1857,7 +1857,7 @@ describe('postgres adapter with mocked pool', () => {
 
         class TestPostgres extends Postgres {
             protected createPool(): any {
-                return mockPool;
+                return mockPostgresPool(this, mockPool);
             }
         }
 
@@ -1866,7 +1866,7 @@ describe('postgres adapter with mocked pool', () => {
         expect(mockClient.release).toHaveBeenCalledWith(true);
     });
 
-    it('destroys the setup connection when acquiring the advisory lock fails', async () => {
+    it('destroys the startup connection when schema initialization fails', async () => {
         const Postgres = await loadPostgresModule();
         const failure = new Error('lock failed');
         const mockClient = {
@@ -1881,7 +1881,7 @@ describe('postgres adapter with mocked pool', () => {
 
         class TestPostgres extends Postgres {
             protected createPool(): any {
-                return mockPool;
+                return mockPostgresPool(this, mockPool);
             }
         }
 
@@ -1911,18 +1911,18 @@ describe('postgres adapter with mocked pool', () => {
 
         class TestPostgres extends Postgres {
             protected createPool(): any {
-                return mockPool;
+                return mockPostgresPool(this, mockPool, new Error('connection lost'));
             }
         }
 
-        await expect(TestPostgres.create('postgresql://example')).resolves.toBeInstanceOf(Postgres);
+        await expect(TestPostgres.create('postgresql://example')).rejects.toThrow('connection lost');
         expect(mockClient.release).toHaveBeenCalledWith(true);
     });
 
     it('commits successful replacements and covers path helper fallbacks', async () => {
         const mockClient = {
             query: jest.fn<(...args: unknown[]) => Promise<unknown>>()
-                .mockResolvedValue(undefined),
+                .mockResolvedValue({ rowCount: 0, rows: [] }),
             release: jest.fn(),
         };
         const mockPool = {
@@ -1933,7 +1933,7 @@ describe('postgres adapter with mocked pool', () => {
         };
         const Postgres = await loadPostgresModule();
         const db = new Postgres('postgresql://example');
-        (db as any).pool = mockPool;
+        (db as any).pool = mockPostgresPool(db, mockPool);
 
         await db.applyIndexPage({
             dids: [{
@@ -1996,7 +1996,7 @@ describe('postgres adapter with mocked pool', () => {
         };
         const Postgres = await loadPostgresModule();
         const db = new Postgres('postgresql://example');
-        (db as any).pool = mockPool;
+        (db as any).pool = mockPostgresPool(db, mockPool);
 
         expect(await db.listPublishedCredentials()).toStrictEqual({
             total: 0,
@@ -2055,7 +2055,7 @@ describe('postgres adapter with mocked pool', () => {
             const query = jest.fn(async (_sql: string) => ({ rowCount: 0, rows: [] }));
             const client = { query, release: jest.fn() };
             const db = new Postgres('postgresql://example');
-            (db as any).pool = { connect: jest.fn(async () => client) };
+            (db as any).pool = mockPostgresPool(db, { connect: jest.fn(async () => client) });
 
             await expect(db.searchDocs('search', { limit: 50 })).resolves.toStrictEqual({
                 dids: [],
@@ -2063,7 +2063,7 @@ describe('postgres adapter with mocked pool', () => {
             });
             expect(query).toHaveBeenCalledWith("SET LOCAL statement_timeout = '2000ms'");
             expect(query.mock.calls.map(([sql]) => sql)).toStrictEqual([
-                'BEGIN READ ONLY',
+                'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY',
                 "SET LOCAL statement_timeout = '2000ms'",
                 expect.stringContaining('WITH matches AS MATERIALIZED'),
                 'COMMIT',
@@ -2099,7 +2099,7 @@ describe('postgres adapter with mocked pool', () => {
         };
         const Postgres = await loadPostgresModule();
         const db = new Postgres('postgresql://example');
-        (db as any).pool = { connect: jest.fn(async () => client) };
+        (db as any).pool = mockPostgresPool(db, { connect: jest.fn(async () => client) });
 
         await expect(db.searchDocs('search', { limit: 50 })).rejects.toBe(failure);
         expect(client.query).toHaveBeenCalledWith('ROLLBACK');
@@ -2418,7 +2418,7 @@ describe('DidIndexer published credential indexing', () => {
         await (indexer as any).refreshIndex();
         await (indexer as any).refreshIndex();
 
-        expect(logger.error).toHaveBeenCalledWith({ error }, 'Error in refreshIndex');
+        expect(logger.error).toHaveBeenCalledWith({ err: error }, 'Error in refreshIndex');
         expect(await db.loadSyncState('index.lastSyncError')).toBeNull();
         expect(await db.loadSyncState('index.snapshot.complete')).toBe('true');
     });
@@ -2451,7 +2451,7 @@ describe('DidIndexer published credential indexing', () => {
             await intervalCallback!();
 
             expect(logger.error).toHaveBeenCalledWith(
-                { error: expect.any(Error) },
+                { err: expect.any(Error) },
                 'refreshIndex error'
             );
 

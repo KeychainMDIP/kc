@@ -1,3 +1,4 @@
+import { mockPostgresPool } from './postgres-mock.ts';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -553,7 +554,7 @@ describe('SQL identity enumeration', () => {
         const client = { query, release: jest.fn() };
         const connect = jest.fn(async () => client);
         class TestPostgres extends Postgres {
-            protected createPool(): any { return { query, connect, end: jest.fn() }; }
+            protected createPool(): any { return mockPostgresPool(this, { query, connect, end: jest.fn() }); }
         }
         const db = await TestPostgres.create('postgresql://isolated-test');
         try {
@@ -579,20 +580,22 @@ describe('SQL identity enumeration', () => {
         [false, true].map(rollbackFails => ({ failure, rollbackFails }))
     ))('cleans up failed PostgreSQL identity reads: %j', async ({ failure, rollbackFails }) => {
         const error = new Error('read transaction failed');
+        let failReads = false;
         const query = jest.fn(async (sql: string) => {
-            if (sql.includes(failure)) throw error;
-            if (sql === 'ROLLBACK' && rollbackFails) throw new Error('rollback failed');
+            if (failReads && sql.includes(failure)) throw error;
+            if (failReads && sql === 'ROLLBACK' && rollbackFails) throw new Error('rollback failed');
             return { rows: sql.includes('COUNT(*)') ? [{ total: 0 }] : [] };
         });
         const client = { query, release: jest.fn() };
         const poolQuery = jest.fn(async () => ({ rows: [] }));
         class TestPostgres extends Postgres {
             protected createPool(): any {
-                return { query: poolQuery, connect: async () => client, end: jest.fn() };
+                return mockPostgresPool(this, { query: poolQuery, connect: async () => client, end: jest.fn() });
             }
         }
         const db = await TestPostgres.create('postgresql://isolated-test');
         try {
+            failReads = true;
             poolQuery.mockClear();
             query.mockClear();
             client.release.mockClear();
@@ -732,16 +735,16 @@ describe('SQL identity enumeration', () => {
             ] };
         });
         const client = {
-            query: async (sql: string, params?: unknown[]) => sql.startsWith('SELECT')
+            query: async (sql: string, params?: unknown[]) => (sql.startsWith('SELECT') || sql.includes('CREATE TABLE'))
                 ? query(sql, params) : { rows: [] },
             release: jest.fn(),
         };
         class TestPostgres extends Postgres {
-            protected createPool(): any { return { query, connect: async () => client, end: jest.fn() }; }
+            protected createPool(): any { return mockPostgresPool(this, { query, connect: async () => client, end: jest.fn() }); }
         }
         const db = await TestPostgres.create('postgresql://isolated-test');
         try {
-            expect(query).toHaveBeenCalledWith(expect.stringContaining('ON identity_fields (did, md5(field), schema_suffix)'));
+            expect(query.mock.calls.some(([sql]) => sql.includes('ON identity_fields (did, md5(field), schema_suffix)'))).toBe(true);
             expect((await db.listIdentities()).identities).toEqual([
                 { did: alice, manifestSchemaDids: [schemaDid] }, { did: bob, manifestSchemaDids: [] },
             ]);

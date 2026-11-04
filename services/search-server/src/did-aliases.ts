@@ -1,3 +1,4 @@
+import { readDatabase } from './db/db-utils.js';
 import type { GatekeeperEvent } from '@mdip/gatekeeper/types';
 import { isValidDID } from '@mdip/ipfs/utils';
 import type { DIDsDb } from './types.js';
@@ -67,38 +68,40 @@ export function canonicalDID(did: string, events: GatekeeperEvent[]): string {
 }
 
 export async function findDIDReadTarget(didDb: DIDsDb, did: string, didPrefix?: string) {
-    if (!isValidDID(did)) {
-        return { storedDid: did, resolutionDid: did, events: await didDb.getDIDEvents(did) };
-    }
-
-    const suffix = getDIDSuffix(did);
-    const requestedDid = didPrefix ? `${didPrefix}:${suffix}` : did;
-    if (didPrefix) {
-        const storedDid = await didDb.findDIDBySuffix(suffix, didPrefix);
-        if (storedDid) {
-            return { storedDid, resolutionDid: requestedDid, events: await didDb.getDIDEvents(storedDid) };
+    return readDatabase(didDb, async () => {
+        if (!isValidDID(did)) {
+            return { storedDid: did, resolutionDid: did, events: await didDb.getDIDEvents(did) };
         }
 
-        if (didPrefix !== AMBIGUOUS_DID_PREFIX) {
-            const ambiguousDid = await didDb.findAmbiguousDIDBySuffix(suffix);
-            if (ambiguousDid) {
-                const events = await didDb.getDIDEvents(ambiguousDid);
-                if (events.length > 0 && !classifyDIDPrefix(events).authoritative) {
-                    return { storedDid: ambiguousDid, resolutionDid: requestedDid, events };
+        const suffix = getDIDSuffix(did);
+        const requestedDid = didPrefix ? `${didPrefix}:${suffix}` : did;
+        if (didPrefix) {
+            const storedDid = await didDb.findDIDBySuffix(suffix, didPrefix);
+            if (storedDid) {
+                return { storedDid, resolutionDid: requestedDid, events: await didDb.getDIDEvents(storedDid) };
+            }
+
+            if (didPrefix !== AMBIGUOUS_DID_PREFIX) {
+                const ambiguousDid = await didDb.findAmbiguousDIDBySuffix(suffix);
+                if (ambiguousDid) {
+                    const events = await didDb.getDIDEvents(ambiguousDid);
+                    if (events.length > 0 && !classifyDIDPrefix(events).authoritative) {
+                        return { storedDid: ambiguousDid, resolutionDid: requestedDid, events };
+                    }
                 }
             }
+
+            return { storedDid: requestedDid, resolutionDid: requestedDid, events: [], scopeRejected: true };
         }
 
-        return { storedDid: requestedDid, resolutionDid: requestedDid, events: [], scopeRejected: true };
-    }
+        const events = await didDb.getDIDEvents(requestedDid);
+        if (events.length > 0) {
+            return { storedDid: requestedDid, resolutionDid: requestedDid, events };
+        }
 
-    const events = await didDb.getDIDEvents(requestedDid);
-    if (events.length > 0) {
-        return { storedDid: requestedDid, resolutionDid: requestedDid, events };
-    }
-
-    const storedDid = await didDb.findDIDBySuffix(suffix, didPrefix);
-    return storedDid
-        ? { storedDid, resolutionDid: requestedDid, events: await didDb.getDIDEvents(storedDid) }
-        : { storedDid: requestedDid, resolutionDid: requestedDid, events };
+        const storedDid = await didDb.findDIDBySuffix(suffix, didPrefix);
+        return storedDid
+            ? { storedDid, resolutionDid: requestedDid, events: await didDb.getDIDEvents(storedDid) }
+            : { storedDid: requestedDid, resolutionDid: requestedDid, events };
+    });
 }
