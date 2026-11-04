@@ -44,6 +44,7 @@ import {
 const DEFAULT_POSTGRES_CONNECTION_TIMEOUT_MS = 3_000;
 const DEFAULT_SEARCH_TIMEOUT_MS = 5_000;
 const INSERT_BATCH_SIZE = 500;
+const SEARCH_MATCH_PROBE_LIMIT = 1000;
 
 async function insertRows(
     client: PoolClient,
@@ -387,12 +388,18 @@ export default class Postgres implements DIDsDb {
                         AND i.indnkeyatts = 1
                         AND i.indnatts = 1
                         AND i.indpred IS NULL
-                        AND pg_get_expr(i.indexprs, i.indrelid) = '(doc)::text', FALSE)
+                        AND i.indexprs IS NULL
+                        AND i.indkey[0] = (
+                            SELECT attnum FROM pg_attribute
+                            WHERE attrelid = to_regclass($2)
+                                AND attname = 'search_text' AND NOT attisdropped
+                        ), FALSE)
                         AS "matchesDefinition",
                     EXISTS (
                         SELECT 1 FROM pg_stats stats
                         WHERE stats.schemaname = idx_ns.nspname
-                            AND stats.tablename = idx.relname
+                            AND stats.tablename = $2
+                            AND stats.attname = 'search_text'
                     ) AS "hasStatistics"
              FROM pg_class idx
              LEFT JOIN pg_namespace idx_ns ON idx_ns.oid = idx.relnamespace
@@ -400,12 +407,12 @@ export default class Postgres implements DIDsDb {
              LEFT JOIN pg_am am ON am.oid = idx.relam
              LEFT JOIN pg_opclass opc ON opc.oid = i.indclass[0]
              WHERE idx.oid = to_regclass($1)`,
-            ['idx_did_docs_doc_trgm', 'did_docs']
+            ['idx_did_docs_search_text_trgm', 'did_docs']
         );
         const existing = indexStatus.rows[0];
 
         if (existing && !existing.isIndex) {
-            throw new Error('Database object idx_did_docs_doc_trgm exists but is not an index');
+            throw new Error('Database object idx_did_docs_search_text_trgm exists but is not an index');
         }
 
         if (existing?.usable && existing.matchesDefinition) {
@@ -416,12 +423,12 @@ export default class Postgres implements DIDsDb {
         }
 
         if (existing) {
-            await client.query('DROP INDEX CONCURRENTLY IF EXISTS idx_did_docs_doc_trgm');
+            await client.query('DROP INDEX CONCURRENTLY IF EXISTS idx_did_docs_search_text_trgm');
         }
 
         await client.query(`
-            CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_did_docs_doc_trgm
-                ON did_docs USING gin ((doc::text) gin_trgm_ops)
+            CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_did_docs_search_text_trgm
+                ON did_docs USING gin (search_text gin_trgm_ops)
         `);
         await client.query('ANALYZE did_docs');
     }
@@ -825,12 +832,12 @@ export default class Postgres implements DIDsDb {
             const groups = await client.query<StatisticsGroup>(`
                 SELECT dc.stats_type AS type, dc.stats_registry AS registry, dc.stats_version AS version,
                        dc.stats_confirmed AS confirmed, dc.stats_ephemeral AS ephemeral,
-                       dc.stats_invalid AS invalid, COUNT(*) AS count
+                       dc.stats_invalid AS invalid, COUNT(*) AS count,
+                       ($1::text IS NULL OR effective.prefix = $1 OR ($2 AND effective.prefix_ambiguous)) AS "inScope"
                 FROM did_classifications dc
                 JOIN did_classifications_effective effective ON effective.suffix = dc.suffix
-                WHERE ($1::text IS NULL OR effective.prefix = $1 OR ($2 AND effective.prefix_ambiguous))
                 GROUP BY dc.stats_type, dc.stats_registry, dc.stats_version,
-                         dc.stats_confirmed, dc.stats_ephemeral, dc.stats_invalid`,
+                         dc.stats_confirmed, dc.stats_ephemeral, dc.stats_invalid, "inScope"`,
             [options.didPrefix || null, options.includeAmbiguous ?? false]);
             const state = await client.query<{ key: string; value: string }>('SELECT key, value FROM sync_state');
             return summarizeStatistics(groups.rows, Object.fromEntries(state.rows.map(row => [row.key, row.value])));
@@ -1407,20 +1414,47 @@ export default class Postgres implements DIDsDb {
             }
             params.push(limit + 1);
 
+            const scopeFilter = filters.length ? `AND ${filters.join(' AND ')}` : '';
+            const sortKey = didPrefix ? 'dc.suffix COLLATE "C"'
+                : '(dc.prefix || \':\' || dc.suffix) COLLATE "C"';
+            const projection = `dc.prefix || ':' || dc.suffix AS did,
+                                dc.prefix_ambiguous AS "prefixAmbiguous"`;
+
             const client = this.getPool();
             await client.query(`SET LOCAL statement_timeout = '${this.searchTimeoutMs}ms'`);
             const result = await client.query<DidRow & { prefixAmbiguous: boolean }>(
                 `WITH matches AS MATERIALIZED (
                     SELECT did
                     FROM did_docs
-                    WHERE doc::text LIKE '%' || $1 || '%' ESCAPE '!'
+                    WHERE search_text LIKE '%' || lower($1) || '%' ESCAPE '!'
+                    LIMIT ${SEARCH_MATCH_PROBE_LIMIT + 1}
+                 ), candidates AS MATERIALIZED (
+                    SELECT dc.did AS stored_did, ${projection}, ${sortKey} AS sort_key
+                    FROM did_classifications_effective dc
+                    WHERE (SELECT COUNT(*) > ${SEARCH_MATCH_PROBE_LIMIT} FROM matches)
+                        ${scopeFilter}
+                    ORDER BY sort_key
                  )
-                 SELECT dc.prefix || ':' || dc.suffix AS did,
-                        dc.prefix_ambiguous AS "prefixAmbiguous"
-                 FROM matches m
-                 JOIN did_classifications_effective dc ON dc.did = m.did
-                 ${filters.length ? `WHERE ${filters.join(' AND ')}` : ''}
-                 ORDER BY ${didPrefix ? 'dc.suffix' : `(dc.prefix || ':' || dc.suffix)`} COLLATE "C"
+                 SELECT page.did, page."prefixAmbiguous" FROM (
+                    (SELECT ${projection}, ${sortKey} AS sort_key
+                     FROM matches m
+                     JOIN did_classifications_effective dc ON dc.did = m.did
+                     WHERE (SELECT COUNT(*) BETWEEN 1 AND ${SEARCH_MATCH_PROBE_LIMIT} FROM matches)
+                        ${scopeFilter}
+                     ORDER BY sort_key LIMIT $${params.length})
+                    UNION ALL
+                    (SELECT c.did, c."prefixAmbiguous", c.sort_key
+                     FROM candidates c
+                     CROSS JOIN LATERAL (
+                        SELECT 1 FROM did_docs d
+                        WHERE d.did = c.stored_did
+                            AND d.search_text LIKE '%' || lower($1) || '%' ESCAPE '!'
+                        -- Keep text checks after the ordered scan so the page limit can stop early.
+                        OFFSET 0
+                     ) matched
+                     ORDER BY c.sort_key LIMIT $${params.length})
+                 ) page
+                 ORDER BY page.sort_key
                  LIMIT $${params.length}`,
                 params
             );

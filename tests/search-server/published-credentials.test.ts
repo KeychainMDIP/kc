@@ -727,7 +727,7 @@ describe.each(adapterFactories)('$name query and utility behavior', ({ create })
             const did1 = 'did:test:query-1';
             const did2 = 'did:test:query-2';
             const doc1 = createQueryableDoc(did1, {
-                name: 'Needle Alpha',
+                name: 'Needle Alice Smith',
                 tags: ['alpha', 'shared'],
                 nestedKinds: ['first', 'shared'],
                 coordinates: ['zero', 'one'],
@@ -770,10 +770,13 @@ describe.each(adapterFactories)('$name query and utility behavior', ({ create })
             const storedDoc = await db.getDID(did1) as Record<string, any>;
             expect(storedDoc).toStrictEqual(doc1);
             storedDoc.didDocumentData.profile.name = 'Mutated';
-            expect((await db.getDID(did1) as any).didDocumentData.profile.name).toBe('Needle Alpha');
+            expect((await db.getDID(did1) as any).didDocumentData.profile.name).toBe('Needle Alice Smith');
             expect(await db.getDID('did:test:missing')).toBeNull();
 
             expect(await db.searchDocs('Needle', { limit: 50 })).toStrictEqual(completeSearchPage([did1]));
+            expect(await db.searchDocs('alice', { limit: 50 })).toStrictEqual(completeSearchPage([did1]));
+            expect(await db.searchDocs('Alice', { limit: 50 })).toStrictEqual(completeSearchPage([did1]));
+            expect(await db.searchDocs('ALICE', { limit: 50 })).toStrictEqual(completeSearchPage([did1]));
             expect(await db.queryDocs({
                 '$.didDocument.id': { $in: [did1] },
             })).toStrictEqual([did1]);
@@ -825,6 +828,8 @@ describe.each(adapterFactories)('$name query and utility behavior', ({ create })
             expect(await db.searchDocs('%', { limit: 50 })).toStrictEqual(completeSearchPage([matchingDid]));
             expect(await db.searchDocs('_', { limit: 50 })).toStrictEqual(completeSearchPage([matchingDid]));
             expect(await db.searchDocs('!', { limit: 50 })).toStrictEqual(completeSearchPage([matchingDid]));
+            expect(await db.searchDocs('100%_COMPLETE!', { limit: 50 }))
+                .toStrictEqual(completeSearchPage([matchingDid]));
         }
         finally {
             await cleanup();
@@ -1463,7 +1468,7 @@ describe('postgres adapter with mocked pool', () => {
                     }],
                 };
             }
-            if (text.includes("doc::text LIKE '%' || $1 || '%'")) {
+            if (text.includes("search_text LIKE '%' || lower($1) || '%'")) {
                 const rows = params?.[0] === 'paged'
                     ? [{ did: 'did:test:search-1', prefixAmbiguous: true }, { did: 'did:test:search-2', prefixAmbiguous: true }]
                     : [{ did: 'did:test:search-1', prefixAmbiguous: true }];
@@ -1577,7 +1582,7 @@ describe('postgres adapter with mocked pool', () => {
                 schemaDid: 'did:mdip:schema-1',
             }],
         });
-        expect(await db.searchDocs('search', { limit: 50 }))
+        expect(await db.searchDocs('SeArCh', { limit: 50 }))
             .toStrictEqual(completeSearchPage(['did:test:search-1']));
         expect(await db.searchDocs('search', { limit: 50, cursor: 'did:test:cursor' }))
             .toStrictEqual(completeSearchPage(['did:test:search-1']));
@@ -1589,7 +1594,7 @@ describe('postgres adapter with mocked pool', () => {
         expect(await db.searchDocs('search', {
             didPrefix: 'did:mdip', includeAmbiguous: true, limit: 25,
         })).toStrictEqual(completeSearchPage(['did:mdip:search-1']));
-        expect(await db.searchDocs('100%_complete!', { limit: 50 }))
+        expect(await db.searchDocs('100%_COMPLETE!', { limit: 50 }))
             .toStrictEqual(completeSearchPage(['did:test:search-1']));
         expect(await db.searchDocs('paged', { limit: 1 })).toStrictEqual({
             dids: ['did:test:search-1'],
@@ -1601,9 +1606,15 @@ describe('postgres adapter with mocked pool', () => {
         );
         expect(searchCalls).toHaveLength(6);
         expect(searchCalls[0][0]).toContain("ESCAPE '!'");
+        expect(searchCalls[0][0]).toContain("search_text LIKE '%' || lower($1) || '%'");
+        expect(searchCalls[0][0]).toContain('LIMIT 1001');
+        expect(searchCalls[0][0]).toContain('COUNT(*) BETWEEN 1 AND 1000');
+        expect(searchCalls[0][0]).toContain('COUNT(*) > 1000');
+        expect(searchCalls[0][0]).toContain('CROSS JOIN LATERAL');
+        expect(searchCalls[0][0]).toContain('OFFSET 0');
         expect(searchCalls[0][0]).not.toContain('WHERE dc.prefix = $2');
         expect(searchCalls[0][0]).toContain('ORDER BY');
-        expect(searchCalls[0][1]).toStrictEqual(['search', 51]);
+        expect(searchCalls[0][1]).toStrictEqual(['SeArCh', 51]);
         expect(searchCalls[1][0]).not.toContain('WHERE dc.prefix');
         expect(searchCalls[1][1]).toStrictEqual(['search', 'did:test:cursor', 51]);
         expect(searchCalls[2][0]).toContain('dc.prefix = $2');
@@ -1611,7 +1622,7 @@ describe('postgres adapter with mocked pool', () => {
         expect(searchCalls[2][1]).toStrictEqual(['search', 'did:test', 'cursor', 26]);
         expect(searchCalls[3][0]).toContain('OR dc.prefix_ambiguous');
         expect(searchCalls[3][1]).toStrictEqual(['search', 'did:mdip', 26]);
-        expect(searchCalls[4][1]).toStrictEqual(['100!%!_complete!!', 51]);
+        expect(searchCalls[4][1]).toStrictEqual(['100!%!_COMPLETE!!', 51]);
         expect(searchCalls[5][1]).toStrictEqual(['paged', 2]);
         expect(clientQuery).toHaveBeenCalledWith('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
         expect(clientQuery.mock.calls.filter(([sql]) => sql === "SET LOCAL statement_timeout = '5000ms'"))
@@ -1768,13 +1779,20 @@ describe('postgres adapter with mocked pool', () => {
         expect(mockPool.query).not.toHaveBeenCalled();
         expect(mockClient.query).toHaveBeenCalledWith('BEGIN');
         expect(mockClient.query).toHaveBeenCalledWith(expect.stringContaining('CREATE TABLE IF NOT EXISTS did_events'));
+        expect(mockClient.query).toHaveBeenCalledWith(expect.stringContaining(
+            'search_text TEXT GENERATED ALWAYS AS (lower(doc::text)) STORED'
+        ));
+        expect(mockClient.query).not.toHaveBeenCalledWith(expect.stringContaining('ALTER TABLE'));
         expect(mockClient.query).toHaveBeenCalledWith('CREATE EXTENSION IF NOT EXISTS pg_trgm');
         expect(mockClient.query).toHaveBeenCalledWith(
             expect.stringContaining('WHERE idx.oid = to_regclass($1)'),
-            ['idx_did_docs_doc_trgm', 'did_docs']
+            ['idx_did_docs_search_text_trgm', 'did_docs']
         );
         expect(mockClient.query).toHaveBeenCalledWith(
-            expect.stringContaining('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_did_docs_doc_trgm')
+            expect.stringContaining('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_did_docs_search_text_trgm')
+        );
+        expect(mockClient.query).toHaveBeenCalledWith(
+            expect.stringContaining('ON did_docs USING gin (search_text gin_trgm_ops)')
         );
         expect(mockClient.query).toHaveBeenCalledWith('ANALYZE did_docs');
         expect(mockClient.release).toHaveBeenCalledWith(false);
@@ -1844,7 +1862,7 @@ describe('postgres adapter with mocked pool', () => {
         }
 
         await expect(TestPostgres.create('postgresql://example'))
-            .rejects.toThrow('Database object idx_did_docs_doc_trgm exists but is not an index');
+            .rejects.toThrow('Database object idx_did_docs_search_text_trgm exists but is not an index');
         expect(mockClient.release).toHaveBeenCalledWith(true);
     });
 
@@ -1871,7 +1889,7 @@ describe('postgres adapter with mocked pool', () => {
         expect(mockClient.release).toHaveBeenCalledWith(true);
     });
 
-    it('destroys the migration connection when releasing the advisory lock fails', async () => {
+    it('destroys the setup connection when releasing the advisory lock fails', async () => {
         const Postgres = await loadPostgresModule();
         const mockClient = {
             query: jest.fn(async (sql: string) => {

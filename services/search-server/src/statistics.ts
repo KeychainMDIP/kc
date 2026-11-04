@@ -14,6 +14,7 @@ export interface DIDStatisticsMetadata {
 
 export interface StatisticsGroup extends DIDStatisticsMetadata {
     count: number | string;
+    inScope?: boolean | number;
 }
 
 export function projectStatistics(value?: object): DIDStatisticsMetadata {
@@ -30,10 +31,7 @@ export function projectStatistics(value?: object): DIDStatisticsMetadata {
     };
 }
 
-export function summarizeStatistics(
-    groups: Iterable<StatisticsGroup>,
-    state: Record<string, string>,
-): SearchStoredStatistics {
+function countDIDs(groups: Iterable<StatisticsGroup>): SearchStoredStatistics['dids'] {
     const dids: SearchStoredStatistics['dids'] = {
         total: 0,
         byType: { agents: 0, assets: 0, confirmed: 0, unconfirmed: 0, ephemeral: 0, invalid: 0 },
@@ -58,13 +56,22 @@ export function summarizeStatistics(
     }
     dids.byRegistry = Object.fromEntries([...registries].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0));
     dids.byVersion = Object.fromEntries([...versions].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0));
+    return dids;
+}
+
+export function summarizeStatistics(
+    groups: Iterable<StatisticsGroup>,
+    state: Record<string, string>,
+): SearchStoredStatistics {
+    const rows = Array.from(groups);
     const epoch = state[keys.epoch] ?? null;
     const snapshotComplete = state[keys.snapshotComplete] === 'true';
     const changesCursor = state[keys.changesCursor] ?? null;
     const caughtUpCursor = state[keys.caughtUpCursor] ?? null;
     const caughtUpAt = state[keys.caughtUpAt] ?? null;
     return {
-        dids,
+        dids: countDIDs(rows),
+        scopedDids: countDIDs(rows.filter(row => row.inScope ?? true)),
         sync: {
             snapshotComplete,
             snapshotCursor: state[keys.snapshotCursor] ?? null,

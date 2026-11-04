@@ -39,6 +39,7 @@ describe.each(['memory', 'sqlite'])('%s current DID statistics', backend => {
     it('returns an empty partial index without inventing completeness', async () => {
         expect(await db.getStats()).toMatchObject({
             dids: { total: 0, byRegistry: {}, byVersion: {}, byType: { invalid: 0, confirmed: 0 } },
+            scopedDids: { total: 0, byRegistry: {}, byVersion: {}, byType: { invalid: 0, confirmed: 0 } },
             index: { epoch: null, snapshotComplete: false, state: 'snapshot', appliedAt: null },
         });
     });
@@ -72,10 +73,18 @@ describe.each(['memory', 'sqlite'])('%s current DID statistics', backend => {
             byRegistry: { local: 1, hyperswarm: 1, TFTC: 1 },
             byVersion: { '7': 1, '2': 1, '1': 1 },
         });
-        expect((await db.getStats({ didPrefix: 'did:test' })).dids.total).toBe(3);
+        const scoped = await db.getStats({ didPrefix: 'did:test' });
+        expect(scoped.dids).toEqual((await db.getStats()).dids);
+        expect(scoped.scopedDids).toEqual({
+            total: 3,
+            byType: { agents: 1, assets: 1, confirmed: 1, unconfirmed: 1, ephemeral: 1, invalid: 1 },
+            byRegistry: { local: 1, hyperswarm: 1 },
+            byVersion: { '7': 1, '2': 1 },
+        });
+        expect((await db.getStats()).scopedDids).toEqual(scoped.dids);
         await put('did:mdip:asset', { mdip: { type: 'agent', registry: 'local' } });
         expect((await db.getStats()).dids.total).toBe(4);
-        expect((await db.getStats({ didPrefix: 'did:test' })).dids.total).toBe(2);
+        expect((await db.getStats({ didPrefix: 'did:test' })).scopedDids.total).toBe(2);
         await seedDID(db, 'did:mdip:asset', { removed: true });
         expect((await db.getStats()).dids.total).toBe(3);
         await db.wipeDb();
@@ -84,9 +93,13 @@ describe.each(['memory', 'sqlite'])('%s current DID statistics', backend => {
 
     it('includes ambiguous suffixes only according to the established scope rules', async () => {
         await put('did:test:ambiguous', { mdip: { type: 'agent', registry: 'local' } }, null);
-        expect((await db.getStats({ didPrefix: 'did:mdip' })).dids.total).toBe(0);
-        expect((await db.getStats({ didPrefix: 'did:mdip', includeAmbiguous: true })).dids.total).toBe(1);
-        expect((await db.getStats({ didPrefix: 'did:test' })).dids.total).toBe(1);
+        const scoped = await db.getStats({ didPrefix: 'did:mdip' });
+        const ambiguous = await db.getStats({ didPrefix: 'did:mdip', includeAmbiguous: true });
+        expect(scoped.dids.total).toBe(1);
+        expect(scoped.scopedDids.total).toBe(0);
+        expect(ambiguous.dids).toEqual(scoped.dids);
+        expect(ambiguous.scopedDids.total).toBe(1);
+        expect((await db.getStats({ didPrefix: 'did:test' })).scopedDids.total).toBe(1);
     });
 
     it('reads page counts and their committed freshness together, including replay', async () => {
@@ -124,6 +137,17 @@ describe('statistics projection and live sampling', () => {
         const result = summarizeStatistics([{ ...projectStatistics({ mdip: { registry: '__proto__' } }), count: 1 }], {});
         expect(Object.hasOwn(result.dids.byRegistry, '__proto__')).toBe(true);
         expect(result.dids.byRegistry.__proto__).toBe(1);
+    });
+
+    it('counts global and scoped groups from one iterable, including numeric SQLite booleans', () => {
+        function* groups() {
+            yield { ...projectStatistics({ mdip: { type: 'agent', registry: 'local' } }), count: '2', inScope: 1 };
+            yield { ...projectStatistics({ didResolutionMetadata: { error: 'notFound' } }), count: 3, inScope: 0 };
+        }
+        expect(summarizeStatistics(groups(), {})).toMatchObject({
+            dids: { total: 5, byType: { agents: 2, invalid: 3 } },
+            scopedDids: { total: 2, byType: { agents: 2, invalid: 0 } },
+        });
     });
 
     it('samples only allowed operational fields with an independent deadline and response bound', async () => {
@@ -283,13 +307,17 @@ describe('PostgreSQL statistics snapshot', () => {
 
     it('uses one repeatable-read connection for aggregate data and its watermark', async () => {
         const query = jest.fn(async (sql: string) => ({ rows: sql.includes('COUNT(*)')
-            ? [{ ...projectStatistics({ mdip: { type: 'agent', registry: 'local' } }), count: '2' }]
+            ? [
+                { ...projectStatistics({ mdip: { type: 'agent', registry: 'local' } }), count: '2', inScope: true },
+                { ...projectStatistics({ mdip: { type: 'asset', registry: 'TFTC' } }), count: '3', inScope: false },
+            ]
             : sql.includes('SELECT key, value') ? [{ key: keys.epoch, value: 'pg-epoch' }] : [] }));
         const release = jest.fn();
         const db = new Postgres('postgresql://fixture');
         (db as any).pool = mockPostgresPool(db, { connect: async () => ({ query, release }) });
         expect(await db.getStats({ didPrefix: 'did:mdip', includeAmbiguous: true })).toMatchObject({
-            dids: { total: 2, byType: { agents: 2 } }, index: { epoch: 'pg-epoch' },
+            dids: { total: 5, byType: { agents: 2, assets: 3 } },
+            scopedDids: { total: 2, byType: { agents: 2, assets: 0 } }, index: { epoch: 'pg-epoch' },
         });
         expect(query.mock.calls[0][0]).toBe('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
         expect(query.mock.calls.at(-1)![0]).toBe('COMMIT');

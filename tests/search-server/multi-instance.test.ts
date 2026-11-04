@@ -271,6 +271,34 @@ describePostgres('Search Server PostgreSQL multi-instance coordination', () => {
         expect(await getSearchStatus(db, 'postgres')).toMatchObject({ dids: { total: 2 }, sync: { changesCursor: '8' } });
     });
 
+    it('counts every prefix globally while applying prefix and ambiguity filters only to scoped statistics', async () => {
+        const db = await open();
+        await db.applyIndexPage({
+            dids: [
+                ['did:test:outside', 'did:test', 'agent'],
+                ['did:mdip:inside', 'did:mdip', 'asset'],
+                ['did:test:ambiguous', undefined, 'asset'],
+            ].map(([did, prefix, type]) => {
+                const event = createSeedEvent(did!);
+                event.operation.mdip!.prefix = prefix;
+                return { did: did!, events: [event], doc: { mdip: { type, registry: 'local' } } };
+            }),
+            blocks: [], syncStateUpdates: { [INDEX_SYNC_STATE_KEYS.changesCursor]: '7' },
+        });
+        const scoped = await getSearchStatus(db, 'postgres', { didPrefix: 'did:mdip' });
+        const ambiguous = await getSearchStatus(db, 'postgres', { didPrefix: 'did:mdip', includeAmbiguous: true });
+        const unscoped = await getSearchStatus(db, 'postgres');
+        expect(scoped).toMatchObject({
+            dids: { total: 3, byType: { agents: 1, assets: 2 } },
+            scopedDids: { total: 1, byType: { agents: 0, assets: 1 } },
+            sync: { changesCursor: '7' },
+        });
+        expect(ambiguous.dids).toEqual(scoped.dids);
+        expect(ambiguous.scopedDids).toMatchObject({ total: 2, byType: { agents: 0, assets: 2 } });
+        expect(unscoped.scopedDids).toEqual(unscoped.dids);
+        expect((await db.getStats({ didPrefix: 'did:absent' })).scopedDids.total).toBe(0);
+    });
+
     it('rejects incompatible unversioned layouts without creating control state or deleting data', async () => {
         await raw.query(SEARCH_SCHEMA_SQL);
         await raw.query('ALTER TABLE did_docs ADD COLUMN incompatible TEXT');
@@ -419,7 +447,7 @@ describePostgres('Search Server PostgreSQL multi-instance coordination', () => {
 
     it('does not deadlock a concurrent trigram build with a contending old writer', async () => {
         const a = await open();
-        await raw.query('DROP INDEX CONCURRENTLY idx_did_docs_doc_trgm');
+        await raw.query('DROP INDEX CONCURRENTLY idx_did_docs_search_text_trgm');
         const b = new Postgres(url);
         adapters.push(b);
         const entered = deferred();
@@ -444,7 +472,7 @@ describePostgres('Search Server PostgreSQL multi-instance coordination', () => {
         resume.resolve();
         await takeover;
         expect(await write).toBeInstanceOf(IndexOwnershipLostError);
-        expect((await raw.query("SELECT indisvalid FROM pg_index WHERE indexrelid='idx_did_docs_doc_trgm'::regclass")).rows[0].indisvalid).toBe(true);
+        expect((await raw.query("SELECT indisvalid FROM pg_index WHERE indexrelid='idx_did_docs_search_text_trgm'::regclass")).rows[0].indisvalid).toBe(true);
     });
 
     it('bounds schema-lock waits without losing the connection or leaking a lock', async () => {

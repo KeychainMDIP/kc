@@ -69,22 +69,20 @@ KC_LOG_LEVEL=info
 ```
 
 The search database is a rebuildable index and this service does not migrate
-older table layouts. Before deploying a release that changes its schema, stop
-all Search Server instances and set `KC_SEARCH_SERVER_RESET_DB=true` for the
-next startup. This drops and recreates Search Server's own tables and views,
+older table layouts. Before deploying a release that changes its schema, set
+`KC_SEARCH_SERVER_RESET_DB=true` for the next startup. This drops and recreates Search Server's own tables and views,
 including saved cursors and metrics, then reindexes from Gatekeeper.
 
 The flag can be supplied through `.env`. It defaults to `false`. Reset failure
 stops startup rather than serving a partially initialized database.
 
-PostgreSQL startup installs the `pg_trgm` extension and creates a concurrent
-GIN index for document text searches when it is missing. The first startup on
-an existing database waits for that index build to finish while compatible HTTP readers remain available. Index writes wait for
-startup to complete. This index addition does not require a database reset.
-Concurrent Search Server startups serialize this setup through PostgreSQL.
-Allow additional database storage and some indexing work when DID documents
-are synchronized. The PostgreSQL user must be permitted to create the extension
-and index.
+PostgreSQL stores a generated lowercase copy of each document's JSONB-rendered
+text in `did_docs.search_text` and maintains one trigram GIN index on that
+column. Searches use `LIKE` with a lowercased query, avoiding repeated JSON
+serialization and case folding during searches. PostgreSQL generates the text
+on document inserts and updates; the indexer still sends only the original
+document. This trades additional database storage and write work for faster
+searches.
 
 ### Multiple Search Server instances
 
@@ -107,8 +105,10 @@ waits. Requests temporarily unable to access a compatible schema return 503.
 Without startup reset, an incompatible schema is rejected without changing its
 data or ownership. PostgreSQL resets acquire the startup guards and recreate
 the schema and indexing ownership in one transaction.
-Schema changes still require a coordinated rebuild with all incompatible
-instances stopped. Manual table drops while processes are running are unsafe.
+During a schema-changing reset, old incompatible instances return 503 while the
+new instance rebuilds. Search results are empty or partial until indexing catches
+up. Older instances without these coordination guards must be stopped before
+resetting. Manual table drops while processes are running are unsafe.
 
 `GET /api/v1/status` adds `role`, either `"writer"` or `"reader"`, derived from
 the shared database. Healthy readers remain ready. `/api/v1/ready` returns 503
@@ -138,17 +138,21 @@ reader role, and a bounded live sample
 of Gatekeeper operational status. It does not enumerate or resolve Gatekeeper
 DIDs, replay histories, or start a metrics rebuild.
 
-The `dids` section contains `total`, `byType` (agents, assets, confirmed,
-unconfirmed, ephemeral, invalid), `byRegistry`, and `byVersion`. Counts cover
+The `dids` section reports all-prefix totals, matching the scope of the former
+Gatekeeper DID statistics. `scopedDids` reports the configured Search Server
+scope shown in `scope`. Both sections contain `total`, `byType` (agents, assets,
+confirmed, unconfirmed, ephemeral, invalid), `byRegistry`, and `byVersion`. Counts cover
 current stored histories, including deactivated DIDs, deduplicated by CID
 suffix. Physical removals reduce these counts once indexed. These are not the
 cumulative totals returned by the historical snapshot endpoints. `ephemeral`
 means MDIP expiration is set, not that a credential has a signed validity date.
 `invalid` counts indexed resolution-error documents, not failed signatures.
 
-The configured network scope applies. `includeAmbiguous=true` also includes
-ambiguous legacy DIDs under that scope, as on other live listing endpoints.
-Invalid or repeated `includeAmbiguous` values return `400`.
+The configured network scope applies only to `scopedDids`.
+`includeAmbiguous=true` also includes ambiguous legacy DIDs under that scope,
+as on other live listing endpoints. It does not change `dids`. Without a
+configured DID prefix, both sections contain the same counts. Invalid or
+repeated `includeAmbiguous` values return `400`.
 
 For example:
 
@@ -172,6 +176,12 @@ For example:
   },
   "metrics": { "lastRebuiltAt": "2026-10-23T09:00:00.000Z", "lastError": null },
   "dids": {
+    "total": 5,
+    "byType": { "agents": 2, "assets": 3, "confirmed": 3, "unconfirmed": 2, "ephemeral": 1, "invalid": 0 },
+    "byRegistry": { "hyperswarm": 5 },
+    "byVersion": { "1": 3, "2": 2 }
+  },
+  "scopedDids": {
     "total": 3,
     "byType": { "agents": 1, "assets": 2, "confirmed": 2, "unconfirmed": 1, "ephemeral": 1, "invalid": 0 },
     "byRegistry": { "hyperswarm": 3 },
@@ -204,8 +214,8 @@ For example:
 The index state is `snapshot` during initial indexing, `catching_up` after the
 snapshot or during paged changes, and `caught_up` after a final changes page.
 The last state describes the recorded checkpoint and time, not a promise that
-Gatekeeper has not changed since. DID counts and their cursor are read from one
-database snapshot. The live Gatekeeper sample has a separate timestamp and
+Gatekeeper has not changed since. Global and scoped DID counts and their cursor
+are read from one database snapshot. The live Gatekeeper sample has a separate timestamp and
 contains Gatekeeper memory in bytes, not Search Server memory.
 
 Operational sampling has a five-second deadline and a 64-KiB response limit.
@@ -220,8 +230,9 @@ Only `/ready` is exempt by default. If an existing deployment explicitly lists
 `/api/v1/status` in `KC_SEARCH_SERVER_RATE_LIMIT_SKIP_PATHS`, remove it to apply
 the configured rate limit to status requests.
 
-This update adds columns to `did_classifications`. Before first deployment,
-recreate the disposable Search Server database tables or use a fresh Search
+This schema includes statistics columns in `did_classifications` and stored
+lower-case document text in `did_docs`. When upgrading from a layout lacking
+either, recreate the disposable Search Server database tables or use a fresh Search
 database as described above, then restart Search Server to reindex all metadata.
 Do not reset Gatekeeper. Later changes to Gatekeeper's source epoch automatically
 clear and rebuild the Search index within the existing schema instead of
@@ -275,11 +286,15 @@ the command line, use `curl http://localhost:4002/api/v1/status`.
     - `limit` (optional, default `50`, maximum `500`)
     - `cursor` (optional, the `nextCursor` returned by the preceding page)
 - **Notes**: Search terms are literal. SQL wildcard characters `%` and `_` do
-  not broaden the search. Terms shorter than three Unicode characters are
-  rejected because PostgreSQL's trigram index cannot serve them efficiently.
-  Use structured endpoints for short values. Results are ordered by effective
-  DID. Pagination limits the response size but does not avoid the complete text
-  match performed by PostgreSQL's materialized query.
+  not broaden the search. Matching is case-insensitive for ASCII letters on
+  every database adapter; non-ASCII case equivalence depends on the adapter and
+  PostgreSQL collation. Terms shorter than three Unicode characters are rejected
+  because PostgreSQL's trigram index cannot serve them efficiently. Use
+  structured endpoints for short values. Results are ordered by effective DID.
+  PostgreSQL probes a capped set of text matches. Small searches use that complete
+  match set; broad searches check documents in effective-DID order until the page
+  is filled or candidates are exhausted. Scope and cursor filters apply before
+  pagination, and the statement timeout still bounds expensive searches.
 - **Returns**:
     - `200 OK` + `{ "dids": [...], "nextCursor": "did:..." }`.
       `nextCursor` is `null` on the final page.

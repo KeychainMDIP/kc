@@ -134,7 +134,7 @@ describe('Search Server HTTP routes', () => {
             ready: true, db: 'memory',
             sync: { snapshotComplete: false, changesCursor: '42', lastPagesProcessed: 0 },
             metrics: { lastRebuiltAt: '2026-10-23T10:00:00.000Z', lastError: null },
-            dids: { total: 0 }, scope: { didPrefix: 'did:mdip', includeAmbiguous: false },
+            dids: { total: 0 }, scopedDids: { total: 0 }, scope: { didPrefix: 'did:mdip', includeAmbiguous: false },
             index: { state: 'snapshot', changesCursor: '42' },
             gatekeeper: { available: true, status: { uptimeSeconds: 10, eventsQueue: { total: 3 } } },
         });
@@ -154,6 +154,27 @@ describe('Search Server HTTP routes', () => {
         expect(JSON.stringify(unavailable.body)).not.toContain('private dependency configuration');
         stats.mockRejectedValue(new TypeError('database failure'));
         expect((await request('/status')).status).toBe(500);
+    });
+    it('returns global statistics and scoped statistics independently of the ambiguity option', async () => {
+        for (const [did, prefix] of [
+            ['did:mdip:inside', 'did:mdip'], ['did:test:outside', 'did:test'], ['did:test:ambiguous', undefined],
+        ] as const) {
+            const event = createSeedEvent(did);
+            event.operation.mdip!.prefix = prefix;
+            await seedDID(db, did, { events: [event], doc: { mdip: { type: 'asset', registry: 'local' } } });
+        }
+        await boot();
+        const normal = await request('/status');
+        const ambiguous = await request('/status?includeAmbiguous=true');
+        expect(normal.status).toBe(200);
+        expect(normal.body).toMatchObject({
+            dids: { total: 3, byType: { assets: 3 } },
+            scopedDids: { total: 1, byType: { assets: 1 } },
+            scope: { didPrefix: 'did:mdip', includeAmbiguous: false },
+        });
+        expect(ambiguous.status).toBe(200);
+        expect(ambiguous.body.dids).toEqual(normal.body.dids);
+        expect(ambiguous.body.scopedDids.total).toBe(2);
     });
     it('returns identities with defaults and projects repeated field parameters within the configured scope', async () => {
         const event = createSeedEvent(schemaDid);
@@ -373,6 +394,24 @@ describe('Search Server HTTP routes', () => {
         const where = { 'mdip.type': 'agent' };
         expect(await request('/query', { where })).toEqual({ status: 200, body: [schemaDid] });
         expect(query).toHaveBeenCalledWith(where, 'did:mdip', undefined);
+    });
+
+    it('searches documents without ASCII case sensitivity', async () => {
+        const did = 'did:mdip:case-insensitive-search';
+        const event = createSeedEvent(did);
+        event.operation.mdip!.prefix = 'did:mdip';
+        await seedDID(db, did, {
+            events: [event],
+            doc: { didDocumentData: { name: 'Alice Smith' } },
+        });
+        await boot();
+
+        for (const q of ['alice', 'Alice', 'ALICE', 'aLiCe']) {
+            expect(await request(`/search?${new URLSearchParams({ q })}`)).toEqual({
+                status: 200,
+                body: { dids: [did], nextCursor: null },
+            });
+        }
     });
 
     it('reports PostgreSQL search timeouts as unavailable', async () => {

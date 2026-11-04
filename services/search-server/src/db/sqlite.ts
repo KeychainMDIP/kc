@@ -570,12 +570,12 @@ export default class Sqlite implements DIDsDb {
                 const groups = await this.db.all<StatisticsGroup[]>(`
                     SELECT dc.stats_type AS type, dc.stats_registry AS registry, dc.stats_version AS version,
                            dc.stats_confirmed AS confirmed, dc.stats_ephemeral AS ephemeral,
-                           dc.stats_invalid AS invalid, COUNT(*) AS count
+                           dc.stats_invalid AS invalid, COUNT(*) AS count,
+                           (? IS NULL OR effective.prefix = ? OR (? AND effective.prefix_ambiguous)) AS inScope
                     FROM did_classifications dc
                     JOIN did_classifications_effective effective ON effective.suffix = dc.suffix
-                    WHERE (? IS NULL OR effective.prefix = ? OR (? AND effective.prefix_ambiguous))
                     GROUP BY dc.stats_type, dc.stats_registry, dc.stats_version,
-                             dc.stats_confirmed, dc.stats_ephemeral, dc.stats_invalid`,
+                             dc.stats_confirmed, dc.stats_ephemeral, dc.stats_invalid, inScope`,
                 [options.didPrefix || null, options.didPrefix || null, options.includeAmbiguous ? 1 : 0]);
                 const state = await this.db.all<Array<{ key: string; value: string }>>('SELECT key, value FROM sync_state');
                 const result = summarizeStatistics(groups, Object.fromEntries(state.map(row => [row.key, row.value])));

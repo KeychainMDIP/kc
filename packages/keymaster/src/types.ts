@@ -277,6 +277,7 @@ export interface SearchIndexStatistics {
 
 export interface SearchStoredStatistics {
     dids: SearchDIDStatistics;
+    scopedDids: SearchDIDStatistics;
     index: SearchIndexStatistics;
     sync: {
         snapshotComplete: boolean;
