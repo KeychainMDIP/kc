@@ -12,11 +12,7 @@ public final class Secp256k1Jwk {
     private Secp256k1Jwk() {}
 
     public static JwkPair fromPrivateKey(byte[] privateKeyBytes) {
-        if (privateKeyBytes == null || privateKeyBytes.length != 32) {
-            throw new IllegalArgumentException("privateKeyBytes must be 32 bytes");
-        }
-
-        BigInteger d = new BigInteger(1, privateKeyBytes);
+        BigInteger d = privateScalar(privateKeyBytes);
         ECPoint q = SECNamedCurves.getByName(CRV).getG().multiply(d).normalize();
         byte[] uncompressed = q.getEncoded(false);
 
@@ -34,6 +30,17 @@ public final class Secp256k1Jwk {
         return new JwkPair(pub, priv);
     }
 
+    static BigInteger privateScalar(byte[] bytes) {
+        if (bytes == null || bytes.length != 32) {
+            throw new IllegalArgumentException("private key must be 32 bytes");
+        }
+        BigInteger scalar = new BigInteger(1, bytes);
+        if (scalar.signum() == 0 || scalar.compareTo(SECNamedCurves.getByName(CRV).getN()) >= 0) {
+            throw new IllegalArgumentException("private key is outside the curve order");
+        }
+        return scalar;
+    }
+
     public static byte[] toCompressed(JwkPublic jwk) {
         if (jwk == null) {
             throw new IllegalArgumentException("jwk must not be null");
@@ -41,14 +48,10 @@ public final class Secp256k1Jwk {
 
         byte[] x = Base64Url.decode(jwk.x);
         byte[] y = Base64Url.decode(jwk.y);
-        if (x.length != 32 || y.length != 32) {
-            throw new IllegalArgumentException("x and y must be 32 bytes");
-        }
-
-        byte prefix = (byte) ((y[y.length - 1] & 1) == 0 ? 0x02 : 0x03);
-        byte[] out = new byte[33];
+        byte prefix = (byte) (y.length > 0 && (y[y.length - 1] & 1) == 0 ? 0x02 : 0x03);
+        byte[] out = new byte[x.length + 1];
         out[0] = prefix;
-        System.arraycopy(x, 0, out, 1, 32);
+        System.arraycopy(x, 0, out, 1, x.length);
         return out;
     }
 }

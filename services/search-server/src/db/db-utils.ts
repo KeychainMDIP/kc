@@ -1,9 +1,15 @@
 import type { GatekeeperEvent } from '../types.js';
+import type { DIDsDb } from '../types.js';
+
+export function readDatabase<T>(db: DIDsDb, work: () => Promise<T>): Promise<T> {
+    return db.withRead ? db.withRead(work) : work();
+}
 
 export const RESET_SEARCH_SCHEMA_SQL = `
     DROP VIEW IF EXISTS published_credentials_classified;
     DROP VIEW IF EXISTS did_classifications_effective;
     DROP VIEW IF EXISTS did_reference_prefixes;
+    DROP TABLE IF EXISTS search_index_control;
     DROP TABLE IF EXISTS network_metric_snapshots;
     DROP TABLE IF EXISTS sync_state;
     DROP TABLE IF EXISTS challenge_receipts;

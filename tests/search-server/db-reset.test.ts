@@ -6,6 +6,7 @@ import Sqlite from '../../services/search-server/src/db/sqlite.ts';
 import Postgres from '../../services/search-server/src/db/postgres.ts';
 import { RESET_SEARCH_SCHEMA_SQL } from '../../services/search-server/src/db/db-utils.ts';
 import { seedDID } from './db-seed.ts';
+import { mockPostgresPool } from './postgres-mock.ts';
 
 describe('Search Server SQLite startup reset', () => {
     let folder: string;
@@ -82,7 +83,7 @@ describe('Search Server SQLite startup reset', () => {
 describe('Search Server PostgreSQL startup reset', () => {
     function fixture() {
         const client = {
-            query: jest.fn(async () => ({ rows: [] })),
+            query: jest.fn(async (_sql: string) => ({ rows: [] })),
             release: jest.fn(),
         };
         const pool = {
@@ -91,17 +92,19 @@ describe('Search Server PostgreSQL startup reset', () => {
             end: jest.fn(async () => {}),
         };
         class TestPostgres extends Postgres {
-            protected createPool(): any { return pool; }
+            protected createPool(): any { return mockPostgresPool(this, pool); }
         }
-        return { TestPostgres, pool };
+        return { TestPostgres, pool, client };
     }
 
     it('drops only Search tables before creating their current schema', async () => {
-        const { TestPostgres, pool } = fixture();
+        const { TestPostgres, client } = fixture();
         const db = await TestPostgres.create('postgresql://fixture', true);
         try {
-            expect(pool.query.mock.calls[0][0]).toBe(RESET_SEARCH_SCHEMA_SQL);
-            expect(pool.query.mock.calls[1][0]).toContain('CREATE TABLE IF NOT EXISTS did_classifications');
+            expect(client.query.mock.calls[0][0]).toBe('BEGIN');
+            expect(client.query.mock.calls[1][0]).toBe(RESET_SEARCH_SCHEMA_SQL);
+            expect(client.query.mock.calls[2][0]).toContain('CREATE TABLE IF NOT EXISTS did_classifications');
+            expect(RESET_SEARCH_SCHEMA_SQL).toContain('DROP TABLE IF EXISTS search_index_control');
             expect(RESET_SEARCH_SCHEMA_SQL).not.toContain('CASCADE');
             expect(RESET_SEARCH_SCHEMA_SQL).not.toContain('gatekeeper_');
             expect(RESET_SEARCH_SCHEMA_SQL).not.toContain('hyperswarm_');
@@ -110,11 +113,14 @@ describe('Search Server PostgreSQL startup reset', () => {
     });
 
     it('propagates a reset failure and closes the pool without initializing tables', async () => {
-        const { TestPostgres, pool } = fixture();
-        pool.query.mockRejectedValueOnce(new Error('reset denied'));
+        const { TestPostgres, pool, client } = fixture();
+        client.query.mockImplementation(async sql => {
+            if (sql === RESET_SEARCH_SCHEMA_SQL) throw new Error('reset denied');
+            return { rows: [] };
+        });
         await expect(TestPostgres.create('postgresql://fixture', true)).rejects.toThrow('reset denied');
-        expect(pool.query).toHaveBeenCalledTimes(1);
-        expect(pool.connect).not.toHaveBeenCalled();
+        expect(client.query.mock.calls.map(([sql]) => sql)).toEqual(['BEGIN', RESET_SEARCH_SCHEMA_SQL, 'ROLLBACK']);
+        expect(pool.connect).toHaveBeenCalledTimes(1);
         expect(pool.end).toHaveBeenCalledTimes(1);
     });
 });

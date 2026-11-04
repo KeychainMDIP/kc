@@ -1,0 +1,64 @@
+name: Java tests
+
+on:
+  push:
+    branches:
+      - '**'
+    paths:
+      - 'java/**'
+      - 'packages/**'
+      - 'services/gatekeeper/server/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/java-test.yml'
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: java
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 11
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '11'
+          cache: gradle
+
+      - name: Run offline tests and compile demo
+        run: ./gradlew --no-daemon test :demo:compileJava --console=plain
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.4'
+          cache: npm
+
+      - name: Build reference packages and HTTP service
+        working-directory: .
+        run: |
+          npm ci
+          npm ci --prefix services/gatekeeper/server
+          npm run build
+          npm run build --prefix services/gatekeeper/server
+
+      - name: Run isolated reference integration tests
+        run: node scripts/live-tests.mjs
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: java-test-reports
+          path: |
+            java/**/build/test-results/**/*.xml
+            java/**/build/reports/tests/**
+            java/keymaster/build/reports/interop/**
+          if-no-files-found: ignore

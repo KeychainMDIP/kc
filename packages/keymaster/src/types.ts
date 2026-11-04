@@ -301,6 +301,7 @@ export type GatekeeperStatusSample =
 export interface SearchStatusResult extends SearchStoredStatistics {
     ready: boolean;
     db: string;
+    role: 'writer' | 'reader';
     scope: { didPrefix: string | null; includeAmbiguous: boolean };
     gatekeeper: GatekeeperStatusSample;
 }

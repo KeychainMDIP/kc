@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { jest } from '@jest/globals';
+import { mockPostgresPool } from './postgres-mock.ts';
 import Memory from '../../services/search-server/src/db/json-memory.ts';
 import Sqlite from '../../services/search-server/src/db/sqlite.ts';
 import Postgres from '../../services/search-server/src/db/postgres.ts';
@@ -256,7 +257,7 @@ describe('PostgreSQL statistics snapshot', () => {
         });
         const release = jest.fn();
         const db = new Postgres('postgresql://fixture');
-        (db as any).pool = { connect: async () => ({ query, release }) };
+        (db as any).pool = mockPostgresPool(db, { connect: async () => ({ query, release }) });
         await expect(db.wipeDb()).rejects.toThrow('simulated reset failure');
         expect(query.mock.calls[0][0]).toBe('BEGIN');
         expect(query.mock.calls.at(-1)![0]).toBe('ROLLBACK');
@@ -267,7 +268,7 @@ describe('PostgreSQL statistics snapshot', () => {
     it('persists invalid statistics for a newly observed empty history instead of skipping it', async () => {
         const query = jest.fn(async (_sql: string, _params?: unknown[]) => ({ rows: [] }));
         const db = new Postgres('postgresql://fixture');
-        (db as any).pool = { query, connect: async () => ({ query, release: jest.fn() }) };
+        (db as any).pool = mockPostgresPool(db, { query, connect: async () => ({ query, release: jest.fn() }) });
         await db.applyIndexPage({
             dids: [{ did: 'did:test:empty-history', events: [], doc: { didResolutionMetadata: { error: 'notFound' } } }],
             blocks: [],
@@ -286,7 +287,7 @@ describe('PostgreSQL statistics snapshot', () => {
             : sql.includes('SELECT key, value') ? [{ key: keys.epoch, value: 'pg-epoch' }] : [] }));
         const release = jest.fn();
         const db = new Postgres('postgresql://fixture');
-        (db as any).pool = { connect: async () => ({ query, release }) };
+        (db as any).pool = mockPostgresPool(db, { connect: async () => ({ query, release }) });
         expect(await db.getStats({ didPrefix: 'did:mdip', includeAmbiguous: true })).toMatchObject({
             dids: { total: 2, byType: { agents: 2 } }, index: { epoch: 'pg-epoch' },
         });
@@ -302,7 +303,7 @@ describe('PostgreSQL statistics snapshot', () => {
         });
         const release = jest.fn();
         const db = new Postgres('postgresql://fixture');
-        (db as any).pool = { connect: async () => ({ query, release }) };
+        (db as any).pool = mockPostgresPool(db, { connect: async () => ({ query, release }) });
         await expect(db.getStats()).rejects.toThrow('storage unavailable');
         expect(query.mock.calls.at(-1)![0]).toBe('ROLLBACK');
         expect(release).toHaveBeenCalledTimes(1);

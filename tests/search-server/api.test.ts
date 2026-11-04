@@ -22,8 +22,8 @@ const startIndexing = jest.fn<() => Promise<void>>();
 const beginStopping = jest.fn<() => void>();
 const stopIndexing = jest.fn<() => Promise<void>>();
 const resolveDID = jest.fn<(...args: any[]) => Promise<any>>();
-const sqliteCreate = jest.fn(async () => db);
-const postgresCreate = jest.fn(async () => db);
+const sqliteCreate = jest.fn(() => db);
+const postgresCreate = jest.fn((_url?: string) => db);
 let db: DIDsDbMemory;
 let config: Record<string, any>;
 let app: ReturnType<typeof express>;
@@ -41,8 +41,8 @@ jest.unstable_mockModule(require.resolve('express-rate-limit').replace(/\.cjs$/,
 jest.unstable_mockModule('@mdip/common/logger', () => ({ childLogger: () => logger }));
 jest.unstable_mockModule('@mdip/gatekeeper', () => ({ resolveDIDFromEvents: resolveDID }));
 jest.unstable_mockModule('@mdip/gatekeeper/client', () => ({ default: class { connect = connect; getStatus = getStatus; } }));
-jest.unstable_mockModule('./db/sqlite.js', () => ({ default: { create: sqliteCreate } }));
-jest.unstable_mockModule('./db/postgres.js', () => ({ default: { create: postgresCreate } }));
+jest.unstable_mockModule('./db/sqlite.js', () => ({ default: class { constructor() { sqliteCreate(); return db; } } }));
+jest.unstable_mockModule('./db/postgres.js', () => ({ default: class { constructor(url: string) { postgresCreate(url); return db; } } }));
 jest.unstable_mockModule('../../services/search-server/src/db/json-memory.ts', () => ({
     default: class { constructor() { return db; } },
 }));
@@ -384,7 +384,7 @@ describe('Search Server HTTP routes', () => {
             status: 503,
             body: { error: 'Search timed out' },
         });
-        expect(logger.warn).toHaveBeenCalledWith({ error }, '/api/search timed out');
+        expect(logger.warn).toHaveBeenCalledWith({ err: error }, '/api/search timed out');
     });
 
     it('resolves event histories and forwards version options, returning 404 for unresolved documents', async () => {
@@ -492,6 +492,7 @@ describe('Search Server HTTP routes', () => {
         ['/events', 'listEvents', undefined],
         ['/search?q=Alice', 'searchDocs', undefined],
         ['/query', 'queryDocs', { where: {} }],
+        ['/identities', 'listIdentities', undefined],
         ['/metrics/schemas/published', 'getPublishedCredentialCountsBySchema', undefined],
         ['/metrics/snapshots/2026-01-01', 'getNetworkMetricSnapshot', undefined],
         ['/metrics/credentials/published', 'listPublishedCredentials', undefined],
@@ -499,9 +500,13 @@ describe('Search Server HTTP routes', () => {
         ['/metrics/challenge-receipts/usage?attesterDid=attester', 'getChallengeReceiptUsage', undefined],
     ] as const)('reports storage errors from %s', async (path, method, body) => {
         await db.saveSyncState(INDEX_SYNC_STATE_KEYS.metricsDidPrefix, 'did:mdip');
-        jest.spyOn(db, method).mockRejectedValue(new Error('storage unavailable'));
+        const read = jest.spyOn(db, method).mockRejectedValue(new Error('storage unavailable'));
         await boot();
         expect(await request(path, body)).toEqual({ status: 500, body: { error: 'Error: storage unavailable' } });
+
+        const { SearchUnavailableError } = await import('../../services/search-server/src/db/coordination.ts');
+        read.mockRejectedValue(new SearchUnavailableError('schema unavailable'));
+        expect(await request(path, body)).toEqual({ status: 503, body: { error: 'Error: schema unavailable' } });
     });
 
     it.each(['sqlite', 'postgres'])('selects the %s adapter and configures rate limiting', async name => {
@@ -509,10 +514,16 @@ describe('Search Server HTTP routes', () => {
         config.trustProxy = true;
         config.rateLimitEnabled = true;
         config.rateLimitWhitelist = ['127.0.0.1'];
+        const initialize = jest.spyOn(db, 'connect');
         await boot();
         expect(app.get('trust proxy')).toBe(true);
-        if (name === 'sqlite') expect(sqliteCreate).toHaveBeenCalledWith(undefined, undefined, false);
-        else expect(postgresCreate).toHaveBeenCalledWith(config.postgresURL, false);
+        if (name === 'sqlite') {
+            expect(sqliteCreate).toHaveBeenCalledWith();
+            expect(initialize).toHaveBeenCalledWith(false);
+        } else {
+            expect(postgresCreate).toHaveBeenCalledWith(config.postgresURL);
+            expect(initialize).toHaveBeenCalledWith(expect.any(AbortSignal), false);
+        }
         expect(connect).toHaveBeenCalledWith({
             url: config.gatekeeperURL,
             signal: expect.any(AbortSignal),
@@ -534,25 +545,26 @@ describe('Search Server HTTP routes', () => {
     it.each(['sqlite', 'postgres'])('passes an enabled startup reset to the %s adapter', async name => {
         config.db = name;
         config.resetDb = true;
+        const initialize = jest.spyOn(db, 'connect');
         await boot();
-        if (name === 'sqlite') expect(sqliteCreate).toHaveBeenCalledWith(undefined, undefined, true);
-        else expect(postgresCreate).toHaveBeenCalledWith(config.postgresURL, true);
+        if (name === 'sqlite') expect(initialize).toHaveBeenCalledWith(true);
+        else expect(initialize).toHaveBeenCalledWith(expect.any(AbortSignal), true);
         expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('KC_SEARCH_SERVER_RESET_DB'));
     });
 
-    it('does not listen or start indexing after a startup reset failure', async () => {
+    it('closes the listener without starting indexing after a startup reset failure', async () => {
         config.db = 'postgres';
         config.resetDb = true;
         const failure = new Error('reset failed');
-        postgresCreate.mockRejectedValueOnce(failure);
-        const listen = jest.spyOn(app, 'listen');
-        await import(serverEntry);
+        jest.spyOn(db, 'connect').mockRejectedValueOnce(failure);
+        const disconnect = jest.spyOn(db, 'disconnect');
+        await boot();
         await waitForCall(process.exit as any);
-        expect(listen).not.toHaveBeenCalled();
-        expect(connect).not.toHaveBeenCalled();
+        expect(server!.listening).toBe(false);
+        expect(disconnect).toHaveBeenCalledTimes(1);
         expect(startIndexing).not.toHaveBeenCalled();
         expect(process.exit).toHaveBeenCalledWith(1);
-        expect(logger.error).toHaveBeenCalledWith({ error: failure }, '[search-server] Fatal error');
+        expect(logger.error).toHaveBeenCalledWith({ err: failure }, '[search-server] Fatal error');
     });
 
     it.each([false, true])('stops indexing and closes storage on shutdown (storage failure: %s)', async fail => {
@@ -573,7 +585,7 @@ describe('Search Server HTTP routes', () => {
         expect(stopIndexing).toHaveBeenCalledTimes(1);
         expect(disconnect).toHaveBeenCalledTimes(1);
         expect(process.exit).toHaveBeenCalledWith(fail ? 1 : 0);
-        if (fail) expect(logger.error).toHaveBeenCalledWith({ error: expect.any(Error) }, 'Error during shutdown');
+        if (fail) expect(logger.error).toHaveBeenCalledWith({ err: expect.any(Error) }, 'Error during shutdown');
     });
 
     it('drains active HTTP requests before stopping indexing and disconnecting storage', async () => {
@@ -614,7 +626,7 @@ describe('Search Server HTTP routes', () => {
         expect(stopIndexing).toHaveBeenCalledTimes(1);
         expect(disconnect).toHaveBeenCalledTimes(1);
         expect(process.exit).toHaveBeenCalledWith(1);
-        expect(logger.error).toHaveBeenCalledWith({ error: expect.any(AggregateError) }, 'Error during shutdown');
+        expect(logger.error).toHaveBeenCalledWith({ err: expect.any(AggregateError) }, 'Error during shutdown');
     });
 
     it('routes HTTP listener errors through fatal cleanup', async () => {
@@ -627,7 +639,7 @@ describe('Search Server HTTP routes', () => {
         expect(stopIndexing).toHaveBeenCalledTimes(1);
         expect(disconnect).toHaveBeenCalledTimes(1);
         expect(process.exit).toHaveBeenCalledWith(1);
-        expect(logger.error).toHaveBeenCalledWith({ error: expect.any(Error) }, 'HTTP server error');
+        expect(logger.error).toHaveBeenCalledWith({ err: expect.any(Error) }, 'HTTP server error');
     });
 
     it('routes initial indexing failures through fatal cleanup', async () => {
@@ -641,7 +653,7 @@ describe('Search Server HTTP routes', () => {
         expect(stopIndexing).toHaveBeenCalledTimes(1);
         expect(disconnect).toHaveBeenCalledTimes(1);
         expect(process.exit).toHaveBeenCalledWith(1);
-        expect(logger.error).toHaveBeenCalledWith({ error: indexingError }, 'Initial indexing failed');
+        expect(logger.error).toHaveBeenCalledWith({ err: indexingError }, 'Initial indexing failed');
     });
 
     it('does not treat index cancellation during shutdown as fatal', async () => {
@@ -659,7 +671,7 @@ describe('Search Server HTTP routes', () => {
         await new Promise(resolve => setImmediate(resolve));
 
         expect(process.exit).toHaveBeenCalledWith(0);
-        expect(logger.error).not.toHaveBeenCalledWith({ error: expect.any(Error) }, 'Initial indexing failed');
+        expect(logger.error).not.toHaveBeenCalledWith({ err: expect.any(Error) }, 'Initial indexing failed');
     });
 
     it('routes asynchronous listen failures through startup cleanup', async () => {
@@ -677,7 +689,7 @@ describe('Search Server HTTP routes', () => {
         expect(stopIndexing).toHaveBeenCalledTimes(1);
         expect(disconnect).toHaveBeenCalledTimes(1);
         expect(process.exit).toHaveBeenCalledWith(1);
-        expect(logger.error).toHaveBeenCalledWith({ error: listenError }, '[search-server] Fatal error');
+        expect(logger.error).toHaveBeenCalledWith({ err: listenError }, '[search-server] Fatal error');
     });
 
     it('exits on startup failure without starting the HTTP listener', async () => {
@@ -688,6 +700,104 @@ describe('Search Server HTTP routes', () => {
         expect(startIndexing).not.toHaveBeenCalled();
         expect(disconnect).toHaveBeenCalledTimes(1);
         expect(process.exit).toHaveBeenCalledWith(1);
-        expect(logger.error).toHaveBeenCalledWith({ error: expect.any(Error) }, '[search-server] Fatal error');
+        expect(logger.error).toHaveBeenCalledWith({ err: expect.any(Error) }, '[search-server] Fatal error');
+    });
+});
+
+describe('Search Server guarded startup and readers', () => {
+    it('serves 503 until database initialization finishes', async () => {
+        let finish!: () => void;
+        jest.spyOn(db, 'connect').mockReturnValue(new Promise<void>(resolve => { finish = resolve; }));
+        const read = jest.spyOn(db, 'getDIDEvents');
+        await boot();
+        expect((await request('/ready')).status).toBe(503);
+        expect((await request(`/did/${schemaDid}`)).status).toBe(503);
+        expect(read).not.toHaveBeenCalled();
+        expect(startIndexing).not.toHaveBeenCalled();
+        finish();
+        await waitForCall(startIndexing as any);
+        expect((await request('/ready')).status).toBe(200);
+    });
+
+    it('keeps a superseded compatible reader ready and reports its database role', async () => {
+        (db as any).getRole = jest.fn(async () => 'reader');
+        await boot();
+        expect(await request('/ready')).toEqual({ status: 200, body: { ready: true } });
+        expect((await request('/status')).body.role).toBe('reader');
+    });
+
+    it('reports incompatible coordination as unavailable in readiness and normal read routes', async () => {
+        await boot();
+        const { SearchUnavailableError } = await import('../../services/search-server/src/db/coordination.ts');
+        (db as any).getRole = jest.fn(async () => { throw new SearchUnavailableError('schema unavailable'); });
+        jest.spyOn(db, 'findDIDBySuffix').mockRejectedValue(new SearchUnavailableError('schema unavailable'));
+        expect((await request('/ready')).status).toBe(503);
+        expect((await request('/status')).status).toBe(503);
+        expect((await request(`/did/${schemaDid}/events`)).status).toBe(503);
+    });
+
+    it('cancels database startup and waits for it before disconnecting', async () => {
+        config.db = 'postgres';
+        let started!: () => void;
+        const pending = new Promise<void>(resolve => { started = resolve; });
+        const disconnect = jest.spyOn(db, 'disconnect');
+        jest.spyOn(db, 'connect').mockImplementation((async (signal?: AbortSignal) => {
+            started();
+            await new Promise<void>((_resolve, reject) => {
+                signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+            });
+        }) as typeof db.connect);
+        await boot();
+        await pending;
+        const shutdown = process.listeners('SIGTERM').find(listener => !processListeners.SIGTERM.includes(listener))!;
+        await shutdown('SIGTERM');
+        expect(startIndexing).not.toHaveBeenCalled();
+        expect(disconnect).toHaveBeenCalledTimes(1);
+        expect(process.exit).toHaveBeenCalledWith(0);
+    });
+
+    it('does not bind or initialize storage when dependency setup finishes after shutdown', async () => {
+        let finish!: () => void;
+        connect.mockReturnValue(new Promise<void>(resolve => { finish = resolve; }));
+        const dbConnect = jest.spyOn(db, 'connect');
+        const listen = jest.spyOn(app, 'listen');
+        await import(serverEntry);
+        await waitForCall(connect as any);
+        const shutdown = process.listeners('SIGTERM').find(listener => !processListeners.SIGTERM.includes(listener))!;
+        await shutdown('SIGTERM');
+        finish();
+        await new Promise(resolve => setImmediate(resolve));
+        expect(listen).not.toHaveBeenCalled();
+        expect(dbConnect).not.toHaveBeenCalled();
+        expect(startIndexing).not.toHaveBeenCalled();
+    });
+
+    it('closes a late listener without initializing storage after shutdown', async () => {
+        let finishBinding!: () => Promise<void>;
+        const dbConnect = jest.spyOn(db, 'connect');
+        const disconnect = jest.spyOn(db, 'disconnect');
+        const listen = jest.spyOn(app, 'listen').mockImplementation(((_port: number, callback: () => void) => {
+            server = createServer(app);
+            finishBinding = () => new Promise<void>(resolve => {
+                server!.listen(0, '127.0.0.1', () => { callback(); resolve(); });
+            });
+            return server;
+        }) as typeof app.listen);
+
+        await import(serverEntry);
+        await waitForCall(listen as any);
+        const shutdown = process.listeners('SIGTERM').find(listener => !processListeners.SIGTERM.includes(listener))!;
+        await shutdown('SIGTERM');
+        expect(disconnect).toHaveBeenCalledTimes(1);
+
+        const closed = new Promise<void>(resolve => server!.once('close', () => resolve()));
+        await finishBinding();
+        await closed;
+
+        expect(server!.listening).toBe(false);
+        expect(dbConnect).not.toHaveBeenCalled();
+        expect(startIndexing).not.toHaveBeenCalled();
+        expect(process.exit).toHaveBeenCalledTimes(1);
+        expect(process.exit).toHaveBeenCalledWith(0);
     });
 });

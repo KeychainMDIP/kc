@@ -79,12 +79,41 @@ stops startup rather than serving a partially initialized database.
 
 PostgreSQL startup installs the `pg_trgm` extension and creates a concurrent
 GIN index for document text searches when it is missing. The first startup on
-an existing database waits for that index build to finish without blocking
-normal table writes. This index addition does not require a database reset.
+an existing database waits for that index build to finish while compatible HTTP readers remain available. Index writes wait for
+startup to complete. This index addition does not require a database reset.
 Concurrent Search Server startups serialize this setup through PostgreSQL.
 Allow additional database storage and some indexing work when DID documents
 are synchronized. The PostgreSQL user must be permitted to create the extension
 and index.
+
+### Multiple Search Server instances
+
+Multiple Search Server processes can share one PostgreSQL Search database.
+Each successful startup takes over indexing. PostgreSQL serializes the handoff
+with active writes and checks the process's ownership on every later mutation.
+The previous process stops indexing and continues serving HTTP reads. Handoff
+preserves indexed data and synchronization cursors.
+
+All instances must use compatible versions, the same Gatekeeper index feed and
+compatible network-metric scope. Shared SQLite files are not supported for this
+setup. PostgreSQL must be reached directly or through a proxy with session
+pooling. Transaction and statement pooling do not preserve the session locks
+used during startup and reads.
+
+Only one instance indexes. Readers do not automatically promote themselves if
+the writer exits. Restart the writer through its supervisor, or restart a
+compatible reader to take over. Startup and schema-lock contention have bounded
+waits. Requests temporarily unable to access a compatible schema return 503.
+Without startup reset, an incompatible schema is rejected without changing its
+data or ownership. PostgreSQL resets acquire the startup guards and recreate
+the schema and indexing ownership in one transaction.
+Schema changes still require a coordinated rebuild with all incompatible
+instances stopped. Manual table drops while processes are running are unsafe.
+
+`GET /api/v1/status` adds `role`, either `"writer"` or `"reader"`, derived from
+the shared database. Healthy readers remain ready. `/api/v1/ready` returns 503
+while initialization is incomplete or the PostgreSQL database is unavailable
+or incompatible. Readiness does not mean indexing has caught up.
 
 ### Endpoints
 
@@ -99,12 +128,13 @@ authoritative DIDs from another network remain excluded. This option does not
 reclassify stored DIDs and does not apply to historical metric snapshots.
 
 ### `GET /api/v1/ready`
-- **Description**: Returns `{ "ready": true }` once the HTTP service is available.
+- **Description**: Returns `{ "ready": true }` when initialization is complete and the database is usable. Returns 503 while unavailable.
 
 ### `GET /api/v1/status`
 
 Returns the existing `ready`, `db`, `sync`, and `metrics` fields, extended with
-current indexed DID statistics, index freshness, scope, and a bounded live sample
+current indexed DID statistics, index freshness, scope, the instance's writer or
+reader role, and a bounded live sample
 of Gatekeeper operational status. It does not enumerate or resolve Gatekeeper
 DIDs, replay histories, or start a metrics rebuild.
 
@@ -126,6 +156,7 @@ For example:
 {
   "ready": true,
   "db": "postgres",
+  "role": "writer",
   "sync": {
     "snapshotComplete": true,
     "snapshotCursor": "last-snapshot-cursor",
@@ -183,7 +214,8 @@ It does not change indexing request limits. An unavailable sample returns
 without removing the indexed DID counts or inventing zero-valued measurements.
 Old Gatekeeper status responses are unsupported until Gatekeeper is upgraded.
 Only allowed counters are relayed, not queued operation bodies or internal
-errors. Database failures return `500`. The endpoint uses normal rate limiting.
+errors. Database failures return `500`, or `503` when the database or schema is
+temporarily unavailable. The endpoint uses normal rate limiting.
 Only `/ready` is exempt by default. If an existing deployment explicitly lists
 `/api/v1/status` in `KC_SEARCH_SERVER_RATE_LIMIT_SKIP_PATHS`, remove it to apply
 the configured rate limit to status requests.

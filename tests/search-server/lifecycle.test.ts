@@ -1,5 +1,10 @@
 import { jest } from '@jest/globals';
+import { createRequire } from 'node:module';
 import { runService } from '../../services/search-server/src/lifecycle.ts';
+import { SearchUnavailableError } from '../../services/search-server/src/db/coordination.ts';
+
+// Bypass Jest's Pino mock so these assertions check the actual error serializer.
+const pino = createRequire(import.meta.url)('pino/pino.js') as typeof import('pino');
 
 const lifecycleEvents = ['SIGTERM', 'SIGINT', 'uncaughtException', 'unhandledRejection'] as const;
 let originalListeners: Record<string, ReturnType<typeof process.listeners>>;
@@ -57,7 +62,7 @@ describe('Search Server lifecycle', () => {
 
         expect(process.exit).toHaveBeenCalledTimes(1);
         expect(process.exit).toHaveBeenCalledWith(1);
-        expect(log.error).toHaveBeenCalledWith({ error: expect.any(Error) }, 'Unhandled exception caught');
+        expect(log.error).toHaveBeenCalledWith({ err: expect.any(Error) }, 'Unhandled exception caught');
     });
 
     it('exits non-zero when cleanup fails', async () => {
@@ -71,7 +76,7 @@ describe('Search Server lifecycle', () => {
         await shutdown();
 
         expect(process.exit).toHaveBeenCalledWith(1);
-        expect(log.error).toHaveBeenCalledWith({ error: expect.any(Error) }, 'Error during shutdown');
+        expect(log.error).toHaveBeenCalledWith({ err: expect.any(Error) }, 'Error during shutdown');
     });
 
     it('forces a non-zero exit when cleanup exceeds the shutdown deadline', async () => {
@@ -109,7 +114,33 @@ describe('Search Server lifecycle', () => {
 
         expect(cleanup).toHaveBeenCalledTimes(1);
         expect(process.exit).toHaveBeenCalledWith(1);
-        expect(log.error).toHaveBeenCalledWith({ error: expect.any(Error) }, '[search-server] Fatal error');
+        expect(log.error).toHaveBeenCalledWith({ err: expect.any(Error) }, '[search-server] Fatal error');
+    });
+
+    it.each([
+        ['schema incompatibility', new SearchUnavailableError('Unsupported existing Search schema'), { status: 503 }],
+        ['PostgreSQL failure', Object.assign(new Error('column does not exist'), { code: '42703' }), { code: '42703' }],
+    ] as const)('preserves startup error details in real logs for %s', async (_name, error, properties) => {
+        const records: string[] = [];
+        const output = pino({ base: null, timestamp: false }, { write: record => records.push(record) });
+        const cleanup = jest.fn(async () => {});
+        runService({
+            start: async () => { throw error; },
+            cleanup,
+            log: output,
+            timeoutMs: 10_000,
+        });
+
+        await new Promise(resolve => setImmediate(resolve));
+
+        expect(records).toHaveLength(1);
+        expect(JSON.parse(records[0])).toMatchObject({
+            level: 50,
+            msg: '[search-server] Fatal error',
+            err: { message: error.message, stack: error.stack, ...properties },
+        });
+        expect(cleanup).toHaveBeenCalledTimes(1);
+        expect(process.exit).toHaveBeenCalledWith(1);
     });
 
     it('does not treat an interrupted startup as fatal during shutdown', async () => {
@@ -151,6 +182,6 @@ describe('Search Server lifecycle', () => {
 
         expect(cleanup).toHaveBeenCalledTimes(1);
         expect(process.exit).toHaveBeenCalledWith(1);
-        expect(log.error).toHaveBeenCalledWith({ reason, promise }, 'Unhandled rejection caught');
+        expect(log.error).toHaveBeenCalledWith({ err: reason, promise }, 'Unhandled rejection caught');
     });
 });

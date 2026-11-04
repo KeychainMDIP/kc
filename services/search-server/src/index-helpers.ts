@@ -1,3 +1,4 @@
+import { readDatabase } from './db/db-utils.js';
 import type { Request } from "express";
 import { BlockList, isIP } from "net";
 
@@ -175,9 +176,10 @@ export function parseOptionalPositiveInteger(value: unknown, fieldName: string):
 }
 
 export async function getSearchStatus(didDb: DIDsDb, dbName: string, options?: SearchStatsOptions) {
-    return {
+    return readDatabase(didDb, async () => ({
         ready: true,
         db: dbName,
+        role: await didDb.getRole?.() ?? 'writer',
         ...await didDb.getStats(options),
-    };
+    }));
 }
