@@ -5,6 +5,7 @@ import DbJsonMemory from '@mdip/gatekeeper/db/json-memory';
 import HeliaClient from '@mdip/ipfs/helia';
 import type { LegacyWalletFile, StoredWallet } from '@mdip/keymaster/types';
 import { createTestKeymaster } from './testUtils.ts';
+import { KeymasterError } from '@mdip/common/errors';
 
 let ipfs: HeliaClient;
 let gatekeeper: Gatekeeper;
@@ -20,6 +21,98 @@ beforeEach(() => {
     cipher = new CipherNode();
 });
 afterEach(() => { jest.restoreAllMocks(); });
+
+it.each(['provider refusal', 'metadata refusal', 'metadata exception'])('preserves both wallets and signing keys after a bundle import %s', async failure => {
+    const { keymaster, store, providerStore } = createTestKeymaster(gatekeeper, cipher);
+    await keymaster.createId('Alice');
+    const replacement = createTestKeymaster(gatekeeper, cipher).keymaster;
+    await replacement.createId('Bob');
+    const bundle = await replacement.exportWalletBundle();
+    const metadata = await store.loadWallet();
+    const provider = await providerStore.loadWallet();
+    if (failure === 'provider refusal') {
+        jest.spyOn(providerStore, 'saveWallet').mockResolvedValueOnce(false);
+    } else if (failure === 'metadata refusal') {
+        jest.spyOn(store, 'saveWallet').mockResolvedValueOnce(false);
+    } else {
+        jest.spyOn(store, 'saveWallet').mockRejectedValueOnce(new Error('storage failed'));
+    }
+
+    await expect(keymaster.importWalletBundle(bundle)).rejects.toThrow(
+        failure === 'metadata exception' ? 'storage failed' : 'save wallet failed'
+    );
+    expect(await store.loadWallet()).toStrictEqual(metadata);
+    expect(await providerStore.loadWallet()).toStrictEqual(provider);
+    const restarted = createTestKeymaster(gatekeeper, cipher, { store, providerStore }).keymaster;
+    expect(await restarted.verifySignature(await restarted.addSignature({ message: 'still Alice' }))).toBe(true);
+});
+
+it.each(['malformed metadata', 'wrong provider type', 'wrong fingerprint'])('rejects a bundle with %s before writing either store', async invalid => {
+    const { keymaster, store, providerStore } = createTestKeymaster(gatekeeper, cipher);
+    await keymaster.createId('Alice');
+    const bundle = await keymaster.exportWalletBundle();
+    if (invalid === 'malformed metadata') bundle.keymaster.ids = null as any;
+    else if (invalid === 'wrong provider type') bundle.keymaster.provider.type = 'different';
+    else bundle.keymaster.provider.walletFingerprint = 'different';
+    const metadata = await store.loadWallet();
+    const provider = await providerStore.loadWallet();
+    const saveMetadata = jest.spyOn(store, 'saveWallet');
+    const saveProvider = jest.spyOn(providerStore, 'saveWallet');
+
+    await expect(keymaster.importWalletBundle(bundle)).rejects.toThrow();
+    expect(saveMetadata).not.toHaveBeenCalled();
+    expect(saveProvider).not.toHaveBeenCalled();
+    expect(await store.loadWallet()).toStrictEqual(metadata);
+    expect(await providerStore.loadWallet()).toStrictEqual(provider);
+});
+
+it.each(['malformed metadata', 'metadata storage failure'])('preserves the active wallet when DID recovery encounters %s', async failure => {
+    const { keymaster, store, providerStore } = createTestKeymaster(gatekeeper, cipher);
+    await keymaster.createId('Alice');
+    const metadata = await store.loadWallet();
+    const provider = await providerStore.loadWallet();
+    if (failure === 'malformed metadata') {
+        const bundle = await keymaster.exportWalletBundle();
+        bundle.keymaster.ids = null as any;
+        jest.spyOn(keymaster, 'resolveAsset').mockResolvedValueOnce({ backup: bundle });
+    } else {
+        jest.spyOn(keymaster, 'resolveAsset').mockResolvedValueOnce({ backup: structuredClone(metadata) });
+        jest.spyOn(store, 'saveWallet').mockResolvedValueOnce(false);
+    }
+
+    await expect(keymaster.recoverWallet('did:test:backup')).rejects.toThrow(
+        failure === 'malformed metadata' ? 'Invalid wallet data' : 'save wallet failed'
+    );
+    expect(await store.loadWallet()).toStrictEqual(metadata);
+    expect(await providerStore.loadWallet()).toStrictEqual(provider);
+    expect(await keymaster.verifySignature(await keymaster.addSignature({ message: 'still Alice' }))).toBe(true);
+});
+
+it('preserves wallet metadata when persisting a completed DID backup fails', async () => {
+    const { keymaster, store, providerStore } = createTestKeymaster(gatekeeper, cipher);
+    await keymaster.createId('Alice');
+    const metadata = await store.loadWallet();
+    const provider = await providerStore.loadWallet();
+    jest.spyOn(store, 'saveWallet').mockResolvedValueOnce(false);
+
+    await expect(keymaster.backupWallet()).rejects.toThrow('save wallet failed');
+    expect(await store.loadWallet()).toStrictEqual(metadata);
+    expect(await providerStore.loadWallet()).toStrictEqual(provider);
+    expect(await keymaster.verifySignature(await keymaster.addSignature({ message: 'still Alice' }))).toBe(true);
+});
+
+it.each([new Error('provider offline'), new KeymasterError('provider offline')])('preserves the active wallet when initialization encounters %s', async error => {
+    const { keymaster, store, providerStore, walletProvider } = createTestKeymaster(gatekeeper, cipher);
+    await keymaster.createId('Alice');
+    const metadata = await store.loadWallet();
+    const provider = await providerStore.loadWallet();
+    jest.spyOn(walletProvider, 'backupWallet').mockRejectedValueOnce(error);
+
+    await expect(keymaster.newWallet(undefined, true)).rejects.toBe(error);
+    expect(await store.loadWallet()).toStrictEqual(metadata);
+    expect(await providerStore.loadWallet()).toStrictEqual(provider);
+    expect(await keymaster.verifySignature(await keymaster.addSignature({ message: 'still Alice' }))).toBe(true);
+});
 
 it.each(['refusal', 'exception'])('preserves both wallet stores and signing keys after metadata replacement %s', async failure => {
     const { keymaster, store, providerStore, walletProvider } = createTestKeymaster(gatekeeper, cipher);

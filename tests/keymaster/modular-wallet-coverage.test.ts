@@ -198,6 +198,16 @@ async function makeLegacyV1Decrypted(
 }
 
 describe('Keymaster modular wallet coverage', () => {
+    it('rejects bundle export for non-mnemonic providers without changing metadata', async () => {
+        const provider = new DummyWalletProvider();
+        const metadata = await makeWalletFile(provider);
+        const store = new MemoryKeymasterStore(metadata);
+        const keymaster = new Keymaster({ gatekeeper, store, walletProvider: provider, cipher: cipherStub });
+
+        await expect(keymaster.exportWalletBundle()).rejects.toThrow('Wallet bundle requires MnemonicHdWalletProvider');
+        expect(await store.loadWallet()).toEqual(metadata);
+    });
+
     it('rejects seed bank operations for non-mnemonic providers', async () => {
         const provider = new DummyWalletProvider();
         const store = new MemoryKeymasterStore(await makeWalletFile(provider));
@@ -606,6 +616,101 @@ describe('MnemonicHdWalletProvider coverage', () => {
             nextAccount: 0,
             keys: {},
         } as any, true)).rejects.toThrow('Invalid parameter: wallet');
+    });
+
+    it.each([
+        ['missing encrypted mnemonic', { mnemonicEnc: undefined }],
+        ['invalid encryption fields', { mnemonicEnc: { salt: 1, iv: '', data: '' } }],
+        ['negative account counter', { nextAccount: -1 }],
+        ['unsafe account counter', { nextAccount: Number.MAX_SAFE_INTEGER + 1 }],
+        ['missing key map', { keys: null }],
+        ['array key map', { keys: [] }],
+        ['missing key state', { keys: { 'hd:0': null } }],
+        ['negative key version', { keys: { 'hd:0': { currentIndex: -1 } } }],
+        ['unreserved key account', { nextAccount: 0, keys: { 'hd:0': { currentIndex: 0 } } }],
+    ] as const)('rejects %s before replacing provider state', async (_description, invalid) => {
+        const cipher = new CipherNode();
+        const store = new ControlledProviderStore();
+        const provider = new MnemonicHdWalletProvider({ store, cipher, passphrase: PASSPHRASE });
+        await provider.newWallet();
+        const original = await provider.backupWallet();
+        const save = jest.spyOn(store, 'saveWallet');
+
+        await expect(provider.saveWallet({ ...original, ...invalid } as any, true)).rejects.toThrow('Invalid parameter: wallet');
+        expect(save).not.toHaveBeenCalled();
+        expect(await store.loadWallet()).toStrictEqual(original);
+        expect(await provider.backupWallet()).toStrictEqual(original);
+    });
+
+    it('preserves provider state when imported key derivation fails', async () => {
+        const cipher = new CipherNode();
+        const store = new ControlledProviderStore();
+        const provider = new MnemonicHdWalletProvider({ store, cipher, passphrase: PASSPHRASE });
+        await provider.newWallet();
+        const original = await provider.backupWallet();
+        const save = jest.spyOn(store, 'saveWallet');
+        const derive = jest.spyOn(cipher, 'generateHDKey').mockImplementationOnce(() => { throw new Error('derivation failed'); });
+
+        await expect(provider.saveWallet(original, true)).rejects.toThrow('Invalid parameter: wallet');
+        expect(save).not.toHaveBeenCalled();
+        expect(await provider.backupWallet()).toStrictEqual(original);
+        expect(await store.loadWallet()).toStrictEqual(original);
+        derive.mockRestore();
+    });
+
+    it('keeps existing signing keys when provider storage refuses a new wallet', async () => {
+        const cipher = new CipherNode();
+        const store = new ControlledProviderStore();
+        const provider = new MnemonicHdWalletProvider({ store, cipher, passphrase: PASSPHRASE });
+        await provider.newWallet();
+        const original = await provider.backupWallet();
+        store.queueSaveResult(false);
+
+        await expect(provider.newWallet(undefined, true)).rejects.toThrow('save wallet failed');
+        expect(await store.loadWallet()).toStrictEqual(original);
+        const digest = cipher.hashMessage('still active');
+        expect(cipher.verifySig(digest, await provider.signDigest('', digest), original.rootPublicJwk)).toBe(true);
+    });
+
+    it.each([NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])('rejects recovery index %s without changing registered keys', async index => {
+        const cipher = new CipherNode();
+        const store = new ControlledProviderStore();
+        const provider = new MnemonicHdWalletProvider({ store, cipher, passphrase: PASSPHRASE });
+        const created = await provider.createIdKey();
+        const original = await provider.backupWallet();
+
+        await expect(provider.recoverIdKey(created.keyRef, created.publicJwk, index)).rejects.toThrow('Invalid parameter: index');
+        expect(await provider.backupWallet()).toStrictEqual(original);
+        expect(await store.loadWallet()).toStrictEqual(original);
+    });
+
+    it('finds historical keys from base references and rejects unregistered versions', async () => {
+        const cipher = new CipherNode();
+        const store = new ControlledProviderStore();
+        const provider = new MnemonicHdWalletProvider({ store, cipher, passphrase: PASSPHRASE });
+        const created = await provider.createIdKey();
+        await provider.rotateKey(created.keyRef);
+        const original = await provider.backupWallet();
+
+        await expect(provider.findKeyRef('hd:0', created.publicJwk)).resolves.toBe(created.keyRef);
+        await expect(provider.findKeyRef('hd:0#2', created.publicJwk)).rejects.toThrow('Unknown keyRef');
+        expect(await store.loadWallet()).toStrictEqual(original);
+    });
+
+    it('reports rollback refusal and retains active keys after a metadata save fails', async () => {
+        const cipher = new CipherNode();
+        const store = new ControlledProviderStore();
+        const provider = new MnemonicHdWalletProvider({ store, cipher, passphrase: PASSPHRASE });
+        await provider.newWallet();
+        const original = await provider.backupWallet();
+        store.queueSaveResult(true);
+        store.queueSaveResult(false);
+
+        await expect(provider.newWallet(undefined, true, async () => {
+            throw new Error('metadata storage failed');
+        })).rejects.toThrow('Could not restore wallet provider after failed save');
+        const digest = cipher.hashMessage('still active');
+        expect(cipher.verifySig(digest, await provider.signDigest('', digest), original.rootPublicJwk)).toBe(true);
     });
 
     it('saveWallet rejects encrypted provider state before committing it', async () => {
