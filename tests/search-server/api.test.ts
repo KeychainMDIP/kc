@@ -339,6 +339,24 @@ describe('Search Server HTTP routes', () => {
         expect(query).toHaveBeenCalledWith(where, 'did:mdip', undefined);
     });
 
+    it('searches documents without ASCII case sensitivity', async () => {
+        const did = 'did:mdip:case-insensitive-search';
+        const event = createSeedEvent(did);
+        event.operation.mdip!.prefix = 'did:mdip';
+        await seedDID(db, did, {
+            events: [event],
+            doc: { didDocumentData: { name: 'Alice Smith' } },
+        });
+        await boot();
+
+        for (const q of ['alice', 'Alice', 'ALICE', 'aLiCe']) {
+            expect(await request(`/search?${new URLSearchParams({ q })}`)).toEqual({
+                status: 200,
+                body: { dids: [did], nextCursor: null },
+            });
+        }
+    });
+
     it('reports PostgreSQL search timeouts as unavailable', async () => {
         const error = Object.assign(new Error('canceling statement due to statement timeout'), { code: '57014' });
         jest.spyOn(db, 'searchDocs').mockRejectedValue(error);

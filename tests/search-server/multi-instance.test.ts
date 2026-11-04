@@ -297,7 +297,7 @@ describePostgres('Search Server PostgreSQL multi-instance coordination', () => {
 
     it('does not deadlock a concurrent trigram build with a contending old writer', async () => {
         const a = await open();
-        await raw.query('DROP INDEX CONCURRENTLY idx_did_docs_doc_trgm');
+        await raw.query('DROP INDEX CONCURRENTLY idx_did_docs_search_text_trgm');
         const b = new Postgres(url);
         adapters.push(b);
         const entered = deferred();
@@ -322,7 +322,7 @@ describePostgres('Search Server PostgreSQL multi-instance coordination', () => {
         resume.resolve();
         await takeover;
         expect(await write).toBeInstanceOf(IndexOwnershipLostError);
-        expect((await raw.query("SELECT indisvalid FROM pg_index WHERE indexrelid='idx_did_docs_doc_trgm'::regclass")).rows[0].indisvalid).toBe(true);
+        expect((await raw.query("SELECT indisvalid FROM pg_index WHERE indexrelid='idx_did_docs_search_text_trgm'::regclass")).rows[0].indisvalid).toBe(true);
     });
 
     it('bounds schema-lock waits without losing the connection or leaking a lock', async () => {

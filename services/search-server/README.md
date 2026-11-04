@@ -69,14 +69,13 @@ The search database is a rebuildable index and this service does not migrate
 older table layouts. Reset an existing search-server database before deploying
 a release that changes its schema.
 
-PostgreSQL startup installs the `pg_trgm` extension and creates a concurrent
-GIN index for document text searches when it is missing. The first startup on
-an existing database waits for that index build to finish while compatible HTTP readers remain available. Index writes wait for
-startup to complete. This index addition does not require a database reset.
-Concurrent Search Server startups serialize this setup through PostgreSQL.
-Allow additional database storage and some indexing work when DID documents
-are synchronized. The PostgreSQL user must be permitted to create the extension
-and index.
+PostgreSQL stores a generated lowercase copy of each document's JSONB-rendered
+text in `did_docs.search_text` and maintains one trigram GIN index on that
+column. Searches use `LIKE` with a lowercased query, avoiding repeated JSON
+serialization and case folding during searches. PostgreSQL generates the text
+on document inserts and updates; the indexer still sends only the original
+document. This trades additional database storage and write work for faster
+searches.
 
 ### Multiple Search Server instances
 
@@ -168,11 +167,15 @@ reclassify stored DIDs and does not apply to historical metric snapshots.
     - `limit` (optional, default `50`, maximum `500`)
     - `cursor` (optional, the `nextCursor` returned by the preceding page)
 - **Notes**: Search terms are literal. SQL wildcard characters `%` and `_` do
-  not broaden the search. Terms shorter than three Unicode characters are
-  rejected because PostgreSQL's trigram index cannot serve them efficiently.
-  Use structured endpoints for short values. Results are ordered by effective
-  DID. Pagination limits the response size but does not avoid the complete text
-  match performed by PostgreSQL's materialized query.
+  not broaden the search. Matching is case-insensitive for ASCII letters on
+  every database adapter; non-ASCII case equivalence depends on the adapter and
+  PostgreSQL collation. Terms shorter than three Unicode characters are rejected
+  because PostgreSQL's trigram index cannot serve them efficiently. Use
+  structured endpoints for short values. Results are ordered by effective DID.
+  PostgreSQL probes a capped set of text matches. Small searches use that complete
+  match set; broad searches check documents in effective-DID order until the page
+  is filled or candidates are exhausted. Scope and cursor filters apply before
+  pagination, and the statement timeout still bounds expensive searches.
 - **Returns**:
     - `200 OK` + `{ "dids": [...], "nextCursor": "did:..." }`.
       `nextCursor` is `null` on the final page.

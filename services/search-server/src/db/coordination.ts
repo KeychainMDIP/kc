@@ -43,4 +43,4 @@ export const SEARCH_VIEWS = [
     'published_credentials_classified', 'did_classifications_effective', 'did_reference_prefixes',
 ];
 
-export const SEARCH_LAYOUT_HASH = 'fec11b794d5c28a976736c6385635a02b7c89426080c41c432ca77b1bdd07987';
+export const SEARCH_LAYOUT_HASH = '46e7b9ada313bc9fb97ee6c705e8b69854d716cfb599a9db9fcf5eaf03b88ca3';

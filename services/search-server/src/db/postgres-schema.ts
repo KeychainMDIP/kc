@@ -32,7 +32,8 @@ export const SEARCH_SCHEMA_SQL = `
 
             CREATE TABLE IF NOT EXISTS did_docs (
                 did TEXT PRIMARY KEY,
-                doc JSONB NOT NULL
+                doc JSONB NOT NULL,
+                search_text TEXT GENERATED ALWAYS AS (lower(doc::text)) STORED
             );
 
             CREATE TABLE IF NOT EXISTS blocks (
