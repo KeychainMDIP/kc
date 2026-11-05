@@ -22,11 +22,11 @@ const keymasterSchemas = {
     },
     WalletId: {
         type: 'object',
-        required: ['did', 'account', 'index'],
+        required: ['did', 'keyRef'],
         properties: {
             did: { type: 'string' },
-            account: { type: 'integer' },
-            index: { type: 'integer' },
+            keyRef: { type: 'string' },
+            previousKeyRef: { type: 'string' },
             held: { type: 'array', items: { type: 'string' } },
             owned: { type: 'array', items: { type: 'string' } },
             dmail: { type: 'object', additionalProperties: true },
@@ -36,23 +36,34 @@ const keymasterSchemas = {
     },
     Wallet: {
         type: 'object',
-        required: ['version', 'seed', 'counter', 'ids'],
+        required: ['version', 'provider', 'ids'],
         properties: {
-            version: { type: 'integer', enum: [1] },
-            seed: {
+            version: { type: 'integer', enum: [2] },
+            provider: {
                 type: 'object',
-                required: ['mnemonicEnc'],
+                required: ['type', 'walletFingerprint'],
                 properties: {
-                    mnemonicEnc: { $ref: '#/components/schemas/EncryptedMnemonic' },
+                    type: { type: 'string' },
+                    walletFingerprint: { type: 'string' },
                 },
             },
-            counter: { type: 'integer' },
             ids: {
                 type: 'object',
                 additionalProperties: { $ref: '#/components/schemas/WalletId' },
             },
             current: { type: 'string' },
             names: { type: 'object', additionalProperties: { type: 'string' } },
+            backupDid: { type: 'string' },
+        },
+        additionalProperties: true,
+    },
+    LegacyWalletId: {
+        type: 'object',
+        required: ['did', 'account', 'index'],
+        properties: {
+            did: { type: 'string' },
+            account: { type: 'integer' },
+            index: { type: 'integer' },
         },
         additionalProperties: true,
     },
@@ -73,7 +84,7 @@ const keymasterSchemas = {
     },
     LegacyWallet: {
         type: 'object',
-        description: 'Legacy v0 wallet accepted for automatic migration to v1.',
+        description: 'Legacy v0 wallet accepted for automatic migration to v2.',
         required: ['seed', 'counter', 'ids'],
         properties: {
             version: { type: 'integer', enum: [0] },
@@ -95,8 +106,25 @@ const keymasterSchemas = {
             counter: { type: 'integer' },
             ids: {
                 type: 'object',
-                additionalProperties: { $ref: '#/components/schemas/WalletId' },
+                additionalProperties: { $ref: '#/components/schemas/LegacyWalletId' },
             },
+            current: { type: 'string' },
+            names: { type: 'object', additionalProperties: { type: 'string' } },
+        },
+        additionalProperties: true,
+    },
+    LegacyDecryptedWallet: {
+        type: 'object',
+        required: ['version', 'seed', 'counter', 'ids'],
+        properties: {
+            version: { type: 'integer', enum: [1] },
+            seed: {
+                type: 'object',
+                required: ['mnemonicEnc'],
+                properties: { mnemonicEnc: { $ref: '#/components/schemas/EncryptedMnemonic' } },
+            },
+            counter: { type: 'integer' },
+            ids: { type: 'object', additionalProperties: { $ref: '#/components/schemas/LegacyWalletId' } },
             current: { type: 'string' },
             names: { type: 'object', additionalProperties: { type: 'string' } },
         },
@@ -107,6 +135,7 @@ const keymasterSchemas = {
             { $ref: '#/components/schemas/Wallet' },
             { $ref: '#/components/schemas/EncryptedWallet' },
             { $ref: '#/components/schemas/LegacyWallet' },
+            { $ref: '#/components/schemas/LegacyDecryptedWallet' },
         ],
     },
 };

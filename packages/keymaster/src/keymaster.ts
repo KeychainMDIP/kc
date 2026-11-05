@@ -10,8 +10,8 @@ import {
     GatekeeperInterface,
     MdipDocument,
     DocumentMetadata,
-    ResolveDIDOptions,
     Operation,
+    ResolveDIDOptions,
 } from '@mdip/gatekeeper/types';
 import {
     Challenge,
@@ -35,6 +35,8 @@ import {
     IssueCredentialsOptions,
     KeymasterInterface,
     KeymasterOptions,
+    LegacyIDInfo,
+    MdipWalletBundle,
     NoticeMessage,
     Poll,
     PollResults,
@@ -44,28 +46,28 @@ import {
     StoredWallet,
     VerifiableCredential,
     ViewPollResult,
-    WalletBase,
     WalletFile,
-    WalletEncFile,
+    KeymasterStore,
+    WalletProvider,
+    WalletProviderKey,
     SearchEngine,
-    Seed,
 } from '@mdip/keymaster/types';
 import {
+    isV2Wallet,
     isV1WithEnc,
     isV1Decrypted,
     isLegacyV0,
     isValidIDInfo,
-    isValidWalletPayload,
+    isValidLegacyIDInfo,
 } from './db/typeGuards.js';
+import MnemonicHdWalletProvider from './provider/mnemonic-hd.js';
 import {
     Cipher,
-    EcdsaJwkPair,
     EcdsaJwkPrivate,
-    EcdsaJwkPublic,
+    EcdsaJwkPublic
 } from '@mdip/cipher/types';
 import { isValidDID } from '@mdip/ipfs/utils';
 import { copyJSON } from '@mdip/common/utils';
-import { decMnemonic, encMnemonic } from "./encryption.js";
 
 const DefaultSchema = {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -104,9 +106,9 @@ export enum NoticeTags {
 }
 
 export default class Keymaster implements KeymasterInterface {
-    private readonly passphrase: string;
     private gatekeeper: GatekeeperInterface;
-    private db: WalletBase;
+    private store: KeymasterStore;
+    private walletProvider: WalletProvider;
     private cipher: Cipher;
     private searchEngine: SearchEngine | undefined;
     private readonly defaultRegistry: string;
@@ -115,16 +117,24 @@ export default class Keymaster implements KeymasterInterface {
     private readonly maxNameLength: number;
     private readonly maxDataLength: number;
     private _walletCache?: WalletFile;
-    private _walletLock: Promise<void> = Promise.resolve();
-    private _hdkeyCache?: ReturnType<Cipher['generateHDKey']>;
-    private _hdkeyCacheSeed?: string;
+    private _walletMutationLock: Promise<void> = Promise.resolve();
 
     constructor(options: KeymasterOptions) {
         if (!options || !options.gatekeeper || !options.gatekeeper.createDID) {
             throw new InvalidParameterError('options.gatekeeper');
         }
-        if (!options.wallet || !options.wallet.loadWallet || !options.wallet.saveWallet) {
-            throw new InvalidParameterError('options.wallet');
+        if (!options.store || !options.store.loadWallet || !options.store.saveWallet) {
+            throw new InvalidParameterError('options.store');
+        }
+        if (!options.walletProvider ||
+            !options.walletProvider.type ||
+            !options.walletProvider.getFingerprint ||
+            !options.walletProvider.resetWallet ||
+            !options.walletProvider.createIdKey ||
+            !options.walletProvider.signDigest ||
+            !options.walletProvider.encrypt ||
+            !options.walletProvider.decrypt) {
+            throw new InvalidParameterError('options.walletProvider');
         }
         if (!options.cipher || !options.cipher.verifySig) {
             throw new InvalidParameterError('options.cipher');
@@ -132,13 +142,9 @@ export default class Keymaster implements KeymasterInterface {
         if (options.search && !options.search.search) {
             throw new InvalidParameterError('options.search');
         }
-        if (!options.passphrase) {
-            throw new InvalidParameterError('options.passphrase');
-        }
-
-        this.passphrase = options.passphrase;
         this.gatekeeper = options.gatekeeper;
-        this.db = options.wallet;
+        this.store = options.store;
+        this.walletProvider = options.walletProvider;
         this.cipher = options.cipher;
         this.searchEngine = options.search;
 
@@ -153,9 +159,66 @@ export default class Keymaster implements KeymasterInterface {
         return this.gatekeeper.listRegistries();
     }
 
+    private async getWalletProviderIdentity() {
+        return {
+            type: this.walletProvider.type,
+            walletFingerprint: await this.walletProvider.getFingerprint(),
+        };
+    }
+
+    private isMnemonicHdWalletProvider(provider: WalletProvider): provider is MnemonicHdWalletProvider {
+        return provider instanceof MnemonicHdWalletProvider;
+    }
+
+    private supportsKeyRotation(
+        provider: WalletProvider
+    ): provider is WalletProvider & { rotateKey(keyRef: string): Promise<WalletProviderKey> } {
+        return 'rotateKey' in provider && typeof provider.rotateKey === 'function';
+    }
+
+    private isMdipWalletBundle(bundle: unknown): bundle is MdipWalletBundle {
+        return !!bundle
+            && typeof bundle === 'object'
+            && 'version' in bundle
+            && 'type' in bundle
+            && 'keymaster' in bundle
+            && 'provider' in bundle
+            && (bundle as MdipWalletBundle).version === 1
+            && (bundle as MdipWalletBundle).type === 'mdip-wallet-bundle';
+    }
+
+    private async normalizeStoredWallet(stored: StoredWallet, persist?: (wallet: WalletFile) => Promise<void>): Promise<WalletFile> {
+        if (isV2Wallet(stored)) {
+            await this.assertWalletMatchesProvider(stored);
+            if (this.isMnemonicHdWalletProvider(this.walletProvider)) {
+                const provider = await this.walletProvider.backupWallet();
+                this.walletProvider.assertKeyRefs(provider, Object.values(stored.ids).map(id => id.keyRef));
+            }
+            await persist?.(stored);
+            return stored;
+        }
+
+        if (isLegacyV0(stored) || isV1Decrypted(stored) || isV1WithEnc(stored)) {
+            if (!this.isMnemonicHdWalletProvider(this.walletProvider)) {
+                throw new KeymasterError('Legacy wallet migration requires MnemonicHdWalletProvider.');
+            }
+
+            return this.walletProvider.migrateLegacyWallet(stored, persist);
+        }
+
+        throw new KeymasterError((stored as { version?: number })?.version === 2 ? 'Invalid wallet data.' : 'Unsupported wallet version.');
+    }
+
+    private async assertWalletMatchesProvider(wallet: WalletFile): Promise<void> {
+        const provider = await this.getWalletProviderIdentity();
+        if (wallet.provider.type !== provider.type || wallet.provider.walletFingerprint !== provider.walletFingerprint) {
+            throw new KeymasterError('Wallet provider does not match stored metadata.');
+        }
+    }
+
     private runWalletExclusive<T>(fn: () => Promise<T>): Promise<T> {
-        const chained = this._walletLock.then(fn, fn);
-        this._walletLock = chained.then(() => undefined, () => undefined);
+        const chained = this._walletMutationLock.then(fn, fn);
+        this._walletMutationLock = chained.then(() => undefined, () => undefined);
         return chained;
     }
 
@@ -173,15 +236,11 @@ export default class Keymaster implements KeymasterInterface {
                 return;
             }
 
-            const hdkey = await this.getHDKeyFromCacheOrMnemonic(decrypted);
-            const reenc = await this.encryptWalletForStorage(decrypted, hdkey);
-            const ok = await this.db.saveWallet(reenc, true);
+            const ok = await this.store.saveWallet(decrypted, true);
             if (!ok) {
                 throw new KeymasterError('save wallet failed');
             }
 
-            this._hdkeyCache = hdkey;
-            this._hdkeyCacheSeed = JSON.stringify(reenc.seed.mnemonicEnc);
             this._walletCache = decrypted;
         });
     }
@@ -191,16 +250,19 @@ export default class Keymaster implements KeymasterInterface {
             return this._walletCache;
         }
 
-        const stored = await this.db.loadWallet() as WalletFile | null;
+        const stored = await this.store.loadWallet();
 
         if (!stored) {
-            await this.newWalletUnlocked();
-            return this._walletCache!;
+            this._walletCache = await this.newWalletUnlocked();
+            return this._walletCache;
         }
 
-        const upgraded: WalletFile = await this.upgradeWallet(stored);
-        this._walletCache = await this.decryptWallet(upgraded);
-        return this._walletCache;
+        if (isV2Wallet(stored)) {
+            this._walletCache = await this.normalizeStoredWallet(stored);
+        } else if (!await this.saveWalletUnlocked(stored, true)) {
+            throw new KeymasterError('save wallet failed');
+        }
+        return this._walletCache!;
     }
 
     async loadWallet(): Promise<WalletFile> {
@@ -214,17 +276,24 @@ export default class Keymaster implements KeymasterInterface {
         wallet: StoredWallet,
         overwrite: boolean
     ): Promise<boolean> {
-        const upgraded: WalletFile = await this.upgradeWallet(wallet, false);
-        const toStore: WalletEncFile = await this.encryptWallet(upgraded);
-        const { wallet: decrypted, hdkey } = await this.decryptWalletFromStorage(toStore);
-
-        const ok = await this.db.saveWallet(toStore, overwrite);
-        if (ok) {
-            this._hdkeyCache = hdkey;
-            this._hdkeyCacheSeed = JSON.stringify(toStore.seed.mnemonicEnc);
-            this._walletCache = decrypted;
+        if (!overwrite && await this.store.loadWallet()) {
+            return false;
         }
-        return ok;
+        const refused = new KeymasterError('save wallet failed');
+        try {
+            const normalized = await this.normalizeStoredWallet(wallet, async candidate => {
+                if (!await this.store.saveWallet(candidate, overwrite)) {
+                    throw refused;
+                }
+            });
+            this._walletCache = normalized;
+            return true;
+        } catch (error) {
+            if (error === refused) {
+                return false;
+            }
+            throw error;
+        }
     }
 
     async saveWallet(
@@ -238,47 +307,49 @@ export default class Keymaster implements KeymasterInterface {
         mnemonic?: string,
         overwrite = false
     ): Promise<WalletFile> {
-        try {
-            if (!mnemonic) {
-                mnemonic = this.cipher.generateMnemonic();
-            }
-
-            // Validate without replacing the active wallet's cached key.
-            this.cipher.generateHDKey(mnemonic);
-        } catch {
-            throw new InvalidParameterError('mnemonic');
-        }
-
-        const mnemonicEnc = await encMnemonic(mnemonic, this.passphrase);
-        const wallet: WalletFile = {
-            version: 1,
-            seed: { mnemonicEnc },
-            counter: 0,
-            ids: {}
-        };
-
-        const ok = await this.saveWalletUnlocked(wallet, overwrite)
-        if (!ok) {
+        if (!overwrite && await this.store.loadWallet()) {
             throw new KeymasterError('save wallet failed');
         }
+        if (this.isMnemonicHdWalletProvider(this.walletProvider)) {
+            let initialized = false;
+            try {
+                await this.walletProvider.backupWallet();
+                initialized = true;
+            } catch (error) {
+                if (!(error instanceof KeymasterError) || error.message !== 'Keymaster: Wallet provider not initialized.') {
+                    throw error;
+                }
+            }
+            if (!initialized || overwrite || mnemonic) {
+                let wallet!: WalletFile;
+                await this.walletProvider.newWallet(mnemonic, overwrite, async walletFingerprint => {
+                    wallet = { version: 2, provider: { type: this.walletProvider.type, walletFingerprint }, ids: {} };
+                    if (!await this.store.saveWallet(wallet, overwrite)) {
+                        throw new KeymasterError('save wallet failed');
+                    }
+                });
+                this._walletCache = wallet;
+                return wallet;
+            }
+        } else if (mnemonic) {
+            throw new KeymasterError('Wallet provider does not support mnemonic initialization.');
+        } else {
+            await this.walletProvider.resetWallet(overwrite);
+        }
 
+        const wallet: WalletFile = {
+            version: 2,
+            provider: await this.getWalletProviderIdentity(),
+            ids: {},
+        };
+        if (!await this.saveWalletUnlocked(wallet, overwrite)) {
+            throw new KeymasterError('save wallet failed');
+        }
         return wallet;
     }
 
-    async newWallet(
-        mnemonic?: string,
-        overwrite = false
-    ): Promise<WalletFile> {
+    async newWallet(mnemonic?: string, overwrite = false): Promise<WalletFile> {
         return this.runWalletExclusive(() => this.newWalletUnlocked(mnemonic, overwrite));
-    }
-
-    async decryptMnemonic(): Promise<string> {
-        const wallet = await this.loadWallet();
-        return this.getMnemonicForDerivation(wallet);
-    }
-
-    async getMnemonicForDerivation(wallet: WalletFile): Promise<string> {
-        return decMnemonic(wallet.seed.mnemonicEnc!, this.passphrase!);
     }
 
     async checkWallet(): Promise<CheckWalletResult> {
@@ -287,9 +358,6 @@ export default class Keymaster implements KeymasterInterface {
         let checked = 0;
         let invalid = 0;
         let deleted = 0;
-
-        // Validate keys
-        await this.resolveSeedBank();
 
         for (const name of Object.keys(wallet.ids)) {
             try {
@@ -427,7 +495,12 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     async resolveSeedBank(): Promise<MdipDocument> {
-        const keypair = await this.hdKeyPair();
+        if (!this.isMnemonicHdWalletProvider(this.walletProvider)) {
+            throw new KeymasterError('Seed bank requires MnemonicHdWalletProvider.');
+        }
+
+        const provider = await this.walletProvider.backupWallet();
+        const publicJwk = provider.rootPublicJwk;
 
         const operation: Operation = {
             type: "create",
@@ -437,11 +510,11 @@ export default class Keymaster implements KeymasterInterface {
                 type: "agent",
                 registry: this.defaultRegistry,
             },
-            publicJwk: keypair.publicJwk,
+            publicJwk,
         };
 
         const msgHash = this.cipher.hashJSON(operation);
-        const signature = this.cipher.signHash(msgHash, keypair.privateJwk);
+        const signature = await this.walletProvider.signDigest('', msgHash);
         const signed: Operation = {
             ...operation,
             signature: {
@@ -449,13 +522,16 @@ export default class Keymaster implements KeymasterInterface {
                 hash: msgHash,
                 value: signature
             }
-        }
+        };
         const did = await this.gatekeeper.createDID(signed);
         return this.gatekeeper.resolveDID(did);
     }
 
     async updateSeedBank(doc: MdipDocument): Promise<boolean> {
-        const keypair = await this.hdKeyPair();
+        if (!this.isMnemonicHdWalletProvider(this.walletProvider)) {
+            throw new KeymasterError('Seed bank requires MnemonicHdWalletProvider.');
+        }
+
         const did = doc.didDocument?.id;
         if (!did) {
             throw new InvalidParameterError('seed bank missing DID');
@@ -471,7 +547,7 @@ export default class Keymaster implements KeymasterInterface {
         };
 
         const msgHash = this.cipher.hashJSON(operation);
-        const signature = this.cipher.signHash(msgHash, keypair.privateJwk);
+        const signature = await this.walletProvider.signDigest('', msgHash);
         const signed = {
             ...operation,
             signature: {
@@ -482,108 +558,202 @@ export default class Keymaster implements KeymasterInterface {
             }
         };
 
-        return await this.gatekeeper.updateDID(signed);
+        return this.gatekeeper.updateDID(signed);
     }
 
     async backupWallet(registry = this.defaultRegistry, wallet?: WalletFile): Promise<string> {
-
-        if (!wallet) {
-            wallet = await this.loadWallet();
+        const walletProvider = this.walletProvider;
+        if (!this.isMnemonicHdWalletProvider(walletProvider)) {
+            wallet ??= await this.loadWallet();
+            const backupDID = await this.createAsset({ backup: wallet }, { registry });
+            await this.mutateWallet((current) => {
+                current.backupDid = backupDID;
+            });
+            return backupDID;
         }
 
-        const keypair = await this.hdKeyPair();
-        const seedBank = await this.resolveSeedBank();
-        const msg = JSON.stringify(wallet);
-        const backup = this.cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, msg);
-
-        const operation: Operation = {
-            type: "create",
-            created: new Date().toISOString(),
-            mdip: {
+        return this.runWalletExclusive(async () => {
+            const current = await this.loadWalletUnlocked();
+            wallet ??= current;
+            const provider = await walletProvider.backupWallet();
+            const bundle: MdipWalletBundle = {
                 version: 1,
-                type: "asset",
-                registry: registry,
-                ...(this.didPrefix ? { prefix: this.didPrefix } : {}),
-            },
-            controller: seedBank.didDocument?.id,
-            data: { backup: backup },
-        };
+                type: 'mdip-wallet-bundle',
+                keymaster: wallet,
+                provider,
+            };
+            const seedBank = await this.resolveSeedBank();
+            const backup = await this.walletProvider.encrypt('', provider.rootPublicJwk, JSON.stringify(bundle));
 
-        const msgHash = this.cipher.hashJSON(operation);
-        const signature = this.cipher.signHash(msgHash, keypair.privateJwk);
+            const operation: Operation = {
+                type: "create",
+                created: new Date().toISOString(),
+                mdip: {
+                    version: 1,
+                    type: "asset",
+                    registry,
+                    ...(this.didPrefix ? { prefix: this.didPrefix } : {}),
+                },
+                controller: seedBank.didDocument?.id,
+                data: { backup },
+            };
 
-        const signed: Operation = {
-            ...operation,
-            signature: {
-                signer: seedBank.didDocument?.id,
-                signed: new Date().toISOString(),
-                hash: msgHash,
-                value: signature,
+            const msgHash = this.cipher.hashJSON(operation);
+            const signature = await this.walletProvider.signDigest('', msgHash);
+            const signed: Operation = {
+                ...operation,
+                signature: {
+                    signer: seedBank.didDocument?.id,
+                    signed: new Date().toISOString(),
+                    hash: msgHash,
+                    value: signature,
+                }
+            };
+
+            const backupDID = await this.gatekeeper.createDID(signed);
+
+            if (!seedBank.didDocumentData || typeof seedBank.didDocumentData !== 'object' || Array.isArray(seedBank.didDocumentData)) {
+                seedBank.didDocumentData = {};
             }
-        };
 
-        const backupDID = await this.gatekeeper.createDID(signed);
-
-        if (seedBank.didDocumentData && typeof seedBank.didDocumentData === 'object' && !Array.isArray(seedBank.didDocumentData)) {
             const data = seedBank.didDocumentData as { wallet?: string };
             data.wallet = backupDID;
             await this.updateSeedBank(seedBank);
-        }
 
-        return backupDID;
+            if (!await this.saveWalletUnlocked({ ...current, backupDid: backupDID }, true)) {
+                throw new KeymasterError('save wallet failed');
+            }
+
+            return backupDID;
+        });
     }
 
     async recoverWallet(did?: string): Promise<WalletFile> {
-        if (!did) {
+        return this.runWalletExclusive(() => this.recoverWalletUnlocked(did));
+    }
+
+    private async recoverWalletUnlocked(did?: string): Promise<WalletFile> {
+        await this.loadWalletUnlocked();
+        if (!did && this.isMnemonicHdWalletProvider(this.walletProvider)) {
             const seedBank = await this.resolveSeedBank();
             if (seedBank.didDocumentData && typeof seedBank.didDocumentData === 'object' && !Array.isArray(seedBank.didDocumentData)) {
                 const data = seedBank.didDocumentData as { wallet?: string };
                 did = data.wallet;
             }
-            if (!did) {
-                throw new InvalidParameterError('No backup DID found');
-            }
         }
 
-        const keypair = await this.hdKeyPair();
+        if (!did) {
+            const wallet = await this.loadWallet();
+            did = wallet.backupDid;
+        }
+
+        if (!did) {
+            throw new InvalidParameterError('No backup DID found');
+        }
+
         const data = await this.resolveAsset(did);
         if (!data) {
             throw new InvalidParameterError('No asset data found');
         }
 
-        const castData = data as { backup?: string };
+        const castData = data as { backup?: WalletFile | string };
 
-        if (typeof castData.backup !== 'string') {
-            throw new InvalidParameterError('Asset "backup" is missing or not a string');
+        if (castData.backup == null) {
+            throw new InvalidParameterError('Asset "backup" is missing');
         }
 
-        const backup = this.cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, castData.backup);
-        let wallet = JSON.parse(backup);
+        let backup: StoredWallet | MdipWalletBundle;
+        if (typeof castData.backup === 'string') {
+            try {
+                backup = JSON.parse(castData.backup);
+            } catch {
+                if (!this.isMnemonicHdWalletProvider(this.walletProvider)) {
+                    throw new InvalidParameterError('Asset "backup" is not valid JSON');
+                }
 
-        if (isV1Decrypted(wallet)) {
-            const mnemonic = await this.decryptMnemonic();
-            // Backup might have a different mnemonic passphase so re-encrypt
-            wallet.seed.mnemonicEnc = await encMnemonic(mnemonic, this.passphrase);
+                const providerState = await this.walletProvider.backupWallet();
+                const plaintext = await this.walletProvider.decrypt('', providerState.rootPublicJwk, castData.backup);
+                backup = JSON.parse(plaintext);
+            }
+        } else {
+            backup = castData.backup;
         }
 
-        await this.mutateWallet(async (current) => {
-            // Validate and decrypt the backup before replacing the candidate.
-            // mutateWallet performs the only recovery write.
-            wallet = await this.upgradeWallet(wallet, false);
-            wallet = await this.decryptWallet(wallet);
-
-            // Clear all existing properties from the current wallet
-            // This ensures a clean slate before restoring the recovered wallet
-            for (const k in current) {
-                delete current[k as keyof StoredWallet];
+        if (this.isMdipWalletBundle(backup)) {
+            if (!this.isMnemonicHdWalletProvider(this.walletProvider)) {
+                throw new InvalidParameterError('Asset "backup" is not valid metadata');
             }
 
-            // Copy all properties from the recovered wallet into the cleared current wallet
-            // This effectively replaces the current wallet with the recovered one
-            Object.assign(current, wallet);
-        });
+            if (!isV2Wallet(backup.keymaster)) {
+                throw new KeymasterError('Invalid wallet data.');
+            }
+            await this.assertWalletMatchesProvider(backup.keymaster);
 
-        return this.loadWallet();
+            const currentProvider = await this.walletProvider.backupWallet();
+            const provider = {
+                ...backup.provider,
+                rootPublicJwk: currentProvider.rootPublicJwk,
+                mnemonicEnc: currentProvider.mnemonicEnc,
+            };
+
+            const recovered = structuredClone(backup.keymaster);
+            recovered.backupDid = did;
+            this.walletProvider.assertKeyRefs(provider, Object.values(recovered.ids).map(id => id.keyRef));
+            const providerOk = await this.walletProvider.saveWallet(provider, true, async () => {
+                if (!await this.store.saveWallet(recovered, true)) {
+                    throw new KeymasterError('save wallet failed');
+                }
+            });
+            if (!providerOk) {
+                throw new KeymasterError('save wallet failed');
+            }
+            this._walletCache = recovered;
+            return recovered;
+        }
+
+        if (isV1Decrypted(backup) && this.isMnemonicHdWalletProvider(this.walletProvider)) {
+            const providerState = await this.walletProvider.backupWallet();
+            backup.seed.mnemonicEnc = providerState.mnemonicEnc;
+        }
+
+        if (!await this.saveWalletUnlocked({ ...backup, backupDid: did }, true)) {
+            throw new KeymasterError('save wallet failed');
+        }
+        return this._walletCache!;
+    }
+
+    async exportWalletBundle(): Promise<MdipWalletBundle> {
+        return this.runWalletExclusive(async () => {
+            const keymaster = await this.loadWalletUnlocked();
+            if (!this.isMnemonicHdWalletProvider(this.walletProvider)) {
+                throw new KeymasterError('Wallet bundle requires MnemonicHdWalletProvider.');
+            }
+            return { version: 1, type: 'mdip-wallet-bundle', keymaster: structuredClone(keymaster), provider: await this.walletProvider.backupWallet() };
+        });
+    }
+
+    async importWalletBundle(bundle: MdipWalletBundle): Promise<WalletFile> {
+        return this.runWalletExclusive(async () => {
+            if (!this.isMdipWalletBundle(bundle) || !isV2Wallet(bundle.keymaster)
+                || !this.isMnemonicHdWalletProvider(this.walletProvider)) {
+                throw new InvalidParameterError('bundle');
+            }
+            const fingerprint = await this.walletProvider.getFingerprintForWallet(bundle.provider);
+            if (bundle.keymaster.provider.type !== this.walletProvider.type
+                || bundle.keymaster.provider.walletFingerprint !== fingerprint) {
+                throw new KeymasterError('Wallet provider does not match stored metadata.');
+            }
+            this.walletProvider.assertKeyRefs(bundle.provider, Object.values(bundle.keymaster.ids).map(id => id.keyRef));
+            if (!await this.walletProvider.saveWallet(bundle.provider, true, async () => {
+                if (!await this.store.saveWallet(bundle.keymaster, true)) {
+                    throw new KeymasterError('save wallet failed');
+                }
+            })) {
+                throw new KeymasterError('save wallet failed');
+            }
+            this._walletCache = bundle.keymaster;
+            return this._walletCache!;
+        });
     }
 
     async listIds(): Promise<string[]> {
@@ -654,12 +824,6 @@ export default class Keymaster implements KeymasterInterface {
         return idInfo;
     }
 
-    async hdKeyPair(): Promise<EcdsaJwkPair> {
-        const wallet = await this.loadWallet();
-        const hdkey = await this.getHDKeyFromCacheOrMnemonic(wallet);
-        return this.cipher.generateJwk(hdkey.privateKey!);
-    }
-
     getPublicKeyJwk(doc: MdipDocument): EcdsaJwkPublic {
         // TBD Return the right public key, not just the first one
         if (!doc.didDocument) {
@@ -679,36 +843,65 @@ export default class Keymaster implements KeymasterInterface {
     private async resolveIdentityForCryptography(did: string, versionTime?: string): Promise<MdipDocument> {
         try {
             return await this.resolveDID(did, { confirm: true, versionTime });
-        }
-        catch (error) {
+        } catch (error) {
             if (!(error instanceof InvalidDIDError) || error.detail !== 'unknown') {
                 throw error;
             }
-            // The immutable create key remains usable locally while registry confirmation is pending.
+            // The create key remains usable before registry confirmation.
             return this.resolveDID(did, { versionSequence: 1, versionTime });
         }
     }
 
-    async fetchKeyPair(name?: string): Promise<EcdsaJwkPair | null> {
-        const wallet = await this.loadWallet();
-        const id = await this.fetchIdInfo(name, wallet);
-        const hdkey = await this.getHDKeyFromCacheOrMnemonic(wallet);
+    private async getConfirmedPublicKeyJwk(id: IDInfo): Promise<EcdsaJwkPublic> {
         const doc = await this.resolveIdentityForCryptography(id.did);
-        const confirmedPublicKeyJwk = this.getPublicKeyJwk(doc);
+        return this.getPublicKeyJwk(doc);
+    }
 
-        for (let i = id.index; i >= 0; i--) {
-            const path = `m/44'/0'/${id.account}'/0/${i}`;
-            const didkey = hdkey.derive(path);
-            const keypair = this.cipher.generateJwk(didkey.privateKey!);
+    private async assertProviderControlsId(id: IDInfo, doc: MdipDocument): Promise<void> {
+        try {
+            const did = doc.didDocument?.id;
+            if (!did || typeof id?.did !== 'string' || typeof id.keyRef !== 'string' || !this.didMatch(id.did, did)) {
+                throw new InvalidDIDError();
+            }
 
-            if (keypair.publicJwk.x === confirmedPublicKeyJwk.x &&
-                keypair.publicJwk.y === confirmedPublicKeyJwk.y
-            ) {
-                return keypair;
+            const publicJwk = this.getPublicKeyJwk(doc);
+            const challenge = {
+                purpose: 'recoverId',
+                did,
+                keyRef: id.keyRef,
+            };
+            const digest = this.cipher.hashJSON(challenge);
+            const signature = await this.walletProvider.signDigest(id.keyRef, digest);
+
+            if (!this.cipher.verifySig(digest, signature, publicJwk)) {
+                throw new InvalidDIDError();
             }
         }
+        catch {
+            throw new InvalidDIDError();
+        }
+    }
 
-        return null;
+    private async getActiveKeyRef(id: IDInfo): Promise<string> {
+        if (!this.supportsKeyRotation(this.walletProvider)) {
+            return id.keyRef;
+        }
+
+        const currentDoc = await this.resolveDID(id.did);
+        if (currentDoc.didDocumentMetadata?.confirmed !== false) {
+            return id.keyRef;
+        }
+
+        const currentPublicJwk = this.getPublicKeyJwk(currentDoc);
+        const confirmedPublicJwk = await this.getConfirmedPublicKeyJwk(id);
+        if (this.cipher.hashJSON(currentPublicJwk) === this.cipher.hashJSON(confirmedPublicJwk)) {
+            return id.keyRef;
+        }
+
+        if (this.isMnemonicHdWalletProvider(this.walletProvider)) {
+            return this.walletProvider.findKeyRef(id.keyRef, confirmedPublicJwk);
+        }
+        return id.previousKeyRef ?? id.keyRef;
     }
 
     async createAsset(
@@ -966,16 +1159,16 @@ export default class Keymaster implements KeymasterInterface {
         } = options;
 
         const id = await this.fetchIdInfo(sender);
-        const senderKeypair = await this.fetchKeyPair(id.did);
-        if (!senderKeypair) {
-            throw new KeymasterError('No valid sender keypair');
-        }
+        const senderKeyRef = await this.getActiveKeyRef(id);
+        const senderPublicJwk = await this.getConfirmedPublicKeyJwk(id);
 
         const doc = await this.resolveIdentityForCryptography(receiver);
         const receivePublicJwk = this.getPublicKeyJwk(doc);
 
-        const cipher_sender = encryptForSender ? this.cipher.encryptMessage(senderKeypair.publicJwk, senderKeypair.privateJwk, msg) : null;
-        const cipher_receiver = this.cipher.encryptMessage(receivePublicJwk, senderKeypair.privateJwk, msg);
+        const cipher_sender = encryptForSender
+            ? await this.walletProvider.encrypt(senderKeyRef, senderPublicJwk, msg)
+            : null;
+        const cipher_receiver = await this.walletProvider.encrypt(senderKeyRef, receivePublicJwk, msg);
         const cipher_hash = includeHash ? this.cipher.hashMessage(msg) : null;
 
         const encrypted: EncryptedMessage = {
@@ -987,26 +1180,6 @@ export default class Keymaster implements KeymasterInterface {
         }
 
         return this.createAssetFor({ encrypted }, id.did, options);
-    }
-
-    private async decryptWithDerivedKeys(wallet: WalletFile, id: IDInfo, senderPublicJwk: EcdsaJwkPublic, ciphertext: string): Promise<string> {
-        const hdkey = await this.getHDKeyFromCacheOrMnemonic(wallet);
-
-        // Try all private keys for this ID, starting with the most recent and working backward
-        let index = id.index;
-        while (index >= 0) {
-            const path = `m/44'/0'/${id.account}'/0/${index}`;
-            const didkey = hdkey.derive(path);
-            const receiverKeypair = this.cipher.generateJwk(didkey.privateKey!);
-            try {
-                return this.cipher.decryptMessage(senderPublicJwk, receiverKeypair.privateJwk, ciphertext);
-            }
-            catch {
-                index -= 1;
-            }
-        }
-
-        throw new KeymasterError("ID can't decrypt ciphertext");
     }
 
     async decryptMessage(did: string): Promise<string> {
@@ -1034,7 +1207,7 @@ export default class Keymaster implements KeymasterInterface {
         const senderPublicJwk = this.getPublicKeyJwk(doc);
 
         const ciphertext = (crypt.sender === id.did && crypt.cipher_sender) ? crypt.cipher_sender : crypt.cipher_receiver;
-        return await this.decryptWithDerivedKeys(wallet, id, senderPublicJwk, ciphertext!);
+        return await this.walletProvider.decrypt(id.keyRef, senderPublicJwk, ciphertext!);
     }
 
     async encryptJSON(
@@ -1074,7 +1247,7 @@ export default class Keymaster implements KeymasterInterface {
 
     async addSignature<T extends object>(
         obj: T,
-        controller?: string
+        controller?: string,
     ): Promise<T & { signature: Signature }> {
         if (obj == null) {
             throw new InvalidParameterError('obj');
@@ -1082,15 +1255,10 @@ export default class Keymaster implements KeymasterInterface {
 
         // Fetches current ID if name is missing
         const id = await this.fetchIdInfo(controller);
-        const keypair = await this.fetchKeyPair(id.did);
-
-        if (!keypair) {
-            throw new KeymasterError('addSignature: no keypair');
-        }
-
         try {
             const msgHash = this.cipher.hashJSON(obj);
-            const signature = this.cipher.signHash(msgHash, keypair.privateJwk);
+            const signingKeyRef = await this.getActiveKeyRef(id);
+            const signature = await this.walletProvider.signDigest(signingKeyRef, msgHash);
 
             return {
                 ...obj,
@@ -1471,19 +1639,12 @@ export default class Keymaster implements KeymasterInterface {
         let did = '';
         await this.mutateWallet(async (wallet) => {
             name = this.validateName(name, wallet);
-            const account = wallet.counter;
-            const index = 0;
-            const signed = await this.createIdOperation(name, account, options);
-
-            wallet.counter += 1;
-            const reserved = await this.saveWalletUnlocked(wallet, true);
-            if (!reserved) {
-                throw new KeymasterError('save wallet failed');
-            }
+            const createdKey = await this.walletProvider.createIdKey();
+            const signed = await this.createIdOperation(name, options, createdKey);
 
             did = await this.gatekeeper.createDID(signed);
 
-            wallet.ids[name] = { did, account, index };
+            wallet.ids[name] = { did, keyRef: createdKey.keyRef };
             wallet.current = name;
         });
 
@@ -1492,18 +1653,15 @@ export default class Keymaster implements KeymasterInterface {
 
     async createIdOperation(
         name: string,
-        account: number = 0,
-        options: { registry?: string } = {}
+        options: { registry?: string } = {},
+        createdKey?: { keyRef: string; publicJwk: EcdsaJwkPublic },
     ): Promise<Operation> {
         const { registry = this.defaultRegistry } = options;
         const wallet = await this.loadWallet();
 
         this.validateName(name, wallet);
 
-        const hdkey = await this.getHDKeyFromCacheOrMnemonic(wallet);
-        const path = `m/44'/0'/${account}'/0/0`;
-        const didkey = hdkey.derive(path);
-        const keypair = this.cipher.generateJwk(didkey.privateKey!);
+        const { keyRef, publicJwk } = createdKey ?? await this.walletProvider.createIdKey();
 
         const block = await this.gatekeeper.getBlock(registry);
         const blockid = block?.hash;
@@ -1518,11 +1676,11 @@ export default class Keymaster implements KeymasterInterface {
                 registry,
                 ...(this.didPrefix ? { prefix: this.didPrefix } : {}),
             },
-            publicJwk: keypair.publicJwk,
+            publicJwk,
         };
 
         const msgHash = this.cipher.hashJSON(operation);
-        const signature = this.cipher.signHash(msgHash, keypair.privateJwk);
+        const signature = await this.walletProvider.signDigest(keyRef, msgHash);
         const signed: Operation = {
             ...operation,
             signature: {
@@ -1574,20 +1732,17 @@ export default class Keymaster implements KeymasterInterface {
         const owner = await this.fetchIdInfo(undefined, wallet);
         const name = id || wallet.current;
         const idInfo = await this.fetchIdInfo(name, wallet);
-        const keypair = await this.hdKeyPair();
         const data = {
             name: name,
             id: idInfo,
         };
-        const msg = JSON.stringify(data);
-        const backup = this.cipher.encryptMessage(keypair.publicJwk, keypair.privateJwk, msg);
         const doc = await this.resolveDID(idInfo.did);
         const registry = doc.mdip?.registry;
         if (!registry) {
             throw new InvalidParameterError('no registry found for agent DID');
         }
 
-        const vaultDid = await this.createAssetFor({ backup: backup }, owner.did, { registry, controller: name });
+        const vaultDid = await this.createAssetFor({ backup: data }, owner.did, { registry, controller: name });
 
         if (doc.didDocumentData) {
             const docData = doc.didDocumentData as { vault: string };
@@ -1599,28 +1754,42 @@ export default class Keymaster implements KeymasterInterface {
 
     async recoverId(did: string): Promise<string> {
         try {
-            const keypair = await this.hdKeyPair();
-
             const doc = await this.resolveDID(did);
             const docData = doc.didDocumentData as { vault?: string };
             if (!docData.vault) {
                 throw new InvalidDIDError('didDocumentData missing vault');
             }
 
-            const vault = await this.resolveAsset(docData.vault) as { backup?: string };
-            if (typeof vault.backup !== 'string') {
+            const vault = await this.resolveAsset(docData.vault) as { backup?: { name: string; id: IDInfo | LegacyIDInfo } | string };
+            if (vault.backup == null) {
                 throw new InvalidDIDError('backup not found in vault');
             }
 
-            const backup = this.cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, vault.backup);
-            const data = JSON.parse(backup) as { name?: unknown; id?: unknown };
-            if (!data || typeof data !== 'object' || Array.isArray(data)
-                || typeof data.name !== 'string' || !isValidIDInfo(data.id)) {
-                throw new InvalidDIDError('invalid identity backup');
+            let data: { name: string; id: IDInfo | LegacyIDInfo };
+            if (typeof vault.backup === 'string') {
+                try {
+                    data = JSON.parse(vault.backup);
+                } catch {
+                    if (!this.isMnemonicHdWalletProvider(this.walletProvider)) {
+                        throw new InvalidDIDError();
+                    }
+                    const provider = await this.walletProvider.backupWallet();
+                    const plaintext = await this.walletProvider.decrypt('', provider.rootPublicJwk, vault.backup);
+                    data = JSON.parse(plaintext);
+                }
+            } else {
+                data = vault.backup;
+            }
+            if (!isValidIDInfo(data?.id) && this.isMnemonicHdWalletProvider(this.walletProvider) && isValidLegacyIDInfo(data?.id)) {
+                const { account, index, ...id } = data.id;
+                data.id = { ...id, keyRef: `hd:${account}#${index}` };
             }
 
+            if (!data || typeof data.name !== 'string' || !isValidIDInfo(data.id)) {
+                throw new InvalidDIDError();
+            }
             let name = data.name;
-            const id = data.id;
+            const recoveredId = data.id;
             const vmethod = doc.didDocument?.verificationMethod?.[0];
             const currentPublicKey = vmethod?.publicKeyJwk;
 
@@ -1633,24 +1802,19 @@ export default class Keymaster implements KeymasterInterface {
                     throw new KeymasterError(`${name} already exists in wallet`);
                 }
                 name = this.validateName(name, wallet);
-
-                const keyId = vmethod?.id?.match(/^#key-([1-9]\d*)$/);
-                const indexedKey = Number(keyId?.[1]) - 1;
-                const currentIndex = Number.isSafeInteger(indexedKey) && indexedKey > id.index
-                    ? indexedKey
-                    : id.index;
-                const hdkey = await this.getHDKeyFromCacheOrMnemonic(wallet);
-                const path = `m/44'/0'/${id.account}'/0/${currentIndex}`;
-                const didkey = hdkey.derive(path);
-                const recoveredKey = this.cipher.generateJwk(didkey.privateKey!).publicJwk;
-                if (recoveredKey.x !== currentPublicKey.x || recoveredKey.y !== currentPublicKey.y) {
-                    throw new InvalidDIDError('current key does not belong to wallet');
+                if (this.isMnemonicHdWalletProvider(this.walletProvider)) {
+                    const keyId = vmethod?.id?.match(/^#key-([1-9]\d*)$/);
+                    const index = keyId ? Number(keyId[1]) - 1 : undefined;
+                    try {
+                        const key = await this.walletProvider.recoverIdKey(recoveredId.keyRef, currentPublicKey, index);
+                        recoveredId.keyRef = key.keyRef;
+                    } catch {
+                        throw new InvalidDIDError();
+                    }
                 }
-
-                id.index = currentIndex;
-                wallet.ids[name] = id;
+                await this.assertProviderControlsId(recoveredId, doc);
+                wallet.ids[name] = recoveredId;
                 wallet.current = name;
-                wallet.counter = Math.max(wallet.counter, id.account + 1);
             });
 
             return name;
@@ -1668,17 +1832,11 @@ export default class Keymaster implements KeymasterInterface {
 
         await this.mutateWallet(async (wallet) => {
             const id = wallet.ids[wallet.current!];
-            const cachedId = this._walletCache!.ids[wallet.current!];
-            const nextIndex = id.index + 1;
-
-            const hdkey = await this.getHDKeyFromCacheOrMnemonic(wallet);
-            const path = `m/44'/0'/${id.account}'/0/${nextIndex}`;
-            const didkey = hdkey.derive(path);
-            const keypair = this.cipher.generateJwk(didkey.privateKey!);
+            if (!this.supportsKeyRotation(this.walletProvider)) {
+                throw new KeymasterError('Wallet provider does not support key rotation.');
+            }
 
             const doc = await this.resolveDID(id.did);
-
-            // The immutable create key may rotate before registry confirmation.
             if (!doc.didDocumentMetadata?.confirmed && doc.didDocumentMetadata?.version !== '1') {
                 throw new KeymasterError('Cannot rotate keys');
             }
@@ -1687,8 +1845,15 @@ export default class Keymaster implements KeymasterInterface {
             }
 
             const vmethod = doc.didDocument.verificationMethod[0];
-            vmethod.id = `#key-${nextIndex + 1}`;
-            vmethod.publicKeyJwk = keypair.publicJwk;
+            if (!vmethod.publicKeyJwk) {
+                throw new KeymasterError('DID Document missing verificationMethod');
+            }
+
+            const currentKeyRef = id.keyRef;
+            const rotatedKey = await this.walletProvider.rotateKey(currentKeyRef);
+            const currentKeyCount = Number(vmethod.id?.match(/^#key-([1-9]\d*)$/)?.[1]) || 1;
+            vmethod.id = `#key-${currentKeyCount + 1}`;
+            vmethod.publicKeyJwk = rotatedKey.publicJwk;
             doc.didDocument.authentication = [vmethod.id];
 
             ok = await this.updateDID(doc);
@@ -1696,10 +1861,12 @@ export default class Keymaster implements KeymasterInterface {
                 throw new KeymasterError('Cannot rotate keys');
             }
 
-            id.index = nextIndex; // persist in same mutation
-            // Gatekeeper has accepted the rotation. Keep its key accessible in
-            // memory even if the wallet save fails.
-            cachedId.index = nextIndex;
+            id.previousKeyRef = currentKeyRef;
+            id.keyRef = rotatedKey.keyRef;
+            // Retain accepted keys if metadata persistence fails.
+            const cachedId = this._walletCache!.ids[wallet.current!];
+            cachedId.previousKeyRef = currentKeyRef;
+            cachedId.keyRef = rotatedKey.keyRef;
         });
 
         return ok;
@@ -2001,17 +2168,14 @@ export default class Keymaster implements KeymasterInterface {
             throw new InvalidParameterError('credential');
         }
         const msg = JSON.stringify(signed);
-
-        const senderKeypair = await this.fetchKeyPair(id.did);
-        if (!senderKeypair) {
-            throw new KeymasterError('No valid sender keypair');
-        }
+        const senderKeyRef = await this.getActiveKeyRef(id);
+        const senderPublicJwk = await this.getConfirmedPublicKeyJwk(id);
 
         const holder = credential.credentialSubject.id;
         const holderDoc = await this.resolveIdentityForCryptography(holder);
         const receivePublicJwk = this.getPublicKeyJwk(holderDoc);
-        const cipher_sender = this.cipher.encryptMessage(senderKeypair.publicJwk, senderKeypair.privateJwk, msg);
-        const cipher_receiver = this.cipher.encryptMessage(receivePublicJwk, senderKeypair.privateJwk, msg);
+        const cipher_sender = await this.walletProvider.encrypt(senderKeyRef, senderPublicJwk, msg);
+        const cipher_receiver = await this.walletProvider.encrypt(senderKeyRef, receivePublicJwk, msg);
         const msgHash = this.cipher.hashMessage(msg);
 
         const doc = await this.resolveDID(did);
@@ -2394,7 +2558,7 @@ export default class Keymaster implements KeymasterInterface {
         const senderDoc = await this.resolveIdentityForCryptography(crypt.sender, crypt.created);
         const senderPublicJwk = this.getPublicKeyJwk(senderDoc);
         const ciphertext = (crypt.sender === id.did && crypt.cipher_sender) ? crypt.cipher_sender : crypt.cipher_receiver;
-        const plaintext = await this.decryptWithDerivedKeys(wallet, id, senderPublicJwk, ciphertext!);
+        const plaintext = await this.walletProvider.decrypt(id.keyRef, senderPublicJwk, ciphertext!);
 
         let wrapper: unknown;
         try {
@@ -3333,7 +3497,7 @@ export default class Keymaster implements KeymasterInterface {
 
     private async createGroupVaultFor(owner: string, options: GroupVaultOptions = {}): Promise<string> {
         const id = await this.fetchIdInfo(owner);
-        const idKeypair = await this.fetchKeyPair(id.did);
+        const idPublicJwk = await this.getConfirmedPublicKeyJwk(id);
         // version defaults to 1. To make version undefined (unit testing), set options.version to 0
         const version = typeof options.version === 'undefined'
             ? 1
@@ -3341,8 +3505,8 @@ export default class Keymaster implements KeymasterInterface {
         const salt = this.cipher.generateRandomSalt();
         const vaultKeypair = this.cipher.generateRandomJwk();
         const keys = {};
-        const config = this.cipher.encryptMessage(idKeypair!.publicJwk, vaultKeypair.privateJwk, JSON.stringify(options));
-        const publicJwk = options.secretMembers ? idKeypair!.publicJwk : vaultKeypair.publicJwk; // If secret, encrypt for the owner only
+        const config = this.cipher.encryptMessage(idPublicJwk, vaultKeypair.privateJwk, JSON.stringify(options));
+        const publicJwk = options.secretMembers ? idPublicJwk : vaultKeypair.publicJwk; // If secret, encrypt for the owner only
         const members = this.cipher.encryptMessage(publicJwk, vaultKeypair.privateJwk, JSON.stringify({}));
         const items = this.cipher.encryptMessage(vaultKeypair.publicJwk, vaultKeypair.privateJwk, JSON.stringify({}));
         const sha256 = this.cipher.hashJSON({});
@@ -3391,8 +3555,7 @@ export default class Keymaster implements KeymasterInterface {
     }
 
     private async decryptGroupVault(groupVault: GroupVault, actor: string) {
-        const wallet = await this.loadWallet();
-        const id = await this.fetchIdInfo(actor, wallet);
+        const id = await this.fetchIdInfo(actor);
         const myMemberId = this.generateSaltedId(groupVault, id.did);
         const myVaultKey = groupVault.keys[myMemberId];
 
@@ -3400,13 +3563,13 @@ export default class Keymaster implements KeymasterInterface {
             throw new KeymasterError('No access to group vault');
         }
 
-        const privKeyJSON = await this.decryptWithDerivedKeys(wallet, id, groupVault.publicJwk, myVaultKey);
+        const privKeyJSON = await this.walletProvider.decrypt(id.keyRef, groupVault.publicJwk, myVaultKey);
         const privateJwk = JSON.parse(privKeyJSON) as EcdsaJwkPrivate;
 
         let config: GroupVaultOptions = {};
         let isOwner = false;
         try {
-            const configJSON = await this.decryptWithDerivedKeys(wallet, id, groupVault.publicJwk, groupVault.config);
+            const configJSON = await this.walletProvider.decrypt(id.keyRef, groupVault.publicJwk, groupVault.config);
             config = JSON.parse(configJSON);
             isOwner = true;
         }
@@ -3418,7 +3581,7 @@ export default class Keymaster implements KeymasterInterface {
 
         if (config.secretMembers) {
             try {
-                const membersJSON = await this.decryptWithDerivedKeys(wallet, id, groupVault.publicJwk, groupVault.members);
+                const membersJSON = await this.walletProvider.decrypt(id.keyRef, groupVault.publicJwk, groupVault.members);
                 members = JSON.parse(membersJSON);
             }
             catch {
@@ -3527,8 +3690,8 @@ export default class Keymaster implements KeymasterInterface {
 
     private async addGroupVaultMemberFor(vaultId: string, memberId: string, actor: string): Promise<boolean> {
         const owner = await this.checkGroupVaultOwner(vaultId, actor);
-
-        const idKeypair = await this.fetchKeyPair(actor);
+        const id = await this.fetchIdInfo(actor);
+        const idPublicJwk = await this.getConfirmedPublicKeyJwk(id);
         const groupVault = await this.getGroupVault(vaultId);
         const { privateJwk, config, members } = await this.decryptGroupVault(groupVault, actor);
         const memberDoc = await this.resolveIdentityForCryptography(memberId);
@@ -3540,7 +3703,7 @@ export default class Keymaster implements KeymasterInterface {
         }
 
         members[memberDID] = { added: new Date().toISOString() };
-        const publicJwk = config.secretMembers ? idKeypair!.publicJwk : groupVault.publicJwk;
+        const publicJwk = config.secretMembers ? idPublicJwk : groupVault.publicJwk;
         groupVault.members = this.cipher.encryptMessage(publicJwk, privateJwk, JSON.stringify(members));
 
         await this.addMemberKey(groupVault, memberDID, privateJwk);
@@ -3554,8 +3717,8 @@ export default class Keymaster implements KeymasterInterface {
 
     private async removeGroupVaultMemberFor(vaultId: string, memberId: string, actor: string): Promise<boolean> {
         const owner = await this.checkGroupVaultOwner(vaultId, actor);
-
-        const idKeypair = await this.fetchKeyPair(actor);
+        const id = await this.fetchIdInfo(actor);
+        const idPublicJwk = await this.getConfirmedPublicKeyJwk(id);
         const groupVault = await this.getGroupVault(vaultId);
         const { privateJwk, config, members } = await this.decryptGroupVault(groupVault, actor);
         const memberDoc = await this.resolveIdentityForCryptography(memberId);
@@ -3567,7 +3730,7 @@ export default class Keymaster implements KeymasterInterface {
         }
 
         delete members[memberDID];
-        const publicJwk = config.secretMembers ? idKeypair!.publicJwk : groupVault.publicJwk;
+        const publicJwk = config.secretMembers ? idPublicJwk : groupVault.publicJwk;
         groupVault.members = this.cipher.encryptMessage(publicJwk, privateJwk, JSON.stringify(members));
 
         const memberKeyId = this.generateSaltedId(groupVault, memberDID);
@@ -4287,11 +4450,6 @@ export default class Keymaster implements KeymasterInterface {
         return this.cleanupNoticesFor(recipient.did);
     }
 
-    async exportEncryptedWallet(): Promise<WalletEncFile> {
-        const wallet = await this.loadWallet();
-        return this.encryptWalletForStorage(wallet);
-    }
-
     private async isBallot(ballotDid: string, recipient: string): Promise<boolean> {
         let payload: any;
         try {
@@ -4310,101 +4468,5 @@ export default class Keymaster implements KeymasterInterface {
         } catch {
             return false;
         }
-    }
-
-    private async getHDKeyFromCacheOrMnemonic(wallet: WalletFile) {
-        if (this._hdkeyCache && this._hdkeyCacheSeed === JSON.stringify(wallet.seed.mnemonicEnc)) {
-            return this._hdkeyCache;
-        }
-
-        const mnemonic = await this.getMnemonicForDerivation(wallet);
-        return this.cipher.generateHDKey(mnemonic);
-    }
-
-    private async encryptWalletForStorage(
-        decrypted: WalletFile,
-        hdkey?: ReturnType<Cipher['generateHDKey']>
-    ): Promise<WalletEncFile> {
-        const { version, seed, ...rest } = decrypted;
-
-        const safeSeed: Seed = { mnemonicEnc: seed.mnemonicEnc };
-
-        hdkey ??= await this.getHDKeyFromCacheOrMnemonic(decrypted);
-        const { publicJwk, privateJwk } = this.cipher.generateJwk(hdkey.privateKey!);
-
-        const plaintext = JSON.stringify(rest);
-        const enc = this.cipher.encryptMessage(publicJwk, privateJwk, plaintext);
-
-        return { version: version!, seed: safeSeed, enc };
-    }
-
-    private async decryptWalletFromStorage(stored: WalletEncFile): Promise<{
-        wallet: WalletFile;
-        hdkey: ReturnType<Cipher['generateHDKey']>;
-    }> {
-        let mnemonic: string;
-        try {
-            mnemonic = await decMnemonic(stored.seed.mnemonicEnc!, this.passphrase);
-        } catch {
-            throw new KeymasterError('Incorrect passphrase.');
-        }
-
-        const hdkey = this._hdkeyCache && this._hdkeyCacheSeed === JSON.stringify(stored.seed.mnemonicEnc)
-            ? this._hdkeyCache
-            : this.cipher.generateHDKey(mnemonic);
-        const { publicJwk, privateJwk } = this.cipher.generateJwk(hdkey.privateKey!);
-
-        const plaintext = this.cipher.decryptMessage(publicJwk, privateJwk, stored.enc);
-        const data = JSON.parse(plaintext);
-
-        if (!isValidWalletPayload(data)) {
-            throw new KeymasterError('Invalid wallet data.');
-        }
-
-        const wallet: WalletFile = { version: stored.version, seed: stored.seed, ...data };
-        return { wallet, hdkey };
-    }
-
-    private async decryptWallet(wallet: WalletFile): Promise<WalletFile> {
-        if (isV1WithEnc(wallet)) {
-            const decrypted = await this.decryptWalletFromStorage(wallet);
-            this._hdkeyCache = decrypted.hdkey;
-            this._hdkeyCacheSeed = JSON.stringify(wallet.seed.mnemonicEnc);
-            wallet = decrypted.wallet;
-        }
-
-        if (!isV1Decrypted(wallet)) {
-            throw new KeymasterError("Unsupported wallet version.");
-        }
-
-        return wallet;
-    }
-
-    private async encryptWallet(wallet: WalletFile): Promise<WalletEncFile> {
-        if (isV1Decrypted(wallet)) {
-            return this.encryptWalletForStorage(wallet);
-        }
-        return wallet;
-    }
-
-    private async upgradeWallet(wallet: any, persist = true): Promise<WalletFile> {
-        if (isLegacyV0(wallet)) {
-            const hdkey = this.cipher.generateHDKeyJSON(wallet.seed.hdkey!);
-            const keypair = this.cipher.generateJwk(hdkey.privateKey!);
-            const plaintext = this.cipher.decryptMessage(keypair.publicJwk, keypair.privateJwk, wallet.seed.mnemonic!);
-            const mnemonicEnc = await encMnemonic(plaintext, this.passphrase);
-            const { seed, version, ...rest } = wallet;
-            const newWallet = { version: 1, seed: { mnemonicEnc }, ...rest };
-            wallet = await this.encryptWallet(newWallet);
-            if (persist) {
-                await this.db.saveWallet(wallet, true);
-            }
-        }
-
-        if (wallet.version !== 1) {
-            throw new KeymasterError("Unsupported wallet version.");
-        }
-
-        return wallet;
     }
 }

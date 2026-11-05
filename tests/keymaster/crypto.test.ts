@@ -4,15 +4,15 @@ import Keymaster from '@mdip/keymaster';
 import { EncryptedMessage } from '@mdip/keymaster/types';
 import CipherNode from '@mdip/cipher/node';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory';
-import WalletJsonMemory from '@mdip/keymaster/wallet/json-memory';
 import { ExpectedExceptionError } from '@mdip/common/errors';
 import HeliaClient from '@mdip/ipfs/helia';
+import { createTestKeymaster } from './testUtils.ts';
 
 let ipfs: HeliaClient;
 let gatekeeper: Gatekeeper;
-let wallet: WalletJsonMemory;
 let cipher: CipherNode;
 let keymaster: Keymaster;
+let walletProvider: import('../../packages/keymaster/src/provider/mnemonic-hd.ts').default;
 
 beforeAll(async () => {
     ipfs = new HeliaClient();
@@ -28,9 +28,8 @@ afterAll(async () => {
 beforeEach(() => {
     const db = new DbJsonMemory('test');
     gatekeeper = new Gatekeeper({ db, ipfs, registries: ['local', 'hyperswarm', 'TFTC'] });
-    wallet = new WalletJsonMemory();
     cipher = new CipherNode();
-    keymaster = new Keymaster({ gatekeeper, wallet, cipher, passphrase: 'passphrase' });
+    ({ keymaster, walletProvider } = createTestKeymaster(gatekeeper, cipher));
 });
 
 afterEach(() => {
@@ -77,9 +76,9 @@ describe('encryptMessage', () => {
 
     it('should throw when the sender keypair is unavailable', async () => {
         const did = await keymaster.createId('Bob');
-        jest.spyOn(keymaster, 'fetchKeyPair').mockResolvedValueOnce(null);
+        jest.spyOn(walletProvider, 'encrypt').mockRejectedValueOnce(new Error('provider unavailable'));
 
-        await expect(keymaster.encryptMessage('Hi Bob!', did)).rejects.toThrow('Keymaster: No valid sender keypair');
+        await expect(keymaster.encryptMessage('Hi Bob!', did)).rejects.toThrow('provider unavailable');
     });
 });
 
@@ -240,9 +239,9 @@ describe('addSignature', () => {
 
     it('should throw when the signing keypair is unavailable', async () => {
         await keymaster.createId('Bob');
-        jest.spyOn(keymaster, 'fetchKeyPair').mockResolvedValueOnce(null);
+        jest.spyOn(walletProvider, 'signDigest').mockRejectedValueOnce(new Error('provider unavailable'));
 
-        await expect(keymaster.addSignature(mockJson)).rejects.toThrow('Keymaster: addSignature: no keypair');
+        await expect(keymaster.addSignature(mockJson)).rejects.toThrow('Invalid parameter: obj');
     });
 
     it('should reject an object that cannot be hashed', async () => {

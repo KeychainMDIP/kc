@@ -1,7 +1,7 @@
-import { StoredWallet, WalletBase } from '../types.js';
+import { KeymasterStore, StoredWallet } from '../types.js';
 import { Redis } from 'ioredis'
 
-export default class WalletRedis implements WalletBase {
+export default class WalletRedis implements KeymasterStore {
     private readonly walletKey: string;
     private readonly url: string;
     private redis: Redis | null

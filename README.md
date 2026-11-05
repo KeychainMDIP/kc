@@ -16,7 +16,7 @@ Recommended system requirements:
 $ git clone https://github.com/KeychainMDIP/kc
 $ cd kc
 $ cp sample.env .env
-$ # Edit .env and set KC_ENCRYPTED_PASSPHRASE to a strong value.
+$ # Edit .env and set KC_WALLET_PROVIDER_PASSPHRASE to a strong value.
 $ ./start-node gatekeeper keymaster hypr-mediator cli
 ```
 
