@@ -21,7 +21,13 @@ export const SEARCH_SCHEMA_SQL = `
                 did TEXT NOT NULL UNIQUE,
                 prefix TEXT NOT NULL,
                 prefix_authoritative BOOLEAN NOT NULL,
-                is_agent BOOLEAN NOT NULL
+                is_agent BOOLEAN NOT NULL,
+                stats_type TEXT,
+                stats_registry TEXT,
+                stats_version TEXT,
+                stats_confirmed BOOLEAN NOT NULL,
+                stats_ephemeral BOOLEAN NOT NULL,
+                stats_invalid BOOLEAN NOT NULL
             );
 
             CREATE INDEX IF NOT EXISTS idx_did_classifications_prefix

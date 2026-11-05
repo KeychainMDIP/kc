@@ -4,8 +4,7 @@ import { BlockList, isIP } from "net";
 
 import { childLogger } from "@mdip/common/logger";
 import { isValidDID } from "@mdip/ipfs/utils";
-import { INDEX_SYNC_STATE_KEYS } from "./DidIndexer.js";
-import type { DIDsDb, IdentityListOptions } from "./types.js";
+import type { DIDsDb, IdentityListOptions, SearchStatsOptions } from "./types.js";
 
 const log = childLogger({ service: 'search-server' });
 
@@ -176,40 +175,11 @@ export function parseOptionalPositiveInteger(value: unknown, fieldName: string):
     return parsed;
 }
 
-export async function getSearchStatus(didDb: DIDsDb, dbName: string) {
-    return readDatabase(didDb, async () => {
-        const sync = {
-            snapshotComplete: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.snapshotComplete) === 'true',
-            snapshotCursor: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.snapshotCursor),
-            snapshotCheckpointCursor: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.snapshotCheckpointCursor),
-            changesCursor: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.changesCursor),
-            lastSyncStartedAt: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastSyncStartedAt),
-            lastSyncCompletedAt: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastSyncCompletedAt),
-            lastSyncError: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastSyncError),
-            lastSyncMode: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastSyncMode),
-            lastPagesProcessed: Number.parseInt(
-                await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastPagesProcessed) ?? '0',
-                10
-            ),
-            lastDidsChanged: Number.parseInt(
-                await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastDidsChanged) ?? '0',
-                10
-            ),
-            lastBlocksStored: Number.parseInt(
-                await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastBlocksStored) ?? '0',
-                10
-            ),
-        };
-
-        return {
-            ready: true,
-            db: dbName,
-            role: await didDb.getRole?.() ?? 'writer',
-            sync,
-            metrics: {
-                lastRebuiltAt: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsLastRebuiltAt),
-                lastError: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsLastError),
-            },
-        };
-    });
+export async function getSearchStatus(didDb: DIDsDb, dbName: string, options?: SearchStatsOptions) {
+    return readDatabase(didDb, async () => ({
+        ready: true,
+        db: dbName,
+        role: await didDb.getRole?.() ?? 'writer',
+        ...await didDb.getStats(options),
+    }));
 }

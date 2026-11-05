@@ -6,12 +6,13 @@ import Postgres from '../../services/search-server/src/db/postgres.ts';
 import { SEARCH_SCHEMA_SQL } from '../../services/search-server/src/db/postgres-schema.ts';
 import {
     IndexOwnershipLostError, SearchUnavailableError,
-    SEARCH_LOCK_NAMESPACE, SEARCH_WRITER_LOCK, SEARCH_SCHEMA_LOCK,
+    SEARCH_LOCK_NAMESPACE, SEARCH_WRITER_LOCK, SEARCH_SCHEMA_LOCK, SEARCH_SCHEMA_VERSION,
 } from '../../services/search-server/src/db/coordination.ts';
 import { readDatabase } from '../../services/search-server/src/db/db-utils.ts';
 import { findDIDReadTarget } from '../../services/search-server/src/did-aliases.ts';
 import { getSearchStatus } from '../../services/search-server/src/index-helpers.ts';
 import { createSeedEvent } from './db-seed.ts';
+import { INDEX_SYNC_STATE_KEYS } from '../../services/search-server/src/sync-state.ts';
 
 const seedDID = 'did:test:z3v8AuacR4diTuCgtbEfLDo2LzQNEDHgqBSNLMs5Szuq3WHcQdB';
 let fixtureEvent: ReturnType<typeof createSeedEvent>;
@@ -142,11 +143,160 @@ describePostgres('Search Server PostgreSQL multi-instance coordination', () => {
         expect((await Promise.all(all.map(db => db.getRole()))).filter(role => role === 'writer')).toHaveLength(1);
     });
 
-    it('adopts the exact unversioned main schema without rebuilding data', async () => {
+    it('adopts a matching unversioned Search schema without rebuilding data', async () => {
         await raw.query(SEARCH_SCHEMA_SQL);
         await raw.query("INSERT INTO sync_state VALUES ('cursor','legacy')");
         const db = await open();
         expect(await db.loadSyncState('cursor')).toBe('legacy');
+    });
+
+    it('rebuilds an incompatible schema and coordination metadata only when startup reset is enabled', async () => {
+        const a = await open();
+        await a.applyIndexPage(page());
+        await raw.query('CREATE TABLE unrelated (marker TEXT)');
+        await raw.query("INSERT INTO unrelated VALUES ('kept')");
+        await raw.query('ALTER TABLE did_classifications DROP COLUMN stats_type CASCADE');
+        await raw.query('UPDATE search_index_control SET schema_version = 1');
+        const b = new Postgres(url);
+        adapters.push(b);
+        await expect(b.connect()).rejects.toBeInstanceOf(SearchUnavailableError);
+        expect((await raw.query('SELECT count(*)::int AS n FROM did_docs')).rows[0].n).toBe(1);
+
+        await b.connect(true);
+
+        expect(await b.getRole()).toBe('writer');
+        expect(await b.getStats()).toMatchObject({ dids: { total: 0 }, index: { epoch: null } });
+        expect(await b.loadSyncState('cursor')).toBeNull();
+        expect((await raw.query('SELECT schema_version FROM search_index_control')).rows[0].schema_version).toBe(SEARCH_SCHEMA_VERSION);
+        expect((await raw.query('SELECT marker FROM unrelated')).rows).toEqual([{ marker: 'kept' }]);
+        await b.applyIndexPage(page());
+        expect((await b.getStats()).dids.total).toBe(1);
+    });
+
+    it('waits for an active reader before resetting and fences the previous compatible writer', async () => {
+        const a = await open();
+        await a.applyIndexPage(page());
+        const entered = deferred();
+        const resume = deferred();
+        const reading = a.withRead(async () => {
+            expect((await a.getStats()).dids.total).toBe(1);
+            entered.resolve();
+            await resume.promise;
+            expect(await a.getDID(seedDID)).toEqual({ value: 'kept' });
+        });
+        await entered.promise;
+        const b = new Postgres(url);
+        adapters.push(b);
+        const reset = b.connect(true);
+        try {
+            await waitForSchemaWaiter();
+            expect((await raw.query('SELECT count(*)::int AS n FROM did_docs')).rows[0].n).toBe(1);
+        } finally {
+            resume.resolve();
+            await Promise.all([reading, reset]);
+        }
+        expect(await a.getRole()).toBe('reader');
+        expect(await b.getRole()).toBe('writer');
+        expect((await a.getStats()).dids.total).toBe(0);
+        await expect(a.saveSyncState('cursor', 'stale')).rejects.toBeInstanceOf(IndexOwnershipLostError);
+        expect(await b.loadSyncState('cursor')).toBeNull();
+    });
+
+    it('rolls back failed startup reset DDL together with the original indexing owner', async () => {
+        const a = await open();
+        await a.applyIndexPage(page());
+        await raw.query('CREATE VIEW unrelated_view AS SELECT * FROM did_docs');
+        const b = new Postgres(url);
+        adapters.push(b);
+
+        await expect(b.connect(true)).rejects.toMatchObject({ code: '2BP01' });
+
+        expect(await a.getRole()).toBe('writer');
+        expect(await a.getDID(seedDID)).toEqual({ value: 'kept' });
+        expect((await a.getStats()).dids.total).toBe(1);
+        expect(await a.loadSyncState('cursor')).toBe('7');
+        await expect(a.saveSyncState('after-failed-reset', 'kept')).resolves.toBeUndefined();
+    });
+
+    it('cancels a queued startup reset without replacing data or ownership', async () => {
+        const a = await open();
+        await a.applyIndexPage(page());
+        await raw.query('SELECT pg_advisory_lock_shared(hashtext($1), hashtext($2))',
+            [SEARCH_LOCK_NAMESPACE, SEARCH_SCHEMA_LOCK]);
+        const b = new Postgres(url);
+        adapters.push(b);
+        const abort = new AbortController();
+        const reset = b.connect(abort.signal, true).catch(error => error);
+        try {
+            await waitForSchemaWaiter();
+            abort.abort();
+            expect(await reset).toBeInstanceOf(Error);
+            expect(abort.signal.aborted).toBe(true);
+        } finally {
+            abort.abort();
+            await reset;
+            await raw.query('SELECT pg_advisory_unlock_shared(hashtext($1), hashtext($2))',
+                [SEARCH_LOCK_NAMESPACE, SEARCH_SCHEMA_LOCK]);
+        }
+        expect(await a.getRole()).toBe('writer');
+        expect(await a.getDID(seedDID)).toEqual({ value: 'kept' });
+    });
+
+    it('keeps statistics and checkpoints in the outer read snapshot while indexing continues', async () => {
+        const db = await open();
+        await db.applyIndexPage(page());
+        await db.saveSyncState(INDEX_SYNC_STATE_KEYS.changesCursor, '7');
+        const entered = deferred();
+        const resume = deferred();
+        const reading = db.withRead(async () => {
+            const first = await getSearchStatus(db, 'postgres');
+            entered.resolve();
+            await resume.promise;
+            return [first, await getSearchStatus(db, 'postgres')];
+        });
+        await entered.promise;
+        const secondDid = 'did:test:z3v8AuacR4diTuCgtbEfLDo2LzQNEDHgqBSNLMs5Szuq3WHcQdC';
+        try {
+            await db.applyIndexPage({
+                dids: [{ did: secondDid, events: [createSeedEvent(secondDid)], doc: { value: 'second' } }],
+                blocks: [], syncStateUpdates: { [INDEX_SYNC_STATE_KEYS.changesCursor]: '8' },
+            });
+        } finally {
+            resume.resolve();
+        }
+        const before = await reading;
+        for (const status of before) {
+            expect(status).toMatchObject({ role: 'writer', dids: { total: 1 }, sync: { changesCursor: '7' } });
+        }
+        expect(await getSearchStatus(db, 'postgres')).toMatchObject({ dids: { total: 2 }, sync: { changesCursor: '8' } });
+    });
+
+    it('counts every prefix globally while applying prefix and ambiguity filters only to scoped statistics', async () => {
+        const db = await open();
+        await db.applyIndexPage({
+            dids: [
+                ['did:test:outside', 'did:test', 'agent'],
+                ['did:mdip:inside', 'did:mdip', 'asset'],
+                ['did:test:ambiguous', undefined, 'asset'],
+            ].map(([did, prefix, type]) => {
+                const event = createSeedEvent(did!);
+                event.operation.mdip!.prefix = prefix;
+                return { did: did!, events: [event], doc: { mdip: { type, registry: 'local' } } };
+            }),
+            blocks: [], syncStateUpdates: { [INDEX_SYNC_STATE_KEYS.changesCursor]: '7' },
+        });
+        const scoped = await getSearchStatus(db, 'postgres', { didPrefix: 'did:mdip' });
+        const ambiguous = await getSearchStatus(db, 'postgres', { didPrefix: 'did:mdip', includeAmbiguous: true });
+        const unscoped = await getSearchStatus(db, 'postgres');
+        expect(scoped).toMatchObject({
+            dids: { total: 3, byType: { agents: 1, assets: 2 } },
+            scopedDids: { total: 1, byType: { agents: 0, assets: 1 } },
+            sync: { changesCursor: '7' },
+        });
+        expect(ambiguous.dids).toEqual(scoped.dids);
+        expect(ambiguous.scopedDids).toMatchObject({ total: 2, byType: { agents: 0, assets: 2 } });
+        expect(unscoped.scopedDids).toEqual(unscoped.dids);
+        expect((await db.getStats({ didPrefix: 'did:absent' })).scopedDids.total).toBe(0);
     });
 
     it('rejects incompatible unversioned layouts without creating control state or deleting data', async () => {
@@ -167,7 +317,7 @@ describePostgres('Search Server PostgreSQL multi-instance coordination', () => {
 
     it.each(['DELETE FROM search_index_control',
         'UPDATE search_index_control SET protocol_version=2',
-        'UPDATE search_index_control SET schema_version=2',
+        'UPDATE search_index_control SET schema_version=schema_version+1',
         "UPDATE search_index_control SET owner=''"])(
         'fails closed for damaged or unsupported metadata: %s', async sql => {
             const db = await open();

@@ -2174,6 +2174,7 @@ describe('DidIndexer published credential indexing', () => {
         event.operation.mdip!.type = 'agent';
 
         await db.saveSyncState('index.snapshot.complete', 'true');
+        await db.saveSyncState('index.epoch', 'epoch-test');
         await seedDID(db, holderDid, {
             events: [event],
             doc: createSubjectDoc(holderDid, {
@@ -2234,6 +2235,7 @@ describe('DidIndexer published credential indexing', () => {
         const secondPageCursor = 'opaque-page-2';
         const checkpointCursor = '12';
         await db.saveSyncState('index.snapshot.cursor', savedCursor);
+        await db.saveSyncState('index.epoch', 'epoch-test');
         await db.saveSyncState('index.snapshot.checkpointCursor', checkpointCursor);
         const gatekeeper = {
             isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),

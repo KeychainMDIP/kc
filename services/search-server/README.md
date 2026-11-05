@@ -40,6 +40,9 @@ KC_SEARCH_SERVER_DID_PREFIX=did:test
 # Database adapter: sqlite | postgres | memory
 KC_SEARCH_SERVER_DB=sqlite
 
+# Recreate only Search Server tables before indexing on every startup
+KC_SEARCH_SERVER_RESET_DB=false
+
 # Used when KC_SEARCH_SERVER_DB=postgres
 # Falls back to KC_POSTGRES_URL when unset
 KC_SEARCH_SERVER_POSTGRES_URL=postgresql://mdip:mdip@localhost:5432/mdip
@@ -59,15 +62,19 @@ KC_SEARCH_SERVER_RATE_LIMIT_WINDOW_VALUE=1
 KC_SEARCH_SERVER_RATE_LIMIT_WINDOW_UNIT=minute
 KC_SEARCH_SERVER_RATE_LIMIT_MAX_REQUESTS=600
 KC_SEARCH_SERVER_RATE_LIMIT_WHITELIST=
-KC_SEARCH_SERVER_RATE_LIMIT_SKIP_PATHS=/api/v1/ready,/api/v1/status
+KC_SEARCH_SERVER_RATE_LIMIT_SKIP_PATHS=/api/v1/ready
 
 # Logging
 KC_LOG_LEVEL=info
 ```
 
 The search database is a rebuildable index and this service does not migrate
-older table layouts. Reset an existing search-server database before deploying
-a release that changes its schema.
+older table layouts. Before deploying a release that changes its schema, set
+`KC_SEARCH_SERVER_RESET_DB=true` for the next startup. This drops and recreates Search Server's own tables and views,
+including saved cursors and metrics, then reindexes from Gatekeeper.
+
+The flag can be supplied through `.env`. It defaults to `false`. Reset failure
+stops startup rather than serving a partially initialized database.
 
 PostgreSQL stores a generated lowercase copy of each document's JSONB-rendered
 text in `did_docs.search_text` and maintains one trigram GIN index on that
@@ -95,9 +102,13 @@ Only one instance indexes. Readers do not automatically promote themselves if
 the writer exits. Restart the writer through its supervisor, or restart a
 compatible reader to take over. Startup and schema-lock contention have bounded
 waits. Requests temporarily unable to access a compatible schema return 503.
-An incompatible schema is rejected without changing its data or ownership.
-Schema changes still require a coordinated rebuild with all incompatible
-instances stopped. Manual table drops while processes are running are unsafe.
+Without startup reset, an incompatible schema is rejected without changing its
+data or ownership. PostgreSQL resets acquire the startup guards and recreate
+the schema and indexing ownership in one transaction.
+During a schema-changing reset, old incompatible instances return 503 while the
+new instance rebuilds. Search results are empty or partial until indexing catches
+up. Older instances without these coordination guards must be stopped before
+resetting. Manual table drops while processes are running are unsafe.
 
 `GET /api/v1/status` adds `role`, either `"writer"` or `"reader"`, derived from
 the shared database. Healthy readers remain ready. `/api/v1/ready` returns 503
@@ -120,8 +131,116 @@ reclassify stored DIDs and does not apply to historical metric snapshots.
 - **Description**: Returns `{ "ready": true }` when initialization is complete and the database is usable. Returns 503 while unavailable.
 
 ### `GET /api/v1/status`
-- **Description**: Returns the database adapter, index synchronization state,
-  the per-instance writer/reader role, and the last network-metrics rebuild time or error.
+
+Returns the existing `ready`, `db`, `sync`, and `metrics` fields, extended with
+current indexed DID statistics, index freshness, scope, the instance's writer or
+reader role, and a bounded live sample
+of Gatekeeper operational status. It does not enumerate or resolve Gatekeeper
+DIDs, replay histories, or start a metrics rebuild.
+
+The `dids` section reports all-prefix totals, matching the scope of the former
+Gatekeeper DID statistics. `scopedDids` reports the configured Search Server
+scope shown in `scope`. Both sections contain `total`, `byType` (agents, assets,
+confirmed, unconfirmed, ephemeral, invalid), `byRegistry`, and `byVersion`. Counts cover
+current stored histories, including deactivated DIDs, deduplicated by CID
+suffix. Physical removals reduce these counts once indexed. These are not the
+cumulative totals returned by the historical snapshot endpoints. `ephemeral`
+means MDIP expiration is set, not that a credential has a signed validity date.
+`invalid` counts indexed resolution-error documents, not failed signatures.
+
+The configured network scope applies only to `scopedDids`.
+`includeAmbiguous=true` also includes ambiguous legacy DIDs under that scope,
+as on other live listing endpoints. It does not change `dids`. Without a
+configured DID prefix, both sections contain the same counts. Invalid or
+repeated `includeAmbiguous` values return `400`.
+
+For example:
+
+```json
+{
+  "ready": true,
+  "db": "postgres",
+  "role": "writer",
+  "sync": {
+    "snapshotComplete": true,
+    "snapshotCursor": "last-snapshot-cursor",
+    "snapshotCheckpointCursor": "40",
+    "changesCursor": "42",
+    "lastSyncStartedAt": "2026-10-23T09:59:59.000Z",
+    "lastSyncCompletedAt": "2026-10-23T10:00:00.000Z",
+    "lastSyncError": null,
+    "lastSyncMode": "changes",
+    "lastPagesProcessed": 1,
+    "lastDidsChanged": 3,
+    "lastBlocksStored": 0
+  },
+  "metrics": { "lastRebuiltAt": "2026-10-23T09:00:00.000Z", "lastError": null },
+  "dids": {
+    "total": 5,
+    "byType": { "agents": 2, "assets": 3, "confirmed": 3, "unconfirmed": 2, "ephemeral": 1, "invalid": 0 },
+    "byRegistry": { "hyperswarm": 5 },
+    "byVersion": { "1": 3, "2": 2 }
+  },
+  "scopedDids": {
+    "total": 3,
+    "byType": { "agents": 1, "assets": 2, "confirmed": 2, "unconfirmed": 1, "ephemeral": 1, "invalid": 0 },
+    "byRegistry": { "hyperswarm": 3 },
+    "byVersion": { "1": 2, "2": 1 }
+  },
+  "index": {
+    "epoch": "source-epoch",
+    "snapshotComplete": true,
+    "snapshotCursor": "last-snapshot-cursor",
+    "changesCursor": "42",
+    "appliedAt": "2026-10-23T10:00:00.000Z",
+    "caughtUpCursor": "42",
+    "caughtUpAt": "2026-10-23T10:00:00.000Z",
+    "state": "caught_up",
+    "lastError": null
+  },
+  "scope": { "didPrefix": "did:test", "includeAmbiguous": false },
+  "gatekeeper": {
+    "available": true,
+    "sampledAt": "2026-10-23T10:00:01.000Z",
+    "status": {
+      "uptimeSeconds": 120,
+      "eventsQueue": { "staged": 2, "pending": 3, "processing": 1, "total": 6, "active": true },
+      "memoryUsage": { "rss": 100000000, "heapTotal": 80000000, "heapUsed": 60000000, "external": 10000000, "arrayBuffers": 5000000 }
+    }
+  }
+}
+```
+
+The index state is `snapshot` during initial indexing, `catching_up` after the
+snapshot or during paged changes, and `caught_up` after a final changes page.
+The last state describes the recorded checkpoint and time, not a promise that
+Gatekeeper has not changed since. Global and scoped DID counts and their cursor
+are read from one database snapshot. The live Gatekeeper sample has a separate timestamp and
+contains Gatekeeper memory in bytes, not Search Server memory.
+
+Operational sampling has a five-second deadline and a 64-KiB response limit.
+It does not change indexing request limits. An unavailable sample returns
+`gatekeeper.available=false` with reason `unavailable` or `unsupported_status`,
+without removing the indexed DID counts or inventing zero-valued measurements.
+Old Gatekeeper status responses are unsupported until Gatekeeper is upgraded.
+Only allowed counters are relayed, not queued operation bodies or internal
+errors. Database failures return `500`, or `503` when the database or schema is
+temporarily unavailable. The endpoint uses normal rate limiting.
+Only `/ready` is exempt by default. If an existing deployment explicitly lists
+`/api/v1/status` in `KC_SEARCH_SERVER_RATE_LIMIT_SKIP_PATHS`, remove it to apply
+the configured rate limit to status requests.
+
+This schema includes statistics columns in `did_classifications` and stored
+lower-case document text in `did_docs`. When upgrading from a layout lacking
+either, recreate the disposable Search Server database tables or use a fresh Search
+database as described above, then restart Search Server to reindex all metadata.
+Do not reset Gatekeeper. Later changes to Gatekeeper's source epoch automatically
+clear and rebuild the Search index within the existing schema instead of
+attaching a new cursor to stale totals. An existing Search cursor without a
+recorded epoch also requires a fresh snapshot.
+
+From TypeScript, use `SearchClient.getStatus({ includeAmbiguous: true })`. From
+the command line, use `curl http://localhost:4002/api/v1/status`.
 
 ### `GET /api/v1/did/:did`
 - **Description**: Returns the DID Document

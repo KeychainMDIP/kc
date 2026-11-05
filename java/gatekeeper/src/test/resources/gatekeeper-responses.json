@@ -67,13 +67,7 @@
   },
   "status": {
     "uptimeSeconds": 12,
-    "dids": {
-      "total": 1,
-      "byType": {"agents": 1, "assets": 0, "confirmed": 1, "unconfirmed": 0, "ephemeral": 0, "invalid": 0},
-      "byRegistry": {"local": 1},
-      "byVersion": {"1": 1},
-      "eventsQueue": []
-    },
+    "eventsQueue": {"staged": 2, "pending": 3, "processing": 1, "total": 6, "active": true},
     "memoryUsage": {"rss": 4294967296, "heapTotal": 200, "heapUsed": 100, "external": 50, "arrayBuffers": 25}
   }
 }

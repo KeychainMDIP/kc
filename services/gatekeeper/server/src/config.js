@@ -81,7 +81,6 @@ const config = {
     jsonLimit: process.env.KC_GATEKEEPER_JSON_LIMIT || '4mb',
     maxOpBytes: process.env.KC_GATEKEEPER_MAX_OP_BYTES ? parseInt(process.env.KC_GATEKEEPER_MAX_OP_BYTES) : undefined,
     gcInterval: process.env.KC_GATEKEEPER_GC_INTERVAL ? parseInt(process.env.KC_GATEKEEPER_GC_INTERVAL) : 15,
-    statusInterval: process.env.KC_GATEKEEPER_STATUS_INTERVAL ? parseInt(process.env.KC_GATEKEEPER_STATUS_INTERVAL) : 5,
     gatekeeperTrustProxy: parseBoolean(process.env.KC_GATEKEEPER_TRUST_PROXY, false),
     rateLimitEnabled: parseBoolean(process.env.KC_GATEKEEPER_RATE_LIMIT_ENABLED, false),
     rateLimitWindowValue: parsePositiveInteger(process.env.KC_GATEKEEPER_RATE_LIMIT_WINDOW_VALUE, 1),

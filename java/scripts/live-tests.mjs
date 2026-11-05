@@ -73,7 +73,6 @@ try {
         KC_GATEKEEPER_DID_PREFIX: 'did:test',
         KC_IPFS_ENABLE: 'false',
         KC_GATEKEEPER_GC_INTERVAL: '0',
-        KC_GATEKEEPER_STATUS_INTERVAL: '0',
         KC_GATEKEEPER_RATE_LIMIT_ENABLED: 'false',
         KC_GATEKEEPER_URL: `http://127.0.0.1:${port}`,
     };

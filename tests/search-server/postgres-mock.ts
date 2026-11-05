@@ -1,4 +1,5 @@
 import { jest } from '@jest/globals';
+import { SEARCH_PROTOCOL_VERSION, SEARCH_SCHEMA_VERSION } from '../../services/search-server/src/db/coordination.ts';
 
 // Legacy SQL-unit fixtures mock coordination. Real concurrency is tested in multi-instance.test.ts.
 export function mockPostgresPool(db: unknown, pool: any, unlockError?: Error): any {
@@ -14,7 +15,7 @@ export function mockPostgresPool(db: unknown, pool: any, unlockError?: Error): a
             return { rows: [{ layout: { columns: null, constraints: null, views: null } }], rowCount: 1 };
         }
         if (sql.includes('FROM search_index_control')) {
-            return { rows: [{ owner, protocol_version: 1, schema_version: 1 }], rowCount: 1 };
+            return { rows: [{ owner, protocol_version: SEARCH_PROTOCOL_VERSION, schema_version: SEARCH_SCHEMA_VERSION }], rowCount: 1 };
         }
         if (sql.includes('INSERT INTO search_index_control')) {
             owner = String(params?.[0]);

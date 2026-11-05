@@ -28,8 +28,11 @@ import {
     SearchDocsOptions,
     SearchDocsResult,
     GatekeeperEvent,
+    SearchStatsOptions,
+    SearchStoredStatistics,
 } from '../types.js';
-import { getEventDisplayTime, stableStringify } from './db-utils.js';
+import { projectStatistics, summarizeStatistics, type StatisticsGroup } from '../statistics.js';
+import { getEventDisplayTime, stableStringify, RESET_SEARCH_SCHEMA_SQL } from './db-utils.js';
 import { deduplicateDIDPrefixReferences, extractIdentity, extractIdentityFields } from '../published-credentials.js';
 import {
     classifyDIDPrefix,
@@ -124,16 +127,18 @@ export default class Postgres implements DIDsDb {
 
     static async create<T extends DIDsDb>(
         this: new (url: string) => T,
-        url: string
+        url: string,
+        resetDb = false,
     ): Promise<T> {
         const db = new this(url);
         try {
-            await db.connect();
-            return db;
-        } catch (error) {
+            await db.connect(resetDb);
+        }
+        catch (error) {
             await db.disconnect().catch(() => {});
             throw error;
         }
+        return db;
     }
 
     constructor(url: string) {
@@ -144,7 +149,9 @@ export default class Postgres implements DIDsDb {
         );
     }
 
-    async connect(signal?: AbortSignal): Promise<void> {
+    async connect(signalOrReset?: AbortSignal | boolean, resetDb = false): Promise<void> {
+        let signal = typeof signalOrReset === 'boolean' ? undefined : signalOrReset;
+        resetDb = typeof signalOrReset === 'boolean' ? signalOrReset : resetDb;
         signal = signal ? AbortSignal.any([signal, this.closing.signal]) : this.closing.signal;
         signal.throwIfAborted();
         if (!this.pool) this.pool = this.createPool();
@@ -167,25 +174,28 @@ export default class Postgres implements DIDsDb {
                 [SEARCH_LOCK_NAMESPACE, SEARCH_SCHEMA_LOCK]);
             schemaLocked = true;
             await client.query('RESET lock_timeout');
-            const metadata = await client.query(`SELECT to_regclass('search_index_control') AS control,
-                EXISTS (SELECT 1 FROM pg_class r JOIN pg_namespace n ON n.oid = r.relnamespace
-                    WHERE n.nspname = current_schema() AND r.relname = ANY($1::text[])) AS projections_exist`,
-            [SEARCH_TABLES]);
-            if (metadata.rows[0].control) {
-                await this.control(client);
-            }
-            const result = await client.query(SEARCH_LAYOUT_SQL, [SEARCH_TABLES, SEARCH_VIEWS]);
-            const layout = result.rows[0].layout;
-            if (metadata.rows[0].control || metadata.rows[0].projections_exist
-                || layout.columns !== null || layout.constraints !== null || layout.views !== null) {
-                const hash = createHash('sha256').update(JSON.stringify(layout)).digest('hex');
-                if (hash !== SEARCH_LAYOUT_HASH) {
-                    throw new SearchUnavailableError('Unsupported existing Search schema. Rebuild the Search database before upgrading');
+            if (!resetDb) {
+                const metadata = await client.query(`SELECT to_regclass('search_index_control') AS control,
+                    EXISTS (SELECT 1 FROM pg_class r JOIN pg_namespace n ON n.oid = r.relnamespace
+                        WHERE n.nspname = current_schema() AND r.relname = ANY($1::text[])) AS projections_exist`,
+                [SEARCH_TABLES]);
+                if (metadata.rows[0].control) {
+                    await this.control(client);
+                }
+                const result = await client.query(SEARCH_LAYOUT_SQL, [SEARCH_TABLES, SEARCH_VIEWS]);
+                const layout = result.rows[0].layout;
+                if (metadata.rows[0].control || metadata.rows[0].projections_exist
+                    || layout.columns !== null || layout.constraints !== null || layout.views !== null) {
+                    const hash = createHash('sha256').update(JSON.stringify(layout)).digest('hex');
+                    if (hash !== SEARCH_LAYOUT_HASH) {
+                        throw new SearchUnavailableError('Unsupported existing Search schema. Rebuild the Search database before upgrading');
+                    }
                 }
             }
             signal?.throwIfAborted();
             transaction = true;
             await client.query('BEGIN');
+            if (resetDb) await client.query(RESET_SEARCH_SCHEMA_SQL);
             await client.query(SEARCH_SCHEMA_SQL);
             await client.query('CREATE EXTENSION IF NOT EXISTS pg_trgm');
             await client.query(`CREATE TABLE IF NOT EXISTS search_index_control (
@@ -601,7 +611,7 @@ export default class Postgres implements DIDsDb {
                     await client.query('DELETE FROM did_classifications WHERE suffix = $1', [suffix]);
                 }
 
-                const changed = eventChanges.get(record.did) === true;
+                const changed = !previousDid || previousDid !== record.did || eventChanges.get(record.did) === true;
 
                 if (!changed && !record.removed) {
                     continue;
@@ -623,12 +633,15 @@ export default class Postgres implements DIDsDb {
                 }
 
                 const classification = classifyDIDPrefix(record.events);
+                const statistics = projectStatistics(record.doc);
                 classificationRows.push([
                     suffix,
                     record.did,
                     classification.prefix,
                     classification.authoritative,
                     isAgentDID(record.events),
+                    statistics.type, statistics.registry, statistics.version,
+                    statistics.confirmed, statistics.ephemeral, statistics.invalid,
                 ]);
 
                 for (const [index, event] of record.events.entries()) {
@@ -712,14 +725,21 @@ export default class Postgres implements DIDsDb {
             );
             await insertRows(
                 client,
-                'INSERT INTO did_classifications (suffix, did, prefix, prefix_authoritative, is_agent)',
+                `INSERT INTO did_classifications (suffix, did, prefix, prefix_authoritative, is_agent,
+                    stats_type, stats_registry, stats_version, stats_confirmed, stats_ephemeral, stats_invalid)`,
                 classificationRows,
                 [],
                 ` ON CONFLICT (suffix) DO UPDATE SET
                     did = EXCLUDED.did,
                     prefix = EXCLUDED.prefix,
                     prefix_authoritative = EXCLUDED.prefix_authoritative,
-                    is_agent = EXCLUDED.is_agent`
+                    is_agent = EXCLUDED.is_agent,
+                    stats_type = EXCLUDED.stats_type,
+                    stats_registry = EXCLUDED.stats_registry,
+                    stats_version = EXCLUDED.stats_version,
+                    stats_confirmed = EXCLUDED.stats_confirmed,
+                    stats_ephemeral = EXCLUDED.stats_ephemeral,
+                    stats_invalid = EXCLUDED.stats_invalid`
             );
             await insertRows(
                 client,
@@ -803,6 +823,24 @@ export default class Postgres implements DIDsDb {
             );
 
             return result;
+        });
+    }
+
+    async getStats(options: SearchStatsOptions = {}): Promise<SearchStoredStatistics> {
+        return this.withRead(async () => {
+            const client = this.getPool();
+            const groups = await client.query<StatisticsGroup>(`
+                SELECT dc.stats_type AS type, dc.stats_registry AS registry, dc.stats_version AS version,
+                       dc.stats_confirmed AS confirmed, dc.stats_ephemeral AS ephemeral,
+                       dc.stats_invalid AS invalid, COUNT(*) AS count,
+                       ($1::text IS NULL OR effective.prefix = $1 OR ($2 AND effective.prefix_ambiguous)) AS "inScope"
+                FROM did_classifications dc
+                JOIN did_classifications_effective effective ON effective.suffix = dc.suffix
+                GROUP BY dc.stats_type, dc.stats_registry, dc.stats_version,
+                         dc.stats_confirmed, dc.stats_ephemeral, dc.stats_invalid, "inScope"`,
+            [options.didPrefix || null, options.includeAmbiguous ?? false]);
+            const state = await client.query<{ key: string; value: string }>('SELECT key, value FROM sync_state');
+            return summarizeStatistics(groups.rows, Object.fromEntries(state.rows.map(row => [row.key, row.value])));
         });
     }
 

@@ -9,7 +9,7 @@ export class IndexOwnershipLostError extends SearchUnavailableError {
 }
 
 export const SEARCH_PROTOCOL_VERSION = 1;
-export const SEARCH_SCHEMA_VERSION = 1;
+export const SEARCH_SCHEMA_VERSION = 3;
 export const SEARCH_LOCK_NAMESPACE = 'search-server';
 export const SEARCH_WRITER_LOCK = 'index-writer';
 export const SEARCH_SCHEMA_LOCK = 'index-schema';
@@ -43,4 +43,4 @@ export const SEARCH_VIEWS = [
     'published_credentials_classified', 'did_classifications_effective', 'did_reference_prefixes',
 ];
 
-export const SEARCH_LAYOUT_HASH = '46e7b9ada313bc9fb97ee6c705e8b69854d716cfb599a9db9fcf5eaf03b88ca3';
+export const SEARCH_LAYOUT_HASH = '74a5ec467c29175527f829d24767997ad244cda8e0e596362140227ce4ddbd54';

@@ -356,7 +356,7 @@ program
 
 program
     .command('get-status')
-    .description('Report gatekeeper status')
+    .description('Report Gatekeeper operational status (DID counts: Search Server /api/v1/status)')
     .action(async () => {
         try {
             const response = await gatekeeper.getStatus();

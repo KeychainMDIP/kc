@@ -92,61 +92,24 @@
                       "type": "integer",
                       "description": "The number of seconds since the server started."
                     },
-                    "dids": {
+                    "eventsQueue": {
                       "type": "object",
-                      "description": "Detailed statistics of DID checks.",
+                      "description": "Live queue counts without operation payloads. DID statistics are available from Search Server /status.",
                       "properties": {
+                        "staged": {
+                          "type": "integer"
+                        },
+                        "pending": {
+                          "type": "integer"
+                        },
+                        "processing": {
+                          "type": "integer"
+                        },
                         "total": {
-                          "type": "integer",
-                          "description": "Total number of DIDs processed."
+                          "type": "integer"
                         },
-                        "byType": {
-                          "type": "object",
-                          "description": "Breakdown of DIDs by type.",
-                          "properties": {
-                            "agents": {
-                              "type": "integer",
-                              "description": "Number of DIDs of type \"agent\"."
-                            },
-                            "assets": {
-                              "type": "integer",
-                              "description": "Number of DIDs of type \"asset\"."
-                            },
-                            "confirmed": {
-                              "type": "integer",
-                              "description": "Number of DIDs that have been confirmed."
-                            },
-                            "unconfirmed": {
-                              "type": "integer",
-                              "description": "Number of DIDs that remain unconfirmed."
-                            },
-                            "ephemeral": {
-                              "type": "integer",
-                              "description": "Number of DIDs with an expiration (validUntil) set."
-                            },
-                            "invalid": {
-                              "type": "integer",
-                              "description": "Number of DIDs that could not be resolved or are invalid."
-                            }
-                          }
-                        },
-                        "byRegistry": {
-                          "type": "object",
-                          "description": "Count of DIDs grouped by registry.",
-                          "additionalProperties": {
-                            "type": "integer"
-                          }
-                        },
-                        "byVersion": {
-                          "type": "object",
-                          "description": "Count of DIDs grouped by version.",
-                          "additionalProperties": {
-                            "type": "integer"
-                          }
-                        },
-                        "eventsQueue": {
-                          "type": "object",
-                          "description": "Details of the events queue."
+                        "active": {
+                          "type": "boolean"
                         }
                       }
                     },

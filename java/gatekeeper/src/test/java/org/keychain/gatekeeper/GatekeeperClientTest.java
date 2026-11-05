@@ -35,6 +35,21 @@ import org.keychain.gatekeeper.model.ProcessEventsResult;
 import org.keychain.gatekeeper.model.ResolveDIDOptions;
 
 class GatekeeperClientTest {
+    @Test
+    void readsLightweightOperationalStatus() throws Exception {
+        server.enqueue(new MockResponse().setBody(
+            "{\"uptimeSeconds\":20,\"eventsQueue\":{\"staged\":1,\"pending\":2,\"processing\":3,\"total\":6,\"active\":true},"
+            + "\"memoryUsage\":{\"rss\":100,\"heapTotal\":90,\"heapUsed\":80,\"external\":10,\"arrayBuffers\":5}}"
+        ).setResponseCode(200));
+        var result = client.getStatus();
+        assertEquals(20, result.uptimeSeconds);
+        assertEquals(6, result.eventsQueue.total);
+        assertEquals(3, result.eventsQueue.processing);
+        assertTrue(result.eventsQueue.active);
+        assertEquals(100, result.memoryUsage.rss);
+        assertEquals("/api/v1/status", server.takeRequest().getPath());
+    }
+
     private MockWebServer server;
     private GatekeeperClient client;
     private ObjectMapper mapper;
@@ -456,8 +471,11 @@ class GatekeeperClientTest {
         var status = client.getStatus();
 
         assertEquals(12, status.uptimeSeconds);
-        assertEquals(1, status.dids.total);
-        assertEquals(0, status.dids.byType.assets);
+        assertEquals(6, status.eventsQueue.total);
+        assertEquals(2, status.eventsQueue.staged);
+        assertEquals(3, status.eventsQueue.pending);
+        assertEquals(1, status.eventsQueue.processing);
+        assertTrue(status.eventsQueue.active);
         assertEquals(4294967296L, status.memoryUsage.rss);
         assertEquals("/api/v1/status", takeRequest().getPath());
     }
