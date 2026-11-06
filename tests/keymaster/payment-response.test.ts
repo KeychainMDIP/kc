@@ -357,6 +357,11 @@ describe('payment-only challenge responses', () => {
     });
 
     it('supports the complete paid attestation and credential reuse flow', async () => {
+        await keymaster.setCurrentId('Requestor');
+        const paidChallenge = await keymaster.createChallenge({
+            credentials: [{ schema, issuers: [attestor] }],
+        });
+
         await keymaster.setCurrentId('Attestor');
         const terms = await keymaster.createPaymentInfo({
             network: 'testnet',
@@ -369,7 +374,7 @@ describe('payment-only challenge responses', () => {
             ],
         });
 
-        const attestorResponse = await keymaster.createResponse(challenge, {
+        const attestorResponse = await keymaster.createResponse(paidChallenge, {
             paymentOnly: true,
             paymentInfo: terms,
         });
@@ -388,24 +393,22 @@ describe('payment-only challenge responses', () => {
 
         await keymaster.setCurrentId('Subject');
         expect(await keymaster.acceptCredential(credentialDid)).toBe(true);
-        const credential = await keymaster.getCredential(credentialDid);
-        expect(credential?.credential?.paymentInfo).toStrictEqual(terms);
+        const credentialResponse = await keymaster.createResponse(paidChallenge);
 
         await keymaster.setCurrentId('Requestor');
-        const reuseChallenge = await keymaster.createChallenge({
-            credentials: [{ schema, issuers: [attestor] }],
-        });
-
-        await keymaster.setCurrentId('Subject');
-        const holderResponse = await keymaster.createResponse(reuseChallenge, {
-            paymentOnly: true,
-            paymentInfo: credential!.credential!.paymentInfo as PaymentInfo,
-        });
-
-        await keymaster.setCurrentId('Requestor');
-        await expect(keymaster.verifyResponse(holderResponse, { publish: false })).resolves.toMatchObject({
+        const verified = await keymaster.verifyResponse(credentialResponse, { publish: false });
+        expect(verified).toMatchObject({
             responder: subject,
-            paymentInfo: terms,
+            requested: 1,
+            fulfilled: 1,
+            match: true,
+            credentials: [{ vc: credentialDid }],
         });
+        expect(verified.vps).toHaveLength(1);
+        expect(verified.vps?.[0]).toMatchObject({
+            issuer: attestor,
+            credentialSubject: { id: subject },
+        });
+        expect(verified.vps?.[0].credential?.paymentInfo).toStrictEqual(terms);
     });
 });
