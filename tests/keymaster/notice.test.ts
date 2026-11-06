@@ -689,7 +689,7 @@ describe('cleanupNotices', () => {
         const nonNotice = await keymaster.createAsset({});
         await keymaster.addToNotices(notice, [NoticeTags.CREDENTIAL]);
         await keymaster.addToNotices(nonNotice, [NoticeTags.CREDENTIAL]);
-        await gatekeeper.verifyDb({ chatty: false });
+        await gatekeeper.collectExpiredDIDs();
 
         await expect(keymaster.refreshNotices()).resolves.toBe(true);
         expect((await keymaster.fetchIdInfo()).notices).toHaveProperty(notice);

@@ -1,6 +1,7 @@
 import fs from 'fs';
 import { randomUUID } from 'crypto';
 import { JsonDbFile } from '../types.js';
+import { isDIDLifecycle, isExpirationJob, isLifecycleMetadata } from './lifecycle.js';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -22,7 +23,12 @@ function isJsonDbFile(value: unknown): value is JsonDbFile {
         (value.indexSeq === undefined ||
             (typeof value.indexSeq === 'number' && Number.isSafeInteger(value.indexSeq) && value.indexSeq >= 0)) &&
         (value.indexChanges === undefined || Array.isArray(value.indexChanges)) &&
-        (value.indexEpoch === undefined || typeof value.indexEpoch === 'string');
+        (value.indexEpoch === undefined || typeof value.indexEpoch === 'string') &&
+        (value.lifecycle === undefined || (isRecord(value.lifecycle) &&
+            Object.entries(value.lifecycle).every(([key, row]) => isDIDLifecycle(row) && row.suffix === key))) &&
+        (value.expirationJobs === undefined || (isRecord(value.expirationJobs) &&
+            Object.entries(value.expirationJobs).every(([key, row]) => isExpirationJob(row) && row.suffix === key))) &&
+        (value.lifecycleMetadata === undefined || isLifecycleMetadata(value.lifecycleMetadata));
 }
 
 export function writeJsonDbFile(dbName: string, dataFolder: string, db: JsonDbFile): void {

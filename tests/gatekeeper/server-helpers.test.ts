@@ -42,6 +42,58 @@ function createResponse(statusCode: number, contentLength?: number | string): Ev
 }
 
 describe('gatekeeper server helpers', () => {
+    const expirationPass = {
+        epoch: 'test-epoch', cutoff: 1000, dueComplete: false, jobsComplete: false,
+    };
+
+    it('drains expiration pages and retains their bounded work totals', async () => {
+        const collectExpiredDIDs = jest.fn<() => Promise<import('@mdip/gatekeeper/types').CollectExpiredDIDsResult>>()
+            .mockResolvedValueOnce({ examined: 100, expired: 90, deferred: 10, hasMore: true, continuation: expirationPass })
+            .mockResolvedValueOnce({ examined: 3, expired: 2, deferred: 1, hasMore: false });
+        await expect(helpers.runExpirationCleanup({ collectExpiredDIDs }, () => false)).resolves.toEqual({
+            examined: 103, expired: 92, deferred: 11, hasMore: false, continuation: undefined,
+        });
+        expect(collectExpiredDIDs).toHaveBeenNthCalledWith(2, { limit: 100, continuation: expirationPass });
+    });
+
+    it('bounds a scheduled expiration run and resumes its saved continuation', async () => {
+        const collectExpiredDIDs = jest.fn<() => Promise<import('@mdip/gatekeeper/types').CollectExpiredDIDsResult>>()
+            .mockResolvedValue({ examined: 100, expired: 1, deferred: 0, hasMore: true, continuation: expirationPass });
+        const result = await helpers.runExpirationCleanup({ collectExpiredDIDs }, () => false, expirationPass);
+        expect(collectExpiredDIDs).toHaveBeenCalledTimes(50);
+        expect(result).toEqual({ examined: 5000, expired: 50, deferred: 0, hasMore: true, continuation: expirationPass });
+    });
+
+    it('stops expiration collection between pages during shutdown', async () => {
+        let stopping = false;
+        const collectExpiredDIDs = jest.fn(async () => {
+            stopping = true;
+            return { examined: 1, expired: 1, deferred: 0, hasMore: true, continuation: expirationPass };
+        });
+        await expect(helpers.runExpirationCleanup({ collectExpiredDIDs }, () => stopping)).resolves.toMatchObject({
+            examined: 1, expired: 1, hasMore: true, continuation: expirationPass,
+        });
+        expect(collectExpiredDIDs).toHaveBeenCalledTimes(1);
+        await helpers.runExpirationCleanup({ collectExpiredDIDs }, () => true, expirationPass);
+        expect(collectExpiredDIDs).toHaveBeenCalledTimes(1);
+    });
+
+    it('preserves the error cause and already completed expiration work', async () => {
+        const failure = new Error('database unavailable');
+        const collectExpiredDIDs = jest.fn<() => Promise<import('@mdip/gatekeeper/types').CollectExpiredDIDsResult>>()
+            .mockResolvedValueOnce({ examined: 1, expired: 1, deferred: 0, hasMore: true, continuation: expirationPass })
+            .mockRejectedValueOnce(failure);
+        await expect(helpers.runExpirationCleanup({ collectExpiredDIDs }, () => false)).rejects.toMatchObject({
+            cause: failure, progress: { examined: 1, expired: 1, hasMore: true, continuation: expirationPass },
+        });
+    });
+
+    it('rejects a non-progressing collector response instead of looping', async () => {
+        const collectExpiredDIDs = jest.fn(async () => ({ examined: 0, expired: 0, deferred: 1, hasMore: true }));
+        await expect(helpers.runExpirationCleanup({ collectExpiredDIDs }, () => false)).rejects.toThrow('Expiration cleanup failed');
+        expect(collectExpiredDIDs).toHaveBeenCalledTimes(1);
+    });
+
     it('logs successful, client error, and server error requests', () => {
         const req = { method: 'GET', originalUrl: '/ready' };
         const next = jest.fn();

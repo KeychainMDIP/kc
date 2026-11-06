@@ -2,10 +2,38 @@ import type { NextFunction, Request, Response } from 'express';
 import type { Server } from 'http';
 import { BlockList, isIP } from 'net';
 
-import type { GatekeeperDb, IndexExportRequest, IndexExportResponse } from '@mdip/gatekeeper/types';
+import type {
+    CollectExpiredDIDsOptions, CollectExpiredDIDsResult, ExpirationContinuation,
+    GatekeeperDb, IndexExportRequest, IndexExportResponse,
+} from '@mdip/gatekeeper/types';
 import { childLogger } from '@mdip/common/logger';
 
 const log = childLogger({ service: 'gatekeeper-server' });
+
+export async function runExpirationCleanup(
+    collector: { collectExpiredDIDs(options?: CollectExpiredDIDsOptions): Promise<CollectExpiredDIDsResult> },
+    shouldStop: () => boolean,
+    continuation?: ExpirationContinuation,
+): Promise<CollectExpiredDIDsResult> {
+    const total: CollectExpiredDIDsResult = { examined: 0, expired: 0, deferred: 0, hasMore: !!continuation, continuation };
+    // Bound each scheduled run as well as its pages so imports get time between cycles.
+    for (let page = 0; page < 50 && !shouldStop(); page += 1) {
+        try {
+            const result = await collector.collectExpiredDIDs({ limit: 100, continuation: total.continuation });
+            total.examined += result.examined;
+            total.expired += result.expired;
+            total.deferred += result.deferred;
+            total.hasMore = result.hasMore;
+            total.continuation = result.continuation;
+            if (!result.hasMore) break;
+            if (!result.continuation) throw new Error('Expiration collector did not provide a continuation');
+            await new Promise<void>(resolve => setImmediate(resolve));
+        } catch (cause) {
+            throw Object.assign(new Error('Expiration cleanup failed', { cause }), { progress: total });
+        }
+    }
+    return total;
+}
 
 export const DATABASE_UNAVAILABLE_ERROR = 'database_unavailable';
 export const DATABASE_UNAVAILABLE_MESSAGE = 'Gatekeeper database is unavailable while exporting index';

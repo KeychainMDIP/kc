@@ -3,6 +3,11 @@ import { randomUUID } from 'crypto';
 import { InvalidDIDError } from '@mdip/common/errors';
 import { childLogger } from '@mdip/common/logger';
 import {
+    DIDLifecycle,
+    DeleteEventsOptions,
+    DueDIDCursor,
+    ExpirationJob,
+    LifecycleMetadata,
     GatekeeperDb,
     GatekeeperEvent,
     Operation,
@@ -20,10 +25,79 @@ import {
     normalizeIndexExportLimit,
     parseIndexExportCursor
 } from './index-export.js';
+import { LIFECYCLE_VERSION, LIFECYCLE_PAGE_SIZE, expirationKey, isDIDLifecycle, isExpirationJob, isLifecycleMetadata, lifecycleLimit, projectLifecycle } from './lifecycle.js';
 import { withHealthCheckTimeout } from './health.js';
 
 const REDIS_NOT_STARTED_ERROR = 'Redis not started. Call start() first.';
 const log = childLogger({ service: 'gatekeeper-db', module: 'redis' });
+
+// Decode and validate every lifecycle key before the event script starts writing.
+const lifecyclePrepare = `
+    local base = lifecycleBase
+    local lifeKeys = {base..'/rows', base..'/due', base..'/controllers', base..'/unknown', base..'/jobs', base..'/job-index'}
+    local lifeTypes = {'hash', 'zset', 'zset', 'set', 'hash', 'zset'}
+    for i, key in ipairs(lifeKeys) do
+        local kind = redis.call('TYPE', key).ok
+        if kind ~= 'none' and kind ~= lifeTypes[i] then error('WRONGTYPE lifecycle key '..key) end
+    end
+    local oldRaw = redis.call('HGET', lifeKeys[1], lifecycleId)
+    local oldLife = oldRaw and cjson.decode(oldRaw) or nil
+    if oldLife and (type(oldLife) ~= 'table' or type(oldLife.record) ~= 'table'
+        or (oldLife.dueKey and type(oldLife.dueKey) ~= 'string')
+        or (oldLife.controllerKey and type(oldLife.controllerKey) ~= 'string')) then error('Invalid lifecycle record') end
+    local nextLife = cjson.decode(lifecyclePayload)
+    if nextLife == cjson.null then nextLife = nil end
+    if nextLife and nextLife.keep then
+        local revision = nextLife.revision
+        nextLife = oldRaw and cjson.decode(oldRaw) or nil
+        if nextLife then nextLife.record.revision = revision end
+    end
+    if nextLife and nextLife.delete then
+        local revision = nextLife.revision
+        nextLife = oldRaw and cjson.decode(oldRaw) or nil
+        if nextLife then
+            if nextLife.record.controllerUnknown and nextLife.record.expiresAt
+                and (nextLife.record.type == 'agent' or nextLife.record.type == 'asset') then
+                nextLife.record.unresolved = nil
+            end
+            nextLife.record.controller = nil
+            nextLife.record.controllerUnknown = nil
+            nextLife.record.revision = revision
+            nextLife.controllerKey = nil
+            if not nextLife.record.expiresAt and not nextLife.record.unresolved then nextLife = nil end
+        end
+    end
+    local nextRaw = nextLife and cjson.encode(nextLife) or nil
+    if nextRaw and nextLife.expiresAtText then
+        nextRaw = string.gsub(nextRaw, '("expiresAt":)[^,}]+', '%1'..nextLife.expiresAtText)
+    end
+    local oldJobRaw = redis.call('HGET', lifeKeys[5], lifecycleId)
+    local oldJob = oldJobRaw and cjson.decode(oldJobRaw) or nil
+    if oldJob and (type(oldJob) ~= 'table' or oldJob.type ~= 'agent' or type(oldJob.expiresAt) ~= 'number') then
+        error('Invalid expiration cleanup record')
+    end
+`;
+
+const lifecycleCommit = `
+    if oldLife then
+        if oldLife.dueKey then redis.call('ZREM', lifeKeys[2], oldLife.dueKey) end
+        if oldLife.controllerKey then redis.call('ZREM', lifeKeys[3], oldLife.controllerKey) end
+    end
+    redis.call('SREM', lifeKeys[4], lifecycleId)
+    if nextLife then
+        redis.call('HSET', lifeKeys[1], lifecycleId, nextRaw)
+        if nextLife.dueKey and not nextLife.record.unresolved then redis.call('ZADD', lifeKeys[2], 0, nextLife.dueKey) end
+        if nextLife.controllerKey then redis.call('ZADD', lifeKeys[3], 0, nextLife.controllerKey) end
+        if nextLife.record.controllerUnknown then redis.call('SADD', lifeKeys[4], lifecycleId) end
+    else
+        redis.call('HDEL', lifeKeys[1], lifecycleId)
+    end
+    if not preserveExpirationJob and oldJob and (not nextLife or nextLife.record.type ~= 'agent'
+        or nextLife.record.expiresAt ~= oldJob.expiresAt) then
+        redis.call('HDEL', lifeKeys[5], lifecycleId)
+        redis.call('ZREM', lifeKeys[6], lifecycleId)
+    end
+`;
 
 export default class DbRedis implements GatekeeperDb {
     private readonly dbName: string;
@@ -45,6 +119,7 @@ export default class DbRedis implements GatekeeperDb {
             await this.redis.ping();
             await this.ensureDidIndex();
             await this.ensureIndexEpoch();
+            await this.initializeLifecycleIndex();
         }
         catch (error) {
             try {
@@ -109,6 +184,9 @@ export default class DbRedis implements GatekeeperDb {
             throw new Error(REDIS_NOT_STARTED_ERROR)
         }
 
+        await this.redis.set(`${this.lifecycleKey()}/metadata`, JSON.stringify({
+            version: LIFECYCLE_VERSION, epoch: await this.getIndexEpoch(), checkedCursor: '0', complete: false,
+        }));
         let cursor = '0';
         let totalDeleted = 0;
         do {
@@ -144,11 +222,20 @@ export default class DbRedis implements GatekeeperDb {
             kind: 'did',
             did,
             event,
+            lifecycleVersion: LIFECYCLE_VERSION,
         });
         const queueKeys = queueRegistries.map(registry => this.queueKey(registry));
         const script = `
             ${this.checkRedisTypesScript(['list', 'string', 'zset', 'zset', ...queueKeys.map(() => 'list')])}
             local change = cjson.decode(ARGV[2])
+            local lifecycleBase = ARGV[5]
+            local lifecycleId = ARGV[3]
+            local lifecyclePayload = ARGV[6]
+            local preserveExpirationJob = false
+            if ARGV[7] == 'create' and redis.call('LLEN', KEYS[1]) > 0 then
+                lifecyclePayload = cjson.encode({keep = true, revision = ARGV[8]})
+            end
+            ${lifecyclePrepare}
             local seq = redis.call('INCR', KEYS[2])
             local count = redis.call('RPUSH', KEYS[1], ARGV[1])
             change.seq = seq
@@ -157,13 +244,15 @@ export default class DbRedis implements GatekeeperDb {
             for i = 5, #KEYS do
                 redis.call('RPUSH', KEYS[i], ARGV[4])
             end
+            ${lifecycleCommit}
             return count
         `;
 
         const result = await this.evalAtomicMutation(
             script,
             [key, this.indexSeqKey(), this.indexChangesKey(), this.didIndexKey(), ...queueKeys],
-            [val, change, id, ...(queueKeys.length > 0 ? [JSON.stringify(event.operation)] : [])]
+            [val, change, id, JSON.stringify(event.operation), this.lifecycleKey(), this.lifecyclePayload(did, [event], true),
+                event.operation.type, event.operation.type === 'create' ? randomUUID() : '']
         );
 
         return Number(result ?? 0);
@@ -179,11 +268,12 @@ export default class DbRedis implements GatekeeperDb {
         const payloads = events.map(e => JSON.stringify(e));
         const operationEvents = options?.operationEvents ?? [];
         const changes = operationEvents.length === 0
-            ? [JSON.stringify({ kind: 'did', did })]
+            ? [JSON.stringify({ kind: 'did', did, lifecycleVersion: LIFECYCLE_VERSION })]
             : operationEvents.map(event => JSON.stringify({
                 kind: 'did',
                 did,
                 event,
+                lifecycleVersion: LIFECYCLE_VERSION,
             }));
 
         const script = `
@@ -201,6 +291,11 @@ export default class DbRedis implements GatekeeperDb {
                 changes[i] = cjson.decode(ARGV[2 + eventCount + i])
             end
             local id = ARGV[2 + eventCount + changeCount + 1]
+            local lifecycleId = id
+            local lifecycleBase = ARGV[2 + eventCount + changeCount + 2]
+            local lifecyclePayload = ARGV[2 + eventCount + changeCount + 3]
+            local preserveExpirationJob = eventCount == 0
+            ${lifecyclePrepare}
             redis.call('DEL', KEYS[1])
             for i = 1, eventCount do
                 redis.call('RPUSH', KEYS[1], ARGV[i + 2])
@@ -212,6 +307,7 @@ export default class DbRedis implements GatekeeperDb {
                 redis.call('ZADD', KEYS[3], seq, cjson.encode(change))
             end
             redis.call('ZADD', KEYS[4], 0, id)
+            ${lifecycleCommit}
             return eventCount
         `;
 
@@ -224,6 +320,8 @@ export default class DbRedis implements GatekeeperDb {
                 ...payloads,
                 ...changes,
                 id,
+                this.lifecycleKey(),
+                this.lifecyclePayload(did, events),
             ]
         );
     }
@@ -375,7 +473,7 @@ export default class DbRedis implements GatekeeperDb {
         return events.map(event => JSON.parse(event));
     }
 
-    async deleteEvents(did: string): Promise<number> {
+    async deleteEvents(did: string, expected?: DeleteEventsOptions): Promise<number> {
         if (!this.redis) {
             throw new Error(REDIS_NOT_STARTED_ERROR)
         }
@@ -388,7 +486,25 @@ export default class DbRedis implements GatekeeperDb {
             ${this.checkRedisTypesScript(['list', 'string', 'zset', 'zset'])}
             local change = cjson.decode(ARGV[1])
             local id = ARGV[2]
+            local lifecycleId = id
+            local lifecycleBase = ARGV[3]
+            local lifecyclePayload = 'null'
+            local preserveExpirationJob = true
+            ${lifecyclePrepare}
+            if ARGV[4] ~= '' then
+                local stateRaw = redis.call('GET', lifecycleBase..'/metadata')
+                local state = stateRaw and cjson.decode(stateRaw) or nil
+                if not state or state.complete ~= true or state.version ~= 1
+                    or type(state.checkedCursor) ~= 'string' or #state.checkedCursor > 20
+                    or not string.match(state.checkedCursor, '^%d+$')
+                    or (#state.checkedCursor > 1 and string.sub(state.checkedCursor, 1, 1) == '0')
+                    or redis.call('HGET', lifeKeys[1], '__version__') ~= '1'
+                    or state.epoch ~= redis.call('GET', ARGV[5]) then error('Lifecycle index is not initialized') end
+                if state.epoch ~= ARGV[4] or not oldLife or oldLife.record.revision ~= ARGV[6] then return 0 end
+            end
             local events = redis.call('LRANGE', KEYS[1], 0, -1)
+            local decodedEvents = {}
+            for i, event in ipairs(events) do decodedEvents[i] = cjson.decode(event) end
             local removed = redis.call('DEL', KEYS[1])
             redis.call('ZREM', KEYS[4], id)
             if removed > 0 then
@@ -397,24 +513,183 @@ export default class DbRedis implements GatekeeperDb {
                     change.seq = seq
                     redis.call('ZADD', KEYS[3], seq, cjson.encode(change))
                 else
-                    for _, event in ipairs(events) do
+                    for _, event in ipairs(decodedEvents) do
                         local seq = redis.call('INCR', KEYS[2])
                         change.seq = seq
-                        change.event = cjson.decode(event)
+                        change.event = event
                         redis.call('ZADD', KEYS[3], seq, cjson.encode(change))
                     end
                 end
             end
+            ${lifecycleCommit}
             return removed
         `;
 
         const removed = await this.evalAtomicMutation(
             script,
             [this.didKey(did), this.indexSeqKey(), this.indexChangesKey(), this.didIndexKey()],
-            [JSON.stringify({ kind: 'did', did, removed: true }), this.didId(did)]
+            [JSON.stringify({ kind: 'did', did, removed: true, lifecycleVersion: LIFECYCLE_VERSION }), this.didId(did),
+                this.lifecycleKey(), expected?.epoch ?? '', this.indexEpochKey(), expected?.revision ?? '']
         );
 
         return Number(removed ?? 0);
+    }
+
+    private lifecycleKey(): string { return `${this.dbName}/lifecycle`; }
+
+    private lifecyclePayload(did: string, events: GatekeeperEvent[], append = false): string {
+        if (append && events[0]?.operation.type === 'delete') return JSON.stringify({ delete: true, revision: randomUUID() });
+        const row = projectLifecycle(did, events);
+        return JSON.stringify(row ? {
+            record: row,
+            ...(row.expiresAt !== undefined && { dueKey: expirationKey(row) }),
+            ...(row.type === 'asset' && row.controller && { controllerKey: `${row.controller}/${row.suffix}` }),
+            ...(row.expiresAt !== undefined && { expiresAtText: String(row.expiresAt) }),
+        } : null);
+    }
+
+    async initializeLifecycleIndex(): Promise<void> {
+        const redis = this.assertStarted();
+        const base = this.lifecycleKey();
+        const epoch = await this.getIndexEpoch();
+        const checkpoint = await this.getIndexCheckpointCursor();
+        const raw = await redis.get(`${base}/metadata`);
+        let state: LifecycleMetadata | undefined = raw ? JSON.parse(raw) : undefined;
+        if (state !== undefined && !isLifecycleMetadata(state)) throw new Error('Invalid lifecycle metadata');
+        const rowsVersion = await redis.hget(`${base}/rows`, '__version__');
+        const valid = state?.version === LIFECYCLE_VERSION && state.epoch === epoch
+            && BigInt(state.checkedCursor) <= BigInt(checkpoint) && rowsVersion === String(LIFECYCLE_VERSION);
+        let uncovered = false;
+        if (valid) {
+            let cursor = state!.checkedCursor;
+            while (true) {
+                const page = await redis.zrangebyscore(this.indexChangesKey(), `(${cursor}`, checkpoint, 'LIMIT', 0, LIFECYCLE_PAGE_SIZE);
+                if (!page.length) break;
+                const changes: IndexChangeRecord[] = page.map(item => JSON.parse(item));
+                if (changes.some(change => change.kind === 'did' && change.lifecycleVersion !== LIFECYCLE_VERSION)) {
+                    uncovered = true;
+                    break;
+                }
+                const nextCursor = String(changes[changes.length - 1].seq);
+                if (BigInt(nextCursor) <= BigInt(cursor)) throw new Error('Lifecycle source checkpoint did not advance');
+                cursor = nextCursor;
+            }
+        }
+        if (!valid || uncovered) {
+            const discardJobs = state?.epoch !== epoch;
+            state = { version: LIFECYCLE_VERSION, epoch, complete: false, checkedCursor: checkpoint };
+            const keys = ['/rows', '/due', '/controllers', '/unknown', ...(discardJobs ? ['/jobs', '/job-index'] : [])].map(key => base + key);
+            const results = await redis.multi().del(...keys)
+                .hset(`${base}/rows`, '__version__', String(LIFECYCLE_VERSION))
+                .set(`${base}/metadata`, JSON.stringify(state)).exec();
+            const failed = results?.find(([error]) => error);
+            if (failed) throw failed[0];
+        }
+        if (!state!.complete) {
+            while (true) {
+                const keys = await redis.zrangebylex(this.didIndexKey(), state!.backfillCursor ? `(${state!.backfillCursor}` : '-', '+',
+                    'LIMIT', 0, LIFECYCLE_PAGE_SIZE);
+                if (!keys.length) break;
+                for (const id of keys) {
+                    const events = await this.getEvents(id);
+                    const did = id;
+                    await redis.eval(`local lifecycleBase = ARGV[1]
+                        local lifecycleId = ARGV[2]
+                        local lifecyclePayload = ARGV[3]
+                        local preserveExpirationJob = true
+                        ${lifecyclePrepare}
+                        ${lifecycleCommit}
+                        return 1`, 0, base, id, this.lifecyclePayload(did, events));
+                }
+                state!.backfillCursor = keys[keys.length - 1];
+                await redis.set(`${base}/metadata`, JSON.stringify(state));
+            }
+        }
+        await redis.set(`${base}/metadata`, JSON.stringify({ version: LIFECYCLE_VERSION, epoch, complete: true, checkedCursor: checkpoint }));
+    }
+
+    async getLifecycleMetadata(): Promise<LifecycleMetadata> {
+        const raw = await this.assertStarted().get(`${this.lifecycleKey()}/metadata`);
+        const state: LifecycleMetadata | undefined = raw ? JSON.parse(raw) : undefined;
+        if (!isLifecycleMetadata(state) || !state.complete || state.version !== LIFECYCLE_VERSION || state.epoch !== await this.getIndexEpoch()
+            || await this.assertStarted().hget(`${this.lifecycleKey()}/rows`, '__version__') !== String(LIFECYCLE_VERSION)) {
+            throw new Error('Lifecycle index is not initialized');
+        }
+        return state;
+    }
+
+    async getLifecycle(did: string): Promise<DIDLifecycle | null> {
+        const raw = await this.assertStarted().hget(`${this.lifecycleKey()}/rows`, this.didId(did));
+        return raw ? this.parseLifecycle(raw) : null;
+    }
+
+    private parseLifecycle(raw: string): DIDLifecycle {
+        const value: unknown = JSON.parse(raw).record;
+        if (!isDIDLifecycle(value)) throw new Error('Invalid lifecycle record');
+        return value;
+    }
+
+    private parseExpirationJob(raw: string): ExpirationJob {
+        const value: unknown = JSON.parse(raw);
+        if (!isExpirationJob(value)) throw new Error('Invalid expiration cleanup record');
+        return value;
+    }
+
+    private async lifecycleRows(ids: string[]): Promise<DIDLifecycle[]> {
+        if (!ids.length) return [];
+        const rows = await this.assertStarted().hmget(`${this.lifecycleKey()}/rows`, ...ids);
+        return rows.map(raw => {
+            if (!raw) throw new Error('Missing indexed lifecycle record');
+            return this.parseLifecycle(raw);
+        });
+    }
+
+    async getDueDIDs(cutoff: number, limit: number, after?: DueDIDCursor): Promise<DIDLifecycle[]> {
+        const keys = await this.assertStarted().zrangebylex(`${this.lifecycleKey()}/due`, after ? `(${expirationKey(after)}` : '-',
+            `(${expirationKey({ expiresAt: cutoff, suffix: '' })}`, 'LIMIT', 0, lifecycleLimit(limit));
+        return this.lifecycleRows(keys.map(key => key.split('/').pop()!));
+    }
+
+    async getControlledDIDs(controller: string, limit: number, after?: string): Promise<DIDLifecycle[]> {
+        const prefix = `${this.didId(controller)}/`;
+        const keys = await this.assertStarted().zrangebylex(`${this.lifecycleKey()}/controllers`,
+            after ? `(${prefix}${after}` : `[${prefix}`, `[${prefix}\uffff`, 'LIMIT', 0, lifecycleLimit(limit));
+        return this.lifecycleRows(keys.map(key => key.slice(prefix.length)));
+    }
+
+    async hasUnresolvedLifecycle(): Promise<boolean> {
+        return await this.assertStarted().scard(`${this.lifecycleKey()}/unknown`) > 0;
+    }
+
+    async getExpirationJobs(limit: number, after?: string): Promise<ExpirationJob[]> {
+        const redis = this.assertStarted();
+        const ids = await redis.zrangebylex(`${this.lifecycleKey()}/job-index`, after ? `(${after}` : '-', '+', 'LIMIT', 0, lifecycleLimit(limit));
+        if (!ids.length) return [];
+        return (await redis.hmget(`${this.lifecycleKey()}/jobs`, ...ids)).map(raw => {
+            if (!raw) throw new Error('Missing indexed expiration cleanup record');
+            return this.parseExpirationJob(raw);
+        });
+    }
+
+    async getExpirationJob(suffix: string): Promise<ExpirationJob | null> {
+        const raw = await this.assertStarted().hget(`${this.lifecycleKey()}/jobs`, suffix);
+        return raw ? this.parseExpirationJob(raw) : null;
+    }
+
+    async saveExpirationJob(suffix: string, job: ExpirationJob | null): Promise<void> {
+        if (job && (!isExpirationJob(job) || job.suffix !== suffix)) throw new Error('Invalid expiration cleanup record');
+        const script = `
+            ${this.checkRedisTypesScript(['hash', 'zset'])}
+            local job = cjson.decode(ARGV[2])
+            if job == cjson.null then
+                redis.call('HDEL', KEYS[1], ARGV[1])
+                redis.call('ZREM', KEYS[2], ARGV[1])
+            else
+                redis.call('HSET', KEYS[1], ARGV[1], ARGV[2])
+                redis.call('ZADD', KEYS[2], 0, ARGV[1])
+            end
+            return 1`;
+        await this.evalAtomicMutation(script, [`${this.lifecycleKey()}/jobs`, `${this.lifecycleKey()}/job-index`], [suffix, JSON.stringify(job)]);
     }
 
     async getAllKeys(): Promise<string[]> {
