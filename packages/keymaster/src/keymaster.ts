@@ -37,12 +37,14 @@ import {
     KeymasterOptions,
     NoticeMessage,
     PaymentInfo,
+    PaymentInfoInput,
     Poll,
     PollResults,
     PublishChallengeReceiptOptions,
     PossiblySigned,
     Signature,
     StoredWallet,
+    UnsignedPaymentInfo,
     VerifiableCredential,
     ViewPollResult,
     WalletBase,
@@ -2202,17 +2204,15 @@ export default class Keymaster implements KeymasterInterface {
         return this.createAsset({ challenge }, options);
     }
 
-    private async validatePaymentInfo(
+    private validateUnsignedPaymentInfo(
         value: unknown,
-        challenge: Challenge,
         now = Date.now()
-    ): Promise<PaymentInfo> {
+    ): UnsignedPaymentInfo {
         if (typeof value !== 'object' || !value || Array.isArray(value)) {
             throw new InvalidParameterError('paymentInfo');
         }
 
-        const paymentInfo = value as Partial<PaymentInfo>;
-        const signature = paymentInfo.signature;
+        const paymentInfo = value as Partial<UnsignedPaymentInfo>;
         const networks = ['bitcoin', 'testnet', 'regtest'];
         const validUntil = paymentInfo.validUntil === undefined
             ? undefined
@@ -2230,6 +2230,52 @@ export default class Keymaster implements KeymasterInterface {
                 && Number.isSafeInteger(output.amountSats)
                 && output.amountSats > 0);
 
+        if (paymentInfo.version !== 1
+            || paymentInfo.type !== 'bitcoin'
+            || typeof paymentInfo.network !== 'string'
+            || !networks.includes(paymentInfo.network)
+            || typeof paymentInfo.schema !== 'string'
+            || !isValidDID(paymentInfo.schema)
+            || typeof paymentInfo.subject !== 'string'
+            || !isValidDID(paymentInfo.subject)
+            || !validOutputs
+            || validUntil !== undefined && (!Number.isFinite(validUntil) || now >= validUntil)) {
+            throw new InvalidParameterError('paymentInfo');
+        }
+
+        return paymentInfo as UnsignedPaymentInfo;
+    }
+
+    async createPaymentInfo(input: PaymentInfoInput): Promise<PaymentInfo> {
+        if (typeof input !== 'object' || !input || Array.isArray(input)
+            || typeof input.schema !== 'string'
+            || typeof input.subject !== 'string') {
+            throw new InvalidParameterError('paymentInfo');
+        }
+
+        const signer = await this.fetchIdInfo();
+        const paymentInfo = this.validateUnsignedPaymentInfo({
+            version: 1,
+            type: 'bitcoin',
+            network: input.network,
+            schema: await this.lookupDID(input.schema),
+            subject: await this.lookupDID(input.subject),
+            outputs: Array.isArray(input.outputs)
+                ? input.outputs.map(output => ({ ...output }))
+                : input.outputs,
+            ...(input.validUntil === undefined ? {} : { validUntil: input.validUntil }),
+        });
+
+        return this.addSignature(paymentInfo, signer.did);
+    }
+
+    private async validatePaymentInfo(
+        value: unknown,
+        challenge: Challenge,
+        now = Date.now()
+    ): Promise<PaymentInfo> {
+        const paymentInfo = this.validateUnsignedPaymentInfo(value, now) as PaymentInfo;
+        const signature = paymentInfo.signature;
         const validSignature = typeof signature === 'object'
             && !!signature
             && !Array.isArray(signature)
@@ -2241,21 +2287,11 @@ export default class Keymaster implements KeymasterInterface {
             && typeof signature.value === 'string'
             && signature.value.length > 0;
 
-        if (paymentInfo.version !== 1
-            || paymentInfo.type !== 'bitcoin'
-            || typeof paymentInfo.network !== 'string'
-            || !networks.includes(paymentInfo.network)
-            || typeof paymentInfo.schema !== 'string'
-            || !isValidDID(paymentInfo.schema)
-            || typeof paymentInfo.subject !== 'string'
-            || !isValidDID(paymentInfo.subject)
-            || !validOutputs
-            || validUntil !== undefined && (!Number.isFinite(validUntil) || now >= validUntil)
-            || !validSignature) {
+        if (!validSignature) {
             throw new InvalidParameterError('paymentInfo');
         }
 
-        const signer = paymentInfo.signature!.signer!;
+        const signer = signature.signer!;
         const authorized = Array.isArray(challenge.credentials)
             && challenge.credentials.some(request => {
                 if (typeof request !== 'object' || !request || request.schema !== paymentInfo.schema) {
@@ -2272,7 +2308,7 @@ export default class Keymaster implements KeymasterInterface {
         }
 
         try {
-            if (!await this.verifySignature(paymentInfo as PaymentInfo)) {
+            if (!await this.verifySignature(paymentInfo)) {
                 throw new InvalidParameterError('paymentInfo');
             }
         }
@@ -2280,7 +2316,7 @@ export default class Keymaster implements KeymasterInterface {
             throw new InvalidParameterError('paymentInfo');
         }
 
-        return paymentInfo as PaymentInfo;
+        return paymentInfo;
     }
 
     private async findMatchingCredential(

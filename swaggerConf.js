@@ -118,6 +118,21 @@ const keymasterSchemas = {
             amountSats: { type: 'integer', minimum: 1, maximum: Number.MAX_SAFE_INTEGER },
         },
     },
+    PaymentInfoInput: {
+        type: 'object',
+        required: ['network', 'schema', 'subject', 'outputs'],
+        properties: {
+            network: { type: 'string', enum: ['bitcoin', 'testnet', 'regtest'] },
+            schema: { type: 'string', description: 'DID or wallet name of the requested credential schema.' },
+            subject: { type: 'string', description: 'DID or wallet name of the credential subject.' },
+            outputs: {
+                type: 'array',
+                minItems: 1,
+                items: { $ref: '#/components/schemas/PaymentOutput' },
+            },
+            validUntil: { type: 'string', format: 'date-time' },
+        },
+    },
     PaymentInfo: {
         type: 'object',
         required: ['version', 'type', 'network', 'schema', 'subject', 'outputs', 'signature'],

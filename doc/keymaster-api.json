@@ -248,6 +248,44 @@
           }
         }
       },
+      "PaymentInfoInput": {
+        "type": "object",
+        "required": [
+          "network",
+          "schema",
+          "subject",
+          "outputs"
+        ],
+        "properties": {
+          "network": {
+            "type": "string",
+            "enum": [
+              "bitcoin",
+              "testnet",
+              "regtest"
+            ]
+          },
+          "schema": {
+            "type": "string",
+            "description": "DID or wallet name of the requested credential schema."
+          },
+          "subject": {
+            "type": "string",
+            "description": "DID or wallet name of the credential subject."
+          },
+          "outputs": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/components/schemas/PaymentOutput"
+            }
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "PaymentInfo": {
         "type": "object",
         "required": [
@@ -1830,6 +1868,54 @@
           },
           "400": {
             "description": "The requested name was invalid or could not be removed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/payment-info": {
+      "post": {
+        "summary": "Create signed payment information.",
+        "description": "Builds a versioned Bitcoin payment packet and signs it with the current ID.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PaymentInfoInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The validated and signed payment information.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "paymentInfo": {
+                      "$ref": "#/components/schemas/PaymentInfo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid payment information.",
             "content": {
               "application/json": {
                 "schema": {

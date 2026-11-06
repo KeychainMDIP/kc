@@ -3,7 +3,7 @@ import nock from 'nock';
 import KeymasterClient from '@mdip/keymaster/client';
 import SearchClient from '../../packages/keymaster/src/search-client.ts';
 import { ExpectedExceptionError } from '@mdip/common/errors';
-import { PaymentInfo, Seed, WalletEncFile, WalletFile } from "@mdip/keymaster/types";
+import { PaymentInfo, PaymentInfoInput, Seed, WalletEncFile, WalletFile } from "@mdip/keymaster/types";
 
 const KeymasterURL = 'http://keymaster.org';
 const SearchURL = 'http://search.org';
@@ -28,6 +28,7 @@ const Endpoints = {
     names: '/api/v1/names',
     did: '/api/v1/did',
     assets: '/api/v1/assets',
+    payment_info: '/api/v1/payment-info',
     challenge: '/api/v1/challenge',
     response: '/api/v1/response',
     response_verify: '/api/v1/response/verify',
@@ -1488,6 +1489,44 @@ describe('transferAsset', () => {
         catch (error: any) {
             expect(error.message).toBe(ServerError.message);
         }
+    });
+});
+
+describe('createPaymentInfo', () => {
+    const input: PaymentInfoInput = {
+        network: 'testnet',
+        schema: 'did:test:schema',
+        subject: 'did:test:subject',
+        outputs: [{ role: 'attestor', address: 'tb1qattestor', amountSats: 1_000 }],
+    };
+    const paymentInfo = {
+        version: 1,
+        type: 'bitcoin',
+        ...input,
+        signature: {
+            signer: 'did:test:attestor',
+            signed: '2030-01-01T00:00:00.000Z',
+            hash: 'hash',
+            value: 'signature',
+        },
+    } as PaymentInfo;
+
+    it('should create signed payment information', async () => {
+        nock(KeymasterURL)
+            .post(Endpoints.payment_info, input as any)
+            .reply(200, { paymentInfo });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        await expect(keymaster.createPaymentInfo(input)).resolves.toStrictEqual(paymentInfo);
+    });
+
+    it('should throw exception on server error', async () => {
+        nock(KeymasterURL)
+            .post(Endpoints.payment_info)
+            .reply(500, ServerError);
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        await expect(keymaster.createPaymentInfo(input)).rejects.toMatchObject(ServerError);
     });
 });
 

@@ -3,6 +3,7 @@ import Keymaster from '@mdip/keymaster';
 import {
     ChallengeResponse,
     PaymentInfo,
+    PaymentInfoInput,
     UnsignedPaymentInfo,
 } from '@mdip/keymaster/types';
 import CipherNode from '@mdip/cipher/node';
@@ -52,7 +53,7 @@ beforeEach(async () => {
     await keymaster.setCurrentId('Alice');
     schema = await keymaster.createSchema(mockSchema);
     otherSchema = await keymaster.createSchema({ ...mockSchema, title: 'Other' });
-    paymentInfo = await signPaymentInfo();
+    paymentInfo = await keymaster.createPaymentInfo(paymentInfoInput());
 
     await keymaster.setCurrentId('Victor');
     challenge = await keymaster.createChallenge({
@@ -60,10 +61,8 @@ beforeEach(async () => {
     });
 });
 
-async function signPaymentInfo(overrides: Record<string, unknown> = {}): Promise<PaymentInfo> {
-    const unsigned: UnsignedPaymentInfo = {
-        version: 1,
-        type: 'bitcoin',
+function paymentInfoInput(): PaymentInfoInput {
+    return {
         network: 'testnet',
         schema,
         subject: bob,
@@ -72,6 +71,14 @@ async function signPaymentInfo(overrides: Record<string, unknown> = {}): Promise
             { role: 'attestor', address: 'tb1qattestor', amountSats: 2_000 },
             { role: 'platform', address: 'tb1qplatform', amountSats: 500 },
         ],
+    };
+}
+
+async function signUncheckedPaymentInfo(overrides: Record<string, unknown> = {}): Promise<PaymentInfo> {
+    const unsigned: UnsignedPaymentInfo = {
+        version: 1,
+        type: 'bitcoin',
+        ...paymentInfoInput(),
     };
 
     return keymaster.addSignature({ ...unsigned, ...overrides }) as Promise<PaymentInfo>;
@@ -90,6 +97,30 @@ async function createPaymentResponse(
 }
 
 describe('payment-only challenge responses', () => {
+    it('creates a validated payment packet signed by the current ID', async () => {
+        await keymaster.setCurrentId('Alice');
+        const created = await keymaster.createPaymentInfo({
+            ...paymentInfoInput(),
+            subject: 'Bob',
+        });
+
+        expect(created).toMatchObject({
+            version: 1,
+            type: 'bitcoin',
+            network: 'testnet',
+            schema,
+            subject: bob,
+            outputs: paymentInfoInput().outputs,
+            signature: { signer: alice },
+        });
+        await expect(keymaster.verifySignature(created)).resolves.toBe(true);
+    });
+
+    it.each([null, [], 'payment'])('rejects invalid payment input: %j', async input => {
+        await expect(keymaster.createPaymentInfo(input as unknown as PaymentInfoInput))
+            .rejects.toThrow('paymentInfo');
+    });
+
     it('creates and verifies signed payment information without selecting credentials', async () => {
         await keymaster.setCurrentId('Alice');
         const findCredential = jest.spyOn(keymaster as any, 'findMatchingCredential');
@@ -135,7 +166,8 @@ describe('payment-only challenge responses', () => {
 
     it('accepts optional, application-defined output roles', async () => {
         await keymaster.setCurrentId('Alice');
-        const singleOutput = await signPaymentInfo({
+        const singleOutput = await keymaster.createPaymentInfo({
+            ...paymentInfoInput(),
             outputs: [
                 { role: 'self', address: 'tb1qself', amountSats: 2_000 },
                 { address: 'tb1qunlabelled', amountSats: 1_000 },
@@ -215,7 +247,7 @@ describe('payment-only challenge responses', () => {
         ['expired terms', { validUntil: new Date(Date.now() - 1_000).toISOString() }],
     ])('rejects cryptographically signed but structurally invalid terms: %s', async (_name, overrides) => {
         await keymaster.setCurrentId('Alice');
-        const invalid = await signPaymentInfo(overrides);
+        const invalid = await signUncheckedPaymentInfo(overrides);
         await expect(keymaster.createResponse(challenge, { paymentOnly: true, paymentInfo: invalid }))
             .rejects.toThrow('paymentInfo');
     });
@@ -324,16 +356,56 @@ describe('payment-only challenge responses', () => {
             .rejects.toThrow('challenge.credentials');
     });
 
-    it('retains the exact signed packet inside the issued credential', async () => {
+    it('supports the complete paid attestation and credential reuse flow', async () => {
+        await keymaster.setCurrentId('Alice');
+        const terms = await keymaster.createPaymentInfo({
+            network: 'testnet',
+            schema,
+            subject: bob,
+            outputs: [
+                { role: 'subject', address: 'tb1qsubject', amountSats: 1_000 },
+                { role: 'attestor', address: 'tb1qattestor', amountSats: 2_000 },
+                { role: 'platform', address: 'tb1qplatform', amountSats: 500 },
+            ],
+        });
+
+        const attestorResponse = await keymaster.createResponse(challenge, {
+            paymentOnly: true,
+            paymentInfo: terms,
+        });
+
+        await keymaster.setCurrentId('Victor');
+        await expect(keymaster.verifyResponse(attestorResponse, { publish: false })).resolves.toMatchObject({
+            responder: alice,
+            paymentInfo: terms,
+        });
+
         await keymaster.setCurrentId('Alice');
         const bound = await keymaster.bindCredential(schema, bob, {
-            credential: { email: 'bob@example.com', paymentInfo },
+            credential: { email: 'bob@example.com', paymentInfo: terms },
         });
         const credentialDid = await keymaster.issueCredential(bound);
 
         await keymaster.setCurrentId('Bob');
         expect(await keymaster.acceptCredential(credentialDid)).toBe(true);
         const credential = await keymaster.getCredential(credentialDid);
-        expect(credential?.credential?.paymentInfo).toStrictEqual(paymentInfo);
+        expect(credential?.credential?.paymentInfo).toStrictEqual(terms);
+
+        await keymaster.setCurrentId('Victor');
+        const reuseChallenge = await keymaster.createChallenge({
+            credentials: [{ schema, issuers: [alice] }],
+        });
+
+        await keymaster.setCurrentId('Bob');
+        const holderResponse = await keymaster.createResponse(reuseChallenge, {
+            paymentOnly: true,
+            paymentInfo: credential!.credential!.paymentInfo as PaymentInfo,
+        });
+
+        await keymaster.setCurrentId('Victor');
+        await expect(keymaster.verifyResponse(holderResponse, { publish: false })).resolves.toMatchObject({
+            responder: bob,
+            paymentInfo: terms,
+        });
     });
 });

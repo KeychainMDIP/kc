@@ -127,14 +127,17 @@ export interface PaymentOutput {
     amountSats: number;
 }
 
-export interface UnsignedPaymentInfo {
-    version: 1;
-    type: 'bitcoin';
+export interface PaymentInfoInput {
     network: 'bitcoin' | 'testnet' | 'regtest';
     schema: string;
     subject: string;
     outputs: PaymentOutput[];
     validUntil?: string;
+}
+
+export interface UnsignedPaymentInfo extends PaymentInfoInput {
+    version: 1;
+    type: 'bitcoin';
 }
 
 export interface PaymentInfo extends UnsignedPaymentInfo {
@@ -491,6 +494,7 @@ export interface KeymasterInterface {
     unpublishCredential(did: string): Promise<string | boolean>;
 
     // Challenges
+    createPaymentInfo(input: PaymentInfoInput): Promise<PaymentInfo>;
     createChallenge(challenge?: Challenge, options?: { registry?: string; validUntil?: string }): Promise<string>;
     createResponse(challengeDid: string, options?: CreateResponseOptions): Promise<string>;
     verifyResponse(responseDid: string, options?: { retries?: number; delay?: number; publish?: boolean }): Promise<ChallengeResponse>;

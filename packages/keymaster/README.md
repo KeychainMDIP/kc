@@ -108,16 +108,13 @@ requests and readiness waits.
 
 ### Payment-only challenge responses (beta)
 
-An Attestor can sign Bitcoin payment terms and send them without disclosing a
-credential. The same signed packet can later be embedded in the issued
-credential and reused by its Subject.
+An Attestor can create signed Bitcoin payment terms and send them without
+disclosing a credential. The same signed packet can later be embedded in the
+issued credential and reused by its Subject.
 
 ```ts
-import type { UnsignedPaymentInfo } from '@mdip/keymaster/types';
-
-const unsignedPaymentInfo: UnsignedPaymentInfo = {
-    version: 1,
-    type: 'bitcoin',
+await keymaster.setCurrentId('Attestor');
+const paymentInfo = await keymaster.createPaymentInfo({
     network: 'testnet',
     schema: schemaDid,
     subject: subjectDid,
@@ -126,10 +123,8 @@ const unsignedPaymentInfo: UnsignedPaymentInfo = {
         { role: 'attestor', address: attestorAddress, amountSats: 2_000 },
         { role: 'platform', address: platformAddress, amountSats: 500 },
     ],
-};
+});
 
-await keymaster.setCurrentId('Attestor');
-const paymentInfo = await keymaster.addSignature(unsignedPaymentInfo);
 const responseDid = await keymaster.createResponse(challengeDid, {
     paymentOnly: true,
     paymentInfo,
@@ -137,7 +132,18 @@ const responseDid = await keymaster.createResponse(challengeDid, {
 
 await keymaster.setCurrentId('Requester');
 const response = await keymaster.verifyResponse(responseDid, { publish: false });
+
+// After payment is observed, issue a credential containing the same packet.
+await keymaster.setCurrentId('Attestor');
+const credential = await keymaster.bindCredential(schemaDid, subjectDid, {
+    credential: { ...claims, paymentInfo },
+});
+const credentialDid = await keymaster.issueCredential(credential);
 ```
+
+`createPaymentInfo()` resolves schema and subject names to DIDs, adds the
+current payment protocol version and type, validates the terms, and signs them
+with the current ID.
 
 A verified payment-only response has no credential presentations, reports
 `match: false`, and returns the authenticated responder DID and signed

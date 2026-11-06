@@ -1542,6 +1542,47 @@ v1router.delete('/names/:name', async (req, res) => {
 
 /**
  * @swagger
+ * /payment-info:
+ *   post:
+ *     summary: Create signed payment information.
+ *     description: Builds a versioned Bitcoin payment packet and signs it with the current ID.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/PaymentInfoInput'
+ *     responses:
+ *       200:
+ *         description: The validated and signed payment information.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 paymentInfo:
+ *                   $ref: '#/components/schemas/PaymentInfo'
+ *       400:
+ *         description: Invalid payment information.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+v1router.post('/payment-info', async (req, res) => {
+    try {
+        const paymentInfo = await keymaster.createPaymentInfo(req.body);
+        res.json({ paymentInfo });
+    } catch (error: any) {
+        res.status(400).send({ error: error.toString() });
+    }
+});
+
+/**
+ * @swagger
  * /challenge:
  *   post:
  *     summary: Create a challenge DID with custom data or options.
