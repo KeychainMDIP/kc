@@ -38,8 +38,8 @@ const Legacy = (await import(pathToFileURL(path.join(temporary, 'legacy.js')))).
 const url = process.env.PROFILE_POSTGRES_URL;
 assert(url, 'PROFILE_POSTGRES_URL must point to the disposable profile server');
 const admin = new pg.Pool({connectionString:url});
-const modes = (process.env.PROFILE_MODES || 'main,indexed,main-prepared,indexed-prepared,indexed-no-secondary,indexed-fill80,indexed-batch100').split(',');
-assert(modes.every(mode => ['main','indexed','main-prepared','indexed-prepared','indexed-no-secondary','indexed-fill80','indexed-batch100'].includes(mode)), 'Unknown profile mode');
+const modes = (process.env.PROFILE_MODES || 'main,indexed,main-prepared,indexed-prepared,indexed-no-secondary,indexed-no-secondary-prepared,indexed-fill80,indexed-batch100').split(',');
+assert(modes.every(mode => ['main','indexed','main-prepared','indexed-prepared','indexed-no-secondary','indexed-no-secondary-prepared','indexed-fill80','indexed-batch100'].includes(mode)), 'Unknown profile mode');
 const samples = Number(process.env.PROFILE_ROWS || 500);
 const rounds = Number(process.env.PROFILE_ROUNDS || 3);
 assert(Number.isSafeInteger(samples) && samples > 0 && Number.isSafeInteger(rounds) && rounds > 0, 'Positive integer sample counts required');
@@ -75,7 +75,7 @@ try {
             process.env.KC_POSTGRES_URL=local.toString();process.env.KC_POSTGRES_POOL_MAX='1';
             const db=new (mode.startsWith('main')?Legacy:Current)('bench');
             await db.start();
-            if(mode==='indexed-no-secondary')for(const name of ['gatekeeper_lifecycle_due','gatekeeper_lifecycle_controller','gatekeeper_lifecycle_unresolved'])await db.pool.query(`DROP INDEX ${name}`);
+            if(mode.startsWith('indexed-no-secondary'))for(const name of ['gatekeeper_lifecycle_due','gatekeeper_lifecycle_controller','gatekeeper_lifecycle_unresolved'])await db.pool.query(`DROP INDEX ${name}`);
             if(mode==='indexed-fill80')await db.pool.query('ALTER TABLE gatekeeper_lifecycle SET(fillfactor=80)');
             const query=db.pool.query.bind(db.pool);let explain=false;let captured;
             db.pool.query=async function(text,values,...rest){
