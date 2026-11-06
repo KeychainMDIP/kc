@@ -18,6 +18,28 @@ export function isNetworkMetricsScopeCurrent(storedDidPrefix: string | null, did
     return storedDidPrefix !== null && storedDidPrefix === (didPrefix ?? '');
 }
 
+export function projectSnapshotToPrefix(snapshot: NetworkMetricSnapshot, didPrefix: string): NetworkMetricSnapshot {
+    const pick = (counts: Record<string, number>): Record<string, number> =>
+        counts[didPrefix] ? { [didPrefix]: counts[didPrefix] } : {};
+
+    const didCountsByPrefix = pick(snapshot.didCountsByPrefix);
+    const agentDidCountsByPrefix = pick(snapshot.agentDidCountsByPrefix);
+    const credentialDidCountsByPrefix = pick(snapshot.credentialDidCountsByPrefix);
+
+    return {
+        ...snapshot,
+        didCount: didCountsByPrefix[didPrefix] ?? 0,
+        didCountsByPrefix,
+        agentDidCount: agentDidCountsByPrefix[didPrefix] ?? 0,
+        agentDidCountsByPrefix,
+        credentialCount: credentialDidCountsByPrefix[didPrefix] ?? 0,
+        credentialDidCountsByPrefix,
+        // Approximation: a scoped build counts only same-prefix credentials per
+        // schema, while an unscoped one counts credentials of every prefix.
+        schemas: snapshot.schemas.filter(schema => schema.schemaDid.startsWith(`${didPrefix}:`)),
+    };
+}
+
 export interface NetworkMetricsBuildResult {
     snapshots: NetworkMetricSnapshot[];
     agentsWithConflictingPrefixes: number;

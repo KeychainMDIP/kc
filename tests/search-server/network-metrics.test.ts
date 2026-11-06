@@ -14,6 +14,7 @@ import {
     buildNetworkMetricSnapshots,
     isNetworkMetricsScopeCurrent,
     parseSnapshotDate,
+    projectSnapshotToPrefix,
 } from '../../services/search-server/src/network-metrics.ts';
 import type {
     DIDEventHistory,
@@ -1281,5 +1282,56 @@ describe('DidIndexer network metrics scheduling', () => {
         expect(replace).toHaveBeenCalledTimes(2);
         expect(await db.loadSyncState('metrics.lastError')).toBeNull();
         expect(await db.loadSyncState('metrics.lastRebuiltAt')).not.toBeNull();
+    });
+});
+
+describe('network metric snapshot projection', () => {
+    const unscoped: NetworkMetricSnapshot = {
+        date: '2026-01-01',
+        rebuiltAt: '2026-01-02T00:00:00.000Z',
+        didCount: 10,
+        didCountsByPrefix: { 'did:arbitrary': 1, 'did:mdip': 3, 'did:test': 6 },
+        agentDidCount: 5,
+        agentDidCountsByPrefix: { 'did:mdip': 2, 'did:test': 3 },
+        credentialCount: 4,
+        credentialDidCountsByPrefix: { 'did:mdip': 1, 'did:test': 3 },
+        schemas: [
+            { schemaDid: 'did:test:schemaA', count: 3 },
+            { schemaDid: 'did:mdip:schemaB', count: 1 },
+        ],
+    };
+
+    it('narrows totals, prefix maps and schemas to one prefix', () => {
+        expect(projectSnapshotToPrefix(unscoped, 'did:mdip')).toEqual({
+            date: '2026-01-01',
+            rebuiltAt: '2026-01-02T00:00:00.000Z',
+            didCount: 3,
+            didCountsByPrefix: { 'did:mdip': 3 },
+            agentDidCount: 2,
+            agentDidCountsByPrefix: { 'did:mdip': 2 },
+            credentialCount: 1,
+            credentialDidCountsByPrefix: { 'did:mdip': 1 },
+            schemas: [{ schemaDid: 'did:mdip:schemaB', count: 1 }],
+        });
+    });
+
+    it('keeps per-prefix projections summing to the unscoped totals', () => {
+        const prefixes = Object.keys(unscoped.didCountsByPrefix);
+        const projections = prefixes.map(prefix => projectSnapshotToPrefix(unscoped, prefix));
+        expect(projections.reduce((sum, item) => sum + item.didCount, 0)).toBe(unscoped.didCount);
+        expect(projections.reduce((sum, item) => sum + item.agentDidCount, 0)).toBe(unscoped.agentDidCount);
+        expect(projections.reduce((sum, item) => sum + item.credentialCount, 0)).toBe(unscoped.credentialCount);
+    });
+
+    it('reports zero and empty maps for a prefix with no DIDs', () => {
+        expect(projectSnapshotToPrefix(unscoped, 'did:other')).toMatchObject({
+            didCount: 0,
+            didCountsByPrefix: {},
+            agentDidCount: 0,
+            agentDidCountsByPrefix: {},
+            credentialCount: 0,
+            credentialDidCountsByPrefix: {},
+            schemas: [],
+        });
     });
 });
