@@ -22,9 +22,16 @@ import {
     parseOptionalBoolean,
     parseOptionalPositiveInteger,
     rateLimitWindowUnits,
+    resolveRequestDidPrefix,
     shouldSkipRateLimitPath,
 } from "./index-helpers.js";
-import { isNetworkMetricsScopeCurrent, parseSnapshotDate } from './network-metrics.js';
+import {
+    isNetworkMetricsScopeCurrent,
+    isScopedSnapshotDay,
+    parseSnapshotDate,
+    projectSnapshotToPrefix,
+    withoutSchemaPrefixCounts,
+} from './network-metrics.js';
 import { readDatabase } from './db/db-utils.js';
 import { SearchUnavailableError } from './db/coordination.js';
 import { runService, type Shutdown } from './lifecycle.js';
@@ -201,9 +208,23 @@ async function main(shutdown: Shutdown) {
         }
     });
 
+    v1router.use((req, res, next) => {
+        try {
+            res.locals.didPrefix = resolveRequestDidPrefix(
+                req.query.didPrefix,
+                config.didPrefix,
+                config.allowedDidPrefixes
+            );
+        }
+        catch (error: any) {
+            return res.status(400).json({ error: error.message ?? String(error) });
+        }
+        next();
+    });
+
     v1router.get("/did/:did/events", async (req, res) => {
         try {
-            const target = await findDIDReadTarget(didDb, req.params.did, config.didPrefix);
+            const target = await findDIDReadTarget(didDb, req.params.did, res.locals.didPrefix);
             res.json(target.events);
         } catch (error) {
             log.error({ err: error }, 'Get DID events error');
@@ -227,7 +248,7 @@ async function main(shutdown: Shutdown) {
                 const { storedDid, resolutionDid, events, scopeRejected } = await findDIDReadTarget(
                     didDb,
                     did,
-                    config.didPrefix
+                    res.locals.didPrefix
                 );
 
                 if (events.length === 0) {
@@ -282,7 +303,7 @@ async function main(shutdown: Shutdown) {
             const offset = parseNonNegativeInteger(req.query.offset, 0);
 
             const result = await didDb.listEvents({
-                didPrefix: config.didPrefix,
+                didPrefix: res.locals.didPrefix,
                 includeAmbiguous,
                 registry,
                 updatedAfter,
@@ -324,7 +345,7 @@ async function main(shutdown: Shutdown) {
             }
 
             return res.json(await didDb.searchDocs(q, {
-                didPrefix: config.didPrefix,
+                didPrefix: res.locals.didPrefix,
                 includeAmbiguous: parseOptionalBoolean(req.query.includeAmbiguous),
                 limit: rawLimit === undefined ? DEFAULT_SEARCH_LIMIT : Number(rawLimit),
                 cursor,
@@ -348,7 +369,7 @@ async function main(shutdown: Shutdown) {
 
             const dids = await didDb.queryDocs(
                 where,
-                config.didPrefix,
+                res.locals.didPrefix,
                 parseOptionalBoolean(req.query.includeAmbiguous)
             );
             return res.json(dids);
@@ -370,7 +391,7 @@ async function main(shutdown: Shutdown) {
         try {
             return res.json(await didDb.listIdentities({
                 ...options,
-                didPrefix: config.didPrefix,
+                didPrefix: res.locals.didPrefix,
                 includeAmbiguous: parseOptionalBoolean(req.query.includeAmbiguous),
             }));
         }
@@ -389,7 +410,7 @@ async function main(shutdown: Shutdown) {
             }
 
             const schemas = await didDb.getPublishedCredentialCountsBySchema(
-                config.didPrefix,
+                res.locals.didPrefix,
                 parseOptionalBoolean(req.query.includeAmbiguous)
             );
             return res.json({ schemas });
@@ -407,6 +428,12 @@ async function main(shutdown: Shutdown) {
             if (!date) {
                 return res.status(400).json({ error: 'date must be a valid, non-future UTC date in YYYY-MM-DD format' });
             }
+            // A scoped build holds only its own network, so no other prefix can
+            // ever be served: reject before storage state can answer 404 or 503.
+            const requestedPrefix: string | undefined = res.locals.didPrefix;
+            if (requestedPrefix !== config.didPrefix && config.didPrefix !== undefined) {
+                return res.status(400).json({ error: `Network metrics are scoped to ${config.didPrefix}` });
+            }
             const result = await readDatabase(didDb, async () => {
                 const storedDidPrefix = await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsDidPrefix);
                 if (!isNetworkMetricsScopeCurrent(storedDidPrefix, config.didPrefix)) {
@@ -418,7 +445,18 @@ async function main(shutdown: Shutdown) {
                     return { status: 404, body: { error: 'Snapshot not found' } };
                 }
 
-                return { status: 200, body: select(snapshot) };
+                if (requestedPrefix === config.didPrefix) {
+                    return { status: 200, body: select(withoutSchemaPrefixCounts(snapshot)) };
+                }
+
+                const projected = projectSnapshotToPrefix(snapshot, requestedPrefix!);
+                if (!projected) {
+                    return { status: 503, body: { error: 'Network metrics are rebuilding for the requested DID prefix' } };
+                }
+                if (!isScopedSnapshotDay(projected)) {
+                    return { status: 404, body: { error: 'Snapshot not found' } };
+                }
+                return { status: 200, body: select(projected) };
             });
             return res.status(result.status).json(result.body);
         }
@@ -462,7 +500,7 @@ async function main(shutdown: Shutdown) {
             const limit = Math.min(parseNonNegativeInteger(req.query.limit, 50), 500);
             const offset = parseNonNegativeInteger(req.query.offset, 0);
             const result = await didDb.listPublishedCredentials({
-                didPrefix: config.didPrefix,
+                didPrefix: res.locals.didPrefix,
                 includeAmbiguous,
                 credentialDid,
                 schemaDid,
@@ -493,7 +531,7 @@ async function main(shutdown: Shutdown) {
             const limit = parseNonNegativeInteger(req.query.limit, 50);
             const offset = parseNonNegativeInteger(req.query.offset, 0);
             const result = await didDb.listChallengeReceipts({
-                didPrefix: config.didPrefix,
+                didPrefix: res.locals.didPrefix,
                 includeAmbiguous,
                 receiptDid,
                 attesterDid,
@@ -528,7 +566,7 @@ async function main(shutdown: Shutdown) {
             const limit = parseNonNegativeInteger(req.query.limit, 50);
             const offset = parseNonNegativeInteger(req.query.offset, 0);
             const result = await didDb.getChallengeReceiptUsage({
-                didPrefix: config.didPrefix,
+                didPrefix: res.locals.didPrefix,
                 includeAmbiguous,
                 attesterDid,
                 schemaDid,

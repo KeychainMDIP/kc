@@ -161,8 +161,12 @@ export interface NetworkMetricSnapshot {
     agentDidCountsByPrefix: Record<string, number>;
     credentialCount: number;
     credentialDidCountsByPrefix: Record<string, number>;
-    schemas: PublishedCredentialSchemaCount[];
+    schemas: NetworkMetricSchemaCount[];
     rebuiltAt: string;
+}
+
+export interface NetworkMetricSchemaCount extends PublishedCredentialSchemaCount {
+    countsByCredentialPrefix?: Record<string, number>;
 }
 
 export interface SearchDocsOptions {

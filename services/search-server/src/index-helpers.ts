@@ -14,6 +14,23 @@ export const rateLimitWindowUnits = {
     hour: 60 * 60 * 1000,
 } as const;
 
+export function resolveRequestDidPrefix(
+    value: unknown,
+    configuredPrefix: string | undefined,
+    allowedPrefixes: string[]
+): string | undefined {
+    if (value === undefined || (value !== '' && value === configuredPrefix)) {
+        return configuredPrefix;
+    }
+
+    if (typeof value !== 'string' || !allowedPrefixes.includes(value)) {
+        const allowed = allowedPrefixes.length > 0 ? allowedPrefixes.join(', ') : 'none (per-request scope disabled)';
+        throw new Error(`didPrefix must be one of: ${allowed}`);
+    }
+
+    return value;
+}
+
 export function normalizeIp(ip: string): string {
     const withoutZone = ip.split('%')[0];
 

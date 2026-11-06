@@ -13,7 +13,10 @@ import DidIndexer, {
 import {
     buildNetworkMetricSnapshots,
     isNetworkMetricsScopeCurrent,
+    isScopedSnapshotDay,
     parseSnapshotDate,
+    projectSnapshotToPrefix,
+    withoutSchemaPrefixCounts,
 } from '../../services/search-server/src/network-metrics.ts';
 import type {
     DIDEventHistory,
@@ -157,9 +160,9 @@ describe('network metric snapshot builder', () => {
 
         expect(result.snapshots).toStrictEqual([
             { date: '2026-08-02', didCount: 1, didCountsByPrefix: { 'did:test': 1 }, agentDidCount: 1, agentDidCountsByPrefix: { 'did:test': 1 }, credentialCount: 0, credentialDidCountsByPrefix: {}, schemas: [], rebuiltAt: '2026-08-05T12:00:00.000Z' },
-            { date: '2026-08-03', didCount: 2, didCountsByPrefix: { 'did:test': 2 }, agentDidCount: 1, agentDidCountsByPrefix: { 'did:test': 1 }, credentialCount: 1, credentialDidCountsByPrefix: { 'did:test': 1 }, schemas: [{ schemaDid: 'did:test:schema', count: 1 }], rebuiltAt: '2026-08-05T12:00:00.000Z' },
-            { date: '2026-08-04', didCount: 2, didCountsByPrefix: { 'did:test': 2 }, agentDidCount: 1, agentDidCountsByPrefix: { 'did:test': 1 }, credentialCount: 1, credentialDidCountsByPrefix: { 'did:test': 1 }, schemas: [{ schemaDid: 'did:test:schema', count: 1 }], rebuiltAt: '2026-08-05T12:00:00.000Z' },
-            { date: '2026-08-05', didCount: 2, didCountsByPrefix: { 'did:test': 2 }, agentDidCount: 1, agentDidCountsByPrefix: { 'did:test': 1 }, credentialCount: 1, credentialDidCountsByPrefix: { 'did:test': 1 }, schemas: [{ schemaDid: 'did:test:schema', count: 1 }], rebuiltAt: '2026-08-05T12:00:00.000Z' },
+            { date: '2026-08-03', didCount: 2, didCountsByPrefix: { 'did:test': 2 }, agentDidCount: 1, agentDidCountsByPrefix: { 'did:test': 1 }, credentialCount: 1, credentialDidCountsByPrefix: { 'did:test': 1 }, schemas: [{ schemaDid: 'did:test:schema', count: 1, countsByCredentialPrefix: { 'did:test': 1 } }], rebuiltAt: '2026-08-05T12:00:00.000Z' },
+            { date: '2026-08-04', didCount: 2, didCountsByPrefix: { 'did:test': 2 }, agentDidCount: 1, agentDidCountsByPrefix: { 'did:test': 1 }, credentialCount: 1, credentialDidCountsByPrefix: { 'did:test': 1 }, schemas: [{ schemaDid: 'did:test:schema', count: 1, countsByCredentialPrefix: { 'did:test': 1 } }], rebuiltAt: '2026-08-05T12:00:00.000Z' },
+            { date: '2026-08-05', didCount: 2, didCountsByPrefix: { 'did:test': 2 }, agentDidCount: 1, agentDidCountsByPrefix: { 'did:test': 1 }, credentialCount: 1, credentialDidCountsByPrefix: { 'did:test': 1 }, schemas: [{ schemaDid: 'did:test:schema', count: 1, countsByCredentialPrefix: { 'did:test': 1 } }], rebuiltAt: '2026-08-05T12:00:00.000Z' },
         ]);
         expect(result.credentialsDatedByOperationCreated).toBe(1);
         expect(result.credentialsDatedByValidFrom).toBe(0);
@@ -1281,5 +1284,155 @@ describe('DidIndexer network metrics scheduling', () => {
         expect(replace).toHaveBeenCalledTimes(2);
         expect(await db.loadSyncState('metrics.lastError')).toBeNull();
         expect(await db.loadSyncState('metrics.lastRebuiltAt')).not.toBeNull();
+    });
+});
+
+describe('network metric snapshot projection', () => {
+    const unscoped: NetworkMetricSnapshot = {
+        date: '2026-01-01',
+        rebuiltAt: '2026-01-02T00:00:00.000Z',
+        didCount: 10,
+        didCountsByPrefix: { 'did:arbitrary': 1, 'did:mdip': 3, 'did:test': 6 },
+        agentDidCount: 5,
+        agentDidCountsByPrefix: { 'did:mdip': 2, 'did:test': 3 },
+        credentialCount: 4,
+        credentialDidCountsByPrefix: { 'did:mdip': 1, 'did:test': 3 },
+        schemas: [
+            { schemaDid: 'did:test:schemaA', count: 3, countsByCredentialPrefix: { 'did:test': 3 } },
+            { schemaDid: 'did:mdip:schemaB', count: 1, countsByCredentialPrefix: { 'did:mdip': 1 } },
+        ],
+    };
+
+    it('narrows totals, prefix maps and schemas to one prefix', () => {
+        expect(projectSnapshotToPrefix(unscoped, 'did:mdip')).toEqual({
+            date: '2026-01-01',
+            rebuiltAt: '2026-01-02T00:00:00.000Z',
+            didCount: 3,
+            didCountsByPrefix: { 'did:mdip': 3 },
+            agentDidCount: 2,
+            agentDidCountsByPrefix: { 'did:mdip': 2 },
+            credentialCount: 1,
+            credentialDidCountsByPrefix: { 'did:mdip': 1 },
+            schemas: [{ schemaDid: 'did:mdip:schemaB', count: 1 }],
+        });
+    });
+
+    it('keeps per-prefix projections summing to the unscoped totals', () => {
+        const prefixes = Object.keys(unscoped.didCountsByPrefix);
+        const projections = prefixes.map(prefix => projectSnapshotToPrefix(unscoped, prefix));
+        expect(projections.reduce((sum, item) => sum + item!.didCount, 0)).toBe(unscoped.didCount);
+        expect(projections.reduce((sum, item) => sum + item!.agentDidCount, 0)).toBe(unscoped.agentDidCount);
+        expect(projections.reduce((sum, item) => sum + item!.credentialCount, 0)).toBe(unscoped.credentialCount);
+    });
+
+    it('reports zero and empty maps for a prefix with no DIDs', () => {
+        expect(projectSnapshotToPrefix(unscoped, 'did:other')).toMatchObject({
+            didCount: 0,
+            didCountsByPrefix: {},
+            agentDidCount: 0,
+            agentDidCountsByPrefix: {},
+            credentialCount: 0,
+            credentialDidCountsByPrefix: {},
+            schemas: [],
+        });
+    });
+
+    it('counts only same-network credentials per schema, matching a scoped build', async () => {
+        const mdipHolder = 'did:mdip:mdip-holder';
+        const testHolder = 'did:test:test-holder';
+        const schemaDid = 'did:mdip:shared-schema';
+        const histories = [
+            createAgentHistory(mdipHolder, '2026-08-01T00:00:00.000Z', [
+                manifestUpdate(mdipHolder, 'did:mdip:mdip-credential', { schemaDid }),
+            ]),
+            createAgentHistory(testHolder, '2026-08-01T00:00:00.000Z', [
+                manifestUpdate(testHolder, 'did:test:test-credential', { schemaDid }),
+            ]),
+            createCredentialHistory('did:mdip:mdip-credential', '2026-08-01T00:00:00.000Z'),
+            createCredentialHistory('did:test:test-credential', '2026-08-01T00:00:00.000Z'),
+            createCredentialHistory(schemaDid, '2026-08-01T00:00:00.000Z'),
+        ];
+        const now = new Date('2026-08-01T12:00:00.000Z');
+
+        const unscoped = (await buildNetworkMetricSnapshots(histories, now)).snapshots.at(-1)!;
+        expect(unscoped.schemas).toEqual([
+            { schemaDid, count: 2, countsByCredentialPrefix: { 'did:mdip': 1, 'did:test': 1 } },
+        ]);
+
+        for (const prefix of ['did:mdip', 'did:test']) {
+            const scoped = (await buildNetworkMetricSnapshots(histories, now, prefix)).snapshots.at(-1);
+            expect(projectSnapshotToPrefix(unscoped, prefix)).toEqual(scoped);
+        }
+        expect(projectSnapshotToPrefix(unscoped, 'did:mdip')?.schemas).toEqual([{ schemaDid, count: 1 }]);
+    });
+
+    it('serves a projected snapshot for exactly the days a scoped build has one', async () => {
+        const mdipHolder = 'did:mdip:mdip-holder';
+        const testHolder = 'did:test:test-holder';
+        const histories = [
+            createAgentHistory(mdipHolder, '2026-08-01T00:00:00.000Z', [
+                manifestUpdate(mdipHolder, 'did:mdip:mdip-credential', { schemaDid: 'did:mdip:schema' }),
+            ]),
+            createAgentHistory(testHolder, '2026-08-03T00:00:00.000Z', [
+                manifestUpdate(testHolder, 'did:test:test-credential', { schemaDid: 'did:test:schema' }),
+            ]),
+            createCredentialHistory('did:mdip:mdip-credential', '2026-08-02T00:00:00.000Z'),
+            createCredentialHistory('did:test:test-credential', '2026-08-04T00:00:00.000Z'),
+            createCredentialHistory('did:mdip:schema', '2026-08-01T00:00:00.000Z'),
+            createCredentialHistory('did:test:schema', '2026-08-03T00:00:00.000Z'),
+        ];
+        const now = new Date('2026-08-05T12:00:00.000Z');
+        const unscoped = (await buildNetworkMetricSnapshots(histories, now)).snapshots;
+
+        for (const prefix of ['did:mdip', 'did:test', 'did:other']) {
+            const scoped = (await buildNetworkMetricSnapshots(histories, now, prefix)).snapshots;
+            const projected = unscoped
+                .map(snapshot => projectSnapshotToPrefix(snapshot, prefix)!)
+                .filter(isScopedSnapshotDay);
+            expect(projected).toEqual(scoped);
+        }
+    });
+
+    it('ranks projected schemas by their projected counts', () => {
+        const projected = projectSnapshotToPrefix({
+            ...unscoped,
+            schemas: [
+                { schemaDid: 'did:mdip:busy', count: 5, countsByCredentialPrefix: { 'did:mdip': 1, 'did:test': 4 } },
+                { schemaDid: 'did:mdip:quiet', count: 2, countsByCredentialPrefix: { 'did:mdip': 2 } },
+                { schemaDid: 'did:mdip:foreign', count: 3, countsByCredentialPrefix: { 'did:test': 3 } },
+            ],
+        }, 'did:mdip');
+
+        expect(projected?.schemas).toEqual([
+            { schemaDid: 'did:mdip:quiet', count: 2 },
+            { schemaDid: 'did:mdip:busy', count: 1 },
+        ]);
+    });
+
+    it('cannot project snapshots stored without per-prefix schema counts', () => {
+        expect(projectSnapshotToPrefix({
+            ...unscoped,
+            schemas: [{ schemaDid: 'did:mdip:schemaB', count: 1 }],
+        }, 'did:mdip')).toBeNull();
+        expect(projectSnapshotToPrefix({ ...unscoped, schemas: [] }, 'did:mdip')).not.toBeNull();
+    });
+
+    it('serves stored snapshots without the projection-only counts', () => {
+        expect(withoutSchemaPrefixCounts(unscoped).schemas).toEqual([
+            { schemaDid: 'did:test:schemaA', count: 3 },
+            { schemaDid: 'did:mdip:schemaB', count: 1 },
+        ]);
+    });
+
+    it('keeps scoped builds free of per-prefix schema counts', async () => {
+        const holderDid = 'did:test:holder';
+        const result = await buildNetworkMetricSnapshots([
+            createAgentHistory(holderDid, '2026-08-01T00:00:00.000Z', [
+                manifestUpdate(holderDid, 'did:test:credential'),
+            ]),
+            createCredentialHistory('did:test:credential', '2026-08-01T00:00:00.000Z'),
+        ], new Date('2026-08-01T12:00:00.000Z'), 'did:test');
+
+        expect(result.snapshots.at(-1)?.schemas).toStrictEqual([{ schemaDid: 'did:test:schema', count: 1 }]);
     });
 });
