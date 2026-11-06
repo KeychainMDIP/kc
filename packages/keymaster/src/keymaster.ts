@@ -36,6 +36,7 @@ import {
     KeymasterInterface,
     KeymasterOptions,
     NoticeMessage,
+    PaymentInfo,
     Poll,
     PollResults,
     PublishChallengeReceiptOptions,
@@ -2201,6 +2202,87 @@ export default class Keymaster implements KeymasterInterface {
         return this.createAsset({ challenge }, options);
     }
 
+    private async validatePaymentInfo(
+        value: unknown,
+        challenge: Challenge,
+        now = Date.now()
+    ): Promise<PaymentInfo> {
+        if (typeof value !== 'object' || !value || Array.isArray(value)) {
+            throw new InvalidParameterError('paymentInfo');
+        }
+
+        const paymentInfo = value as Partial<PaymentInfo>;
+        const signature = paymentInfo.signature;
+        const networks = ['bitcoin', 'testnet', 'regtest'];
+        const validUntil = paymentInfo.validUntil === undefined
+            ? undefined
+            : this.credentialTimestamp(paymentInfo.validUntil);
+
+        const validOutputs = Array.isArray(paymentInfo.outputs)
+            && paymentInfo.outputs.length > 0
+            && paymentInfo.outputs.every(output => typeof output === 'object'
+                && !!output
+                && !Array.isArray(output)
+                && (output.role === undefined
+                    || typeof output.role === 'string' && output.role.trim().length > 0)
+                && typeof output.address === 'string'
+                && output.address.trim().length > 0
+                && Number.isSafeInteger(output.amountSats)
+                && output.amountSats > 0);
+
+        const validSignature = typeof signature === 'object'
+            && !!signature
+            && !Array.isArray(signature)
+            && typeof signature.signer === 'string'
+            && isValidDID(signature.signer)
+            && Number.isFinite(this.credentialTimestamp(signature.signed))
+            && typeof signature.hash === 'string'
+            && signature.hash.length > 0
+            && typeof signature.value === 'string'
+            && signature.value.length > 0;
+
+        if (paymentInfo.version !== 1
+            || paymentInfo.type !== 'bitcoin'
+            || typeof paymentInfo.network !== 'string'
+            || !networks.includes(paymentInfo.network)
+            || typeof paymentInfo.schema !== 'string'
+            || !isValidDID(paymentInfo.schema)
+            || typeof paymentInfo.subject !== 'string'
+            || !isValidDID(paymentInfo.subject)
+            || !validOutputs
+            || validUntil !== undefined && (!Number.isFinite(validUntil) || now >= validUntil)
+            || !validSignature) {
+            throw new InvalidParameterError('paymentInfo');
+        }
+
+        const signer = paymentInfo.signature!.signer!;
+        const authorized = Array.isArray(challenge.credentials)
+            && challenge.credentials.some(request => {
+                if (typeof request !== 'object' || !request || request.schema !== paymentInfo.schema) {
+                    return false;
+                }
+
+                return request.issuers === undefined
+                    || Array.isArray(request.issuers)
+                    && (request.issuers.length === 0 || request.issuers.includes(signer));
+            });
+
+        if (!authorized) {
+            throw new InvalidParameterError('paymentInfo');
+        }
+
+        try {
+            if (!await this.verifySignature(paymentInfo as PaymentInfo)) {
+                throw new InvalidParameterError('paymentInfo');
+            }
+        }
+        catch {
+            throw new InvalidParameterError('paymentInfo');
+        }
+
+        return paymentInfo as PaymentInfo;
+    }
+
     private async findMatchingCredential(
         credential: {
             schema: string;
@@ -2259,16 +2341,25 @@ export default class Keymaster implements KeymasterInterface {
         options: CreateResponseOptions = {}
     ): Promise<string> {
         const responder = await this.fetchIdInfo();
-        let { retries = 0, delay = 1000 } = options;
+        const { paymentOnly, paymentInfo, ...assetOptions } = options;
+        let { retries = 0, delay = 1000 } = assetOptions;
 
-        if (!options.registry) {
-            options.registry = this.ephemeralRegistry;
+        if (paymentOnly !== undefined && typeof paymentOnly !== 'boolean') {
+            throw new InvalidParameterError('options.paymentOnly');
         }
 
-        if (!options.validUntil) {
+        if (paymentOnly !== true && paymentInfo !== undefined) {
+            throw new InvalidParameterError('options.paymentInfo');
+        }
+
+        if (!assetOptions.registry) {
+            assetOptions.registry = this.ephemeralRegistry;
+        }
+
+        if (!assetOptions.validUntil) {
             const expires = new Date();
             expires.setHours(expires.getHours() + 1); // Add 1 hour
-            options.validUntil = expires.toISOString();
+            assetOptions.validUntil = expires.toISOString();
         }
 
         let doc;
@@ -2302,6 +2393,23 @@ export default class Keymaster implements KeymasterInterface {
             throw new InvalidParameterError('requestor undefined');
         }
 
+        const requested = challenge.credentials?.length ?? 0;
+
+        if (paymentOnly) {
+            const validatedPaymentInfo = await this.validatePaymentInfo(paymentInfo, challenge);
+            const response: ChallengeResponse = {
+                challenge: challengeDID,
+                credentials: [],
+                requested,
+                fulfilled: 0,
+                match: false,
+                responseNonce: this.cipher.generateRandomSalt(),
+                paymentInfo: validatedPaymentInfo,
+            };
+
+            return this.encryptJSONFor({ response }, requestor, responder.did, assetOptions);
+        }
+
         // TBD check challenge isValid for expired?
 
         const matches = [];
@@ -2321,11 +2429,10 @@ export default class Keymaster implements KeymasterInterface {
 
         for (let vcDid of matches) {
             const plaintext = await this.decryptMessageFor(vcDid, responder.did);
-            const vpDid = await this.encryptMessageFor(plaintext, requestor, responder.did, { ...options, includeHash: true });
+            const vpDid = await this.encryptMessageFor(plaintext, requestor, responder.did, { ...assetOptions, includeHash: true });
             pairs.push({ vc: vcDid, vp: vpDid });
         }
 
-        const requested = challenge.credentials?.length ?? 0;
         const fulfilled = matches.length;
         const match = (requested === fulfilled);
         const responseNonce = this.cipher.generateRandomSalt();
@@ -2339,7 +2446,7 @@ export default class Keymaster implements KeymasterInterface {
             responseNonce
         };
 
-        return this.encryptJSONFor({ response }, requestor, responder.did, options);
+        return this.encryptJSONFor({ response }, requestor, responder.did, assetOptions);
     }
 
     async verifyResponse(
@@ -2407,7 +2514,18 @@ export default class Keymaster implements KeymasterInterface {
         if (typeof wrapper !== 'object' || !wrapper || !('response' in wrapper)) {
             throw new InvalidParameterError('responseDID not a valid challenge response');
         }
-        const { response } = wrapper as { response: ChallengeResponse };
+        const responseValue = (wrapper as { response: unknown }).response;
+
+        if (typeof responseValue !== 'object' || !responseValue || Array.isArray(responseValue)) {
+            throw new InvalidParameterError('responseDID not a valid challenge response');
+        }
+
+        const response = responseValue as ChallengeResponse;
+        if (typeof response.challenge !== 'string'
+            || !isValidDID(response.challenge)
+            || !Array.isArray(response.credentials)) {
+            throw new InvalidParameterError('responseDID not a valid challenge response');
+        }
 
         const challengeDoc = await this.resolveDID(response.challenge);
         const challenge = (challengeDoc.didDocumentData as { challenge?: Challenge } | undefined)?.challenge;
@@ -2419,7 +2537,29 @@ export default class Keymaster implements KeymasterInterface {
             throw new InvalidParameterError('requesterDid');
         }
 
+        if (challenge.credentials !== undefined && !Array.isArray(challenge.credentials)) {
+            throw new InvalidParameterError('challenge.credentials');
+        }
+
         const requestedCredentials = challenge.credentials ?? [];
+
+        if (response.paymentInfo !== undefined) {
+            if (response.credentials.length > 0) {
+                throw new InvalidParameterError('response.paymentInfo');
+            }
+
+            const paymentInfo = await this.validatePaymentInfo(response.paymentInfo, challenge);
+            return {
+                ...response,
+                requested: requestedCredentials.length,
+                fulfilled: 0,
+                match: false,
+                vps: [],
+                responder,
+                paymentInfo,
+            };
+        }
+
         const matchedPresentations = new Set<string>();
         const candidates: { vp: VerifiableCredential; credentialIndexes: number[] }[] = [];
         const now = Date.now();

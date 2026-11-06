@@ -222,6 +222,109 @@
             "$ref": "#/components/schemas/LegacyWallet"
           }
         ]
+      },
+      "PaymentOutput": {
+        "type": "object",
+        "required": [
+          "address",
+          "amountSats"
+        ],
+        "properties": {
+          "role": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "Optional application-defined recipient role."
+          },
+          "address": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "amountSats": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        }
+      },
+      "PaymentInfo": {
+        "type": "object",
+        "required": [
+          "version",
+          "type",
+          "network",
+          "schema",
+          "subject",
+          "outputs",
+          "signature"
+        ],
+        "properties": {
+          "version": {
+            "type": "integer",
+            "enum": [
+              1
+            ]
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "bitcoin"
+            ]
+          },
+          "network": {
+            "type": "string",
+            "enum": [
+              "bitcoin",
+              "testnet",
+              "regtest"
+            ]
+          },
+          "schema": {
+            "type": "string",
+            "description": "DID of the requested credential schema."
+          },
+          "subject": {
+            "type": "string",
+            "description": "DID of the credential subject."
+          },
+          "outputs": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/components/schemas/PaymentOutput"
+            }
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "signature": {
+            "type": "object",
+            "required": [
+              "signer",
+              "signed",
+              "hash",
+              "value"
+            ],
+            "properties": {
+              "signer": {
+                "type": "string",
+                "description": "DID of the payment terms signer."
+              },
+              "signed": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "hash": {
+                "type": "string"
+              },
+              "value": {
+                "type": "string"
+              }
+            }
+          }
+        }
       }
     }
   },
@@ -1833,7 +1936,7 @@
     "/response": {
       "post": {
         "summary": "Create a response to an existing challenge DID.",
-        "description": "Accepts a challenge DID (the DID of a previously created challenge) and an `options` object, then returns a new DID containing the response. Internally, the Keymaster finds matching credentials and bundles them into verifiable presentations. The response is encrypted for the original challenge's controller and stored as a new asset DID.\n",
+        "description": "Accepts a challenge DID (the DID of a previously created challenge) and an `options` object, then returns a new DID containing the response. By default, Keymaster finds matching credentials and bundles them into verifiable presentations. With `paymentOnly`, it instead sends verified signed payment information without credential presentations. The response is encrypted for the original challenge's controller and stored as a new asset DID.\n",
         "requestBody": {
           "required": true,
           "content": {
@@ -1867,6 +1970,14 @@
                         "type": "integer",
                         "description": "Milliseconds to wait between retries.",
                         "default": 1000
+                      },
+                      "paymentOnly": {
+                        "type": "boolean",
+                        "description": "Create a payment-only response without credential presentations.",
+                        "default": false
+                      },
+                      "paymentInfo": {
+                        "$ref": "#/components/schemas/PaymentInfo"
                       },
                       "encryptForSender": {
                         "type": "boolean",
@@ -2017,6 +2128,14 @@
                           },
                           "description": "Each credential pair (vc, vp) the response included."
                         },
+                        "requested": {
+                          "type": "integer",
+                          "description": "Number of credential requirements in the challenge."
+                        },
+                        "fulfilled": {
+                          "type": "integer",
+                          "description": "Number of credential requirements fulfilled by presentations."
+                        },
                         "match": {
                           "type": "boolean",
                           "description": "true if the response satisfies all challenge requirements, otherwise `false`."
@@ -2031,6 +2150,9 @@
                         "responder": {
                           "type": "string",
                           "description": "The DID (controller) of the responder."
+                        },
+                        "paymentInfo": {
+                          "$ref": "#/components/schemas/PaymentInfo"
                         }
                       }
                     }

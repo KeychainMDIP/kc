@@ -3,7 +3,7 @@ import nock from 'nock';
 import KeymasterClient from '@mdip/keymaster/client';
 import SearchClient from '../../packages/keymaster/src/search-client.ts';
 import { ExpectedExceptionError } from '@mdip/common/errors';
-import {Seed, WalletEncFile, WalletFile} from "@mdip/keymaster/types";
+import { PaymentInfo, Seed, WalletEncFile, WalletFile } from "@mdip/keymaster/types";
 
 const KeymasterURL = 'http://keymaster.org';
 const SearchURL = 'http://search.org';
@@ -1535,6 +1535,30 @@ describe('createResponse', () => {
         const did = await keymaster.createResponse(mockChallenge);
 
         expect(did).toStrictEqual(mockResponse);
+    });
+
+    it('should forward payment-only response options', async () => {
+        const paymentInfo = {
+            version: 1,
+            type: 'bitcoin',
+            network: 'testnet',
+            schema: 'did:test:schema',
+            subject: 'did:test:subject',
+            outputs: [{ role: 'attestor', address: 'tb1qattestor', amountSats: 1 }],
+            signature: {
+                signer: 'did:test:attestor',
+                signed: '2030-01-01T00:00:00.000Z',
+                hash: 'hash',
+                value: 'signature',
+            },
+        } as PaymentInfo;
+        const options = { paymentOnly: true, paymentInfo };
+        nock(KeymasterURL)
+            .post(Endpoints.response, { challenge: mockChallenge, options } as any)
+            .reply(200, { did: mockResponse });
+
+        const keymaster = await KeymasterClient.create({ url: KeymasterURL });
+        await expect(keymaster.createResponse(mockChallenge, options)).resolves.toBe(mockResponse);
     });
 
     it('should throw exception on createResponse server error', async () => {

@@ -121,6 +121,26 @@ export interface Challenge {
     [key: string]: any;
 }
 
+export interface PaymentOutput {
+    role?: string;
+    address: string;
+    amountSats: number;
+}
+
+export interface UnsignedPaymentInfo {
+    version: 1;
+    type: 'bitcoin';
+    network: 'bitcoin' | 'testnet' | 'regtest';
+    schema: string;
+    subject: string;
+    outputs: PaymentOutput[];
+    validUntil?: string;
+}
+
+export interface PaymentInfo extends UnsignedPaymentInfo {
+    signature: Signature;
+}
+
 export interface ChallengeResponse {
     challenge: string;
     credentials: {
@@ -133,6 +153,7 @@ export interface ChallengeResponse {
     responseNonce?: string;
     vps?: VerifiableCredential[];
     responder?: string;
+    paymentInfo?: PaymentInfo;
 }
 
 export interface CreateResponseOptions {
@@ -140,6 +161,8 @@ export interface CreateResponseOptions {
     validUntil?: string;
     retries?: number;
     delay?: number;
+    paymentOnly?: boolean;
+    paymentInfo?: PaymentInfo;
 }
 
 export interface ChallengeReceipt {
