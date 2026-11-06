@@ -109,6 +109,57 @@ const keymasterSchemas = {
             { $ref: '#/components/schemas/LegacyWallet' },
         ],
     },
+    PaymentOutput: {
+        type: 'object',
+        required: ['address', 'amountSats'],
+        properties: {
+            role: { type: 'string', minLength: 1, pattern: '\\S', description: 'Optional application-defined recipient role.' },
+            address: { type: 'string', minLength: 1, pattern: '\\S' },
+            amountSats: { type: 'integer', minimum: 1, maximum: Number.MAX_SAFE_INTEGER },
+        },
+    },
+    PaymentInfoInput: {
+        type: 'object',
+        required: ['network', 'schema', 'subject', 'outputs'],
+        properties: {
+            network: { type: 'string', enum: ['bitcoin', 'testnet', 'regtest'] },
+            schema: { type: 'string', description: 'DID or wallet name of the requested credential schema.' },
+            subject: { type: 'string', description: 'DID or wallet name of the credential subject.' },
+            outputs: {
+                type: 'array',
+                minItems: 1,
+                items: { $ref: '#/components/schemas/PaymentOutput' },
+            },
+            validUntil: { type: 'string', format: 'date-time' },
+        },
+    },
+    PaymentInfo: {
+        type: 'object',
+        required: ['version', 'type', 'network', 'schema', 'subject', 'outputs', 'signature'],
+        properties: {
+            version: { type: 'integer', enum: [1] },
+            type: { type: 'string', enum: ['bitcoin'] },
+            network: { type: 'string', enum: ['bitcoin', 'testnet', 'regtest'] },
+            schema: { type: 'string', description: 'DID of the requested credential schema.' },
+            subject: { type: 'string', description: 'DID of the credential subject.' },
+            outputs: {
+                type: 'array',
+                minItems: 1,
+                items: { $ref: '#/components/schemas/PaymentOutput' },
+            },
+            validUntil: { type: 'string', format: 'date-time' },
+            signature: {
+                type: 'object',
+                required: ['signer', 'signed', 'hash', 'value'],
+                properties: {
+                    signer: { type: 'string', description: 'DID of the payment terms signer.' },
+                    signed: { type: 'string', format: 'date-time' },
+                    hash: { type: 'string' },
+                    value: { type: 'string' },
+                },
+            },
+        },
+    },
 };
 
 const gatekeeperOptions = {

@@ -1542,6 +1542,47 @@ v1router.delete('/names/:name', async (req, res) => {
 
 /**
  * @swagger
+ * /payment-info:
+ *   post:
+ *     summary: Create signed payment information.
+ *     description: Builds a versioned Bitcoin payment packet and signs it with the current ID.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/PaymentInfoInput'
+ *     responses:
+ *       200:
+ *         description: The validated and signed payment information.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 paymentInfo:
+ *                   $ref: '#/components/schemas/PaymentInfo'
+ *       400:
+ *         description: Invalid payment information.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+v1router.post('/payment-info', async (req, res) => {
+    try {
+        const paymentInfo = await keymaster.createPaymentInfo(req.body);
+        res.json({ paymentInfo });
+    } catch (error: any) {
+        res.status(400).send({ error: error.toString() });
+    }
+});
+
+/**
+ * @swagger
  * /challenge:
  *   post:
  *     summary: Create a challenge DID with custom data or options.
@@ -1611,8 +1652,9 @@ v1router.post('/challenge', async (req, res) => {
  *     summary: Create a response to an existing challenge DID.
  *     description: >
  *       Accepts a challenge DID (the DID of a previously created challenge) and an `options` object, then returns a new DID containing the
- *       response. Internally, the Keymaster finds matching credentials and bundles them into verifiable presentations. The response is
- *       encrypted for the original challenge's controller and stored as a new asset DID.
+ *       response. By default, Keymaster finds matching credentials and bundles them into verifiable presentations. With `paymentOnly`, it
+ *       instead sends verified signed payment information without credential presentations. The response is encrypted for the original
+ *       challenge's controller and stored as a new asset DID.
  *     requestBody:
  *       required: true
  *       content:
@@ -1642,6 +1684,12 @@ v1router.post('/challenge', async (req, res) => {
  *                     type: integer
  *                     description: Milliseconds to wait between retries.
  *                     default: 1000
+ *                   paymentOnly:
+ *                     type: boolean
+ *                     description: Create a payment-only response without credential presentations.
+ *                     default: false
+ *                   paymentInfo:
+ *                     $ref: '#/components/schemas/PaymentInfo'
  *                   encryptForSender:
  *                     type: boolean
  *                     description: Whether to include an encrypted copy for the sender (the responding party). Defaults to true.
@@ -1755,6 +1803,12 @@ v1router.post('/response', async (req, res) => {
  *                       items:
  *                         type: object
  *                       description: Each credential pair (vc, vp) the response included.
+ *                     requested:
+ *                       type: integer
+ *                       description: Number of credential requirements in the challenge.
+ *                     fulfilled:
+ *                       type: integer
+ *                       description: Number of credential requirements fulfilled by presentations.
  *                     match:
  *                       type: boolean
  *                       description: true if the response satisfies all challenge requirements, otherwise `false`.
@@ -1766,6 +1820,8 @@ v1router.post('/response', async (req, res) => {
  *                     responder:
  *                       type: string
  *                       description: The DID (controller) of the responder.
+ *                     paymentInfo:
+ *                       $ref: '#/components/schemas/PaymentInfo'
  *       400:
  *         description: Verification failed or request was invalid.
  *         content:

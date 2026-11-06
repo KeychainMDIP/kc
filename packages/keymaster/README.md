@@ -106,6 +106,54 @@ default. Set `timeoutMs` to use a different positive, finite deadline. Long-runn
 services can pass an `AbortSignal` as `signal`. Aborting it cancels active
 requests and readiness waits.
 
+### Payment-only challenge responses (beta)
+
+An Attestor can create signed Bitcoin payment terms and send them without
+disclosing a credential. The same signed packet can later be embedded in the
+issued credential and reused by its Subject.
+
+```ts
+await keymaster.setCurrentId('Attestor');
+const paymentInfo = await keymaster.createPaymentInfo({
+    network: 'testnet',
+    schema: schemaDid,
+    subject: subjectDid,
+    outputs: [
+        { role: 'subject', address: subjectAddress, amountSats: 1_000 },
+        { role: 'attestor', address: attestorAddress, amountSats: 2_000 },
+        { role: 'platform', address: platformAddress, amountSats: 500 },
+    ],
+});
+
+const responseDid = await keymaster.createResponse(challengeDid, {
+    paymentOnly: true,
+    paymentInfo,
+});
+
+await keymaster.setCurrentId('Requester');
+const response = await keymaster.verifyResponse(responseDid, { publish: false });
+
+// After payment is observed, issue a credential containing the same packet.
+await keymaster.setCurrentId('Attestor');
+const credential = await keymaster.bindCredential(schemaDid, subjectDid, {
+    credential: { ...claims, paymentInfo },
+});
+const credentialDid = await keymaster.issueCredential(credential);
+```
+
+`createPaymentInfo()` resolves schema and subject names to DIDs, adds the
+current payment protocol version and type, validates the terms, and signs them
+with the current ID.
+
+A verified payment-only response has no credential presentations, reports
+`match: false`, and returns the authenticated responder DID and signed
+`paymentInfo`. Keymaster verifies the packet signature and its authorization for
+the requested schema. Output `role` values are optional application-defined
+labels; the names in the example are not part of the MDIP contract. The
+consuming application remains responsible for its recipient policy, Bitcoin
+address validation, transaction construction, payment observation, and
+comparing the packet with the credential eventually disclosed.
+
 ### Wallet cleanup
 
 `fixWallet()` removes malformed DIDs and entries whose resolved DID document is
