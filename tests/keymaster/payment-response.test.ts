@@ -16,9 +16,9 @@ import { mockSchema } from './helper.ts';
 
 let ipfs: HeliaClient;
 let keymaster: Keymaster;
-let alice: string;
-let bob: string;
-let victor: string;
+let attestor: string;
+let subject: string;
+let requestor: string;
 let schema: string;
 let otherSchema: string;
 let challenge: string;
@@ -46,18 +46,18 @@ beforeEach(async () => {
         passphrase: 'passphrase',
     });
 
-    alice = await keymaster.createId('Alice');
-    bob = await keymaster.createId('Bob');
-    victor = await keymaster.createId('Victor');
+    attestor = await keymaster.createId('Attestor');
+    subject = await keymaster.createId('Subject');
+    requestor = await keymaster.createId('Requestor');
 
-    await keymaster.setCurrentId('Alice');
+    await keymaster.setCurrentId('Attestor');
     schema = await keymaster.createSchema(mockSchema);
     otherSchema = await keymaster.createSchema({ ...mockSchema, title: 'Other' });
     paymentInfo = await keymaster.createPaymentInfo(paymentInfoInput());
 
-    await keymaster.setCurrentId('Victor');
+    await keymaster.setCurrentId('Requestor');
     challenge = await keymaster.createChallenge({
-        credentials: [{ schema, issuers: [alice] }],
+        credentials: [{ schema, issuers: [attestor] }],
     });
 });
 
@@ -65,7 +65,7 @@ function paymentInfoInput(): PaymentInfoInput {
     return {
         network: 'testnet',
         schema,
-        subject: bob,
+        subject,
         outputs: [
             { role: 'subject', address: 'tb1qsubject', amountSats: 1_000 },
             { role: 'attestor', address: 'tb1qattestor', amountSats: 2_000 },
@@ -85,7 +85,7 @@ async function signUncheckedPaymentInfo(overrides: Record<string, unknown> = {})
 }
 
 async function createPaymentResponse(
-    responder: 'Alice' | 'Bob' = 'Alice',
+    responder: 'Attestor' | 'Subject' = 'Attestor',
     info: PaymentInfo = paymentInfo,
     challengeDid: string = challenge
 ) {
@@ -98,10 +98,10 @@ async function createPaymentResponse(
 
 describe('payment-only challenge responses', () => {
     it('creates a validated payment packet signed by the current ID', async () => {
-        await keymaster.setCurrentId('Alice');
+        await keymaster.setCurrentId('Attestor');
         const created = await keymaster.createPaymentInfo({
             ...paymentInfoInput(),
-            subject: 'Bob',
+            subject: 'Subject',
         });
 
         expect(created).toMatchObject({
@@ -109,9 +109,9 @@ describe('payment-only challenge responses', () => {
             type: 'bitcoin',
             network: 'testnet',
             schema,
-            subject: bob,
+            subject,
             outputs: paymentInfoInput().outputs,
-            signature: { signer: alice },
+            signature: { signer: attestor },
         });
         await expect(keymaster.verifySignature(created)).resolves.toBe(true);
     });
@@ -122,7 +122,7 @@ describe('payment-only challenge responses', () => {
     });
 
     it('creates and verifies signed payment information without selecting credentials', async () => {
-        await keymaster.setCurrentId('Alice');
+        await keymaster.setCurrentId('Attestor');
         const findCredential = jest.spyOn(keymaster as any, 'findMatchingCredential');
         const responseDid = await keymaster.createResponse(challenge, {
             paymentOnly: true,
@@ -140,7 +140,7 @@ describe('payment-only challenge responses', () => {
             paymentInfo,
         });
 
-        await keymaster.setCurrentId('Victor');
+        await keymaster.setCurrentId('Requestor');
         const publishReceipts = jest.spyOn(keymaster as any, 'publishChallengeReceiptsFor');
         const verified = await keymaster.verifyResponse(responseDid);
         expect(verified).toMatchObject({
@@ -148,24 +148,24 @@ describe('payment-only challenge responses', () => {
             fulfilled: 0,
             match: false,
             vps: [],
-            responder: alice,
+            responder: attestor,
             paymentInfo,
         });
         expect(publishReceipts).not.toHaveBeenCalled();
     });
 
     it('allows the subject to reuse payment information signed by the attestor', async () => {
-        const responseDid = await createPaymentResponse('Bob');
+        const responseDid = await createPaymentResponse('Subject');
 
-        await keymaster.setCurrentId('Victor');
+        await keymaster.setCurrentId('Requestor');
         const verified = await keymaster.verifyResponse(responseDid, { publish: false });
-        expect(verified.responder).toBe(bob);
-        expect(verified.paymentInfo?.signature.signer).toBe(alice);
+        expect(verified.responder).toBe(subject);
+        expect(verified.paymentInfo?.signature.signer).toBe(attestor);
         expect(verified.paymentInfo).toStrictEqual(paymentInfo);
     });
 
     it('accepts optional, application-defined output roles', async () => {
-        await keymaster.setCurrentId('Alice');
+        await keymaster.setCurrentId('Attestor');
         const singleOutput = await keymaster.createPaymentInfo({
             ...paymentInfoInput(),
             outputs: [
@@ -186,9 +186,9 @@ describe('payment-only challenge responses', () => {
         response.fulfilled = 99;
         response.match = true;
         response.vps = [{} as any];
-        const supplied = await keymaster.encryptJSON({ response }, victor);
+        const supplied = await keymaster.encryptJSON({ response }, requestor);
 
-        await keymaster.setCurrentId('Victor');
+        await keymaster.setCurrentId('Requestor');
         await expect(keymaster.verifyResponse(supplied, { publish: false })).resolves.toMatchObject({
             requested: 1,
             fulfilled: 0,
@@ -198,7 +198,7 @@ describe('payment-only challenge responses', () => {
     });
 
     it('rejects ambiguous creation options', async () => {
-        await keymaster.setCurrentId('Alice');
+        await keymaster.setCurrentId('Attestor');
         await expect(keymaster.createResponse(challenge, { paymentOnly: true }))
             .rejects.toThrow('paymentInfo');
         await expect(keymaster.createResponse(challenge, { paymentInfo }))
@@ -208,7 +208,7 @@ describe('payment-only challenge responses', () => {
     });
 
     it.each([null, [], 'payment'])('rejects non-object payment information: %j', async invalid => {
-        await keymaster.setCurrentId('Alice');
+        await keymaster.setCurrentId('Attestor');
         await expect(keymaster.createResponse(challenge, {
             paymentOnly: true,
             paymentInfo: invalid as unknown as PaymentInfo,
@@ -216,13 +216,13 @@ describe('payment-only challenge responses', () => {
     });
 
     it('requires the signer and schema to be authorized by the same challenge request', async () => {
-        await keymaster.setCurrentId('Victor');
+        await keymaster.setCurrentId('Requestor');
         const mixedChallenge = await keymaster.createChallenge({ credentials: [
-            { schema, issuers: [bob] },
-            { schema: otherSchema, issuers: [alice] },
+            { schema, issuers: [subject] },
+            { schema: otherSchema, issuers: [attestor] },
         ] });
 
-        await expect(createPaymentResponse('Alice', paymentInfo, mixedChallenge))
+        await expect(createPaymentResponse('Attestor', paymentInfo, mixedChallenge))
             .rejects.toThrow('paymentInfo');
     });
 
@@ -246,7 +246,7 @@ describe('payment-only challenge responses', () => {
         ['invalid expiry', { validUntil: 'tomorrow' }],
         ['expired terms', { validUntil: new Date(Date.now() - 1_000).toISOString() }],
     ])('rejects cryptographically signed but structurally invalid terms: %s', async (_name, overrides) => {
-        await keymaster.setCurrentId('Alice');
+        await keymaster.setCurrentId('Attestor');
         const invalid = await signUncheckedPaymentInfo(overrides);
         await expect(keymaster.createResponse(challenge, { paymentOnly: true, paymentInfo: invalid }))
             .rejects.toThrow('paymentInfo');
@@ -258,8 +258,8 @@ describe('payment-only challenge responses', () => {
         const unsigned = structuredClone(paymentInfo) as Partial<PaymentInfo>;
         delete unsigned.signature;
 
-        await expect(createPaymentResponse('Alice', tampered)).rejects.toThrow('paymentInfo');
-        await expect(createPaymentResponse('Alice', unsigned as PaymentInfo)).rejects.toThrow('paymentInfo');
+        await expect(createPaymentResponse('Attestor', tampered)).rejects.toThrow('paymentInfo');
+        await expect(createPaymentResponse('Attestor', unsigned as PaymentInfo)).rejects.toThrow('paymentInfo');
     });
 
     it.each([
@@ -267,7 +267,7 @@ describe('payment-only challenge responses', () => {
         ['type', (info: any) => { info.type = 'litecoin'; }],
         ['network', (info: any) => { info.network = 'bitcoin'; }],
         ['schema', (info: any) => { info.schema = otherSchema; }],
-        ['subject', (info: any) => { info.subject = alice; }],
+        ['subject', (info: any) => { info.subject = attestor; }],
         ['output role', (info: any) => { info.outputs[0].role = 'platform'; }],
         ['output address', (info: any) => { info.outputs[0].address = 'tb1qchanged'; }],
         ['output amount', (info: any) => { info.outputs[0].amountSats++; }],
@@ -276,7 +276,7 @@ describe('payment-only challenge responses', () => {
     ])('rejects a packet whose signed %s was changed', async (_field, tamper) => {
         const invalid = structuredClone(paymentInfo);
         tamper(invalid);
-        await expect(createPaymentResponse('Alice', invalid)).rejects.toThrow('paymentInfo');
+        await expect(createPaymentResponse('Attestor', invalid)).rejects.toThrow('paymentInfo');
     });
 
     it.each([
@@ -287,27 +287,27 @@ describe('payment-only challenge responses', () => {
     ] as const)('rejects an invalid signature %s', async (field, value) => {
         const invalid = structuredClone(paymentInfo);
         Object.assign(invalid.signature, { [field]: value });
-        await expect(createPaymentResponse('Alice', invalid)).rejects.toThrow('paymentInfo');
+        await expect(createPaymentResponse('Attestor', invalid)).rejects.toThrow('paymentInfo');
     });
 
     it('independently rejects payment information tampered after response creation', async () => {
         const responseDid = await createPaymentResponse();
         const { response } = await keymaster.decryptJSON(responseDid) as { response: ChallengeResponse };
         response.paymentInfo!.outputs.reverse();
-        const supplied = await keymaster.encryptJSON({ response }, victor);
+        const supplied = await keymaster.encryptJSON({ response }, requestor);
 
-        await keymaster.setCurrentId('Victor');
+        await keymaster.setCurrentId('Requestor');
         await expect(keymaster.verifyResponse(supplied, { publish: false }))
             .rejects.toThrow('paymentInfo');
     });
 
     it('rejects an otherwise shaped packet whose signer cannot be resolved', async () => {
-        await keymaster.setCurrentId('Victor');
+        await keymaster.setCurrentId('Requestor');
         const unrestricted = await keymaster.createChallenge({ credentials: [{ schema }] });
         const missingSigner = structuredClone(paymentInfo);
         missingSigner.signature.signer = `did:test:${await generateCID('missing signer')}`;
 
-        await expect(createPaymentResponse('Alice', missingSigner, unrestricted))
+        await expect(createPaymentResponse('Attestor', missingSigner, unrestricted))
             .rejects.toThrow('paymentInfo');
     });
 
@@ -315,17 +315,17 @@ describe('payment-only challenge responses', () => {
         const responseDid = await createPaymentResponse();
         const { response } = await keymaster.decryptJSON(responseDid) as { response: ChallengeResponse };
         response.credentials = [{ vc: schema, vp: otherSchema }];
-        const supplied = await keymaster.encryptJSON({ response }, victor);
+        const supplied = await keymaster.encryptJSON({ response }, requestor);
 
-        await keymaster.setCurrentId('Victor');
+        await keymaster.setCurrentId('Requestor');
         await expect(keymaster.verifyResponse(supplied, { publish: false }))
             .rejects.toThrow('response.paymentInfo');
     });
 
     it.each([null, 'response', []])('rejects an invalid response value: %j', async response => {
-        await keymaster.setCurrentId('Alice');
-        const supplied = await keymaster.encryptJSON({ response }, victor);
-        await keymaster.setCurrentId('Victor');
+        await keymaster.setCurrentId('Attestor');
+        const supplied = await keymaster.encryptJSON({ response }, requestor);
+        await keymaster.setCurrentId('Requestor');
         await expect(keymaster.verifyResponse(supplied, { publish: false }))
             .rejects.toThrow('responseDID not a valid challenge response');
     });
@@ -334,34 +334,34 @@ describe('payment-only challenge responses', () => {
         ['challenge', () => ({ challenge: 'not-a-did', credentials: [] })],
         ['credentials', () => ({ challenge, credentials: null })],
     ] as const)('rejects a malformed response %s field', async (_field, makeResponse) => {
-        await keymaster.setCurrentId('Alice');
-        const supplied = await keymaster.encryptJSON({ response: makeResponse() }, victor);
-        await keymaster.setCurrentId('Victor');
+        await keymaster.setCurrentId('Attestor');
+        const supplied = await keymaster.encryptJSON({ response: makeResponse() }, requestor);
+        await keymaster.setCurrentId('Requestor');
         await expect(keymaster.verifyResponse(supplied, { publish: false }))
             .rejects.toThrow('responseDID not a valid challenge response');
     });
 
     it('rejects malformed credential requirements in the resolved challenge', async () => {
-        await keymaster.setCurrentId('Victor');
+        await keymaster.setCurrentId('Requestor');
         const malformedChallenge = await keymaster.createAsset({
             challenge: { credentials: 'invalid' },
         });
-        await keymaster.setCurrentId('Alice');
+        await keymaster.setCurrentId('Attestor');
         const supplied = await keymaster.encryptJSON({
             response: { challenge: malformedChallenge, credentials: [] },
-        }, victor);
+        }, requestor);
 
-        await keymaster.setCurrentId('Victor');
+        await keymaster.setCurrentId('Requestor');
         await expect(keymaster.verifyResponse(supplied, { publish: false }))
             .rejects.toThrow('challenge.credentials');
     });
 
     it('supports the complete paid attestation and credential reuse flow', async () => {
-        await keymaster.setCurrentId('Alice');
+        await keymaster.setCurrentId('Attestor');
         const terms = await keymaster.createPaymentInfo({
             network: 'testnet',
             schema,
-            subject: bob,
+            subject,
             outputs: [
                 { role: 'subject', address: 'tb1qsubject', amountSats: 1_000 },
                 { role: 'attestor', address: 'tb1qattestor', amountSats: 2_000 },
@@ -374,37 +374,37 @@ describe('payment-only challenge responses', () => {
             paymentInfo: terms,
         });
 
-        await keymaster.setCurrentId('Victor');
+        await keymaster.setCurrentId('Requestor');
         await expect(keymaster.verifyResponse(attestorResponse, { publish: false })).resolves.toMatchObject({
-            responder: alice,
+            responder: attestor,
             paymentInfo: terms,
         });
 
-        await keymaster.setCurrentId('Alice');
-        const bound = await keymaster.bindCredential(schema, bob, {
-            credential: { email: 'bob@example.com', paymentInfo: terms },
+        await keymaster.setCurrentId('Attestor');
+        const bound = await keymaster.bindCredential(schema, subject, {
+            credential: { email: 'subject@example.com', paymentInfo: terms },
         });
         const credentialDid = await keymaster.issueCredential(bound);
 
-        await keymaster.setCurrentId('Bob');
+        await keymaster.setCurrentId('Subject');
         expect(await keymaster.acceptCredential(credentialDid)).toBe(true);
         const credential = await keymaster.getCredential(credentialDid);
         expect(credential?.credential?.paymentInfo).toStrictEqual(terms);
 
-        await keymaster.setCurrentId('Victor');
+        await keymaster.setCurrentId('Requestor');
         const reuseChallenge = await keymaster.createChallenge({
-            credentials: [{ schema, issuers: [alice] }],
+            credentials: [{ schema, issuers: [attestor] }],
         });
 
-        await keymaster.setCurrentId('Bob');
+        await keymaster.setCurrentId('Subject');
         const holderResponse = await keymaster.createResponse(reuseChallenge, {
             paymentOnly: true,
             paymentInfo: credential!.credential!.paymentInfo as PaymentInfo,
         });
 
-        await keymaster.setCurrentId('Victor');
+        await keymaster.setCurrentId('Requestor');
         await expect(keymaster.verifyResponse(holderResponse, { publish: false })).resolves.toMatchObject({
-            responder: bob,
+            responder: subject,
             paymentInfo: terms,
         });
     });
