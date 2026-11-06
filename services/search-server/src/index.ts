@@ -25,7 +25,13 @@ import {
     resolveRequestDidPrefix,
     shouldSkipRateLimitPath,
 } from "./index-helpers.js";
-import { isNetworkMetricsScopeCurrent, parseSnapshotDate, projectSnapshotToPrefix } from './network-metrics.js';
+import {
+    isNetworkMetricsScopeCurrent,
+    isScopedSnapshotDay,
+    parseSnapshotDate,
+    projectSnapshotToPrefix,
+    withoutSchemaPrefixCounts,
+} from './network-metrics.js';
 import { readDatabase } from './db/db-utils.js';
 import { SearchUnavailableError } from './db/coordination.js';
 import { runService, type Shutdown } from './lifecycle.js';
@@ -422,6 +428,12 @@ async function main(shutdown: Shutdown) {
             if (!date) {
                 return res.status(400).json({ error: 'date must be a valid, non-future UTC date in YYYY-MM-DD format' });
             }
+            // A scoped build holds only its own network, so no other prefix can
+            // ever be served: reject before storage state can answer 404 or 503.
+            const requestedPrefix: string | undefined = res.locals.didPrefix;
+            if (requestedPrefix !== config.didPrefix && config.didPrefix !== undefined) {
+                return res.status(400).json({ error: `Network metrics are scoped to ${config.didPrefix}` });
+            }
             const result = await readDatabase(didDb, async () => {
                 const storedDidPrefix = await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsDidPrefix);
                 if (!isNetworkMetricsScopeCurrent(storedDidPrefix, config.didPrefix)) {
@@ -433,15 +445,18 @@ async function main(shutdown: Shutdown) {
                     return { status: 404, body: { error: 'Snapshot not found' } };
                 }
 
-                const requestedPrefix: string | undefined = res.locals.didPrefix;
                 if (requestedPrefix === config.didPrefix) {
-                    return { status: 200, body: select(snapshot) };
-                }
-                if (config.didPrefix !== undefined) {
-                    return { status: 400, body: { error: `Network metrics are scoped to ${config.didPrefix}` } };
+                    return { status: 200, body: select(withoutSchemaPrefixCounts(snapshot)) };
                 }
 
-                return { status: 200, body: select(projectSnapshotToPrefix(snapshot, requestedPrefix!)) };
+                const projected = projectSnapshotToPrefix(snapshot, requestedPrefix!);
+                if (!projected) {
+                    return { status: 503, body: { error: 'Network metrics are rebuilding for the requested DID prefix' } };
+                }
+                if (!isScopedSnapshotDay(projected)) {
+                    return { status: 404, body: { error: 'Snapshot not found' } };
+                }
+                return { status: 200, body: select(projected) };
             });
             return res.status(result.status).json(result.body);
         }

@@ -8,6 +8,7 @@ import {
 } from './did-aliases.js';
 import type {
     DIDEventHistory,
+    NetworkMetricSchemaCount,
     NetworkMetricSnapshot,
     PublishedCredentialSchemaCount,
 } from './types.js';
@@ -18,13 +19,52 @@ export function isNetworkMetricsScopeCurrent(storedDidPrefix: string | null, did
     return storedDidPrefix !== null && storedDidPrefix === (didPrefix ?? '');
 }
 
-export function projectSnapshotToPrefix(snapshot: NetworkMetricSnapshot, didPrefix: string): NetworkMetricSnapshot {
+function compareSchemaCounts(a: PublishedCredentialSchemaCount, b: PublishedCredentialSchemaCount): number {
+    return b.count - a.count || a.schemaDid.localeCompare(b.schemaDid);
+}
+
+// Drops the projection-only split so the stored snapshot serves the same shape as before.
+export function withoutSchemaPrefixCounts(snapshot: NetworkMetricSnapshot): NetworkMetricSnapshot {
+    return {
+        ...snapshot,
+        schemas: snapshot.schemas.map(({ schemaDid, count }) => ({ schemaDid, count })),
+    };
+}
+
+// A scoped build starts at its network's first counted day, or at the rebuild
+// day when it has none; cumulative counts never drop, so earlier days are the
+// only all-zero ones and a scoped build has no snapshot for them.
+export function isScopedSnapshotDay(snapshot: NetworkMetricSnapshot): boolean {
+    return snapshot.didCount + snapshot.agentDidCount + snapshot.credentialCount > 0 ||
+        snapshot.date === snapshot.rebuiltAt.slice(0, 10);
+}
+
+// Returns null when the snapshot predates the per-prefix schema split: it then
+// cannot be projected exactly, and the next metrics rebuild will add it.
+export function projectSnapshotToPrefix(
+    snapshot: NetworkMetricSnapshot,
+    didPrefix: string
+): NetworkMetricSnapshot | null {
+    if (snapshot.schemas.some(schema => !schema.countsByCredentialPrefix)) {
+        return null;
+    }
+
     const pick = (counts: Record<string, number>): Record<string, number> =>
         counts[didPrefix] ? { [didPrefix]: counts[didPrefix] } : {};
 
     const didCountsByPrefix = pick(snapshot.didCountsByPrefix);
     const agentDidCountsByPrefix = pick(snapshot.agentDidCountsByPrefix);
     const credentialDidCountsByPrefix = pick(snapshot.credentialDidCountsByPrefix);
+
+    // Matches a scoped build: a schema counts only credentials of its own network.
+    const schemas = snapshot.schemas
+        .filter(schema => schema.schemaDid.startsWith(`${didPrefix}:`))
+        .map(schema => ({
+            schemaDid: schema.schemaDid,
+            count: schema.countsByCredentialPrefix?.[didPrefix] ?? 0,
+        }))
+        .filter(schema => schema.count > 0)
+        .sort(compareSchemaCounts);
 
     return {
         ...snapshot,
@@ -34,9 +74,7 @@ export function projectSnapshotToPrefix(snapshot: NetworkMetricSnapshot, didPref
         agentDidCountsByPrefix,
         credentialCount: credentialDidCountsByPrefix[didPrefix] ?? 0,
         credentialDidCountsByPrefix,
-        // Approximation: a scoped build counts only same-prefix credentials per
-        // schema, while an unscoped one counts credentials of every prefix.
-        schemas: snapshot.schemas.filter(schema => schema.schemaDid.startsWith(`${didPrefix}:`)),
+        schemas,
     };
 }
 
@@ -161,13 +199,17 @@ function nextDay(day: string): string {
 
 function sortedSchemaCounts(
     counts: Map<string, number>,
-    schemaDids: Map<string, string>
-): PublishedCredentialSchemaCount[] {
+    schemaDids: Map<string, string>,
+    prefixCounts?: Map<string, Map<string, number>>
+): NetworkMetricSchemaCount[] {
     return Array.from(counts, ([schemaKey, count]) => ({
         schemaDid: schemaDids.get(schemaKey) as string,
         count,
+        ...(prefixCounts
+            ? { countsByCredentialPrefix: sortedPrefixCounts(prefixCounts.get(schemaKey) ?? new Map()) }
+            : {}),
     }))
-        .sort((a, b) => b.count - a.count || a.schemaDid.localeCompare(b.schemaDid));
+        .sort(compareSchemaCounts);
 }
 
 export function parseSnapshotDate(value: unknown, now: Date = new Date()): string | null {
@@ -193,6 +235,8 @@ export async function buildNetworkMetricSnapshots(
     const agentPrefixDeltas = new Map<string, Map<string, number>>();
     const credentialPrefixDeltas = new Map<string, Map<string, number>>();
     const schemaDeltas = new Map<string, Map<string, number>>();
+    // day -> schema -> credential prefix -> count; unscoped builds only.
+    const schemaPrefixDeltas = new Map<string, Map<string, Map<string, number>>>();
     const schemaDids = new Map<string, string>();
     const dids = new Map<string, DIDEvidence>();
     const credentials = new Map<string, CredentialEvidence>();
@@ -326,6 +370,13 @@ export async function buildNetworkMetricSnapshots(
             schemaDids.set(schemaKey, `${schemaPrefix}:${schemaKey}`);
             incrementSchema(schemaDeltas, day, schemaKey);
         }
+        if (!didPrefix) {
+            const daySchemas = schemaPrefixDeltas.get(day) ?? new Map<string, Map<string, number>>();
+            const schemaPrefixes = daySchemas.get(schemaKey) ?? new Map<string, number>();
+            increment(schemaPrefixes, credentialPrefix);
+            daySchemas.set(schemaKey, schemaPrefixes);
+            schemaPrefixDeltas.set(day, daySchemas);
+        }
     }
 
     const deltaDays = [...didPrefixDeltas.keys(), ...agentPrefixDeltas.keys(), ...credentialPrefixDeltas.keys()];
@@ -336,6 +387,7 @@ export async function buildNetworkMetricSnapshots(
     const agentDidCountsByPrefix = new Map<string, number>();
     const credentialDidCountsByPrefix = new Map<string, number>();
     const schemaCounts = new Map<string, number>();
+    const schemaPrefixCounts = new Map<string, Map<string, number>>();
 
     for (let day = firstDay; day <= today; day = nextDay(day)) {
         for (const [prefix, count] of didPrefixDeltas.get(day) ?? []) {
@@ -350,6 +402,13 @@ export async function buildNetworkMetricSnapshots(
         for (const [schemaDid, count] of schemaDeltas.get(day) ?? []) {
             schemaCounts.set(schemaDid, (schemaCounts.get(schemaDid) ?? 0) + count);
         }
+        for (const [schemaKey, prefixDeltas] of schemaPrefixDeltas.get(day) ?? []) {
+            const prefixCounts = schemaPrefixCounts.get(schemaKey) ?? new Map<string, number>();
+            for (const [prefix, count] of prefixDeltas) {
+                prefixCounts.set(prefix, (prefixCounts.get(prefix) ?? 0) + count);
+            }
+            schemaPrefixCounts.set(schemaKey, prefixCounts);
+        }
         snapshots.push({
             date: day,
             didCount: totalPrefixCounts(didCountsByPrefix),
@@ -358,7 +417,7 @@ export async function buildNetworkMetricSnapshots(
             agentDidCountsByPrefix: sortedPrefixCounts(agentDidCountsByPrefix),
             credentialCount: totalPrefixCounts(credentialDidCountsByPrefix),
             credentialDidCountsByPrefix: sortedPrefixCounts(credentialDidCountsByPrefix),
-            schemas: sortedSchemaCounts(schemaCounts, schemaDids),
+            schemas: sortedSchemaCounts(schemaCounts, schemaDids, didPrefix ? undefined : schemaPrefixCounts),
             rebuiltAt,
         });
     }

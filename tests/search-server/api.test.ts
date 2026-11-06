@@ -603,13 +603,16 @@ describe('Search Server HTTP routes', () => {
             didCount: 5, didCountsByPrefix: { 'did:mdip': 4, 'did:test': 1 },
             agentDidCount: 2, agentDidCountsByPrefix: { 'did:mdip': 2 },
             credentialCount: 1, credentialDidCountsByPrefix: { 'did:mdip': 1 },
-            schemas: [{ schemaDid, count: 1 }],
+            schemas: [{ schemaDid, count: 2, countsByCredentialPrefix: { 'did:mdip': 1, 'did:test': 1 } }],
         };
-        jest.spyOn(db, 'getNetworkMetricSnapshot').mockResolvedValue(snapshot);
+        const getSnapshot = jest.spyOn(db, 'getNetworkMetricSnapshot').mockResolvedValue(snapshot);
         await db.saveSyncState(INDEX_SYNC_STATE_KEYS.metricsDidPrefix, '');
         await boot();
 
-        expect(await request(`/metrics/snapshots/${date}`)).toEqual({ status: 200, body: snapshot });
+        expect(await request(`/metrics/snapshots/${date}`)).toEqual({
+            status: 200,
+            body: { ...snapshot, schemas: [{ schemaDid, count: 2 }] },
+        });
         expect(await request(`/metrics/snapshots/agents/${date}?didPrefix=did:test`)).toEqual({
             status: 200,
             body: { agentDidCount: 0, agentDidCountsByPrefix: {} },
@@ -619,26 +622,59 @@ describe('Search Server HTTP routes', () => {
             body: {
                 ...snapshot,
                 didCount: 4, didCountsByPrefix: { 'did:mdip': 4 },
+                schemas: [{ schemaDid, count: 1 }],
             },
+        });
+
+        expect(await request(`/metrics/snapshots/${date}?didPrefix=did:test`)).toEqual({
+            status: 200,
+            body: {
+                ...snapshot,
+                didCount: 1, didCountsByPrefix: { 'did:test': 1 },
+                agentDidCount: 0, agentDidCountsByPrefix: {},
+                credentialCount: 0, credentialDidCountsByPrefix: {},
+                schemas: [],
+            },
+        });
+        getSnapshot.mockResolvedValue({ ...snapshot, didCountsByPrefix: { 'did:mdip': 4 } });
+        expect(await request(`/metrics/snapshots/${date}?didPrefix=did:test`)).toEqual({
+            status: 404,
+            body: { error: 'Snapshot not found' },
+        });
+
+        getSnapshot.mockResolvedValue({ ...snapshot, schemas: [{ schemaDid, count: 2 }] });
+        expect(await request(`/metrics/snapshots/schemas/${date}?didPrefix=did:mdip`)).toEqual({
+            status: 503,
+            body: { error: 'Network metrics are rebuilding for the requested DID prefix' },
         });
     });
 
-    it('rejects snapshot projection when the snapshots are built for another scope', async () => {
+    it.each([
+        ['stored', 'did:mdip', true],
+        ['missing', 'did:mdip', false],
+        ['rebuilding', null, true],
+    ] as const)('rejects snapshot projection on a scoped instance when the snapshot is %s', async (
+        _state, storedScope, hasSnapshot
+    ) => {
         config.allowedDidPrefixes = ['did:test'];
         const getSnapshot = jest.spyOn(db, 'getNetworkMetricSnapshot');
-        await db.saveSyncState(INDEX_SYNC_STATE_KEYS.metricsDidPrefix, 'did:mdip');
-        getSnapshot.mockResolvedValue({
+        await db.saveSyncState(INDEX_SYNC_STATE_KEYS.metricsDidPrefix, storedScope);
+        getSnapshot.mockResolvedValue(hasSnapshot ? {
             date: '2026-01-01', rebuiltAt: '2026-01-02T00:00:00Z',
             didCount: 1, didCountsByPrefix: { 'did:mdip': 1 },
             agentDidCount: 0, agentDidCountsByPrefix: {},
             credentialCount: 0, credentialDidCountsByPrefix: {}, schemas: [],
-        });
+        } : null);
+        const loadSyncState = jest.spyOn(db, 'loadSyncState');
         await boot();
+        loadSyncState.mockClear();
 
         expect(await request('/metrics/snapshots/2026-01-01?didPrefix=did:test')).toEqual({
             status: 400,
             body: { error: 'Network metrics are scoped to did:mdip' },
         });
+        expect(getSnapshot).not.toHaveBeenCalled();
+        expect(loadSyncState).not.toHaveBeenCalledWith(INDEX_SYNC_STATE_KEYS.metricsDidPrefix);
     });
 
     it.each([

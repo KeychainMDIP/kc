@@ -618,11 +618,12 @@ on instances that must stay restricted to one network.
 
 Snapshots are built for the configured scope only. To serve them per request,
 leave `KC_SEARCH_SERVER_DID_PREFIX` empty so the snapshots stay unscoped; each
-request then narrows the totals and prefix maps to the requested prefix. Schema
-counts are filtered by the schema DID's prefix but still include credentials
-from every network, so they can differ from a dedicated scoped instance. When
+request then narrows the totals, prefix maps and schema counts to the requested
+prefix, matching what a dedicated scoped instance would build. Snapshots stored
+before an upgrade lack the per-prefix schema counts, so projected requests
+return `503` until the next metrics rebuild. When
 `KC_SEARCH_SERVER_DID_PREFIX` is set, a snapshot request for any other prefix
-returns `400`.
+returns `400`, whether or not the snapshot exists or is rebuilding.
 
 Legacy DIDs without authoritative prefix evidence are classified as `did:test`,
 so a `did:test` request includes them, and a request for another prefix
