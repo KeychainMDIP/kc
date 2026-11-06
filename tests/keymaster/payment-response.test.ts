@@ -411,4 +411,70 @@ describe('payment-only challenge responses', () => {
         });
         expect(verified.vps?.[0].credential?.paymentInfo).toStrictEqual(terms);
     });
+
+    it('supports paid reuse of an existing credential', async () => {
+        await keymaster.setCurrentId('Attestor');
+        const terms = await keymaster.createPaymentInfo(paymentInfoInput());
+        const bound = await keymaster.bindCredential(schema, subject, {
+            credential: { email: 'subject@example.com', paymentInfo: terms },
+        });
+        const credentialDid = await keymaster.issueCredential(bound);
+
+        await keymaster.setCurrentId('Subject');
+        expect(await keymaster.acceptCredential(credentialDid)).toBe(true);
+
+        await keymaster.setCurrentId('Requestor');
+        const reuseChallenge = await keymaster.createChallenge({
+            credentials: [{ schema, issuers: [attestor] }],
+        });
+
+        await keymaster.setCurrentId('Subject');
+        const heldCredential = await keymaster.decryptJSON(credentialDid) as {
+            credential: { paymentInfo: PaymentInfo };
+        };
+        const reuseTerms = heldCredential.credential.paymentInfo;
+        expect(reuseTerms).toStrictEqual(terms);
+        const paymentResponse = await keymaster.createResponse(reuseChallenge, {
+            paymentOnly: true,
+            paymentInfo: reuseTerms,
+        });
+
+        await keymaster.setCurrentId('Requestor');
+        const verifiedPayment = await keymaster.verifyResponse(paymentResponse, { publish: false });
+        expect(verifiedPayment).toMatchObject({
+            challenge: reuseChallenge,
+            responder: subject,
+            requested: 1,
+            fulfilled: 0,
+            match: false,
+            paymentInfo: {
+                schema,
+                subject,
+                signature: { signer: attestor },
+            },
+        });
+        expect(verifiedPayment.paymentInfo).toStrictEqual(terms);
+
+        // Bitcoin payment and observation happen outside Keymaster.
+        await keymaster.setCurrentId('Subject');
+        const credentialResponse = await keymaster.createResponse(reuseChallenge);
+
+        await keymaster.setCurrentId('Requestor');
+        const verifiedCredential = await keymaster.verifyResponse(credentialResponse, { publish: false });
+        expect(verifiedCredential).toMatchObject({
+            challenge: reuseChallenge,
+            responder: subject,
+            requested: 1,
+            fulfilled: 1,
+            match: true,
+            credentials: [{ vc: credentialDid }],
+        });
+        expect(verifiedCredential.vps).toHaveLength(1);
+        expect(verifiedCredential.vps?.[0]).toMatchObject({
+            issuer: attestor,
+            credentialSubject: { id: subject },
+        });
+        expect(verifiedCredential.vps?.[0].credential?.paymentInfo)
+            .toStrictEqual(verifiedPayment.paymentInfo);
+    });
 });
