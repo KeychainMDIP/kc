@@ -143,8 +143,9 @@ function createPostgresFixture(): AdapterFixture {
         });
     }
 
-    const query = async (sql: string, params: unknown[] = []) => {
-        const text = String(sql);
+    const query = async (sql: string | { text: string; values?: unknown[] }, params: unknown[] = []) => {
+        const text = typeof sql === 'string' ? sql : sql.text;
+        if (typeof sql !== 'string') params = sql.values ?? [];
 
         if (text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK') {
             return { rows: [], rowCount: 0 };
@@ -872,8 +873,9 @@ function createPostgresIndexChangeFailureFixture(): DbPostgres {
     let transactionEvents: Map<string, GatekeeperEvent[]> | null = null;
     let transactionBlocks: Map<string, BlockInfo> | null = null;
 
-    async function runQuery(sql: string, params: unknown[] = [], transactional = false) {
-        const text = String(sql);
+    async function runQuery(sql: string | { text: string; values?: unknown[] }, params: unknown[] = [], transactional = false) {
+        const text = typeof sql === 'string' ? sql : sql.text;
+        if (typeof sql !== 'string') params = sql.values ?? [];
 
         if (text === 'BEGIN') {
             transactionEvents = cloneJSONMap(committedEvents);

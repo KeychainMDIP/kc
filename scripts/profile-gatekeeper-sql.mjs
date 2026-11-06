@@ -78,15 +78,19 @@ try {
             if(mode.startsWith('indexed-no-secondary'))for(const name of ['gatekeeper_lifecycle_due','gatekeeper_lifecycle_controller','gatekeeper_lifecycle_unresolved'])await db.pool.query(`DROP INDEX ${name}`);
             if(mode==='indexed-fill80')await db.pool.query('ALTER TABLE gatekeeper_lifecycle SET(fillfactor=80)');
             const query=db.pool.query.bind(db.pool);let explain=false;let captured;
-            db.pool.query=async function(text,values,...rest){
+            db.pool.query=async function(statement,values,...rest){
+                const text = typeof statement === 'string' ? statement : statement?.text;
                 if(typeof text==='string'&&text.trimStart().startsWith('WITH inserted_event AS')){
+                    values = typeof statement === 'string' ? values : statement.values;
                     if(explain){
                         const response=await query(`EXPLAIN(ANALYZE,BUFFERS,WAL,SETTINGS,FORMAT JSON) ${text}`,values);
                         captured=response.rows[0]['QUERY PLAN'][0];return {rows:[{length:1}],rowCount:1};
                     }
                     if(mode.endsWith('prepared'))return query({name:'profile_append',text,values});
+                    // Keep unnamed controls comparable after production starts using named queries.
+                    return query(text,values);
                 }
-                return query(text,values,...rest);
+                return query(statement,values,...rest);
             };
             try{
                 for(let n=0;n<50;n++){const e=event('zWarm'+n,'asset');await db.addEvent(e.did,e);}
@@ -105,11 +109,13 @@ try {
                     const began=performance.now();
                     if (mode === 'indexed-batch100') {
                         const client = await db.pool.connect();
+                        const unnamed = { query: (statement, values) => typeof statement === 'string'
+                            ? client.query(statement, values) : client.query(statement.text, statement.values) };
                         try {
                             for (let offset = 0; offset < batch.length; offset += 100) {
                                 await client.query('BEGIN');
                                 try {
-                                    for (const e of batch.slice(offset, offset + 100)) assert.equal(await db.addEventStrict(client, e.did, e.did.split(':').pop(), e), 1);
+                                    for (const e of batch.slice(offset, offset + 100)) assert.equal(await db.addEventStrict(unnamed, e.did, e.did.split(':').pop(), e), 1);
                                     await client.query('COMMIT');
                                 } catch (error) { await client.query('ROLLBACK'); throw error; }
                             }

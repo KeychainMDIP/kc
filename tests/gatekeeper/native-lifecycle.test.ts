@@ -195,6 +195,26 @@ describe.each(kinds)('%s native lifecycle persistence', kind => {
         expect(await fixture.db.getDueDIDs(cutoff, 10)).toEqual([]);
     });
 
+    it('reuses one prepared append across direct and transactional writes', async () => {
+        if (kind !== 'postgres') return;
+        const target = did('zPrepared');
+        await fixture.db.addEvent(target, createEvent('zPrepared'));
+        for (let index = 0; index < 8; index += 1) {
+            await fixture.db.addEvent(target, updateEvent('zPrepared', index % 2 ? expiry : future));
+        }
+        const queued = createEvent('zPreparedQueued', future, 'asset', 'zController');
+        await fixture.db.addEventAndQueue(queued.did!, queued, ['hyperswarm']);
+        const result = await (fixture.db as any).pool.query(
+            "SELECT name, generic_plans, custom_plans FROM pg_prepared_statements WHERE name = 'gatekeeper-append-event-v1'"
+        );
+        expect(result.rows).toHaveLength(1);
+        expect(Number(result.rows[0].generic_plans) + Number(result.rows[0].custom_plans)).toBe(10);
+        expect(await fixture.db.getEvents(target)).toHaveLength(9);
+        expect(await fixture.db.getLifecycle(target)).toMatchObject({ expiresAt: cutoff - 1000 });
+        expect(await fixture.db.getQueue('hyperswarm')).toEqual([queued.operation]);
+        expect(await fixture.db.getLifecycle(queued.did!)).toMatchObject({ controller: 'zController', expiresAt: cutoff + 1000 });
+    });
+
     it('projects a delete from the state current at its atomic append boundary', async () => {
         if (kind !== 'postgres') return;
         await fixture.db.addEvent(did('zRenewed'), createEvent('zRenewed'));

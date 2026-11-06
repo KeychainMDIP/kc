@@ -466,8 +466,10 @@ export default class DbPostgres implements GatekeeperDb {
     ): Promise<number> {
         const serializedEvent = JSON.stringify(event);
         const lifecycle = projectLifecycle(did, [event]);
-        const result = await executor.query<LengthRow>(
-            `WITH inserted_event AS (
+        // Reuse the plan for this large statement on each pooled connection.
+        const result = await executor.query<LengthRow>({
+            name: 'gatekeeper-append-event-v1',
+            text: `WITH inserted_event AS (
                 INSERT INTO gatekeeper_events (namespace, id, seq, event)
                 SELECT $1, $2, COALESCE(MAX(seq), -1) + 1, $3::jsonb
                 FROM gatekeeper_events
@@ -514,9 +516,9 @@ export default class DbPostgres implements GatekeeperDb {
              )
              SELECT COUNT(*) AS length
              FROM inserted_change`,
-            [this.dbName, id, serializedEvent, did, lifecycle ? JSON.stringify(lifecycle) : null,
+            values: [this.dbName, id, serializedEvent, did, lifecycle ? JSON.stringify(lifecycle) : null,
                 event.operation.type, randomUUID()]
-        );
+        });
 
         return this.toNumber(result.rows[0]?.length ?? 0);
     }
