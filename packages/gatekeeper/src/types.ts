@@ -9,6 +9,9 @@ export interface JsonDbFile {
     indexSeq?: number;
     indexChanges?: IndexChangeRecord[];
     indexEpoch?: string;
+    lifecycle?: Record<string, DIDLifecycle>;
+    expirationJobs?: Record<string, ExpirationJob>;
+    lifecycleMetadata?: LifecycleMetadata;
 }
 
 export interface ImportBatchResult {
@@ -122,6 +125,7 @@ export interface IndexChangeRecord {
     block?: BlockInfo;
     event?: GatekeeperEvent;
     removed?: boolean;
+    lifecycleVersion?: number;
 }
 
 export interface IndexExportSnapshotRequest {
@@ -199,6 +203,62 @@ export interface IndexExportChangesResponse extends IndexExportBaseResponse {
 
 export type IndexExportResponse = IndexExportSnapshotResponse | IndexExportChangesResponse;
 
+export interface DIDLifecycle {
+    suffix: string;
+    did: string;
+    revision: string;
+    type?: 'agent' | 'asset';
+    expiresAt?: number;
+    controller?: string;
+    unresolved?: boolean;
+    controllerUnknown?: boolean;
+}
+
+export interface ExpirationJob extends DIDLifecycle {
+    dependentCursor?: string;
+}
+
+export interface LifecycleMetadata {
+    version: number;
+    epoch: string;
+    complete: boolean;
+    checkedCursor: string;
+    backfillCursor?: string;
+}
+
+export interface DueDIDCursor {
+    expiresAt: number;
+    suffix: string;
+}
+
+export interface DeleteEventsOptions {
+    epoch: string;
+    revision: string;
+}
+
+export interface ExpirationContinuation {
+    epoch: string;
+    cutoff: number;
+    dueCursor?: DueDIDCursor;
+    jobCursor?: string;
+    dueComplete: boolean;
+    jobsComplete: boolean;
+    next?: 'due' | 'job';
+}
+
+export interface CollectExpiredDIDsOptions {
+    limit?: number;
+    continuation?: ExpirationContinuation;
+}
+
+export interface CollectExpiredDIDsResult {
+    examined: number;
+    expired: number;
+    deferred: number;
+    hasMore: boolean;
+    continuation?: ExpirationContinuation;
+}
+
 export interface GatekeeperDb {
     start(): Promise<void>;
     stop(): Promise<void>;
@@ -208,7 +268,16 @@ export interface GatekeeperDb {
     addEventAndQueue(did: string, event: GatekeeperEvent, queueRegistries: string[]): Promise<void | number>;
     getEvents(did: string): Promise<GatekeeperEvent[]>;
     setEvents(did: string, events: GatekeeperEvent[], options?: SetEventsOptions): Promise<number | void>;
-    deleteEvents(did: string): Promise<void | number>;
+    deleteEvents(did: string, expected?: DeleteEventsOptions): Promise<void | number>;
+    initializeLifecycleIndex(): Promise<void>;
+    getLifecycleMetadata(): Promise<LifecycleMetadata>;
+    getLifecycle(did: string): Promise<DIDLifecycle | null>;
+    getDueDIDs(cutoff: number, limit: number, after?: DueDIDCursor): Promise<DIDLifecycle[]>;
+    getControlledDIDs(controller: string, limit: number, after?: string): Promise<DIDLifecycle[]>;
+    hasUnresolvedLifecycle(): Promise<boolean>;
+    getExpirationJob(suffix: string): Promise<ExpirationJob | null>;
+    getExpirationJobs(limit: number, after?: string): Promise<ExpirationJob[]>;
+    saveExpirationJob(suffix: string, job: ExpirationJob | null): Promise<void>;
     getAllKeys(): Promise<string[]>;
     queueOperation(registry: string, op: Operation): Promise<number>;
     getQueue(registry: string): Promise<Operation[]>;

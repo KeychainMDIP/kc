@@ -1996,10 +1996,10 @@
     },
     "/db/verify": {
       "get": {
-        "summary": "Check all DIDs in the database",
+        "summary": "Verify stored DID signatures and repair conclusively invalid histories",
         "responses": {
           "200": {
-            "description": "Resolution and expiry results for all DIDs in the database.",
+            "description": "Cryptographic audit and expiry-repair results. Missing dependencies or unsupported historical formats return an incomplete-audit error without deleting those histories.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2011,7 +2011,7 @@
                     },
                     "verified": {
                       "type": "integer",
-                      "description": "The count of cached or successfully resolved DIDs retained."
+                      "description": "The count of successfully audited DIDs retained."
                     },
                     "expired": {
                       "type": "integer",
@@ -2019,7 +2019,7 @@
                     },
                     "invalid": {
                       "type": "integer",
-                      "description": "The count of DIDs that failed resolution and were removed."
+                      "description": "The count of histories with conclusively invalid signatures that were removed."
                     }
                   }
                 }

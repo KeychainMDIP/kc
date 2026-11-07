@@ -8,6 +8,10 @@ import {
 import { childLogger, createConsoleLogger, type LoggerLike } from '@mdip/common/logger';
 import { IPFSClient } from '@mdip/ipfs/types';
 import {
+    DIDLifecycle,
+    ExpirationContinuation,
+    CollectExpiredDIDsOptions,
+    CollectExpiredDIDsResult,
     BlockId,
     BlockInfo,
     CheckDIDsOptions,
@@ -43,6 +47,8 @@ export {
     resolveDIDFromEvents,
 } from './did-resolver.js';
 
+import { LIFECYCLE_PAGE_SIZE, lifecycleLimit } from './db/lifecycle.js';
+
 enum ImportStatus {
     ADDED = 'added',
     MERGED = 'merged',
@@ -50,7 +56,16 @@ enum ImportStatus {
     DEFERRED = 'deferred',
 }
 
-const retryableResolutionErrors = new WeakSet<object>();
+class IncompleteDatabaseAuditError extends Error {
+    constructor(did: string, reason: string, cause?: unknown) {
+        super(`Database audit incomplete for ${did}: ${reason}`, { cause });
+        this.name = 'IncompleteDatabaseAuditError';
+    }
+}
+
+class InvalidDatabaseSignatureError extends Error {
+    constructor(readonly did: string) { super(`Invalid stored signature for ${did}`); }
+}
 
 export default class Gatekeeper implements GatekeeperInterface {
     private db: GatekeeperDb;
@@ -58,8 +73,6 @@ export default class Gatekeeper implements GatekeeperInterface {
     private deferredEvents = new WeakSet<GatekeeperEvent>();
     private processingEventCount = 0;
     private readonly eventsSeen: Record<string, boolean>;
-    private verifiedDIDs: Record<string, boolean>;
-    private mutationRevision: number;
     private isProcessingEvents: boolean;
     private ipfs?: IPFSClient;
     private cipher: CipherNode;
@@ -71,8 +84,6 @@ export default class Gatekeeper implements GatekeeperInterface {
     supportedRegistries: string[];
     private didLocks = new Map<string, Promise<void>>();
     private controllerGraphLock: Promise<void> = Promise.resolve();
-    private activeMutations = new Set<string>();
-    private pendingExpiredControllers = new Map<string, string>();
     private verifyDbInFlight?: Promise<VerifyDbResult>;
     constructor(options: GatekeeperOptions) {
         if (!options || !options.db) {
@@ -86,8 +97,6 @@ export default class Gatekeeper implements GatekeeperInterface {
 
         this.eventsQueue = [];
         this.eventsSeen = {};
-        this.verifiedDIDs = {};
-        this.mutationRevision = 0;
         this.isProcessingEvents = false;
         this.ipfsEnabled = options.ipfsEnabled ?? true;
         if (this.ipfsEnabled) {
@@ -127,36 +136,6 @@ export default class Gatekeeper implements GatekeeperInterface {
             : operation.did;
 
         return !!operationDID && this.didKey(did) === this.didKey(operationDID);
-    }
-
-    private async readForResolution<T>(read: () => Promise<T>): Promise<T> {
-        try {
-            return await read();
-        }
-        catch (error) {
-            if (typeof error === 'object' && error !== null) {
-                retryableResolutionErrors.add(error);
-            }
-            throw error;
-        }
-    }
-
-    private invalidateVerifiedDID(did: string): void {
-        this.mutationRevision += 1;
-        delete this.verifiedDIDs[this.didKey(did)];
-    }
-
-    private async mutateDID<T>(did: string, fn: () => Promise<T>): Promise<T> {
-        const key = this.didKey(did);
-        this.activeMutations.add(key);
-        this.invalidateVerifiedDID(did);
-        try {
-            return await fn();
-        }
-        finally {
-            this.invalidateVerifiedDID(did);
-            this.activeMutations.delete(key);
-        }
     }
 
     private async withDidLock<T>(did: string, fn: () => Promise<T>): Promise<T> {
@@ -199,262 +178,400 @@ export default class Gatekeeper implements GatekeeperInterface {
         }
     }
 
+    private maintenanceLock: Promise<void> = Promise.resolve();
+
+    private withMaintenance<T>(fn: () => Promise<T>): Promise<T> {
+        const result = this.maintenanceLock.then(fn, fn);
+        this.maintenanceLock = result.then(() => undefined, () => undefined);
+        return result;
+    }
+
+    private withDIDsAndGraph<T>(dids: string[], fn: () => Promise<T>): Promise<T> {
+        const keys = [...new Set(dids.map(did => this.didKey(did)))].sort();
+        const lock = (index: number): Promise<T> => index < keys.length
+            ? this.withDidLock(keys[index], () => lock(index + 1))
+            : this.withControllerGraphLock(fn);
+        return lock(0);
+    }
+
+    private lifecycleDID(row: DIDLifecycle): string {
+        return row.did.startsWith('did:') ? row.did : `${this.didPrefix}:${row.suffix}`;
+    }
+
+    private async currentExpiration(did: string): Promise<{ doc: MdipDocument; expiresAt?: number }> {
+        const doc = await this.resolveDID(did);
+        if (doc.didResolutionMetadata?.error) throw new Error(`Cannot resolve expiration candidate ${did}`);
+        const time = doc.mdip?.validUntil ? Date.parse(doc.mdip.validUntil) : NaN;
+        return { doc, expiresAt: Number.isFinite(time) ? time : undefined };
+    }
+
+    async collectExpiredDIDs(options: CollectExpiredDIDsOptions = {}): Promise<CollectExpiredDIDsResult> {
+        const limit = lifecycleLimit(options.limit ?? LIFECYCLE_PAGE_SIZE);
+        return this.withMaintenance(() => this.collectExpiredDIDsPage(options, limit));
+    }
+
+    private async collectExpiredDIDsPage(
+        options: CollectExpiredDIDsOptions,
+        limit: number,
+        onRemoved?: (did: string) => void,
+    ): Promise<CollectExpiredDIDsResult> {
+        const metadata = await this.db.getLifecycleMetadata();
+        const pass: ExpirationContinuation = options.continuation
+            ? copyJSON(options.continuation)
+            : { epoch: metadata.epoch, cutoff: Date.now(), dueComplete: false, jobsComplete: false, next: 'job' };
+        this.validateExpirationPass(pass, metadata.epoch);
+        const totals = { examined: 0, expired: 0, deferred: 0 };
+        const seen = new Set<string>();
+        const removedSuffixes = new Set<string>();
+        const removed = (did: string): void => {
+            const suffix = this.didKey(did);
+            seen.add(suffix);
+            if (!removedSuffixes.has(suffix)) {
+                removedSuffixes.add(suffix);
+                totals.expired += 1;
+                onRemoved?.(did);
+            }
+        };
+        try {
+            while (totals.examined < limit && (!pass.dueComplete || !pass.jobsComplete)) {
+                const jobs = !pass.jobsComplete && (pass.next === 'job' || pass.dueComplete);
+                pass.next = jobs ? 'due' : 'job';
+                const rows = jobs
+                    ? await this.db.getExpirationJobs(1, pass.jobCursor)
+                    : await this.db.getDueDIDs(pass.cutoff, 1, pass.dueCursor);
+                const row = rows[0];
+                if (!row) {
+                    if (jobs) pass.jobsComplete = true;
+                    else pass.dueComplete = true;
+                    continue;
+                }
+                const previousJobCursor = pass.jobCursor;
+                if (jobs) pass.jobCursor = row.suffix;
+                else pass.dueCursor = { expiresAt: row.expiresAt!, suffix: row.suffix };
+                if (seen.has(row.suffix)) {
+                    totals.examined += 1;
+                    continue;
+                }
+                seen.add(row.suffix);
+                const before = totals.examined;
+                const did = this.lifecycleDID(row);
+                try {
+                    if (row.type === 'agent') {
+                        const resume = await this.collectExpiredAgent(row, pass, limit, jobs, totals, removed);
+                        if (resume) {
+                            // An unfinished job may sort before the current job-page position.
+                            pass.jobCursor = jobs ? previousJobCursor : undefined;
+                            pass.jobsComplete = false;
+                            break;
+                        }
+                    } else {
+                        totals.examined += 1;
+                        const deleted = await this.withDIDsAndGraph([did], async () => {
+                            await this.assertExpirationEpoch(pass.epoch);
+                            const current = await this.db.getLifecycle(did);
+                            if (!current || current.unresolved || current.type === 'agent') return false;
+                            const { doc, expiresAt } = await this.currentExpiration(did);
+                            if (doc.mdip?.type === 'agent' || expiresAt === undefined || expiresAt >= pass.cutoff) return false;
+                            return !!await this.db.deleteEvents(did, { epoch: pass.epoch, revision: current.revision });
+                        });
+                        if (deleted) removed(did);
+                        else totals.deferred += 1;
+                    }
+                } catch (error) {
+                    await this.assertExpirationEpoch(pass.epoch);
+                    if (totals.examined === before) totals.examined += 1;
+                    totals.deferred += 1;
+                    this.log.error({ err: error, did }, 'Expiration candidate deferred');
+                }
+            }
+            await this.assertExpirationEpoch(pass.epoch);
+        } catch (error) {
+            const failure = new Error('Expiration collection interrupted', { cause: error });
+            Object.assign(failure, { progress: { ...totals }, continuation: pass });
+            throw failure;
+        }
+        const hasMore = !pass.dueComplete || !pass.jobsComplete;
+        return { ...totals, hasMore, ...(hasMore && { continuation: pass }) };
+    }
+
+    private validateExpirationPass(pass: ExpirationContinuation, epoch: string): void {
+        if (pass.epoch !== epoch) throw new Error('Expiration pass invalidated by database reset');
+        const validInstant = (time: number) => Number.isSafeInteger(time) && Math.abs(time) <= 8_640_000_000_000_000;
+        if (!validInstant(pass.cutoff) || pass.cutoff > Date.now() ||
+            typeof pass.dueComplete !== 'boolean' || typeof pass.jobsComplete !== 'boolean' ||
+            (pass.next !== undefined && pass.next !== 'due' && pass.next !== 'job') ||
+            (pass.jobCursor !== undefined && (typeof pass.jobCursor !== 'string' || !pass.jobCursor)) ||
+            (pass.dueCursor !== undefined && (!pass.dueCursor || typeof pass.dueCursor !== 'object' ||
+                !validInstant(pass.dueCursor.expiresAt) || typeof pass.dueCursor.suffix !== 'string' || !pass.dueCursor.suffix))) {
+            throw new InvalidParameterError('expiration continuation');
+        }
+    }
+
+    private async assertExpirationEpoch(epoch: string): Promise<void> {
+        if ((await this.db.getLifecycleMetadata()).epoch !== epoch) {
+            throw new Error('Expiration pass invalidated by database reset');
+        }
+    }
+
+    private async collectExpiredAgent(
+        row: DIDLifecycle,
+        pass: ExpirationContinuation,
+        limit: number,
+        resumed: boolean,
+        totals: { examined: number; expired: number; deferred: number },
+        removed: (did: string) => void,
+    ): Promise<boolean> {
+        const did = this.lifecycleDID(row);
+        const selectedJob = await this.db.getExpirationJob(row.suffix);
+        const rootCost = resumed ? 0 : 1;
+        const capacity = limit - totals.examined - rootCost;
+        const children = capacity > 0
+            ? await this.db.getControlledDIDs(row.suffix, capacity, selectedJob?.dependentCursor)
+            : [];
+        return this.withDIDsAndGraph([did, ...children.map(child => this.lifecycleDID(child))], async () => {
+            await this.assertExpirationEpoch(pass.epoch);
+            totals.examined += rootCost;
+            const saved = await this.db.getExpirationJob(row.suffix);
+            const current = await this.db.getLifecycle(did);
+            const events = await this.db.getEvents(did);
+            let job = saved ?? { ...row };
+            if (events.length > 0) {
+                const agent = await this.currentExpiration(did);
+                if (!current || current.unresolved || agent.doc.mdip?.type !== 'agent' ||
+                    agent.expiresAt === undefined || agent.expiresAt >= pass.cutoff) {
+                    await this.db.saveExpirationJob(row.suffix, null);
+                    if (!rootCost) totals.examined += 1;
+                    totals.deferred += 1;
+                    return false;
+                }
+                if ((selectedJob?.dependentCursor !== saved?.dependentCursor) ||
+                    (saved && saved.expiresAt !== agent.expiresAt)) {
+                    // Reselect the page under its canonical locks after lifecycle changes.
+                    job = { ...current };
+                    await this.db.saveExpirationJob(row.suffix, job);
+                    if (!rootCost) totals.examined += 1;
+                    return true;
+                }
+                job = { ...job, ...current };
+            } else if (!saved || saved.expiresAt === undefined || saved.expiresAt >= pass.cutoff) {
+                if (!rootCost) totals.examined += 1;
+                totals.deferred += 1;
+                return false;
+            }
+            if (await this.db.hasUnresolvedLifecycle()) {
+                if (!rootCost) totals.examined += 1;
+                totals.deferred += 1;
+                return false;
+            }
+            await this.db.saveExpirationJob(row.suffix, job);
+            for (const child of children) {
+                totals.examined += 1;
+                const childDID = this.lifecycleDID(child);
+                try {
+                    const currentChild = await this.db.getLifecycle(childDID);
+                    const childDoc = await this.resolveDID(childDID);
+                    if (childDoc.didResolutionMetadata?.error === 'notFound') {
+                        job.dependentCursor = child.suffix;
+                        continue;
+                    }
+                    if (childDoc.didResolutionMetadata?.error || !currentChild) {
+                        throw new Error(`Cannot revalidate controlled asset ${childDID}`);
+                    }
+                    if (childDoc.mdip?.type === 'asset' && childDoc.didDocument?.controller &&
+                        this.didKey(childDoc.didDocument.controller) === row.suffix) {
+                        if (await this.db.deleteEvents(childDID, { epoch: pass.epoch, revision: currentChild.revision })) removed(childDID);
+                        else totals.deferred += 1;
+                    }
+                } catch (error) {
+                    totals.deferred += 1;
+                    this.log.error({ err: error, did: childDID }, 'Controlled expiration candidate deferred');
+                }
+                job.dependentCursor = child.suffix;
+            }
+            await this.db.saveExpirationJob(row.suffix, job);
+            const remaining = await this.db.getControlledDIDs(row.suffix, 1);
+            if (!remaining.length) {
+                if (!rootCost && totals.examined === limit) return true;
+                if (!rootCost) totals.examined += 1;
+                if (current && events.length > 0) {
+                    if (!await this.db.deleteEvents(did, { epoch: pass.epoch, revision: current.revision })) {
+                        totals.deferred += 1;
+                        return false;
+                    }
+                    removed(did);
+                }
+                await this.db.saveExpirationJob(row.suffix, null);
+                return false;
+            }
+            const after = await this.db.getControlledDIDs(row.suffix, 1, job.dependentCursor);
+            if (after.length > 0) return true;
+            // Earlier failures and arrivals are retried in the next pass, not a busy loop.
+            delete job.dependentCursor;
+            await this.db.saveExpirationJob(row.suffix, job);
+            if (!rootCost && children.length === 0) totals.examined += 1;
+            return false;
+        });
+    }
+
     verifyDb(options?: { chatty?: boolean }): Promise<VerifyDbResult> {
-        this.verifyDbInFlight ??= this.runVerifyDb(options).finally(() => {
+        this.verifyDbInFlight ??= this.withMaintenance(() => this.runVerifyDb(options)).finally(() => {
             this.verifyDbInFlight = undefined;
         });
         return this.verifyDbInFlight;
     }
 
+    private async auditHistory(
+        did: string, history: GatekeeperEvent[], ancestors = new Set<string>(), options: ResolveDIDOptions = {},
+    ): Promise<MdipDocument> {
+        const key = this.didKey(did);
+        if (!history.length || ancestors.has(key)) throw new IncompleteDatabaseAuditError(did, 'missing or cyclic controller history');
+        const visiting = new Set(ancestors).add(key);
+        const captured = copyJSON(history);
+        if (captured[0].operation.type !== 'create' || captured.slice(1).some(event => event.operation.type === 'create')) {
+            throw new IncompleteDatabaseAuditError(did, 'history must contain exactly one initial create');
+        }
+        const metadataIssues = new WeakSet<Operation>();
+        let usedMetadataIssue = false;
+        for (const event of captured) {
+            const cid = await this.generateCID(event.operation);
+            if (event.opid && event.opid !== cid) metadataIssues.add(event.operation);
+            if (event.did && this.didKey(event.did) !== key) metadataIssues.add(event.operation);
+            event.opid = cid;
+            if (event.operation.type !== 'create' && (!event.operation.did || this.didKey(event.operation.did) !== key)) metadataIssues.add(event.operation);
+        }
+        try {
+            if (!(await this.didMatchesOperation(did, captured[0].operation))) metadataIssues.add(captured[0].operation);
+        } catch (error) {
+            throw new IncompleteDatabaseAuditError(did, 'unsupported create identity', error);
+        }
+        const trustedController = async (controller: string, signed: string): Promise<MdipDocument> => {
+            const events = await this.db.getEvents(controller);
+            const confirmed = await this.auditHistory(controller, events, visiting, { confirm: true, versionTime: signed });
+            const doc = confirmed.didResolutionMetadata?.error === 'notFound'
+                ? await this.auditHistory(controller, events, visiting, { versionSequence: 1, versionTime: signed })
+                : confirmed;
+            if (!doc.didDocument || doc.didResolutionMetadata?.error) {
+                throw new IncompleteDatabaseAuditError(did, `unavailable controller ${controller}`);
+            }
+            return doc;
+        };
+        const signingKey = async (doc: MdipDocument, signed: string, seen: Set<string>): Promise<NonNullable<Operation['publicJwk']>> => {
+            const controller = doc.didDocument?.controller;
+            if (controller) {
+                const suffix = this.didKey(controller);
+                if (seen.has(suffix)) throw new IncompleteDatabaseAuditError(did, 'cyclic signing dependency');
+                seen.add(suffix);
+                return signingKey(await trustedController(controller, signed), signed, seen);
+            }
+            const jwk = doc.didDocument?.verificationMethod?.[0]?.publicKeyJwk;
+            if (!jwk) throw new IncompleteDatabaseAuditError(did, 'unavailable signing key');
+            return jwk;
+        };
+        const verify = async (operation: Operation, doc?: MdipDocument): Promise<boolean> => {
+            if (metadataIssues.has(operation)) usedMetadataIssue = true;
+            const signature = operation.signature;
+            if (!signature || !this.verifySignatureFormat(signature)) throw new IncompleteDatabaseAuditError(did, 'unsupported signature structure');
+            const jwk = operation.type === 'create' && operation.mdip?.type === 'agent'
+                ? operation.publicJwk
+                : operation.type === 'create'
+                    ? await signingKey(await trustedController(operation.controller ?? '', signature.signed), signature.signed, new Set())
+                    : await signingKey(doc!, signature.signed, new Set());
+            if (!jwk || jwk.kty !== 'EC' || jwk.crv !== 'secp256k1') {
+                throw new IncompleteDatabaseAuditError(did, 'unsupported signing key');
+            }
+            const unsigned = copyJSON(operation);
+            delete unsigned.signature;
+            const hash = this.cipher.hashJSON(unsigned);
+            let valid: boolean;
+            try {
+                valid = this.cipher.verifySig(hash, signature.value, jwk);
+            } catch (error) {
+                throw new IncompleteDatabaseAuditError(did, 'unsupported cryptographic input', error);
+            }
+            if (!valid) throw new InvalidDatabaseSignatureError(did);
+            // A newer admission policy is not evidence that a historical signature was forged.
+            try {
+                const supported = operation.type === 'create'
+                    ? await this.verifyCreateOperation(operation)
+                    : await this.verifyUpdateOperation(operation, doc!);
+                if (!supported || signature.hash !== hash) throw new Error('unsupported historical operation');
+            } catch (error) {
+                throw new IncompleteDatabaseAuditError(did, 'historical admission policy or dependency', error);
+            }
+            return true;
+        };
+        let doc: MdipDocument;
+        try {
+            doc = await resolveDIDFromEvents({
+                did, events: captured, options: { ...options, verify: true }, didPrefix: this.didPrefix,
+                generateCID: operation => this.generateCID(operation),
+                generateDID: operation => this.generateDID(operation),
+                verifyCreateOperation: operation => verify(operation),
+                verifyUpdateOperation: (operation, previous) => verify(operation, previous),
+            });
+        } catch (error) {
+            if (error instanceof InvalidDatabaseSignatureError || error instanceof IncompleteDatabaseAuditError) throw error;
+            throw new IncompleteDatabaseAuditError(did, 'history cannot be verified', error);
+        }
+        if (usedMetadataIssue || (doc.didResolutionMetadata?.error && doc.didResolutionMetadata.error !== 'notFound') || !doc.didDocument) {
+            throw new IncompleteDatabaseAuditError(did, 'history identity or version metadata mismatch');
+        }
+        return doc;
+    }
+
     private async runVerifyDb(options?: { chatty?: boolean }): Promise<VerifyDbResult> {
-        const chatty = options?.chatty ?? true;
+        const epoch = (await this.db.getLifecycleMetadata()).epoch;
+        const cutoff = Date.now();
         const dids = await this.getDIDs() as string[];
-        const total = dids.length;
-        const snapshotKeys = new Set(dids.map(did => this.didKey(did)));
-        const now = Date.now();
-        const inspectedDIDs = new Set<string>();
-        const expiredDIDs = new Set<string>();
-        const expiredAgents = new Set<string>();
-        const failedDIDs = new Set<string>();
-        const dependents = new Map<string, string[]>();
-        const verifyStart = chatty ? Date.now() : 0;
-        const resolveCurrent = async (did: string): Promise<{
-            doc?: MdipDocument;
-            expiresAt?: number;
-            invalid: boolean;
-            notFound?: boolean;
-            retryable?: boolean;
-        }> => {
-            try {
-                const doc = await this.resolveDID(did);
-                if (doc.didResolutionMetadata?.error) {
-                    return {
-                        invalid: true,
-                        notFound: doc.didResolutionMetadata.error === 'notFound',
-                    };
+        const snapshot = new Set(dids.map(did => this.didKey(did)));
+        const verified = new Set<string>();
+        const invalid = new Set<string>();
+        let examined = 0;
+        for (const did of dids) {
+            await this.withDIDsAndGraph([did], async () => {
+                await this.assertExpirationEpoch(epoch);
+                try {
+                    const history = await this.db.getEvents(did);
+                    const doc = await this.auditHistory(did, history);
+                    if (doc.didResolutionMetadata?.error) throw new IncompleteDatabaseAuditError(did, 'history not found');
+                    verified.add(this.didKey(did));
+                } catch (error) {
+                    if (error instanceof InvalidDatabaseSignatureError && this.didKey(error.did) === this.didKey(did)) {
+                        await this.removeDIDUnlocked(did);
+                        invalid.add(this.didKey(did));
+                    } else {
+                        throw error instanceof IncompleteDatabaseAuditError ? error
+                            : new IncompleteDatabaseAuditError(did, 'verification dependency failed', error);
+                    }
                 }
-
-                const validUntil = doc.mdip?.validUntil;
-                if (!validUntil) {
-                    return { doc, invalid: false };
-                }
-
-                const expiresAt = new Date(validUntil).getTime();
-                return isNaN(expiresAt)
-                    ? { doc, invalid: false }
-                    : { doc, expiresAt, invalid: false };
-            }
-            catch (error) {
-                const retryable = typeof error === 'object'
-                    && error !== null
-                    && retryableResolutionErrors.has(error);
-                return { invalid: !retryable, retryable };
-            }
+            });
+            if (++examined % LIFECYCLE_PAGE_SIZE === 0) await new Promise<void>(resolve => setImmediate(resolve));
+        }
+        // Audit signatures before expiry repair removes controller keys needed by those histories.
+        const expired = new Set<string>();
+        let continuation: ExpirationContinuation | undefined = {
+            epoch, cutoff, dueComplete: false, jobsComplete: false, next: 'job',
         };
-
-        const inspectDID = async (did: string, n: number): Promise<void> => {
-            inspectedDIDs.add(did);
-            const key = this.didKey(did);
-            const revision = this.mutationRevision;
-            try {
-                const { doc, expiresAt, invalid, retryable } = await resolveCurrent(did);
-                if (invalid || retryable || !doc) {
-                    throw new InvalidOperationError('DID resolution failed');
-                }
-
-                const controller = doc.didDocument?.controller;
-                if (controller) {
-                    const controllerKey = this.didKey(controller);
-                    const controlledDIDs = dependents.get(controllerKey) ?? [];
-                    controlledDIDs.push(did);
-                    dependents.set(controllerKey, controlledDIDs);
-                }
-
-                if (expiresAt !== undefined) {
-                    if (expiresAt < now) {
-                        if (chatty) {
-                            this.log.warn(`${n}/${total} ${did} expired`);
-                        }
-                        expiredDIDs.add(did);
-                        if (doc.mdip?.type === 'agent') {
-                            expiredAgents.add(did);
-                        }
-                    }
-                    else if (chatty) {
-                        const minutesLeft = Math.round((expiresAt - now) / 60 / 1000);
-                        this.log.debug(`expiring ${n}/${total} ${did} in ${minutesLeft} minutes`);
-                    }
-                    return;
-                }
-
-                if (chatty) {
-                    this.log.debug(`resolved ${n}/${total} ${did} OK`);
-                }
-                if (revision === this.mutationRevision && !this.activeMutations.has(key)) {
-                    this.verifiedDIDs[key] = true;
-                }
-            }
-            catch {
-                if (chatty) {
-                    this.log.warn(`${n}/${total} ${did} invalid`);
-                }
-                failedDIDs.add(did);
-            }
-        };
-
-        for (let n = 0; n < dids.length; n += 1) {
-            const did = dids[n];
-            if (!this.verifiedDIDs[this.didKey(did)]) {
-                await inspectDID(did, n + 1);
-            }
-        }
-
-        if (expiredAgents.size > 0 || failedDIDs.size > 0 || this.pendingExpiredControllers.size > 0) {
-            for (let n = 0; n < dids.length; n += 1) {
-                const did = dids[n];
-                if (!inspectedDIDs.has(did)) {
-                    await inspectDID(did, n + 1);
-                }
-            }
-        }
-
-        const removedExpiredDIDs = new Set<string>();
-        const removedInvalidDIDs = new Set<string>();
-        let dependencyDiscoveryFailed = false;
-
-        for (const did of failedDIDs) {
-            await this.withDidLock(did, async () => {
-                const current = await resolveCurrent(did);
-                if (current.retryable) {
-                    dependencyDiscoveryFailed = true;
-                    return;
-                }
-                if (current.invalid || !current.doc) {
-                    await this.removeDIDUnlocked(did);
-                    removedInvalidDIDs.add(did);
-                    return;
-                }
-
-                const controller = current.doc.didDocument?.controller;
-                if (controller) {
-                    const controllerKey = this.didKey(controller);
-                    const controlledDIDs = dependents.get(controllerKey) ?? [];
-                    controlledDIDs.push(did);
-                    dependents.set(controllerKey, controlledDIDs);
-                }
-
-                if (current.expiresAt !== undefined && current.expiresAt < Date.now()) {
-                    expiredDIDs.add(did);
-                    if (current.doc.mdip?.type === 'agent') {
-                        expiredAgents.add(did);
-                    }
-                }
+        for (let pages = 0; pages < 50; pages += 1) {
+            const page = await this.collectExpiredDIDsPage({ continuation }, LIFECYCLE_PAGE_SIZE, did => {
+                const key = this.didKey(did);
+                if (snapshot.has(key) && !invalid.has(key)) expired.add(key);
             });
+            continuation = page.continuation;
+            if (!continuation) break;
+            await new Promise<void>(resolve => setImmediate(resolve));
         }
-
-        const expiredControllers = new Map(this.pendingExpiredControllers);
-        for (const agentDID of expiredAgents) {
-            expiredControllers.set(this.didKey(agentDID), agentDID);
-        }
-
-        for (const [agentKey, agentDID] of expiredControllers) {
-            await this.withDidLock(agentDID, async () => {
-                const agent = await resolveCurrent(agentDID);
-                if (agent.retryable) {
-                    this.pendingExpiredControllers.set(agentKey, agentDID);
-                    return;
-                }
-                if (agent.notFound) {
-                    this.pendingExpiredControllers.set(agentKey, agentDID);
-                    if (snapshotKeys.has(agentKey)) {
-                        removedExpiredDIDs.add(agentDID);
-                    }
-                }
-                else if (agent.invalid) {
-                    this.pendingExpiredControllers.set(agentKey, agentDID);
-                    return;
-                }
-                else if (agent.doc?.mdip?.type !== 'agent'
-                    || agent.expiresAt === undefined
-                    || agent.expiresAt >= Date.now()) {
-                    this.pendingExpiredControllers.delete(agentKey);
-                    return;
-                }
-                if (dependencyDiscoveryFailed) {
-                    this.pendingExpiredControllers.set(agentKey, agentDID);
-                    return;
-                }
-
-                let revalidationFailed = false;
-                for (const assetDID of dependents.get(agentKey) ?? []) {
-                    await this.withDidLock(assetDID, async () => {
-                        const asset = await resolveCurrent(assetDID);
-                        const controller = asset.doc?.didDocument?.controller;
-                        if (asset.notFound) {
-                            removedExpiredDIDs.add(assetDID);
-                            return;
-                        }
-                        if (asset.invalid || asset.retryable) {
-                            revalidationFailed = true;
-                        }
-                        else if (asset.doc?.mdip?.type === 'asset'
-                            && controller
-                            && this.didKey(controller) === agentKey) {
-                            await this.removeDIDUnlocked(assetDID);
-                            removedExpiredDIDs.add(assetDID);
-                        }
-                    });
-                    if (revalidationFailed) {
-                        this.pendingExpiredControllers.set(agentKey, agentDID);
-                        return;
-                    }
-                }
-
-                if (!agent.notFound) {
-                    await this.removeDIDUnlocked(agentDID);
-                    removedExpiredDIDs.add(agentDID);
-                }
-                this.pendingExpiredControllers.delete(agentKey);
-            });
-        }
-
-        for (const did of expiredDIDs) {
-            if (expiredAgents.has(did) || removedExpiredDIDs.has(did) || removedInvalidDIDs.has(did)) {
-                continue;
+        await this.assertExpirationEpoch(epoch);
+        // A missing snapshot DID without a successful repair is not a verified retained record.
+        for (const did of dids) {
+            if (verified.has(this.didKey(did)) && !expired.has(this.didKey(did)) && !(await this.db.getEvents(did)).length) {
+                throw new IncompleteDatabaseAuditError(did, 'history removed concurrently');
             }
-
-            await this.withDidLock(did, async () => {
-                const current = await resolveCurrent(did);
-                if (current.retryable) {
-                    return;
-                }
-                if (current.notFound) {
-                    removedExpiredDIDs.add(did);
-                }
-                else if (current.invalid) {
-                    await this.removeDIDUnlocked(did);
-                    removedInvalidDIDs.add(did);
-                }
-                else if (current.expiresAt !== undefined && current.expiresAt < Date.now()) {
-                    await this.removeDIDUnlocked(did);
-                    removedExpiredDIDs.add(did);
-                }
-            });
         }
-
-        const invalidKeys = new Set([...removedInvalidDIDs].map(did => this.didKey(did)));
-        const expired = new Set([...removedExpiredDIDs]
-            .map(did => this.didKey(did))
-            .filter(key => !invalidKeys.has(key))).size;
-        const invalid = invalidKeys.size;
-        const verified = total - expired - invalid;
-
-        if (chatty) {
-            const durationMs = Date.now() - verifyStart;
-            this.log.debug({ durationMs }, 'verifyDb');
-        }
-
-        return { total, verified, expired, invalid };
+        await this.assertExpirationEpoch(epoch);
+        const result = { total: snapshot.size, verified: verified.size - expired.size, expired: expired.size, invalid: invalid.size };
+        if (options?.chatty ?? true) this.log.info(result, 'Database integrity audit complete');
+        return result;
     }
 
     async checkDIDs(options?: CheckDIDsOptions): Promise<CheckDIDsResult> {
@@ -554,14 +671,14 @@ export default class Gatekeeper implements GatekeeperInterface {
 
     // For testing purposes
     async resetDb(): Promise<boolean> {
-        this.mutationRevision += 1;
-        this.verifiedDIDs = {};
-        await this.db.resetDb();
-        this.pendingExpiredControllers.clear();
-        this.clearEventsSeen();
-        this.eventsQueue = [];
-        this.deferredEvents = new WeakSet();
-        return true;
+        return this.withControllerGraphLock(async () => {
+            await this.db.resetDb();
+            await this.db.initializeLifecycleIndex();
+            this.clearEventsSeen();
+            this.eventsQueue = [];
+            this.deferredEvents = new WeakSet();
+            return true;
+        });
     }
 
     async generateCID(operation: unknown): Promise<string> {
@@ -935,21 +1052,23 @@ export default class Gatekeeper implements GatekeeperInterface {
     }
 
     async createDID(operation: Operation): Promise<string> {
-        const valid = await this.verifyCreateOperation(operation);
-        if (!valid) {
-            throw new InvalidOperationError('signature')
-        }
-
-        const registry = operation.mdip!.registry;
-
-        // Reject operations with unsupported registries
-        if (!registry || !this.supportedRegistries.includes(registry)) {
-            throw new InvalidOperationError(`registry ${registry} not supported`);
-        }
-
+        if (!operation) throw new InvalidOperationError('missing');
+        if (this.operationExceedsMaxBytes(operation)) throw new InvalidOperationError('size');
+        operation = copyJSON(operation);
         const did = await this.generateDID(operation);
 
         return this.withDidLock(did, () => this.withControllerGraphLock(async () => {
+            const valid = await this.verifyCreateOperation(operation);
+            if (!valid) {
+                throw new InvalidOperationError('signature')
+            }
+
+            const registry = operation.mdip!.registry;
+
+            // Reject operations with unsupported registries
+            if (!registry || !this.supportedRegistries.includes(registry)) {
+                throw new InvalidOperationError(`registry ${registry} not supported`);
+            }
             const ops = await this.exportDID(did);
 
             // Check to see if we already have this DID in the db
@@ -961,13 +1080,13 @@ export default class Gatekeeper implements GatekeeperInterface {
                 throw new InvalidOperationError('controller cycle');
             }
 
-            await this.mutateDID(did, () => this.db.addEventAndQueue(did, {
+            await this.db.addEventAndQueue(did, {
                 registry: 'local',
                 time: operation.created!,
                 ordinal: [0],
                 operation,
                 did
-            }, this.publicationRegistries(registry)));
+            }, this.publicationRegistries(registry));
             await this.checkQueueCapacity(registry);
             return did;
         }));
@@ -986,7 +1105,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         options?: ResolveDIDOptions
     ): Promise<MdipDocument> {
         const events = did && isValidDID(did)
-            ? await this.readForResolution(() => this.db.getEvents(did))
+            ? await this.db.getEvents(did)
             : [];
 
         return resolveDIDFromEvents({
@@ -996,7 +1115,7 @@ export default class Gatekeeper implements GatekeeperInterface {
             didPrefix: this.didPrefix,
             generateCID: (operation) => this.generateCID(operation),
             generateDID: (operation) => this.generateDID(operation),
-            getBlock: (registry, block) => this.readForResolution(() => this.db.getBlock(registry, block)),
+            getBlock: (registry, block) => this.db.getBlock(registry, block),
             verifyCreateOperation: (operation) => this.verifyCreateOperation(operation),
             verifyUpdateOperation: (operation, doc) => this.verifyUpdateOperation(operation, doc),
         });
@@ -1032,13 +1151,13 @@ export default class Gatekeeper implements GatekeeperInterface {
                 throw new InvalidOperationError(`registry ${registry} not supported`);
             }
 
-            await this.mutateDID(operation.did!, () => this.db.addEventAndQueue(operation.did!, {
+            await this.db.addEventAndQueue(operation.did!, {
                 registry: 'local',
                 time: operation.signature?.signed || '',
                 ordinal: [0],
                 operation,
                 did: operation.did
-            }, this.publicationRegistries(registry)));
+            }, this.publicationRegistries(registry));
             await this.checkQueueCapacity(registry);
 
             return true;
@@ -1122,7 +1241,7 @@ export default class Gatekeeper implements GatekeeperInterface {
     }
 
     private async removeDIDUnlocked(did: string): Promise<void> {
-        await this.mutateDID(did, () => this.db.deleteEvents(did));
+        await this.db.deleteEvents(did);
     }
 
     async removeDIDs(dids: string[]): Promise<boolean> {
@@ -1131,7 +1250,7 @@ export default class Gatekeeper implements GatekeeperInterface {
         }
 
         for (const did of dids) {
-            await this.withDidLock(did, () => this.removeDIDUnlocked(did));
+            await this.withDIDsAndGraph([did], () => this.removeDIDUnlocked(did));
         }
 
         return true;
@@ -1207,7 +1326,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                             opid: eventOperationCid,
                             operation: opMatch.operation,
                         };
-                        await this.mutateDID(lockedDid, () => this.db.setEvents(lockedDid, currentEvents));
+                        await this.db.setEvents(lockedDid, currentEvents);
                         return ImportStatus.ADDED;
                     }
 
@@ -1220,13 +1339,13 @@ export default class Gatekeeper implements GatekeeperInterface {
                     }
 
                     if (currentEvents.length === 0) {
-                        await this.mutateDID(lockedDid, () => this.db.addEvent(lockedDid, event));
+                        await this.db.addEvent(lockedDid, event);
                         return ImportStatus.ADDED;
                     }
 
                     // TEMP during did:test, operation.previd is optional
                     if (!event.operation.previd) {
-                        await this.mutateDID(lockedDid, () => this.db.addEvent(lockedDid, event));
+                        await this.db.addEvent(lockedDid, event);
                         return ImportStatus.ADDED;
                     }
 
@@ -1239,7 +1358,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                     const index = currentEvents.indexOf(idMatch);
 
                     if (index === currentEvents.length - 1) {
-                        await this.mutateDID(lockedDid, () => this.db.addEvent(lockedDid, event));
+                        await this.db.addEvent(lockedDid, event);
                         return ImportStatus.ADDED;
                     }
 
@@ -1253,9 +1372,9 @@ export default class Gatekeeper implements GatekeeperInterface {
                             (event.ordinal && nextEvent.ordinal && compareOrdinals(event.ordinal, nextEvent.ordinal) < 0)) {
                             // reorg event, discard the rest of the operation sequence and replace with this event
                             const newSequence = [...currentEvents.slice(0, index + 1), event];
-                            await this.mutateDID(lockedDid, () => this.db.setEvents(lockedDid, newSequence, {
+                            await this.db.setEvents(lockedDid, newSequence, {
                                 operationEvents: [event],
-                            }));
+                            });
                             return ImportStatus.ADDED;
                         }
                     }

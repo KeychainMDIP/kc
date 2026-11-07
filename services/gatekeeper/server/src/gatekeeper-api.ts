@@ -12,6 +12,7 @@ import DbSqlite from '@mdip/gatekeeper/db/sqlite';
 import DbMongo from '@mdip/gatekeeper/db/mongo';
 import DbPostgres from '@mdip/gatekeeper/db/postgres';
 import {
+    ExpirationContinuation,
     Operation,
     ResolveDIDOptions,
 } from '@mdip/gatekeeper/types';
@@ -31,6 +32,7 @@ import {
     rateLimitWindowUnits,
     shouldSkipRateLimitPath,
     stopGatekeeper,
+    runExpirationCleanup,
 } from './helpers.js';
 
 EventEmitter.defaultMaxListeners = 100;
@@ -1761,11 +1763,11 @@ v1router.get('/db/reset', trackedRoute(async (req, res) => {
  * @swagger
  * /db/verify:
  *   get:
- *     summary: Check all DIDs in the database
+ *     summary: Verify stored DID signatures and repair conclusively invalid histories
  *
  *     responses:
  *       200:
- *         description: Resolution and expiry results for all DIDs in the database.
+ *         description: Cryptographic audit and expiry-repair results. Missing dependencies or unsupported historical formats return an incomplete-audit error without deleting those histories.
  *         content:
  *           application/json:
  *             schema:
@@ -1776,13 +1778,13 @@ v1router.get('/db/reset', trackedRoute(async (req, res) => {
  *                   description: The total number of DIDs that were checked.
  *                 verified:
  *                   type: integer
- *                   description: The count of cached or successfully resolved DIDs retained.
+ *                   description: The count of successfully audited DIDs retained.
  *                 expired:
  *                   type: integer
  *                   description: The count of expired DIDs and their dependencies that were removed.
  *                 invalid:
  *                   type: integer
- *                   description: The count of DIDs that failed resolution and were removed.
+ *                   description: The count of histories with conclusively invalid signatures that were removed.
  *       500:
  *         description: Internal Server Error.
  *         content:
@@ -2334,6 +2336,7 @@ app.use('/api', (req, res) => {
 
 let shuttingDown = false;
 let gcTimer: ReturnType<typeof setTimeout> | undefined;
+let gcContinuation: ExpirationContinuation | undefined;
 let server: ReturnType<typeof app.listen> | undefined;
 let shutdownPromise: Promise<void> | undefined;
 let shutdownExitCode = 0;
@@ -2388,14 +2391,23 @@ function scheduleGc() {
 }
 
 async function gcLoop() {
+    const startedAt = Date.now();
     try {
-        const response = await gatekeeper.verifyDb();
-        log.info(`DID garbage collection: ${JSON.stringify(response)} waiting ${config.gcInterval} minutes...`);
+        const response = await runExpirationCleanup(gatekeeper, () => shuttingDown, gcContinuation);
+        gcContinuation = response.continuation;
+        log.info({
+            examined: response.examined, expired: response.expired, deferred: response.deferred,
+            hasMore: response.hasMore, durationMs: Date.now() - startedAt,
+        }, `DID expiration cleanup complete, waiting ${config.gcInterval} minutes`);
     }
-    catch (error: any) {
-        log.error(`Error in DID garbage collection: ${error}`);
+    catch (err) {
+        // Durable agent jobs preserve partial cascades even if this pass must restart.
+        gcContinuation = undefined;
+        log.error({ err }, 'Error in DID expiration cleanup');
     }
-    scheduleGc();
+    finally {
+        scheduleGc();
+    }
 }
 
 async function getStatus() {

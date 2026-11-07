@@ -11,6 +11,7 @@ export default class DbJsonCache extends AbstractJson {
 
     async start(): Promise<void> {
         this.loadDb();
+        await super.start();
     }
 
     protected loadDb(): JsonDbFile {
@@ -33,8 +34,10 @@ export default class DbJsonCache extends AbstractJson {
     }
 
     async resetDb(): Promise<JsonDbFile> {
-        const db = { dids: {} };
-        this.writeDb(db);
-        return db;
+        return this.runExclusive(() => {
+            const db = { dids: {} };
+            this.writeDb(db);
+            return db;
+        });
     }
 }

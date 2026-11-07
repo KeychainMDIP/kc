@@ -3,6 +3,11 @@ import { randomUUID } from 'crypto';
 import { InvalidDIDError } from '@mdip/common/errors';
 import { childLogger } from '@mdip/common/logger';
 import {
+    DIDLifecycle,
+    DeleteEventsOptions,
+    DueDIDCursor,
+    ExpirationJob,
+    LifecycleMetadata,
     GatekeeperDb,
     GatekeeperEvent,
     Operation,
@@ -20,6 +25,7 @@ import {
     normalizeIndexExportLimit,
     parseIndexExportCursor
 } from './index-export.js';
+import { LIFECYCLE_VERSION, LIFECYCLE_PAGE_SIZE, isDIDLifecycle, isExpirationJob, isLifecycleMetadata, lifecycleLimit, projectLifecycle } from './lifecycle.js';
 import { DB_HEALTH_TIMEOUT_MS, withHealthCheckTimeout } from './health.js';
 
 interface DidsDoc {
@@ -112,9 +118,10 @@ export default class DbMongo implements GatekeeperDb {
             await this.ensureIndex('index_changes', { seq: 1 }, { name: 'index_changes_seq_unique', unique: true });
             await this.ensureIndexSeqCounter();
             await this.ensureIndexEpoch();
+            await this.initializeLifecycleIndex();
         }
         catch (error) {
-            await this.client.close();
+            try { await this.client.close(); } catch { /* Preserve the startup failure. */ }
             this.client = null;
             this.db = null;
             throw error;
@@ -154,16 +161,14 @@ export default class DbMongo implements GatekeeperDb {
             throw new Error(MONGO_NOT_STARTED_ERROR)
         }
 
-        await this.db.collection('dids').deleteMany({});
-        await this.db.collection('queue').deleteMany({});
-        await this.db.collection('blocks').deleteMany({});
-        await this.db.collection('index_changes').deleteMany({});
-        await this.db.collection('counters').deleteMany({});
-        await this.db.collection<MetadataDoc>('metadata').updateOne(
-            { id: 'indexEpoch' },
-            { $set: { value: randomUUID() } },
-            { upsert: true }
-        );
+        await this.withTransaction(async session => {
+            for (const name of ['lifecycle', 'dids', 'queue', 'blocks', 'index_changes', 'counters']) {
+                await this.db!.collection(name).deleteMany({}, { session });
+            }
+            await this.db!.collection('metadata').deleteOne({ id: 'lifecycle' }, { session });
+            await this.db!.collection<MetadataDoc>('metadata').updateOne(
+                { id: 'indexEpoch' }, { $set: { value: randomUUID() } }, { upsert: true, session });
+        });
     }
 
     private indexKeyMatches(actual: Record<string, unknown> | undefined, expected: Record<string, 1 | -1>): boolean {
@@ -382,7 +387,7 @@ export default class DbMongo implements GatekeeperDb {
         }
 
         const seq = await this.nextIndexSeq(session);
-        await this.db.collection('index_changes').insertOne({ seq, ...change }, { session });
+        await this.db.collection('index_changes').insertOne({ seq, ...change, lifecycleVersion: LIFECYCLE_VERSION }, { session });
     }
 
     async addEvent(did: string, event: GatekeeperEvent): Promise<number> {
@@ -397,18 +402,25 @@ export default class DbMongo implements GatekeeperDb {
         const id = this.splitSuffix(did);
 
         return this.withTransaction(async session => {
-            const result = await this.db!.collection<DidsDoc>('dids').updateOne(
-                { id },
-                {
-                    $push: {
-                        events: { $each: [event] }
-                    }
-                },
-                { upsert: true, session }
-            );
+            const collection = this.db!.collection<DidsDoc>('dids');
+            const update = { $push: { events: { $each: [event] } } };
+            const creating = event.operation.type === 'create';
+            // An existing document can have an empty history after maintenance.
+            const before = creating ? await collection.findOneAndUpdate({ id }, update,
+                { upsert: true, session, returnDocument: 'before', projection: { events: { $slice: 1 } } }) : null;
+            const result = creating ? null : await collection.updateOne({ id }, update, { upsert: true, session });
 
+            const previous = event.operation.type === 'delete'
+                ? (await this.db!.collection<{ record: DIDLifecycle }>('lifecycle').findOne({ kind: 'did', id }, { session }))?.record
+                : null;
+            if (creating && before?.events?.length) {
+                await this.db!.collection('lifecycle').updateOne({ kind: 'did', id },
+                    { $set: { 'record.revision': randomUUID() } }, { session });
+            } else {
+                await this.writeLifecycle(session, did, [event], previous ?? null);
+            }
             // Return how many docs were modified
-            const count = result.modifiedCount + (result.upsertedCount ?? 0);
+            const count = creating ? 1 : result!.modifiedCount + (result!.upsertedCount ?? 0);
             await this.recordIndexChange({
                 kind: 'did',
                 did,
@@ -440,6 +452,7 @@ export default class DbMongo implements GatekeeperDb {
                     { $set: { events } },
                     { upsert: true, session }
                 );
+            await this.writeLifecycle(session, did, events);
             const operationEvents = options?.operationEvents ?? [];
 
             if (operationEvents.length === 0) {
@@ -471,7 +484,7 @@ export default class DbMongo implements GatekeeperDb {
         return row?.events ?? [];
     }
 
-    async deleteEvents(did: string): Promise<number> {
+    async deleteEvents(did: string, expected?: DeleteEventsOptions): Promise<number> {
         if (!this.db) {
             throw new Error(MONGO_NOT_STARTED_ERROR)
         }
@@ -479,6 +492,17 @@ export default class DbMongo implements GatekeeperDb {
         const id = this.splitSuffix(did);
 
         return this.withTransaction(async session => {
+            if (expected) {
+                const epoch = (await this.db!.collection<MetadataDoc>('metadata').findOne({ id: 'indexEpoch' }, { session }))?.value;
+                const stored = await this.db!.collection<MetadataDoc>('metadata').findOne({ id: 'lifecycle' }, { session });
+                const state: unknown = stored && JSON.parse(stored.value);
+                if (!isLifecycleMetadata(state) || !state.complete || state.version !== LIFECYCLE_VERSION || state.epoch !== epoch) {
+                    throw new Error('Lifecycle index is not initialized');
+                }
+                const row = await this.db!.collection<{ record: DIDLifecycle }>('lifecycle').findOne({ kind: 'did', id }, { session });
+                if (epoch !== expected.epoch || !row || this.parseLifecycle(row.record).revision !== expected.revision) return 0;
+            }
+            await this.db!.collection('lifecycle').deleteOne({ kind: 'did', id }, { session });
             const row = await this.db!.collection<DidsDoc>('dids').findOne({ id }, { session });
             const result = await this.db!.collection('dids').deleteOne({ id }, { session });
             if ((result.deletedCount ?? 0) > 0) {
@@ -491,6 +515,142 @@ export default class DbMongo implements GatekeeperDb {
             }
             return result.deletedCount ?? 0
         });
+    }
+
+    private async writeLifecycle(session: ClientSession, did: string, events: GatekeeperEvent[], previous?: DIDLifecycle | null): Promise<void> {
+        const id = this.splitSuffix(did);
+        const record = projectLifecycle(did, events, previous);
+        const collection = this.db!.collection('lifecycle');
+        if (record) {
+            await collection.updateOne({ kind: 'did', id }, { $set: {
+                record, expiresAt: record.expiresAt ?? null, controller: record.controller ?? null, unresolved: !!record.controllerUnknown,
+            } }, { upsert: true, session });
+        } else {
+            await collection.deleteOne({ kind: 'did', id }, { session });
+        }
+        if (events.length === 0) return;
+        const jobQuery = record?.type === 'agent' && !record.unresolved
+            ? { kind: 'job', id, 'record.expiresAt': { $ne: record.expiresAt ?? null } }
+            : { kind: 'job', id };
+        await collection.deleteMany(jobQuery, { session });
+    }
+
+    private async saveLifecycleMetadata(state: LifecycleMetadata, session?: ClientSession): Promise<void> {
+        await this.db!.collection('metadata').updateOne({ id: 'lifecycle' },
+            { $set: { value: JSON.stringify(state) } }, { upsert: true, session });
+    }
+
+    async initializeLifecycleIndex(): Promise<void> {
+        if (!this.db) throw new Error(MONGO_NOT_STARTED_ERROR);
+        const lifecycleExists = !!await this.db.listCollections({ name: 'lifecycle' }, { nameOnly: true }).next();
+        if (!lifecycleExists) await this.db.collection('metadata').deleteOne({ id: 'lifecycle' });
+        await this.ensureIndex('lifecycle', { kind: 1, id: 1 }, { name: 'lifecycle_id', unique: true });
+        await this.ensureIndex('lifecycle', { kind: 1, expiresAt: 1, id: 1 }, { name: 'lifecycle_due' });
+        await this.ensureIndex('lifecycle', { kind: 1, controller: 1, id: 1 }, { name: 'lifecycle_controller' });
+        await this.ensureIndex('lifecycle', { kind: 1, unresolved: 1, id: 1 }, { name: 'lifecycle_unresolved' });
+        await this.ensureIndex('index_changes', { kind: 1, lifecycleVersion: 1, seq: 1 }, { name: 'index_changes_lifecycle_coverage' });
+        const epoch = await this.getIndexEpoch();
+        const checkpoint = await this.getIndexCheckpointCursor();
+        const stored = await this.db.collection<MetadataDoc>('metadata').findOne({ id: 'lifecycle' });
+        let state: LifecycleMetadata | undefined = stored ? JSON.parse(stored.value) : undefined;
+        if (state !== undefined && !isLifecycleMetadata(state)) throw new Error('Invalid lifecycle metadata');
+        const valid = state?.version === LIFECYCLE_VERSION && state.epoch === epoch
+            && BigInt(state.checkedCursor) <= BigInt(checkpoint);
+        const uncovered = state && await this.db.collection('index_changes').findOne({
+            seq: { $gt: Number(state.checkedCursor) }, kind: 'did', lifecycleVersion: { $ne: LIFECYCLE_VERSION },
+        }, { projection: { _id: 1 } });
+        if (!valid || uncovered) {
+            const discardJobs = state?.epoch !== epoch;
+            state = { version: LIFECYCLE_VERSION, epoch, complete: false, checkedCursor: checkpoint };
+            await this.withTransaction(async session => {
+                await this.db!.collection('lifecycle').deleteMany({ kind: 'did' }, { session });
+                if (discardJobs) await this.db!.collection('lifecycle').deleteMany({ kind: 'job' }, { session });
+                await this.saveLifecycleMetadata(state!, session);
+            });
+        }
+        if (!state!.complete) {
+            while (true) {
+                const page = await this.db.collection<DidsDoc>('dids').find({ id: { $gt: state!.backfillCursor ?? '' } })
+                    .sort({ id: 1 }).limit(LIFECYCLE_PAGE_SIZE).toArray();
+                if (!page.length) break;
+                state!.backfillCursor = page[page.length - 1].id;
+                await this.withTransaction(async session => {
+                    for (const { id, events } of page) await this.writeLifecycle(session, id, events);
+                    await this.saveLifecycleMetadata(state!, session);
+                });
+            }
+        }
+        await this.saveLifecycleMetadata({ version: LIFECYCLE_VERSION, epoch, complete: true, checkedCursor: checkpoint });
+    }
+
+    async getLifecycleMetadata(): Promise<LifecycleMetadata> {
+        if (!this.db) throw new Error(MONGO_NOT_STARTED_ERROR);
+        const stored = await this.db.collection<MetadataDoc>('metadata').findOne({ id: 'lifecycle' });
+        const state: LifecycleMetadata | undefined = stored && JSON.parse(stored.value);
+        if (!isLifecycleMetadata(state) || !state.complete || state.version !== LIFECYCLE_VERSION || state.epoch !== await this.getIndexEpoch()) {
+            throw new Error('Lifecycle index is not initialized');
+        }
+        return state;
+    }
+
+    async getLifecycle(did: string): Promise<DIDLifecycle | null> {
+        if (!this.db) throw new Error(MONGO_NOT_STARTED_ERROR);
+        const row = await this.db.collection<{ kind: string; id: string; record: DIDLifecycle }>('lifecycle')
+            .findOne({ kind: 'did', id: this.splitSuffix(did) });
+        return row ? this.parseLifecycle(row.record) : null;
+    }
+
+    private parseLifecycle(value: unknown): DIDLifecycle {
+        if (!isDIDLifecycle(value)) throw new Error('Invalid lifecycle record');
+        return value;
+    }
+
+    private parseExpirationJob(value: unknown): ExpirationJob {
+        if (!isExpirationJob(value)) throw new Error('Invalid expiration cleanup record');
+        return value;
+    }
+
+    async getDueDIDs(cutoff: number, limit: number, after?: DueDIDCursor): Promise<DIDLifecycle[]> {
+        if (!this.db) throw new Error(MONGO_NOT_STARTED_ERROR);
+        const rows = await this.db.collection<{ record: DIDLifecycle }>('lifecycle').find({
+            kind: 'did', unresolved: false, 'record.unresolved': { $ne: true }, expiresAt: { $lt: cutoff, $ne: null },
+            ...(after && { $or: [{ expiresAt: { $gt: after.expiresAt, $lt: cutoff } },
+                { expiresAt: after.expiresAt, id: { $gt: after.suffix } }] }),
+        }).sort({ expiresAt: 1, id: 1 }).limit(lifecycleLimit(limit)).toArray();
+        return rows.map(row => this.parseLifecycle(row.record));
+    }
+
+    async getControlledDIDs(controller: string, limit: number, after?: string): Promise<DIDLifecycle[]> {
+        if (!this.db) throw new Error(MONGO_NOT_STARTED_ERROR);
+        const rows = await this.db.collection<{ record: DIDLifecycle }>('lifecycle').find({
+            kind: 'did', controller: this.splitSuffix(controller), id: { $gt: after ?? '' }, 'record.type': 'asset',
+        }).sort({ id: 1 }).limit(lifecycleLimit(limit)).toArray();
+        return rows.map(row => this.parseLifecycle(row.record));
+    }
+
+    async hasUnresolvedLifecycle(): Promise<boolean> {
+        if (!this.db) throw new Error(MONGO_NOT_STARTED_ERROR);
+        return !!await this.db.collection('lifecycle').findOne({ kind: 'did', unresolved: true }, { projection: { _id: 1 } });
+    }
+
+    async getExpirationJobs(limit: number, after?: string): Promise<ExpirationJob[]> {
+        if (!this.db) throw new Error(MONGO_NOT_STARTED_ERROR);
+        const rows = await this.db.collection<{ record: ExpirationJob }>('lifecycle').find({ kind: 'job', id: { $gt: after ?? '' } })
+            .sort({ id: 1 }).limit(lifecycleLimit(limit)).toArray();
+        return rows.map(row => this.parseExpirationJob(row.record));
+    }
+
+    async getExpirationJob(suffix: string): Promise<ExpirationJob | null> {
+        if (!this.db) throw new Error(MONGO_NOT_STARTED_ERROR);
+        const row = await this.db.collection<{ record: unknown }>('lifecycle').findOne({ kind: 'job', id: suffix });
+        return row ? this.parseExpirationJob(row.record) : null;
+    }
+
+    async saveExpirationJob(suffix: string, job: ExpirationJob | null): Promise<void> {
+        if (job && (!isExpirationJob(job) || job.suffix !== suffix)) throw new Error('Invalid expiration cleanup record');
+        if (!this.db) throw new Error(MONGO_NOT_STARTED_ERROR);
+        if (job) await this.db.collection('lifecycle').updateOne({ kind: 'job', id: suffix }, { $set: { record: job } }, { upsert: true });
+        else await this.db.collection('lifecycle').deleteOne({ kind: 'job', id: suffix });
     }
 
     async getAllKeys(): Promise<string[]> {
