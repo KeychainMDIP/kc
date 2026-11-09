@@ -33,6 +33,73 @@ beforeEach(async () => {
 });
 
 describe('verifyDb', () => {
+    it('retains an asset when its signing time predates the controller history', async () => {
+        const pair = cipher.generateRandomJwk();
+        const anchor = await helper.createAgentOp(pair);
+        const owner = await gatekeeper.createDID(anchor);
+        const operation = await helper.createAssetOp(owner, pair);
+        operation.signature!.signed = new Date(Date.parse(anchor.created!) - 1).toISOString();
+        const asset = await gatekeeper.generateDID(operation);
+        await db.addEvent(asset, { did: asset, registry: 'local', time: operation.created!, operation });
+        const events = await db.getEvents(asset);
+        await expect(gatekeeper.verifyDb({ chatty: false })).rejects.toThrow('unavailable controller');
+        expect(await db.getEvents(asset)).toEqual(events);
+        expect(await db.getEvents(owner)).toHaveLength(1);
+    });
+
+    it('preserves a history whose envelope timestamp cannot be resolved during an audit', async () => {
+        const did = await gatekeeper.createDID(await helper.createAgentOp(cipher.generateRandomJwk()));
+        const events = await db.getEvents(did);
+        events[0].time = 'invalid';
+        await db.setEvents(did, events);
+        await expect(gatekeeper.verifyDb({ chatty: false })).rejects.toThrow('history cannot be verified');
+        expect(await db.getEvents(did)).toEqual(events);
+    });
+
+    it('repairs more than one expiration page after verifying all snapshot histories', async () => {
+        const validUntil = new Date(Date.now() - 1000).toISOString();
+        for (let index = 0; index < 101; index += 1) {
+            await gatekeeper.createDID(await helper.createAgentOp(cipher.generateRandomJwk(), { validUntil }));
+        }
+        await expect(gatekeeper.verifyDb({ chatty: false })).resolves.toEqual({
+            total: 101, verified: 0, invalid: 0, expired: 101,
+        });
+        expect(await gatekeeper.getDIDs()).toEqual([]);
+    });
+
+    it('audits asset controllers through their historical chain of signing keys', async () => {
+        const pair = cipher.generateRandomJwk();
+        const owner = await gatekeeper.createDID(await helper.createAgentOp(pair));
+        const controller = await gatekeeper.createDID(await helper.createAssetOp(owner, pair, {
+            validUntil: '2099-01-01T00:00:00Z',
+        }));
+        const asset = await gatekeeper.createDID(await helper.createAssetOp(owner, pair));
+        const doc = await gatekeeper.resolveDID(asset);
+        doc.didDocument!.controller = controller;
+        await expect(gatekeeper.updateDID(await helper.createUpdateOp(pair, asset, doc))).resolves.toBe(true);
+        const replacement = await gatekeeper.resolveDID(asset);
+        replacement.didDocumentData = { nested: true };
+        await expect(gatekeeper.updateDID(await helper.createUpdateOp(pair, asset, replacement))).resolves.toBe(true);
+        const before = await gatekeeper.exportDIDs([owner, controller, asset]);
+        await expect(gatekeeper.verifyDb({ chatty: false })).resolves.toEqual({
+            total: 3, verified: 3, invalid: 0, expired: 0,
+        });
+        expect(await gatekeeper.exportDIDs([owner, controller, asset])).toEqual(before);
+    });
+
+    it('reports a history removed after cryptographic verification as an incomplete audit', async () => {
+        const did = await gatekeeper.createDID(await helper.createAgentOp(cipher.generateRandomJwk()));
+        const read = db.getEvents.bind(db);
+        let reads = 0;
+        const history = jest.spyOn(db, 'getEvents').mockImplementation(async target => {
+            if (target === did && ++reads === 2) await gatekeeper.removeDIDs([did]);
+            return read(target);
+        });
+        try {
+            await expect(gatekeeper.verifyDb({ chatty: false })).rejects.toThrow('history removed concurrently');
+            expect(await db.getEvents(did)).toEqual([]);
+        } finally { history.mockRestore(); }
+    });
     it.each(['missing signature', 'invalid timestamp', 'missing key', 'unsupported curve'])(
         'preserves a history with %s when cryptographic auditing cannot establish invalidity', async failure => {
             const did = await gatekeeper.createDID(await helper.createAgentOp(cipher.generateRandomJwk()));

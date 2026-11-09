@@ -158,6 +158,42 @@ describe.each(adapters)('%s lifecycle index', (_name, Adapter) => {
         fs.rmSync(folder, { recursive: true, force: true });
     });
 
+    it('returns cleanup jobs in suffix order with a bounded exclusive cursor', async () => {
+        for (const suffix of ['c', 'a', 'b']) {
+            const target = `did:test:${suffix}`;
+            await db.addEvent(target, agent(expires, target));
+            const row = (await db.getLifecycle(target))!;
+            await db.saveExpirationJob(suffix, { ...row, type: 'agent', expiresAt: row.expiresAt! });
+        }
+        expect((await db.getExpirationJobs(2)).map(row => row.suffix)).toEqual(['a', 'b']);
+        expect((await db.getExpirationJobs(2, 'a')).map(row => row.suffix)).toEqual(['b', 'c']);
+        expect(await db.getExpirationJobs(2, 'c')).toEqual([]);
+    });
+
+    it('rejects malformed cleanup jobs without persisting them', async () => {
+        const row = projectLifecycle(did, [agent()])!;
+        const invalid: unknown[] = [
+            { ...row, type: 'asset' }, { ...row, expiresAt: undefined },
+            { ...row, controllerUnknown: true }, { ...row, unresolved: true },
+            { ...row, suffix: 'different' }, { ...row, dependentCursor: '' },
+        ];
+        for (const value of invalid) {
+            // @ts-expect-error Deliberately exercise malformed runtime cleanup jobs.
+            await expect(db.saveExpirationJob(row.suffix, value)).rejects.toThrow('Invalid expiration cleanup job');
+        }
+        expect(await db.getExpirationJobs(10)).toEqual([]);
+    });
+
+    it('invalidates a saved cleanup job when a replacement changes its expiration', async () => {
+        await db.addEvent(did, agent());
+        const row = (await db.getLifecycle(did))!;
+        await db.saveExpirationJob(row.suffix, { ...row, type: 'agent', expiresAt: row.expiresAt! });
+        await db.addEvent(did, update('2027-01-01T00:00:00Z'));
+        expect(await db.getExpirationJob(row.suffix)).toBeNull();
+        expect(await db.getLifecycle(did)).toMatchObject({ expiresAt: Date.parse('2027-01-01T00:00:00Z') });
+        expect(await db.getEvents(did)).toHaveLength(2);
+    });
+
     it('maintains sparse lifecycle rows and rejects stale revision and epoch deletions', async () => {
         await db.addEvent(did, agent());
         const row = (await db.getLifecycle(alias))!;
