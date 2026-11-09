@@ -158,6 +158,17 @@ describe.each(adapters)('%s lifecycle index', (_name, Adapter) => {
         fs.rmSync(folder, { recursive: true, force: true });
     });
 
+    it('removes an empty history and exports its removal without fabricating an operation', async () => {
+        await db.setEvents(did, []);
+        const snapshot = await db.exportIndexSnapshot();
+        await expect(db.deleteEvents(did)).resolves.toBe(1);
+        expect(await db.getAllKeys()).not.toContain(did.split(':').pop());
+        const changes = await db.exportIndexChanges({ cursor: snapshot.checkpointCursor!, includeOperations: true });
+        expect(changes.dids).toEqual([{ did, removed: true, events: [] }]);
+        expect(changes.operations).toEqual([]);
+        expect(changes.removedOperations).toBeUndefined();
+    });
+
     it('returns cleanup jobs in suffix order with a bounded exclusive cursor', async () => {
         for (const suffix of ['c', 'a', 'b']) {
             const target = `did:test:${suffix}`;

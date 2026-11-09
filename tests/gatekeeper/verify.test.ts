@@ -33,6 +33,33 @@ beforeEach(async () => {
 });
 
 describe('verifyDb', () => {
+    it('reports a catalog entry without history as incomplete without removing the entry', async () => {
+        const did = await gatekeeper.createDID(await helper.createAgentOp(cipher.generateRandomJwk()));
+        await db.setEvents(did, []);
+        await expect(gatekeeper.verifyDb({ chatty: false })).rejects.toThrow('missing or cyclic controller history');
+        expect(await gatekeeper.getDIDs()).toContain(did);
+        expect(await db.getEvents(did)).toEqual([]);
+    });
+
+    it.each(['empty', 'missing method', 'missing JWK'])(
+        'retains a historical update whose previous signing key is %s', async state => {
+            const pair = cipher.generateRandomJwk();
+            const did = await gatekeeper.createDID(await helper.createAgentOp(pair));
+            const doc = await gatekeeper.resolveDID(did);
+            if (state === 'empty') doc.didDocument!.verificationMethod = [];
+            if (state === 'missing method') delete doc.didDocument!.verificationMethod;
+            if (state === 'missing JWK') delete doc.didDocument!.verificationMethod![0].publicKeyJwk;
+            await expect(gatekeeper.updateDID(await helper.createUpdateOp(pair, did, doc))).resolves.toBe(true);
+            const replacement = await gatekeeper.resolveDID(did);
+            replacement.didDocumentData = { restored: true };
+            const operation = await helper.createUpdateOp(pair, did, replacement);
+            await db.addEvent(did, { did, registry: 'local', time: operation.signature!.signed, operation });
+            const before = await db.getEvents(did);
+            await expect(gatekeeper.verifyDb({ chatty: false })).rejects.toThrow('unavailable signing key');
+            expect(await db.getEvents(did)).toEqual(before);
+        },
+    );
+
     it('retains an asset when its signing time predates the controller history', async () => {
         const pair = cipher.generateRandomJwk();
         const anchor = await helper.createAgentOp(pair);

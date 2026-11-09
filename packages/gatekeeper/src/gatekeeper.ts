@@ -511,8 +511,6 @@ export default class Gatekeeper implements GatekeeperInterface {
         try {
             doc = await resolveDIDFromEvents({
                 did, events: captured, options: { ...options, verify: true }, didPrefix: this.didPrefix,
-                generateCID: operation => this.generateCID(operation),
-                generateDID: operation => this.generateDID(operation),
                 verifyCreateOperation: operation => verify(operation),
                 verifyUpdateOperation: (operation, previous) => verify(operation, previous),
             });
