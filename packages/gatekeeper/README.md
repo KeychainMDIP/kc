@@ -78,6 +78,17 @@ Expiration repair within an audit also has a finite work budget. A large
 expiration backlog may remain afterward. Such retained DIDs can be counted as
 cryptographically verified even though a later cleanup cycle will remove them.
 
+### Import performance
+
+Imports reuse the target history already read and cache the CIDs of stored
+operations by their exact contents. Each Gatekeeper instance retains at most
+10,000 cache entries and 64 MiB of accounted string data. Cache structures and
+temporary allocations require additional memory. Least recently used entries
+are evicted, and a successful database reset clears the cache.
+
+Incoming operation CIDs and signatures are still verified. Explicit database
+audits recompute historical CIDs independently of the import cache.
+
 ### Client
 
 The GatekeeperClient is used to communicate with a Gatekeeper REST API service.

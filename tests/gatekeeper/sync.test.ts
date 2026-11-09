@@ -73,6 +73,237 @@ describe('exportDID', () => {
     });
 });
 
+describe('historical operation CID cache', () => {
+    async function storedAgent() {
+        const keypair = cipher.generateRandomJwk();
+        const operation = await helper.createAgentOp(keypair, { registry: 'hyperswarm' });
+        const event = { registry: 'hyperswarm', time: operation.created!, ordinal: [1], operation };
+        await expect(gatekeeper.importEvent(event)).resolves.toBe('added');
+        return { keypair, operation, event, did: await gatekeeper.generateDID(operation) };
+    }
+
+    it('calculates historical CIDs once across 500 successive updates', async () => {
+        const { keypair, operation, did } = await storedAgent();
+        const generate = jest.spyOn(gatekeeper, 'generateCID');
+        try {
+            for (let step = 0; step < 500; step += 1) {
+                const doc = await gatekeeper.resolveDID(did);
+                doc.didDocumentData = { step };
+                const update = await helper.createUpdateOp(keypair, did, doc);
+                await expect(gatekeeper.importEvent({
+                    registry: 'hyperswarm', time: update.signature!.signed, ordinal: [step + 2], operation: update,
+                })).resolves.toBe('added');
+            }
+            expect(generate).toHaveBeenCalledTimes(1000);
+            expect(generate.mock.calls.filter(([op]) => (op as Operation).signature?.hash === operation.signature!.hash))
+                .toHaveLength(1);
+            await expect(gatekeeper.resolveDID(did)).resolves.toMatchObject({
+                didDocumentData: { step: 499 }, didDocumentMetadata: { version: '501' },
+            });
+        }
+        finally {
+            generate.mockRestore();
+        }
+    });
+
+    it('does not reuse a cached CID when stored contents change but opid does not', async () => {
+        const { keypair, did } = await storedAgent();
+        const doc = await gatekeeper.resolveDID(did);
+        doc.didDocumentData = { original: true };
+        const operation = await helper.createUpdateOp(keypair, did, doc);
+        const event = { registry: 'hyperswarm', time: operation.signature!.signed, ordinal: [2], operation };
+        await expect(gatekeeper.importEvent(event)).resolves.toBe('added');
+        await expect(gatekeeper.importEvent(copyJSON(event))).resolves.toBe('merged');
+        const events = await gatekeeper.exportDID(did);
+        events[1].operation.doc!.didDocumentData = { changed: true };
+        await db.setEvents(did, events);
+
+        const generate = jest.spyOn(gatekeeper, 'generateCID');
+        try {
+            await expect(gatekeeper.importEvent(copyJSON(event))).resolves.toBe('rejected');
+            expect(generate).toHaveBeenCalledWith(events[1].operation);
+        }
+        finally {
+            generate.mockRestore();
+        }
+    });
+
+    it('still verifies incoming signatures and rejects forged opids after warming the cache', async () => {
+        const { operation, event, did } = await storedAgent();
+        await expect(gatekeeper.importEvent(copyJSON(event))).resolves.toBe('merged');
+        const verify = jest.spyOn(gatekeeper, 'verifyCreateOperation').mockResolvedValueOnce(false);
+        try {
+            await expect(gatekeeper.importEvent(copyJSON(event))).resolves.toBe('rejected');
+            expect(verify).toHaveBeenCalledWith(operation);
+        }
+        finally {
+            verify.mockRestore();
+        }
+        await expect(gatekeeper.importEvent({ ...event, opid: 'forged-version' })).resolves.toBe('rejected');
+        await expect(gatekeeper.exportDID(did)).resolves.toHaveLength(1);
+    });
+
+    it('recomputes missing legacy opids once and continues matching predecessors', async () => {
+        const { keypair, did, event } = await storedAgent();
+        const events = await gatekeeper.exportDID(did);
+        delete events[0].opid;
+        await db.setEvents(did, events);
+        await expect(gatekeeper.importEvent(copyJSON(event))).resolves.toBe('merged');
+        const doc = await gatekeeper.resolveDID(did);
+        doc.didDocumentData = { legacy: true };
+        const operation = await helper.createUpdateOp(keypair, did, doc);
+        await expect(gatekeeper.importEvent({
+            registry: 'hyperswarm', time: operation.signature!.signed, ordinal: [2], operation,
+        })).resolves.toBe('added');
+        await expect(gatekeeper.resolveDID(did)).resolves.toMatchObject({ didDocumentData: { legacy: true } });
+    });
+
+    it('evicts the least recently used contents at the entry limit', async () => {
+        // @ts-expect-error Use a small internal bound to exercise eviction without thousands of identities.
+        gatekeeper.maxHistoryCidCacheEntries = 2;
+        try {
+            const first = await storedAgent();
+            const second = await storedAgent();
+            const third = await storedAgent();
+            for (const { event } of [first, second, first, third]) {
+                await expect(gatekeeper.importEvent(copyJSON(event))).resolves.toBe('merged');
+            }
+            // @ts-expect-error Inspect retained contents to verify the memory bound and LRU order.
+            expect([...gatekeeper.historicalOperationCids.keys()]).toEqual([
+                JSON.stringify(first.operation), JSON.stringify(third.operation),
+            ]);
+        }
+        finally {
+            // @ts-expect-error Restore the production bound.
+            gatekeeper.maxHistoryCidCacheEntries = 10_000;
+        }
+    });
+
+    it('bounds retained string bytes and does not retain oversized contents', async () => {
+        const first = await storedAgent();
+        const second = await storedAgent();
+        await gatekeeper.importEvent(copyJSON(first.event));
+        // @ts-expect-error Read the accounted UTF-16 content/CID bytes for a small test bound.
+        const firstBytes = gatekeeper.historicalOperationCidBytes;
+        // @ts-expect-error Exercise the byte bound independently of the entry bound.
+        gatekeeper.maxHistoryCidCacheBytes = firstBytes;
+        try {
+            await gatekeeper.importEvent(copyJSON(second.event));
+            // @ts-expect-error Only one same-sized operation fits in this byte bound.
+            expect(gatekeeper.historicalOperationCids.size).toBe(1);
+            // @ts-expect-error Retained strings stay within the byte bound.
+            expect(gatekeeper.historicalOperationCidBytes).toBeLessThanOrEqual(firstBytes);
+            await gatekeeper.resetDb();
+            // @ts-expect-error An operation larger than the cache remains importable, but is not cached.
+            gatekeeper.maxHistoryCidCacheBytes = 1;
+            const third = await storedAgent();
+            await expect(gatekeeper.importEvent(copyJSON(third.event))).resolves.toBe('merged');
+            // @ts-expect-error Oversized entries are not retained.
+            expect(gatekeeper.historicalOperationCids.size).toBe(0);
+            // @ts-expect-error Successful reset also clears byte accounting.
+            expect(gatekeeper.historicalOperationCidBytes).toBe(0);
+        }
+        finally {
+            // @ts-expect-error Restore the production bound.
+            gatekeeper.maxHistoryCidCacheBytes = 64 * 1024 * 1024;
+        }
+    });
+});
+
+describe('import history reuse', () => {
+    it.each(['update', 'delete'] as const)('reads the target history once when importing an aliased %s', async type => {
+        const keypair = cipher.generateRandomJwk();
+        const did = await gatekeeper.createDID(await helper.createAgentOp(keypair));
+        const doc = await gatekeeper.resolveDID(did);
+        doc.didDocumentData = { changed: true };
+        const operation = type === 'delete'
+            ? await helper.createDeleteOp(keypair, did)
+            : await helper.createUpdateOp(keypair, did, doc);
+        const alias = `did:mdip:${did.split(':').pop()}`;
+        const read = jest.spyOn(db, 'getEvents');
+        try {
+            await expect(gatekeeper.importEvent({
+                registry: 'hyperswarm', time: operation.signature!.signed, did: alias, operation,
+            })).resolves.toBe('added');
+            expect(read).toHaveBeenCalledTimes(1);
+            expect(read).toHaveBeenCalledWith(alias);
+        }
+        finally {
+            read.mockRestore();
+        }
+        const resolved = await gatekeeper.resolveDID(did);
+        expect(resolved.didDocumentMetadata?.version).toBe('2');
+        if (type === 'delete') {
+            expect(resolved.didDocumentMetadata?.deactivated).toBe(true);
+        }
+        else {
+            expect(resolved.didDocumentData).toEqual({ changed: true });
+        }
+    });
+
+    it('reuses the asset history but still resolves and verifies its controller', async () => {
+        const keypair = cipher.generateRandomJwk();
+        const controller = await gatekeeper.createDID(await helper.createAgentOp(keypair));
+        const did = await gatekeeper.createDID(await helper.createAssetOp(controller, keypair));
+        const doc = await gatekeeper.resolveDID(did);
+        doc.didDocumentData = { changed: true };
+        const operation = await helper.createUpdateOp(keypair, did, doc);
+        const read = jest.spyOn(db, 'getEvents');
+        try {
+            await expect(gatekeeper.importEvent({
+                registry: 'hyperswarm', time: operation.signature!.signed, operation,
+            })).resolves.toBe('added');
+            expect(read.mock.calls.filter(([target]) => target === did)).toHaveLength(1);
+            expect(read).toHaveBeenCalledWith(controller);
+        }
+        finally {
+            read.mockRestore();
+        }
+        const replacement = await gatekeeper.resolveDID(did);
+        replacement.didDocumentData = { forged: true };
+        const forged = await helper.createUpdateOp(cipher.generateRandomJwk(), did, replacement);
+        await expect(gatekeeper.importEvent({
+            registry: 'hyperswarm', time: forged.signature!.signed, operation: forged,
+        })).resolves.toBe('rejected');
+    });
+
+    it('verifies duplicate rotations against their predecessor without modifying stored signed documents', async () => {
+        const oldKeys = cipher.generateRandomJwk();
+        const newKeys = cipher.generateRandomJwk();
+        const newestKeys = cipher.generateRandomJwk();
+        const create = await helper.createAgentOp(oldKeys, { registry: 'hyperswarm' });
+        const did = await gatekeeper.generateDID(create);
+        await gatekeeper.importEvent({ registry: 'hyperswarm', time: create.created!, operation: create });
+        const doc = await gatekeeper.resolveDID(did);
+        doc.didDocument!.verificationMethod![0].publicKeyJwk = newKeys.publicJwk;
+        delete doc.didDocumentMetadata;
+        delete doc.didResolutionMetadata;
+        const rotation = await helper.createUpdateOp(oldKeys, did, doc);
+        await expect(gatekeeper.updateDID(rotation)).resolves.toBe(true);
+        const nextDoc = await gatekeeper.resolveDID(did);
+        nextDoc.didDocument!.verificationMethod![0].publicKeyJwk = newestKeys.publicJwk;
+        const nextRotation = await helper.createUpdateOp(newKeys, did, nextDoc);
+        await expect(gatekeeper.updateDID(nextRotation)).resolves.toBe(true);
+        const before = await gatekeeper.exportDID(did);
+        const read = jest.spyOn(db, 'getEvents');
+        try {
+            await expect(gatekeeper.importEvent({
+                ...before[2], registry: 'hyperswarm', ordinal: [2],
+            })).resolves.toBe('added');
+            expect(read).toHaveBeenCalledTimes(1);
+        }
+        finally {
+            read.mockRestore();
+        }
+        const after = await gatekeeper.exportDID(did);
+        expect(after.map(event => event.operation)).toEqual(before.map(event => event.operation));
+        await expect(gatekeeper.resolveDID(did)).resolves.toMatchObject({
+            didDocument: { verificationMethod: [{ publicKeyJwk: newestKeys.publicJwk }] },
+            didDocumentMetadata: { version: '3', confirmed: false },
+        });
+    });
+});
+
 describe('exportDIDs', () => {
     it('should export valid DIDs', async () => {
         const keypair = cipher.generateRandomJwk();
@@ -983,9 +1214,9 @@ describe('processEvents', () => {
             operation,
         };
         await gatekeeper.importBatch([event]);
-        const originalVerifyOperation = gatekeeper.verifyOperation.bind(gatekeeper);
-        const verifyOperation = jest.spyOn(gatekeeper, 'verifyOperation').mockImplementationOnce(async op => {
-            const valid = await originalVerifyOperation(op);
+        const originalVerifyUpdate = gatekeeper.verifyUpdateOperation.bind(gatekeeper);
+        const verifyOperation = jest.spyOn(gatekeeper, 'verifyUpdateOperation').mockImplementationOnce(async (op, doc) => {
+            const valid = await originalVerifyUpdate(op, doc);
             op.did = victimDid;
             event.did = victimDid;
             return valid;

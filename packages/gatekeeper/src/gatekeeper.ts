@@ -49,6 +49,9 @@ export {
 
 import { LIFECYCLE_PAGE_SIZE, lifecycleLimit } from './db/lifecycle.js';
 
+const MAX_HISTORY_CID_CACHE_ENTRIES = 10_000;
+const MAX_HISTORY_CID_CACHE_BYTES = 64 * 1024 * 1024;
+
 enum ImportStatus {
     ADDED = 'added',
     MERGED = 'merged',
@@ -85,6 +88,10 @@ export default class Gatekeeper implements GatekeeperInterface {
     private didLocks = new Map<string, Promise<void>>();
     private controllerGraphLock: Promise<void> = Promise.resolve();
     private verifyDbInFlight?: Promise<VerifyDbResult>;
+    private historicalOperationCids = new Map<string, string>();
+    private historicalOperationCidBytes = 0;
+    private maxHistoryCidCacheEntries = MAX_HISTORY_CID_CACHE_ENTRIES;
+    private maxHistoryCidCacheBytes = MAX_HISTORY_CID_CACHE_BYTES;
     constructor(options: GatekeeperOptions) {
         if (!options || !options.db) {
             throw new InvalidParameterError('missing options.db');
@@ -673,6 +680,8 @@ export default class Gatekeeper implements GatekeeperInterface {
     async resetDb(): Promise<boolean> {
         return this.withControllerGraphLock(async () => {
             await this.db.resetDb();
+            this.historicalOperationCids.clear();
+            this.historicalOperationCidBytes = 0;
             await this.db.initializeLifecycleIndex();
             this.clearEventsSeen();
             this.eventsQueue = [];
@@ -686,6 +695,31 @@ export default class Gatekeeper implements GatekeeperInterface {
         return generateCID(JSON.parse(canonical));
     }
 
+    private async historicalOperationCID(operation: Operation): Promise<string> {
+        // Key by contents, never by an unverified stored opid or mutable object identity.
+        const contents = JSON.stringify(operation);
+        const cached = this.historicalOperationCids.get(contents);
+        if (cached !== undefined) {
+            this.historicalOperationCids.delete(contents);
+            this.historicalOperationCids.set(contents, cached);
+            return cached;
+        }
+
+        const cid = await this.generateCID(operation);
+        const bytes = 2 * (contents.length + cid.length);
+        if (bytes <= this.maxHistoryCidCacheBytes) {
+            while (this.historicalOperationCids.size >= this.maxHistoryCidCacheEntries
+                || this.historicalOperationCidBytes + bytes > this.maxHistoryCidCacheBytes) {
+                const [oldContents, oldCid] = this.historicalOperationCids.entries().next().value!;
+                this.historicalOperationCids.delete(oldContents);
+                this.historicalOperationCidBytes -= 2 * (oldContents.length + oldCid.length);
+            }
+            this.historicalOperationCids.set(contents, cid);
+            this.historicalOperationCidBytes += bytes;
+        }
+        return cid;
+    }
+
     async generateDID(operation: Operation): Promise<string> {
         return generateDIDFromOperation(operation, {
             didPrefix: this.didPrefix,
@@ -694,13 +728,19 @@ export default class Gatekeeper implements GatekeeperInterface {
     }
 
     async verifyOperation(operation: Operation): Promise<boolean> {
+        return this.verifyOperationWithHistory(operation);
+    }
+
+    private async verifyOperationWithHistory(operation: Operation, events?: GatekeeperEvent[]): Promise<boolean> {
         if (operation.type === 'create') {
             const valid = await this.verifyCreateOperation(operation);
             return valid && !(await this.operationIntroducesControllerCycle(operation));
         }
 
         if (operation.type === 'update' || operation.type === 'delete') {
-            const doc = await this.resolveDID(operation.did);
+            const doc = events === undefined
+                ? await this.resolveDID(operation.did)
+                : await this.resolveHistory(operation.did, copyJSON(events));
             const valid = await this.verifyUpdateOperation(operation, doc);
             return valid && !(await this.operationIntroducesControllerCycle(operation));
         }
@@ -1108,6 +1148,14 @@ export default class Gatekeeper implements GatekeeperInterface {
             ? await this.db.getEvents(did)
             : [];
 
+        return this.resolveHistory(did, events, options);
+    }
+
+    private async resolveHistory(
+        did: string | undefined,
+        events: GatekeeperEvent[],
+        options?: ResolveDIDOptions,
+    ): Promise<MdipDocument> {
         return resolveDIDFromEvents({
             did,
             events,
@@ -1285,7 +1333,7 @@ export default class Gatekeeper implements GatekeeperInterface {
 
                 for (let i = 0; i < currentEvents.length; i++) {
                     const e = currentEvents[i];
-                    const operationCid = await this.generateCID(e.operation);
+                    const operationCid = await this.historicalOperationCID(e.operation);
 
                     if (!e.opid) {
                         e.opid = operationCid;
@@ -1303,7 +1351,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                         ? await this.verifyCreateOperation(event.operation)
                         : await this.verifyUpdateOperation(
                             event.operation,
-                            await this.resolveDID(lockedDid, { versionSequence: opMatchIndex })
+                            await this.resolveHistory(lockedDid, copyJSON(currentEvents), { versionSequence: opMatchIndex })
                         );
 
                     if (!valid || !(await this.didMatchesOperation(lockedDid, event.operation))) {
@@ -1332,7 +1380,7 @@ export default class Gatekeeper implements GatekeeperInterface {
 
                     return ImportStatus.MERGED;
                 } else {
-                    const ok = await this.verifyOperation(event.operation);
+                    const ok = await this.verifyOperationWithHistory(event.operation, currentEvents);
 
                     if (!ok || !(await this.didMatchesOperation(lockedDid, event.operation))) {
                         return ImportStatus.REJECTED;
