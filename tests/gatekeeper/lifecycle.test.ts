@@ -271,6 +271,47 @@ describe.each(adapters.slice(0, 2))('%s lifecycle durability', (_name, Adapter) 
         fs.rmSync(folder, { recursive: true, force: true });
     });
 
+    it.each(['version', 'epoch', 'incomplete', 'future cursor', 'missing lifecycle', 'missing jobs', 'legacy write'])(
+        'rebuilds %s metadata without changing authoritative histories', async failure => {
+            const db = new Adapter('test', folder);
+            await db.start();
+            await db.addEvent(did, agent());
+            const history = await db.getEvents(did);
+            const row = (await db.getLifecycle(did))!;
+            const { epoch } = await db.getLifecycleMetadata();
+            await db.stop();
+            const file = path.join(folder, 'test.json');
+            const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+            if (failure === 'version') saved.lifecycleMetadata.version += 1;
+            if (failure === 'epoch') saved.lifecycleMetadata.epoch = 'old';
+            if (failure === 'incomplete') saved.lifecycleMetadata.complete = false;
+            if (failure === 'future cursor') saved.lifecycleMetadata.checkedCursor = '999999';
+            if (failure === 'missing lifecycle') delete saved.lifecycle;
+            if (failure === 'missing jobs') delete saved.expirationJobs;
+            if (failure === 'legacy write') {
+                delete saved.indexChanges.at(-1).lifecycleVersion;
+                saved.lifecycleMetadata.checkedCursor = '0';
+            }
+            if (saved.lifecycle) saved.lifecycle[row.suffix].expiresAt = Date.parse(expires) + 1000;
+            fs.writeFileSync(file, JSON.stringify(saved));
+            const reopened = new Adapter('test', folder);
+            try {
+                if (['version', 'epoch', 'incomplete', 'missing lifecycle', 'missing jobs'].includes(failure)) {
+                    await expect(reopened.getLifecycleMetadata()).rejects.toThrow('not initialized');
+                }
+                if (['version', 'epoch', 'incomplete', 'missing lifecycle'].includes(failure)) {
+                    await expect(reopened.deleteEvents(did, { epoch, revision: row.revision })).resolves.toBe(0);
+                }
+                await reopened.start();
+                expect(await reopened.getLifecycleMetadata()).toMatchObject({
+                    complete: true, epoch, checkedCursor: String(saved.indexSeq),
+                });
+                expect(await reopened.getEvents(did)).toEqual(history);
+                expect(await reopened.getLifecycle(did)).toMatchObject({ expiresAt: Date.parse(expires), type: 'agent' });
+            } finally { await reopened.stop(); }
+        },
+    );
+
     it('resumes interrupted backfill without re-projecting committed pages or changing histories', async () => {
         const histories: Record<string, GatekeeperEvent[]> = {};
         for (let i = 0; i < 205; i++) {

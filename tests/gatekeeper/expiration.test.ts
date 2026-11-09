@@ -60,6 +60,117 @@ async function collect(gatekeeper: Gatekeeper, limit = 100) {
 beforeEach(() => jest.restoreAllMocks());
 
 describe('indexed expiration collection', () => {
+    it.each(['missing', 'unresolved', 'agent'])('defers a stale asset candidate whose lifecycle is %s', async state => {
+        const { db, gatekeeper, agent, asset } = await fixture();
+        const owner = await agent();
+        const due = await asset(owner, new Date(Date.now() - 1000).toISOString());
+        const row = (await db.getLifecycle(due))!;
+        const read = jest.spyOn(db, 'getLifecycle').mockResolvedValueOnce(state === 'missing' ? null
+            : { ...row, ...(state === 'unresolved' ? { unresolved: true } : { type: 'agent' as const }) });
+        expect(await collect(gatekeeper)).toMatchObject({ expired: 0, deferred: 1 });
+        read.mockRestore();
+        expect(await db.getEvents(due)).toHaveLength(1);
+        expect(await collect(gatekeeper)).toMatchObject({ expired: 1 });
+    });
+
+    it('retains dependents when a selected orphan cleanup job disappears', async () => {
+        const { db, gatekeeper, agent, asset } = await fixture();
+        const owner = await agent(new Date(Date.now() - 1000).toISOString());
+        const child = await asset(owner);
+        await gatekeeper.collectExpiredDIDs({ limit: 1 });
+        await gatekeeper.removeDIDs([owner.did]);
+        const query = db.getExpirationJobs.bind(db);
+        jest.spyOn(db, 'getExpirationJobs').mockImplementationOnce(async (...args) => {
+            const rows = await query(...args);
+            await db.saveExpirationJob(rows[0].suffix, null);
+            return rows;
+        });
+        expect(await collect(gatekeeper)).toMatchObject({ expired: 0, deferred: 1 });
+        expect(await db.getEvents(child)).toHaveLength(1);
+    });
+
+    it('revalidates a selected cleanup job after its agent is renewed', async () => {
+        const { db, gatekeeper, helper, agent, asset } = await fixture();
+        const owner = await agent(new Date(Date.now() - 1000).toISOString());
+        const child = await asset(owner);
+        await gatekeeper.collectExpiredDIDs({ limit: 1 });
+        const query = db.getExpirationJobs.bind(db);
+        jest.spyOn(db, 'getExpirationJobs').mockImplementationOnce(async (...args) => {
+            const rows = await query(...args);
+            const doc = await gatekeeper.resolveDID(owner.did);
+            delete doc.mdip!.validUntil;
+            await gatekeeper.updateDID(await helper.createUpdateOp(owner.keypair, owner.did, doc));
+            return rows;
+        });
+        expect(await collect(gatekeeper)).toMatchObject({ expired: 0, deferred: 1 });
+        expect(await db.getEvents(child)).toHaveLength(1);
+        expect(await db.getExpirationJobs(1)).toEqual([]);
+    });
+
+    it('reselects dependents after a saved cleanup cursor changes', async () => {
+        const { db, gatekeeper, agent, asset } = await fixture();
+        const owner = await agent(new Date(Date.now() - 1000).toISOString());
+        await asset(owner);
+        await gatekeeper.collectExpiredDIDs({ limit: 1 });
+        const query = db.getControlledDIDs.bind(db);
+        jest.spyOn(db, 'getControlledDIDs').mockImplementationOnce(async (...args) => {
+            const rows = await query(...args);
+            const job = (await db.getExpirationJob(owner.did.split(':').pop()!))!;
+            await db.saveExpirationJob(job.suffix, { ...job, dependentCursor: rows[0].suffix });
+            return rows;
+        });
+        const page = await gatekeeper.collectExpiredDIDs({ limit: 2 });
+        expect(page).toMatchObject({ examined: 1, expired: 0, hasMore: true });
+        expect(await collect(gatekeeper)).toMatchObject({ expired: 2 });
+    });
+
+    it('continues safely when a selected dependent is already removed', async () => {
+        const { db, gatekeeper, agent, asset } = await fixture();
+        const owner = await agent(new Date(Date.now() - 1000).toISOString());
+        const child = await asset(owner);
+        const query = db.getControlledDIDs.bind(db);
+        jest.spyOn(db, 'getControlledDIDs').mockImplementationOnce(async (...args) => {
+            const rows = await query(...args);
+            await db.deleteEvents(child);
+            return rows;
+        });
+        expect(await collect(gatekeeper)).toMatchObject({ expired: 1, deferred: 0 });
+        expect(await gatekeeper.getDIDs()).toEqual([]);
+    });
+
+    it.each(['metadata', 'resolution', 'revision'])('retains a dependent after failed %s revalidation', async failure => {
+        const { db, gatekeeper, agent, asset } = await fixture();
+        const owner = await agent(new Date(Date.now() - 1000).toISOString());
+        const child = await asset(owner);
+        const lifecycle = db.getLifecycle.bind(db);
+        const resolve = gatekeeper.resolveDID.bind(gatekeeper);
+        const remove = db.deleteEvents.bind(db);
+        const read = jest.spyOn(db, 'getLifecycle').mockImplementation(did =>
+            failure === 'metadata' && did === child ? Promise.resolve(null) : lifecycle(did));
+        const resolution = jest.spyOn(gatekeeper, 'resolveDID').mockImplementation((did, options) =>
+            failure === 'resolution' && did === child
+                ? Promise.resolve({ didResolutionMetadata: { error: 'internalError' } }) : resolve(did, options));
+        const deletion = jest.spyOn(db, 'deleteEvents').mockImplementation((did, options) =>
+            failure === 'revision' && did === child ? Promise.resolve(0) : remove(did, options));
+        expect(await collect(gatekeeper)).toMatchObject({ expired: 0, deferred: 1 });
+        expect(await db.getEvents(child)).toHaveLength(1);
+        read.mockRestore();
+        resolution.mockRestore();
+        deletion.mockRestore();
+        expect(await collect(gatekeeper)).toMatchObject({ expired: 2 });
+    });
+
+    it('retains an agent and its cleanup job after a guarded deletion is rejected', async () => {
+        const { db, gatekeeper, agent } = await fixture();
+        const owner = await agent(new Date(Date.now() - 1000).toISOString());
+        const remove = jest.spyOn(db, 'deleteEvents').mockResolvedValue(0);
+        expect(await collect(gatekeeper)).toMatchObject({ expired: 0, deferred: 1 });
+        expect(await db.getEvents(owner.did)).toHaveLength(1);
+        expect(await db.getExpirationJobs(1)).toHaveLength(1);
+        remove.mockRestore();
+        expect(await collect(gatekeeper)).toMatchObject({ expired: 1 });
+    });
+
     it('only resolves due candidates and does no full scan, audit or backfill', async () => {
         const { db, gatekeeper, agent, asset } = await fixture();
         const owner = await agent();

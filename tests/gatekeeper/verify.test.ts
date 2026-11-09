@@ -33,6 +33,60 @@ beforeEach(async () => {
 });
 
 describe('verifyDb', () => {
+    it.each(['missing signature', 'invalid timestamp', 'missing key', 'unsupported curve'])(
+        'preserves a history with %s when cryptographic auditing cannot establish invalidity', async failure => {
+            const did = await gatekeeper.createDID(await helper.createAgentOp(cipher.generateRandomJwk()));
+            const events = await db.getEvents(did);
+            const operation = events[0].operation;
+            if (failure === 'missing signature') delete operation.signature;
+            if (failure === 'invalid timestamp') operation.signature!.signed = 'invalid';
+            if (failure === 'missing key') delete operation.publicJwk;
+            if (failure === 'unsupported curve') {
+                // @ts-expect-error Exercise unsupported persisted key material.
+                operation.publicJwk!.crv = 'P-256';
+            }
+            await db.setEvents(did, events);
+            const reason = failure === 'missing signature' || failure === 'invalid timestamp'
+                ? 'unsupported signature structure' : 'unsupported signing key';
+            await expect(gatekeeper.verifyDb({ chatty: false })).rejects.toThrow(reason);
+            expect(await db.getEvents(did)).toEqual(events);
+        },
+    );
+
+    it('preserves stored histories when the cryptographic provider fails during an audit', async () => {
+        const did = await gatekeeper.createDID(await helper.createAgentOp(cipher.generateRandomJwk()));
+        const before = await db.getEvents(did);
+        const verify = jest.spyOn(CipherNode.prototype, 'verifySig').mockImplementationOnce(() => {
+            throw new Error('provider unavailable');
+        });
+        try {
+            await expect(gatekeeper.verifyDb({ chatty: false })).rejects.toThrow('unsupported cryptographic input');
+            expect(await db.getEvents(did)).toEqual(before);
+        } finally { verify.mockRestore(); }
+        await expect(gatekeeper.verifyDb({ chatty: false })).resolves.toMatchObject({ verified: 1, invalid: 0 });
+    });
+
+    it('preserves stored histories when create identity derivation fails during an audit', async () => {
+        const did = await gatekeeper.createDID(await helper.createAgentOp(cipher.generateRandomJwk()));
+        const before = await db.getEvents(did);
+        const derive = jest.spyOn(gatekeeper, 'generateDID').mockRejectedValueOnce(new Error('CID unavailable'));
+        try {
+            await expect(gatekeeper.verifyDb({ chatty: false })).rejects.toThrow('unsupported create identity');
+            expect(await db.getEvents(did)).toEqual(before);
+        } finally { derive.mockRestore(); }
+    });
+
+    it('retries an audit after reading a history fails without deleting its data', async () => {
+        const did = await gatekeeper.createDID(await helper.createAgentOp(cipher.generateRandomJwk()));
+        const before = await db.getEvents(did);
+        const read = jest.spyOn(db, 'getEvents').mockRejectedValueOnce(new Error('storage unavailable'));
+        try {
+            await expect(gatekeeper.verifyDb({ chatty: false })).rejects.toThrow('verification dependency failed');
+            expect(await db.getEvents(did)).toEqual(before);
+        } finally { read.mockRestore(); }
+        await expect(gatekeeper.verifyDb({ chatty: false })).resolves.toMatchObject({ verified: 1, invalid: 0 });
+    });
+
     it('preserves deferred events during an explicit audit', async () => {
         const keypair = cipher.generateRandomJwk();
         const did = await gatekeeper.createDID(await helper.createAgentOp(keypair));
