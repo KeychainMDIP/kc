@@ -12,10 +12,39 @@ import {
     parseOptionalBoolean,
     parseOptionalPositiveInteger,
     rateLimitWindowUnits,
+    resolveRequestDidPrefix,
     shouldSkipRateLimitPath,
 } from '../../services/search-server/src/index-helpers.ts';
 
 /* eslint-disable sonarjs/no-hardcoded-ip */
+
+describe('Search Server request DID prefix scope', () => {
+    const allowed = ['did:test', 'did:mdip'];
+
+    it('falls back to the configured scope when no prefix is requested', () => {
+        expect(resolveRequestDidPrefix(undefined, 'did:mdip', allowed)).toBe('did:mdip');
+        expect(resolveRequestDidPrefix(undefined, undefined, allowed)).toBeUndefined();
+        expect(resolveRequestDidPrefix(undefined, undefined, [])).toBeUndefined();
+    });
+
+    it('returns an allowlisted prefix regardless of the configured scope', () => {
+        expect(resolveRequestDidPrefix('did:test', undefined, allowed)).toBe('did:test');
+        expect(resolveRequestDidPrefix('did:test', 'did:mdip', allowed)).toBe('did:test');
+    });
+
+    it('accepts the configured scope without an allowlist entry', () => {
+        expect(resolveRequestDidPrefix('did:mdip', 'did:mdip', [])).toBe('did:mdip');
+    });
+
+    it('rejects prefixes outside the allowlist, repeated values and the disabled feature', () => {
+        expect(() => resolveRequestDidPrefix('did:arbitrary', undefined, allowed))
+            .toThrow('didPrefix must be one of: did:test, did:mdip');
+        expect(() => resolveRequestDidPrefix(['did:test', 'did:mdip'], undefined, allowed)).toThrow();
+        expect(() => resolveRequestDidPrefix('', undefined, allowed)).toThrow();
+        expect(() => resolveRequestDidPrefix('did:test', 'did:mdip', []))
+            .toThrow('didPrefix must be one of: none (per-request scope disabled)');
+    });
+});
 
 describe('Search Server request helpers', () => {
     it('normalizes loopback, mapped IPv4 and zone-qualified IPv6 addresses', () => {

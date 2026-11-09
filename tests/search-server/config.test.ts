@@ -1,5 +1,5 @@
 import { jest } from '@jest/globals';
-import { parseDidPrefix, parseSearchDb } from '../../services/search-server/src/config.ts';
+import { parseAllowedDidPrefixes, parseDidPrefix, parseSearchDb } from '../../services/search-server/src/config.ts';
 
 async function loadConfigWithEnv(env: Record<string, string | undefined>) {
     const previous = { ...process.env };
@@ -32,6 +32,17 @@ describe('search-server DID prefix configuration', () => {
             'KC_SEARCH_SERVER_DID_PREFIX must be a did:<method> prefix or empty'
         );
         expect(() => parseDidPrefix('did:mdip:test')).toThrow();
+    });
+
+    it('parses the per-request prefix allowlist and treats blank values as disabled', () => {
+        expect(parseAllowedDidPrefixes(undefined)).toEqual([]);
+        expect(parseAllowedDidPrefixes('  ')).toEqual([]);
+        expect(parseAllowedDidPrefixes('did:test')).toEqual(['did:test']);
+        expect(parseAllowedDidPrefixes(' did:test , did:mdip,')).toEqual(['did:test', 'did:mdip']);
+        expect(() => parseAllowedDidPrefixes('did:test,mdip')).toThrow(
+            'KC_SEARCH_SERVER_ALLOWED_DID_PREFIXES must be a comma-separated list of did:<method> prefixes'
+        );
+        expect(() => parseAllowedDidPrefixes('did:mdip:test')).toThrow();
     });
 });
 

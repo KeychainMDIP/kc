@@ -37,6 +37,10 @@ KC_SEARCH_SERVER_METRICS_REFRESH_INTERVAL_MS=3600000
 # Optional network scope: did:test | did:mdip | empty for all networks
 KC_SEARCH_SERVER_DID_PREFIX=did:test
 
+# Optional comma-separated prefixes a request may select with ?didPrefix=
+# Empty disables per-request scopes. See "Per-request network scope".
+KC_SEARCH_SERVER_ALLOWED_DID_PREFIXES=
+
 # Database adapter: sqlite | postgres | memory
 KC_SEARCH_SERVER_DB=sqlite
 
@@ -126,6 +130,10 @@ accept `includeAmbiguous=true` to also return legacy DIDs whose prefix cannot be
 determined authoritatively. Those DIDs are returned under the configured prefix;
 authoritative DIDs from another network remain excluded. This option does not
 reclassify stored DIDs and does not apply to historical metric snapshots.
+
+Every endpoint below except `/ready` and `/status` also accepts an optional
+`didPrefix` query parameter that replaces the configured scope for that request.
+See [Per-request network scope](#per-request-network-scope).
 
 ### `GET /api/v1/ready`
 - **Description**: Returns `{ "ready": true }` when initialization is complete and the database is usable. Returns 503 while unavailable.
@@ -585,6 +593,42 @@ Set `KC_SEARCH_SERVER_DID_PREFIX` to any `did:<method>` prefix, such as
 DID, search, event, credential, challenge-receipt, and metric endpoints.
 Explicit DIDs using another prefix are excluded from the configured scope.
 Leave the setting empty to return every indexed network.
+
+### Per-request network scope
+
+One instance can serve several networks when
+`KC_SEARCH_SERVER_ALLOWED_DID_PREFIXES` lists them, for example
+`did:test,did:mdip`. A request then selects its network with
+`?didPrefix=<prefix>`, which replaces `KC_SEARCH_SERVER_DID_PREFIX` for that
+request on every DID, search, query, identity, event, credential,
+challenge-receipt and metric endpoint. `includeAmbiguous` keeps its meaning
+within the selected scope.
+
+- Without `didPrefix` the configured scope applies, so existing clients are
+  unaffected.
+- Requesting the configured scope itself is always accepted.
+- Any other prefix must be in the allowlist; otherwise the request fails with
+  `400`. With an empty allowlist (the default) the parameter can only repeat
+  the configured scope.
+- `/ready` and `/status` ignore the parameter.
+
+Enabling the allowlist turns `KC_SEARCH_SERVER_DID_PREFIX` into a default
+rather than a boundary: clients can read every listed network. Leave it empty
+on instances that must stay restricted to one network.
+
+Snapshots are built for the configured scope only. To serve them per request,
+leave `KC_SEARCH_SERVER_DID_PREFIX` empty so the snapshots stay unscoped; each
+request then narrows the totals, prefix maps and schema counts to the requested
+prefix, matching what a dedicated scoped instance would build. Snapshots stored
+before an upgrade lack the per-prefix schema counts, so projected requests
+return `503` until the next metrics rebuild. When
+`KC_SEARCH_SERVER_DID_PREFIX` is set, a snapshot request for any other prefix
+returns `400`, whether or not the snapshot exists or is rebuilding.
+
+Legacy DIDs without authoritative prefix evidence are classified as `did:test`,
+so a `did:test` request includes them, and a request for another prefix
+includes them only with `includeAmbiguous=true`, the same as a dedicated
+instance with that scope.
 
 Changing the configured scope invalidates the stored snapshot scope before a
 rebuild begins. Snapshot endpoints return `503` until the replacement snapshots

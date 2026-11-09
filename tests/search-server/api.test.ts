@@ -61,7 +61,7 @@ beforeEach(() => {
     jest.clearAllMocks();
     db = new DIDsDbMemory();
     config = {
-        db: 'memory', resetDb: false, port: 0, didPrefix: 'did:mdip', postgresURL: 'postgresql://fixture',
+        db: 'memory', resetDb: false, port: 0, didPrefix: 'did:mdip', allowedDidPrefixes: [], postgresURL: 'postgresql://fixture',
         gatekeeperURL: 'http://fixture.invalid', refreshIntervalMs: 5000, metricsRefreshIntervalMs: 60000,
         rateLimitEnabled: false, rateLimitWhitelist: [], rateLimitSkipPaths: ['/api/v1/ready'],
         rateLimitWindowValue: 1, rateLimitWindowUnit: 'minute', rateLimitMaxRequests: 10,
@@ -473,6 +473,76 @@ describe('Search Server HTTP routes', () => {
         expect(resolveDID).not.toHaveBeenCalled();
     });
 
+    it('forwards an allowlisted per-request didPrefix to every scoped endpoint', async () => {
+        config.didPrefix = undefined;
+        config.allowedDidPrefixes = ['did:test', 'did:mdip'];
+        const identities = jest.spyOn(db, 'listIdentities');
+        const events = jest.spyOn(db, 'listEvents');
+        const search = jest.spyOn(db, 'searchDocs');
+        const query = jest.spyOn(db, 'queryDocs');
+        const schemas = jest.spyOn(db, 'getPublishedCredentialCountsBySchema');
+        const credentials = jest.spyOn(db, 'listPublishedCredentials');
+        const receipts = jest.spyOn(db, 'listChallengeReceipts');
+        const usage = jest.spyOn(db, 'getChallengeReceiptUsage');
+        const where = { 'didDocumentData.kind': { $in: ['agent'] } };
+        await boot();
+
+        expect((await request('/identities?didPrefix=did:test')).status).toBe(200);
+        expect((await request('/events?didPrefix=did:test')).status).toBe(200);
+        expect((await request('/search?q=agent&didPrefix=did:test')).status).toBe(200);
+        expect((await request('/query?didPrefix=did:test', { where })).status).toBe(200);
+        expect((await request('/metrics/schemas/published?didPrefix=did:test')).status).toBe(200);
+        expect((await request('/metrics/credentials/published?didPrefix=did:test')).status).toBe(200);
+        expect((await request('/metrics/challenge-receipts?didPrefix=did:test')).status).toBe(200);
+        expect((await request('/metrics/challenge-receipts/usage?attesterDid=attester&didPrefix=did:test')).status).toBe(200);
+
+        expect(identities).toHaveBeenCalledWith(expect.objectContaining({ didPrefix: 'did:test' }));
+        expect(events).toHaveBeenCalledWith(expect.objectContaining({ didPrefix: 'did:test' }));
+        expect(search).toHaveBeenCalledWith('agent', expect.objectContaining({ didPrefix: 'did:test' }));
+        expect(query).toHaveBeenCalledWith(where, 'did:test', undefined);
+        expect(schemas).toHaveBeenCalledWith('did:test', undefined);
+        expect(credentials).toHaveBeenCalledWith(expect.objectContaining({ didPrefix: 'did:test' }));
+        expect(receipts).toHaveBeenCalledWith(expect.objectContaining({ didPrefix: 'did:test' }));
+        expect(usage).toHaveBeenCalledWith(expect.objectContaining({ didPrefix: 'did:test' }));
+
+        expect((await request('/identities')).status).toBe(200);
+        expect(identities).toHaveBeenLastCalledWith(expect.objectContaining({ didPrefix: undefined }));
+    });
+
+    it('rejects a didPrefix outside the allowlist before consulting storage', async () => {
+        const identities = jest.spyOn(db, 'listIdentities');
+        await boot();
+
+        expect(await request('/identities?didPrefix=did:test')).toEqual({
+            status: 400,
+            body: { error: 'didPrefix must be one of: none (per-request scope disabled)' },
+        });
+        expect((await request('/did/did:mdip:fixture?didPrefix=did:test')).status).toBe(400);
+        expect(identities).not.toHaveBeenCalled();
+        expect((await request('/ready?didPrefix=did:test')).status).toBe(200);
+        expect((await request('/status?didPrefix=did:test')).status).toBe(200);
+
+        expect((await request('/identities?didPrefix=did:mdip')).status).toBe(200);
+        expect(identities).toHaveBeenLastCalledWith(expect.objectContaining({ didPrefix: 'did:mdip' }));
+    });
+
+    it('scopes DID resolution to the requested prefix', async () => {
+        config.didPrefix = undefined;
+        config.allowedDidPrefixes = ['did:test', 'did:mdip'];
+        const storedDid = schemaDid.replace('did:mdip:', 'did:test:');
+        const event = createSeedEvent(storedDid);
+        event.operation.mdip!.prefix = 'did:test';
+        await seedDID(db, storedDid, { events: [event] });
+        await boot();
+
+        expect((await request(`/did/${schemaDid}?didPrefix=did:mdip`)).status).toBe(404);
+        expect(resolveDID).not.toHaveBeenCalled();
+        expect(await request(`/did/${schemaDid}?didPrefix=did:test`)).toEqual({
+            status: 200,
+            body: { didDocument: { id: storedDid } },
+        });
+    });
+
     it('uses cached documents only for unversioned, in-scope requests', async () => {
         const cached = { didDocument: { id: 'did:mdip:cached' } };
         const getDoc = jest.spyOn(db, 'getDID').mockResolvedValue(cached);
@@ -522,6 +592,89 @@ describe('Search Server HTTP routes', () => {
         expect(getSnapshot).toHaveBeenLastCalledWith(date);
         getSnapshot.mockResolvedValue(null);
         expect((await request(`/metrics/snapshots/${date}`)).status).toBe(404);
+    });
+
+    it('projects an unscoped snapshot to the requested prefix', async () => {
+        config.didPrefix = undefined;
+        config.allowedDidPrefixes = ['did:test', 'did:mdip'];
+        const date = '2026-01-01';
+        const snapshot: NetworkMetricSnapshot = {
+            date, rebuiltAt: '2026-01-02T00:00:00Z',
+            didCount: 5, didCountsByPrefix: { 'did:mdip': 4, 'did:test': 1 },
+            agentDidCount: 2, agentDidCountsByPrefix: { 'did:mdip': 2 },
+            credentialCount: 1, credentialDidCountsByPrefix: { 'did:mdip': 1 },
+            schemas: [{ schemaDid, count: 2, countsByCredentialPrefix: { 'did:mdip': 1, 'did:test': 1 } }],
+        };
+        const getSnapshot = jest.spyOn(db, 'getNetworkMetricSnapshot').mockResolvedValue(snapshot);
+        await db.saveSyncState(INDEX_SYNC_STATE_KEYS.metricsDidPrefix, '');
+        await boot();
+
+        expect(await request(`/metrics/snapshots/${date}`)).toEqual({
+            status: 200,
+            body: { ...snapshot, schemas: [{ schemaDid, count: 2 }] },
+        });
+        expect(await request(`/metrics/snapshots/agents/${date}?didPrefix=did:test`)).toEqual({
+            status: 200,
+            body: { agentDidCount: 0, agentDidCountsByPrefix: {} },
+        });
+        expect(await request(`/metrics/snapshots/${date}?didPrefix=did:mdip`)).toEqual({
+            status: 200,
+            body: {
+                ...snapshot,
+                didCount: 4, didCountsByPrefix: { 'did:mdip': 4 },
+                schemas: [{ schemaDid, count: 1 }],
+            },
+        });
+
+        expect(await request(`/metrics/snapshots/${date}?didPrefix=did:test`)).toEqual({
+            status: 200,
+            body: {
+                ...snapshot,
+                didCount: 1, didCountsByPrefix: { 'did:test': 1 },
+                agentDidCount: 0, agentDidCountsByPrefix: {},
+                credentialCount: 0, credentialDidCountsByPrefix: {},
+                schemas: [],
+            },
+        });
+        getSnapshot.mockResolvedValue({ ...snapshot, didCountsByPrefix: { 'did:mdip': 4 } });
+        expect(await request(`/metrics/snapshots/${date}?didPrefix=did:test`)).toEqual({
+            status: 404,
+            body: { error: 'Snapshot not found' },
+        });
+
+        getSnapshot.mockResolvedValue({ ...snapshot, schemas: [{ schemaDid, count: 2 }] });
+        expect(await request(`/metrics/snapshots/schemas/${date}?didPrefix=did:mdip`)).toEqual({
+            status: 503,
+            body: { error: 'Network metrics are rebuilding for the requested DID prefix' },
+        });
+    });
+
+    it.each([
+        ['stored', 'did:mdip', true],
+        ['missing', 'did:mdip', false],
+        ['rebuilding', null, true],
+    ] as const)('rejects snapshot projection on a scoped instance when the snapshot is %s', async (
+        _state, storedScope, hasSnapshot
+    ) => {
+        config.allowedDidPrefixes = ['did:test'];
+        const getSnapshot = jest.spyOn(db, 'getNetworkMetricSnapshot');
+        await db.saveSyncState(INDEX_SYNC_STATE_KEYS.metricsDidPrefix, storedScope);
+        getSnapshot.mockResolvedValue(hasSnapshot ? {
+            date: '2026-01-01', rebuiltAt: '2026-01-02T00:00:00Z',
+            didCount: 1, didCountsByPrefix: { 'did:mdip': 1 },
+            agentDidCount: 0, agentDidCountsByPrefix: {},
+            credentialCount: 0, credentialDidCountsByPrefix: {}, schemas: [],
+        } : null);
+        const loadSyncState = jest.spyOn(db, 'loadSyncState');
+        await boot();
+        loadSyncState.mockClear();
+
+        expect(await request('/metrics/snapshots/2026-01-01?didPrefix=did:test')).toEqual({
+            status: 400,
+            body: { error: 'Network metrics are scoped to did:mdip' },
+        });
+        expect(getSnapshot).not.toHaveBeenCalled();
+        expect(loadSyncState).not.toHaveBeenCalledWith(INDEX_SYNC_STATE_KEYS.metricsDidPrefix);
     });
 
     it.each([
