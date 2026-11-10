@@ -255,7 +255,7 @@ async function scanBlocks(): Promise<void> {
     }
 }
 
-async function importBatch(item: DiscoveredItem) {
+export async function importBatch(item: DiscoveredItem) {
     if (item.error) {
         return;
     }
@@ -264,7 +264,7 @@ async function importBatch(item: DiscoveredItem) {
         return;
     }
 
-    const asset = await keymaster.resolveAsset(item.did);
+    const asset = await keymaster.resolveAsset(item.did, { versionSequence: 1 });
     const queue = (asset as { batch?: Operation[] }).batch || asset;
 
     // Skip badly formatted batches
