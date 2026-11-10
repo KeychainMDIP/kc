@@ -69,6 +69,22 @@ errors prevent a conclusion. It preserves those uncertain histories, although
 earlier completed repairs are not rolled back. Full audits are never scheduled
 by garbage collection.
 
+## Database resets
+
+The existing reset endpoint retains its namespace scope and response. PostgreSQL
+can clear Gatekeeper's bulk-data tables with `TRUNCATE` when they contain no other
+namespace and exclusive access is immediately available. Otherwise it uses
+scoped deletes. Row security, user triggers or unavailable truncate privileges
+also retain the scoped path. The reset strategy is logged after commit.
+
+Pause ingestion and other table users before a planned reset to allow the bulk
+path reliably. It briefly locks those tables. Reset still regenerates the index
+epoch and initializes empty lifecycle state, causing consumers to rebuild through
+their existing epoch checks. Other namespaces and unrelated metadata are retained.
+
+Bulk reset reduces deletion WAL. Reimporting operations and rebuilding downstream
+stores still generate WAL, so the PostgreSQL archive pipeline must keep up.
+
 ## Lightweight status and DID statistics
 
 `GET /api/v1/status` reports Gatekeeper uptime, process memory, and live queue
