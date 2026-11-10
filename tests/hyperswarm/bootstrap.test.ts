@@ -1,10 +1,12 @@
 import { jest } from '@jest/globals';
 import type {
     GatekeeperEvent,
+    IndexChangeRecord,
     IndexExportRemovedOperationRecord,
     IndexExportResponse,
     Operation,
 } from '@mdip/gatekeeper/types';
+import { buildIndexChangesResponse } from '@mdip/gatekeeper/db/index-export.ts';
 import InMemoryOperationSyncStore from '../../services/mediators/hyperswarm/src/db/memory.ts';
 import {
     bootstrapSyncStoreFromGatekeeper,
@@ -226,6 +228,7 @@ describe('bootstrapSyncStoreFromGatekeeper', () => {
             cursor: '12',
             limit: 25,
             includeOperations: true,
+            includeDIDHistories: false,
         });
         expect(await store.has(h('a'))).toBe(true);
         expect(await store.has(h('b'))).toBe(false);
@@ -236,6 +239,58 @@ describe('bootstrapSyncStoreFromGatekeeper', () => {
         }]);
         expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor)).toBe('13');
         expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.gatekeeperIndexEpoch)).toBe('epoch-a');
+    });
+
+    it('consumes real history-free Gatekeeper pages through empty pages and removals', async () => {
+        const store = new InMemoryOperationSyncStore();
+        await store.start();
+        await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotComplete, 'true');
+        await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor, '0');
+        await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.gatekeeperIndexEpoch, 'epoch-a');
+        const eventA = makeEvent(makeOperation('a', '2026-02-10T10:00:00.000Z'), 'did:test:a');
+        const eventB = makeEvent(makeOperation('b', '2026-02-10T11:00:00.000Z'), 'did:test:b');
+        const changes: IndexChangeRecord[] = [
+            { seq: 1, kind: 'did', did: eventA.did, event: eventA },
+            { seq: 2, kind: 'block', registry: 'local', block: { height: 1, hash: 'block-1', time: 0 } },
+            { seq: 3, kind: 'did', did: eventB.did },
+            { seq: 4, kind: 'did', did: eventA.did, removed: true, event: eventA },
+            { seq: 5, kind: 'did', did: eventB.did, event: eventB },
+        ];
+        const readHistory = jest.fn(async (): Promise<GatekeeperEvent[]> => { throw new Error('history read'); });
+        const pages: IndexExportResponse[] = [];
+        const gatekeeper = {
+            exportIndex: jest.fn<BootstrapGatekeeper['exportIndex']>(async request => {
+                if (request.mode !== 'changes') throw new Error('unexpected snapshot');
+                const offset = Number(request.cursor);
+                const end = offset + request.limit!;
+                const page = await buildIndexChangesResponse(
+                    changes.slice(offset, end), end < changes.length, request,
+                    String(changes.length), readHistory, 'epoch-a',
+                );
+                pages.push(page);
+                return page;
+            }),
+        };
+        try {
+            const result = await bootstrapSyncStoreFromGatekeeper(store, gatekeeper, { pageLimit: 1 });
+            expect(result).toMatchObject({ mode: 'changes', pages: 5, exported: 3, mapped: 3,
+                invalid: 0, inserted: 2, updated: 0, deleted: 1, countAfter: 1 });
+            expect(pages.map(page => page.operations!.length)).toEqual([1, 0, 0, 0, 1]);
+            expect(pages.map(page => page.dids)).toStrictEqual([
+                [], [], [], [{ did: eventA.did, events: [], removed: true }], [],
+            ]);
+            for (let index = 0; index < changes.length; index += 1) {
+                expect(gatekeeper.exportIndex).toHaveBeenNthCalledWith(index + 1, {
+                    mode: 'changes', cursor: String(index), limit: 1,
+                    includeOperations: true, includeDIDHistories: false,
+                });
+            }
+            expect(await store.has(h('a'))).toBe(false);
+            await expect(store.getByIds([h('b')])).resolves.toMatchObject([{ id: h('b'), syncOrder: 5, operation: eventB.operation }]);
+            expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor)).toBe('5');
+            expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.gatekeeperIndexEpoch)).toBe('epoch-a');
+            expect(readHistory).not.toHaveBeenCalled();
+        } finally { await store.stop(); }
     });
 
     it('deletes operations exported by incremental Gatekeeper changes', async () => {
@@ -318,6 +373,7 @@ describe('bootstrapSyncStoreFromGatekeeper', () => {
             cursor: '12',
             limit: 500,
             includeOperations: true,
+            includeDIDHistories: false,
         });
         expect(gatekeeper.exportIndex).toHaveBeenNthCalledWith(2, {
             mode: 'snapshot',
@@ -377,6 +433,7 @@ describe('bootstrapSyncStoreFromGatekeeper', () => {
             cursor: '118597',
             limit: 500,
             includeOperations: true,
+            includeDIDHistories: false,
         });
         expect(gatekeeper.exportIndex).toHaveBeenNthCalledWith(2, {
             mode: 'snapshot',
@@ -435,7 +492,7 @@ describe('bootstrapSyncStoreFromGatekeeper', () => {
         expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor)).toBe('12');
     });
 
-    it('rejects changes responses without operation records', async () => {
+    it.each([undefined, null, {}, 'invalid', false])('rejects changes responses with non-array operation records (%p)', async operations => {
         const store = new InMemoryOperationSyncStore();
         await store.start();
         await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotComplete, 'true');
@@ -443,17 +500,43 @@ describe('bootstrapSyncStoreFromGatekeeper', () => {
 
         const opA = makeOperation('a', '2026-02-10T10:00:00.000Z');
         const gatekeeper = {
-            exportIndex: jest.fn(async () => changesResponse({
-                cursor: '13',
-                didEvents: [makeEvent(opA, 'did:test:a')],
-            })),
+            exportIndex: jest.fn(async () => {
+                const response = changesResponse({
+                    cursor: '13',
+                    didEvents: [makeEvent(opA, 'did:test:a')],
+                });
+                if (operations !== undefined) Object.assign(response, { operations });
+                return response;
+            }),
         };
+        const persist = jest.spyOn(store, 'applySyncPage');
 
         await expect(bootstrapSyncStoreFromGatekeeper(store, gatekeeper))
             .rejects
             .toThrow('Changes export response missing operations');
         await expect(store.getByIds([h('a')])).resolves.toStrictEqual([]);
         expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor)).toBe('12');
+        expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.gatekeeperIndexEpoch)).toBeNull();
+        expect(persist).not.toHaveBeenCalled();
+    });
+
+    it.each([null, {}, 'invalid', false])('rejects malformed operation removals (%p) without applying the page', async removedOperations => {
+        const store = new InMemoryOperationSyncStore();
+        await store.start();
+        await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotComplete, 'true');
+        await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor, '12');
+        const event = makeEvent(makeOperation('a', '2026-02-10T10:00:00.000Z'), 'did:test:a');
+        const response = changesResponse({ cursor: '13', operations: [event], didEvents: [event] });
+        Object.assign(response, { removedOperations });
+        const persist = jest.spyOn(store, 'applySyncPage');
+
+        await expect(bootstrapSyncStoreFromGatekeeper(store, {
+            exportIndex: jest.fn(async () => response),
+        })).rejects.toThrow('Changes export response has invalid removedOperations');
+        expect(await store.count()).toBe(0);
+        expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor)).toBe('12');
+        expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.gatekeeperIndexEpoch)).toBeNull();
+        expect(persist).not.toHaveBeenCalled();
     });
 
     it('rejects inconsistent saved snapshot cursor state', async () => {
@@ -545,6 +628,7 @@ describe('bootstrapSyncStoreFromGatekeeper', () => {
             cursor: '13',
             limit: 500,
             includeOperations: true,
+            includeDIDHistories: false,
         });
         expect(await paginatedStore.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor)).toBe('14');
 

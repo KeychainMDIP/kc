@@ -458,6 +458,7 @@ async function syncChanges(
             cursor,
             limit: pageLimit,
             includeOperations: true,
+            includeDIDHistories: false,
         });
 
         if (response.mode !== 'changes') {
