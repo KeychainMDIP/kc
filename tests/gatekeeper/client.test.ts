@@ -668,6 +668,16 @@ describe('importDIDs', () => {
 });
 
 describe('exportIndex', () => {
+    it('forwards an explicit history opt-out without dropping operation records', async () => {
+        const request = { mode: 'changes' as const, cursor: '0', includeOperations: true, includeDIDHistories: false };
+        const result = { mode: 'changes', indexEpoch: 'epoch-test', cursor: '1', checkpointCursor: '1',
+            hasMore: false, dids: [], blocks: [], operations: [] };
+        const scope = nock(GatekeeperURL).post(Endpoints.index.export, request).reply(200, result);
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        await expect(gatekeeper.exportIndex(request)).resolves.toStrictEqual(result);
+        expect(scope.isDone()).toBe(true);
+    });
+
     it('should return index export response', async () => {
         const exportResponse = {
             mode: 'changes',

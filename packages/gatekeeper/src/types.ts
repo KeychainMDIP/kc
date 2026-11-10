@@ -140,6 +140,7 @@ export interface IndexExportChangesRequest {
     cursor?: string | null;
     limit?: number;
     includeOperations?: boolean;
+    includeDIDHistories?: boolean;
 }
 
 export type IndexExportRequest = IndexExportSnapshotRequest | IndexExportChangesRequest;
@@ -154,6 +155,7 @@ export interface IndexExportChangesOptions {
     cursor?: string | null;
     limit?: number;
     includeOperations?: boolean;
+    includeDIDHistories?: boolean;
 }
 
 export interface IndexExportDIDRecord {

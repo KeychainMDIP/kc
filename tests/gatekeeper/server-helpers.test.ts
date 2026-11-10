@@ -365,9 +365,10 @@ describe('gatekeeper server helpers', () => {
         expect(db.exportIndexChanges).not.toHaveBeenCalled();
 
         db.isReady.mockResolvedValue(true);
-        await expect(helpers.exportIndexWithReadiness(db, { mode: 'changes', cursor: '0' }))
+        const request = { mode: 'changes' as const, cursor: '0', includeOperations: true, includeDIDHistories: false };
+        await expect(helpers.exportIndexWithReadiness(db, request))
             .resolves.toStrictEqual(response);
-        expect(db.exportIndexChanges).toHaveBeenCalledWith({ mode: 'changes', cursor: '0' });
+        expect(db.exportIndexChanges).toHaveBeenCalledWith(request);
     });
 
     it('converts export-time database connectivity errors to unavailable errors', async () => {
@@ -443,6 +444,7 @@ describe('gatekeeper server helpers', () => {
             cursor: null,
             limit: 2,
             includeOperations: true,
+            includeDIDHistories: undefined,
         });
         expect(() => helpers.parseIndexExportRequest(null)).toThrow('request body must be an object');
         expect(() => helpers.parseIndexExportRequest([])).toThrow('request body must be an object');
@@ -454,6 +456,24 @@ describe('gatekeeper server helpers', () => {
             .toThrow('includeOperations must be a boolean');
         expect(() => helpers.parseIndexExportRequest({ mode: 'snapshot', limit: -1 }))
             .toThrow('limit must be a positive integer');
+    });
+
+    it.each([
+        [undefined, undefined], [null, undefined], [true, true], [false, false], ['true', true], ['false', false],
+    ])('parses the optional history flag %p', (value, expected) => {
+        expect(helpers.parseIndexExportRequest({ mode: 'changes', includeDIDHistories: value }))
+            .toStrictEqual({ mode: 'changes', cursor: undefined, limit: undefined,
+                includeOperations: undefined, includeDIDHistories: expected });
+    });
+
+    it.each([0, 1, [], {}, 'yes', 'FALSE', ''])('rejects a malformed history flag %p', value => {
+        expect(() => helpers.parseIndexExportRequest({ mode: 'changes', includeDIDHistories: value }))
+            .toThrow('includeDIDHistories must be a boolean');
+    });
+
+    it('ignores the history flag for snapshots', () => {
+        expect(helpers.parseIndexExportRequest({ mode: 'snapshot', includeDIDHistories: 'invalid' }))
+            .toStrictEqual({ mode: 'snapshot', cursor: undefined, checkpointCursor: undefined, limit: undefined });
     });
 
     it('formats durations and byte counts', () => {

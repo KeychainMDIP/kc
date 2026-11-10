@@ -91,6 +91,13 @@ audits recompute historical CIDs independently of the import cache.
 
 ### Client
 
+Incremental `exportIndex()` requests include changed DID histories by default.
+Set `includeDIDHistories: false` in changes mode to skip those history reads and
+receive only per-page DID removal records in `dids`. Set `includeOperations: true`
+independently to receive ordered operations and operation removals. Snapshots
+always include histories. See the [API documentation](../../services/gatekeeper/server/README.md#index-export)
+for cursor handling and an example.
+
 The GatekeeperClient is used to communicate with a Gatekeeper REST API service.
 
 ```js
