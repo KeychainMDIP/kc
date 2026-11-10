@@ -12,6 +12,7 @@ import { MediatorDb, MediatorDbInterface, DiscoveredItem, BlockVerbosity } from 
 import { GatekeeperEvent, Operation } from '@mdip/gatekeeper/types';
 import { childLogger } from '@mdip/common/logger';
 import { isRetryableChainError, runService } from './lifecycle.js';
+import { resolveAnchoredBatchAsset } from './batch-import.js';
 
 const REGISTRY = config.chain;
 const SMART_FEE_MODE = "CONSERVATIVE";
@@ -255,7 +256,7 @@ async function scanBlocks(): Promise<void> {
     }
 }
 
-export async function importBatch(item: DiscoveredItem) {
+async function importBatch(item: DiscoveredItem) {
     if (item.error) {
         return;
     }
@@ -264,7 +265,7 @@ export async function importBatch(item: DiscoveredItem) {
         return;
     }
 
-    const asset = await keymaster.resolveAsset(item.did, { versionSequence: 1 });
+    const asset = await resolveAnchoredBatchAsset(keymaster, item.did);
     const queue = (asset as { batch?: Operation[] }).batch || asset;
 
     // Skip badly formatted batches
