@@ -6,4 +6,5 @@ public class IndexExportRequest {
     public String checkpointCursor;
     public Integer limit;
     public Boolean includeOperations;
+    public Boolean includeDIDHistories;
 }
