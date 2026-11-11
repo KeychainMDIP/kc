@@ -22,6 +22,8 @@ import {
     KeymasterClientOptions,
     KeymasterInterface,
     NoticeMessage,
+    PaymentInfo,
+    PaymentInfoInput,
     Poll,
     PublishChallengeReceiptOptions,
     StoredWallet,
@@ -531,6 +533,16 @@ export default class KeymasterClient implements KeymasterInterface {
         try {
             const response = await this.axios.post(`${this.API}/challenge`, { challenge, options });
             return response.data.did;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async createPaymentInfo(input: PaymentInfoInput): Promise<PaymentInfo> {
+        try {
+            const response = await this.axios.post(`${this.API}/payment-info`, input);
+            return response.data.paymentInfo;
         }
         catch (error) {
             throwError(error);

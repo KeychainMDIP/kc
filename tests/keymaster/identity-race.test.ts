@@ -317,6 +317,29 @@ describe('current identity changes during operations', () => {
         expect((await keymaster.fetchIdInfo('Verifier')).did).toBe(verifier);
     });
 
+    it('signs payment information with the initiating identity', async () => {
+        const attestor = await keymaster.createId('Attestor');
+        const subject = await keymaster.createId('Subject');
+        await keymaster.createId('Other');
+        await keymaster.setCurrentId('Attestor');
+        const schema = await keymaster.createSchema(mockSchema);
+        const pause = pauseNextLookup(schema);
+
+        const creating = keymaster.createPaymentInfo({
+            network: 'testnet',
+            schema,
+            subject,
+            outputs: [{ role: 'attestor', address: 'tb1qattestor', amountSats: 1_000 }],
+        });
+        await pause.reached;
+        await keymaster.setCurrentId('Other');
+        pause.release();
+
+        const paymentInfo = await creating;
+        expect(paymentInfo.signature.signer).toBe(attestor);
+        await expect(keymaster.verifySignature(paymentInfo)).resolves.toBe(true);
+    });
+
     it('keeps response actors through transient resolution retries', async () => {
         const verifier = await keymaster.createId('Verifier');
         const responder = await keymaster.createId('Responder');
