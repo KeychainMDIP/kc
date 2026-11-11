@@ -7,6 +7,8 @@ The mediator has two responsibilities:
 - **Import**: Scans confirmed transactions for tagged MDIP operations stored in Taproot reveal witnesses and imports them into Gatekeeper.
 - **Export**: Polls the corresponding Gatekeeper queue and sends commit and reveal transactions that store complete operations in the reveal witnesses.
 
+Imports are admitted and processed in bounded batches. Capacity refusals stay retryable, and later operations and batches can supply missing controllers or predecessors.
+
 Unlike the Satoshi mediator, which puts a DID that resolves to an operation batch in `OP_RETURN`, this mediator uses `OP_RETURN` only for an MDIP marker. Complete operation data is stored directly in the Taproot reveal witnesses, and one reveal transaction can contain multiple operations.
 
 The mediator appends `-Inscription` to `KC_SAT_CHAIN`. Gatekeeper currently accepts `BTC-Inscription` and `Signet-Inscription`, so use `BTC` or `Signet` as the base chain.

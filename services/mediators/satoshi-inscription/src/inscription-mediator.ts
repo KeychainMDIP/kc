@@ -419,6 +419,7 @@ function keyFromItem(item: DiscoveredInscribedItem): InscribedKey {
 async function importBatches(): Promise<boolean> {
     const db = await loadDb();
 
+    // Later batches can supply dependencies that release Gatekeeper's pending capacity.
     for (const item of db.discovered ?? []) {
         if (shuttingDown) {
             break;
@@ -437,9 +438,6 @@ async function importBatches(): Promise<boolean> {
                 list[idx] = update;
             }
         });
-        if (result.capacityDeferred) {
-            break;
-        }
     }
 
     return true;

@@ -320,6 +320,7 @@ function sameItem(a: DiscoveredItem, b: DiscoveredItem) {
 async function importBatches(): Promise<boolean> {
     const db = await loadDb();
 
+    // Later batches can supply dependencies that release Gatekeeper's pending capacity.
     for (const item of db.discovered) {
         if (shuttingDown) {
             break;
@@ -339,9 +340,6 @@ async function importBatches(): Promise<boolean> {
                     list[idx] = update;
                 }
             });
-            if (result.capacityDeferred) {
-                break;
-            }
         }
         catch (error: any) {
             // OK if DID not found, we'll just try again later
