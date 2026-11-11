@@ -449,13 +449,13 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         }
     }
 
-    function closePeerSession(peerKey: string, reason: string): void {
+    function closePeerSession(peerKey: string, reason: string, locallyInterrupted = false): void {
         const session = peerSessions.get(peerKey);
         if (!session) {
             return;
         }
 
-        const retryOnNextPeriodic = session.initiator
+        const retryOnNextPeriodic = locallyInterrupted || session.initiator
             && (reason === 'ordered_catchup_active' || reason === 'sync_busy');
         peerSessions.delete(peerKey);
         releaseSessionSlot(session);
@@ -2658,6 +2658,13 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                     sendNegClose(peerKey, session, 'idle_timeout');
                     closePeerSession(peerKey, 'idle_timeout');
                 }
+            }
+        },
+        interruptForOrderedCatchup(): void {
+            for (const [peerKey, session] of peerSessions) {
+                options.bulkReads.cancel(peerKey);
+                sendNegClose(peerKey, session, 'ordered_catchup_active');
+                closePeerSession(peerKey, 'ordered_catchup_active', true);
             }
         },
         removePeer(peerKey: string, reason: string): void {

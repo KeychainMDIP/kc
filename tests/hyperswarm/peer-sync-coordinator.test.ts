@@ -3,6 +3,7 @@ import { jest } from '@jest/globals';
 import type { OperationSyncStore } from '../../services/mediators/hyperswarm/src/db/types.ts';
 import type { ImportPipeline } from '../../services/mediators/hyperswarm/src/import-pipeline.ts';
 import type { ConnectionInfo } from '../../services/mediators/hyperswarm/src/mediator-state.ts';
+import { createConnectionInfo } from '../../services/mediators/hyperswarm/src/mediator-state.ts';
 import { createNegentropyCoordinator } from '../../services/mediators/hyperswarm/src/negentropy-coordinator.ts';
 import { normalizePeerCapabilities } from '../../services/mediators/hyperswarm/src/negentropy/protocol.ts';
 import { createOrderedCatchupCoordinator } from '../../services/mediators/hyperswarm/src/ordered-catchup-coordinator.ts';
@@ -157,5 +158,58 @@ describe('peer sync coordinator targeted repair', () => {
 
         await expect(repair).resolves.toBe(false);
         expect(replaced.startSession).not.toHaveBeenCalled();
+    });
+
+    it('keeps round-robin opportunities while an active fallback checks a nearly caught-up ordered source', async () => {
+        const keys = ['1', '2', '3'].map(char => char.repeat(64));
+        const peers = new Map(keys.map(key => {
+            const connection = createConnectionInfo({ connection: {} as ConnectionInfo['connection'], peerName: key });
+            connection.syncMode = 'negentropy';
+            connection.syncStarted = true;
+            connection.peerTransportFramingVersion = 1;
+            connection.capabilities = normalizePeerCapabilities({
+                negentropy: true,
+                negentropyVersion: 2,
+                ...(key === keys[2] && {
+                    orderedCatchup: true, orderedCatchupVersion: 1, orderedCatchupReady: true,
+                    operationCount: 100_000, orderedOperationCount: 100_000,
+                }),
+            });
+            return [key, connection] as const;
+        }));
+        let active: string | null = null;
+        const startSession = jest.fn(async (key: string) => { active = key; return true; });
+        const interrupt = jest.fn();
+        const negentropy = {
+            getActiveSessionCount: () => active ? 1 : 0,
+            hasActiveSession: (key: string) => active === key,
+            startSession,
+            interruptForOrderedCatchup: interrupt,
+        } as unknown as ReturnType<typeof createNegentropyCoordinator>;
+        const ordered = {
+            expireServerExpectation: jest.fn(),
+            hasActiveForPeer: () => false,
+            hasActiveOutbound: () => false,
+        } as unknown as ReturnType<typeof createOrderedCatchupCoordinator>;
+        const coordinator = createPeerSyncCoordinator({
+            negentropyVersion: 2, orderedCatchupVersion: 1, transportFramingVersion: 1,
+            windowSize: 25_000, repairIntervalMs: 1_000, syncStats: createMediatorSyncStats(),
+            getNodeKey: () => '0'.repeat(64), getPeerKeys: () => keys,
+            getConnection: key => peers.get(key),
+            getSyncStore: () => ({ count: async () => 99_000 }) as OperationSyncStore,
+            getImportPipeline: () => ({ queued: 0, running: 0 }) as ImportPipeline,
+            getNegentropyCoordinator: () => negentropy,
+            getOrderedCatchupCoordinator: () => ordered,
+            waitForInitialPing: async () => true, onPeersAdvertised: jest.fn(),
+        });
+
+        await coordinator.schedulePreferredSyncs();
+        await coordinator.schedulePreferredSyncs();
+        active = null;
+        await coordinator.schedulePreferredSyncs();
+
+        expect(startSession.mock.calls.map(([key]) => key)).toEqual([keys[0], keys[1]]);
+        expect(interrupt).not.toHaveBeenCalled();
+        await coordinator.shutdown();
     });
 });

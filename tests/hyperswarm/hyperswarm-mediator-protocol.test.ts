@@ -979,6 +979,216 @@ describe('hyperswarm mediator protocol characterization', () => {
         });
     });
 
+    it('prefers the largest ready ordered peer over an earlier unready peer', async () => {
+        const protocolNode = await createNode({ maxRecords: 4 });
+        const first = attachPeer(protocolNode);
+        const smaller = attachPeer(protocolNode, {
+            peerKeyByte: 0x33,
+            overrides: { capabilities: compatibleCapabilities({
+                orderedCatchup: true, orderedCatchupVersion: 1, orderedCatchupReady: true,
+                operationCount: 5, orderedOperationCount: 5,
+            }) },
+        });
+        const larger = attachPeer(protocolNode, {
+            peerKeyByte: 0x44,
+            overrides: { capabilities: compatibleCapabilities({
+                orderedCatchup: true, orderedCatchupVersion: 1, orderedCatchupReady: true,
+                operationCount: 10, orderedOperationCount: 10,
+            }) },
+        });
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.maybeStartPeerSync(first.peerKey));
+
+        expect(decodeWrites(larger.pair)).toEqual(expect.arrayContaining([
+            expect.objectContaining({ type: 'ordered_catchup_req' }),
+        ]));
+        expect(decodeWrites(first.pair)).toHaveLength(0);
+        expect(decodeWrites(smaller.pair)).toHaveLength(0);
+    });
+
+    it('interrupts fallback Negentropy when a ready ordered source connects', async () => {
+        const protocolNode = await createNode({ maxRecords: 4 });
+        const fallback = attachPeer(protocolNode);
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.maybeStartPeerSync(fallback.peerKey));
+        expect(decodeWrites(fallback.pair)).toEqual(expect.arrayContaining([
+            expect.objectContaining({ type: 'neg_open' }),
+        ]));
+        const ready = attachPeer(protocolNode, {
+            peerKeyByte: 0x33,
+            overrides: { capabilities: compatibleCapabilities({
+                orderedCatchup: true, orderedCatchupVersion: 1, orderedCatchupReady: true,
+                operationCount: 10, orderedOperationCount: 10,
+            }) },
+        });
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.maybeStartPeerSync(ready.peerKey));
+
+        expect(decodeWrites(fallback.pair)).toEqual(expect.arrayContaining([
+            expect.objectContaining({ type: 'neg_close', reason: 'ordered_catchup_active' }),
+        ]));
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(fallback.peerKey)?.activeSession,
+        )).toBeNull();
+        expect(decodeWrites(ready.pair)).toEqual(expect.arrayContaining([
+            expect.objectContaining({ type: 'ordered_catchup_req' }),
+        ]));
+    });
+
+    it('drains admitted imports and blocks new Negentropy opens before switching to ordered catch-up', async () => {
+        const protocolNode = await createNode({ maxRecords: 4 });
+        const fallback = attachPeer(protocolNode);
+        const [operation] = await makeOperations(1);
+        const remoteOpen = await createRemoteOpen();
+        let importing!: () => void;
+        let resume!: () => void;
+        const started = new Promise<void>(resolve => { importing = resolve; });
+        const released = new Promise<void>(resolve => { resume = resolve; });
+        const client = protocolNode.node.gatekeeperClient;
+        const originalImport = client.importBatch.getMockImplementation()!;
+        client.importBatch.mockImplementationOnce(async events => {
+            importing();
+            await released;
+            return originalImport(events);
+        });
+        const queued = protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(fallback.peerKey, {
+            type: 'queue', data: [operation],
+        }));
+        await started;
+        const ready = attachPeer(protocolNode, {
+            peerKeyByte: 0x33,
+            overrides: { capabilities: compatibleCapabilities({
+                orderedCatchup: true, orderedCatchupVersion: 1, orderedCatchupReady: true,
+                operationCount: 10, orderedOperationCount: 10,
+            }) },
+        });
+        const switching = protocolNode.node.run(() => protocolNode.node.mediator.__test.maybeStartPeerSync(ready.peerKey));
+
+        try {
+            await nextTurn();
+            expect(decodeWrites(ready.pair)).toHaveLength(0);
+            await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(fallback.peerKey, remoteOpen));
+            expect(decodeWrites(fallback.pair)).toEqual(expect.arrayContaining([
+                expect.objectContaining({ type: 'neg_close', reason: 'ordered_catchup_active' }),
+            ]));
+            resume();
+            await queued;
+            await switching;
+            expect(decodeWrites(ready.pair)).toEqual(expect.arrayContaining([
+                expect.objectContaining({ type: 'ordered_catchup_req' }),
+            ]));
+        }
+        finally {
+            resume();
+            await Promise.allSettled([queued, switching]);
+        }
+    });
+
+    it('finds a ready ordered source during periodic repair after an earlier peer is delayed', async () => {
+        const protocolNode = await createNode({ maxRecords: 4 });
+        attachPeer(protocolNode, { overrides: { negentropyRetryAfter: Date.now() + 60_000 } });
+        const fallback = attachPeer(protocolNode, { peerKeyByte: 0x33 });
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.maybeStartPeerSync(fallback.peerKey));
+        const ready = attachPeer(protocolNode, {
+            peerKeyByte: 0x44,
+            overrides: {
+                syncMode: 'negentropy',
+                capabilities: compatibleCapabilities({
+                    orderedCatchup: true, orderedCatchupVersion: 1, orderedCatchupReady: true,
+                    operationCount: 10, orderedOperationCount: 10,
+                }),
+            },
+        });
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.schedulePreferredSyncs());
+
+        expect(decodeWrites(fallback.pair)).toEqual(expect.arrayContaining([
+            expect.objectContaining({ type: 'neg_close', reason: 'ordered_catchup_active' }),
+        ]));
+        expect(decodeWrites(ready.pair)).toEqual(expect.arrayContaining([
+            expect.objectContaining({ type: 'ordered_catchup_req' }),
+        ]));
+    });
+
+    it('keeps fallback Negentropy when a ready ordered peer is only one percent ahead', async () => {
+        const protocolNode = await createNode({ maxRecords: 25_000 });
+        jest.spyOn(protocolNode.store, 'count').mockResolvedValue(99_000);
+        const fallback = attachPeer(protocolNode);
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.maybeStartPeerSync(fallback.peerKey));
+        const ready = attachPeer(protocolNode, {
+            peerKeyByte: 0x33,
+            overrides: { capabilities: compatibleCapabilities({
+                orderedCatchup: true, orderedCatchupVersion: 1, orderedCatchupReady: true,
+                operationCount: 100_000, orderedOperationCount: 100_000,
+            }) },
+        });
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.maybeStartPeerSync(ready.peerKey));
+
+        expect(decodeWrites(fallback.pair).filter(message => message.type === 'neg_close')).toHaveLength(0);
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(fallback.peerKey)?.activeSession,
+        )).toMatchObject({ mode: 'negentropy' });
+        expect(decodeWrites(ready.pair)).toHaveLength(0);
+    });
+
+    it('rechecks the ordered gap after draining imports before starting a full transfer', async () => {
+        const protocolNode = await createNode({ maxRecords: 25_000 });
+        const fallback = attachPeer(protocolNode);
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.maybeStartPeerSync(fallback.peerKey));
+        const ready = attachPeer(protocolNode, {
+            peerKeyByte: 0x33,
+            overrides: { capabilities: compatibleCapabilities({
+                orderedCatchup: true, orderedCatchupVersion: 1, orderedCatchupReady: true,
+                operationCount: 100_000, orderedOperationCount: 100_000,
+            }) },
+        });
+        jest.spyOn(protocolNode.store, 'count')
+            .mockResolvedValueOnce(0)
+            .mockResolvedValue(99_000);
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.maybeStartPeerSync(ready.peerKey));
+
+        expect(decodeWrites(fallback.pair)).toEqual(expect.arrayContaining([
+            expect.objectContaining({ type: 'neg_close', reason: 'ordered_catchup_active' }),
+        ]));
+        expect(decodeWrites(ready.pair).filter(message => message.type === 'ordered_catchup_req')).toHaveLength(0);
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(ready.peerKey)?.activeSession,
+        )).toBeNull();
+    });
+
+    it('lets an interrupted responder resume when draining closes the ordered gap', async () => {
+        const protocolNode = await createNode({ maxRecords: 25_000 });
+        const fallback = attachPeer(protocolNode);
+        const remoteOpen = await createRemoteOpen();
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(fallback.peerKey, remoteOpen));
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(fallback.peerKey)?.activeSession,
+        )).toMatchObject({ mode: 'negentropy', sessionId: remoteOpen.sessionId });
+        const ready = attachPeer(protocolNode, {
+            peerKeyByte: 0x33,
+            overrides: { capabilities: compatibleCapabilities({
+                orderedCatchup: true, orderedCatchupVersion: 1, orderedCatchupReady: true,
+                operationCount: 100_000, orderedOperationCount: 100_000,
+            }) },
+        });
+        jest.spyOn(protocolNode.store, 'count')
+            .mockResolvedValueOnce(50_000)
+            .mockResolvedValue(50_300);
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.maybeStartPeerSync(ready.peerKey));
+
+        expect(decodeWrites(ready.pair).filter(message => message.type === 'ordered_catchup_req')).toHaveLength(0);
+        const resumed = { ...remoteOpen, sessionId: 'resumed-remote-session' };
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(fallback.peerKey, resumed));
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(fallback.peerKey)?.activeSession,
+        )).toMatchObject({ mode: 'negentropy', sessionId: resumed.sessionId });
+        expect(decodeWrites(fallback.pair)).not.toEqual(expect.arrayContaining([
+            expect.objectContaining({ type: 'neg_close', sessionId: resumed.sessionId, reason: 'sync_busy' }),
+        ]));
+    });
+
     it('retries Negentropy on the next periodic pass after an ordered catch-up rejection', async () => {
         const protocolNode = await createNode({ keyByte: 0x11 });
         const { peerKey, pair } = attachPeer(protocolNode, { peerKeyByte: 0x22 });
