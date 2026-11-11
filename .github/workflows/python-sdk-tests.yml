@@ -19,6 +19,8 @@ jobs:
       - name: Setup .env for Testing
         working-directory: ./tests/cli-tests
         run: |
+          # Keep Ubuntu's archive fallbacks and skip the failing Azure mirror.
+          sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
           sudo apt-get update
           sudo apt-get install -y expect
           ./generate_test_env.sh
