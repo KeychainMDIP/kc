@@ -18,12 +18,17 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Check package repository DNS
+        run: |
+          getent ahostsv4 archive.ubuntu.com || true
+          sudo -u _apt getent ahostsv4 archive.ubuntu.com || true
       
       - name: Setup env for Testing
         working-directory: ./tests/cli-tests
         run: |
-          sudo apt update
-          sudo apt-get install -y expect
+          sudo apt-get -o Acquire::ForceIPv4=true update
+          sudo apt-get -o Acquire::ForceIPv4=true install -y expect
           ./generate_test_env.sh
           ln -s "$GITHUB_WORKSPACE/kc" /usr/local/bin/kc
           ln -s "$GITHUB_WORKSPACE/admin" /usr/local/bin/admin

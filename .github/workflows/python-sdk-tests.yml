@@ -19,8 +19,6 @@ jobs:
       - name: Setup .env for Testing
         working-directory: ./tests/cli-tests
         run: |
-          sudo apt-get update
-          sudo apt-get install -y expect
           ./generate_test_env.sh
           cat ../../.env
 
