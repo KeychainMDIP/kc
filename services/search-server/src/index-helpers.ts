@@ -1,10 +1,10 @@
+import { readDatabase } from './db/db-utils.js';
 import type { Request } from "express";
 import { BlockList, isIP } from "net";
 
 import { childLogger } from "@mdip/common/logger";
 import { isValidDID } from "@mdip/ipfs/utils";
-import { INDEX_SYNC_STATE_KEYS } from "./DidIndexer.js";
-import type { DIDsDb, IdentityListOptions } from "./types.js";
+import type { DIDsDb, IdentityListOptions, SearchStatsOptions } from "./types.js";
 
 const log = childLogger({ service: 'search-server' });
 
@@ -13,6 +13,23 @@ export const rateLimitWindowUnits = {
     minute: 60 * 1000,
     hour: 60 * 60 * 1000,
 } as const;
+
+export function resolveRequestDidPrefix(
+    value: unknown,
+    configuredPrefix: string | undefined,
+    allowedPrefixes: string[]
+): string | undefined {
+    if (value === undefined || (value !== '' && value === configuredPrefix)) {
+        return configuredPrefix;
+    }
+
+    if (typeof value !== 'string' || !allowedPrefixes.includes(value)) {
+        const allowed = allowedPrefixes.length > 0 ? allowedPrefixes.join(', ') : 'none (per-request scope disabled)';
+        throw new Error(`didPrefix must be one of: ${allowed}`);
+    }
+
+    return value;
+}
 
 export function normalizeIp(ip: string): string {
     const withoutZone = ip.split('%')[0];
@@ -175,37 +192,11 @@ export function parseOptionalPositiveInteger(value: unknown, fieldName: string):
     return parsed;
 }
 
-export async function getSearchStatus(didDb: DIDsDb, dbName: string) {
-    const sync = {
-        snapshotComplete: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.snapshotComplete) === 'true',
-        snapshotCursor: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.snapshotCursor),
-        snapshotCheckpointCursor: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.snapshotCheckpointCursor),
-        changesCursor: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.changesCursor),
-        lastSyncStartedAt: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastSyncStartedAt),
-        lastSyncCompletedAt: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastSyncCompletedAt),
-        lastSyncError: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastSyncError),
-        lastSyncMode: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastSyncMode),
-        lastPagesProcessed: Number.parseInt(
-            await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastPagesProcessed) ?? '0',
-            10
-        ),
-        lastDidsChanged: Number.parseInt(
-            await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastDidsChanged) ?? '0',
-            10
-        ),
-        lastBlocksStored: Number.parseInt(
-            await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.lastBlocksStored) ?? '0',
-            10
-        ),
-    };
-
-    return {
+export async function getSearchStatus(didDb: DIDsDb, dbName: string, options?: SearchStatsOptions) {
+    return readDatabase(didDb, async () => ({
         ready: true,
         db: dbName,
-        sync,
-        metrics: {
-            lastRebuiltAt: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsLastRebuiltAt),
-            lastError: await didDb.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsLastError),
-        },
-    };
+        role: await didDb.getRole?.() ?? 'writer',
+        ...await didDb.getStats(options),
+    }));
 }

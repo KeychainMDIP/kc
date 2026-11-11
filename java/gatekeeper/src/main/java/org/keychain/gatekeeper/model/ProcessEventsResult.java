@@ -1,5 +1,7 @@
 package org.keychain.gatekeeper.model;
 
+import java.util.List;
+
 public class ProcessEventsResult {
     public Boolean busy;
     public Integer added;
@@ -9,6 +11,9 @@ public class ProcessEventsResult {
     public Boolean hasMore;
     public Integer capacityDeferred;
     public String[] capacityDeferredHashes;
+    public List<String> acceptedHashes;
+    public List<GatekeeperEvent> acceptedEvents;
+    public List<Operation> rejectedOperations;
 
     public ProcessEventsResult() {}
 }

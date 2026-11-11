@@ -9,7 +9,7 @@ Keychain (kc) is the reference implementation of the Multi-Dimensional Identity 
 Recommended system requirements:
 
 - GNU/Linux OS with [Docker](https://www.docker.com/) for containerized operation
-- Node.js 22.15.0 and npm 10.8.2 or newer for manual and local operation
+- Node.js 22.23.4 and npm 10.8.2 or newer for manual and local operation
 - At least 3 GB RAM for Gatekeeper, Keymaster, the Hyperswarm mediator, Search Server, Explorer, IPFS, and their database dependencies. Other services require additional memory.
 
 ```

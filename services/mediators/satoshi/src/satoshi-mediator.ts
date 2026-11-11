@@ -13,6 +13,7 @@ import { GatekeeperEvent, Operation } from '@mdip/gatekeeper/types';
 import { childLogger } from '@mdip/common/logger';
 import { isRetryableChainError, runService } from './lifecycle.js';
 import { importEventBatch } from './import-batch.js';
+import { resolveAnchoredBatchAsset } from './batch-import.js';
 
 const REGISTRY = config.chain;
 const SMART_FEE_MODE = "CONSERVATIVE";
@@ -268,7 +269,7 @@ async function importBatch(item: DiscoveredItem): Promise<{
         return;
     }
 
-    const asset = await keymaster.resolveAsset(item.did);
+    const asset = await resolveAnchoredBatchAsset(keymaster, item.did);
     const queue = (asset as { batch?: Operation[] }).batch || asset;
 
     // Skip badly formatted batches

@@ -2,9 +2,11 @@ import { jest } from '@jest/globals';
 
 import CipherNode from '@mdip/cipher/node';
 import type GatekeeperClient from '@mdip/gatekeeper/client';
-import type { GatekeeperEvent, ImportBatchResult, Operation } from '@mdip/gatekeeper/types';
+import type { GatekeeperEvent, ImportBatchResult, Operation, ResolveDIDOptions } from '@mdip/gatekeeper/types';
 import { importEventBatch as importSatoshiBatch } from '../../services/mediators/satoshi/src/import-batch.ts';
 import { importEventBatch as importInscriptionBatch } from '../../services/mediators/satoshi-inscription/src/import-batch.ts';
+
+import { resolveAnchoredBatchAsset } from '../../services/mediators/satoshi/src/batch-import.ts';
 
 const cipher = new CipherNode();
 const implementations = [
@@ -299,5 +301,20 @@ describe.each(implementations)('%s blockchain event import', (_name, importBatch
 
         expect(result.complete).toBe(true);
         expect(result.processed.rejectedOperations).toEqual([operation]);
+    });
+});
+
+describe('Satoshi batch import', () => {
+    it('resolves the batch committed by the asset create operation', async () => {
+        const anchoredBatch = { batch: [{ type: 'create' }] };
+        const substitutedBatch = { batch: [{ type: 'delete' }] };
+        const resolveAsset = jest.fn<(did: string, options?: ResolveDIDOptions) => Promise<unknown>>(
+            async (_did, options) => options?.versionSequence === 1 ? anchoredBatch : substitutedBatch
+        );
+
+        const result = await resolveAnchoredBatchAsset({ resolveAsset }, 'did:test:batch');
+
+        expect(resolveAsset).toHaveBeenCalledWith('did:test:batch', { versionSequence: 1 });
+        expect(result).toBe(anchoredBatch);
     });
 });

@@ -2,7 +2,7 @@ import { loadEnv } from "@mdip/common/env";
 
 loadEnv();
 
-const DEFAULT_RATE_LIMIT_SKIP_PATHS = ['/api/v1/ready', '/api/v1/status'];
+const DEFAULT_RATE_LIMIT_SKIP_PATHS = ['/api/v1/ready'];
 export type SearchDb = 'sqlite' | 'postgres' | 'memory';
 
 function parseBoolean(value: string | undefined, defaultValue: boolean): boolean {
@@ -69,6 +69,16 @@ export function parseDidPrefix(value: string | undefined): string | undefined {
     throw new Error('KC_SEARCH_SERVER_DID_PREFIX must be a did:<method> prefix or empty');
 }
 
+export function parseAllowedDidPrefixes(value: string | undefined): string[] {
+    const prefixes = parseCsv(value);
+    for (const prefix of prefixes) {
+        if (!/^did:[^:]+$/.test(prefix)) {
+            throw new Error('KC_SEARCH_SERVER_ALLOWED_DID_PREFIXES must be a comma-separated list of did:<method> prefixes');
+        }
+    }
+    return prefixes;
+}
+
 export function parseSearchDb(value: string | undefined): SearchDb {
     const db = value || 'sqlite';
 
@@ -90,7 +100,9 @@ const config = {
         60 * 60 * 1000
     ),
     didPrefix: parseDidPrefix(process.env.KC_SEARCH_SERVER_DID_PREFIX),
+    allowedDidPrefixes: parseAllowedDidPrefixes(process.env.KC_SEARCH_SERVER_ALLOWED_DID_PREFIXES),
     db: parseSearchDb(process.env.KC_SEARCH_SERVER_DB),
+    resetDb: parseBoolean(process.env.KC_SEARCH_SERVER_RESET_DB, false),
     postgresURL: process.env.KC_SEARCH_SERVER_POSTGRES_URL
         || process.env.KC_POSTGRES_URL
         || 'postgresql://mdip:mdip@localhost:5432/mdip',

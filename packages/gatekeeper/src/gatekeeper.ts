@@ -657,6 +657,20 @@ export default class Gatekeeper implements GatekeeperInterface {
         return { total, byType, byRegistry, byVersion, eventsQueue };
     }
 
+    getQueueStatus() {
+        let pending = 0;
+        for (const event of this.eventsQueue) {
+            if (this.deferredEvents.has(event)) pending += 1;
+        }
+        return {
+            staged: this.eventsQueue.length - pending,
+            pending,
+            processing: this.processingEventCount,
+            total: this.eventsQueue.length + this.processingEventCount,
+            active: this.isProcessingEvents || this.processingEventCount > 0,
+        };
+    }
+
     async listRegistries(): Promise<string[]> {
         return this.supportedRegistries;
     }

@@ -12,10 +12,39 @@ import {
     parseOptionalBoolean,
     parseOptionalPositiveInteger,
     rateLimitWindowUnits,
+    resolveRequestDidPrefix,
     shouldSkipRateLimitPath,
 } from '../../services/search-server/src/index-helpers.ts';
 
 /* eslint-disable sonarjs/no-hardcoded-ip */
+
+describe('Search Server request DID prefix scope', () => {
+    const allowed = ['did:test', 'did:mdip'];
+
+    it('falls back to the configured scope when no prefix is requested', () => {
+        expect(resolveRequestDidPrefix(undefined, 'did:mdip', allowed)).toBe('did:mdip');
+        expect(resolveRequestDidPrefix(undefined, undefined, allowed)).toBeUndefined();
+        expect(resolveRequestDidPrefix(undefined, undefined, [])).toBeUndefined();
+    });
+
+    it('returns an allowlisted prefix regardless of the configured scope', () => {
+        expect(resolveRequestDidPrefix('did:test', undefined, allowed)).toBe('did:test');
+        expect(resolveRequestDidPrefix('did:test', 'did:mdip', allowed)).toBe('did:test');
+    });
+
+    it('accepts the configured scope without an allowlist entry', () => {
+        expect(resolveRequestDidPrefix('did:mdip', 'did:mdip', [])).toBe('did:mdip');
+    });
+
+    it('rejects prefixes outside the allowlist, repeated values and the disabled feature', () => {
+        expect(() => resolveRequestDidPrefix('did:arbitrary', undefined, allowed))
+            .toThrow('didPrefix must be one of: did:test, did:mdip');
+        expect(() => resolveRequestDidPrefix(['did:test', 'did:mdip'], undefined, allowed)).toThrow();
+        expect(() => resolveRequestDidPrefix('', undefined, allowed)).toThrow();
+        expect(() => resolveRequestDidPrefix('did:test', 'did:mdip', []))
+            .toThrow('didPrefix must be one of: none (per-request scope disabled)');
+    });
+});
 
 describe('Search Server request helpers', () => {
     it('normalizes loopback, mapped IPv4 and zone-qualified IPv6 addresses', () => {
@@ -81,9 +110,10 @@ describe('Search Server request helpers', () => {
 
     it('reports empty and populated synchronization state without modifying it', async () => {
         const db = new DIDsDbMemory();
-        expect(await getSearchStatus(db, 'memory')).toEqual({
+        expect(await getSearchStatus(db, 'memory')).toMatchObject({
             ready: true,
             db: 'memory',
+            role: 'writer',
             sync: {
                 snapshotComplete: false,
                 snapshotCursor: null,
@@ -109,9 +139,10 @@ describe('Search Server request helpers', () => {
             await db.saveSyncState(INDEX_SYNC_STATE_KEYS[name as keyof typeof state], value);
         }
         const { metricsLastRebuiltAt, metricsLastError, ...sync } = state;
-        expect(await getSearchStatus(db, 'memory')).toEqual({
+        expect(await getSearchStatus(db, 'memory')).toMatchObject({
             ready: true,
             db: 'memory',
+            role: 'writer',
             sync: { ...sync, snapshotComplete: true, lastPagesProcessed: 2, lastDidsChanged: 3, lastBlocksStored: 4 },
             metrics: { lastRebuiltAt: metricsLastRebuiltAt, lastError: metricsLastError },
         });
@@ -120,7 +151,7 @@ describe('Search Server request helpers', () => {
 
     it('propagates status storage failures rather than reporting success', async () => {
         const db = new DIDsDbMemory();
-        jest.spyOn(db, 'loadSyncState').mockRejectedValue(new Error('database unavailable'));
+        jest.spyOn(db, 'getStats').mockRejectedValue(new Error('database unavailable'));
         await expect(getSearchStatus(db, 'memory')).rejects.toThrow('database unavailable');
     });
 });

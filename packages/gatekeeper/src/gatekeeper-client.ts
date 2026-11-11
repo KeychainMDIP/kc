@@ -8,6 +8,7 @@ import {
     GatekeeperInterface,
     GatekeeperEvent,
     GetStatusResult,
+    StatusRequestOptions,
     Operation,
     MdipDocument,
     ResolveDIDOptions,
@@ -171,9 +172,18 @@ export default class GatekeeperClient implements GatekeeperInterface {
         }
     }
 
-    async getStatus(): Promise<GetStatusResult> {
+    async getStatus(options: StatusRequestOptions = {}): Promise<GetStatusResult> {
+        for (const value of [options.timeoutMs, options.maxResponseBytes]) {
+            if (value !== undefined && (!Number.isSafeInteger(value) || value <= 0)) {
+                throw new Error('Status request limits must be positive safe integers');
+            }
+        }
         try {
-            const response = await this.axios.get(`${this.API}/status`);
+            const response = await this.axios.get(`${this.API}/status`, {
+                timeout: options.timeoutMs,
+                maxContentLength: options.maxResponseBytes,
+                ...(options.signal ? { signal: options.signal } : {}),
+            });
             return response.data;
         }
         catch (error) {

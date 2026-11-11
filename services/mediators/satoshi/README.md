@@ -4,7 +4,7 @@ The Satoshi mediator operates with configured Bitcoin-derived chains that expose
 
 The mediator has two responsibilities:
 
-- **Import**: Scans confirmed transactions for MDIP DIDs in the `OP_RETURN` field, resolves each discovered batch DID, and imports its operations into Gatekeeper.
+- **Import**: Scans confirmed transactions for MDIP DIDs in the `OP_RETURN` field, resolves each discovered batch DID at its immutable create version, and imports its operations into Gatekeeper.
 - **Export**: Polls the corresponding Gatekeeper queue, creates a batch asset, and sends a transaction containing that batch DID in the `OP_RETURN` field.
 
 Gatekeeper currently accepts the plain-chain registries `TBTC`, `Signet`, and `TFTC`. Bitcoin mainnet uses the inscription mediator and registry `BTC-Inscription`.

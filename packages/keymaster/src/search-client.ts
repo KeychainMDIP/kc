@@ -2,6 +2,7 @@ import {
     WaitUntilReadyOptions,
     SearchClientOptions,
     SearchEngine,
+    SearchStatusResult,
 } from './types.js'
 
 import axiosModule, { AxiosError, type AxiosInstance, type AxiosStatic } from 'axios';
@@ -109,6 +110,16 @@ export default class SearchClient implements SearchEngine {
                 return false;
             }
             throw error;
+        }
+    }
+
+    async getStatus(options: { includeAmbiguous?: boolean } = {}): Promise<SearchStatusResult> {
+        try {
+            const response = await this.axios.get(`${this.API}/status`, { params: options });
+            return response.data;
+        }
+        catch (error) {
+            throwError(error);
         }
     }
 

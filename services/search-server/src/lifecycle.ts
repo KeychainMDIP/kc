@@ -39,7 +39,7 @@ export function runService({ start, cleanup, log, timeoutMs }: ServiceLifecycleO
                 }
                 catch (error) {
                     exitCode = Math.max(exitCode, 1);
-                    log.error({ error }, 'Error during shutdown');
+                    log.error({ err: error }, 'Error during shutdown');
                 }
                 finally {
                     clearTimeout(timeout);
@@ -54,11 +54,11 @@ export function runService({ start, cleanup, log, timeoutMs }: ServiceLifecycleO
     process.on('SIGTERM', () => shutdown());
     process.on('SIGINT', () => shutdown());
     process.on('uncaughtException', error => {
-        log.error({ error }, 'Unhandled exception caught');
+        log.error({ err: error }, 'Unhandled exception caught');
         return shutdown(1);
     });
     process.on('unhandledRejection', (reason, promise) => {
-        log.error({ reason, promise }, 'Unhandled rejection caught');
+        log.error({ err: reason, promise }, 'Unhandled rejection caught');
         return shutdown(1);
     });
 
@@ -68,7 +68,7 @@ export function runService({ start, cleanup, log, timeoutMs }: ServiceLifecycleO
             if (stopping) {
                 return;
             }
-            log.error({ error }, '[search-server] Fatal error');
+            log.error({ err: error }, '[search-server] Fatal error');
             return shutdown(1);
         });
 

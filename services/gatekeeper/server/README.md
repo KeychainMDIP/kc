@@ -46,6 +46,24 @@ When `KC_GATEKEEPER_DB=mongodb`, Gatekeeper requires MongoDB transactions so DID
 
 The repository `docker-compose.yml` starts MongoDB as a single-node replica set named `rs0` and uses `KC_MONGODB_URL=mongodb://mongodb:27017/?replicaSet=rs0` for containers. Its healthcheck waits until the replica set has a writable primary before starting dependent services. Existing Mongo-backed deployments must use a replica set with a reachable primary, or a managed replica-set/sharded MongoDB deployment, before starting Gatekeeper with this adapter.
 
+## Lightweight status and DID statistics
+
+`GET /api/v1/status` reports Gatekeeper uptime, process memory, and live queue
+counts.
+
+```json
+{
+  "uptimeSeconds": 120,
+  "eventsQueue": { "staged": 2, "pending": 3, "processing": 1, "total": 6, "active": true },
+  "memoryUsage": { "rss": 100000000, "heapTotal": 80000000, "heapUsed": 60000000, "external": 10000000, "arrayBuffers": 5000000 }
+}
+```
+
+Queue categories are disjoint. `staged` means queued work not last classified
+as deferred, `pending` means queued work waiting after a deferred import, and
+`processing` means work remaining in active import passes. `total` is their
+sum. Raw operation bodies are not included. Memory counters are byte counts.
+
 ## Index export limitation
 
 `POST /api/v1/index/export` is intended to let consumers sync DID event histories using a cursor to avoid full database reads. Snapshot export includes DID events, the checkpoint cursor used to continue with incremental changes, and an `indexEpoch` that changes when the backing index database is reset or replaced. It does not currently include Gatekeeper's blockchain table.

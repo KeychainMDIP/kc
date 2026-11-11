@@ -124,13 +124,14 @@
           "version": 1,
           "type": "agent",
           "registry": "Signet"
-        }
+        },
+        "didDocumentMetadata": {}
       },
       "signature": {
         "signer": "did:test:alice",
         "signed": "2024-01-02T03:04:07.000Z",
-        "hash": "1c0e760fe15a1aa25644b927e28784c23a65e52d9dc00aa9b1fdfb6320c4341a",
-        "value": "4b2986479d4451c47a89835c611b4fdcfc5be9c9915d427c68b6e88614be935434845a2875d137007c5aa1ad90cae3c7384e220d470334904540de2415ddf8d1"
+        "hash": "d6581f2a0cfe727d530acfb0ccc71f184ee1daaf1800d5bc13ae416239c38c09",
+        "value": "d79a339df2ed8aacf5ec2e858844a703e879345550bab3d367b54349b56e7e2916dc20fb425e9fb9396c8a228f1bd39e9faee090836e0f5d947131eb922e4ece"
       }
     }
   }

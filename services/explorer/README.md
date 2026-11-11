@@ -6,7 +6,7 @@ A React-based DID (Decentralized Identifier) explorer for viewing DIDs, DID docu
 
 ### Prerequisites
 
-- Node.js 22.15.0 and npm 10.8.2 or newer
+- Node.js 22.23.4 and npm 10.8.2 or newer
 
 ### Installation
 
