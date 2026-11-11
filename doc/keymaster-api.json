@@ -33,18 +33,17 @@
         "type": "object",
         "required": [
           "did",
-          "account",
-          "index"
+          "keyRef"
         ],
         "properties": {
           "did": {
             "type": "string"
           },
-          "account": {
-            "type": "integer"
+          "keyRef": {
+            "type": "string"
           },
-          "index": {
-            "type": "integer"
+          "previousKeyRef": {
+            "type": "string"
           },
           "held": {
             "type": "array",
@@ -73,30 +72,30 @@
         "type": "object",
         "required": [
           "version",
-          "seed",
-          "counter",
+          "provider",
           "ids"
         ],
         "properties": {
           "version": {
             "type": "integer",
             "enum": [
-              1
+              2
             ]
           },
-          "seed": {
+          "provider": {
             "type": "object",
             "required": [
-              "mnemonicEnc"
+              "type",
+              "walletFingerprint"
             ],
             "properties": {
-              "mnemonicEnc": {
-                "$ref": "#/components/schemas/EncryptedMnemonic"
+              "type": {
+                "type": "string"
+              },
+              "walletFingerprint": {
+                "type": "string"
               }
             }
-          },
-          "counter": {
-            "type": "integer"
           },
           "ids": {
             "type": "object",
@@ -112,6 +111,29 @@
             "additionalProperties": {
               "type": "string"
             }
+          },
+          "backupDid": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "LegacyWalletId": {
+        "type": "object",
+        "required": [
+          "did",
+          "account",
+          "index"
+        ],
+        "properties": {
+          "did": {
+            "type": "string"
+          },
+          "account": {
+            "type": "integer"
+          },
+          "index": {
+            "type": "integer"
           }
         },
         "additionalProperties": true
@@ -149,7 +171,7 @@
       },
       "LegacyWallet": {
         "type": "object",
-        "description": "Legacy v0 wallet accepted for automatic migration to v1.",
+        "description": "Legacy v0 wallet accepted for automatic migration to v2.",
         "required": [
           "seed",
           "counter",
@@ -195,7 +217,54 @@
           "ids": {
             "type": "object",
             "additionalProperties": {
-              "$ref": "#/components/schemas/WalletId"
+              "$ref": "#/components/schemas/LegacyWalletId"
+            }
+          },
+          "current": {
+            "type": "string"
+          },
+          "names": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": true
+      },
+      "LegacyDecryptedWallet": {
+        "type": "object",
+        "required": [
+          "version",
+          "seed",
+          "counter",
+          "ids"
+        ],
+        "properties": {
+          "version": {
+            "type": "integer",
+            "enum": [
+              1
+            ]
+          },
+          "seed": {
+            "type": "object",
+            "required": [
+              "mnemonicEnc"
+            ],
+            "properties": {
+              "mnemonicEnc": {
+                "$ref": "#/components/schemas/EncryptedMnemonic"
+              }
+            }
+          },
+          "counter": {
+            "type": "integer"
+          },
+          "ids": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/LegacyWalletId"
             }
           },
           "current": {
@@ -220,6 +289,9 @@
           },
           {
             "$ref": "#/components/schemas/LegacyWallet"
+          },
+          {
+            "$ref": "#/components/schemas/LegacyDecryptedWallet"
           }
         ]
       }
@@ -322,7 +394,52 @@
                   "type": "object",
                   "properties": {
                     "wallet": {
-                      "$ref": "#/components/schemas/Wallet"
+                      "type": "object",
+                      "properties": {
+                        "version": {
+                          "type": "integer"
+                        },
+                        "provider": {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string"
+                            },
+                            "walletFingerprint": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "ids": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "object",
+                            "properties": {
+                              "did": {
+                                "type": "string"
+                              },
+                              "keyRef": {
+                                "type": "string"
+                              },
+                              "owned": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "current": {
+                          "type": "string"
+                        },
+                        "names": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -453,7 +570,142 @@
                   "type": "object",
                   "properties": {
                     "wallet": {
-                      "$ref": "#/components/schemas/Wallet"
+                      "type": "object",
+                      "properties": {
+                        "version": {
+                          "type": "integer"
+                        },
+                        "provider": {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string"
+                            },
+                            "walletFingerprint": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "ids": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "object",
+                            "properties": {
+                              "did": {
+                                "type": "string"
+                              },
+                              "keyRef": {
+                                "type": "string"
+                              },
+                              "owned": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "current": {
+                          "type": "string"
+                        },
+                        "names": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/wallet/bundle": {
+      "get": {
+        "summary": "Export the current keymaster metadata and mnemonic wallet provider state.",
+        "responses": {
+          "200": {
+            "description": "The wallet bundle object.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "bundle": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Import a wallet bundle containing keymaster metadata and mnemonic wallet provider state.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "bundle": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The imported wallet object.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "wallet": {
+                      "type": "object"
                     }
                   }
                 }
@@ -489,7 +741,7 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "ok": {
+                    "did": {
                       "type": "string",
                       "description": "The DID associated with the wallet backup."
                     }
@@ -543,7 +795,52 @@
                   "type": "object",
                   "properties": {
                     "wallet": {
-                      "$ref": "#/components/schemas/Wallet"
+                      "type": "object",
+                      "properties": {
+                        "version": {
+                          "type": "integer"
+                        },
+                        "provider": {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string"
+                            },
+                            "walletFingerprint": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "ids": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "object",
+                            "properties": {
+                              "did": {
+                                "type": "string"
+                              },
+                              "keyRef": {
+                                "type": "string"
+                              },
+                              "owned": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "current": {
+                          "type": "string"
+                        },
+                        "names": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -672,10 +969,10 @@
     },
     "/wallet/mnemonic": {
       "get": {
-        "summary": "Decrypt and retrieve the wallet's mnemonic phrase.",
+        "summary": "Retrieve the recovery phrase for the mnemonic wallet provider.",
         "responses": {
           "200": {
-            "description": "The mnemonic phrase.",
+            "description": "The wallet recovery phrase.",
             "content": {
               "application/json": {
                 "schema": {
@@ -683,44 +980,6 @@
                   "properties": {
                     "mnemonic": {
                       "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/export/wallet/encrypted": {
-      "get": {
-        "summary": "Export the wallet in encrypted form.",
-        "description": "Returns the wallet in its encrypted format, which includes the encrypted mnemonic and encrypted wallet data. This format is secure for storage or backup purposes.\n",
-        "responses": {
-          "200": {
-            "description": "The encrypted wallet object.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "wallet": {
-                      "$ref": "#/components/schemas/EncryptedWallet"
                     }
                   }
                 }

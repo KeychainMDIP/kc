@@ -4,16 +4,17 @@ import { ChallengeReceipt, ChallengeResponse, VerifiableCredential } from '@mdip
 import { jest } from '@jest/globals';
 import CipherNode from '@mdip/cipher/node';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory';
-import WalletJsonMemory from '@mdip/keymaster/wallet/json-memory';
 import { InvalidDIDError, ExpectedExceptionError, UnknownIDError } from '@mdip/common/errors';
 import HeliaClient from '@mdip/ipfs/helia';
 import { mockSchema } from './helper.ts';
+import { createTestKeymaster } from './testUtils.ts';
 
 let ipfs: HeliaClient;
 let gatekeeper: Gatekeeper;
-let wallet: WalletJsonMemory;
 let cipher: CipherNode;
 let keymaster: Keymaster;
+let store: import('@mdip/keymaster/wallet/json-memory').default;
+let providerStore: import('@mdip/keymaster/types').WalletProviderStore;
 
 beforeAll(async () => {
     ipfs = new HeliaClient();
@@ -29,9 +30,8 @@ afterAll(async () => {
 beforeEach(() => {
     const db = new DbJsonMemory('test');
     gatekeeper = new Gatekeeper({ db, ipfs, registries: ['local', 'hyperswarm', 'TFTC'] });
-    wallet = new WalletJsonMemory();
     cipher = new CipherNode();
-    keymaster = new Keymaster({ gatekeeper, wallet, cipher, passphrase: 'passphrase' });
+    ({ keymaster, store, providerStore } = createTestKeymaster(gatekeeper, cipher));
 });
 
 describe('createResponse', () => {
@@ -334,7 +334,7 @@ describe('credential validity periods', () => {
 
     beforeEach(async () => {
         clock = jest.spyOn(Date, 'now').mockReturnValue(now);
-        keymaster = new Keymaster({ gatekeeper, wallet, cipher, passphrase: 'passphrase', defaultRegistry: 'local' });
+        keymaster = createTestKeymaster(gatekeeper, cipher, { store, providerStore, defaultRegistry: 'local' }).keymaster;
         alice = await keymaster.createId('Alice');
         bob = await keymaster.createId('Bob');
         victor = await keymaster.createId('Victor');
@@ -497,7 +497,7 @@ describe('verifyResponse', () => {
 
         beforeEach(async () => {
             verifierDID = await keymaster.createId('Verifier');
-            other = new Keymaster({ gatekeeper, wallet: new WalletJsonMemory(), cipher, passphrase: 'passphrase' });
+            other = createTestKeymaster(gatekeeper, cipher).keymaster;
             otherDID = await other.createId('Other');
         });
 
@@ -665,11 +665,11 @@ describe('verifyResponse', () => {
         let payload: { response: ChallengeResponse };
 
         beforeEach(async () => {
-            keymaster = new Keymaster({ gatekeeper, wallet, cipher, passphrase: 'passphrase', defaultRegistry: 'local' });
+            keymaster = createTestKeymaster(gatekeeper, cipher, { store, providerStore, defaultRegistry: 'local' }).keymaster;
             alice = await keymaster.createId('Alice', { registry: 'local' });
             carol = await keymaster.createId('Carol', { registry: 'local' });
             victor = await keymaster.createId('Victor', { registry: 'local' });
-            other = new Keymaster({ gatekeeper, wallet: new WalletJsonMemory(), cipher, passphrase: 'passphrase' });
+            other = createTestKeymaster(gatekeeper, cipher).keymaster;
             dave = await other.createId('Dave', { registry: 'local' });
 
             await keymaster.setCurrentId('Alice');

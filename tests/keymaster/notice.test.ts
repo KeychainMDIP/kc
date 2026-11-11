@@ -6,7 +6,8 @@ import DbJsonMemory from '@mdip/gatekeeper/db/json-memory';
 import WalletJsonMemory from '@mdip/keymaster/wallet/json-memory';
 import { ExpectedExceptionError } from '@mdip/common/errors';
 import HeliaClient from '@mdip/ipfs/helia';
-import { NoticeMessage, SearchEngine } from '@mdip/keymaster/types';
+import { NoticeMessage, SearchEngine, WalletProviderStore } from '@mdip/keymaster/types';
+import { createTestKeymaster } from './testUtils.ts';
 
 class MockSearch implements SearchEngine {
     private results: string[] = [];
@@ -31,7 +32,8 @@ class MockSearch implements SearchEngine {
 
 let ipfs: HeliaClient;
 let gatekeeper: Gatekeeper;
-let wallet: WalletJsonMemory;
+let store: WalletJsonMemory;
+let providerStore: WalletProviderStore;
 let cipher: CipherNode;
 let keymaster: Keymaster;
 let search: MockSearch;
@@ -50,10 +52,9 @@ afterAll(async () => {
 beforeEach(() => {
     const db = new DbJsonMemory('test');
     gatekeeper = new Gatekeeper({ db, ipfs, registries: ['local', 'hyperswarm', 'TFTC'] });
-    wallet = new WalletJsonMemory();
     cipher = new CipherNode();
     search = new MockSearch();
-    keymaster = new Keymaster({ gatekeeper, wallet, cipher, search, passphrase: 'passphrase' });
+    ({ keymaster, store, providerStore } = createTestKeymaster(gatekeeper, cipher, { search }));
 });
 
 describe('verifyNotice', () => {
@@ -221,7 +222,7 @@ describe('importNotice', () => {
         expect((await keymaster.fetchIdInfo()).notices?.[notice]).toBeUndefined();
 
         resolve.mockRestore();
-        keymaster = new Keymaster({ gatekeeper, wallet, cipher, search, passphrase: 'passphrase' });
+        keymaster = createTestKeymaster(gatekeeper, cipher, { store, providerStore, search }).keymaster;
         expect((await keymaster.fetchIdInfo()).notices?.[notice]).toBeUndefined();
         await expect(keymaster.importNotice(notice)).resolves.toBe(true);
         expect(await keymaster.listCredentials()).toStrictEqual([first, second]);
@@ -252,10 +253,10 @@ describe('importNotice', () => {
 
     it.each([2, 3])('should remain retryable when wallet save %s fails', async failAt => {
         const { first, second, notice } = await createCredentialNotice();
-        const saveWallet = wallet.saveWallet.bind(wallet);
+        const saveWallet = store.saveWallet.bind(store);
         const failure = new Error('Wallet storage unavailable');
         let saves = 0;
-        const save = jest.spyOn(wallet, 'saveWallet').mockImplementation(async (candidate, overwrite) => {
+        const save = jest.spyOn(store, 'saveWallet').mockImplementation(async (candidate, overwrite) => {
             if (++saves === failAt) {
                 throw failure;
             }
@@ -266,7 +267,7 @@ describe('importNotice', () => {
         expect((await keymaster.fetchIdInfo()).notices?.[notice]).toBeUndefined();
 
         save.mockRestore();
-        keymaster = new Keymaster({ gatekeeper, wallet, cipher, search, passphrase: 'passphrase' });
+        keymaster = createTestKeymaster(gatekeeper, cipher, { store, providerStore, search }).keymaster;
         expect(await keymaster.listCredentials()).toStrictEqual(failAt === 2 ? [first] : [first, second]);
         expect((await keymaster.fetchIdInfo()).notices?.[notice]).toBeUndefined();
         await expect(keymaster.importNotice(notice)).resolves.toBe(true);
@@ -341,7 +342,7 @@ describe('importNotice', () => {
         const poll = await keymaster.createPoll({ ...await keymaster.pollTemplate(), roster });
         const notice = await keymaster.createNotice({ to: [alice], dids: [poll] });
         await keymaster.setCurrentId('Alice');
-        jest.spyOn(wallet, 'saveWallet').mockRejectedValueOnce(new Error('Wallet storage unavailable'));
+        jest.spyOn(store, 'saveWallet').mockRejectedValueOnce(new Error('Wallet storage unavailable'));
 
         await expect(keymaster.importNotice(notice)).resolves.toBe(false);
         expect((await keymaster.fetchIdInfo()).notices?.[notice]).toBeUndefined();
@@ -616,7 +617,7 @@ describe('searchNotices', () => {
     });
 
     it('should return false if search engine not configured', async () => {
-        keymaster = new Keymaster({ gatekeeper, wallet, cipher, passphrase: 'passphrase' });
+        ({ keymaster } = createTestKeymaster(gatekeeper, cipher, { store, providerStore }));
         await keymaster.createId('Alice');
 
         const ok = await keymaster.searchNotices();
@@ -666,7 +667,7 @@ describe('cleanupNotices', () => {
         await keymaster.addToNotices(nonNotice, [NoticeTags.CREDENTIAL]);
         await keymaster.addToNotices(notice, [NoticeTags.CREDENTIAL]);
         const original = JSON.parse(JSON.stringify((await keymaster.fetchIdInfo()).notices));
-        const stored = await wallet.loadWallet();
+        const stored = await store.loadWallet();
         const resolveDID = gatekeeper.resolveDID.bind(gatekeeper);
         const failure = Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
         jest.spyOn(gatekeeper, 'resolveDID').mockImplementation(async (did, options) => {
@@ -678,7 +679,7 @@ describe('cleanupNotices', () => {
 
         await expect(keymaster.cleanupNotices()).rejects.toBe(failure);
         expect((await keymaster.fetchIdInfo()).notices).toStrictEqual(original);
-        expect(await wallet.loadWallet()).toStrictEqual(stored);
+        expect(await store.loadWallet()).toStrictEqual(stored);
     });
 
     it('skips a garbage-collected notice and continues cleaning up', async () => {
