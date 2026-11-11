@@ -1,7 +1,7 @@
 import CipherNode from '@mdip/cipher/node';
 import Gatekeeper from '@mdip/gatekeeper';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory.ts';
-import type { Operation } from '@mdip/gatekeeper/types';
+import type { GatekeeperEvent, Operation } from '@mdip/gatekeeper/types';
 import { jest } from '@jest/globals';
 
 import InMemoryOperationSyncStore from '../../services/mediators/hyperswarm/src/db/memory.ts';
@@ -1314,6 +1314,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         const operations = [oldestOperation, ...fillerOperations];
         const newestOperation = operations.at(-1)!;
         let persistenceFailed = false;
+        let importedEvents: GatekeeperEvent[] = [];
         let upsertMany!: jest.SpiedFunction<InMemoryOperationSyncStore['upsertMany']>;
         const running = await createRunningNode({
             beforeStart: async (node, store) => {
@@ -1329,42 +1330,56 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
                 node.gatekeeperClient.getQueue
                     .mockResolvedValueOnce(operations)
                     .mockResolvedValue([]);
-                node.gatekeeperClient.importBatch.mockImplementation(async events => ({
-                    queued: 0,
-                    processed: events.length,
-                    rejected: 0,
-                    total: events.length,
-                    rejectedIndices: [],
-                }));
-                node.gatekeeperClient.processEvents.mockResolvedValue({
-                    added: 0,
-                    merged: 0,
-                    rejected: 0,
-                    pending: 0,
-                    acceptedHashes: [],
-                    acceptedEvents: [],
+                node.gatekeeperClient.importBatch.mockImplementation(async events => {
+                    importedEvents = events;
+                    return {
+                        queued: events.length,
+                        processed: 0,
+                        rejected: 0,
+                        total: events.length,
+                        rejectedIndices: [],
+                        processedIndices: [],
+                        capacityDeferred: 0,
+                        capacityDeferredIndices: [],
+                    };
+                });
+                node.gatekeeperClient.processEvents.mockImplementation(async () => {
+                    const acceptedEvents = importedEvents;
+                    importedEvents = [];
+                    return {
+                        added: acceptedEvents.length,
+                        merged: 0,
+                        rejected: 0,
+                        pending: 0,
+                        acceptedHashes: acceptedEvents.map(event => event.operation.signature!.hash),
+                        acceptedEvents,
+                        rejectedOperations: [],
+                        hasMore: false,
+                        capacityDeferred: 0,
+                        capacityDeferredHashes: [],
+                    };
                 });
             },
         });
         expect(persistenceFailed).toBe(true);
         const callsAfterFailure = upsertMany.mock.calls.length;
+        const getByIds = jest.spyOn(running.store, 'getByIds');
+
+        await running.node.run(() => jest.advanceTimersByTimeAsync(2_000));
+        await eventually(() => getByIds.mock.calls.length > 0);
+        const retainedIds = getByIds.mock.calls.flatMap(([ids]) => ids);
+        expect(retainedIds).toHaveLength(1_000);
+        expect(retainedIds).not.toContain(oldestOperation.signature!.hash);
+        expect(retainedIds).toContain(newestOperation.signature!.hash);
 
         const peer = await attachConnection(running, 0x22);
         await sendPeerMessage(peer, peerPing());
         await sendPeerMessage(peer, queueMessage(oldestOperation));
-        await eventually(() => running.node.gatekeeperClient.processEvents.mock.calls.length >= 1);
-        await settle();
-        expect(upsertMany).toHaveBeenCalledTimes(callsAfterFailure);
-
-        await sendPeerMessage(peer, queueMessage(newestOperation));
         await eventually(() => upsertMany.mock.calls.length > callsAfterFailure);
-        expect(upsertMany.mock.calls[callsAfterFailure][0].map(record => record.id)).toStrictEqual([
-            newestOperation.signature!.hash,
-        ]);
-
-        await running.node.gatekeeper.createDID(oldestOperation);
-        await running.node.run(() => jest.advanceTimersByTimeAsync(2_000));
-        await eventually(async () => await running.store.has(oldestOperation.signature!.hash));
+        expect(upsertMany.mock.calls.slice(callsAfterFailure).some(([records]) => (
+            records.some(record => record.id === oldestOperation.signature!.hash)
+        ))).toBe(true);
+        expect(await running.store.has(oldestOperation.signature!.hash)).toBe(true);
     });
 
     it('resets synchronized state and restarts peer sync after a Gatekeeper epoch change', async () => {

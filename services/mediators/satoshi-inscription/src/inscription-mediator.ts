@@ -14,6 +14,7 @@ import { GatekeeperEvent, Operation } from '@mdip/gatekeeper/types';
 import Inscription from '@mdip/inscription';
 import { childLogger } from '@mdip/common/logger';
 import { isRetryableChainError, runService } from './lifecycle.js';
+import { importEventBatch } from './import-batch.js';
 import {
     AccountKeys,
     MediatorDb,
@@ -363,7 +364,10 @@ async function scanBlocks(): Promise<void> {
     }
 }
 
-async function importBatch(item: DiscoveredInscribedItem) {
+async function importBatch(item: DiscoveredInscribedItem): Promise<{
+    update: DiscoveredInscribedItem;
+    capacityDeferred: boolean;
+} | undefined> {
     if (item.imported && item.processed) {
         return;
     }
@@ -381,10 +385,15 @@ async function importBatch(item: DiscoveredInscribedItem) {
     };
 
     let update: DiscoveredInscribedItem = { ...item };
+    let capacityDeferred = false;
 
     try {
-        update.imported  = await gatekeeper.importBatch(events);
-        update.processed = await gatekeeper.processEvents();
+        const result = await importEventBatch(gatekeeper, events);
+        update.imported = result.imported;
+        capacityDeferred = result.capacityDeferred;
+        if (result.complete) {
+            update.processed = result.processed;
+        }
         logObj = { ...logObj, imported: update.imported, processed: update.processed };
     } catch (error) {
         update.error = JSON.stringify(`Error importing inscribed batch: ${error}`);
@@ -392,7 +401,7 @@ async function importBatch(item: DiscoveredInscribedItem) {
     }
 
     log.debug({ logObj }, 'inscription log');
-    return update;
+    return { update, capacityDeferred };
 }
 
 function sameItem(a: InscribedKey, b: InscribedKey) {
@@ -410,15 +419,17 @@ function keyFromItem(item: DiscoveredInscribedItem): InscribedKey {
 async function importBatches(): Promise<boolean> {
     const db = await loadDb();
 
+    // Later batches can supply dependencies that release Gatekeeper's pending capacity.
     for (const item of db.discovered ?? []) {
         if (shuttingDown) {
             break;
         }
 
-        const update = await importBatch(item);
-        if (!update) {
+        const result = await importBatch(item);
+        if (!result) {
             continue;
         }
+        const { update } = result;
 
         await jsonPersister.updateDb((db) => {
             const list = db.discovered ?? [];

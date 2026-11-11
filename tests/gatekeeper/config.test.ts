@@ -45,7 +45,7 @@ describe('gatekeeper server config', () => {
     });
 
     it('uses defaults when settings are absent', async () => {
-        expect(await importConfig()).toMatchObject({
+        expect(await importConfig()).toStrictEqual({
             port: 4224,
             db: 'redis',
             ipfsURL: 'http://localhost:5001/api/v0',
@@ -87,7 +87,7 @@ describe('gatekeeper server config', () => {
             KC_GATEKEEPER_RATE_LIMIT_MAX_REQUESTS: '3',
             KC_GATEKEEPER_RATE_LIMIT_WHITELIST: 'one, , two',
             KC_GATEKEEPER_RATE_LIMIT_SKIP_PATHS: '/one, , /two',
-        })).toMatchObject({
+        })).toStrictEqual({
             port: 1234,
             db: 'json',
             ipfsURL: 'http://ipfs',

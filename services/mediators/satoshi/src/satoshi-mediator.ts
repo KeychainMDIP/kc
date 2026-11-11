@@ -12,6 +12,7 @@ import { MediatorDb, MediatorDbInterface, DiscoveredItem, BlockVerbosity } from 
 import { GatekeeperEvent, Operation } from '@mdip/gatekeeper/types';
 import { childLogger } from '@mdip/common/logger';
 import { isRetryableChainError, runService } from './lifecycle.js';
+import { importEventBatch } from './import-batch.js';
 import { resolveAnchoredBatchAsset } from './batch-import.js';
 
 const REGISTRY = config.chain;
@@ -256,7 +257,10 @@ async function scanBlocks(): Promise<void> {
     }
 }
 
-async function importBatch(item: DiscoveredItem) {
+async function importBatch(item: DiscoveredItem): Promise<{
+    update: DiscoveredItem;
+    capacityDeferred: boolean;
+} | undefined> {
     if (item.error) {
         return;
     }
@@ -292,16 +296,21 @@ async function importBatch(item: DiscoveredItem) {
     }
 
     let update: DiscoveredItem = { ...item };
+    let capacityDeferred = false;
 
     try {
-        update.imported = await gatekeeper.importBatch(batch);
-        update.processed = await gatekeeper.processEvents();
+        const result = await importEventBatch(gatekeeper, batch);
+        update.imported = result.imported;
+        capacityDeferred = result.capacityDeferred;
+        if (result.complete) {
+            update.processed = result.processed;
+        }
     } catch (error) {
         update.error = JSON.stringify(error);
     }
 
     log.debug({ update }, 'importBatch update');
-    return update;
+    return { update, capacityDeferred };
 }
 
 function sameItem(a: DiscoveredItem, b: DiscoveredItem) {
@@ -311,16 +320,18 @@ function sameItem(a: DiscoveredItem, b: DiscoveredItem) {
 async function importBatches(): Promise<boolean> {
     const db = await loadDb();
 
+    // Later batches can supply dependencies that release Gatekeeper's pending capacity.
     for (const item of db.discovered) {
         if (shuttingDown) {
             break;
         }
 
         try {
-            const update = await importBatch(item);
-            if (!update) {
+            const result = await importBatch(item);
+            if (!result) {
                 continue;
             }
+            const { update } = result;
 
             await jsonPersister.updateDb((db) => {
                 const list = db.discovered ?? [];

@@ -317,9 +317,11 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         void trackWork(callback);
         maybeStartBackgroundPrebuild('session_closed');
 
-        log.debug({
+        log.info({
             peer: shortName(peerKey),
             mode: 'negentropy',
+            sessionId: session.sessionId,
+            durationMs: Date.now() - session.startedAt,
             rounds: session.rounds,
             pendingHave: session.pendingHaveIds.size,
             pendingNeed: session.pendingNeedIds.size,
@@ -1570,6 +1572,24 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                 session.unresolvedNeedIds.delete(id);
                 session.unresolvedOperations.delete(id);
             }
+            const capacityDeferredIds = new Set(imported.capacityDeferredIds ?? []);
+            if (capacityDeferredIds.size > 0) {
+                for (const id of capacityDeferredIds) {
+                    session.pendingNeedIds.delete(id);
+                    session.unresolvedNeedIds.delete(id);
+                    session.unresolvedOperations.delete(id);
+                }
+                log.info(
+                    { peer: shortName(peerKey), deferred: capacityDeferredIds.size },
+                    'closing incomplete negentropy session after Gatekeeper backpressure',
+                );
+                if (!sendNegClose(peerKey, session, 'gatekeeper_backpressure')) {
+                    closePeerSession(peerKey, 'send_neg_close_failed');
+                    return;
+                }
+                closePeerSession(peerKey, 'gatekeeper_backpressure');
+                return;
+            }
             if (imported.retryable) {
                 for (const operation of unprovenBatch) {
                     const mapped = mapOperationToSyncKey(operation);
@@ -1578,6 +1598,8 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                         session.unresolvedOperations.delete(mapped.value.idHex);
                     }
                 }
+                touchPeerSession(peerKey);
+                return;
             }
             else {
                 for (const operation of unprovenBatch) {
@@ -1838,6 +1860,12 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                     sendNegClose(peerKey, session, 'idle_timeout');
                     closePeerSession(peerKey, 'idle_timeout');
                 }
+            }
+        },
+        interruptForOrderedCatchup(): void {
+            for (const [peerKey, session] of peerSessions) {
+                sendNegClose(peerKey, session, 'ordered_catchup_active');
+                closePeerSession(peerKey, 'ordered_catchup_active');
             }
         },
         removePeer(peerKey: string, reason: string): void {

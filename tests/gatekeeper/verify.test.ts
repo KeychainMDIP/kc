@@ -99,6 +99,34 @@ describe('verifyDb', () => {
         resolveDID.mockRestore();
     });
 
+    it.each([
+        { error: new Error('invalid stored history') },
+        { error: 'invalidDid' },
+    ])('should log the original resolution failure during verification: $error', async ({ error }) => {
+        const log = jest.fn();
+        const gatekeeper = new Gatekeeper({ db, ipfs, console: { ...mockConsole, log } });
+        const operation = await helper.createAgentOp(cipher.generateRandomJwk());
+        const did = await gatekeeper.createDID(operation);
+        const resolveDID = jest.spyOn(gatekeeper, 'resolveDID');
+        if (error instanceof Error) {
+            resolveDID.mockRejectedValue(error);
+        }
+        else {
+            resolveDID.mockResolvedValue({ didResolutionMetadata: { error } });
+        }
+
+        try {
+            await expect(gatekeeper.verifyDb()).resolves.toStrictEqual({
+                total: 1, verified: 0, expired: 0, invalid: 1,
+            });
+            expect(log).toHaveBeenCalledWith({ error, did }, `1/1 ${did} invalid`);
+            expect(log).toHaveBeenCalledWith({ durationMs: expect.any(Number) }, 'verifyDb');
+        }
+        finally {
+            resolveDID.mockRestore();
+        }
+    });
+
     it('should get same results with chatty turned off', async () => {
         const keypair = cipher.generateRandomJwk();
         const agentOp = await helper.createAgentOp(keypair);

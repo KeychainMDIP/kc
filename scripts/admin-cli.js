@@ -11,6 +11,78 @@ const gatekeeperURL = process.env.KC_GATEKEEPER_URL || 'http://localhost:4224';
 const gatekeeper = new GatekeeperClient();
 const cipher = new CipherNode();
 
+async function processEventPages(events = []) {
+    const requestedHashes = new Set(events.map(event => event.operation?.signature?.hash)
+        .filter(hash => typeof hash === 'string').map(hash => hash.toLowerCase()));
+    const deferredHashes = new Set();
+    while (true) {
+        const response = await gatekeeper.processEvents();
+        console.log(JSON.stringify(response, null, 4));
+        if (response.busy) {
+            throw new Error('Gatekeeper is already processing events');
+        }
+        const hashes = response.capacityDeferredHashes ?? [];
+        if (response.capacityDeferred > 0 && hashes.length === 0) {
+            throw new Error('Gatekeeper did not identify capacity-deferred operations');
+        }
+        for (const hash of hashes) {
+            const normalized = hash.toLowerCase();
+            if (requestedHashes.has(normalized)) deferredHashes.add(normalized);
+        }
+        if (!response.hasMore) return deferredHashes;
+    }
+}
+
+async function importEventBatches(remaining) {
+    if (!Array.isArray(remaining)) throw new Error('Batch file must contain an array of events');
+    while (remaining.length > 0) {
+        const retry = [];
+        for (let offset = 0; offset < remaining.length; offset += 100) {
+            let chunk = remaining.slice(offset, offset + 100);
+            let stalled = false;
+            while (chunk.length > 0) {
+                const response = await gatekeeper.importBatch(chunk);
+                console.log(response);
+                const deferred = new Set((response.capacityDeferredIndices ?? [])
+                    .filter(index => Number.isInteger(index) && index >= 0 && index < chunk.length));
+                if (deferred.size !== (response.capacityDeferred ?? deferred.size)) {
+                    throw new Error('Gatekeeper did not identify capacity-deferred inputs');
+                }
+                const rejected = new Set(response.rejectedIndices ?? []);
+                const deferredHashes = await processEventPages(chunk);
+                const unadmitted = [];
+                for (const [index, event] of chunk.entries()) {
+                    if (rejected.has(index)) continue;
+                    const hash = event.operation?.signature?.hash;
+                    if (deferred.has(index)) unadmitted.push(event);
+                    else if (typeof hash === 'string' && deferredHashes.has(hash.toLowerCase())) retry.push(event);
+                }
+                if (stalled && unadmitted.length === chunk.length) {
+                    throw new Error('Gatekeeper import capacity remains full. Retry the file when capacity is available.');
+                }
+                stalled = unadmitted.length === chunk.length;
+                chunk = unadmitted;
+            }
+        }
+        if (retry.length === remaining.length) {
+            throw new Error(`No progress on ${retry.length} capacity-deferred events. Retry the file when dependencies or queue capacity are available.`);
+        }
+        remaining = retry;
+    }
+}
+
+async function importDIDFile(file) {
+    try {
+        const dids = JSON.parse(fs.readFileSync(file).toString());
+        if (!Array.isArray(dids)) throw new Error('DID file must contain an array of histories');
+        await importEventBatches(dids.flat());
+    }
+    catch (error) {
+        process.exitCode = 1;
+        console.error(error);
+    }
+}
+
 program
     .version('1.0.0')
     .description('Admin CLI tool')
@@ -171,18 +243,8 @@ program
 
 program
     .command('import-did <file>')
-    .description('Import DID from file')
-    .action(async (file) => {
-        try {
-            const contents = fs.readFileSync(file).toString();
-            const did = JSON.parse(contents);
-            const response = await gatekeeper.importDIDs(did);
-            console.log(response);
-        }
-        catch (error) {
-            console.error(error.message);
-        }
-    });
+    .description('Import and process DID from file')
+    .action(importDIDFile);
 
 program
     .command('export-dids')
@@ -199,30 +261,8 @@ program
 
 program
     .command('import-dids <file>')
-    .description('Import DIDs from file')
-    .action(async (file) => {
-        try {
-            const contents = fs.readFileSync(file).toString();
-            const dids = JSON.parse(contents);
-            let chunk = [];
-
-            for (const did of dids) {
-                chunk.push(did);
-
-                if (chunk.length > 100) {
-                    const response = await gatekeeper.importDIDs(chunk);
-                    console.log(response);
-                    chunk = [];
-                }
-            }
-
-            const response = await gatekeeper.importDIDs(chunk);
-            console.log(response);
-        }
-        catch (error) {
-            console.error(error.message);
-        }
-    });
+    .description('Import and process DIDs from file')
+    .action(importDIDFile);
 
 program
     .command('export-batch')
@@ -239,7 +279,7 @@ program
 
 program
     .command('import-batch-file <file> [registry]')
-    .description('Import batch of events')
+    .description('Import and process batch of events')
     .action(async (file, registry) => {
         if (!registry) {
             registry = 'local';
@@ -247,24 +287,14 @@ program
 
         try {
             const contents = fs.readFileSync(file).toString();
-            let batch = JSON.parse(contents);
-            let chunk = [];
+            let remaining = JSON.parse(contents);
+            if (!Array.isArray(remaining)) throw new Error('Batch file must contain an array of events');
+            for (const event of remaining) event.registry = registry;
 
-            for (const event of batch) {
-                event.registry = registry;
-
-                chunk.push(event);
-
-                if (chunk.length >= 100) {
-                    const response = await gatekeeper.importBatch(chunk);
-                    console.log(response);
-                    chunk = [];
-                }
-            }
-            const response = await gatekeeper.importBatch(chunk);
-            console.log(response);
+            await importEventBatches(remaining);
         }
         catch (error) {
+            process.exitCode = 1;
             console.error(error);
         }
     });
@@ -346,8 +376,7 @@ program
     .description('Process events queue')
     .action(async () => {
         try {
-            const response = await gatekeeper.processEvents();
-            console.log(JSON.stringify(response, null, 4));
+            await processEventPages();
         }
         catch (error) {
             console.error(error);

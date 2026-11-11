@@ -4,6 +4,12 @@ The Hyperswarm mediator is responsible for distributing unconfirmed MDIP operati
 
 The mediator uses Negentropy for full-history windowed synchronization on connect, with periodic retry only until the peer reaches a completed sync. Ordered catch-up can transfer ordered pages before handing off to Negentropy.
 
+When catching up, the mediator prefers the largest eligible ordered history among
+connected peers. If a ready ordered source becomes available during fallback
+Negentropy synchronization, it closes those sessions and drains admitted imports
+before switching to ordered catch-up. Negentropy still reconciles any differences
+after the ordered transfer.
+
 Realtime propagation is always handled by the Gatekeeper queue gossip path:
 
 - mediator polls `gatekeeper.getQueue('hyperswarm')`
@@ -53,6 +59,14 @@ The mediator emits periodic structured sync metrics in `connectionLoop` includin
 
 Negentropy session concurrency is currently fixed at one active session per node.
 Ordered catch-up uses the same operation push chunking as negentropy: up to 300 operations or 512 KiB per push.
+
+Gatekeeper imports are also consumed in bounded pages. If Gatekeeper retains an
+operation while waiting for a dependency or refuses it because the pending queue
+is full, the mediator does not advertise that operation as stored or relay its
+live-gossip batch. It delays another local submission until the normal
+Negentropy repair interval, while later synchronization remains able to retry
+the operation. Gatekeeper and mediator versions containing this contract must
+be deployed together.
 
 ## IPFS disabled mode
 

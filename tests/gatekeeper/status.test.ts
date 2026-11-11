@@ -25,6 +25,11 @@ describe('lightweight queue status', () => {
         const importEvent = jest.spyOn(gatekeeper, 'importEvent').mockResolvedValue('deferred' as any);
         await gatekeeper.processEvents();
         expect(gatekeeper.getQueueStatus()).toEqual({ staged: 0, pending: 1, processing: 0, total: 1, active: false });
+        await gatekeeper.processEvents();
+        expect(importEvent).toHaveBeenCalledTimes(1);
+
+        // The mocked deferral has an unknown dependency, so a real mutation wakes its conservative watch.
+        await gatekeeper.createDID(await helper.createAgentOp(new CipherNode().generateRandomJwk()));
 
         let release!: () => void;
         let started!: () => void;
@@ -46,6 +51,29 @@ describe('lightweight queue status', () => {
         await expect(gatekeeper.processEvents()).rejects.toThrow('temporary storage failure');
         expect(gatekeeper.getQueueStatus()).toEqual({ staged: 1, pending: 0, processing: 0, total: 1, active: false });
         await gatekeeper.resetDb();
+        expect(gatekeeper.getQueueStatus().total).toBe(0);
+    });
+
+    it('counts page reservations and concurrent admissions without losing accepted work', async () => {
+        await queueAgent();
+        await queueAgent();
+        let release!: () => void;
+        let started!: () => void;
+        const working = new Promise<void>(resolve => { started = resolve; });
+        const resume = new Promise<void>(resolve => { release = resolve; });
+        jest.spyOn(gatekeeper, 'importEvent')
+            .mockResolvedValue('merged' as any)
+            .mockResolvedValueOnce('merged' as any)
+            .mockImplementationOnce(async () => { started(); await resume; return 'merged' as any; });
+        const processing = gatekeeper.processEvents();
+        try {
+            await working;
+            expect(gatekeeper.getQueueStatus()).toEqual({ staged: 0, pending: 0, processing: 2, total: 2, active: true });
+            await queueAgent();
+            expect(gatekeeper.getQueueStatus()).toEqual({ staged: 1, pending: 0, processing: 2, total: 3, active: true });
+        } finally { release(); await processing; }
+        expect(gatekeeper.getQueueStatus()).toEqual({ staged: 1, pending: 0, processing: 0, total: 1, active: false });
+        await gatekeeper.processEvents();
         expect(gatekeeper.getQueueStatus().total).toBe(0);
     });
 
