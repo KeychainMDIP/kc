@@ -22,8 +22,6 @@ jobs:
       - name: Setup env for Testing
         working-directory: ./tests/cli-tests
         run: |
-          # Use an independent Ubuntu mirror while preserving APT signature checks and fallbacks.
-          printf 'https://mirrors.kernel.org/ubuntu/\tpriority:0\n' | sudo tee -a /etc/apt/apt-mirrors.txt
           sudo apt-get update
           sudo apt-get install -y expect
           ./generate_test_env.sh
