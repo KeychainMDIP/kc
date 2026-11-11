@@ -572,6 +572,107 @@ describe('importBatch', () => {
         expect(response.processed).toBe(0);
     });
 
+    it('should drain processing before reset and admit the same event after reset', async () => {
+        const localDb = new DbJsonMemory('reset-processing');
+        const gk = new Gatekeeper({ db: localDb, ipfs, console: mockConsole });
+        const operation = await helper.createAgentOp(cipher.generateRandomJwk());
+        const event = { registry: 'hyperswarm', time: operation.created!, operation };
+        await gk.importBatch([event]);
+
+        let writing!: () => void;
+        let resume!: () => void;
+        const started = new Promise<void>(resolve => { writing = resolve; });
+        const released = new Promise<void>(resolve => { resume = resolve; });
+        const originalAddEvent = localDb.addEvent.bind(localDb);
+        const addEvent = jest.spyOn(localDb, 'addEvent').mockImplementationOnce(async (did, queued) => {
+            writing();
+            await released;
+            return originalAddEvent(did, queued);
+        });
+        const resetDb = jest.spyOn(localDb, 'resetDb');
+
+        try {
+            const processing = gk.processEvents();
+            await started;
+            const reset = gk.resetDb();
+            let admitted = false;
+            const admission = gk.importBatch([event]).then(result => {
+                admitted = true;
+                return result;
+            });
+            await Promise.resolve();
+            expect(resetDb).not.toHaveBeenCalled();
+            expect(admitted).toBe(false);
+
+            resume();
+            await expect(processing).resolves.toMatchObject({ added: 1 });
+            await expect(reset).resolves.toBe(true);
+            await expect(admission).resolves.toMatchObject({ queued: 1, processed: 0 });
+            await expect(localDb.getAllKeys()).resolves.toHaveLength(0);
+            await expect(gk.processEvents()).resolves.toMatchObject({ added: 1, pending: 0 });
+            await expect(localDb.getAllKeys()).resolves.toHaveLength(1);
+        }
+        finally {
+            resume();
+            addEvent.mockRestore();
+            resetDb.mockRestore();
+        }
+    });
+
+    it('should wait for an in-flight admission before clearing the queues', async () => {
+        const localDb = new DbJsonMemory('reset-admission');
+        const gk = new Gatekeeper({ db: localDb, ipfs, console: mockConsole });
+        const operation = await helper.createAgentOp(cipher.generateRandomJwk());
+        const event = { registry: 'hyperswarm', time: operation.created!, operation };
+        let verifying!: () => void;
+        let resume!: () => void;
+        const started = new Promise<void>(resolve => { verifying = resolve; });
+        const released = new Promise<void>(resolve => { resume = resolve; });
+        const originalVerify = gk.verifyEvent.bind(gk);
+        const verifyEvent = jest.spyOn(gk, 'verifyEvent').mockImplementationOnce(async queued => {
+            verifying();
+            await released;
+            return originalVerify(queued);
+        });
+        const resetDb = jest.spyOn(localDb, 'resetDb');
+
+        try {
+            const admission = gk.importBatch([event]);
+            await started;
+            const reset = gk.resetDb();
+            await Promise.resolve();
+            expect(resetDb).not.toHaveBeenCalled();
+            resume();
+            await expect(admission).resolves.toMatchObject({ queued: 1 });
+            await expect(reset).resolves.toBe(true);
+            await expect(gk.processEvents()).resolves.toMatchObject({ added: 0, pending: 0 });
+            await expect(gk.importBatch([event])).resolves.toMatchObject({ queued: 1, processed: 0 });
+        }
+        finally {
+            resume();
+            verifyEvent.mockRestore();
+            resetDb.mockRestore();
+        }
+    });
+
+    it('should preserve queued work and release the boundary after a failed reset', async () => {
+        const localDb = new DbJsonMemory('failed-reset');
+        const gk = new Gatekeeper({ db: localDb, ipfs, console: mockConsole });
+        const operation = await helper.createAgentOp(cipher.generateRandomJwk());
+        const event = { registry: 'hyperswarm', time: operation.created!, operation };
+        await gk.importBatch([event]);
+        const resetDb = jest.spyOn(localDb, 'resetDb').mockRejectedValueOnce(new Error('reset failed'));
+
+        try {
+            await expect(gk.resetDb()).rejects.toThrow('reset failed');
+            await expect(gk.importBatch([event])).resolves.toMatchObject({ processed: 1 });
+            await expect(gk.processEvents()).resolves.toMatchObject({ added: 1, pending: 0 });
+        }
+        finally {
+            resetDb.mockRestore();
+        }
+    });
+
     it('should throw an exception on undefined', async () => {
         try {
             // @ts-expect-error Testing invalid usage
