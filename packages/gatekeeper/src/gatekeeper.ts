@@ -580,16 +580,16 @@ export default class Gatekeeper implements GatekeeperInterface {
     }
 
     getQueueStatus() {
-        let pending = 0;
-        for (const event of this.eventsQueue) {
-            if (this.deferredEvents.has(event)) pending += 1;
-        }
+        const staged = this.stagedEvents.length;
+        const pending = this.pendingEvents.length;
+        const total = this.eventStates.size;
+        const processing = total - staged - pending;
         return {
-            staged: this.eventsQueue.length - pending,
+            staged,
             pending,
-            processing: this.processingEventCount,
-            total: this.eventsQueue.length + this.processingEventCount,
-            active: this.isProcessingEvents || this.processingEventCount > 0,
+            processing,
+            total,
+            active: this.isProcessingEvents,
         };
     }
 
