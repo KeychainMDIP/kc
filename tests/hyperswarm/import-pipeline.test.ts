@@ -1,6 +1,8 @@
 import { jest } from '@jest/globals';
 
 import CipherNode from '@mdip/cipher/node';
+import Gatekeeper from '@mdip/gatekeeper';
+import DbJsonMemory from '@mdip/gatekeeper/db/json-memory.ts';
 import type GatekeeperClient from '@mdip/gatekeeper/client';
 import type { GatekeeperEvent, Operation } from '@mdip/gatekeeper/types';
 import { generateCID } from '@mdip/ipfs/utils';
@@ -12,6 +14,8 @@ import {
 } from '../../services/mediators/hyperswarm/src/import-pipeline.ts';
 import { mapAcceptedOperationsToSyncRecords } from '../../services/mediators/hyperswarm/src/sync-persistence.ts';
 import { createMediatorSyncStats } from '../../services/mediators/hyperswarm/src/sync-stats.ts';
+
+import TestHelper from '../gatekeeper/helper.ts';
 
 const operation: Operation = {
     type: 'create',
@@ -107,6 +111,96 @@ function makeValidOperation(index: number): Operation {
 }
 
 describe('import pipeline', () => {
+    it('shares the accepted event instead of a rejected request with the same unsigned hash', async () => {
+        const cipher = new CipherNode();
+        const db = new DbJsonMemory('accepted-signature-variant');
+        const gatekeeper = new Gatekeeper({ db, ipfsEnabled: false });
+        const helper = new TestHelper(gatekeeper, cipher);
+        const genuine = await helper.createAgentOp(cipher.generateRandomJwk(), { registry: 'hyperswarm' });
+        const forged: Operation = {
+            ...genuine,
+            signature: { ...genuine.signature!, value: '0'.repeat(128) },
+        };
+        expect(await gatekeeper.verifyCreateOperation(forged)).toBe(false);
+        await gatekeeper.importBatch([{ registry: 'hyperswarm', time: genuine.created!, operation: genuine }]);
+        const store = new InMemoryOperationSyncStore();
+        const pipeline = createPipeline(jest.fn(async () => true), store, {
+            importBatch: gatekeeper.importBatch.bind(gatekeeper),
+            processEvents: gatekeeper.processEvents.bind(gatekeeper),
+        });
+
+        try {
+            await expect(pipeline.enqueue({ kind: 'remote', name: 'peer-a', data: [forged] }))
+                .resolves.toMatchObject({
+                    persistedIds: [genuine.signature!.hash],
+                    retryable: false,
+                });
+            expect((await store.getByIds([genuine.signature!.hash]))[0].operation).toEqual(genuine);
+            const did = await gatekeeper.generateDID(genuine);
+            expect((await db.getEvents(did))[0].operation).toEqual(genuine);
+        } finally {
+            await pipeline.shutdown();
+        }
+    });
+
+    it('drains another caller\'s full staging queue before retrying refused operations', async () => {
+        jest.useFakeTimers();
+        const cipher = new CipherNode();
+        const db = new DbJsonMemory('staged-capacity-recovery');
+        const gatekeeper = new Gatekeeper({ db, ipfsEnabled: false });
+        (gatekeeper as unknown as { maxEventPageCount: number }).maxEventPageCount = 1;
+        const helper = new TestHelper(gatekeeper, cipher);
+        const staged = await helper.createAgentOp(cipher.generateRandomJwk(), { registry: 'hyperswarm' });
+        const refused = await helper.createAgentOp(cipher.generateRandomJwk(), { registry: 'hyperswarm' });
+        await gatekeeper.importBatch([{ registry: 'hyperswarm', time: staged.created!, operation: staged }]);
+        const processEvents = jest.fn(gatekeeper.processEvents.bind(gatekeeper));
+        const pipeline = createPipeline(jest.fn(async () => true), new InMemoryOperationSyncStore(), {
+            importBatch: gatekeeper.importBatch.bind(gatekeeper),
+            processEvents,
+        });
+
+        try {
+            await expect(pipeline.enqueue({ kind: 'remote', name: 'peer-a', data: [refused] }))
+                .resolves.toMatchObject({ capacityDeferredIds: [refused.signature!.hash], retryable: false });
+            expect(processEvents).toHaveBeenCalledTimes(1);
+            expect(await db.getAllKeys()).toHaveLength(1);
+            expect(gatekeeper.getQueueStatus().total).toBe(0);
+
+            await jest.advanceTimersByTimeAsync(300_000);
+            await expect(pipeline.enqueue({ kind: 'remote', name: 'peer-a', data: [refused] }))
+                .resolves.toMatchObject({ persistedIds: [refused.signature!.hash], capacityDeferredIds: [] });
+            expect(await db.getAllKeys()).toHaveLength(2);
+        } finally {
+            await pipeline.shutdown();
+            jest.useRealTimers();
+        }
+    });
+
+    it('processes an operation already staged by another caller', async () => {
+        const cipher = new CipherNode();
+        const db = new DbJsonMemory('staged-duplicate-recovery');
+        const gatekeeper = new Gatekeeper({ db, ipfsEnabled: false });
+        const helper = new TestHelper(gatekeeper, cipher);
+        const staged = await helper.createAgentOp(cipher.generateRandomJwk(), { registry: 'hyperswarm' });
+        await gatekeeper.importBatch([{ registry: 'hyperswarm', time: staged.created!, operation: staged }]);
+        const processEvents = jest.fn(gatekeeper.processEvents.bind(gatekeeper));
+        const pipeline = createPipeline(jest.fn(async () => true), new InMemoryOperationSyncStore(), {
+            importBatch: gatekeeper.importBatch.bind(gatekeeper),
+            processEvents,
+        });
+
+        try {
+            await expect(pipeline.enqueue({ kind: 'remote', name: 'peer-a', data: [staged] }))
+                .resolves.toMatchObject({ persistedIds: [staged.signature!.hash], pendingIds: [], retryable: false });
+            expect(processEvents).toHaveBeenCalledTimes(1);
+            expect(await db.getAllKeys()).toHaveLength(1);
+            expect(gatekeeper.getQueueStatus().total).toBe(0);
+        } finally {
+            await pipeline.shutdown();
+        }
+    });
+
+
     it('logs the failed batch peer without logging its operations and keeps it retryable', async () => {
         const error = new Error('Gatekeeper unavailable');
         const pipeline = createPipeline(jest.fn(async () => { throw error; }));
@@ -486,7 +580,7 @@ describe('import pipeline', () => {
         }));
         const pipeline = createPipeline(jest.fn(async () => true), new InMemoryOperationSyncStore(), {
             importBatch,
-            processEvents: jest.fn<GatekeeperClient['processEvents']>(),
+            processEvents: jest.fn<GatekeeperClient['processEvents']>(async () => ({ hasMore: false })),
         });
 
         await expect(pipeline.enqueue({ kind: 'remote', name: 'peer-a', data: operations }))
@@ -508,7 +602,7 @@ describe('import pipeline', () => {
         }));
         const pipeline = createPipeline(jest.fn(async () => true), new InMemoryOperationSyncStore(), {
             importBatch,
-            processEvents: jest.fn<GatekeeperClient['processEvents']>(),
+            processEvents: jest.fn<GatekeeperClient['processEvents']>(async () => ({ hasMore: false })),
         });
 
         const first = await pipeline.enqueue({ kind: 'remote', name: 'peer-a', data: [deferred] });
@@ -537,7 +631,7 @@ describe('import pipeline', () => {
         }));
         const pipeline = createPipeline(jest.fn(async () => true), new InMemoryOperationSyncStore(), {
             importBatch,
-            processEvents: jest.fn<GatekeeperClient['processEvents']>(),
+            processEvents: jest.fn<GatekeeperClient['processEvents']>(async () => ({ hasMore: false })),
         });
 
         await expect(pipeline.enqueue({ kind: 'remote', name: 'peer-a', data: [invalid] }))
@@ -547,13 +641,13 @@ describe('import pipeline', () => {
         await pipeline.shutdown();
     });
 
-    it('does not process or immediately resubmit an already-pending operation', async () => {
+    it('does not immediately resubmit an already-pending operation', async () => {
         const pending = makeValidOperation(1);
         const importBatch = jest.fn(async () => ({
             queued: 0, processed: 1, rejected: 0, total: 1,
             rejectedIndices: [], capacityDeferred: 0, capacityDeferredIndices: [], processedIndices: [0],
         }));
-        const processEvents = jest.fn<GatekeeperClient['processEvents']>();
+        const processEvents = jest.fn<GatekeeperClient['processEvents']>(async () => ({ hasMore: false, pending: 1 }));
         const pipeline = createPipeline(jest.fn(async () => true), new InMemoryOperationSyncStore(), {
             importBatch,
             processEvents,
@@ -569,7 +663,7 @@ describe('import pipeline', () => {
         await pipeline.enqueue({ kind: 'remote', name: 'peer-a', data: [pending] });
 
         expect(importBatch).toHaveBeenCalledTimes(1);
-        expect(processEvents).not.toHaveBeenCalled();
+        expect(processEvents).toHaveBeenCalledTimes(1);
         await pipeline.shutdown();
     });
 
@@ -587,19 +681,21 @@ describe('import pipeline', () => {
                 rejectedIndices: [], capacityDeferred: 0,
                 capacityDeferredIndices: [], processedIndices: [],
             });
-        const processEvents = jest.fn<GatekeeperClient['processEvents']>(async () => ({
-            added: 2,
-            merged: 0,
-            rejected: 0,
-            pending: 0,
-            acceptedHashes: [pending.signature!.hash, dependency.signature!.hash],
-            acceptedEvents: [pending, dependency].map(item => ({
-                registry: 'hyperswarm',
-                time: item.created!,
-                operation: item,
-            })),
-            hasMore: false,
-        }));
+        const processEvents = jest.fn<GatekeeperClient['processEvents']>()
+            .mockResolvedValueOnce({ hasMore: false, pending: 1 })
+            .mockImplementation(async () => ({
+                added: 2,
+                merged: 0,
+                rejected: 0,
+                pending: 0,
+                acceptedHashes: [pending.signature!.hash, dependency.signature!.hash],
+                acceptedEvents: [pending, dependency].map(item => ({
+                    registry: 'hyperswarm',
+                    time: item.created!,
+                    operation: item,
+                })),
+                hasMore: false,
+            }));
         const pipeline = createPipeline(jest.fn(async () => true), new InMemoryOperationSyncStore(), {
             importBatch,
             processEvents,
@@ -674,7 +770,7 @@ describe('import pipeline', () => {
         }));
         const pipeline = createPipeline(jest.fn(async () => true), new InMemoryOperationSyncStore(), {
             importBatch,
-            processEvents: jest.fn<GatekeeperClient['processEvents']>(),
+            processEvents: jest.fn<GatekeeperClient['processEvents']>(async () => ({ hasMore: false })),
         });
 
         await pipeline.enqueue({ kind: 'remote', name: 'peer-a', data: operations });
@@ -700,7 +796,7 @@ describe('import pipeline', () => {
         }));
         const pipeline = createPipeline(jest.fn(async () => true), store, {
             importBatch,
-            processEvents: jest.fn<GatekeeperClient['processEvents']>(),
+            processEvents: jest.fn<GatekeeperClient['processEvents']>(async () => ({ hasMore: false })),
         });
 
         await pipeline.enqueue({ kind: 'remote', name: 'peer-a', data: [deferred] });
@@ -723,7 +819,7 @@ describe('import pipeline', () => {
                 rejectedIndices: [], capacityDeferred: 1,
                 capacityDeferredIndices: [0], processedIndices: [],
             })),
-            processEvents: jest.fn<GatekeeperClient['processEvents']>(),
+            processEvents: jest.fn<GatekeeperClient['processEvents']>(async () => ({ hasMore: false })),
             exportIndex: jest.fn(async () => ({
                 mode: 'snapshot' as const,
                 dids: [],

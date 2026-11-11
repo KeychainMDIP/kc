@@ -23,7 +23,7 @@ export function resolveAcceptedOperationsToPersist(
     }
 
     return dedupeOperationsByHash([
-        ...acceptedFromCandidates,
         ...acceptedFromProcessEvents,
+        ...acceptedFromCandidates,
     ]);
 }

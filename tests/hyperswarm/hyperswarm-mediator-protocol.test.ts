@@ -2035,7 +2035,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             data: [operation],
         }));
 
-        expect(processEvents).not.toHaveBeenCalled();
+        expect(processEvents).toHaveBeenCalledTimes(1);
         expect(await protocolNode.store.has(operationId)).toBe(false);
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
             type: 'neg_close',
@@ -3688,7 +3688,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession === null,
         ));
 
-        expect(processEvents).not.toHaveBeenCalled();
+        expect(processEvents).toHaveBeenCalledTimes(1);
         expect(await protocolNode.store.has(operation.signature!.hash)).toBe(false);
         expect(decodeWrites(pair).filter(message => message.type === 'ordered_catchup_req')).toEqual([
             expect.objectContaining({

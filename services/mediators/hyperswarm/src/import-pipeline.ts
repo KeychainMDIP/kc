@@ -393,7 +393,7 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
             let capacityReported = (imported.response.capacityDeferred ?? 0) > 0
                 || (imported.response.capacityDeferredIndices?.length ?? 0) > 0;
 
-            if (imported.response.queued > 0 || processRetryNeeded) {
+            if (imported.response.queued > 0 || imported.response.processed > 0 || capacityReported || processRetryNeeded) {
                 try {
                     let hasMore = true;
                     while (hasMore) {
