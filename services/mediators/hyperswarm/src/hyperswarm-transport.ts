@@ -72,6 +72,7 @@ export interface HyperswarmTransportOptions {
     onQueue(peerKey: string, message: QueueMessage, connection: ConnectionInfo): void | Promise<void>;
     onSyncMessage(peerKey: string, message: SyncMessage, connection: ConnectionInfo): void | Promise<void>;
     onDisconnected(peerKey: string, reason: string, connection: ConnectionInfo): void;
+    onRelayFailure?(peerKey: string, connection: ConnectionInfo): void;
     maxMessageBytes?: number;
     maxPeerStates?: number;
     now?: () => number;
@@ -347,13 +348,13 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
     }
 
     function cleanupConnection(peerKey: string, connection: ConnectionInfo, reason: string): void {
-        releaseAllInbound(connection);
+        clearPartialFrameDeadline(connection);
         closeWriter(peerKey, connection, reason);
         const draining = drainingConnections.get(peerKey) ?? new Set<ConnectionInfo>();
         draining.add(connection);
         drainingConnections.set(peerKey, draining);
         Promise.allSettled([
-            connection.inboundReceiveChain,
+            connection.inboundReceiveChain.finally(() => releaseAllInbound(connection)),
             connection.initialPingPromise,
         ]).then(
             () => {
@@ -955,16 +956,30 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
             || message.type === 'ordered_catchup_push'
             || message.type === 'ops_push';
         const pending: Promise<unknown>[] = [];
+        const failedRecipients: Array<[string, ConnectionInfo]> = [];
         for (const peerKey of Object.keys(connections)) {
-            if (!message.relays.includes(peerKey)) {
-                if (bulk) {
-                    pending.push(sendAwaited(peerKey, message));
-                } else {
-                    send(peerKey, message);
-                }
+            const connection = connections[peerKey];
+            if (!connection || message.relays.includes(peerKey)) continue;
+            if (bulk) {
+                pending.push(sendAwaited(peerKey, message, connection).then(delivered => {
+                    if (!delivered) failedRecipients.push([peerKey, connection]);
+                }));
+            } else {
+                send(peerKey, message);
             }
         }
         await Promise.allSettled(pending);
+        if (message.type === 'queue') {
+            for (const [peerKey, connection] of failedRecipients) {
+                if (connections[peerKey] !== connection || connection.terminationStarted) continue;
+                try {
+                    options.onRelayFailure?.(peerKey, connection);
+                }
+                catch (error) {
+                    log.error({ error, peer: shortName(peerKey) }, 'queue relay failure callback failed');
+                }
+            }
+        }
     }
 
     function expireStaleConnections(now = Date.now()): void {

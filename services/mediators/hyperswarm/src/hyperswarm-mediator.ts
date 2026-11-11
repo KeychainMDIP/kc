@@ -238,6 +238,7 @@ transport = createHyperswarmTransport({
         peerSyncCoordinator.handleDisconnected(peerKey, reason);
         queueCoordinator.handleDisconnected(peerKey, reason, connection);
     },
+    onRelayFailure: (peerKey, connection) => queueCoordinator.handleRelayFailure(peerKey, connection),
 });
 
 function replaceSyncStore(store: OperationSyncStore): void {

@@ -16,6 +16,11 @@ Realtime propagation uses best-effort Gatekeeper queue gossip:
 - peers import operations, persist the shareable results, then relay them with
   fresh relay metadata
 
+When an import releases older pending operations, each persisted page is relayed
+before processing the next page. Relay failures schedule repair without stopping
+the import drain or penalizing the source peer.
+An outbound budget refusal schedules repair for the affected recipient.
+
 This keeps low latency for new operations while negentropy handles catch-up.
 An overloaded receiver may drop a live batch and schedule targeted Negentropy
 repair. The sender retains its synchronization inventory so the dropped delivery
@@ -44,8 +49,8 @@ retry-delayed batch hashes share a 4,096-entry FIFO cache. Pending input and loc
 capacity failures remain retryable after the repair interval. Repeated copies
 within that interval do not resubmit work or create repeated repair jobs.
 
-All import paths share a five-page, 2.5-MiB operation-data budget. Raw framed
-input and queued output have separate per-connection and global byte budgets,
+Inbound operation pages use a shared five-page, 2.5-MiB operation-data budget.
+Raw framed input and queued output have separate per-connection and global byte budgets,
 including the framing header and message envelope. An incomplete frame and a
 blocked outbound write each have a two-minute deadline. Local byte pressure
 does not count as a protocol strike.
@@ -99,6 +104,11 @@ paged-processing contract. Deploy the companion Gatekeeper ingress changes
 before claiming end-to-end memory protection.
 
 ## Sync mode behavior
+
+Eligible ready ordered peers take priority when the existing cold-start or
+operation-gap rule calls for ordered catch-up. An active Negentropy session is
+drained before switching. A nearly synchronized node keeps using reconciliation
+unless its missing-operation gap exceeds the existing threshold.
 
 | peer mode | connect-time behavior | periodic behavior | queue gossip |
 | --- | --- | --- | --- |

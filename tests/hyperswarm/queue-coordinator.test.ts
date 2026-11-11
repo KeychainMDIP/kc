@@ -48,6 +48,25 @@ function importResult(overrides: Partial<ImportQueueResult> = {}): ImportQueueRe
     };
 }
 
+function withPersistedPages(pipeline: ImportPipeline): ImportPipeline {
+    return {
+        ...pipeline,
+        async enqueue(request, onComplete) {
+            const result = await pipeline.enqueue(request, onComplete);
+            if (request.kind === 'remote' && request.onPersistedPage) {
+                if (result.acceptedOperations.length || result.portableTerminalOperations.length) {
+                    await request.onPersistedPage({
+                        acceptedOperations: result.acceptedOperations,
+                        portableTerminalOperations: result.portableTerminalOperations,
+                    });
+                }
+                return { ...result, acceptedOperations: [], portableTerminalOperations: [] };
+            }
+            return result;
+        },
+    };
+}
+
 describe('queue coordinator', () => {
     const connection = {} as ConnectionInfo;
     const defaultRepairOptions = () => ({
@@ -81,7 +100,7 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             bulkReads: createBulkWorkScheduler(2),
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
-            getImportPipeline: () => ({ enqueue } as unknown as ImportPipeline),
+            getImportPipeline: () => withPersistedPages({ enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
             createQueueMessage: () => ({
                 type: 'queue', time: '', node: 'local', relays: [],
@@ -135,7 +154,7 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             bulkReads: createBulkWorkScheduler(2),
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
-            getImportPipeline: () => ({ enqueue } as unknown as ImportPipeline),
+            getImportPipeline: () => withPersistedPages({ enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
             createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
             relay,
@@ -172,7 +191,7 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             bulkReads: createBulkWorkScheduler(2),
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
-            getImportPipeline: () => ({
+            getImportPipeline: () => withPersistedPages({
                 enqueue: jest.fn(async () => importResult({
                     persistedIds: [accepted.operation.signature!.hash, terminal.signature!.hash],
                     pendingIds: [pending.signature!.hash],
@@ -205,7 +224,111 @@ describe('queue coordinator', () => {
         ]);
     });
 
-    it('relays nothing when the import result is retryable', async () => {
+    it('relays older persisted pages before requesting another and never repeats final arrays', async () => {
+        const { cipher, operation } = makeOperation();
+        const older = makeOperation('2026-08-01T12:00:01.000Z').operation;
+        const terminal = makeOperation('2026-08-01T12:00:02.000Z').operation;
+        const persisted = new Set<string>();
+        let pageCount = 0;
+        let started!: () => void;
+        let release!: () => void;
+        const relaying = new Promise<void>(resolve => { started = resolve; });
+        const resume = new Promise<void>(resolve => { release = resolve; });
+        const relay = jest.fn(async (message: QueueMessage) => {
+            expect(message.data.every(op => persisted.has(op.signature!.hash))).toBe(true);
+            if (relay.mock.calls.length === 1) { started(); await resume; }
+        });
+        const enqueue = jest.fn<ImportPipeline['enqueue']>(async request => {
+            if (request.kind !== 'remote' || !request.onPersistedPage) throw new Error('missing page callback');
+            for (const [op, portable] of [[older, false], [terminal, true], [operation, false]] as const) {
+                persisted.add(op.signature!.hash);
+                pageCount += 1;
+                await request.onPersistedPage({
+                    acceptedOperations: portable ? [] : [op],
+                    portableTerminalOperations: portable ? [op] : [],
+                });
+            }
+            return importResult({ persistedIds: [operation.signature!.hash], acceptedOperations: [operation] });
+        });
+        const pipeline = { enqueue } as unknown as ImportPipeline;
+        const coordinator = createQueueCoordinator({
+            registry: 'hyperswarm', maxOpsPerPage: 1, maxBytesPerPage: 512 * 1024,
+            ...defaultRepairOptions(),
+            gatekeeper: {
+                getQueue: jest.fn(async () => []), clearQueue: jest.fn(async () => true),
+            } as unknown as Pick<GatekeeperClient, 'getQueue' | 'clearQueue'>,
+            cipher, syncStats: createMediatorSyncStats(), bulkReads: createBulkWorkScheduler(2),
+            operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
+            getImportPipeline: () => pipeline, getNodeKey: () => 'local-key',
+            createQueueMessage: () => ({ type: 'queue', time: 'fresh', node: 'local', relays: [] }),
+            relay, onProtocolViolation: jest.fn(),
+        });
+        const handling = coordinator.handleMessage('peer-key', {
+            type: 'queue', time: 'remote', node: 'remote', relays: ['other'], data: [operation],
+        }, connection);
+        try {
+            await Promise.race([relaying, handling.then(() => { throw new Error('page was not relayed'); })]);
+            expect(pageCount).toBe(1);
+            expect(relay).toHaveBeenCalledTimes(1);
+        } finally { release(); await handling; }
+        expect(pageCount).toBe(3);
+        expect(relay.mock.calls.map(([message]) => message)).toEqual([older, terminal, operation].map(op => ({
+            type: 'queue', time: 'fresh', node: 'local', relays: ['peer-key'], data: [op],
+        })));
+        expect(coordinator.getMetrics().admitted).toBe(0);
+    });
+
+    it('drains persisted pages after relay failure and schedules a retry without peer punishment', async () => {
+        const { cipher, operation } = makeOperation();
+        const older = makeOperation('2026-08-01T12:00:01.000Z').operation;
+        let nowMs = 0;
+        let drained = false;
+        const enqueue = jest.fn<ImportPipeline['enqueue']>()
+            .mockImplementationOnce(async request => {
+                if (request.kind !== 'remote' || !request.onPersistedPage) throw new Error('missing page callback');
+                for (const op of [older, operation]) {
+                    await request.onPersistedPage({ acceptedOperations: [op], portableTerminalOperations: [] });
+                }
+                drained = true;
+                return importResult({ persistedIds: [operation.signature!.hash] });
+            })
+            .mockResolvedValue(importResult({ knownIds: [operation.signature!.hash] }));
+        const relay = jest.fn<(_message: QueueMessage) => Promise<void>>()
+            .mockRejectedValueOnce(new Error('relay failed')).mockResolvedValue(undefined);
+        const requestRepair = jest.fn(async () => false);
+        const onProtocolViolation = jest.fn();
+        const operationPages = createOperationPageBudget(5, 5 * 512 * 1024);
+        const pipeline = { enqueue } as unknown as ImportPipeline;
+        const coordinator = createQueueCoordinator({
+            registry: 'hyperswarm', maxOpsPerPage: 300, maxBytesPerPage: 512 * 1024,
+            ...defaultRepairOptions(), now: () => nowMs,
+            gatekeeper: {
+                getQueue: jest.fn(async () => []), clearQueue: jest.fn(async () => true),
+            } as unknown as Pick<GatekeeperClient, 'getQueue' | 'clearQueue'>,
+            cipher, syncStats: createMediatorSyncStats(), bulkReads: createBulkWorkScheduler(2),
+            operationPages, getImportPipeline: () => pipeline, getNodeKey: () => 'local-key', requestRepair,
+            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            relay, onProtocolViolation,
+        });
+        const message: QueueMessage = { type: 'queue', time: '', node: 'peer', relays: [], data: [operation] };
+        await expect(coordinator.handleMessage('peer-key', message, connection)).resolves.toBeUndefined();
+        expect(drained).toBe(true);
+        expect(relay).toHaveBeenCalledTimes(2);
+        expect(onProtocolViolation).not.toHaveBeenCalled();
+        expect(coordinator.getMetrics()).toMatchObject({ admitted: 0, repairsPending: 1 });
+        expect(operationPages.pages).toBe(0);
+        expect(operationPages.bytes).toBe(0);
+        await coordinator.handleMessage('peer-key', message, connection);
+        expect(enqueue).toHaveBeenCalledTimes(1);
+        await coordinator.runRepairs();
+        expect(requestRepair).toHaveBeenCalledWith('peer-key', connection);
+        nowMs = 1_001;
+        await coordinator.handleMessage('peer-key', message, connection);
+        expect(enqueue).toHaveBeenCalledTimes(2);
+        expect(relay).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not relay unproven return arrays when an import fails before persistence', async () => {
         const { cipher, operation } = makeOperation();
         let nowMs = 0;
         const enqueue = jest.fn(async () => importResult({
@@ -269,7 +392,7 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             bulkReads: createBulkWorkScheduler(2),
             operationPages,
-            getImportPipeline: () => ({ enqueue } as unknown as ImportPipeline),
+            getImportPipeline: () => withPersistedPages({ enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
             createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
             relay,
@@ -323,7 +446,7 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             bulkReads: createBulkWorkScheduler(2),
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
-            getImportPipeline: () => ({ enqueue } as unknown as ImportPipeline),
+            getImportPipeline: () => withPersistedPages({ enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
             createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
             relay,
@@ -384,7 +507,7 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             bulkReads: createBulkWorkScheduler(2),
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
-            getImportPipeline: () => ({ enqueue } as unknown as ImportPipeline),
+            getImportPipeline: () => withPersistedPages({ enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
             getConnection: peerKey => connections.get(peerKey),
             requestRepair,
@@ -449,7 +572,7 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             bulkReads: createBulkWorkScheduler(2),
             operationPages,
-            getImportPipeline: () => ({ enqueue: jest.fn() } as unknown as ImportPipeline),
+            getImportPipeline: () => withPersistedPages({ enqueue: jest.fn() } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
             getConnection: () => connection,
             requestRepair,
@@ -499,7 +622,7 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             bulkReads: createBulkWorkScheduler(2),
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
-            getImportPipeline: () => ({ enqueue } as unknown as ImportPipeline),
+            getImportPipeline: () => withPersistedPages({ enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
             getConnection: peerKey => connections.get(peerKey),
             requestRepair,
@@ -544,7 +667,7 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             bulkReads: createBulkWorkScheduler(2),
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
-            getImportPipeline: () => ({ enqueue } as unknown as ImportPipeline),
+            getImportPipeline: () => withPersistedPages({ enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
             createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
             relay: jest.fn(async () => undefined),
@@ -594,7 +717,7 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             bulkReads: createBulkWorkScheduler(2),
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
-            getImportPipeline: () => ({ enqueue } as unknown as ImportPipeline),
+            getImportPipeline: () => withPersistedPages({ enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
             createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
             relay: jest.fn(async () => undefined),
@@ -637,7 +760,7 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             bulkReads: createBulkWorkScheduler(2),
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
-            getImportPipeline: () => ({
+            getImportPipeline: () => withPersistedPages({
                 enqueue: jest.fn(async (request: { data: Operation[] }) => importResult({
                     pendingIds: request.data.map(operation => operation.signature!.hash),
                 })),
@@ -688,7 +811,7 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             bulkReads: createBulkWorkScheduler(2),
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
-            getImportPipeline: () => ({
+            getImportPipeline: () => withPersistedPages({
                 enqueue: jest.fn(async (request: { data: Operation[] }) => importResult({
                     pendingIds: request.data.map(operation => operation.signature!.hash),
                 })),
@@ -713,6 +836,60 @@ describe('queue coordinator', () => {
 
         await coordinator.runRepairs();
         expect(requestRepair).toHaveBeenCalledTimes(2);
+    });
+
+    it.each(['busy', 'error'])('gives another peer a repair opportunity after a %s result', async outcome => {
+        const first = makeOperation('2026-08-01T12:00:00.000Z');
+        const second = makeOperation('2026-08-01T12:00:01.000Z').operation;
+        const firstConnection = {} as ConnectionInfo;
+        const secondConnection = {} as ConnectionInfo;
+        const connections = new Map<string, ConnectionInfo>([
+            ['first-peer', firstConnection], ['second-peer', secondConnection],
+        ]);
+        const requestRepair = jest.fn(async (peerKey: string) => {
+            if (peerKey === 'first-peer') {
+                if (outcome === 'error') throw new Error('repair unavailable');
+                return false;
+            }
+            return true;
+        });
+        const coordinator = createQueueCoordinator({
+            registry: 'hyperswarm',
+            maxOpsPerPage: 300,
+            maxBytesPerPage: 512 * 1024,
+            repairIntervalMs: 1_000,
+            gatekeeper: {
+                getQueue: jest.fn(async () => []),
+                clearQueue: jest.fn(async () => true),
+            } as unknown as Pick<GatekeeperClient, 'getQueue' | 'clearQueue'>,
+            cipher: first.cipher,
+            syncStats: createMediatorSyncStats(),
+            bulkReads: createBulkWorkScheduler(2),
+            operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
+            getImportPipeline: () => withPersistedPages({
+                enqueue: jest.fn(async (request: { data: Operation[] }) => importResult({
+                    pendingIds: request.data.map(operation => operation.signature!.hash),
+                })),
+            } as unknown as ImportPipeline),
+            getNodeKey: () => 'local-key',
+            getConnection: peerKey => connections.get(peerKey),
+            requestRepair,
+            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            relay: jest.fn(async () => undefined),
+            onProtocolViolation: jest.fn(),
+        });
+        const message = (operation: Operation): QueueMessage => ({
+            type: 'queue', time: '', node: 'peer', relays: [], data: [operation],
+        });
+        await coordinator.handleMessage('first-peer', message(first.operation), firstConnection);
+        await coordinator.handleMessage('second-peer', message(second), secondConnection);
+
+        await coordinator.runRepairs();
+        await coordinator.runRepairs();
+
+        expect(requestRepair).toHaveBeenNthCalledWith(1, 'first-peer', firstConnection);
+        expect(requestRepair).toHaveBeenNthCalledWith(2, 'second-peer', secondConnection);
+        expect(coordinator.getMetrics().repairsPending).toBe(1);
     });
 
     it('preserves a new overload yield while an earlier repair is starting', async () => {
@@ -747,7 +924,7 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             bulkReads: createBulkWorkScheduler(2),
             operationPages,
-            getImportPipeline: () => ({
+            getImportPipeline: () => withPersistedPages({
                 enqueue: jest.fn(async () => importResult({
                     pendingIds: [first.operation.signature!.hash],
                 })),
@@ -799,7 +976,7 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             bulkReads: createBulkWorkScheduler(2),
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
-            getImportPipeline: () => ({
+            getImportPipeline: () => withPersistedPages({
                 enqueue: jest.fn(async () => importResult({
                     pendingIds: [operation.signature!.hash],
                 })),
@@ -850,7 +1027,7 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             bulkReads: createBulkWorkScheduler(2),
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
-            getImportPipeline: () => ({ enqueue } as unknown as ImportPipeline),
+            getImportPipeline: () => withPersistedPages({ enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
             getConnection: peerKey => connections.get(peerKey),
             requestRepair,
@@ -888,7 +1065,7 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             bulkReads: createBulkWorkScheduler(2),
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
-            getImportPipeline: () => ({ enqueue } as unknown as ImportPipeline),
+            getImportPipeline: () => withPersistedPages({ enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
             getConnection: () => undefined,
             requestRepair,
@@ -924,7 +1101,7 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             bulkReads: createBulkWorkScheduler(2),
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
-            getImportPipeline: () => ({
+            getImportPipeline: () => withPersistedPages({
                 enqueue: jest.fn(async () => importResult({
                     pendingIds: [operation.signature!.hash],
                 })),
@@ -965,7 +1142,7 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             bulkReads: createBulkWorkScheduler(2),
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
-            getImportPipeline: () => ({
+            getImportPipeline: () => withPersistedPages({
                 enqueue: jest.fn(async () => importResult({
                     pendingIds: [operation.signature!.hash],
                 })),
@@ -1012,7 +1189,7 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             bulkReads: createBulkWorkScheduler(2),
             operationPages,
-            getImportPipeline: () => ({ enqueue } as unknown as ImportPipeline),
+            getImportPipeline: () => withPersistedPages({ enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
             createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
             relay: jest.fn(async () => undefined),
@@ -1053,7 +1230,7 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             bulkReads: createBulkWorkScheduler(2),
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
-            getImportPipeline: () => ({ enqueue: jest.fn() } as unknown as ImportPipeline),
+            getImportPipeline: () => withPersistedPages({ enqueue: jest.fn() } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
             createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
             relay: jest.fn(async () => undefined),
@@ -1077,7 +1254,7 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             bulkReads: createBulkWorkScheduler(2),
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
-            getImportPipeline: () => ({
+            getImportPipeline: () => withPersistedPages({
                 enqueue: jest.fn(async () => importResult({
                     persistedIds: [operation.signature!.hash],
                     acceptedOperations: [operation],
@@ -1124,7 +1301,7 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             bulkReads: createBulkWorkScheduler(2),
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
-            getImportPipeline: () => ({ enqueue } as unknown as ImportPipeline),
+            getImportPipeline: () => withPersistedPages({ enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
             createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
             relay,
@@ -1179,7 +1356,7 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             bulkReads: createBulkWorkScheduler(2),
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
-            getImportPipeline: () => ({ enqueue } as unknown as ImportPipeline),
+            getImportPipeline: () => withPersistedPages({ enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
             createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
             relay: jest.fn(async () => undefined),
@@ -1206,7 +1383,7 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             bulkReads: createBulkWorkScheduler(2),
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
-            getImportPipeline: () => ({
+            getImportPipeline: () => withPersistedPages({
                 enqueue: jest.fn(async () => importResult({ retryable: true })),
             } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
@@ -1237,7 +1414,7 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             bulkReads: createBulkWorkScheduler(2),
             operationPages,
-            getImportPipeline: () => ({ enqueue: jest.fn() } as unknown as ImportPipeline),
+            getImportPipeline: () => withPersistedPages({ enqueue: jest.fn() } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
             createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
             relay: jest.fn(async () => undefined),
@@ -1285,7 +1462,7 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             bulkReads: createBulkWorkScheduler(2),
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
-            getImportPipeline: () => ({ enqueue } as unknown as ImportPipeline),
+            getImportPipeline: () => withPersistedPages({ enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
             createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
             relay,

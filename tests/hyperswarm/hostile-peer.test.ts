@@ -98,6 +98,7 @@ async function createHarness() {
             queue.handleDisconnected(key, reason, connection);
             negentropy.removePeer(key, reason);
         },
+        onRelayFailure: (key, connection) => queue.handleRelayFailure(key, connection),
     });
     negentropy = createNegentropyCoordinator({
         version: 2, transportFramingVersion: 1, frameSizeLimit: 0,
@@ -117,7 +118,7 @@ async function createHarness() {
         terminatePeerConnection: (key, reason) => transport.terminatePeer(key, reason),
         onSessionClosed: () => undefined,
     });
-    const repair = jest.fn(async () => false);
+    const repair = jest.fn<Parameters<typeof createQueueCoordinator>[0]['requestRepair']>(async () => false);
     queue = createQueueCoordinator({
         registry: 'hyperswarm', maxOpsPerPage: 300, maxBytesPerPage: 512 * 1024,
         repairIntervalMs: 300_000, gatekeeper, cipher, syncStats: stats, bulkReads,
@@ -147,6 +148,47 @@ async function createHarness() {
 }
 
 describe('hostile peer integration', () => {
+    it('repairs the recipient whose gossip delivery was refused by the writer budget', async () => {
+        const h = await createHarness();
+        const pendingWrites: Promise<boolean>[] = [];
+        let recipient: Socket | undefined;
+        try {
+            const source = await h.connect(1);
+            recipient = await h.connect(2);
+            await h.connect(3);
+            const helper = new TestHelper(h.gatekeeper, h.cipher);
+            const operation = await helper.createAgentOp(h.cipher.generateRandomJwk(), { registry: 'hyperswarm' });
+            const message = { ...base, type: 'queue' as const, data: [operation] };
+            recipient.blocked = true;
+            for (let i = 0; i < 30; i += 1) {
+                pendingWrites.push(h.transport.sendBulkToPeer(recipient.key, message));
+            }
+            expect(h.stats.hardening.outboundBudgetRefusals).toBeGreaterThan(0);
+
+            await h.send(source, message);
+            await h.queue.runRepairs();
+            expect(await h.store.count()).toBe(1);
+            expect(h.repair).toHaveBeenCalledWith(recipient.key, h.transport.getConnection(recipient.key));
+            expect(h.repair.mock.calls.every(([key]) => key === recipient!.key)).toBe(true);
+            expect(h.queue.getMetrics().repairsPending).toBe(1);
+            expect(recipient.destroyed).toBe(false);
+            expect(h.stats.protocolViolationCooldowns).toBe(0);
+
+            recipient.blocked = false;
+            recipient.releaseWrite?.();
+            await Promise.all(pendingWrites);
+            h.repair.mockResolvedValueOnce(true);
+            await h.queue.runRepairs();
+            expect(h.queue.getMetrics().repairsPending).toBe(0);
+            expect(h.transport.getAccounting().outboundBytes).toBe(0);
+        }
+        finally {
+            if (recipient) { recipient.blocked = false; recipient.releaseWrite?.(); }
+            await Promise.all(pendingWrites);
+            await h.close();
+        }
+    });
+
     it('bounds concurrent gossip, outcomes, bytes and quarantine under peer churn', async () => {
         const h = await createHarness();
         const blockedImport = deferred();

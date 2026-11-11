@@ -3438,7 +3438,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         }));
         await deliverAuthorizedPush(protocolNode, peerKey, pair, open, [operation]);
 
-        expect(processEvents).not.toHaveBeenCalled();
+        expect(processEvents).toHaveBeenCalledTimes(1);
         expect(await protocolNode.store.has(operationId)).toBe(false);
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
             type: 'ops_ack',

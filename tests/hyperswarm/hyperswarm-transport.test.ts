@@ -117,6 +117,7 @@ function createTransport(overrides: {
     | 'maxMessageBytes'
     | 'maxOutboundBytesPerConnection'
     | 'maxOutboundBytesTotal'
+    | 'onRelayFailure'
     | 'writeTimeoutMs'
 >> = {}) {
     const syncStats = createMediatorSyncStats();
@@ -143,6 +144,7 @@ function createTransport(overrides: {
         onQueue,
         onSyncMessage,
         onDisconnected,
+        onRelayFailure: overrides.onRelayFailure,
     });
     return { transport, syncStats, onPing, onQueue, onSyncMessage, onDisconnected };
 }
@@ -449,6 +451,56 @@ describe('hyperswarm transport resource bounds', () => {
         data: [],
     });
 
+    it('does not schedule relay repair for a replacement when an older write fails', async () => {
+        const onRelayFailure = jest.fn();
+        const { transport, syncStats } = createTransport({ onRelayFailure });
+        const old = new FakeConnection(0x30);
+        old.autoCompleteWrites = false;
+        const peerKey = old.remotePublicKey.toString('hex');
+        transport.setConnection(peerKey, createConnectionInfo({
+            connection: old as unknown as HyperswarmConnection,
+            peerName: 'old',
+        }));
+        const sending = transport.relay(queueMessage('local'));
+        expect(transport.getAccounting().outboundBytes).toBeGreaterThan(0);
+
+        const replacement = new FakeConnection(0x30);
+        transport.addConnection(replacement as unknown as HyperswarmConnection);
+        await transport.getConnection(peerKey)!.initialPingPromise;
+        await sending;
+
+        expect(old.destroyed).toBe(true);
+        expect(replacement.destroyed).toBe(false);
+        expect(onRelayFailure).not.toHaveBeenCalled();
+        expect(syncStats.protocolViolationCooldowns).toBe(0);
+        await transport.shutdown();
+    });
+
+    it('tolerates a disconnect handler closing another recipient during fanout', async () => {
+        const onRelayFailure = jest.fn();
+        const { transport, onDisconnected } = createTransport({ onRelayFailure });
+        const first = new FakeConnection(0x2e);
+        const second = new FakeConnection(0x2f);
+        const firstKey = first.remotePublicKey.toString('hex');
+        const secondKey = second.remotePublicKey.toString('hex');
+        for (const [key, socket] of [[firstKey, first], [secondKey, second]] as const) {
+            transport.setConnection(key, createConnectionInfo({
+                connection: socket as unknown as HyperswarmConnection,
+                peerName: key,
+            }));
+        }
+        onDisconnected.mockImplementation(key => {
+            if (key === firstKey) transport.terminatePeer(secondKey, 'swarm_stopped');
+        });
+        first.write = () => { throw new Error('write failed'); };
+
+        await expect(transport.relay(queueMessage('local'))).resolves.toBeUndefined();
+
+        expect(transport.getAccounting().connections).toBe(0);
+        expect(onRelayFailure).not.toHaveBeenCalled();
+        await transport.shutdown();
+    });
+
     it('caps unique connections while allowing a same-key replacement', async () => {
         const { transport } = createTransport({ maxConnections: 2 });
         const first = new FakeConnection(0x31);
@@ -658,6 +710,41 @@ describe('hyperswarm transport resource bounds', () => {
         await processing;
         expect(transport.getAccounting().inboundBytes).toBe(0);
         await transport.shutdown();
+    });
+
+    it('retains disconnected handler bytes until its receive chain drains', async () => {
+        const blocked = deferred<void>();
+        const onPing = jest.fn(async () => blocked.promise);
+        const framed = encodeFramedMessage(JSON.stringify(ping()));
+        const { transport } = createTransport({ onPing, maxInboundBytesTotal: framed.length });
+        const first = new FakeConnection(0x42);
+        const second = new FakeConnection(0x43);
+        const firstKey = first.remotePublicKey.toString('hex');
+        const secondKey = second.remotePublicKey.toString('hex');
+        transport.setConnection(firstKey, createConnectionInfo({
+            connection: first as unknown as HyperswarmConnection,
+            peerName: 'first',
+        }));
+        transport.setConnection(secondKey, createConnectionInfo({
+            connection: second as unknown as HyperswarmConnection,
+            peerName: 'second',
+        }));
+
+        const processing = transport.processInboundPeerData(firstKey, framed);
+        try {
+            await nextTurn();
+            expect(onPing).toHaveBeenCalledTimes(1);
+            transport.terminatePeer(firstKey, 'connection_closed');
+            expect(transport.getAccounting().inboundBytes).toBe(framed.length);
+            await transport.processInboundPeerData(secondKey, framed);
+            expect(second.destroyed).toBe(true);
+            expect(onPing).toHaveBeenCalledTimes(1);
+        } finally {
+            blocked.resolve();
+            await processing;
+            await transport.shutdown();
+        }
+        expect(transport.getAccounting().inboundBytes).toBe(0);
     });
 
     it('closes a partial frame after the absolute assembly deadline', async () => {

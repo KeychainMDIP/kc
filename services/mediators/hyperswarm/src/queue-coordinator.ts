@@ -167,10 +167,19 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
             if (connection !== recorded.connection) {
                 recorded.connection = connection;
             }
-            if (await options.requestRepair(peerKey, connection)) {
-                options.syncStats.hardening.gossipRepairsStarted += 1;
-                if (repairNeeded.get(peerKey) === recorded) {
+            try {
+                if (await options.requestRepair(peerKey, connection)) {
+                    options.syncStats.hardening.gossipRepairsStarted += 1;
+                    if (repairNeeded.get(peerKey) === recorded) {
+                        repairNeeded.delete(peerKey);
+                    }
+                }
+            }
+            finally {
+                const pending = repairNeeded.get(peerKey);
+                if (pending) {
                     repairNeeded.delete(peerKey);
+                    repairNeeded.set(peerKey, pending);
                 }
             }
             return;
@@ -274,6 +283,7 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
         inFlight.set(batchHash, current);
         admittedGossip += 1;
         try {
+            let relayFailed = false;
             let imported;
             try {
                 imported = await options.getImportPipeline().enqueue({
@@ -282,6 +292,29 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
                     node: message.node,
                     data: page.value.operations,
                     queueGossip: true,
+                    onPersistedPage: async persisted => {
+                        const shareable = dedupeOperationsByHash([
+                            ...persisted.acceptedOperations,
+                            ...persisted.portableTerminalOperations,
+                        ]);
+                        options.syncStats.hardening.gossipShareableOperations += shareable.length;
+                        for (const data of chunkOperationsForPush(shareable, {
+                            maxOpsPerPush: options.maxOpsPerPage,
+                            maxBytesPerPush: options.maxBytesPerPage,
+                        })) {
+                            try {
+                                await options.relay({
+                                    ...options.createQueueMessage(),
+                                    relays: [peerKey],
+                                    data,
+                                });
+                            }
+                            catch (error) {
+                                if (!relayFailed) log.error({ error, peer: peerKey }, 'persisted queue gossip relay failed');
+                                relayFailed = true;
+                            }
+                        }
+                    },
                 });
             }
             catch (error) {
@@ -296,7 +329,7 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
             }
 
             const handledIds = new Set([...imported.knownIds, ...imported.persistedIds]);
-            const complete = imported.pendingIds.length === 0
+            const complete = !relayFailed && imported.pendingIds.length === 0
                 && imported.capacityDeferredIds.length === 0
                 && imported.unaddressableOperations.length === 0
                 && page.value.operations.every(operation => {
@@ -313,21 +346,6 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
                 rememberRetry(batchHash, repairSource);
             }
 
-            const shareable = dedupeOperationsByHash([
-                ...imported.acceptedOperations,
-                ...imported.portableTerminalOperations,
-            ]);
-            options.syncStats.hardening.gossipShareableOperations += shareable.length;
-            for (const data of chunkOperationsForPush(shareable, {
-                maxOpsPerPush: options.maxOpsPerPage,
-                maxBytesPerPush: options.maxBytesPerPage,
-            })) {
-                await options.relay({
-                    ...options.createQueueMessage(),
-                    relays: [peerKey],
-                    data,
-                });
-            }
         }
         finally {
             if (inFlight.get(batchHash) === current) {
@@ -429,6 +447,17 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
             const current = options.getConnection(peerKey);
             if (!current || current === connection) {
                 repairNeeded.delete(peerKey);
+            }
+        },
+        handleRelayFailure(peerKey: string, connection: ConnectionInfo): void {
+            if (!accepting || options.getConnection(peerKey) !== connection) {
+                return;
+            }
+            if (rememberRepair({ peerKey, connection })) {
+                repairYieldNeeded = true;
+                if (admittedGossip === 0) {
+                    void startRepairOpportunity();
+                }
             }
         },
         runRepairs(): Promise<void> {
