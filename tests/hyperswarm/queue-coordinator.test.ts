@@ -8,6 +8,34 @@ import { createQueueCoordinator } from '../../services/mediators/hyperswarm/src/
 import { createMediatorSyncStats } from '../../services/mediators/hyperswarm/src/sync-stats.ts';
 
 describe('queue coordinator', () => {
+    it.each([
+        { name: 'HTTP epoch conflict', error: { error: 'gatekeeper_index_epoch_changed' }, reset: true },
+        { name: 'direct epoch conflict', error: { code: 'gatekeeper_index_epoch_changed' }, reset: true },
+        { name: 'storage failure', error: new Error('storage unavailable'), reset: false },
+        { name: 'missing error body', error: null, reset: false },
+    ])('handles $name while clearing the publication queue', async ({ error, reset }) => {
+        const operation = { signature: { hash: 'operation-hash' } } as Operation;
+        const enqueue = jest.fn(async () => ({ knownIds: [], persistedIds: [], retryable: false }));
+        const clearQueue = jest.fn(async () => { throw error; });
+        const relay = jest.fn(async () => {});
+        const coordinator = createQueueCoordinator({
+            registry: 'hyperswarm',
+            gatekeeper: { getQueue: jest.fn(async () => [operation]), clearQueue },
+            cipher: { hashJSON: () => 'batch-hash' } as Pick<CipherNode, 'hashJSON'>,
+            syncStats: createMediatorSyncStats(),
+            getImportPipeline: () => ({ indexEpoch: 'old-epoch', enqueue } as unknown as ImportPipeline),
+            getNodeKey: () => 'local-key',
+            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            relay,
+        });
+
+        if (reset) await expect(coordinator.flush()).resolves.toBeUndefined();
+        else await expect(coordinator.flush()).rejects.toBe(error);
+        expect(clearQueue).toHaveBeenCalledWith('hyperswarm', ['operation-hash'], 'old-epoch');
+        expect(enqueue).toHaveBeenCalledTimes(1);
+        expect(relay).not.toHaveBeenCalled();
+    });
+
     it.each(['persist', 'merge'] as const)('treats an old-epoch %s result as reset recovery', async phase => {
         const operation = { signature: { hash: 'operation-hash' } } as Operation;
         const enqueue = jest.fn(async (request: { phase?: string }) => ({

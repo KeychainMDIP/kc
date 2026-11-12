@@ -8,6 +8,7 @@ import {
     dedupeOperationsByHash,
     filterKnownOperations,
     filterOperationsByAcceptedHashes,
+    hasContentVerifiedOperationId,
     mapAcceptedOperationsToSyncRecords,
     mapIndexExportChangesToSyncPage,
     mapIndexExportOperationsToSyncRecords,
@@ -40,6 +41,18 @@ function makeCreateOp(hashChar: string, signed: string): Operation {
 }
 
 describe('sync-persistence helpers', () => {
+    it('does not trust claimed synchronization IDs when content verification cannot finish', () => {
+        const operation = makeCreateOp('a', '2026-02-10T10:00:00.000Z');
+        const hashJSON = jest.fn(() => { throw new Error('cannot canonicalize operation'); });
+        const unsigned = { ...operation };
+        delete unsigned.signature;
+
+        expect(hasContentVerifiedOperationId(unsigned, { hashJSON })).toBe(false);
+        expect(hashJSON).not.toHaveBeenCalled();
+        expect(hasContentVerifiedOperationId(operation, { hashJSON })).toBe(false);
+        expect(hashJSON).toHaveBeenCalledTimes(1);
+    });
+
     it('skips persisted-record pruning when there is nothing pending', async () => {
         const getByIds = jest.fn(async () => []);
 
@@ -238,20 +251,34 @@ describe('sync-persistence helpers', () => {
         });
     });
 
-    it('restores retired history to active order only from a new accepted export record', async () => {
+    it.each([RETIRED_SYNC_ORDER_OFFSET + 1, Number.MAX_SAFE_INTEGER])(
+        'restores inactive order %s only from a new accepted export record', async syncOrder => {
+            const operation = makeCreateOp('a', '2026-02-10T10:00:00.000Z');
+            const existing = mapAcceptedOperationsToSyncRecords([{
+                operation, syncOrder,
+            }]).records;
+            const store = new InMemoryOperationSyncStore();
+            await store.upsertMany(existing);
+            const reactivated = mapIndexExportChangesToSyncPage([{
+                seq: 10, did: 'did:test:a', event: {
+                    registry: 'hyperswarm', time: operation.signature!.signed, operation,
+                },
+            }], [], existing);
+            await store.applySyncPage(reactivated);
+            await expect(store.getByIds([h('a')])).resolves.toMatchObject([{ syncOrder: 10, operation }]);
+        },
+    );
+
+    it('rejects malformed removals and unmappable exported operations without inventing inventory', () => {
         const operation = makeCreateOp('a', '2026-02-10T10:00:00.000Z');
-        const existing = mapAcceptedOperationsToSyncRecords([{
-            operation, syncOrder: RETIRED_SYNC_ORDER_OFFSET + 1,
-        }]).records;
-        const store = new InMemoryOperationSyncStore();
-        await store.upsertMany(existing);
-        const reactivated = mapIndexExportChangesToSyncPage([{
-            seq: 10, did: 'did:test:a', event: {
-                registry: 'hyperswarm', time: operation.signature!.signed, operation,
+        delete operation.signature;
+        const result = mapIndexExportChangesToSyncPage([{
+            seq: 1, did: 'did:test:a', event: {
+                registry: 'hyperswarm', time: operation.created!, operation,
             },
-        }], [], existing);
-        await store.applySyncPage(reactivated);
-        await expect(store.getByIds([h('a')])).resolves.toMatchObject([{ syncOrder: 10, operation }]);
+        }], [{ seq: 2, did: 'did:test:a', operationHash: null as unknown as string }]);
+
+        expect(result).toEqual({ records: [], deleteIds: [], invalid: 2 });
     });
 
     it('does not invent ordered replay positions for removed snapshot records', async () => {

@@ -33,6 +33,30 @@ function fixture() {
 }
 
 describe('Hyperswarm import reset boundary', () => {
+    it.each(['remote', 'terminal'] as const)('stops cancelled %s work after its known-operation lookup', async kind => {
+        const { pipeline, store, importBatch, processEvents } = fixture();
+        const unsigned: Operation = { type: 'update', did: 'did:test:legacy', doc: {} };
+        const candidate = {
+            ...unsigned,
+            signature: { ...operation.signature!, hash: new CipherNode().hashJSON(unsigned) },
+        };
+        await pipeline.refreshIndex('startup');
+        let cancelled = false;
+        jest.spyOn(store, 'getByIds').mockImplementationOnce(async () => {
+            cancelled = true;
+            return [];
+        });
+        const write = jest.spyOn(store, 'upsertMany');
+        try {
+            await expect(pipeline.enqueue({ kind, name: 'peer', data: [candidate], cancelled: () => cancelled }))
+                .resolves.toMatchObject({ retryable: false, persistedIds: [] });
+            expect(importBatch).not.toHaveBeenCalled();
+            expect(processEvents).not.toHaveBeenCalled();
+            expect(write).not.toHaveBeenCalled();
+            expect(await store.count()).toBe(0);
+        } finally { await pipeline.shutdown(); }
+    });
+
     it('uses the mirrored epoch for admission and event processing', async () => {
         const { pipeline, importBatch, processEvents } = fixture();
         try {
