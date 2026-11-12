@@ -13,6 +13,7 @@ const operation: Operation = {
 
 function fixture() {
     const store = new InMemoryOperationSyncStore();
+    const cipher = new CipherNode();
     let serverEpoch = 'epoch-a';
     const exportIndex = jest.fn(async (request: IndexExportRequest): Promise<IndexExportResponse> => ({
         mode: request.mode, indexEpoch: serverEpoch, cursor: '0', checkpointCursor: '0', hasMore: false,
@@ -26,13 +27,34 @@ function fixture() {
     }));
     const pipeline = createImportPipeline({
         gatekeeper: { importBatch, processEvents, exportIndex, isReady: async () => true },
-        syncStore: store, cipher: new CipherNode(), syncStats: createMediatorSyncStats(),
+        syncStore: store, cipher, syncStats: createMediatorSyncStats(),
         beginStoreMutation: () => () => {}, onStoreChanged: () => {},
     });
-    return { store, pipeline, importBatch, processEvents, exportIndex, reset() { serverEpoch = 'epoch-b'; } };
+    return { store, cipher, pipeline, importBatch, processEvents, exportIndex, reset() { serverEpoch = 'epoch-b'; } };
 }
 
 describe('Hyperswarm import reset boundary', () => {
+    it('does not persist terminal classification cancelled during content verification', async () => {
+        const { pipeline, store, cipher } = fixture();
+        const unsigned: Operation = { type: 'update', did: 'did:test:legacy', doc: {} };
+        const candidate = { ...unsigned, signature: { ...operation.signature!, hash: cipher.hashJSON(unsigned) } };
+        await pipeline.refreshIndex('startup');
+        let cancelled = false;
+        const original = cipher.hashJSON.bind(cipher);
+        const hash = jest.spyOn(cipher, 'hashJSON').mockImplementation(value => {
+            cancelled = true;
+            return original(value);
+        });
+        const write = jest.spyOn(store, 'upsertMany');
+        try {
+            await expect(pipeline.enqueue({ kind: 'terminal', name: 'peer', data: [candidate], cancelled: () => cancelled }))
+                .resolves.toMatchObject({ retryable: false, persistedIds: [] });
+            expect(hash).toHaveBeenCalledTimes(1);
+            expect(write).not.toHaveBeenCalled();
+            expect(await store.count()).toBe(0);
+        } finally { await pipeline.shutdown(); }
+    });
+
     it.each(['remote', 'terminal'] as const)('stops cancelled %s work after its known-operation lookup', async kind => {
         const { pipeline, store, importBatch, processEvents } = fixture();
         const unsigned: Operation = { type: 'update', did: 'did:test:legacy', doc: {} };
