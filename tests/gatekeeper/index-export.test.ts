@@ -153,6 +153,18 @@ function createPostgresFixture(): AdapterFixture {
             return { rows: [], rowCount: 0 };
         }
 
+        if (/^(SAVEPOINT|ROLLBACK TO SAVEPOINT|RELEASE SAVEPOINT)/.test(text) || text.startsWith('LOCK TABLE')) {
+            return { rows: [], rowCount: 0 };
+        }
+        if (text.includes('AS protected')) return { rows: [{ protected: false }], rowCount: 1 };
+        if (text.includes('AS shared')) return { rows: [{ shared: false }], rowCount: 1 };
+        if (text.startsWith('TRUNCATE TABLE')) {
+            eventsByKey.clear();
+            queues.clear();
+            changes.length = 0;
+            return { rows: [], rowCount: 0 };
+        }
+
         if (/^\s*(DELETE FROM|INSERT INTO|SELECT record FROM) gatekeeper_lifecycle\b/.test(text)) {
             return { rows: [], rowCount: 0 };
         }

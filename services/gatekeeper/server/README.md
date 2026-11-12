@@ -69,6 +69,22 @@ errors prevent a conclusion. It preserves those uncertain histories, although
 earlier completed repairs are not rolled back. Full audits are never scheduled
 by garbage collection.
 
+## Database resets
+
+The existing reset endpoint retains its namespace scope and response. PostgreSQL
+can clear Gatekeeper's bulk-data tables with `TRUNCATE` when they contain no other
+namespace and exclusive access is immediately available. Otherwise it uses
+scoped deletes. Row security, user triggers or unavailable truncate privileges
+also retain the scoped path. The reset strategy is logged after commit.
+
+Pause ingestion and other table users before a planned reset to allow the bulk
+path reliably. It briefly locks those tables. Reset still regenerates the index
+epoch and initializes empty lifecycle state, causing consumers to rebuild through
+their existing epoch checks. Other namespaces and unrelated metadata are retained.
+
+Bulk reset reduces deletion WAL. Reimporting operations and rebuilding downstream
+stores still generate WAL, so the PostgreSQL archive pipeline must keep up.
+
 ## Lightweight status and DID statistics
 
 `GET /api/v1/status` reports Gatekeeper uptime, process memory, and live queue
@@ -86,6 +102,18 @@ Queue categories are disjoint. `staged` means queued work not last classified
 as deferred, `pending` means queued work waiting after a deferred import, and
 `processing` means work remaining in active import passes. `total` is their
 sum. Raw operation bodies are not included. Memory counters are byte counts.
+
+## Event requests across a database reset
+
+`POST /api/v1/batch/import`, `POST /api/v1/events/process` and
+`POST /api/v1/queue/{registry}/clear` accept the optional
+`X-MDIP-Index-Epoch` header. Use the `indexEpoch` returned by index export to
+bind work to that database generation. A reset drains active event work before
+clearing the database. Requests carrying the previous epoch then return HTTP
+409 with `{ "error": "gatekeeper_index_epoch_changed" }` and make no changes.
+Discard old queued synchronization work and refresh the index before retrying.
+Requests without this header retain their existing behavior.
+
 
 ## Index export
 

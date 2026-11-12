@@ -64,6 +64,14 @@ rolled back. Unavailable or uncertain histories are retained for another
 attempt. This does not change whether peers can subsequently re-import expired
 histories.
 
+PostgreSQL resets prefer a bulk truncate when the namespace owns all rows in
+Gatekeeper's data tables and exclusive access is available. Shared tables, busy
+access, row security or user triggers retain namespace-scoped deletion. Metadata
+and index sequence behavior are preserved. Resets log the selected strategy.
+Quiesce ingestion and other table users during planned resets to allow the bulk
+path. This reduces reset WAL, while resynchronization still generates WAL and
+requires sufficient archive capacity.
+
 `verifyDb()` is a separate, expensive cryptographic audit. It does not trust a
 previous successful audit as proof that stored data is still intact. It may
 repair histories with conclusively invalid signatures and perform expiration

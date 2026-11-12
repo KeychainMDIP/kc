@@ -360,10 +360,10 @@ export interface GatekeeperInterface {
     importDIDs(dids: GatekeeperEvent[][]): Promise<ImportBatchResult>;
     removeDIDs(dids: string[]): Promise<boolean>;
     exportBatch(dids?: string[]): Promise<GatekeeperEvent[]>;
-    importBatch(batch: GatekeeperEvent[]): Promise<ImportBatchResult>;
-    processEvents(): Promise<ProcessEventsResult>;
+    importBatch(batch: GatekeeperEvent[], expectedIndexEpoch?: string): Promise<ImportBatchResult>;
+    processEvents(expectedIndexEpoch?: string): Promise<ProcessEventsResult>;
     getQueue(registry: string): Promise<Operation[]>;
-    clearQueue(registry: string, events: Operation[] | string[]): Promise<boolean>;
+    clearQueue(registry: string, events: Operation[] | string[], expectedIndexEpoch?: string): Promise<boolean>;
     addData(data: Buffer): Promise<string>;
     getData(cid: string): Promise<Buffer | null>;
     addJSON(json: object): Promise<string>;

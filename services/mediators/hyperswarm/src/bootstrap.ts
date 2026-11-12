@@ -203,9 +203,16 @@ async function applyChangesPage(
         throw new Error('Changes export response has invalid removedOperations');
     }
 
+    const touchedIds = Array.from(new Set([
+        ...response.operations.map(record => record.event.operation.signature?.hash),
+        ...(response.removedOperations ?? []).map(record => record.operationHash),
+    ].filter((id): id is string => typeof id === 'string' && /^[a-f0-9]{64}$/i.test(id))
+        .map(id => id.toLowerCase())));
+    const existing = touchedIds.length > 0 ? await syncStore.getByIds(touchedIds) : [];
     const { records, deleteIds, invalid } = mapIndexExportChangesToSyncPage(
         response.operations,
         response.removedOperations,
+        existing,
     );
     const result = await runStoreMutation(
         records.length > 0 || deleteIds.length > 0,
@@ -221,9 +228,9 @@ async function applyChangesPage(
         exported: response.operations.length + (response.removedOperations?.length ?? 0),
         mapped: records.length + deleteIds.length,
         invalid,
-        inserted: result.inserted,
-        updated: result.updated,
-        deleted: result.deleted,
+        inserted: result.inserted - result.deleted,
+        updated: result.updated + result.deleted,
+        deleted: 0,
     };
 }
 

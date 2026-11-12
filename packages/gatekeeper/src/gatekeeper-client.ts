@@ -290,9 +290,12 @@ export default class GatekeeperClient implements GatekeeperInterface {
         }
     }
 
-    async importBatch(batch: GatekeeperEvent[]): Promise<ImportBatchResult> {
+    async importBatch(batch: GatekeeperEvent[], expectedIndexEpoch?: string): Promise<ImportBatchResult> {
         try {
-            const response = await this.axios.post(`${this.API}/batch/import`, batch);
+            const response = await this.axios.post(`${this.API}/batch/import`, batch,
+                expectedIndexEpoch === undefined ? undefined : {
+                    headers: { 'X-MDIP-Index-Epoch': expectedIndexEpoch },
+                });
             return response.data;
         }
         catch (error) {
@@ -320,9 +323,12 @@ export default class GatekeeperClient implements GatekeeperInterface {
         }
     }
 
-    async clearQueue(registry: string, events: Operation[] | string[]): Promise<boolean> {
+    async clearQueue(registry: string, events: Operation[] | string[], expectedIndexEpoch?: string): Promise<boolean> {
         try {
-            const response = await this.axios.post(`${this.API}/queue/${registry}/clear`, events);
+            const response = await this.axios.post(`${this.API}/queue/${registry}/clear`, events,
+                expectedIndexEpoch === undefined ? undefined : {
+                    headers: { 'X-MDIP-Index-Epoch': expectedIndexEpoch },
+                });
             return response.data;
         }
         catch (error) {
@@ -330,9 +336,12 @@ export default class GatekeeperClient implements GatekeeperInterface {
         }
     }
 
-    async processEvents(): Promise<ProcessEventsResult> {
+    async processEvents(expectedIndexEpoch?: string): Promise<ProcessEventsResult> {
         try {
-            const response = await this.axios.post(`${this.API}/events/process`);
+            const response = await this.axios.post(`${this.API}/events/process`, undefined,
+                expectedIndexEpoch === undefined ? undefined : {
+                    headers: { 'X-MDIP-Index-Epoch': expectedIndexEpoch },
+                });
             return response.data;
         }
         catch (error) {

@@ -1634,6 +1634,17 @@
     "/batch/import": {
       "post": {
         "summary": "Import a batch of DID events",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-MDIP-Index-Epoch",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Expected index epoch from index export. Old-epoch work is rejected after a database reset."
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -1749,6 +1760,24 @@
               }
             }
           },
+          "409": {
+            "description": "The expected index epoch changed. Refresh the index and discard old synchronization work.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "gatekeeper_index_epoch_changed"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
           "500": {
             "description": "Internal Server Error.",
             "content": {
@@ -1857,6 +1886,15 @@
         "summary": "Remove specified DIDs from the queue",
         "parameters": [
           {
+            "in": "header",
+            "name": "X-MDIP-Index-Epoch",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Expected index epoch from index export. Old-epoch work is rejected after a database reset."
+          },
+          {
             "in": "path",
             "name": "registry",
             "required": true,
@@ -1926,6 +1964,24 @@
               "application/json": {
                 "schema": {
                   "type": "boolean"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The expected index epoch changed. Refresh the index and discard old synchronization work.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "gatekeeper_index_epoch_changed"
+                      ]
+                    }
+                  }
                 }
               }
             }
@@ -2049,6 +2105,17 @@
       "post": {
         "summary": "Process queued events",
         "description": "Iterates over all queued events, importing them if they are valid (adding or merging). Continues until no more new events can be processed. If `processEvents` is already running, it may return `{ busy: true }` to indicate that processing is in progress.\n",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-MDIP-Index-Epoch",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Expected index epoch from index export. Old-epoch work is rejected after a database reset."
+          }
+        ],
         "responses": {
           "200": {
             "description": "A summary of how many events were added, merged, rejected, or still pending in the queue. Or `{ busy: true }` if processing is already underway.\n",
@@ -2108,6 +2175,24 @@
                       }
                     }
                   ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The expected index epoch changed. Refresh the index and discard old synchronization work.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "gatekeeper_index_epoch_changed"
+                      ]
+                    }
+                  }
                 }
               }
             }

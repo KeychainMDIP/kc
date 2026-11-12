@@ -88,6 +88,8 @@ export default class Gatekeeper implements GatekeeperInterface {
     private didLocks = new Map<string, Promise<void>>();
     private controllerGraphLock: Promise<void> = Promise.resolve();
     private verifyDbInFlight?: Promise<VerifyDbResult>;
+    private eventQueueBarrier: Promise<void> = Promise.resolve();
+    private eventQueueWork = new Set<Promise<unknown>>();
     private historicalOperationCids = new Map<string, string>();
     private historicalOperationCidBytes = 0;
     private maxHistoryCidCacheEntries = MAX_HISTORY_CID_CACHE_ENTRIES;
@@ -130,6 +132,23 @@ export default class Gatekeeper implements GatekeeperInterface {
     private clearEventsSeen(): void {
         for (const key of Object.keys(this.eventsSeen)) {
             delete this.eventsSeen[key];
+        }
+    }
+
+    private withEventQueueWork<T>(fn: () => Promise<T>): Promise<T> {
+        const work = this.eventQueueBarrier.then(fn).finally(() => {
+            this.eventQueueWork.delete(work);
+        });
+        this.eventQueueWork.add(work);
+        return work;
+    }
+
+    private async assertIndexEpoch(expectedIndexEpoch?: string): Promise<void> {
+        if (expectedIndexEpoch !== undefined &&
+            expectedIndexEpoch !== (await this.db.getLifecycleMetadata()).epoch) {
+            throw Object.assign(new Error('Gatekeeper index epoch changed'), {
+                code: 'gatekeeper_index_epoch_changed',
+            });
         }
     }
 
@@ -676,16 +695,20 @@ export default class Gatekeeper implements GatekeeperInterface {
 
     // For testing purposes
     async resetDb(): Promise<boolean> {
-        return this.withControllerGraphLock(async () => {
-            await this.db.resetDb();
-            this.historicalOperationCids.clear();
-            this.historicalOperationCidBytes = 0;
-            await this.db.initializeLifecycleIndex();
-            this.clearEventsSeen();
-            this.eventsQueue = [];
-            this.deferredEvents = new WeakSet();
-            return true;
-        });
+        // Finish admitted work before reset and hold new requests behind it.
+        const reset = Promise.allSettled([this.eventQueueBarrier, ...this.eventQueueWork])
+            .then(() => this.withControllerGraphLock(async () => {
+                await this.db.resetDb();
+                this.historicalOperationCids.clear();
+                this.historicalOperationCidBytes = 0;
+                await this.db.initializeLifecycleIndex();
+                this.clearEventsSeen();
+                this.eventsQueue = [];
+                this.deferredEvents = new WeakSet();
+                return true;
+            }));
+        this.eventQueueBarrier = reset.then(() => {}, () => {});
+        return reset;
     }
 
     async generateCID(operation: unknown): Promise<string> {
@@ -1504,7 +1527,14 @@ export default class Gatekeeper implements GatekeeperInterface {
         return { added, merged, rejected, acceptedHashes, acceptedEvents, rejectedOperations };
     }
 
-    async processEvents(): Promise<ProcessEventsResult> {
+    async processEvents(expectedIndexEpoch?: string): Promise<ProcessEventsResult> {
+        return this.withEventQueueWork(async () => {
+            await this.assertIndexEpoch(expectedIndexEpoch);
+            return this.processQueuedEvents();
+        });
+    }
+
+    private async processQueuedEvents(): Promise<ProcessEventsResult> {
         if (this.isProcessingEvents) {
             return { busy: true };
         }
@@ -1669,7 +1699,14 @@ export default class Gatekeeper implements GatekeeperInterface {
         return !event.did || this.didMatchesOperation(event.did, event.operation);
     }
 
-    async importBatch(batch: GatekeeperEvent[]): Promise<ImportBatchResult> {
+    async importBatch(batch: GatekeeperEvent[], expectedIndexEpoch?: string): Promise<ImportBatchResult> {
+        return this.withEventQueueWork(async () => {
+            await this.assertIndexEpoch(expectedIndexEpoch);
+            return this.admitBatch(batch);
+        });
+    }
+
+    private async admitBatch(batch: GatekeeperEvent[]): Promise<ImportBatchResult> {
         if (!batch || !Array.isArray(batch) || batch.length < 1) {
             throw new InvalidParameterError('batch');
         }
@@ -1734,7 +1771,14 @@ export default class Gatekeeper implements GatekeeperInterface {
         return this.db.getQueue(registry);
     }
 
-    async clearQueue(registry: string, events: Operation[] | string[]): Promise<boolean> {
+    async clearQueue(registry: string, events: Operation[] | string[], expectedIndexEpoch?: string): Promise<boolean> {
+        return this.withEventQueueWork(async () => {
+            await this.assertIndexEpoch(expectedIndexEpoch);
+            return this.clearRegistryQueue(registry, events);
+        });
+    }
+
+    private async clearRegistryQueue(registry: string, events: Operation[] | string[]): Promise<boolean> {
         if (!ValidRegistries.includes(registry)) {
             throw new InvalidParameterError(`registry=${registry}`);
         }

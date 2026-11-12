@@ -273,8 +273,8 @@ describe('bootstrapSyncStoreFromGatekeeper', () => {
         };
         try {
             const result = await bootstrapSyncStoreFromGatekeeper(store, gatekeeper, { pageLimit: 1 });
-            expect(result).toMatchObject({ mode: 'changes', pages: 5, exported: 3, mapped: 3,
-                invalid: 0, inserted: 2, updated: 0, deleted: 1, countAfter: 1 });
+            expect(result).toMatchObject({ mode: 'changes', pages: 5, exported: 3, mapped: 4,
+                invalid: 0, inserted: 2, updated: 1, deleted: 0, countAfter: 2 });
             expect(pages.map(page => page.operations!.length)).toEqual([1, 0, 0, 0, 1]);
             expect(pages.map(page => page.dids)).toStrictEqual([
                 [], [], [], [{ did: eventA.did, events: [], removed: true }], [],
@@ -285,7 +285,8 @@ describe('bootstrapSyncStoreFromGatekeeper', () => {
                     includeOperations: true, includeDIDHistories: false,
                 });
             }
-            expect(await store.has(h('a'))).toBe(false);
+            expect(await store.has(h('a'))).toBe(true);
+            await expect(store.getByIds([h('a')])).resolves.toMatchObject([{ syncOrder: 2 ** 52 + 1 }]);
             await expect(store.getByIds([h('b')])).resolves.toMatchObject([{ id: h('b'), syncOrder: 5, operation: eventB.operation }]);
             expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor)).toBe('5');
             expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.gatekeeperIndexEpoch)).toBe('epoch-a');
@@ -293,7 +294,7 @@ describe('bootstrapSyncStoreFromGatekeeper', () => {
         } finally { await store.stop(); }
     });
 
-    it('deletes operations exported by incremental Gatekeeper changes', async () => {
+    it('retains accepted operations and advances past incremental Gatekeeper removals', async () => {
         const store = new InMemoryOperationSyncStore();
         await store.start();
         const operation = makeOperation('a', '2026-02-10T10:00:00.000Z');
@@ -321,11 +322,13 @@ describe('bootstrapSyncStoreFromGatekeeper', () => {
 
         expect(result).toMatchObject({
             exported: 1,
-            mapped: 1,
-            deleted: 1,
-            countAfter: 0,
+            mapped: 0,
+            deleted: 0,
+            updated: 0,
+            countAfter: 1,
         });
-        expect(await store.has(h('a'))).toBe(false);
+        expect(await store.has(h('a'))).toBe(true);
+        expect(await store.countOrdered()).toBe(0);
         expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor)).toBe('13');
     });
 

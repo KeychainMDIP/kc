@@ -439,22 +439,71 @@ export default class DbPostgres implements GatekeeperDb {
         }
     }
 
+    private async tryTruncateForReset(client: PoolClient): Promise<string | undefined> {
+        await client.query('SAVEPOINT reset_truncate');
+        let reason: string | undefined;
+        try {
+            await client.query(`LOCK TABLE gatekeeper_events, gatekeeper_queue, gatekeeper_blocks,
+                gatekeeper_index_changes, gatekeeper_lifecycle IN ACCESS EXCLUSIVE MODE NOWAIT`);
+            await client.query('LOCK TABLE gatekeeper_metadata IN ROW EXCLUSIVE MODE NOWAIT');
+            const protectedTables = await client.query<{ protected: boolean }>(`SELECT EXISTS (
+                SELECT 1 FROM pg_class c WHERE c.oid IN (
+                    'gatekeeper_events'::regclass, 'gatekeeper_queue'::regclass,
+                    'gatekeeper_blocks'::regclass, 'gatekeeper_index_changes'::regclass,
+                    'gatekeeper_lifecycle'::regclass, 'gatekeeper_metadata'::regclass
+                ) AND (c.relrowsecurity OR EXISTS (
+                    SELECT 1 FROM pg_trigger t WHERE t.tgrelid = c.oid AND NOT t.tgisinternal
+                ))
+            ) AS protected`);
+            if (protectedTables.rows[0].protected) {
+                reason = 'row_security_or_triggers';
+            } else {
+                const shared = await client.query<{ shared: boolean }>(`SELECT EXISTS (
+                    SELECT 1 FROM gatekeeper_events WHERE namespace <> $1
+                    UNION ALL SELECT 1 FROM gatekeeper_queue WHERE namespace <> $1
+                    UNION ALL SELECT 1 FROM gatekeeper_blocks WHERE namespace <> $1
+                    UNION ALL SELECT 1 FROM gatekeeper_index_changes WHERE namespace <> $1
+                    UNION ALL SELECT 1 FROM gatekeeper_lifecycle WHERE namespace <> $1
+                ) AS shared`, [this.dbName]);
+                if (shared.rows[0].shared) reason = 'shared_namespace';
+                else await client.query(`TRUNCATE TABLE gatekeeper_events, gatekeeper_queue,
+                    gatekeeper_blocks, gatekeeper_index_changes, gatekeeper_lifecycle
+                    CONTINUE IDENTITY RESTRICT`);
+            }
+        } catch (error) {
+            const code = (error as { code?: string } | null)?.code;
+            if (code !== '55P03' && code !== '42501' && code !== '0A000') throw error;
+            reason = code;
+        }
+        // A failed multi-table lock may already hold earlier locks and abort the transaction.
+        if (reason) await client.query('ROLLBACK TO SAVEPOINT reset_truncate');
+        await client.query('RELEASE SAVEPOINT reset_truncate');
+        return reason;
+    }
+
     async resetDb(): Promise<void> {
         return this.runExclusive(async () => {
-            await this.withTx(async client => {
-                await client.query('DELETE FROM gatekeeper_lifecycle WHERE namespace = $1', [this.dbName]);
+            const reason = await this.withTx(async client => {
+                const fallback = await this.tryTruncateForReset(client);
+                if (fallback) {
+                    await client.query('DELETE FROM gatekeeper_lifecycle WHERE namespace = $1', [this.dbName]);
+                }
                 await client.query("DELETE FROM gatekeeper_metadata WHERE namespace = $1 AND key = 'lifecycle'", [this.dbName]);
-                await client.query('DELETE FROM gatekeeper_events WHERE namespace = $1', [this.dbName]);
-                await client.query('DELETE FROM gatekeeper_queue WHERE namespace = $1', [this.dbName]);
-                await client.query('DELETE FROM gatekeeper_blocks WHERE namespace = $1', [this.dbName]);
-                await client.query('DELETE FROM gatekeeper_index_changes WHERE namespace = $1', [this.dbName]);
+                if (fallback) {
+                    await client.query('DELETE FROM gatekeeper_events WHERE namespace = $1', [this.dbName]);
+                    await client.query('DELETE FROM gatekeeper_queue WHERE namespace = $1', [this.dbName]);
+                    await client.query('DELETE FROM gatekeeper_blocks WHERE namespace = $1', [this.dbName]);
+                    await client.query('DELETE FROM gatekeeper_index_changes WHERE namespace = $1', [this.dbName]);
+                }
                 await client.query(
                     `INSERT INTO gatekeeper_metadata (namespace, key, value)
                      VALUES ($1, 'indexEpoch', $2)
                      ON CONFLICT (namespace, key) DO UPDATE SET value = excluded.value`,
                     [this.dbName, randomUUID()]
                 );
+                return fallback;
             });
+            log.info({ strategy: reason ? 'delete' : 'truncate', reason }, 'Gatekeeper database reset complete');
         });
     }
 

@@ -2,12 +2,13 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { randomUUID } from 'crypto';
-import { Pool } from 'pg';
+import { Pool, type PoolClient } from 'pg';
 import { jest } from '@jest/globals';
 import DbMongo from '@mdip/gatekeeper/db/mongo.ts';
 import DbPostgres from '@mdip/gatekeeper/db/postgres.ts';
 import DbRedis from '@mdip/gatekeeper/db/redis.ts';
 import DbSqlite from '@mdip/gatekeeper/db/sqlite.ts';
+import Gatekeeper from '@mdip/gatekeeper';
 import type { GatekeeperDb, GatekeeperEvent, LifecycleMetadata } from '@mdip/gatekeeper/types';
 
 const cutoff = Date.parse('2026-01-01T00:00:00.000Z');
@@ -42,6 +43,7 @@ function updateEvent(suffix: string, validUntil?: string, controller?: string): 
 type Kind = 'sqlite' | 'postgres' | 'mongo' | 'redis';
 interface Fixture {
     db: GatekeeperDb;
+    postgres?: { pool: Pool; namespace: string };
     close(): Promise<void>;
     rawEvent(suffix: string, event: GatekeeperEvent): Promise<void>;
     removeLifecycleStructure(): Promise<void>;
@@ -97,6 +99,7 @@ async function createFixture(kind: Kind): Promise<Fixture> {
     }
     return {
         db,
+        ...(kind === 'postgres' && { postgres: { pool: handle.pool as Pool, namespace } }),
         getMetadata: () => db.getLifecycleMetadata(),
         setMetadata,
         async close() {
@@ -154,6 +157,304 @@ const kinds: Kind[] = ['sqlite'];
 if (process.env.KC_LIFECYCLE_POSTGRES_TEST_URL) kinds.push('postgres');
 if (process.env.KC_LIFECYCLE_MONGO_TEST_URL) kinds.push('mongo');
 if (process.env.KC_LIFECYCLE_REDIS_TEST_URL) kinds.push('redis');
+
+const describePostgres = process.env.KC_LIFECYCLE_POSTGRES_TEST_URL ? describe : describe.skip;
+describePostgres('PostgreSQL bulk reset', () => {
+    const tables = ['gatekeeper_events', 'gatekeeper_queue', 'gatekeeper_blocks',
+        'gatekeeper_index_changes', 'gatekeeper_lifecycle'] as const;
+    let fixture: Fixture;
+    let pool: Pool;
+    let namespace: string;
+
+    beforeEach(async () => {
+        fixture = undefined as unknown as Fixture;
+        fixture = await createFixture('postgres');
+        ({ pool, namespace } = fixture.postgres!);
+    });
+    afterEach(async () => { await fixture?.close(); });
+
+    async function seed() {
+        const event = createEvent('zTarget');
+        await fixture.db.addEventAndQueue(event.did!, event, ['hyperswarm']);
+        await fixture.db.addBlock('local', { height: 1, hash: 'block-1', time: 1 });
+        const row = (await fixture.db.getLifecycle('zTarget'))!;
+        await fixture.db.saveExpirationJob(row.suffix, { ...row, dependentCursor: 'zChild' });
+        await pool.query("INSERT INTO gatekeeper_metadata VALUES ($1, 'custom', 'keep'), ('other', 'indexEpoch', 'other-epoch')", [namespace]);
+    }
+
+    async function counts(target = namespace) {
+        return Promise.all(tables.map(async table => {
+            // Table names come only from the fixed fixture list.
+            // eslint-disable-next-line sonarjs/sql-queries
+            return Number((await pool.query(`SELECT count(*) AS n FROM ${table} WHERE namespace = $1`, [target])).rows[0].n);
+        }));
+    }
+
+    // Pin only promise-based transaction acquisition. Pool.query's callback path stays real.
+    async function withResetClient<T>(action: (client: PoolClient) => Promise<T>): Promise<T> {
+        const client = await pool.connect();
+        const original = pool.connect.bind(pool) as any;
+        const connect = jest.spyOn(pool as any, 'connect').mockImplementation((callback?: any) =>
+            typeof callback === 'function' ? original(callback) : Promise.resolve(client));
+        const release = jest.spyOn(client, 'release').mockImplementation(() => undefined);
+        try { return await action(client); }
+        finally { connect.mockRestore(); release.mockRestore(); client.release(); }
+    }
+
+    async function resetQueries() {
+        return withResetClient(async client => {
+            const spy = jest.spyOn(client, 'query');
+            try {
+                await fixture.db.resetDb();
+                return spy.mock.calls.map(args => String(args[0]));
+            } finally { spy.mockRestore(); }
+        });
+    }
+
+    function barrier() {
+        let resolve!: () => void;
+        const promise = new Promise<void>(done => { resolve = done; });
+        return { promise, resolve };
+    }
+
+    it('truncates all bulk data, preserves metadata and restores library readiness', async () => {
+        await seed();
+        const epoch = (await fixture.db.getLifecycleMetadata()).epoch;
+        expect((await counts()).every(n => n > 0)).toBe(true);
+        const sql = await resetQueries();
+        expect(sql.some(text => text.startsWith('TRUNCATE TABLE'))).toBe(true);
+        expect(sql.some(text => text.startsWith('DELETE FROM gatekeeper_events'))).toBe(false);
+        expect(await counts()).toEqual([0, 0, 0, 0, 0]);
+        expect(await fixture.db.getBlock('local', 'block-1')).toBeNull();
+        expect(await pool.query('SELECT namespace, key, value FROM gatekeeper_metadata ORDER BY namespace, key'))
+            .toMatchObject({ rows: [
+                { namespace, key: 'custom', value: 'keep' },
+                { namespace, key: 'indexEpoch', value: expect.any(String) },
+                { namespace: 'other', key: 'indexEpoch', value: 'other-epoch' },
+            ] });
+        expect((await fixture.db.exportIndexSnapshot()).indexEpoch).not.toBe(epoch);
+        await expect(fixture.db.getLifecycleMetadata()).rejects.toThrow('Lifecycle');
+        const gatekeeper = new Gatekeeper({ db: fixture.db, ipfsEnabled: false });
+        await expect(gatekeeper.resetDb()).resolves.toBe(true);
+        expect(await fixture.db.isReady()).toBe(true);
+        expect(await fixture.db.getLifecycleMetadata()).toMatchObject({ complete: true });
+        expect(gatekeeper.getQueueStatus().total).toBe(0);
+        await fixture.db.addEvent(did('zAfter'), createEvent('zAfter'));
+        expect((await fixture.db.exportIndexChanges()).dids).toHaveLength(1);
+    });
+
+    it('resets an empty namespace repeatedly without restarting the global cursor sequence', async () => {
+        await seed();
+        const before = await fixture.db.exportIndexChanges();
+        await fixture.db.resetDb();
+        const first = await fixture.db.exportIndexSnapshot();
+        await fixture.db.resetDb();
+        const second = await fixture.db.exportIndexSnapshot();
+        expect(first.indexEpoch).not.toBe(second.indexEpoch);
+        expect(second.dids).toEqual([]);
+        await fixture.db.addEvent(did('zAfter'), createEvent('zAfter'));
+        expect(Number((await fixture.db.exportIndexChanges()).cursor)).toBeGreaterThan(Number(before.cursor));
+    });
+
+    const otherRows = {
+        gatekeeper_events: "INSERT INTO gatekeeper_events VALUES ('other', 'zOther', 0, $1::jsonb)",
+        gatekeeper_queue: "INSERT INTO gatekeeper_queue VALUES ('other', 'hyperswarm', $1::jsonb)",
+        gatekeeper_blocks: "INSERT INTO gatekeeper_blocks VALUES ('other', 'local', 'other-block', 1, 1, 0)",
+        gatekeeper_index_changes: "INSERT INTO gatekeeper_index_changes(namespace, kind, did, event) VALUES ('other', 'did', 'did:test:zOther', $1::jsonb)",
+        gatekeeper_lifecycle: "INSERT INTO gatekeeper_lifecycle(namespace, kind, id, record) VALUES ('other', 'job', 'zOther', $1::jsonb)",
+    };
+    it.each(tables)('preserves a namespace present only in %s', async table => {
+        await seed();
+        const event = createEvent('zOther');
+        const row = (await fixture.db.getLifecycle('zTarget'))!;
+        const data = table === 'gatekeeper_queue' ? [event.operation]
+            : table === 'gatekeeper_lifecycle' ? { ...row, suffix: 'zOther', did: did('zOther') } : event;
+        await pool.query(otherRows[table], table === 'gatekeeper_blocks' ? [] : [JSON.stringify(data)]);
+        const sql = await resetQueries();
+        expect(sql.some(text => text.startsWith('TRUNCATE TABLE'))).toBe(false);
+        expect(sql.some(text => text.startsWith('ROLLBACK TO SAVEPOINT'))).toBe(true);
+        expect(await counts()).toEqual([0, 0, 0, 0, 0]);
+        expect(await counts('other')).toEqual(tables.map(name => Number(name === table)));
+        expect((await pool.query("SELECT value FROM gatekeeper_metadata WHERE namespace='other' AND key='indexEpoch'")).rows[0].value).toBe('other-epoch');
+    });
+
+    it('releases partial exclusive locks before using deletes when a reader holds a later table', async () => {
+        await seed();
+        const reader = await pool.connect();
+        try {
+            await reader.query('BEGIN');
+            await reader.query('LOCK TABLE gatekeeper_index_changes IN ACCESS SHARE MODE');
+            await withResetClient(async client => {
+                const { rows: [{ pid }] } = await client.query('SELECT pg_backend_pid() AS pid');
+                const query = client.query.bind(client) as any;
+                let checked = false;
+                const spy = jest.spyOn(client as any, 'query').mockImplementation(async (...args: any[]) => {
+                    if (String(args[0]).startsWith('DELETE FROM gatekeeper_lifecycle')) {
+                        const locks = await reader.query("SELECT 1 FROM pg_locks WHERE pid=$1 AND mode='AccessExclusiveLock' AND granted", [pid]);
+                        expect(locks.rowCount).toBe(0);
+                        checked = true;
+                    }
+                    return query(...args);
+                });
+                try { await fixture.db.resetDb(); expect(checked).toBe(true); }
+                finally { spy.mockRestore(); }
+            });
+            expect(await counts()).toEqual([0, 0, 0, 0, 0]);
+        } finally { await reader.query('ROLLBACK'); reader.release(); }
+    });
+
+    it('does not truncate an uncommitted write from another namespace', async () => {
+        await seed();
+        const writer = await pool.connect();
+        try {
+            await writer.query('BEGIN');
+            await writer.query(otherRows.gatekeeper_events, [JSON.stringify(createEvent('zOther'))]);
+            const sql = await resetQueries();
+            expect(sql.some(text => text.startsWith('TRUNCATE TABLE'))).toBe(false);
+            await writer.query('COMMIT');
+            expect(await counts('other')).toEqual([1, 0, 0, 0, 0]);
+        } finally { await writer.query('ROLLBACK'); writer.release(); }
+    });
+
+    it('blocks a new namespace writer until the checked truncate has committed', async () => {
+        await seed();
+        const writer = await pool.connect();
+        const observer = await pool.connect();
+        const { rows: [{ pid }] } = await writer.query('SELECT pg_backend_pid() AS pid');
+        const entered = barrier(); const proceed = barrier();
+        let write: Promise<unknown> | undefined;
+        try {
+            await withResetClient(async client => {
+                const query = client.query.bind(client) as any;
+                const spy = jest.spyOn(client as any, 'query').mockImplementation(async (...args: any[]) => {
+                    if (String(args[0]).startsWith('TRUNCATE TABLE')) { entered.resolve(); await proceed.promise; }
+                    return query(...args);
+                });
+                const reset = fixture.db.resetDb();
+                try {
+                    await Promise.race([entered.promise, reset.then(() => { throw new Error('Reset skipped the truncate barrier'); })]);
+                    write = writer.query(otherRows.gatekeeper_events, [JSON.stringify(createEvent('zOther'))]);
+                    let blocked = false;
+                    for (let attempt = 0; attempt < 100; attempt += 1) {
+                        const state = await observer.query("SELECT wait_event_type FROM pg_stat_activity WHERE pid=$1", [pid]);
+                        if (state.rows[0].wait_event_type === 'Lock') { blocked = true; break; }
+                        await new Promise(done => setTimeout(done, 10));
+                    }
+                    expect(blocked).toBe(true);
+                } finally {
+                    proceed.resolve();
+                    try { await reset; } finally { spy.mockRestore(); }
+                }
+            });
+            await write;
+            expect(await counts('other')).toEqual([1, 0, 0, 0, 0]);
+        } finally { proceed.resolve(); await write; writer.release(); observer.release(); }
+    });
+
+    it.each([false, true])('retains scoped deletion for a restricted role, row security=%s', async rls => {
+        await seed();
+        const role = `reset_${randomUUID().replaceAll('-', '')}`;
+        // Role/schema identifiers below are generated hexadecimal UUIDs with fixed prefixes.
+        // eslint-disable-next-line sonarjs/sql-queries
+        await pool.query(`CREATE ROLE "${role}"; GRANT USAGE ON SCHEMA "${namespace}" TO "${role}";
+            GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA "${namespace}" TO "${role}"`);
+        try {
+            if (rls) {
+                await pool.query(otherRows.gatekeeper_events, [JSON.stringify(createEvent('zOther'))]);
+                // eslint-disable-next-line sonarjs/sql-queries
+                await pool.query(`GRANT TRUNCATE ON ALL TABLES IN SCHEMA "${namespace}" TO "${role}";
+                    ALTER TABLE gatekeeper_events ENABLE ROW LEVEL SECURITY;
+                    CREATE POLICY own_namespace ON gatekeeper_events USING (namespace='${namespace}')`);
+            }
+            await withResetClient(async client => {
+                // eslint-disable-next-line sonarjs/sql-queries
+                await client.query(`SET ROLE "${role}"`);
+                const spy = jest.spyOn(client, 'query');
+                try {
+                    await fixture.db.resetDb();
+                    const sql = spy.mock.calls.map(args => String(args[0]));
+                    expect(sql.some(text => text.startsWith('DELETE FROM gatekeeper_events'))).toBe(true);
+                    expect(sql.some(text => text.startsWith('ROLLBACK TO SAVEPOINT'))).toBe(true);
+                } finally { spy.mockRestore(); await client.query('RESET ROLE'); }
+            });
+            expect(await counts()).toEqual([0, 0, 0, 0, 0]);
+            if (rls) expect(await counts('other')).toEqual([1, 0, 0, 0, 0]);
+        } finally {
+            // eslint-disable-next-line sonarjs/sql-queries
+            await pool.query(`DROP OWNED BY "${role}"; DROP ROLE "${role}"`);
+        }
+    });
+
+    it('uses deletes without cascading through an external foreign-key table', async () => {
+        await seed();
+        await pool.query('CREATE TABLE external_reference(namespace text, id text, seq int, FOREIGN KEY(namespace,id,seq) REFERENCES gatekeeper_events)');
+        const sql = await resetQueries();
+        expect(sql.some(text => text.startsWith('TRUNCATE TABLE'))).toBe(true);
+        expect(sql.some(text => text.startsWith('ROLLBACK TO SAVEPOINT'))).toBe(true);
+        expect(sql.some(text => text.startsWith('DELETE FROM gatekeeper_events'))).toBe(true);
+        expect((await pool.query("SELECT to_regclass('external_reference') AS name")).rows[0].name).toBe('external_reference');
+    });
+
+    it('preserves delete triggers and does not run truncate triggers', async () => {
+        await seed();
+        await pool.query(`CREATE TABLE reset_audit(kind text, lifecycle_present boolean);
+            CREATE FUNCTION audit_reset() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+                INSERT INTO reset_audit SELECT TG_OP, EXISTS(
+                    SELECT 1 FROM gatekeeper_metadata WHERE namespace = OLD.namespace AND key = 'lifecycle'
+                ); RETURN OLD; END; $$;
+            CREATE TRIGGER audit_delete BEFORE DELETE ON gatekeeper_events FOR EACH ROW EXECUTE FUNCTION audit_reset();
+            CREATE TRIGGER audit_truncate AFTER TRUNCATE ON gatekeeper_events EXECUTE FUNCTION audit_reset()`);
+        const sql = await resetQueries();
+        expect(sql.some(text => text.startsWith('TRUNCATE TABLE'))).toBe(false);
+        expect((await pool.query('SELECT * FROM reset_audit')).rows).toEqual([{ kind: 'DELETE', lifecycle_present: false }]);
+    });
+
+    it('preserves the data visible to lifecycle metadata delete triggers', async () => {
+        await seed();
+        await pool.query(`CREATE TABLE metadata_reset_audit(events bigint, lifecycle bigint);
+            CREATE FUNCTION audit_metadata_reset() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+                INSERT INTO metadata_reset_audit SELECT
+                    (SELECT count(*) FROM gatekeeper_events), (SELECT count(*) FROM gatekeeper_lifecycle);
+                RETURN OLD; END; $$;
+            CREATE TRIGGER audit_metadata_delete BEFORE DELETE ON gatekeeper_metadata
+                FOR EACH ROW EXECUTE FUNCTION audit_metadata_reset()`);
+        const sql = await resetQueries();
+        expect(sql.some(text => text.startsWith('TRUNCATE TABLE'))).toBe(false);
+        expect((await pool.query('SELECT * FROM metadata_reset_audit')).rows).toEqual([{ events: '1', lifecycle: '0' }]);
+    });
+
+    it.each(['after_truncate', 'unexpected_lock', 'scoped_delete', 'savepoint_recovery'])('rolls back data and metadata for %s failure', async failure => {
+        await seed();
+        const before = await counts();
+        const metadata = (await pool.query('SELECT * FROM gatekeeper_metadata ORDER BY namespace,key')).rows;
+        const reader = await pool.connect();
+        if (failure === 'savepoint_recovery') { await reader.query('BEGIN'); await reader.query('LOCK TABLE gatekeeper_lifecycle IN ACCESS SHARE MODE'); }
+        if (failure === 'scoped_delete') await pool.query(otherRows.gatekeeper_events, [JSON.stringify(createEvent('zOther'))]);
+        try {
+            await withResetClient(async client => {
+                const query = client.query.bind(client) as any;
+                let truncated = false;
+                const spy = jest.spyOn(client as any, 'query').mockImplementation(async (...args: any[]) => {
+                    const text = String(args[0]);
+                    if (text.startsWith('TRUNCATE TABLE')) truncated = true;
+                    const fail = failure === 'after_truncate' && text.includes('INSERT INTO gatekeeper_metadata')
+                        || failure === 'unexpected_lock' && text.startsWith('LOCK TABLE')
+                        || failure === 'scoped_delete' && text.startsWith('DELETE FROM gatekeeper_events')
+                        || failure === 'savepoint_recovery' && text.startsWith('ROLLBACK TO SAVEPOINT');
+                    if (fail) return query('SELECT 1/0');
+                    return query(...args);
+                });
+                try {
+                    await expect(fixture.db.resetDb()).rejects.toThrow();
+                    if (failure === 'after_truncate') expect(truncated).toBe(true);
+                } finally { spy.mockRestore(); }
+            });
+            expect(await counts()).toEqual(before);
+            expect((await pool.query('SELECT * FROM gatekeeper_metadata ORDER BY namespace,key')).rows).toEqual(metadata);
+            expect(await fixture.db.getExpirationJob('zTarget')).toMatchObject({ dependentCursor: 'zChild' });
+        } finally { await reader.query('ROLLBACK'); reader.release(); }
+    });
+});
 
 describe.each(kinds)('%s native lifecycle persistence', kind => {
     let fixture: Fixture;
