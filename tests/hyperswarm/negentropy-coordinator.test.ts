@@ -14,6 +14,86 @@ jest.unstable_mockModule('@mdip/common/logger', () => ({
 }));
 
 describe('Negentropy coordinator', () => {
+    it('waits for mirror recovery before scheduling peers after a reset cancellation', async () => {
+        const { createPeerSyncCoordinator } = await import('../../services/mediators/hyperswarm/src/peer-sync-coordinator.ts');
+        const finishTransition = jest.fn();
+        const getPeerKeys = jest.fn(() => []);
+        const coordinator = createPeerSyncCoordinator({
+            getOrderedCatchupCoordinator: () => ({ finishTransition }),
+            getNegentropyCoordinator: () => ({ getActiveSessionCount: () => 0 }),
+            getPeerKeys,
+        } as unknown as Parameters<typeof createPeerSyncCoordinator>[0]);
+        await coordinator.handleNegentropySessionClosed('peer', 'gatekeeper_reset');
+        expect(finishTransition).toHaveBeenCalledWith('peer');
+        expect(getPeerKeys).not.toHaveBeenCalled();
+        await coordinator.handleNegentropySessionClosed('peer', 'complete');
+        expect(getPeerKeys).toHaveBeenCalledTimes(1);
+        await coordinator.shutdown();
+    });
+
+    it.each(['remote', 'terminal'])('closes %s imports interrupted by reset without unresolved-operation warnings', async phase => {
+        const [
+            { createNegentropyCoordinator },
+            { default: InMemoryOperationSyncStore },
+            { createConnectionInfo },
+            { createMediatorSyncStats },
+        ] = await Promise.all([
+            import('../../services/mediators/hyperswarm/src/negentropy-coordinator.ts'),
+            import('../../services/mediators/hyperswarm/src/db/memory.ts'),
+            import('../../services/mediators/hyperswarm/src/mediator-state.ts'),
+            import('../../services/mediators/hyperswarm/src/sync-stats.ts'),
+        ]);
+        const peerKey = '22'.repeat(32);
+        const connection = createConnectionInfo({
+            connection: { write() {}, destroy() {}, remotePublicKey: Buffer.from(peerKey, 'hex') } as never,
+            peerName: 'test-peer',
+        });
+        const store = new InMemoryOperationSyncStore();
+        const enqueue = jest.fn<ImportPipeline['enqueue']>(async request => request.kind === phase
+            ? { knownIds: [], persistedIds: [], retryable: true, indexEpochChanged: true }
+            : { knownIds: [], persistedIds: [], retryable: false });
+        const importPipeline = {
+            queued: 0, running: 0, indexEpoch: 'old-epoch', enqueue,
+        } as unknown as ImportPipeline;
+        const sendToPeer = jest.fn<Parameters<typeof createNegentropyCoordinator>[0]['sendToPeer']>(() => true);
+        const onSessionClosed = jest.fn(async () => undefined);
+        const coordinator = createNegentropyCoordinator({
+            version: 1, transportFramingVersion: 1, frameSizeLimit: 0,
+            maxRecordsPerWindow: 16, maxRoundsPerSession: 8, maxIdsPerRequest: 1_000,
+            maxIdsPerLookup: 1_000, maxOpsPerPush: 300, maxBytesPerPush: 512 * 1024,
+            idleTimeoutMs: 120_000, syncStore: store, importPipeline, syncStats: createMediatorSyncStats(),
+            getConnection: key => key === peerKey ? connection : undefined,
+            createSessionId: () => 'reset-session',
+            createBaseMessage: type => ({ type, time: '', node: '', relays: [] }),
+            sendToPeer, canStartBackgroundPrebuild: () => false, terminatePeerConnection() {}, onSessionClosed,
+        });
+        try {
+            await coordinator.initializeAdapter();
+            await coordinator.startSession(peerKey, { source: 'connect', modeReason: 'negentropy_supported', initiator: true });
+            const open = sendToPeer.mock.calls[0]?.[1] as { windowId: string };
+            mockLogger.warn.mockClear();
+            await coordinator.handleMessage(peerKey, {
+                type: 'ops_push', sessionId: 'reset-session', windowId: open.windowId, round: 0,
+                time: '', node: '', relays: [],
+                data: [{ type: 'create', signature: {
+                    hash: 'b'.repeat(64), signed: '2026-01-01T00:00:00.000Z', value: 'signature',
+                } }],
+            });
+            if (phase === 'terminal') {
+                await coordinator.handleMessage(peerKey, {
+                    type: 'neg_close', sessionId: 'reset-session', windowId: open.windowId,
+                    reason: 'complete', round: 0, time: '', node: '', relays: [],
+                });
+            }
+            expect(coordinator.hasActiveSession(peerKey)).toBe(false);
+            expect(onSessionClosed).toHaveBeenCalledWith(peerKey, 'gatekeeper_reset');
+            expect(mockLogger.warn).not.toHaveBeenCalled();
+        } finally {
+            await coordinator.shutdown();
+            await store.stop();
+        }
+    });
+
     it('logs a rejected session-close callback before shutdown completes', async () => {
         const [
             { createNegentropyCoordinator },

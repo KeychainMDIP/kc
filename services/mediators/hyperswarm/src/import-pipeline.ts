@@ -5,7 +5,7 @@ import type CipherNode from '@mdip/cipher/node';
 import type { Operation } from '@mdip/gatekeeper/types';
 import { generateCID } from '@mdip/ipfs/utils';
 import { childLogger } from '@mdip/common/logger';
-import { bootstrapSyncStoreFromGatekeeper, type BootstrapResult } from './bootstrap.js';
+import { bootstrapSyncStoreFromGatekeeper, HYPR_INDEX_SYNC_STATE_KEYS, type BootstrapResult } from './bootstrap.js';
 import type { OperationSyncStore, SyncOperationWriteRecord } from './db/types.js';
 import {
     addAggregateSample,
@@ -35,11 +35,13 @@ interface ImportQueueResult {
     knownIds: string[];
     persistedIds: string[];
     retryable: boolean;
+    indexEpochChanged?: boolean;
 }
 
 interface ImportRequestBase {
     name: string;
     data: Operation[];
+    indexEpoch?: string;
 }
 
 interface RemoteImportRequest extends ImportRequestBase {
@@ -64,6 +66,10 @@ type ImportPipelineRequest =
     | LocalQueueImportRequest
     | TerminalImportRequest;
 
+type PipelineWork =
+    | { kind: 'import'; request: ImportPipelineRequest; indexEpoch?: string }
+    | { kind: 'refresh'; source: string };
+
 export interface ImportPipelineOptions {
     gatekeeper: Pick<GatekeeperClient, 'exportIndex' | 'importBatch' | 'isReady' | 'processEvents'>;
     syncStore: OperationSyncStore;
@@ -74,6 +80,7 @@ export interface ImportPipelineOptions {
 }
 
 export interface ImportPipeline {
+    readonly indexEpoch?: string;
     readonly queued: number;
     readonly running: number;
     enqueue(
@@ -106,6 +113,8 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
     const terminalOperationCids = new Set<string>();
     const activeIndexRefreshes = new Set<Promise<BootstrapResult>>();
     let accepting = true;
+    let indexEpoch: string | undefined;
+    let invalidatedEpoch: string | undefined;
     let shutdownPromise: Promise<void> | null = null;
 
     async function generateOperationCid(operation: Operation): Promise<string> {
@@ -113,7 +122,15 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
         return generateCID(JSON.parse(canonical));
     }
 
-    async function importBatch(batch: Operation[]) {
+    function assertCurrentEpoch(expected?: string): void {
+        if (expected !== undefined && (expected !== indexEpoch || expected === invalidatedEpoch)) {
+            throw Object.assign(new Error('Synchronization work belongs to an old Gatekeeper epoch'), {
+                code: 'stale_import_epoch',
+            });
+        }
+    }
+
+    async function importBatch(batch: Operation[], expectedIndexEpoch?: string) {
         const hash = cipher.hashJSON(batch);
         const now = new Date();
         const isoTime = now.toISOString();
@@ -127,7 +144,9 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
 
         log.debug(`importBatch: ${shortName(hash)} merging ${events.length} events...`);
         const importStart = Date.now();
-        const response = await gatekeeper.importBatch(events);
+        const response = expectedIndexEpoch === undefined
+            ? await gatekeeper.importBatch(events)
+            : await gatekeeper.importBatch(events, expectedIndexEpoch);
         log.debug({ durationMs: Date.now() - importStart }, 'importBatch');
         log.debug(`* ${JSON.stringify(response)}`);
         syncStats.opsRejected += response.rejected ?? 0;
@@ -279,18 +298,27 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
         return attemptedRecords.map(record => record.id);
     }
 
-    async function mergeBatch(batch: Operation[]): Promise<string[]> {
+    async function mergeBatch(
+        batch: Operation[], expectedIndexEpoch?: string, cancelled?: () => boolean,
+    ): Promise<string[]> {
         const processCandidates: Operation[] = [];
         const structurallyRejected: Operation[] = [];
 
         for (let offset = 0; offset < batch.length; offset += GATEKEEPER_BATCH_SIZE) {
-            const imported = await importBatch(batch.slice(offset, offset + GATEKEEPER_BATCH_SIZE));
+            assertCurrentEpoch(expectedIndexEpoch);
+            if (cancelled?.()) break;
+            const imported = await importBatch(batch.slice(offset, offset + GATEKEEPER_BATCH_SIZE), expectedIndexEpoch);
             processCandidates.push(...imported.processCandidates);
             structurallyRejected.push(...imported.rejectedOperations);
         }
 
+        if (processCandidates.length === 0 && structurallyRejected.length === 0) return [];
         const processStart = Date.now();
-        const response = await gatekeeper.processEvents();
+        assertCurrentEpoch(expectedIndexEpoch);
+        const response = expectedIndexEpoch === undefined
+            ? await gatekeeper.processEvents()
+            : await gatekeeper.processEvents(expectedIndexEpoch);
+        assertCurrentEpoch(expectedIndexEpoch);
         log.debug({ durationMs: Date.now() - processStart }, 'processEvents');
         if (response.busy) {
             throw new Error('gatekeeper processEvents busy');
@@ -384,13 +412,14 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
         return Array.from(selected.values());
     }
 
-    async function processRequest(request: ImportPipelineRequest): Promise<ImportQueueResult> {
+    async function processRequest(request: ImportPipelineRequest, expectedIndexEpoch?: string): Promise<ImportQueueResult> {
         const result = emptyResult();
         if ((request.kind === 'remote' || request.kind === 'terminal') && request.cancelled?.()) {
             return result;
         }
 
         try {
+            assertCurrentEpoch(expectedIndexEpoch);
             if (request.kind === 'remote' && !await gatekeeper.isReady()) {
                 return emptyResult(true);
             }
@@ -401,7 +430,7 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
             if (request.kind === 'local_queue') {
                 result.persistedIds = request.phase === 'persist'
                     ? await persistProcessedOperations(request.data, [], 'flushQueue')
-                    : await mergeBatch(request.data);
+                    : await mergeBatch(request.data, expectedIndexEpoch);
                 return result;
             }
             if (request.kind === 'terminal') {
@@ -460,16 +489,30 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
             log.debug(
                 `* merging batch (${filtered.operations.length}/${request.data.length} events) from: ${shortName(request.name)} (${request.node || 'anon'}) *`
             );
-            result.persistedIds = await mergeBatch(filtered.operations);
+            result.persistedIds = await mergeBatch(filtered.operations, expectedIndexEpoch, request.cancelled);
         }
         catch (error) {
             result.retryable = true;
-            log.error({ error }, 'mergeBatch error');
+            const code = (error as { code?: string; error?: string } | null)?.code
+                ?? (error as { error?: string } | null)?.error;
+            if (code === 'gatekeeper_index_epoch_changed' || code === 'stale_import_epoch') {
+                result.indexEpochChanged = true;
+            }
+            if (code === 'gatekeeper_index_epoch_changed') {
+                invalidatedEpoch = expectedIndexEpoch;
+                log.info({ expectedIndexEpoch }, 'Gatekeeper reset interrupted synchronization');
+            }
+            else if (code !== 'stale_import_epoch') {
+                log.error({ error }, 'mergeBatch error');
+            }
         }
         return result;
     }
 
-    const queue = asyncLib.queue<ImportPipelineRequest, ImportQueueResult>(processRequest, 1);
+    // Mirror resets and accepted-operation persistence must share the import boundary.
+    const queue = asyncLib.queue<PipelineWork, ImportQueueResult | BootstrapResult>(async work => work.kind === 'refresh'
+        ? runIndexRefresh(work.source)
+        : processRequest(work.request, work.indexEpoch), 1);
 
     async function waitForIdle(): Promise<void> {
         if (!queue.idle()) {
@@ -481,6 +524,8 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
         const sync = await bootstrapSyncStoreFromGatekeeper(syncStore, gatekeeper, {
             beginStoreMutation: () => beginStoreMutation(`refresh_${source}`),
         });
+        indexEpoch = (await syncStore.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.gatekeeperIndexEpoch)) ?? undefined;
+        invalidatedEpoch = undefined;
         if (sync.resetReason) {
             pendingSyncRecords.clear();
             terminalOperationCids.clear();
@@ -505,6 +550,9 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
     }
 
     return {
+        get indexEpoch(): string | undefined {
+            return indexEpoch;
+        },
         get queued(): number {
             return queue.length();
         },
@@ -518,7 +566,7 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
                 return Promise.resolve(result);
             }
             return new Promise((resolve, reject) => {
-                queue.push<ImportQueueResult>(request, (error, result) => {
+                queue.push<ImportQueueResult>({ kind: 'import', request, indexEpoch: request.indexEpoch ?? indexEpoch }, (error, result) => {
                     if (error || !result) {
                         reject(error ?? new Error('import queue completed without a result'));
                         return;
@@ -539,7 +587,12 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
                 return Promise.reject(new Error('import pipeline is shutting down'));
             }
 
-            const refresh = runIndexRefresh(source);
+            const refresh = new Promise<BootstrapResult>((resolve, reject) => {
+                queue.push<BootstrapResult>({ kind: 'refresh', source }, (error, result) => {
+                    if (error || !result) reject(error ?? new Error('index refresh completed without a result'));
+                    else resolve(result);
+                });
+            });
             activeIndexRefreshes.add(refresh);
             refresh.then(
                 () => activeIndexRefreshes.delete(refresh),

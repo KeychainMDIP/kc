@@ -752,6 +752,14 @@ describe('exportBatch', () => {
 });
 
 describe('importBatch', () => {
+    it('sends an optional expected epoch and preserves reset-conflict responses', async () => {
+        nock(GatekeeperURL, { reqheaders: { 'x-mdip-index-epoch': 'old-epoch' } })
+            .post(Endpoints.batch.import, [])
+            .reply(409, { error: 'gatekeeper_index_epoch_changed' });
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        await expect(gatekeeper.importBatch([], 'old-epoch'))
+            .rejects.toEqual({ error: 'gatekeeper_index_epoch_changed' });
+    });
     it('should return imported batch results', async () => {
         nock(GatekeeperURL)
             .post(Endpoints.batch.import)
@@ -822,6 +830,13 @@ describe('getQueue', () => {
 });
 
 describe('clearQueue', () => {
+    it('sends the expected epoch when clearing a publication queue', async () => {
+        nock(GatekeeperURL, { reqheaders: { 'x-mdip-index-epoch': 'current-epoch' } })
+            .post(`${Endpoints.queue}/hyperswarm/clear`, [])
+            .reply(200, 'true', { 'Content-Type': 'application/json' });
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        await expect(gatekeeper.clearQueue('hyperswarm', [], 'current-epoch')).resolves.toBe(true);
+    });
     const mockRegistry = 'local';
 
     it('should return clear status', async () => {
@@ -857,6 +872,13 @@ describe('clearQueue', () => {
 });
 
 describe('processEvents', () => {
+    it('sends an optional expected epoch when processing', async () => {
+        nock(GatekeeperURL, { reqheaders: { 'x-mdip-index-epoch': 'current-epoch' } })
+            .post(Endpoints.events.process)
+            .reply(200, { added: 0, pending: 0 });
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        await expect(gatekeeper.processEvents('current-epoch')).resolves.toEqual({ added: 0, pending: 0 });
+    });
     it('should return process status', async () => {
         nock(GatekeeperURL)
             .post(Endpoints.events.process)

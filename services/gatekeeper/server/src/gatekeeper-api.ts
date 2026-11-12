@@ -1450,6 +1450,14 @@ v1router.post('/batch/export', trackedRoute(async (req, res) => {
  *   post:
  *     summary: Import a batch of DID events
  *
+ *     parameters:
+ *       - in: header
+ *         name: X-MDIP-Index-Epoch
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: Expected index epoch from index export. Old-epoch work is rejected after a database reset.
+ *
  *     requestBody:
  *       required: true
  *       content:
@@ -1528,6 +1536,16 @@ v1router.post('/batch/export', trackedRoute(async (req, res) => {
  *                   type: integer
  *                   description: The total event queue size after this import.
  *
+ *       409:
+ *         description: The expected index epoch changed. Refresh the index and discard old synchronization work.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   enum: [gatekeeper_index_epoch_changed]
  *       500:
  *         description: Internal Server Error.
  *         content:
@@ -1538,9 +1556,13 @@ v1router.post('/batch/export', trackedRoute(async (req, res) => {
 v1router.post('/batch/import', trackedRoute(async (req, res) => {
     try {
         const batch = req.body;
-        const response = await gatekeeper.importBatch(batch);
+        const response = await gatekeeper.importBatch(batch, req.get('X-MDIP-Index-Epoch'));
         res.json(response);
     } catch (error: any) {
+        if (error?.code === 'gatekeeper_index_epoch_changed') {
+            res.status(409).json({ error: error.code });
+            return;
+        }
         log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
@@ -1629,6 +1651,12 @@ v1router.get('/queue/:registry', trackedRoute(async (req, res) => {
  *     summary: Remove specified DIDs from the queue
  *
  *     parameters:
+ *       - in: header
+ *         name: X-MDIP-Index-Epoch
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: Expected index epoch from index export. Old-epoch work is rejected after a database reset.
  *       - in: path
  *         name: registry
  *         required: true
@@ -1681,6 +1709,16 @@ v1router.get('/queue/:registry', trackedRoute(async (req, res) => {
  *           application/json:
  *             schema:
  *               type: boolean
+ *       409:
+ *         description: The expected index epoch changed. Refresh the index and discard old synchronization work.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   enum: [gatekeeper_index_epoch_changed]
  *       500:
  *         description: Internal Server Error.
  *         content:
@@ -1691,9 +1729,13 @@ v1router.get('/queue/:registry', trackedRoute(async (req, res) => {
 v1router.post('/queue/:registry/clear', trackedRoute(async (req, res) => {
     try {
         const eventsOrHashes = req.body;
-        const queue = await gatekeeper.clearQueue(req.params.registry, eventsOrHashes);
+        const queue = await gatekeeper.clearQueue(req.params.registry, eventsOrHashes, req.get('X-MDIP-Index-Epoch'));
         res.json(queue);
     } catch (error: any) {
+        if (error?.code === 'gatekeeper_index_epoch_changed') {
+            res.status(409).json({ error: error.code });
+            return;
+        }
         log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }
@@ -1811,6 +1853,14 @@ v1router.get('/db/verify', trackedRoute(async (req, res) => {
  *       Continues until no more new events can be processed. If `processEvents` is already running,
  *       it may return `{ busy: true }` to indicate that processing is in progress.
  *
+ *     parameters:
+ *       - in: header
+ *         name: X-MDIP-Index-Epoch
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: Expected index epoch from index export. Old-epoch work is rejected after a database reset.
+ *
  *     responses:
  *       200:
  *         description: >
@@ -1854,6 +1904,16 @@ v1router.get('/db/verify', trackedRoute(async (req, res) => {
  *                       description: Operations rejected during this processing run.
  *                       items:
  *                         type: object
+ *       409:
+ *         description: The expected index epoch changed. Refresh the index and discard old synchronization work.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   enum: [gatekeeper_index_epoch_changed]
  *       500:
  *         description: Internal Server Error.
  *         content:
@@ -1863,9 +1923,13 @@ v1router.get('/db/verify', trackedRoute(async (req, res) => {
  */
 v1router.post('/events/process', trackedRoute(async (req, res) => {
     try {
-        const response = await gatekeeper.processEvents();
+        const response = await gatekeeper.processEvents(req.get('X-MDIP-Index-Epoch'));
         res.json(response);
     } catch (error: any) {
+        if (error?.code === 'gatekeeper_index_epoch_changed') {
+            res.status(409).json({ error: error.code });
+            return;
+        }
         res.status(500).send(error.toString());
     }
 }));

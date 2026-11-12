@@ -8,6 +8,32 @@ import { createQueueCoordinator } from '../../services/mediators/hyperswarm/src/
 import { createMediatorSyncStats } from '../../services/mediators/hyperswarm/src/sync-stats.ts';
 
 describe('queue coordinator', () => {
+    it.each(['persist', 'merge'] as const)('treats an old-epoch %s result as reset recovery', async phase => {
+        const operation = { signature: { hash: 'operation-hash' } } as Operation;
+        const enqueue = jest.fn(async (request: { phase?: string }) => ({
+            knownIds: [], persistedIds: [],
+            retryable: request.phase === phase,
+            indexEpochChanged: request.phase === phase,
+        }));
+        const clearQueue = jest.fn(async () => true);
+        const relay = jest.fn(async () => {});
+        const coordinator = createQueueCoordinator({
+            registry: 'hyperswarm',
+            gatekeeper: { getQueue: jest.fn(async () => [operation]), clearQueue },
+            cipher: { hashJSON: () => 'batch-hash' } as Pick<CipherNode, 'hashJSON'>,
+            syncStats: createMediatorSyncStats(),
+            getImportPipeline: () => ({ indexEpoch: 'old-epoch', enqueue } as unknown as ImportPipeline),
+            getNodeKey: () => 'local-key',
+            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            relay,
+        });
+
+        await expect(coordinator.flush()).resolves.toBeUndefined();
+        expect(enqueue).toHaveBeenCalledTimes(phase === 'persist' ? 1 : 2);
+        expect(clearQueue).toHaveBeenCalledTimes(phase === 'persist' ? 0 : 1);
+        expect(relay).toHaveBeenCalledTimes(phase === 'persist' ? 0 : 1);
+    });
+
     it('suppresses duplicate gossip and preserves local flush ordering', async () => {
         const operation = { signature: { hash: 'operation-hash' } } as Operation;
         const order: string[] = [];

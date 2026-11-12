@@ -1032,7 +1032,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         }
     });
 
-    it('backs off the export loop while imports remain queued', async () => {
+    it('waits for queued imports before refreshing the index and then resumes polling', async () => {
         const operations = await makeOperations(2);
         const running = await createRunningNode();
         const peer = await attachConnection(running, 0x22);
@@ -1062,17 +1062,18 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         const second = running.node.run(
             () => running.node.mediator.__test.receiveMsg(peer.peerKey, queueMessage(operations[1])),
         );
-        await running.node.run(() => jest.advanceTimersByTimeAsync(2_000));
         const refreshesBeforeBackoff = running.node.gatekeeperClient.exportIndex.mock.calls.length;
+        await running.node.run(() => jest.advanceTimersByTimeAsync(61_000));
+        expect(running.node.gatekeeperClient.exportIndex).toHaveBeenCalledTimes(refreshesBeforeBackoff);
         releaseFirst();
         await first;
         await second;
-        await running.node.run(() => jest.advanceTimersByTimeAsync(59_000));
-        expect(running.node.gatekeeperClient.exportIndex).toHaveBeenCalledTimes(refreshesBeforeBackoff);
-        await running.node.run(() => jest.advanceTimersByTimeAsync(1_000));
+        await eventually(async () => running.node.gatekeeperClient.exportIndex.mock.calls.length > refreshesBeforeBackoff);
+        const resumedRefreshes = running.node.gatekeeperClient.exportIndex.mock.calls.length;
+        await running.node.run(() => jest.advanceTimersByTimeAsync(2_000));
 
         expect(processEvents).toHaveBeenCalledTimes(2);
-        expect(running.node.gatekeeperClient.exportIndex.mock.calls.length).toBeGreaterThan(refreshesBeforeBackoff);
+        expect(running.node.gatekeeperClient.exportIndex.mock.calls.length).toBeGreaterThan(resumedRefreshes);
     });
 
     it('expires an idle ordered catch-up server session without closing its connection', async () => {
@@ -1157,6 +1158,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         expect(running.node.gatekeeperClient.clearQueue).toHaveBeenCalledWith(
             'hyperswarm',
             [operation.signature!.hash],
+            (await running.node.gatekeeperDb.getLifecycleMetadata()).epoch,
         );
         expect(peer.pair.transcript).toEqual(expect.arrayContaining([
             expect.objectContaining({ messageType: 'queue', framed: true }),

@@ -75,6 +75,7 @@ type NegentropyMessage =
     | NegCloseMessage;
 
 interface PeerSyncSession {
+    indexEpoch?: string;
     sessionId: string;
     peerKey: string;
     initiator: boolean;
@@ -259,6 +260,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             initiator,
             options.maxRoundsPerSession,
         );
+        session.indexEpoch = options.importPipeline.indexEpoch;
         peerSessions.set(peerKey, session);
         const conn = options.getConnection(peerKey);
         if (conn) {
@@ -1170,9 +1172,15 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             kind: 'terminal',
             name: peerKey,
             data: operations,
+            indexEpoch: session.indexEpoch,
             cancelled: () => peerSessions.get(peerKey) !== session,
         });
         if (peerSessions.get(peerKey) !== session) {
+            return;
+        }
+        if (imported.indexEpochChanged) {
+            sendNegClose(peerKey, session, 'gatekeeper_reset');
+            closePeerSession(peerKey, 'gatekeeper_reset');
             return;
         }
         if (imported.retryable) {
@@ -1545,9 +1553,16 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                 kind: 'remote',
                 name: peerKey,
                 data: unprovenBatch,
+                indexEpoch: session.indexEpoch,
+                cancelled: () => peerSessions.get(peerKey) !== session,
             });
 
             if (peerSessions.get(peerKey) !== session) {
+                return;
+            }
+            if (imported.indexEpochChanged) {
+                sendNegClose(peerKey, session, 'gatekeeper_reset');
+                closePeerSession(peerKey, 'gatekeeper_reset');
                 return;
             }
             for (const operation of unprovenBatch) {

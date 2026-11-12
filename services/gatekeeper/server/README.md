@@ -103,6 +103,17 @@ as deferred, `pending` means queued work waiting after a deferred import, and
 `processing` means work remaining in active import passes. `total` is their
 sum. Raw operation bodies are not included. Memory counters are byte counts.
 
+## Event requests across a database reset
+
+`POST /api/v1/batch/import`, `POST /api/v1/events/process` and
+`POST /api/v1/queue/{registry}/clear` accept the optional
+`X-MDIP-Index-Epoch` header. Use the `indexEpoch` returned by index export to
+bind work to that database generation. A reset drains active event work before
+clearing the database. Requests carrying the previous epoch then return HTTP
+409 with `{ "error": "gatekeeper_index_epoch_changed" }` and make no changes.
+Discard old queued synchronization work and refresh the index before retrying.
+Requests without this header retain their existing behavior.
+
 ## Index export limitation
 
 `POST /api/v1/index/export` is intended to let consumers sync DID event histories using a cursor to avoid full database reads. Snapshot export includes DID events, the checkpoint cursor used to continue with incremental changes, and an `indexEpoch` that changes when the backing index database is reset or replaced. It does not currently include Gatekeeper's blockchain table.
