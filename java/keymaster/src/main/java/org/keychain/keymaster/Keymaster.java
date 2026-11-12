@@ -1181,7 +1181,7 @@ public class Keymaster {
         java.util.List<java.util.Map<String, Object>> pairs = new java.util.ArrayList<>();
         for (String vcDid : matches) {
             String plaintext = decryptMessageFor(vcDid, responder);
-            effective.includeHash = true;
+            effective.includeHash = false;
             String vpDid = encryptMessageFor(plaintext, requestor, responder, effective);
             java.util.Map<String, Object> pair = new java.util.LinkedHashMap<>();
             pair.put("vc", vcDid);
@@ -1282,7 +1282,7 @@ public class Keymaster {
             Object vpEncrypted = ((Map<?, ?>) vpData).get("encrypted");
             if (!(vcEncrypted instanceof Map<?, ?>) || !(vpEncrypted instanceof Map<?, ?>)) continue;
             Object hash = ((Map<?, ?>) vcEncrypted).get("cipher_hash");
-            if (!(hash instanceof String) || !hash.equals(((Map<?, ?>) vpEncrypted).get("cipher_hash"))) continue;
+            if (!(hash instanceof String)) continue;
             String plaintext = decryptMessageFor(vpDid, verifier);
             Object parsed = parseEncryptedJson(plaintext);
             if (!hash.equals(crypto.hashMessage(plaintext)) || !isVerifiableCredential(parsed)) continue;

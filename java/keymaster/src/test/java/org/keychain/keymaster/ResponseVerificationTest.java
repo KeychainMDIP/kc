@@ -78,6 +78,9 @@ class ResponseVerificationTest {
         CreateResponseOptions options = noPublish();
         String response = keymaster.createResponse(challenge, options);
         keymaster.setCurrentId("Requester");
+        Map<String, Object> responsePayload = payload(response);
+        Map<?, ?> presentation = (Map<?, ?>) ((List<?>) responsePayload.get("credentials")).get(0);
+        assertFalse(encrypted((String) presentation.get("vp")).containsKey("cipher_hash"));
         int before = node.created.size();
         assertEquals(true, keymaster.verifyResponse(response, options).get("match"));
         assertEquals(before, node.created.size());
@@ -170,7 +173,7 @@ class ResponseVerificationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"vc-revoked", "vp-revoked", "vc-unencrypted", "vp-unencrypted", "missing-hash", "different-hash", "forged-hash", "wrong-subject", "missing-schema", "wrong-schema"})
+    @ValueSource(strings = {"vc-revoked", "vp-revoked", "vc-unencrypted", "vp-unencrypted", "missing-hash", "forged-hash", "wrong-subject", "missing-schema", "wrong-schema"})
     void invalidPresentationsCannotAuthorizeOrPublish(String defect) {
         keymaster.setCurrentId("Holder");
         Map<String, Object> pair = pair(vc);
@@ -180,9 +183,8 @@ class ResponseVerificationTest {
             case "vp-revoked": node.doc(vp).didDocumentMetadata.deactivated = true; break;
             case "vc-unencrypted": node.doc(vc).didDocumentData = Map.of(); break;
             case "vp-unencrypted": node.doc(vp).didDocumentData = Map.of(); break;
-            case "missing-hash": encrypted(vc).remove("cipher_hash"); encrypted(vp).remove("cipher_hash"); break;
-            case "different-hash": encrypted(vp).put("cipher_hash", "different"); break;
-            case "forged-hash": encrypted(vc).put("cipher_hash", "forged"); encrypted(vp).put("cipher_hash", "forged"); break;
+            case "missing-hash": encrypted(vc).remove("cipher_hash"); break;
+            case "forged-hash": encrypted(vc).put("cipher_hash", "forged"); break;
             default:
                 keymaster.setCurrentId("Issuer");
                 Map<String, Object> credential = keymaster.bindCredential(schema, defect.equals("wrong-subject") ? other : holder);
@@ -448,7 +450,7 @@ class ResponseVerificationTest {
     }
 
     private Map<String, Object> pair(String credential) {
-        return Map.of("vc", credential, "vp", keymaster.encryptMessage(keymaster.decryptMessage(credential), requester, hashed()));
+        return Map.of("vc", credential, "vp", keymaster.encryptMessage(keymaster.decryptMessage(credential), requester));
     }
 
     private String manual(List<Map<String, Object>> pairs) {

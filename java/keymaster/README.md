@@ -170,9 +170,10 @@ provide field-level selective disclosure.
 Verification authenticates the response controller and encrypted sender, requires
 that the selected verifier owns the live challenge, and binds each credential's
 subject to the responder. It decrypts the same outer response version it checks.
-Presentations must reference live encrypted credentials, have matching declared
-hashes and match a SHA-256 hash of the exact decrypted plaintext. Issuer
-signatures, structure, validity, schemas and issuer restrictions are checked.
+Presentations must reference live encrypted credentials and match the SHA-256
+hash declared by the credential against the exact decrypted plaintext. The
+presentation does not publish a duplicate plaintext hash. Issuer signatures,
+structure, validity, schemas and issuer restrictions are checked.
 Distinct presentations are assigned to individual requirements without depending
 on their order. Repeating one presentation does not satisfy multiple requirements.
 Client-supplied counters and match flags cannot authorize a response.

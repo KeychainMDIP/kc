@@ -83,6 +83,8 @@ describe('createResponse', () => {
         expect(response.fulfilled).toBe(1);
         expect(response.match).toBe(true);
         expect(response.responseNonce).toEqual(expect.any(String));
+        const vpData = await keymaster.resolveAsset(response.credentials[0].vp);
+        expect(vpData.encrypted.cipher_hash).toBeNull();
 
         const publicAsset = await keymaster.resolveAsset(responseDID) as Record<string, unknown>;
         expect(publicAsset).not.toHaveProperty('response');
@@ -1090,13 +1092,10 @@ describe('verifyResponse', () => {
         await keymaster.setCurrentId('Carol');
         const vp = await keymaster.encryptMessage(
             await keymaster.decryptMessage(vcB),
-            victor,
-            { includeHash: true }
+            victor
         );
-        const vcData = await keymaster.resolveAsset(vcA);
         const vpData = await keymaster.resolveAsset(vp);
-        vpData.encrypted.cipher_hash = vcData.encrypted.cipher_hash;
-        await keymaster.updateAsset(vp, vpData);
+        expect(vpData.encrypted.cipher_hash).toBeNull();
 
         const response = await keymaster.encryptJSON({
             response: {
