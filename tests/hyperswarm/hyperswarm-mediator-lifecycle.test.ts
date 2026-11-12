@@ -5,6 +5,7 @@ import type { Operation } from '@mdip/gatekeeper/types';
 import { jest } from '@jest/globals';
 
 import InMemoryOperationSyncStore from '../../services/mediators/hyperswarm/src/db/memory.ts';
+import { HYPR_INDEX_SYNC_STATE_KEYS } from '../../services/mediators/hyperswarm/src/bootstrap.ts';
 import NegentropyAdapter from '../../services/mediators/hyperswarm/src/negentropy/adapter.ts';
 import { encodeNegentropyFrame } from '../../services/mediators/hyperswarm/src/negentropy/protocol.ts';
 import {
@@ -447,7 +448,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         );
     });
 
-    it('rebuilds Negentropy after Gatekeeper removes indexed operations', async () => {
+    it('rebuilds Negentropy while retaining removed Gatekeeper history', async () => {
         const [operation] = await makeOperations(1);
         let did = '';
         const running = await createRunningNode({
@@ -468,18 +469,21 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
             deferInitialBuild: true,
         });
         running.node.run(() => running.node.mediator.__test.setNegentropyAdapter(adapter));
+        await settle();
         const buildSnapshot = jest.spyOn(adapter, 'buildSnapshotForWindow');
         expect(await running.store.has(operation.signature!.hash)).toBe(true);
 
         await running.node.gatekeeperDb.deleteEvents(did);
+        const { checkpointCursor: checkpoint } = await running.node.gatekeeperDb.exportIndexChanges({ cursor: '0' });
         await running.node.run(() => jest.advanceTimersByTimeAsync(2_000));
         await eventually(async () => (
-            !await running.store.has(operation.signature!.hash)
+            await running.store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor) === checkpoint
             && buildSnapshot.mock.calls.length > 0
         ));
 
+        expect(await running.store.has(operation.signature!.hash)).toBe(true);
         await expect(buildSnapshot.mock.results.at(-1)!.value).resolves.toMatchObject({
-            stats: { loaded: 0 },
+            stats: { loaded: 1 },
         });
     });
 

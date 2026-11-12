@@ -238,7 +238,7 @@ describe('bootstrapSyncStoreFromGatekeeper', () => {
         expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.gatekeeperIndexEpoch)).toBe('epoch-a');
     });
 
-    it('deletes operations exported by incremental Gatekeeper changes', async () => {
+    it('retains accepted operations and advances past incremental Gatekeeper removals', async () => {
         const store = new InMemoryOperationSyncStore();
         await store.start();
         const operation = makeOperation('a', '2026-02-10T10:00:00.000Z');
@@ -266,11 +266,13 @@ describe('bootstrapSyncStoreFromGatekeeper', () => {
 
         expect(result).toMatchObject({
             exported: 1,
-            mapped: 1,
-            deleted: 1,
-            countAfter: 0,
+            mapped: 0,
+            deleted: 0,
+            updated: 0,
+            countAfter: 1,
         });
-        expect(await store.has(h('a'))).toBe(false);
+        expect(await store.has(h('a'))).toBe(true);
+        expect(await store.countOrdered()).toBe(0);
         expect(await store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor)).toBe('13');
     });
 
