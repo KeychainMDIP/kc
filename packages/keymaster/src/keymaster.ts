@@ -2321,7 +2321,7 @@ export default class Keymaster implements KeymasterInterface {
 
         for (let vcDid of matches) {
             const plaintext = await this.decryptMessageFor(vcDid, responder.did);
-            const vpDid = await this.encryptMessageFor(plaintext, requestor, responder.did, { ...options, includeHash: true });
+            const vpDid = await this.encryptMessageFor(plaintext, requestor, responder.did, { ...options, includeHash: false });
             pairs.push({ vc: vcDid, vp: vpDid });
         }
 
@@ -2441,12 +2441,6 @@ export default class Keymaster implements KeymasterInterface {
             }
 
             const vcHash = castVCData.encrypted;
-            const vpHash = castVPData.encrypted;
-
-            if (vcHash.cipher_hash !== vpHash.cipher_hash) {
-                // can't verify that the contents of VP match the VC
-                continue;
-            }
 
             const vpPlaintext = await this.decryptMessageFor(credential.vp, id.did);
             let vp: unknown;
