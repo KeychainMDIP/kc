@@ -8,6 +8,54 @@ import { createQueueCoordinator } from '../../services/mediators/hyperswarm/src/
 import { createMediatorSyncStats } from '../../services/mediators/hyperswarm/src/sync-stats.ts';
 
 describe('queue coordinator', () => {
+    it('does not clear or relay the publication queue if processing pauses while persistence finishes', async () => {
+        let available = true;
+        const operation = { signature: { hash: 'operation-hash' } } as Operation;
+        const enqueue = jest.fn(async () => {
+            available = false;
+            return { knownIds: [], persistedIds: ['operation-hash'], retryable: false };
+        });
+        const clearQueue = jest.fn(async () => true);
+        const relay = jest.fn(async () => {});
+        const pipeline = { get available() { return available; }, enqueue } as unknown as ImportPipeline;
+        const coordinator = createQueueCoordinator({
+            registry: 'hyperswarm', gatekeeper: { getQueue: async () => [operation], clearQueue },
+            cipher: { hashJSON: () => 'batch-hash' } as Pick<CipherNode, 'hashJSON'>,
+            syncStats: createMediatorSyncStats(), getImportPipeline: () => pipeline,
+            getNodeKey: () => 'local', createQueueMessage: () => ({ type: 'queue', time: '', node: '', relays: [] }), relay,
+        });
+        await coordinator.flush();
+        expect(enqueue).toHaveBeenCalledTimes(1);
+        expect(clearQueue).not.toHaveBeenCalled();
+        expect(relay).not.toHaveBeenCalled();
+    });
+
+    it('leaves gossip unseen and the publication queue intact while processing is paused', async () => {
+        let available = false;
+        const enqueue = jest.fn(async () => ({ knownIds: [], persistedIds: [], retryable: false }));
+        const getQueue = jest.fn(async () => []);
+        const clearQueue = jest.fn(async () => true);
+        const relay = jest.fn(async () => {});
+        const pipeline = { get available() { return available; }, enqueue } as unknown as ImportPipeline;
+        const coordinator = createQueueCoordinator({
+            registry: 'hyperswarm', gatekeeper: { getQueue, clearQueue },
+            cipher: { hashJSON: () => 'batch-hash' } as Pick<CipherNode, 'hashJSON'>,
+            syncStats: createMediatorSyncStats(), getImportPipeline: () => pipeline,
+            getNodeKey: () => 'local', createQueueMessage: () => ({ type: 'queue', time: '', node: '', relays: [] }), relay,
+        });
+        const message = { type: 'queue' as const, time: '', node: '', relays: [], data: [{} as Operation] };
+        await coordinator.handleMessage('peer', message);
+        await coordinator.flush();
+        expect(enqueue).not.toHaveBeenCalled();
+        expect(getQueue).not.toHaveBeenCalled();
+        expect(clearQueue).not.toHaveBeenCalled();
+        expect(relay).not.toHaveBeenCalled();
+        available = true;
+        await coordinator.handleMessage('peer', message);
+        expect(enqueue).toHaveBeenCalledTimes(1);
+        expect(relay).toHaveBeenCalledTimes(1);
+    });
+
     it.each([
         { name: 'HTTP epoch conflict', error: { error: 'gatekeeper_index_epoch_changed' }, reset: true },
         { name: 'direct epoch conflict', error: { code: 'gatekeeper_index_epoch_changed' }, reset: true },
@@ -23,7 +71,7 @@ describe('queue coordinator', () => {
             gatekeeper: { getQueue: jest.fn(async () => [operation]), clearQueue },
             cipher: { hashJSON: () => 'batch-hash' } as Pick<CipherNode, 'hashJSON'>,
             syncStats: createMediatorSyncStats(),
-            getImportPipeline: () => ({ indexEpoch: 'old-epoch', enqueue } as unknown as ImportPipeline),
+            getImportPipeline: () => ({ available: true, recovering: false, indexEpoch: 'old-epoch', enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
             createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
             relay,
@@ -50,7 +98,7 @@ describe('queue coordinator', () => {
             gatekeeper: { getQueue: jest.fn(async () => [operation]), clearQueue },
             cipher: { hashJSON: () => 'batch-hash' } as Pick<CipherNode, 'hashJSON'>,
             syncStats: createMediatorSyncStats(),
-            getImportPipeline: () => ({ indexEpoch: 'old-epoch', enqueue } as unknown as ImportPipeline),
+            getImportPipeline: () => ({ available: true, recovering: false, indexEpoch: 'old-epoch', enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
             createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
             relay,
@@ -79,7 +127,7 @@ describe('queue coordinator', () => {
             } as unknown as Pick<GatekeeperClient, 'getQueue' | 'clearQueue'>,
             cipher: { hashJSON: () => 'batch-hash' } as Pick<CipherNode, 'hashJSON'>,
             syncStats: createMediatorSyncStats(),
-            getImportPipeline: () => ({ enqueue } as unknown as ImportPipeline),
+            getImportPipeline: () => ({ available: true, recovering: false, enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
             createQueueMessage: () => ({
                 type: 'queue', time: '', node: 'local', relays: [],

@@ -2,9 +2,10 @@ import asyncLib from 'async';
 
 import type GatekeeperClient from '@mdip/gatekeeper/client';
 import type CipherNode from '@mdip/cipher/node';
-import type { Operation } from '@mdip/gatekeeper/types';
+import type { EventQueueStatus, Operation } from '@mdip/gatekeeper/types';
 import { generateCID } from '@mdip/ipfs/utils';
 import { childLogger } from '@mdip/common/logger';
+import { waitForTimeout } from '@mdip/common/utils';
 import { bootstrapSyncStoreFromGatekeeper, HYPR_INDEX_SYNC_STATE_KEYS, type BootstrapResult } from './bootstrap.js';
 import type { OperationSyncStore, SyncOperationWriteRecord } from './db/types.js';
 import {
@@ -29,6 +30,9 @@ const GATEKEEPER_BATCH_SIZE = 100;
 const KNOWN_OPERATION_LOOKUP_LIMIT = 300;
 const RETRY_LOOKUP_LIMIT = 1_000;
 const MAX_PENDING_SYNC_RECORDS = 1_000;
+const PROCESSING_RECOVERY_MS = 5 * 60_000;
+const STATUS_TIMEOUT_MS = 5_000;
+const MAX_RECOVERY_DELAY_MS = 5_000;
 export const TERMINAL_REJECTED_SYNC_ORDER = Number.MAX_SAFE_INTEGER;
 
 interface ImportQueueResult {
@@ -36,6 +40,8 @@ interface ImportQueueResult {
     persistedIds: string[];
     retryable: boolean;
     indexEpochChanged?: boolean;
+    dependencyUnavailable?: boolean;
+    indexRefreshRequired?: boolean;
 }
 
 interface ImportRequestBase {
@@ -71,7 +77,8 @@ type PipelineWork =
     | { kind: 'refresh'; source: string };
 
 export interface ImportPipelineOptions {
-    gatekeeper: Pick<GatekeeperClient, 'exportIndex' | 'importBatch' | 'isReady' | 'processEvents'>;
+    gatekeeper: Pick<GatekeeperClient, 'exportIndex' | 'importBatch' | 'isReady' | 'processEvents' | 'getStatus'>;
+    signal?: AbortSignal;
     syncStore: OperationSyncStore;
     cipher: Pick<CipherNode, 'canonicalizeJSON' | 'hashJSON'>;
     syncStats: MediatorSyncStats;
@@ -83,6 +90,8 @@ export interface ImportPipeline {
     readonly indexEpoch?: string;
     readonly queued: number;
     readonly running: number;
+    readonly available: boolean;
+    readonly recovering: boolean;
     enqueue(
         request: ImportPipelineRequest,
         onComplete?: (result: ImportQueueResult) => void,
@@ -116,6 +125,100 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
     let indexEpoch: string | undefined;
     let invalidatedEpoch: string | undefined;
     let shutdownPromise: Promise<void> | null = null;
+    let processingState: 'ready' | 'recovering' | 'paused' = 'ready';
+    let recoveryGeneration = 0;
+    let mirroredRecoveryGeneration = 0;
+    let nextRecoveryProbeAt = 0;
+    let lastProcessingQueue: EventQueueStatus | undefined;
+    const recoveryAbort = new AbortController();
+    const recoverySignal = options.signal
+        ? AbortSignal.any([options.signal, recoveryAbort.signal])
+        : recoveryAbort.signal;
+
+    function processingUnavailable(): Error {
+        return Object.assign(new Error('Gatekeeper processing is unavailable'), {
+            code: 'gatekeeper_processing_unavailable',
+        });
+    }
+
+    async function processingIdle(): Promise<boolean> {
+        nextRecoveryProbeAt = Date.now() + MAX_RECOVERY_DELAY_MS;
+        try {
+            const status = await gatekeeper.getStatus({
+                timeoutMs: STATUS_TIMEOUT_MS,
+                maxResponseBytes: 64 * 1024,
+                signal: recoverySignal,
+            });
+            const state = status?.eventsQueue;
+            lastProcessingQueue = state && typeof state.active === 'boolean'
+                && [state.staged, state.pending, state.processing, state.total].every(count => Number.isSafeInteger(count) && count >= 0)
+                ? { staged: state.staged, pending: state.pending, processing: state.processing, total: state.total, active: state.active }
+                : undefined;
+            return state?.active === false;
+        }
+        catch (err) {
+            recoverySignal.throwIfAborted();
+            log.debug({ err }, 'Gatekeeper processing recovery probe failed');
+            return false;
+        }
+    }
+
+    async function processEvents(expectedIndexEpoch: string | undefined, source: string) {
+        let recoveryStartedAt: number | undefined;
+        let delayMs = 1_000;
+        try {
+            for (;;) {
+                recoverySignal.throwIfAborted();
+                assertCurrentEpoch(expectedIndexEpoch);
+                try {
+                    const response = expectedIndexEpoch === undefined
+                        ? await gatekeeper.processEvents()
+                        : await gatekeeper.processEvents(expectedIndexEpoch);
+                    assertCurrentEpoch(expectedIndexEpoch);
+                    if (!response.busy) {
+                        if (recoveryStartedAt !== undefined) {
+                            processingState = 'ready';
+                            log.info({ source, expectedIndexEpoch, durationMs: Date.now() - recoveryStartedAt, eventsQueue: lastProcessingQueue },
+                                'Gatekeeper processing recovered');
+                        }
+                        return { response, recovered: recoveryStartedAt !== undefined };
+                    }
+                }
+                catch (err) {
+                    // GatekeeperClient exposes request deadlines as strings, not Axios errors.
+                    if (typeof err !== 'string' || !/^timeout of \d+ms exceeded$/.test(err)) throw err;
+                }
+
+                if (recoveryStartedAt === undefined) {
+                    recoveryStartedAt = Date.now();
+                    lastProcessingQueue = undefined;
+                    processingState = 'recovering';
+                    recoveryGeneration += 1;
+                    log.warn({ source, expectedIndexEpoch }, 'Waiting for Gatekeeper processing after timeout or busy response');
+                }
+                for (;;) {
+                    recoverySignal.throwIfAborted();
+                    const remainingMs = PROCESSING_RECOVERY_MS - (Date.now() - recoveryStartedAt);
+                    if (remainingMs <= 0) throw processingUnavailable();
+                    await waitForTimeout(Math.min(delayMs, remainingMs), recoverySignal);
+                    if (Date.now() - recoveryStartedAt >= PROCESSING_RECOVERY_MS) throw processingUnavailable();
+                    const idle = await processingIdle();
+                    if (Date.now() - recoveryStartedAt >= PROCESSING_RECOVERY_MS) throw processingUnavailable();
+                    delayMs = Math.min(delayMs * 2, MAX_RECOVERY_DELAY_MS);
+                    if (idle) break;
+                }
+            }
+        }
+        finally {
+            if (processingState === 'recovering') {
+                processingState = 'paused';
+                if (!recoverySignal.aborted) {
+                    log.warn({ source, expectedIndexEpoch, durationMs: Date.now() - recoveryStartedAt!, eventsQueue: lastProcessingQueue },
+                        'Gatekeeper processing recovery interrupted, imports paused until index refresh');
+                }
+            }
+        }
+    }
 
     async function generateOperationCid(operation: Operation): Promise<string> {
         const canonical = cipher.canonicalizeJSON(operation);
@@ -299,8 +402,8 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
     }
 
     async function mergeBatch(
-        batch: Operation[], expectedIndexEpoch?: string, cancelled?: () => boolean,
-    ): Promise<string[]> {
+        batch: Operation[], expectedIndexEpoch?: string, cancelled?: () => boolean, source = 'local_queue',
+    ): Promise<Pick<ImportQueueResult, 'persistedIds' | 'indexRefreshRequired'>> {
         const processCandidates: Operation[] = [];
         const structurallyRejected: Operation[] = [];
 
@@ -312,17 +415,12 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
             structurallyRejected.push(...imported.rejectedOperations);
         }
 
-        if (processCandidates.length === 0 && structurallyRejected.length === 0) return [];
+        if (processCandidates.length === 0 && structurallyRejected.length === 0) return { persistedIds: [] };
         const processStart = Date.now();
         assertCurrentEpoch(expectedIndexEpoch);
-        const response = expectedIndexEpoch === undefined
-            ? await gatekeeper.processEvents()
-            : await gatekeeper.processEvents(expectedIndexEpoch);
+        const { response, recovered } = await processEvents(expectedIndexEpoch, source);
         assertCurrentEpoch(expectedIndexEpoch);
         log.debug({ durationMs: Date.now() - processStart }, 'processEvents');
-        if (response.busy) {
-            throw new Error('gatekeeper processEvents busy');
-        }
         const processSummary = { ...response };
         delete processSummary.acceptedHashes;
         delete processSummary.acceptedEvents;
@@ -347,12 +445,15 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
                 retryIds.add(mapped.value.idHex);
             }
         }
-        return persistProcessedOperations(
-            acceptedToPersist,
-            rejectedToPersist,
-            'mergeBatch',
-            retryIds,
-        );
+        return {
+            persistedIds: await persistProcessedOperations(
+                acceptedToPersist,
+                rejectedToPersist,
+                'mergeBatch',
+                retryIds,
+            ),
+            ...(recovered && { indexRefreshRequired: true }),
+        };
     }
 
     async function collectTerminalOperations(operations: Operation[]): Promise<Operation[]> {
@@ -420,6 +521,7 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
 
         try {
             assertCurrentEpoch(expectedIndexEpoch);
+            if (processingState !== 'ready') return { ...emptyResult(true), dependencyUnavailable: true };
             if (request.kind === 'remote' && !await gatekeeper.isReady()) {
                 return emptyResult(true);
             }
@@ -428,9 +530,12 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
             }
 
             if (request.kind === 'local_queue') {
-                result.persistedIds = request.phase === 'persist'
-                    ? await persistProcessedOperations(request.data, [], 'flushQueue')
-                    : await mergeBatch(request.data, expectedIndexEpoch);
+                if (request.phase === 'persist') {
+                    result.persistedIds = await persistProcessedOperations(request.data, [], 'flushQueue');
+                }
+                else {
+                    Object.assign(result, await mergeBatch(request.data, expectedIndexEpoch));
+                }
                 return result;
             }
             if (request.kind === 'terminal') {
@@ -489,21 +594,31 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
             log.debug(
                 `* merging batch (${filtered.operations.length}/${request.data.length} events) from: ${shortName(request.name)} (${request.node || 'anon'}) *`
             );
-            result.persistedIds = await mergeBatch(filtered.operations, expectedIndexEpoch, request.cancelled);
+            Object.assign(result, await mergeBatch(filtered.operations, expectedIndexEpoch, request.cancelled, request.name));
         }
         catch (error) {
             result.retryable = true;
             const code = (error as { code?: string; error?: string } | null)?.code
                 ?? (error as { error?: string } | null)?.error;
+            if (code === 'gatekeeper_processing_unavailable') {
+                result.dependencyUnavailable = true;
+                return result;
+            }
             if (code === 'gatekeeper_index_epoch_changed' || code === 'stale_import_epoch') {
                 result.indexEpochChanged = true;
+            }
+            else if (processingState === 'paused') {
+                result.dependencyUnavailable = true;
             }
             if (code === 'gatekeeper_index_epoch_changed') {
                 invalidatedEpoch = expectedIndexEpoch;
                 log.info({ expectedIndexEpoch }, 'Gatekeeper reset interrupted synchronization');
             }
+            else if (recoverySignal.aborted) {
+                log.debug({ err: error }, 'Gatekeeper import cancelled during shutdown');
+            }
             else if (code !== 'stale_import_epoch') {
-                log.error({ error }, 'mergeBatch error');
+                log.error({ err: error }, 'mergeBatch error');
             }
         }
         return result;
@@ -521,6 +636,10 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
     }
 
     async function runIndexRefresh(source: string): Promise<BootstrapResult> {
+        if (processingState === 'paused'
+            && (Date.now() < nextRecoveryProbeAt || !await processingIdle())) {
+            throw processingUnavailable();
+        }
         const sync = await bootstrapSyncStoreFromGatekeeper(syncStore, gatekeeper, {
             beginStoreMutation: () => beginStoreMutation(`refresh_${source}`),
         });
@@ -546,6 +665,14 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
                 );
             }
         }
+        if (processingState === 'paused') {
+            processingState = 'ready';
+            log.info({ source, indexEpoch, eventsQueue: lastProcessingQueue }, 'Gatekeeper processing available after index refresh');
+        }
+        if (mirroredRecoveryGeneration < recoveryGeneration) {
+            mirroredRecoveryGeneration = recoveryGeneration;
+            return { ...sync, processingRecoveryGeneration: recoveryGeneration };
+        }
         return sync;
     }
 
@@ -559,9 +686,15 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
         get running(): number {
             return queue.running();
         },
+        get available(): boolean {
+            return processingState === 'ready';
+        },
+        get recovering(): boolean {
+            return processingState === 'recovering';
+        },
         enqueue(request, onComplete): Promise<ImportQueueResult> {
-            if (!accepting) {
-                const result = emptyResult(true);
+            if (!accepting || processingState === 'paused') {
+                const result = { ...emptyResult(true), dependencyUnavailable: processingState === 'paused' };
                 onComplete?.(result);
                 return Promise.resolve(result);
             }
@@ -603,6 +736,7 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
         shutdown(): Promise<void> {
             if (!shutdownPromise) {
                 accepting = false;
+                recoveryAbort.abort();
                 shutdownPromise = (async () => {
                     await waitForIdle();
                     await Promise.allSettled([...activeIndexRefreshes]);

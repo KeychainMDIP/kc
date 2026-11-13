@@ -403,6 +403,30 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         expect(successfulCloses).toHaveLength(1);
     });
 
+    it('mirrors a lost processing response before Negentropy completion without blaming or retrying the peer', async () => {
+        const operations = await createIndependentOperations(1);
+        const expectedIds = operationIds(operations);
+        driver = await createMediatorDriver({
+            operationsA: operations, operationsB: [],
+            publicKeyA: Buffer.alloc(32, 0x22), publicKeyB: Buffer.alloc(32, 0x11),
+        });
+        const receiver = driver.nodeB;
+        receiver.gatekeeperClient.processEvents.mockImplementationOnce(async (...args) => {
+            await receiver.gatekeeper.processEvents(...args);
+            throw 'timeout of 60000ms exceeded';
+        });
+        await driver.startSync();
+        await driver.driveUntilQuiescent(expectedIds);
+        expect(receiver.gatekeeperClient.importBatch).toHaveBeenCalledTimes(1);
+        expect(receiver.gatekeeperClient.processEvents).toHaveBeenCalledTimes(2);
+        expect(await gatekeeperIds(receiver.gatekeeper)).toEqual(expectedIds);
+        expect(await driver.storeB.count()).toBe(1);
+        expect(decodeWire(driver.transport).some(message => (
+            message.body.type === 'neg_close' && message.body.reason === 'unresolved_operations'
+        ))).toBe(false);
+        assertCompletedNegentropyExchange(decodeWire(driver.transport));
+    });
+
     it('retries an identical requested push after a transient import failure', async () => {
         const operations = await createIndependentOperations(1);
         const expectedIds = operationIds(operations);

@@ -34,7 +34,7 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
     }
 
     async function handleMessage(peerKey: string, message: QueueMessage): Promise<void> {
-        if (!Array.isArray(message.data) || !isNewBatch(message.data)) {
+        if (!options.getImportPipeline().available || !Array.isArray(message.data) || !isNewBatch(message.data)) {
             return;
         }
 
@@ -53,6 +53,7 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
     }
 
     async function flush(): Promise<void> {
+        if (!options.getImportPipeline().available) return;
         const indexEpoch = options.getImportPipeline().indexEpoch;
         const batch = await options.gatekeeper.getQueue(options.registry);
         if (batch.length === 0) {
@@ -67,7 +68,7 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
             data: batch,
         });
         if (imported.retryable) {
-            if (imported.indexEpochChanged) return;
+            if (imported.indexEpochChanged || imported.dependencyUnavailable) return;
             throw new Error('failed to import local Gatekeeper queue');
         }
 
@@ -83,6 +84,7 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
         const hashes = batch
             .map(operation => operation.signature?.hash)
             .filter((hash): hash is string => !!hash);
+        if (!options.getImportPipeline().available) return;
         try {
             if (indexEpoch === undefined) await options.gatekeeper.clearQueue(options.registry, hashes);
             else await options.gatekeeper.clearQueue(options.registry, hashes, indexEpoch);
@@ -101,7 +103,7 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
             data: batch,
         });
         if (merged.retryable) {
-            if (merged.indexEpochChanged) return;
+            if (merged.indexEpochChanged || merged.dependencyUnavailable) return;
             throw new Error('failed to merge local Gatekeeper queue');
         }
     }

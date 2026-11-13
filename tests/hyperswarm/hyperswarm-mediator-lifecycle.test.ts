@@ -250,6 +250,94 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         expect(options.signal?.aborted).toBe(true);
     });
 
+    it('blocks fallback admissions during a processing outage and retries eligible ordered catch-up after recovery', async () => {
+        const running = await createRunningNode();
+        const peer = await attachConnection(running, 0x22);
+        const [operation] = await makeOperations(1);
+        const capabilities = {
+            negentropy: true, negentropyVersion: 1,
+            orderedCatchup: true, orderedCatchupVersion: 1, orderedCatchupReady: true,
+            operationCount: 100, orderedOperationCount: 100,
+        };
+        await sendPeerMessage(peer, peerPing({ capabilities }));
+        const sessionId = running.node.run(() => running.node.mediator.__test.getConnectionState(peer.peerKey))
+            ?.orderedCatchupClientSessionId as string;
+        expect(sessionId).toEqual(expect.any(String));
+        running.node.gatekeeperClient.processEvents.mockResolvedValueOnce({ busy: true });
+        const busyStatus = {
+            uptimeSeconds: 0, memoryUsage: process.memoryUsage(),
+            eventsQueue: { staged: 0, pending: 17, processing: 1, total: 18, active: true },
+        };
+        running.node.gatekeeperClient.getStatus.mockResolvedValue(busyStatus);
+        await sendPeerMessage(peer, {
+            type: 'ordered_catchup_push', sessionId, time: '', node: '', relays: [],
+            data: [operation], cursor: { syncOrder: 1, id: operation.signature!.hash }, hasMore: true,
+        });
+        await settle();
+        const imports = running.node.gatekeeperClient.importBatch.mock.calls.length;
+        const other = await attachConnection(running, 0x33);
+        await sendPeerMessage(other, peerPing({ capabilities }));
+        for (let minute = 0; minute < 5; minute += 1) {
+            await sendPeerMessage(peer, peerPing({ capabilities }));
+            await sendPeerMessage(other, peerPing({ capabilities }));
+            await running.node.run(() => jest.advanceTimersByTimeAsync(60_000));
+        }
+        await settle();
+        await sendPeerMessage(other, {
+            type: 'neg_open', sessionId: 'inbound-during-outage', windowId: 'window', round: 0,
+            time: '', node: '', relays: [], frame: '', window: { fromTs: 0, toTs: 10 },
+        });
+        await sendPeerMessage(other, queueMessage(operation));
+        expect(running.node.gatekeeperClient.importBatch).toHaveBeenCalledTimes(imports);
+        expect(running.node.gatekeeperClient.processEvents).toHaveBeenCalledTimes(1);
+        expect(countNegOpenMessages(other)).toBe(0);
+        expect(running.node.run(() => running.node.mediator.__test.getConnectionState(peer.peerKey)))
+            .toMatchObject({ orderedCatchupClientSessionId: null });
+        running.node.gatekeeperClient.getStatus.mockResolvedValue({
+            ...busyStatus, eventsQueue: { ...busyStatus.eventsQueue, processing: 0, active: false },
+        });
+        await running.node.run(() => jest.advanceTimersByTimeAsync(60_000));
+        await settle();
+        expect(running.node.run(() => running.node.mediator.__test.getConnectionState(peer.peerKey)))
+            .toMatchObject({ orderedCatchupClientSessionId: expect.any(String) });
+        expect(running.node.gatekeeperClient.importBatch).toHaveBeenCalledTimes(imports);
+    });
+
+    it('reconciles gossip skipped during recovery after a peer had already finished synchronizing', async () => {
+        const running = await createRunningNode({ keyByte: 0x33 });
+        const peer = await attachConnection(running, 0x11);
+        const [first, missed] = await makeOperations(2);
+        running.node.run(() => running.node.mediator.__test.addConnection(peer.peerKey, {
+            connection: peer.pair.connectionA,
+            capabilities: { advertised: true, negentropy: true, version: 1 },
+            syncMode: 'negentropy', syncStarted: true, negentropySynced: true,
+        }));
+        running.node.gatekeeperClient.processEvents.mockResolvedValueOnce({ busy: true });
+        running.node.gatekeeperClient.getStatus.mockResolvedValue({
+            uptimeSeconds: 0, memoryUsage: process.memoryUsage(),
+            eventsQueue: { staged: 1, pending: 0, processing: 0, total: 1, active: true },
+        });
+        await running.node.run(() => running.node.mediator.__test.receiveMsg(peer.peerKey, queueMessage(first)));
+        await settle();
+        await running.node.run(() => running.node.mediator.__test.receiveMsg(peer.peerKey, queueMessage(missed)));
+        expect(running.node.gatekeeperClient.importBatch).toHaveBeenCalledTimes(1);
+        running.node.gatekeeperClient.getStatus.mockResolvedValue({
+            uptimeSeconds: 0, memoryUsage: process.memoryUsage(),
+            eventsQueue: { staged: 1, pending: 0, processing: 0, total: 1, active: false },
+        });
+        await running.node.run(() => jest.advanceTimersByTimeAsync(4_000));
+        await eventually(() => countNegOpenMessages(peer) > 0);
+        const open = peer.pair.transcript.filter(entry => entry.messageType === 'neg_open').at(-1)!;
+        const message = JSON.parse(decodeFramedMessages(open.raw).messages[0].toString('utf8'));
+        await running.node.run(() => running.node.mediator.__test.receiveMsg(peer.peerKey, {
+            type: 'ops_push', sessionId: message.sessionId, windowId: message.windowId,
+            time: '', node: '', relays: [], data: [missed],
+        }));
+        await eventually(async () => await running.store.has(missed.signature!.hash));
+        expect(running.node.gatekeeperClient.importBatch).toHaveBeenCalledTimes(2);
+        expect(await running.node.gatekeeper.getDIDs()).toHaveLength(2);
+    });
+
     it('cancels the startup retry when shutting down', async () => {
         const node = await createMediatorNode({
             name: `lifecycle-node-${++nodeNumber}`,

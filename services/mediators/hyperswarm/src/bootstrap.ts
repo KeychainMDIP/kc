@@ -51,6 +51,7 @@ export interface BootstrapResult {
     snapshotComplete: boolean;
     durationMs: number;
     resetReason?: string;
+    processingRecoveryGeneration?: number;
 }
 
 export interface BootstrapOptions {

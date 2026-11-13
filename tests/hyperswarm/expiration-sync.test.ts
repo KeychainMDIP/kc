@@ -75,7 +75,9 @@ describe('expiration and historical synchronization', () => {
             ? db.exportIndexSnapshot(request)
             : db.exportIndexChanges(request);
         const createPipeline = () => createImportPipeline({
-            gatekeeper: { importBatch, processEvents, exportIndex, isReady: async () => true },
+            gatekeeper: { importBatch, processEvents, exportIndex, isReady: async () => true,
+                getStatus: async () => ({ uptimeSeconds: 0, memoryUsage: process.memoryUsage(), eventsQueue: gatekeeper.getQueueStatus() }),
+            },
             syncStore: store,
             cipher,
             syncStats: createMediatorSyncStats(),

@@ -217,6 +217,7 @@ export function createOrderedCatchupCoordinator(
     function refillPrefetch(session: ClientSession): boolean {
         if (clients.get(session.peerKey) !== session
             || session.terminalReason
+            || !options.importPipeline.available
             || session.requestOutstanding
             || session.pendingImports > PREFETCH_BATCHES) {
             return true;
@@ -287,7 +288,7 @@ export function createOrderedCatchupCoordinator(
         void trackWork(finishClient(session));
     }
 
-    function settleImport(session: ClientSession, retryable: boolean, indexEpochChanged = false): void {
+    function settleImport(session: ClientSession, retryable: boolean, indexEpochChanged = false, dependencyUnavailable = false): void {
         session.pendingImports = Math.max(0, session.pendingImports - 1);
         if (retryable) {
             session.importsAborted = true;
@@ -296,7 +297,8 @@ export function createOrderedCatchupCoordinator(
             return;
         }
         if (retryable) {
-            failClient(session.peerKey, indexEpochChanged ? 'gatekeeper_reset' : 'ordered_catchup_import_retryable');
+            failClient(session.peerKey, indexEpochChanged ? 'gatekeeper_reset'
+                : dependencyUnavailable ? 'gatekeeper_processing_unavailable' : 'ordered_catchup_import_retryable');
             return;
         }
         touchClient(session);
@@ -319,7 +321,7 @@ export function createOrderedCatchupCoordinator(
             },
             imported => {
                 try {
-                    settleImport(session, imported.retryable, imported.indexEpochChanged);
+                    settleImport(session, imported.retryable, imported.indexEpochChanged, imported.dependencyUnavailable);
                 }
                 catch (error) {
                     log.error({ error, peer: shortName(session.peerKey), sessionId: session.sessionId }, 'ordered catch-up import completion failed');
@@ -510,7 +512,8 @@ export function createOrderedCatchupCoordinator(
     }
 
     function createClientSession(peerKey: string, sessionId: string): ClientSession | null {
-        if (!accepting || clients.has(peerKey) || transitions.has(peerKey) || !options.getConnection(peerKey)) {
+        if (!accepting || !options.importPipeline.available
+            || clients.has(peerKey) || transitions.has(peerKey) || !options.getConnection(peerKey)) {
             return null;
         }
         const now = Date.now();
@@ -606,6 +609,10 @@ export function createOrderedCatchupCoordinator(
         },
         expire(now = Date.now()): void {
             for (const [peerKey, session] of clients) {
+                if (session.pendingImports > 0 && options.importPipeline.recovering) {
+                    session.lastActivity = now;
+                    continue;
+                }
                 if (now - session.lastActivity > options.idleTimeoutMs) {
                     failClient(peerKey, 'idle_timeout');
                 }

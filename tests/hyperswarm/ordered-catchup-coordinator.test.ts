@@ -41,6 +41,7 @@ function createCoordinator(overrides: Partial<Pick<
         }),
     } as ConnectionInfo;
     const importPipeline = overrides.importPipeline ?? {
+        available: true, recovering: false,
         waitForIdle: jest.fn(async () => undefined),
         refreshIndex: jest.fn(async () => bootstrapResult),
     } as unknown as ImportPipeline;
@@ -67,6 +68,7 @@ describe('ordered catch-up coordinator shutdown', () => {
     it.each([true, false])('classifies an epoch-cancelled import separately from other retries: %s', async indexEpochChanged => {
         const onFailure = jest.fn(async () => undefined);
         const importPipeline = {
+            available: true, recovering: false,
             enqueue: jest.fn<ImportPipeline['enqueue']>(async (_request, onComplete) => {
                 const result = { knownIds: [], persistedIds: [], retryable: true, indexEpochChanged };
                 onComplete?.(result);
