@@ -8,6 +8,28 @@ import { createQueueCoordinator } from '../../services/mediators/hyperswarm/src/
 import { createMediatorSyncStats } from '../../services/mediators/hyperswarm/src/sync-stats.ts';
 
 describe('queue coordinator', () => {
+    it('does not clear or relay the publication queue if processing pauses while persistence finishes', async () => {
+        let available = true;
+        const operation = { signature: { hash: 'operation-hash' } } as Operation;
+        const enqueue = jest.fn(async () => {
+            available = false;
+            return { knownIds: [], persistedIds: ['operation-hash'], retryable: false };
+        });
+        const clearQueue = jest.fn(async () => true);
+        const relay = jest.fn(async () => {});
+        const pipeline = { get available() { return available; }, enqueue } as unknown as ImportPipeline;
+        const coordinator = createQueueCoordinator({
+            registry: 'hyperswarm', gatekeeper: { getQueue: async () => [operation], clearQueue },
+            cipher: { hashJSON: () => 'batch-hash' } as Pick<CipherNode, 'hashJSON'>,
+            syncStats: createMediatorSyncStats(), getImportPipeline: () => pipeline,
+            getNodeKey: () => 'local', createQueueMessage: () => ({ type: 'queue', time: '', node: '', relays: [] }), relay,
+        });
+        await coordinator.flush();
+        expect(enqueue).toHaveBeenCalledTimes(1);
+        expect(clearQueue).not.toHaveBeenCalled();
+        expect(relay).not.toHaveBeenCalled();
+    });
+
     it('leaves gossip unseen and the publication queue intact while processing is paused', async () => {
         let available = false;
         const enqueue = jest.fn(async () => ({ knownIds: [], persistedIds: [], retryable: false }));

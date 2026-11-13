@@ -159,6 +159,32 @@ describe('Gatekeeper processing recovery', () => {
         } finally { await pipeline.shutdown(); }
     });
 
+    it.each(['status', 'processing'] as const)('stops when the recovery budget expires during a %s request', async phase => {
+        const { pipeline, gatekeeper } = fixture();
+        const startedAt = Date.now();
+        gatekeeper.processEvents.mockImplementation(async () => {
+            if (phase === 'processing' && Date.now() - startedAt >= 297_000) {
+                jest.setSystemTime(startedAt + 300_001);
+            }
+            return { busy: true };
+        });
+        gatekeeper.getStatus.mockImplementation(async () => {
+            const nearDeadline = Date.now() - startedAt >= 297_000;
+            if (nearDeadline && phase === 'status') jest.setSystemTime(startedAt + 300_001);
+            return status(!nearDeadline);
+        });
+        const pending = pipeline.enqueue(request);
+        try {
+            await nextTurn();
+            await jest.advanceTimersByTimeAsync(297_000);
+            await expect(pending).resolves.toMatchObject({ retryable: true, dependencyUnavailable: true });
+            expect(pipeline.available).toBe(false);
+            expect(pipeline.recovering).toBe(false);
+            expect(gatekeeper.importBatch).toHaveBeenCalledTimes(1);
+            expect(gatekeeper.processEvents).toHaveBeenCalledTimes(phase === 'status' ? 1 : 2);
+        } finally { await pipeline.shutdown(); }
+    });
+
     it.each([new Error('disk failure'), { error: 'forbidden', status: 403 }, 'connection refused'])(
         'preserves non-timeout processing failures: %s', async error => {
             const { pipeline, gatekeeper } = fixture();
