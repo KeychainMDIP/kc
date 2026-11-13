@@ -84,7 +84,7 @@ describe('Negentropy coordinator', () => {
         } finally { await coordinator.shutdown(); }
     });
 
-    it.each([true, false])('handles a recovery refresh failure without blaming the peer, local pause: %s', async localUnavailable => {
+    it.each(['unavailable', 'storage', 'accepted'] as const)('handles the %s recovery mirror outcome using accepted inventory', async outcome => {
         const [
             { createNegentropyCoordinator }, { default: InMemoryOperationSyncStore },
             { createConnectionInfo }, { createMediatorSyncStats },
@@ -100,13 +100,24 @@ describe('Negentropy coordinator', () => {
             peerName: 'test-peer',
         });
         const store = new InMemoryOperationSyncStore();
-        const failure = localUnavailable
+        const operation = { type: 'create' as const, signature: {
+            hash: 'b'.repeat(64), signed: '2026-01-01T00:00:00.000Z', value: 'signature',
+        } };
+        const lookup = jest.spyOn(store, 'getByIds');
+        const failure = outcome === 'unavailable'
             ? Object.assign(new Error('Gatekeeper processing is unavailable'), { code: 'gatekeeper_processing_unavailable' })
             : new Error('sync-store unavailable');
         const importPipeline = {
             available: true, recovering: false, queued: 0, running: 0, indexEpoch: 'epoch',
             enqueue: async () => ({ knownIds: [], persistedIds: [], retryable: false, indexRefreshRequired: true }),
-            refreshIndex: async () => { throw failure; },
+            refreshIndex: async () => {
+                if (outcome !== 'accepted') throw failure;
+                await store.upsertMany([{ id: operation.signature.hash, ts: 1_767_225_600, syncOrder: 1, operation }]);
+                return {
+                    mode: 'changes', countBefore: 0, countAfter: 1, pages: 1, exported: 1, mapped: 1,
+                    invalid: 0, inserted: 1, updated: 0, deleted: 0, snapshotComplete: true, durationMs: 0,
+                };
+            },
         } as unknown as ImportPipeline;
         const sendToPeer = jest.fn<Parameters<typeof createNegentropyCoordinator>[0]['sendToPeer']>(() => true);
         const onIndexRefreshed = jest.fn(async () => {});
@@ -127,17 +138,24 @@ describe('Negentropy coordinator', () => {
             mockLogger.error.mockClear();
             await coordinator.handleMessage(peerKey, {
                 type: 'ops_push', sessionId: 'session', windowId: open.windowId, round: 0,
-                time: '', node: '', relays: [], data: [{ type: 'create', signature: {
-                    hash: 'b'.repeat(64), signed: '2026-01-01T00:00:00.000Z', value: 'signature',
-                } }],
+                time: '', node: '', relays: [], data: [operation],
             });
-            expect(onSessionClosed).toHaveBeenCalledWith(peerKey, 'gatekeeper_processing_unavailable');
+            if (outcome === 'accepted') {
+                expect(onIndexRefreshed).toHaveBeenCalledWith('negentropy_processing_recovery', expect.objectContaining({ inserted: 1 }));
+                expect(lookup).toHaveBeenCalledWith([operation.signature.hash]);
+                expect(coordinator.hasActiveSession(peerKey)).toBe(true);
+                expect(onSessionClosed).not.toHaveBeenCalled();
+                expect(mockLogger.error).not.toHaveBeenCalled();
+            }
+            else {
+                expect(onSessionClosed).toHaveBeenCalledWith(peerKey, 'gatekeeper_processing_unavailable');
+                expect(onIndexRefreshed).not.toHaveBeenCalled();
+                if (outcome === 'unavailable') expect(mockLogger.error).not.toHaveBeenCalled();
+                else expect(mockLogger.error).toHaveBeenCalledWith(
+                    expect.objectContaining({ err: failure }), 'Failed to mirror Gatekeeper processing recovery',
+                );
+            }
             expect(terminatePeerConnection).not.toHaveBeenCalled();
-            expect(onIndexRefreshed).not.toHaveBeenCalled();
-            if (localUnavailable) expect(mockLogger.error).not.toHaveBeenCalled();
-            else expect(mockLogger.error).toHaveBeenCalledWith(
-                expect.objectContaining({ err: failure }), 'Failed to mirror Gatekeeper processing recovery',
-            );
         } finally { await coordinator.shutdown(); }
     });
 
