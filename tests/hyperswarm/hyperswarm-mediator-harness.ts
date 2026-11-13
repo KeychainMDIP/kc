@@ -26,6 +26,7 @@ type MockMethods<T, Keys extends keyof T> = {
 export type GatekeeperClientDelegates = MockMethods<GatekeeperClient,
     | 'connect'
     | 'isReady'
+    | 'getStatus'
     | 'exportIndex'
     | 'getDIDs'
     | 'exportBatch'
@@ -134,6 +135,9 @@ function createGatekeeperClientDelegates(context: MediatorNodeContext): Gatekeep
     return {
         connect: jest.fn<GatekeeperClient['connect']>(async () => undefined),
         isReady: jest.fn<GatekeeperClient['isReady']>(async () => true),
+        getStatus: jest.fn<GatekeeperClient['getStatus']>(async () => ({
+            uptimeSeconds: 0, memoryUsage: process.memoryUsage(), eventsQueue: context.gatekeeper.getQueueStatus(),
+        })),
         exportIndex: jest.fn<GatekeeperClient['exportIndex']>(request => request.mode === 'snapshot'
             ? context.gatekeeperDb.exportIndexSnapshot(request)
             : context.gatekeeperDb.exportIndexChanges(request)),

@@ -87,6 +87,9 @@ interface PeerSyncSession {
     currentWindowEngine: NegentropyWindowEngine | null;
     startedAt: number;
     lastActivity: number;
+    pendingImports: number;
+    recoveryRefreshes: number;
+    deferredClose?: NegCloseMessage;
     pendingHaveIds: Set<string>;
     pendingNeedIds: Set<string>;
     unresolvedNeedIds: Set<string>;
@@ -126,6 +129,7 @@ interface NegentropyCoordinatorOptions {
     canStartBackgroundPrebuild(): boolean;
     terminatePeerConnection(peerKey: string, reason: string): void;
     onSessionClosed(peerKey: string, reason: string): void | Promise<void>;
+    onIndexRefreshed(source: string, sync: BootstrapResult): Promise<void>;
 }
 
 interface NegOpenSchedulingState {
@@ -207,6 +211,8 @@ function createSessionState(
         currentWindowEngine: null,
         startedAt: now,
         lastActivity: now,
+        pendingImports: 0,
+        recoveryRefreshes: 0,
         pendingHaveIds: new Set<string>(),
         pendingNeedIds: new Set<string>(),
         unresolvedNeedIds: new Set<string>(),
@@ -1183,6 +1189,11 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             closePeerSession(peerKey, 'gatekeeper_reset');
             return;
         }
+        if (imported.dependencyUnavailable) {
+            sendNegClose(peerKey, session, 'gatekeeper_processing_unavailable');
+            closePeerSession(peerKey, 'gatekeeper_processing_unavailable');
+            return;
+        }
         if (imported.retryable) {
             log.warn(
                 { peer: shortName(peerKey), operations: operations.length },
@@ -1210,6 +1221,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         if (!session.reconciliationComplete) {
             return;
         }
+        if (session.pendingImports > 0) return;
 
         if (!carryReceivedUnresolvedNeeds(session)) {
             return;
@@ -1394,7 +1406,8 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         const globalOrderedCatchupActive = schedulingState?.globalActive ?? false;
         const peerOrderedCatchupActive = schedulingState?.peerActive ?? false;
 
-        if (conflictDecision.action === 'ignore' || globalOrderedCatchupActive || peerOrderedCatchupActive) {
+        if (conflictDecision.action === 'ignore' || globalOrderedCatchupActive || peerOrderedCatchupActive
+            || !options.importPipeline.available) {
             const remoteWindowId = typeof msg.windowId === 'string' ? msg.windowId : '';
             const rejectionSent = remoteSessionId.length > 0
                 && remoteWindowId.length > 0
@@ -1404,9 +1417,9 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                     sessionId: remoteSessionId,
                     windowId: remoteWindowId,
                     round: Number.isInteger(msg.round) ? msg.round : 0,
-                    reason: 'ordered_catchup_active',
+                    reason: options.importPipeline.available ? 'ordered_catchup_active' : 'gatekeeper_processing_unavailable',
                 });
-            log.warn(
+            log.debug(
                 {
                     peer: shortName(peerKey),
                     remoteSessionId,
@@ -1418,7 +1431,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                     postImportActive: schedulingState?.transitionActive ?? false,
                     rejectionSent,
                 },
-                'rejecting neg_open while ordered catch-up active'
+                'rejecting neg_open while synchronization is paused or ordered catch-up is active'
             );
             return;
         }
@@ -1525,6 +1538,52 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         }
     }
 
+    async function importReceivedOperations(peerKey: string, session: PeerSyncSession, operations: Operation[]) {
+        session.pendingImports += 1;
+        try {
+            const imported = await options.importPipeline.enqueue({
+                kind: 'remote', name: peerKey, data: operations, indexEpoch: session.indexEpoch,
+                cancelled: () => peerSessions.get(peerKey) !== session,
+            });
+            if (!imported.indexRefreshRequired || peerSessions.get(peerKey) !== session) return imported;
+
+            // A timed-out request can commit without returning its accepted operation hashes.
+            session.recoveryRefreshes += 1;
+            try {
+                const source = 'negentropy_processing_recovery';
+                const sync = await options.importPipeline.refreshIndex(source);
+                await options.onIndexRefreshed(source, sync);
+                if (peerSessions.get(peerKey) !== session) return imported;
+                const ids = operations.flatMap(operation => {
+                    const mapped = mapOperationToSyncKey(operation);
+                    return mapped.ok ? [mapped.value.idHex] : [];
+                });
+                for (const chunk of chunkIds(ids, options.maxIdsPerLookup)) {
+                    const rows = await options.syncStore.getByIds(chunk);
+                    if (peerSessions.get(peerKey) !== session) return imported;
+                    imported.knownIds.push(...rows.map(row => row.id));
+                }
+                return imported;
+            }
+            catch (err) {
+                const localUnavailable = (err as { code?: string } | null)?.code === 'gatekeeper_processing_unavailable';
+                if (shutdownStarted || localUnavailable) {
+                    log.debug({ err, peer: shortName(peerKey) }, 'Gatekeeper processing recovery mirror deferred');
+                }
+                else {
+                    log.error({ err, peer: shortName(peerKey) }, 'Failed to mirror Gatekeeper processing recovery');
+                }
+                return { ...imported, retryable: true, dependencyUnavailable: true };
+            }
+            finally {
+                session.recoveryRefreshes -= 1;
+            }
+        }
+        finally {
+            session.pendingImports -= 1;
+        }
+    }
+
     async function handleOpsPushMessage(peerKey: string, msg: OpsPushMessage): Promise<void> {
         const session = peerSessions.get(peerKey);
         if (!session || session.sessionId !== msg.sessionId) {
@@ -1549,13 +1608,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                 return;
             }
 
-            const imported = await options.importPipeline.enqueue({
-                kind: 'remote',
-                name: peerKey,
-                data: unprovenBatch,
-                indexEpoch: session.indexEpoch,
-                cancelled: () => peerSessions.get(peerKey) !== session,
-            });
+            const imported = await importReceivedOperations(peerKey, session, unprovenBatch);
 
             if (peerSessions.get(peerKey) !== session) {
                 return;
@@ -1563,6 +1616,11 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             if (imported.indexEpochChanged) {
                 sendNegClose(peerKey, session, 'gatekeeper_reset');
                 closePeerSession(peerKey, 'gatekeeper_reset');
+                return;
+            }
+            if (imported.dependencyUnavailable) {
+                sendNegClose(peerKey, session, 'gatekeeper_processing_unavailable');
+                closePeerSession(peerKey, 'gatekeeper_processing_unavailable');
                 return;
             }
             for (const operation of unprovenBatch) {
@@ -1604,6 +1662,11 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                 }
             }
             await maybeFinalizeInitiatorSession(peerKey, session);
+            if (session.pendingImports === 0 && session.deferredClose) {
+                const close = session.deferredClose;
+                session.deferredClose = undefined;
+                await handleNegCloseMessage(peerKey, close);
+            }
         }
 
         if (peerSessions.get(peerKey) === session) {
@@ -1623,6 +1686,10 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                 }
             }
             if (msg.reason === 'complete') {
+                if (session.pendingImports > 0) {
+                    session.deferredClose = msg;
+                    return;
+                }
                 const unresolvedRefreshed = await refreshStoredUnresolvedNeeds(peerKey, session);
                 if (peerSessions.get(peerKey) !== session) {
                     return;
@@ -1658,7 +1725,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             initiator: boolean;
         },
     ): Promise<boolean> {
-        if (shutdownStarted) {
+        if (shutdownStarted || !options.importPipeline.available) {
             return false;
         }
         const conn = options.getConnection(peerKey);
@@ -1674,6 +1741,10 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             const peerLatestSignedTimestamp = conn.capabilities.latestSignedTimestamp;
             const initialWindow = await buildInitialHistoryWindowForSession(peerLatestSignedTimestamp);
             if (peerSessions.get(peerKey) !== session) {
+                return false;
+            }
+            if (!options.importPipeline.available) {
+                closePeerSession(peerKey, 'gatekeeper_processing_unavailable');
                 return false;
             }
             session.windows = [initialWindow];
@@ -1778,7 +1849,13 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         }
     }
 
-    function reset(): void {
+    function reset(reason?: string): void {
+        if (reason) {
+            for (const [peerKey, session] of peerSessions) {
+                sendNegClose(peerKey, session, reason);
+                closePeerSession(peerKey, reason);
+            }
+        }
         peerSessions.clear();
         invalidateNegentropyAdapterCache();
     }
@@ -1849,6 +1926,10 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         },
         expire(now = Date.now()): void {
             for (const [peerKey, session] of peerSessions) {
+                if (session.pendingImports > 0 && (options.importPipeline.recovering || session.recoveryRefreshes > 0)) {
+                    session.lastActivity = now;
+                    continue;
+                }
                 if (now - session.lastActivity > options.idleTimeoutMs) {
                     sendNegClose(peerKey, session, 'idle_timeout');
                     closePeerSession(peerKey, 'idle_timeout');

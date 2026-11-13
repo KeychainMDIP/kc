@@ -75,6 +75,7 @@ const NEG_MAX_OPS_PER_PUSH = 300;
 const NEG_MAX_BYTES_PER_PUSH = 512 * 1024;
 const NEG_REPAIR_INTERVAL_MS = config.negentropyIntervalSeconds * 1000;
 const syncStats = createMediatorSyncStats();
+const dependencyRequests = new AbortController();
 let nodeKey = '';
 let nodeInfo: NodeInfo;
 const peerDirectory = createPeerDirectory({
@@ -90,6 +91,7 @@ let transport: ReturnType<typeof createHyperswarmTransport>;
 function buildImportPipeline(store: OperationSyncStore): ImportPipeline {
     return createImportPipeline({
         gatekeeper,
+        signal: dependencyRequests.signal,
         syncStore: store,
         cipher,
         syncStats,
@@ -123,7 +125,7 @@ function buildOrderedCatchupCoordinator(
         onIndexRefreshed: (source, sync) => peerSyncCoordinator.handleIndexRefreshed(source, sync),
         onComplete: outcome => peerSyncCoordinator.handleOrderedCatchupComplete(outcome),
         onHandoffDeferred: () => peerSyncCoordinator.schedulePreferredSyncs(),
-        onFailure: () => peerSyncCoordinator.handleOrderedCatchupFailure(),
+        onFailure: outcome => peerSyncCoordinator.handleOrderedCatchupFailure(outcome),
     });
 }
 
@@ -154,6 +156,7 @@ function buildNegentropyCoordinator(
         canStartBackgroundPrebuild: () => peerSyncCoordinator.canStartBackgroundPrebuild(),
         terminatePeerConnection: (peerKey, reason) => transport.terminatePeer(peerKey, reason),
         onSessionClosed: (peerKey, reason) => peerSyncCoordinator.handleNegentropySessionClosed(peerKey, reason),
+        onIndexRefreshed: (source, sync) => peerSyncCoordinator.handleIndexRefreshed(source, sync),
     });
 }
 
@@ -219,7 +222,6 @@ let resolveStartupRetry: (() => void) | null = null;
 let cleanupPromise: Promise<void> | null = null;
 let shutdownPromise: Promise<void> | null = null;
 let shutdownExitCode = 0;
-const dependencyRequests = new AbortController();
 
 function clearLoopTimers(): void {
     if (exportTimer) {
@@ -388,11 +390,14 @@ async function exportLoop(): Promise<void> {
     }
 
     try {
+        const wasUnavailable = !importPipeline.available;
         const sync = await importPipeline.refreshIndex('exportLoop');
         await peerSyncCoordinator.handleIndexRefreshed('exportLoop', sync);
+        if (wasUnavailable) await peerSyncCoordinator.schedulePreferredSyncs();
         await queueCoordinator.flush();
     } catch (error) {
-        log.error({ error }, 'Error in exportLoop');
+        if (!importPipeline.available) log.debug({ err: error }, 'Index refresh deferred while Gatekeeper processing is unavailable');
+        else log.error({ err: error }, 'Error in exportLoop');
     }
 
     const importQueueLength = importPipeline.queued;

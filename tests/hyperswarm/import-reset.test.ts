@@ -26,7 +26,10 @@ function fixture() {
         added: 0, merged: 0, rejected: 0, pending: 1, acceptedHashes: [], acceptedEvents: [],
     }));
     const pipeline = createImportPipeline({
-        gatekeeper: { importBatch, processEvents, exportIndex, isReady: async () => true },
+        gatekeeper: { importBatch, processEvents, exportIndex, isReady: async () => true,
+            getStatus: async () => ({ uptimeSeconds: 0, memoryUsage: process.memoryUsage(),
+                eventsQueue: { staged: 0, pending: 0, processing: 0, total: 0, active: false } }),
+        },
         syncStore: store, cipher, syncStats: createMediatorSyncStats(),
         beginStoreMutation: () => () => {}, onStoreChanged: () => {},
     });
