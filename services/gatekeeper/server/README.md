@@ -21,7 +21,7 @@ Operations come from Keymaster clients such as end-user wallets and network medi
 | `KC_IPFS_ENABLE` | true | Enable IPFS-backed CAS endpoints |
 | `KC_IPFS_CLUSTER_URL` | (no default) | Optional IPFS Cluster API URL |
 | `KC_IPFS_CLUSTER_AUTH_HEADER` | (no default) | Optional authorization header sent to IPFS Cluster |
-| `KC_GATEKEEPER_GC_INTERVAL` | 15 | The number of minutes between garbage collection cycles (0 to disable) |
+| `KC_GATEKEEPER_GC_INTERVAL` | 15 | Minutes between bounded indexed expiration-cleanup runs (0 to disable scheduled cleanup) |
 | `KC_GATEKEEPER_TRUST_PROXY` | false | If true, trust upstream proxy headers when determining client IP (`req.ip`) |
 | `KC_GATEKEEPER_RATE_LIMIT_ENABLED` | false | Enable API rate limiting |
 | `KC_GATEKEEPER_RATE_LIMIT_WINDOW_VALUE` | 1 | Time window size for rate limiting |
@@ -46,6 +46,45 @@ When `KC_GATEKEEPER_DB=mongodb`, Gatekeeper requires MongoDB transactions so DID
 
 The repository `docker-compose.yml` starts MongoDB as a single-node replica set named `rs0` and uses `KC_MONGODB_URL=mongodb://mongodb:27017/?replicaSet=rs0` for containers. Its healthcheck waits until the replica set has a writable primary before starting dependent services. Existing Mongo-backed deployments must use a replica set with a reachable primary, or a managed replica-set/sharded MongoDB deployment, before starting Gatekeeper with this adapter.
 
+## Expiration cleanup and database verification
+
+Scheduled garbage collection queries Gatekeeper's lifecycle index for expired
+DIDs and their direct dependents. It does not enumerate all DID histories,
+calculate statistics, or run a signature audit. Each run handles at most 50
+pages of 100 candidate examinations, yielding between pages and preserving
+unfinished work for the next cycle. A large history can still make an individual
+candidate expensive. The work budget is not a hard time deadline.
+
+The lifecycle index is maintained atomically with history changes on every
+supported adapter. Existing databases receive a one-time backfill during
+startup. Allow that initialization to finish before readiness. No database
+reset is required. Setting `KC_GATEKEEPER_GC_INTERVAL=0` disables scheduled
+cleanup while retaining normal metadata maintenance. Use one Gatekeeper writer
+per authoritative database namespace and stop older writers before upgrading.
+
+`GET /api/v1/db/verify` and `admin verify-db` explicitly run the expensive
+integrity audit. `verified` means successfully audited retained DIDs. An
+incomplete audit returns an error when dependencies, legacy formats or storage
+errors prevent a conclusion. It preserves those uncertain histories, although
+earlier completed repairs are not rolled back. Full audits are never scheduled
+by garbage collection.
+
+## Database resets
+
+The existing reset endpoint retains its namespace scope and response. PostgreSQL
+can clear Gatekeeper's bulk-data tables with `TRUNCATE` when they contain no other
+namespace and exclusive access is immediately available. Otherwise it uses
+scoped deletes. Row security, user triggers or unavailable truncate privileges
+also retain the scoped path. The reset strategy is logged after commit.
+
+Pause ingestion and other table users before a planned reset to allow the bulk
+path reliably. It briefly locks those tables. Reset still regenerates the index
+epoch and initializes empty lifecycle state, causing consumers to rebuild through
+their existing epoch checks. Other namespaces and unrelated metadata are retained.
+
+Bulk reset reduces deletion WAL. Reimporting operations and rebuilding downstream
+stores still generate WAL, so the PostgreSQL archive pipeline must keep up.
+
 ## Lightweight status and DID statistics
 
 `GET /api/v1/status` reports Gatekeeper uptime, process memory, and live queue
@@ -63,6 +102,17 @@ Queue categories are disjoint. `staged` means queued work not last classified
 as deferred, `pending` means queued work waiting after a deferred import, and
 `processing` means work remaining in active import passes. `total` is their
 sum. Raw operation bodies are not included. Memory counters are byte counts.
+
+## Event requests across a database reset
+
+`POST /api/v1/batch/import`, `POST /api/v1/events/process` and
+`POST /api/v1/queue/{registry}/clear` accept the optional
+`X-MDIP-Index-Epoch` header. Use the `indexEpoch` returned by index export to
+bind work to that database generation. A reset drains active event work before
+clearing the database. Requests carrying the previous epoch then return HTTP
+409 with `{ "error": "gatekeeper_index_epoch_changed" }` and make no changes.
+Discard old queued synchronization work and refresh the index before retrying.
+Requests without this header retain their existing behavior.
 
 ## Index export limitation
 

@@ -418,7 +418,7 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
 
     async function handleNegentropySessionClosed(peerKey: string, reason: string): Promise<void> {
         options.getOrderedCatchupCoordinator().finishTransition(peerKey);
-        if (accepting && reason !== 'ordered_catchup_active') {
+        if (accepting && reason !== 'ordered_catchup_active' && reason !== 'gatekeeper_reset') {
             await schedulePreferredSyncs();
         }
     }

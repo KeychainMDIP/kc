@@ -36,7 +36,12 @@ describe.each(adapters)('%s database', (_name, Adapter) => {
     it('initializes only a missing database', async () => {
         await db.start();
 
-        expect(JSON.parse(fs.readFileSync(dbName, 'utf8'))).toStrictEqual({ dids: {} });
+        const stored = JSON.parse(fs.readFileSync(dbName, 'utf8'));
+        expect(stored).toMatchObject({
+            dids: {}, lifecycle: {}, expirationJobs: {},
+            lifecycleMetadata: { version: 1, complete: true, checkedCursor: '0' },
+        });
+        expect(stored.lifecycleMetadata.epoch).toBe(stored.indexEpoch);
     });
 
     it.each([
@@ -51,6 +56,19 @@ describe.each(adapters)('%s database', (_name, Adapter) => {
         ['an invalid index sequence', JSON.stringify({ dids: {}, indexSeq: -1 })],
         ['invalid index changes', JSON.stringify({ dids: {}, indexChanges: {} })],
         ['an invalid index epoch', JSON.stringify({ dids: {}, indexEpoch: 1 })],
+        ['invalid lifecycle rows', JSON.stringify({ dids: {}, lifecycle: [] })],
+        ['a malformed lifecycle row', JSON.stringify({ dids: {}, lifecycle: { first: {} } })],
+        ['a lifecycle row under another suffix', JSON.stringify({ dids: {}, lifecycle: {
+            other: { suffix: 'first', did: 'did:test:first', revision: 'revision', type: 'agent' },
+        } })],
+        ['invalid expiration jobs', JSON.stringify({ dids: {}, expirationJobs: [] })],
+        ['a malformed expiration job', JSON.stringify({ dids: {}, expirationJobs: { first: {} } })],
+        ['invalid lifecycle metadata', JSON.stringify({ dids: {}, lifecycleMetadata: {
+            version: 1, epoch: 'epoch', complete: 'true', checkedCursor: '0',
+        } })],
+        ['an invalid lifecycle checkpoint', JSON.stringify({ dids: {}, lifecycleMetadata: {
+            version: 1, epoch: 'epoch', complete: true, checkedCursor: '-1',
+        } })],
     ])('rejects %s without replacing it', async (_description, contents) => {
         fs.mkdirSync(dataFolder);
         fs.writeFileSync(dbName, contents);

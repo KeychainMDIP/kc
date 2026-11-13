@@ -8,11 +8,13 @@ import {
     dedupeOperationsByHash,
     filterKnownOperations,
     filterOperationsByAcceptedHashes,
+    hasContentVerifiedOperationId,
     mapAcceptedOperationsToSyncRecords,
     mapIndexExportChangesToSyncPage,
     mapIndexExportOperationsToSyncRecords,
     partitionImportBatchOperations,
     prunePersistedSyncRecords,
+    RETIRED_SYNC_ORDER_OFFSET,
     sortOperationsBySyncKey,
 } from '../../services/mediators/hyperswarm/src/sync-persistence.ts';
 import {
@@ -39,6 +41,18 @@ function makeCreateOp(hashChar: string, signed: string): Operation {
 }
 
 describe('sync-persistence helpers', () => {
+    it('does not trust claimed synchronization IDs when content verification cannot finish', () => {
+        const operation = makeCreateOp('a', '2026-02-10T10:00:00.000Z');
+        const hashJSON = jest.fn(() => { throw new Error('cannot canonicalize operation'); });
+        const unsigned = { ...operation };
+        delete unsigned.signature;
+
+        expect(hasContentVerifiedOperationId(unsigned, { hashJSON })).toBe(false);
+        expect(hashJSON).not.toHaveBeenCalled();
+        expect(hasContentVerifiedOperationId(operation, { hashJSON })).toBe(false);
+        expect(hashJSON).toHaveBeenCalledTimes(1);
+    });
+
     it('skips persisted-record pruning when there is nothing pending', async () => {
         const getByIds = jest.fn(async () => []);
 
@@ -174,7 +188,7 @@ describe('sync-persistence helpers', () => {
         expect(result.invalid).toBe(0);
     });
 
-    it('reduces ordered index additions and removals to the final action per ID', () => {
+    it('retains accepted additions when later changes remove their Gatekeeper history', () => {
         const opA = makeCreateOp('a', '2026-02-10T10:00:00.000Z');
         const opB = makeCreateOp('b', '2026-02-10T11:00:00.000Z');
         const eventA: GatekeeperEvent = {
@@ -202,9 +216,114 @@ describe('sync-persistence helpers', () => {
             ],
         );
 
-        expect(result.records).toEqual([expect.objectContaining({ id: h('b'), syncOrder: 4 })]);
+        expect(result.records).toEqual([
+            expect.objectContaining({ id: h('a'), syncOrder: RETIRED_SYNC_ORDER_OFFSET + 1 }),
+            expect.objectContaining({ id: h('b'), syncOrder: 4 }),
+        ]);
         expect(result.deleteIds).toStrictEqual([h('a')]);
         expect(result.invalid).toBe(1);
+    });
+
+    it('retires existing history in its original order without inventing unknown operations', async () => {
+        const operations = [
+            makeCreateOp('a', '2026-02-10T10:00:00.000Z'),
+            makeCreateOp('b', '2026-02-10T11:00:00.000Z'),
+        ];
+        const records = mapAcceptedOperationsToSyncRecords(operations.map((operation, index) => ({
+            operation, syncOrder: index + 1,
+        }))).records;
+        const store = new InMemoryOperationSyncStore();
+        await store.upsertMany(records);
+        const removals = [
+            { seq: 3, did: 'did:test:b', operationHash: h('b') },
+            { seq: 4, did: 'did:test:a', operationHash: h('a') },
+            { seq: 5, did: 'did:test:c', operationHash: h('c') },
+        ];
+        const retired = mapIndexExportChangesToSyncPage([], removals, records);
+        await store.applySyncPage(retired);
+        expect((await store.iterateOrdered()).map(record => [record.id, record.syncOrder])).toEqual([
+            [h('a'), RETIRED_SYNC_ORDER_OFFSET + 1],
+            [h('b'), RETIRED_SYNC_ORDER_OFFSET + 2],
+        ]);
+        expect(await store.has(h('c'))).toBe(false);
+        expect(mapIndexExportChangesToSyncPage([], removals, await store.getByIds([h('a'), h('b')]))).toEqual({
+            records: [], deleteIds: [], invalid: 0,
+        });
+    });
+
+    it.each([RETIRED_SYNC_ORDER_OFFSET + 1, Number.MAX_SAFE_INTEGER])(
+        'restores inactive order %s only from a new accepted export record', async syncOrder => {
+            const operation = makeCreateOp('a', '2026-02-10T10:00:00.000Z');
+            const existing = mapAcceptedOperationsToSyncRecords([{
+                operation, syncOrder,
+            }]).records;
+            const store = new InMemoryOperationSyncStore();
+            await store.upsertMany(existing);
+            const reactivated = mapIndexExportChangesToSyncPage([{
+                seq: 10, did: 'did:test:a', event: {
+                    registry: 'hyperswarm', time: operation.signature!.signed, operation,
+                },
+            }], [], existing);
+            await store.applySyncPage(reactivated);
+            await expect(store.getByIds([h('a')])).resolves.toMatchObject([{ syncOrder: 10, operation }]);
+        },
+    );
+
+    it('rejects malformed removals and unmappable exported operations without inventing inventory', () => {
+        const operation = makeCreateOp('a', '2026-02-10T10:00:00.000Z');
+        delete operation.signature;
+        const result = mapIndexExportChangesToSyncPage([{
+            seq: 1, did: 'did:test:a', event: {
+                registry: 'hyperswarm', time: operation.created!, operation,
+            },
+        }], [{ seq: 2, did: 'did:test:a', operationHash: null as unknown as string }]);
+
+        expect(result).toEqual({ records: [], deleteIds: [], invalid: 2 });
+    });
+
+    it('does not invent ordered replay positions for removed snapshot records', async () => {
+        const records = mapAcceptedOperationsToSyncRecords([
+            makeCreateOp('a', '2026-02-10T10:00:00.000Z'),
+            makeCreateOp('b', '2026-02-10T11:00:00.000Z'),
+        ]).records;
+        const store = new InMemoryOperationSyncStore();
+        await store.upsertMany(records);
+        const retained = mapIndexExportChangesToSyncPage([], [
+            { seq: 10, did: 'did:test:b', operationHash: h('b') },
+            { seq: 11, did: 'did:test:a', operationHash: h('a') },
+        ], records);
+        await store.applySyncPage(retained);
+
+        expect(retained).toEqual({ records: [], deleteIds: [], invalid: 0 });
+        expect(await store.count()).toBe(2);
+        expect(await store.countOrdered()).toBe(0);
+        expect(await store.iterateOrdered()).toEqual([]);
+    });
+
+    it('preserves the rejected-terminal marker and the top retired ordering value', () => {
+        const operation = makeCreateOp('a', '2026-02-10T10:00:00.000Z');
+        const removal = [{ seq: 10, did: 'did:test:a', operationHash: h('a') }];
+        const record = mapAcceptedOperationsToSyncRecords([{
+            operation, syncOrder: RETIRED_SYNC_ORDER_OFFSET - 2,
+        }]).records[0];
+        expect(mapIndexExportChangesToSyncPage([], removal, [record]).records[0].syncOrder)
+            .toBe(Number.MAX_SAFE_INTEGER - 1);
+        expect(mapIndexExportChangesToSyncPage([], removal, [{ ...record, syncOrder: Number.MAX_SAFE_INTEGER }]))
+            .toEqual({ records: [], deleteIds: [], invalid: 0 });
+    });
+
+    it('fails safely before an active cursor can collide with retired or terminal ordering', () => {
+        const operation = makeCreateOp('a', '2026-02-10T10:00:00.000Z');
+        const event = { registry: 'hyperswarm', time: operation.signature!.signed, operation };
+        expect(() => mapIndexExportChangesToSyncPage([{
+            seq: RETIRED_SYNC_ORDER_OFFSET - 1, did: 'did:test:a', event,
+        }])).toThrow('active history range');
+        const previous = mapAcceptedOperationsToSyncRecords([{
+            operation, syncOrder: RETIRED_SYNC_ORDER_OFFSET - 1,
+        }]).records;
+        expect(() => mapIndexExportChangesToSyncPage([], [{
+            seq: 10, did: 'did:test:a', operationHash: h('a'),
+        }], previous)).toThrow('active history range');
     });
 
     it('maps pre-MDIP signed timestamp to MDIP epoch seconds', () => {

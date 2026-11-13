@@ -158,6 +158,7 @@ describe('database readiness checks', () => {
         Object.assign(process.env, configured);
         const db = new DbPostgres('configured-pool');
         jest.spyOn(db as any, 'withTx').mockResolvedValue(undefined);
+        jest.spyOn(db, 'initializeLifecycleIndex').mockResolvedValue(undefined);
 
         try {
             await db.start();

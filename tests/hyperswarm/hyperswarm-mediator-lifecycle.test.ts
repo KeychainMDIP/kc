@@ -5,6 +5,7 @@ import type { Operation } from '@mdip/gatekeeper/types';
 import { jest } from '@jest/globals';
 
 import InMemoryOperationSyncStore from '../../services/mediators/hyperswarm/src/db/memory.ts';
+import { HYPR_INDEX_SYNC_STATE_KEYS } from '../../services/mediators/hyperswarm/src/bootstrap.ts';
 import NegentropyAdapter from '../../services/mediators/hyperswarm/src/negentropy/adapter.ts';
 import { encodeNegentropyFrame } from '../../services/mediators/hyperswarm/src/negentropy/protocol.ts';
 import {
@@ -447,7 +448,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         );
     });
 
-    it('rebuilds Negentropy after Gatekeeper removes indexed operations', async () => {
+    it('retains removed unordered Gatekeeper history without rebuilding Negentropy', async () => {
         const [operation] = await makeOperations(1);
         let did = '';
         const running = await createRunningNode({
@@ -468,19 +469,21 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
             deferInitialBuild: true,
         });
         running.node.run(() => running.node.mediator.__test.setNegentropyAdapter(adapter));
+        await settle();
         const buildSnapshot = jest.spyOn(adapter, 'buildSnapshotForWindow');
-        expect(await running.store.has(operation.signature!.hash)).toBe(true);
+        const original = structuredClone(await running.store.getByIds([operation.signature!.hash]));
+        expect(original).toHaveLength(1);
+        expect(original[0].syncOrder).toBeUndefined();
 
         await running.node.gatekeeperDb.deleteEvents(did);
+        const { checkpointCursor: checkpoint } = await running.node.gatekeeperDb.exportIndexChanges({ cursor: '0' });
         await running.node.run(() => jest.advanceTimersByTimeAsync(2_000));
         await eventually(async () => (
-            !await running.store.has(operation.signature!.hash)
-            && buildSnapshot.mock.calls.length > 0
+            await running.store.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.changesCursor) === checkpoint
         ));
-
-        await expect(buildSnapshot.mock.results.at(-1)!.value).resolves.toMatchObject({
-            stats: { loaded: 0 },
-        });
+        await settle();
+        expect(await running.store.getByIds([operation.signature!.hash])).toEqual(original);
+        expect(buildSnapshot).not.toHaveBeenCalled();
     });
 
     it('handles real swarm connection, close, error, and malformed-data events', async () => {
@@ -1028,7 +1031,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         }
     });
 
-    it('backs off the export loop while imports remain queued', async () => {
+    it('waits for queued imports before refreshing the index and then resumes polling', async () => {
         const operations = await makeOperations(2);
         const running = await createRunningNode();
         const peer = await attachConnection(running, 0x22);
@@ -1058,17 +1061,18 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         const second = running.node.run(
             () => running.node.mediator.__test.receiveMsg(peer.peerKey, queueMessage(operations[1])),
         );
-        await running.node.run(() => jest.advanceTimersByTimeAsync(2_000));
         const refreshesBeforeBackoff = running.node.gatekeeperClient.exportIndex.mock.calls.length;
+        await running.node.run(() => jest.advanceTimersByTimeAsync(61_000));
+        expect(running.node.gatekeeperClient.exportIndex).toHaveBeenCalledTimes(refreshesBeforeBackoff);
         releaseFirst();
         await first;
         await second;
-        await running.node.run(() => jest.advanceTimersByTimeAsync(59_000));
-        expect(running.node.gatekeeperClient.exportIndex).toHaveBeenCalledTimes(refreshesBeforeBackoff);
-        await running.node.run(() => jest.advanceTimersByTimeAsync(1_000));
+        await eventually(async () => running.node.gatekeeperClient.exportIndex.mock.calls.length > refreshesBeforeBackoff);
+        const resumedRefreshes = running.node.gatekeeperClient.exportIndex.mock.calls.length;
+        await running.node.run(() => jest.advanceTimersByTimeAsync(2_000));
 
         expect(processEvents).toHaveBeenCalledTimes(2);
-        expect(running.node.gatekeeperClient.exportIndex.mock.calls.length).toBeGreaterThan(refreshesBeforeBackoff);
+        expect(running.node.gatekeeperClient.exportIndex.mock.calls.length).toBeGreaterThan(resumedRefreshes);
     });
 
     it('expires an idle ordered catch-up server session without closing its connection', async () => {
@@ -1153,6 +1157,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         expect(running.node.gatekeeperClient.clearQueue).toHaveBeenCalledWith(
             'hyperswarm',
             [operation.signature!.hash],
+            (await running.node.gatekeeperDb.getLifecycleMetadata()).epoch,
         );
         expect(peer.pair.transcript).toEqual(expect.arrayContaining([
             expect.objectContaining({ messageType: 'queue', framed: true }),

@@ -143,10 +143,27 @@ function createPostgresFixture(): AdapterFixture {
         });
     }
 
-    const query = async (sql: string, params: unknown[] = []) => {
-        const text = String(sql);
+    const query = async (sql: string | { text: string; values?: unknown[] }, params: unknown[] = []) => {
+        const text = typeof sql === 'string' ? sql : sql.text;
+        if (typeof sql !== 'string') params = sql.values ?? [];
 
         if (text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK') {
+            return { rows: [], rowCount: 0 };
+        }
+
+        if (/^(SAVEPOINT|ROLLBACK TO SAVEPOINT|RELEASE SAVEPOINT)/.test(text) || text.startsWith('LOCK TABLE')) {
+            return { rows: [], rowCount: 0 };
+        }
+        if (text.includes('AS protected')) return { rows: [{ protected: false }], rowCount: 1 };
+        if (text.includes('AS shared')) return { rows: [{ shared: false }], rowCount: 1 };
+        if (text.startsWith('TRUNCATE TABLE')) {
+            eventsByKey.clear();
+            queues.clear();
+            changes.length = 0;
+            return { rows: [], rowCount: 0 };
+        }
+
+        if (/^\s*(DELETE FROM|INSERT INTO|SELECT record FROM) gatekeeper_lifecycle\b/.test(text)) {
             return { rows: [], rowCount: 0 };
         }
 
@@ -191,6 +208,10 @@ function createPostgresFixture(): AdapterFixture {
         if (text.includes('SELECT COALESCE(MAX(seq)')) {
             const id = String(params[1]);
             return { rows: [{ seq: eventsByKey.get(id)?.length ?? 0 }] };
+        }
+
+        if (text.includes("DELETE FROM gatekeeper_metadata WHERE namespace = $1 AND key = 'lifecycle'")) {
+            return { rows: [], rowCount: 0 };
         }
 
         if (text.includes('DELETE FROM gatekeeper_events')) {
@@ -478,7 +499,7 @@ function createRedisFixture(): AdapterFixture {
                 return eventCount;
             }
 
-            if (keyCount === 4 && args.length === 2) {
+            if (keyCount === 4 && args.length >= 2 && args[0].startsWith('{')) {
                 const events = lists.get(keys[0]) ?? [];
                 const removed = del(keys[0]);
                 zsets.get(keys[3])?.delete(args[1]);
@@ -564,6 +585,14 @@ function createMongoFixture(): AdapterFixture {
     (db as any).client = createMongoTransactionClient();
     (db as any).db = {
         collection: (name: string) => {
+            if (name === 'lifecycle') {
+                return {
+                    findOne: async () => null,
+                    updateOne: async () => ({ modifiedCount: 1 }),
+                    deleteOne: async () => ({ deletedCount: 0 }),
+                    deleteMany: async () => ({ deletedCount: 0 }),
+                };
+            }
             if (name === 'dids') {
                 return {
                     find: (query: { id?: { $gt?: string } } = {}) => {
@@ -588,6 +617,14 @@ function createMongoFixture(): AdapterFixture {
                         id,
                         events: eventsByKey.get(id) ?? [],
                     }),
+                    findOneAndUpdate: async (
+                        { id }: { id: string },
+                        update: { $push: { events: { $each: GatekeeperEvent[] } } },
+                    ) => {
+                        const before = eventsByKey.get(id);
+                        eventsByKey.set(id, [...(before ?? []), ...update.$push.events.$each]);
+                        return before ? { id, events: before.slice(0, 1) } : null;
+                    },
                     updateOne: async (
                         { id }: { id: string },
                         update: {
@@ -722,12 +759,29 @@ function createMongoIndexChangeFailureFixture(): DbMongo {
 
     (db as any).db = {
         collection: (name: string) => {
+            if (name === 'lifecycle') {
+                return {
+                    findOne: async () => null,
+                    updateOne: async () => ({ modifiedCount: 1 }),
+                    deleteOne: async () => ({ deletedCount: 0 }),
+                    deleteMany: async () => ({ deletedCount: 0 }),
+                };
+            }
             if (name === 'dids') {
                 return {
                     findOne: async ({ id }: { id: string }) => ({
                         id,
                         events: committedEvents.get(id) ?? [],
                     }),
+                    findOneAndUpdate: async (
+                        { id }: { id: string },
+                        update: { $push: { events: { $each: GatekeeperEvent[] } } },
+                    ) => {
+                        const events = requireActiveMap(transactionEvents, 'Mongo events');
+                        const before = events.get(id);
+                        events.set(id, [...(before ?? []), ...update.$push.events.$each]);
+                        return before ? { id, events: before.slice(0, 1) } : null;
+                    },
                     updateOne: async (
                         { id }: { id: string },
                         update: {
@@ -831,8 +885,9 @@ function createPostgresIndexChangeFailureFixture(): DbPostgres {
     let transactionEvents: Map<string, GatekeeperEvent[]> | null = null;
     let transactionBlocks: Map<string, BlockInfo> | null = null;
 
-    async function runQuery(sql: string, params: unknown[] = [], transactional = false) {
-        const text = String(sql);
+    async function runQuery(sql: string | { text: string; values?: unknown[] }, params: unknown[] = [], transactional = false) {
+        const text = typeof sql === 'string' ? sql : sql.text;
+        if (typeof sql !== 'string') params = sql.values ?? [];
 
         if (text === 'BEGIN') {
             transactionEvents = cloneJSONMap(committedEvents);
@@ -851,6 +906,10 @@ function createPostgresIndexChangeFailureFixture(): DbPostgres {
         if (text === 'ROLLBACK') {
             transactionEvents = null;
             transactionBlocks = null;
+            return { rows: [], rowCount: 0 };
+        }
+
+        if (/^\s*(DELETE FROM|INSERT INTO|SELECT record FROM) gatekeeper_lifecycle\b/.test(text)) {
             return { rows: [], rowCount: 0 };
         }
 
@@ -2103,6 +2162,7 @@ describe('Gatekeeper Redis DID snapshot index', () => {
         }));
         const { default: MockedDbRedis } = await import('@mdip/gatekeeper/db/redis.ts');
         const db = new MockedDbRedis(dbName);
+        jest.spyOn(db, 'initializeLifecycleIndex').mockResolvedValue(undefined);
 
         await db.start();
         await db.stop();
@@ -2145,6 +2205,7 @@ describe('Gatekeeper Redis DID snapshot index', () => {
         }));
         const { default: MockedDbRedis } = await import('@mdip/gatekeeper/db/redis.ts');
         const db = new MockedDbRedis(dbName);
+        jest.spyOn(db, 'initializeLifecycleIndex').mockResolvedValue(undefined);
 
         await db.start();
         await db.stop();
@@ -2177,6 +2238,7 @@ describe('Gatekeeper Redis DID snapshot index', () => {
         }));
         const { default: MockedDbRedis } = await import('@mdip/gatekeeper/db/redis.ts');
         const db = new MockedDbRedis(dbName);
+        jest.spyOn(db, 'initializeLifecycleIndex').mockResolvedValue(undefined);
 
         await db.start();
         await db.stop();
@@ -2203,6 +2265,7 @@ describe('Gatekeeper Redis DID snapshot index', () => {
         }));
         const { default: MockedDbRedis } = await import('@mdip/gatekeeper/db/redis.ts');
         const db = new MockedDbRedis(dbName);
+        jest.spyOn(db, 'initializeLifecycleIndex').mockResolvedValue(undefined);
 
         await expect(db.start()).rejects.toThrow(
             `Unsupported Redis DID index key type for ${dbName}/index/dids: string`
@@ -2242,6 +2305,7 @@ describe('Gatekeeper Redis DID snapshot index', () => {
         }));
         const { default: MockedDbRedis } = await import('@mdip/gatekeeper/db/redis.ts');
         const db = new MockedDbRedis(dbName);
+        jest.spyOn(db, 'initializeLifecycleIndex').mockResolvedValue(undefined);
 
         await expect(db.start()).rejects.toThrow(`Unsupported Redis DID index key type for ${didIndexKey}: string`);
         expect(redis.quit).toHaveBeenCalledTimes(1);
@@ -2295,6 +2359,7 @@ describe('Gatekeeper Redis DID snapshot index', () => {
         }));
         const { default: MockedDbRedis } = await import('@mdip/gatekeeper/db/redis.ts');
         const db = new MockedDbRedis(dbName);
+        jest.spyOn(db, 'initializeLifecycleIndex').mockResolvedValue(undefined);
 
         await db.start();
         await db.stop();
@@ -2348,6 +2413,7 @@ describe('Gatekeeper DB startup and guard behavior', () => {
         }));
         const { default: MockedDbMongo } = await import('@mdip/gatekeeper/db/mongo.ts');
         const db = new MockedDbMongo('mongo-startup-failure');
+        jest.spyOn(db, 'initializeLifecycleIndex').mockResolvedValue(undefined);
 
         await expect(db.start()).rejects.toThrow('MongoDB transactions require a replica set');
         expect(close).toHaveBeenCalledTimes(1);
@@ -2367,6 +2433,7 @@ describe('Gatekeeper DB startup and guard behavior', () => {
         };
         const appDb = {
             collection: (name: string) => ({
+                deleteOne: async () => ({ deletedCount: 1 }),
                 indexes: async () => {
                     const indexes = indexesByCollection[name];
                     if (!indexes) {
@@ -2402,6 +2469,7 @@ describe('Gatekeeper DB startup and guard behavior', () => {
             command: jest.fn(async () => ({ setName: 'rs0' })),
         };
         const client = {
+            startSession: () => ({ withTransaction: (callback: () => Promise<unknown>) => callback(), endSession: async () => undefined }),
             connect: jest.fn(async () => undefined),
             close,
             db: jest.fn((name: string) => name === 'admin' ? adminDb : appDb),
@@ -2412,6 +2480,7 @@ describe('Gatekeeper DB startup and guard behavior', () => {
         }));
         const { default: MockedDbMongo } = await import('@mdip/gatekeeper/db/mongo.ts');
         const db = new MockedDbMongo('mongo-startup-success');
+        jest.spyOn(db, 'initializeLifecycleIndex').mockResolvedValue(undefined);
 
         await db.start();
         await db.resetDb();
@@ -2437,6 +2506,7 @@ describe('Gatekeeper DB startup and guard behavior', () => {
             { upsert: true },
         ]]);
         expect(deletedCollections).toStrictEqual([
+            'lifecycle',
             'dids',
             'queue',
             'blocks',
@@ -2501,6 +2571,7 @@ describe('Gatekeeper DB startup and guard behavior', () => {
         }));
         const { default: MockedDbMongo } = await import('@mdip/gatekeeper/db/mongo.ts');
         const db = new MockedDbMongo('mongo-queue-upgrade');
+        jest.spyOn(db, 'initializeLifecycleIndex').mockResolvedValue(undefined);
 
         await db.start();
         await db.stop();
@@ -2554,6 +2625,7 @@ describe('Gatekeeper DB startup and guard behavior', () => {
         }));
         const { default: MockedDbMongo } = await import('@mdip/gatekeeper/db/mongo.ts');
         const db = new MockedDbMongo('mongo-counter-upgrade');
+        jest.spyOn(db, 'initializeLifecycleIndex').mockResolvedValue(undefined);
 
         await db.start();
         await db.stop();
@@ -2606,6 +2678,7 @@ describe('Gatekeeper DB startup and guard behavior', () => {
         }));
         const { default: MockedDbMongo } = await import('@mdip/gatekeeper/db/mongo.ts');
         const db = new MockedDbMongo('mongo-counter-no-op');
+        jest.spyOn(db, 'initializeLifecycleIndex').mockResolvedValue(undefined);
 
         await db.start();
         await db.stop();
@@ -2631,6 +2704,8 @@ describe('Gatekeeper DB startup and guard behavior', () => {
 
         const appDb = {
             collection: (collectionName: string) => ({
+                deleteOne: async () => ({ deletedCount: 0 }),
+                deleteMany: async () => ({ deletedCount: 0 }),
                 indexes: async () => {
                     if (!existingCollections.has(collectionName)) {
                         throw { code: 26, codeName: 'NamespaceNotFound' };
@@ -2745,13 +2820,18 @@ describe('Gatekeeper DB startup and guard behavior', () => {
                 },
                 findOneAndUpdate: async (
                     { id }: { id: string },
-                    update: { $inc: { value: number } }
+                    update: { $inc?: { value: number }; $push?: { events: { $each: GatekeeperEvent[] } } }
                 ) => {
+                    if (collectionName === 'dids' && update.$push) {
+                        const before = eventsByKey.get(id);
+                        eventsByKey.set(id, [...(before ?? []), ...update.$push.events.$each]);
+                        return before ? { id, events: before.slice(0, 1) } : null;
+                    }
                     if (collectionName !== 'counters' || id !== 'indexSeq') {
                         return null;
                     }
 
-                    indexSeq += update.$inc.value;
+                    indexSeq += update.$inc!.value;
                     return { id, value: indexSeq };
                 },
                 insertOne: async (change: IndexChangeRecord) => {
@@ -2777,6 +2857,7 @@ describe('Gatekeeper DB startup and guard behavior', () => {
         }));
         const { default: MockedDbMongo } = await import('@mdip/gatekeeper/db/mongo.ts');
         const db = new MockedDbMongo('mongo-legacy-1-4-0');
+        jest.spyOn(db, 'initializeLifecycleIndex').mockResolvedValue(undefined);
 
         await db.start();
 
@@ -2831,6 +2912,7 @@ describe('Gatekeeper DB startup and guard behavior', () => {
         expect(indexSeq).toBe(1);
         expect(changes).toStrictEqual([{
             seq: 1,
+            lifecycleVersion: 1,
             kind: 'did',
             did: didC,
             event: eventC,

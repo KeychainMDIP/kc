@@ -17,9 +17,10 @@ export default class DbJson extends AbstractJson {
 
     async start(): Promise<void> {
         this.loadDb();
+        await super.start();
     }
 
     async resetDb(): Promise<void> {
-        this.writeDb({ dids: {} });
+        await this.runExclusive(() => this.writeDb({ dids: {} }));
     }
 }

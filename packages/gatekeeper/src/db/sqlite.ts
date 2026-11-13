@@ -3,7 +3,13 @@ import sqlite3 from 'sqlite3';
 import { randomUUID } from 'crypto';
 import { InvalidDIDError } from '@mdip/common/errors';
 import { childLogger } from '@mdip/common/logger';
+import { LIFECYCLE_VERSION, LIFECYCLE_PAGE_SIZE, isDIDLifecycle, isExpirationJob, isLifecycleMetadata, lifecycleLimit, projectLifecycle } from './lifecycle.js';
 import {
+    DIDLifecycle,
+    DeleteEventsOptions,
+    DueDIDCursor,
+    ExpirationJob,
+    LifecycleMetadata,
     GatekeeperDb,
     GatekeeperEvent,
     Operation,
@@ -43,6 +49,7 @@ interface IndexChangeRow {
 
 const SQLITE_NOT_STARTED_ERROR = 'SQLite DB not open. Call start() first.';
 const log = childLogger({ service: 'gatekeeper-db', module: 'sqlite' });
+
 
 export default class DbSqlite implements GatekeeperDb {
     private readonly dbName: string;
@@ -95,17 +102,18 @@ export default class DbSqlite implements GatekeeperDb {
             driver: sqlite3.Database
         });
 
-        await this.db.exec(`CREATE TABLE IF NOT EXISTS dids (
+        try {
+            await this.db.exec(`CREATE TABLE IF NOT EXISTS dids (
             id TEXT PRIMARY KEY,
             events TEXT
         )`);
 
-        await this.db.exec(`CREATE TABLE IF NOT EXISTS queue (
+            await this.db.exec(`CREATE TABLE IF NOT EXISTS queue (
             id TEXT PRIMARY KEY,
             ops TEXT
         )`);
 
-        await this.db.exec(`CREATE TABLE IF NOT EXISTS index_changes (
+            await this.db.exec(`CREATE TABLE IF NOT EXISTS index_changes (
             seq INTEGER PRIMARY KEY AUTOINCREMENT,
             kind TEXT NOT NULL,
             did TEXT,
@@ -115,12 +123,12 @@ export default class DbSqlite implements GatekeeperDb {
             removed INTEGER NOT NULL DEFAULT 0
         )`);
 
-        await this.db.exec(`CREATE TABLE IF NOT EXISTS metadata (
+            await this.db.exec(`CREATE TABLE IF NOT EXISTS metadata (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
         )`);
 
-        await this.db.exec(`CREATE TABLE IF NOT EXISTS blocks (
+            await this.db.exec(`CREATE TABLE IF NOT EXISTS blocks (
                 registry TEXT NOT NULL,
                 hash TEXT NOT NULL,
                 height INTEGER NOT NULL,
@@ -132,8 +140,21 @@ export default class DbSqlite implements GatekeeperDb {
             CREATE UNIQUE INDEX IF NOT EXISTS idx_registry_height ON blocks (registry, height);
         `);
 
-        await this.migrateSchema();
-        await this.ensureIndexEpoch();
+            await this.migrateSchema();
+            await this.ensureIndexEpoch();
+            const exists = await this.db.get("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'lifecycle'");
+            if (!exists) await this.db.run("DELETE FROM metadata WHERE key = 'lifecycle'");
+            await this.db.exec(`CREATE TABLE IF NOT EXISTS lifecycle (
+                kind TEXT NOT NULL, id TEXT NOT NULL, record TEXT NOT NULL, expires_at INTEGER,
+                controller TEXT, unresolved INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(kind, id));
+                CREATE INDEX IF NOT EXISTS lifecycle_due ON lifecycle(kind, expires_at, id) WHERE expires_at IS NOT NULL;
+                CREATE INDEX IF NOT EXISTS lifecycle_controller ON lifecycle(kind, controller, id) WHERE controller IS NOT NULL;
+                CREATE INDEX IF NOT EXISTS lifecycle_unresolved ON lifecycle(kind, id) WHERE unresolved = 1;`);
+            await this.initializeLifecycleIndex();
+        } catch (error) {
+            try { await this.stop(); } catch { /* Preserve the startup failure. */ }
+            throw error;
+        }
     }
 
     private async migrateSchema(): Promise<void> {
@@ -147,6 +168,11 @@ export default class DbSqlite implements GatekeeperDb {
         if (!hasEventColumn) {
             await this.db.exec('ALTER TABLE index_changes ADD COLUMN event TEXT');
         }
+        if (!indexChangeColumns.some(column => column.name === 'lifecycle_version')) {
+            await this.db.exec('ALTER TABLE index_changes ADD COLUMN lifecycle_version INTEGER');
+        }
+        await this.db.exec(`CREATE INDEX IF NOT EXISTS index_changes_lifecycle_missing
+            ON index_changes(seq) WHERE kind = 'did' AND lifecycle_version IS NOT 1`);
     }
 
     async stop(): Promise<void> {
@@ -177,6 +203,8 @@ export default class DbSqlite implements GatekeeperDb {
         }
         await this.runExclusive(async () => {
             await this.withTx(async () => {
+                await this.db!.run('DELETE FROM lifecycle');
+                await this.db!.run("DELETE FROM metadata WHERE key = 'lifecycle'");
                 await this.db!.run('DELETE FROM dids');
                 await this.db!.run('DELETE FROM queue');
                 await this.db!.run('DELETE FROM blocks');
@@ -232,8 +260,8 @@ export default class DbSqlite implements GatekeeperDb {
         }
 
         await this.db.run(
-            `INSERT INTO index_changes(kind, did, registry, block, removed, event)
-             VALUES (?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO index_changes(kind, did, registry, block, removed, event, lifecycle_version)
+             VALUES (?, ?, ?, ?, ?, ?, 1)`,
             change.kind,
             change.did ?? null,
             change.registry ?? null,
@@ -252,6 +280,7 @@ export default class DbSqlite implements GatekeeperDb {
             id,
             JSON.stringify(events)
         );
+        await this.writeLifecycle(id, events);
         return res.changes ?? 0;
     }
 
@@ -307,7 +336,7 @@ export default class DbSqlite implements GatekeeperDb {
         return this.getEventsStrict(id);
     }
 
-    async deleteEvents(did: string): Promise<number> {
+    async deleteEvents(did: string, expected?: DeleteEventsOptions): Promise<number> {
         if (!this.db) {
             throw new Error(SQLITE_NOT_STARTED_ERROR)
         }
@@ -315,8 +344,14 @@ export default class DbSqlite implements GatekeeperDb {
         return this.runExclusive(() =>
             this.withTx(async () => {
                 const id = this.splitSuffix(did);
+                if (expected) {
+                    const state = await this.getLifecycleMetadata();
+                    const row = await this.getLifecycle(did);
+                    if (state.epoch !== expected.epoch || row?.revision !== expected.revision) return 0;
+                }
                 const events = await this.getEventsStrict(id);
                 const result = await this.db!.run('DELETE FROM dids WHERE id = ?', id);
+                await this.db!.run("DELETE FROM lifecycle WHERE kind = 'did' AND id = ?", id);
                 if ((result.changes ?? 0) > 0) {
                     if (events.length === 0) {
                         await this.recordIndexChangeStrict({ kind: 'did', did, removed: true });
@@ -407,6 +442,144 @@ export default class DbSqlite implements GatekeeperDb {
                 return false;
             })
         );
+    }
+
+    private async writeLifecycle(did: string, events: GatekeeperEvent[]): Promise<void> {
+        const suffix = this.splitSuffix(did);
+        const row = projectLifecycle(did, events);
+        await this.db!.run("DELETE FROM lifecycle WHERE kind = 'did' AND id = ?", suffix);
+        if (row) await this.insertLifecycle(row);
+        if (events.length === 0) return;
+        const job = await this.db!.get<{ record: string }>("SELECT record FROM lifecycle WHERE kind = 'job' AND id = ?", suffix);
+        if (job && (!row || row.type !== 'agent' || JSON.parse(job.record).expiresAt !== row.expiresAt)) {
+            await this.db!.run("DELETE FROM lifecycle WHERE kind = 'job' AND id = ?", suffix);
+        }
+    }
+
+    private async insertLifecycle(row: DIDLifecycle): Promise<void> {
+        await this.db!.run(`INSERT INTO lifecycle(kind, id, record, expires_at, controller, unresolved)
+            VALUES ('did', ?, ?, ?, ?, ?) ON CONFLICT(kind, id) DO UPDATE SET record = excluded.record,
+                expires_at = excluded.expires_at, controller = excluded.controller, unresolved = excluded.unresolved`,
+        row.suffix, JSON.stringify(row), row.expiresAt ?? null, row.controller ?? null, row.controllerUnknown ? 1 : 0);
+    }
+
+    private async saveLifecycleMetadata(state: LifecycleMetadata): Promise<void> {
+        await this.db!.run(`INSERT INTO metadata(key, value) VALUES ('lifecycle', ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value`, JSON.stringify(state));
+    }
+
+    async initializeLifecycleIndex(): Promise<void> {
+        if (!this.db) throw new Error(SQLITE_NOT_STARTED_ERROR);
+        await this.runExclusive(async () => {
+            const epoch = await this.getIndexEpoch();
+            const checkpoint = await this.getIndexCheckpointCursor();
+            const stored = await this.db!.get<{ value: string }>("SELECT value FROM metadata WHERE key = 'lifecycle'");
+            let state: LifecycleMetadata | undefined = stored && JSON.parse(stored.value);
+            if (state !== undefined && !isLifecycleMetadata(state)) throw new Error('Invalid lifecycle metadata');
+            const valid = state?.version === LIFECYCLE_VERSION && state.epoch === epoch
+                && BigInt(state.checkedCursor) <= BigInt(checkpoint);
+            const uncovered = state && await this.db!.get(`SELECT 1 FROM index_changes
+                WHERE seq > ? AND kind = 'did' AND lifecycle_version IS NOT ${LIFECYCLE_VERSION} LIMIT 1`, state.checkedCursor);
+            if (!valid || uncovered) {
+                const discardJobs = state?.epoch !== epoch;
+                state = { version: LIFECYCLE_VERSION, epoch, complete: false, checkedCursor: checkpoint };
+                await this.withTx(async () => {
+                    await this.db!.run("DELETE FROM lifecycle WHERE kind = 'did'");
+                    if (discardJobs) await this.db!.run("DELETE FROM lifecycle WHERE kind = 'job'");
+                    await this.saveLifecycleMetadata(state!);
+                });
+            }
+            if (!state!.complete) {
+                while (true) {
+                    const page = await this.db!.all<{ id: string; events: string }[]>(
+                        'SELECT id, events FROM dids WHERE id > ? ORDER BY id LIMIT ?', state!.backfillCursor ?? '', LIFECYCLE_PAGE_SIZE);
+                    if (!page.length) break;
+                    state!.backfillCursor = page[page.length - 1].id;
+                    await this.withTx(async () => {
+                        for (const { id, events } of page) {
+                            const history: GatekeeperEvent[] = JSON.parse(events);
+                            const row = projectLifecycle(id, history);
+                            if (row) await this.insertLifecycle(row);
+                        }
+                        await this.saveLifecycleMetadata(state!);
+                    });
+                }
+            }
+            state = { version: LIFECYCLE_VERSION, epoch, complete: true, checkedCursor: checkpoint };
+            await this.withTx(() => this.saveLifecycleMetadata(state!));
+        });
+    }
+
+    async getLifecycleMetadata(): Promise<LifecycleMetadata> {
+        if (!this.db) throw new Error(SQLITE_NOT_STARTED_ERROR);
+        const stored = await this.db.get<{ value: string }>("SELECT value FROM metadata WHERE key = 'lifecycle'");
+        const state: LifecycleMetadata | undefined = stored && JSON.parse(stored.value);
+        if (!isLifecycleMetadata(state) || !state.complete || state.version !== LIFECYCLE_VERSION || state.epoch !== await this.getIndexEpoch()) {
+            throw new Error('Lifecycle index is not initialized');
+        }
+        return state;
+    }
+
+    async getLifecycle(did: string): Promise<DIDLifecycle | null> {
+        if (!this.db) throw new Error(SQLITE_NOT_STARTED_ERROR);
+        const row = await this.db.get<{ record: string }>("SELECT record FROM lifecycle WHERE kind = 'did' AND id = ?", this.splitSuffix(did));
+        return row ? this.parseLifecycle(row.record) : null;
+    }
+
+    private parseLifecycle(raw: string): DIDLifecycle {
+        const value: unknown = JSON.parse(raw);
+        if (!isDIDLifecycle(value)) throw new Error('Invalid lifecycle record');
+        return value;
+    }
+
+    private parseExpirationJob(raw: string): ExpirationJob {
+        const value: unknown = JSON.parse(raw);
+        if (!isExpirationJob(value)) throw new Error('Invalid expiration cleanup record');
+        return value;
+    }
+
+    async getDueDIDs(cutoff: number, limit: number, after?: DueDIDCursor): Promise<DIDLifecycle[]> {
+        if (!this.db) throw new Error(SQLITE_NOT_STARTED_ERROR);
+        const rows = await this.db.all<{ record: string }[]>(`SELECT record FROM lifecycle WHERE kind = 'did'
+            AND unresolved = 0 AND COALESCE(json_extract(record, '$.unresolved'), 0) = 0 AND expires_at < ? AND (expires_at, id) > (?, ?) ORDER BY expires_at, id LIMIT ?`,
+        cutoff, after?.expiresAt ?? -8_640_000_000_000_001, after?.suffix ?? '', lifecycleLimit(limit));
+        return rows.map(row => this.parseLifecycle(row.record));
+    }
+
+    async getControlledDIDs(controller: string, limit: number, after?: string): Promise<DIDLifecycle[]> {
+        if (!this.db) throw new Error(SQLITE_NOT_STARTED_ERROR);
+        const rows = await this.db.all<{ record: string }[]>(`SELECT record FROM lifecycle WHERE kind = 'did'
+            AND controller = ? AND id > ? AND json_extract(record, '$.type') = 'asset' ORDER BY id LIMIT ?`,
+        this.splitSuffix(controller), after ?? '', lifecycleLimit(limit));
+        return rows.map(row => this.parseLifecycle(row.record));
+    }
+
+    async hasUnresolvedLifecycle(): Promise<boolean> {
+        if (!this.db) throw new Error(SQLITE_NOT_STARTED_ERROR);
+        return !!await this.db.get("SELECT 1 FROM lifecycle WHERE kind = 'did' AND unresolved = 1 LIMIT 1");
+    }
+
+    async getExpirationJobs(limit: number, after?: string): Promise<ExpirationJob[]> {
+        if (!this.db) throw new Error(SQLITE_NOT_STARTED_ERROR);
+        const rows = await this.db.all<{ record: string }[]>(
+            "SELECT record FROM lifecycle WHERE kind = 'job' AND id > ? ORDER BY id LIMIT ?", after ?? '', lifecycleLimit(limit));
+        return rows.map(row => this.parseExpirationJob(row.record));
+    }
+
+    async getExpirationJob(suffix: string): Promise<ExpirationJob | null> {
+        if (!this.db) throw new Error(SQLITE_NOT_STARTED_ERROR);
+        const row = await this.db.get<{ record: string }>("SELECT record FROM lifecycle WHERE kind = 'job' AND id = ?", suffix);
+        return row ? this.parseExpirationJob(row.record) : null;
+    }
+
+    async saveExpirationJob(suffix: string, job: ExpirationJob | null): Promise<void> {
+        if (job && (!isExpirationJob(job) || job.suffix !== suffix)) throw new Error('Invalid expiration cleanup record');
+        if (!this.db) throw new Error(SQLITE_NOT_STARTED_ERROR);
+        await this.runExclusive(async () => {
+            if (job) await this.db!.run(`INSERT INTO lifecycle(kind, id, record) VALUES ('job', ?, ?)
+                ON CONFLICT(kind, id) DO UPDATE SET record = excluded.record`, suffix, JSON.stringify(job));
+            else await this.db!.run("DELETE FROM lifecycle WHERE kind = 'job' AND id = ?", suffix);
+        });
     }
 
     async getAllKeys(): Promise<string[]> {

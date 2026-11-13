@@ -40,6 +40,63 @@ const docs = await gatekeeper.resolveDID(did);
 console.log(JSON.stringify(docs, null, 4));
 ```
 
+### Expiration cleanup and integrity audits
+
+Gatekeeper maintains a derived index of expiration times and current controller
+relationships alongside accepted histories. Adapter startup backfills existing
+databases before they are ready. No database reset is needed. Stop older
+Gatekeeper writers before upgrading and run one Gatekeeper writer per database
+namespace. Backups must include a consistent snapshot of histories and derived
+metadata. An incomplete or mismatched index cannot authorize deletion.
+
+`collectExpiredDIDs()` performs bounded expiration cleanup on the concrete
+Gatekeeper library. Its result contains `examined`, `expired`, `deferred`,
+`hasMore`, and a `continuation` when another page remains. Pass that continuation
+to the next call. Reset invalidates old continuations. There is no HTTP endpoint
+for this internal maintenance operation.
+
+Cleanup uses the latest accepted state, including unconfirmed updates. It
+revalidates due DIDs before physically removing them and emits the existing
+index removal records. An expired agent's directly controlled assets are
+cleaned in bounded batches before the agent is removed. Partial cascades survive
+restart. Renewal stops further cleanup, but already completed removals are not
+rolled back. Unavailable or uncertain histories are retained for another
+attempt. This does not change whether peers can subsequently re-import expired
+histories.
+
+PostgreSQL resets prefer a bulk truncate when the namespace owns all rows in
+Gatekeeper's data tables and exclusive access is available. Shared tables, busy
+access, row security or user triggers retain namespace-scoped deletion. Metadata
+and index sequence behavior are preserved. Resets log the selected strategy.
+Quiesce ingestion and other table users during planned resets to allow the bulk
+path. This reduces reset WAL, while resynchronization still generates WAL and
+requires sufficient archive capacity.
+
+`verifyDb()` is a separate, expensive cryptographic audit. It does not trust a
+previous successful audit as proof that stored data is still intact. It may
+repair histories with conclusively invalid signatures and perform expiration
+cleanup. Missing dependencies, unsupported legacy formats and storage failures
+produce an incomplete-audit error rather than a successful verification count
+or deletion of uncertain data. Earlier completed repairs are not rolled back if
+a later audit step fails. Successful results keep the existing `total`,
+`verified`, `expired`, and `invalid` fields. Legacy updates without `previd`
+remain supported.
+
+Expiration repair within an audit also has a finite work budget. A large
+expiration backlog may remain afterward. Such retained DIDs can be counted as
+cryptographically verified even though a later cleanup cycle will remove them.
+
+### Import performance
+
+Imports reuse the target history already read and cache the CIDs of stored
+operations by their exact contents. Each Gatekeeper instance retains at most
+10,000 cache entries and 64 MiB of accounted string data. Cache structures and
+temporary allocations require additional memory. Least recently used entries
+are evicted, and a successful database reset clears the cache.
+
+Incoming operation CIDs and signatures are still verified. Explicit database
+audits recompute historical CIDs independently of the import cache.
+
 ### Client
 
 The GatekeeperClient is used to communicate with a Gatekeeper REST API service.

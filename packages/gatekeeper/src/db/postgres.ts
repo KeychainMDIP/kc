@@ -3,6 +3,11 @@ import { randomUUID } from 'crypto';
 import { InvalidDIDError } from '@mdip/common/errors';
 import { childLogger } from '@mdip/common/logger';
 import {
+    DIDLifecycle,
+    DeleteEventsOptions,
+    DueDIDCursor,
+    ExpirationJob,
+    LifecycleMetadata,
     GatekeeperDb,
     GatekeeperEvent,
     Operation,
@@ -19,6 +24,7 @@ import {
     normalizeIndexExportLimit,
     parseIndexExportCursor
 } from './index-export.js';
+import { LIFECYCLE_VERSION, LIFECYCLE_PAGE_SIZE, isDIDLifecycle, isExpirationJob, isLifecycleMetadata, lifecycleLimit, projectLifecycle } from './lifecycle.js';
 import { withHealthCheckTimeout } from './health.js';
 
 const log = childLogger({ service: 'gatekeeper-db', module: 'postgres' });
@@ -89,6 +95,14 @@ export default class DbPostgres implements GatekeeperDb {
     private readonly dbName: string;
     private readonly url: string;
     private pool: Pool | null;
+    private mutationLock: Promise<void> = Promise.resolve();
+
+    // A statement snapshot can predate a waiting upsert, so serialize this namespace's writer.
+    private runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+        const result = this.mutationLock.then(fn, fn);
+        this.mutationLock = result.then(() => undefined, () => undefined);
+        return result;
+    }
 
     constructor(dbName: string) {
         this.dbName = dbName;
@@ -226,6 +240,18 @@ export default class DbPostgres implements GatekeeperDb {
             CREATE INDEX IF NOT EXISTS idx_gatekeeper_index_changes_ns_seq
                 ON gatekeeper_index_changes (namespace, seq ASC);
 
+            ALTER TABLE gatekeeper_index_changes ADD COLUMN IF NOT EXISTS lifecycle_version INTEGER;
+            CREATE INDEX IF NOT EXISTS idx_gatekeeper_index_changes_lifecycle_missing
+                ON gatekeeper_index_changes(namespace, seq)
+                WHERE kind = 'did' AND lifecycle_version IS DISTINCT FROM 1;
+            CREATE TABLE IF NOT EXISTS gatekeeper_lifecycle (
+                namespace TEXT NOT NULL, kind TEXT NOT NULL, id TEXT NOT NULL, record JSONB NOT NULL,
+                expires_at BIGINT, controller TEXT, unresolved BOOLEAN NOT NULL DEFAULT FALSE,
+                PRIMARY KEY(namespace, kind, id)
+            );
+            CREATE INDEX IF NOT EXISTS gatekeeper_lifecycle_due ON gatekeeper_lifecycle(namespace, kind, expires_at, id) WHERE expires_at IS NOT NULL;
+            CREATE INDEX IF NOT EXISTS gatekeeper_lifecycle_controller ON gatekeeper_lifecycle(namespace, kind, controller, id) WHERE controller IS NOT NULL;
+            CREATE INDEX IF NOT EXISTS gatekeeper_lifecycle_unresolved ON gatekeeper_lifecycle(namespace, kind, id) WHERE unresolved;
             CREATE TABLE IF NOT EXISTS gatekeeper_metadata (
                 namespace TEXT NOT NULL,
                 key TEXT NOT NULL,
@@ -306,8 +332,8 @@ export default class DbPostgres implements GatekeeperDb {
     ): Promise<void> {
         await client.query(
             `INSERT INTO gatekeeper_index_changes
-                (namespace, kind, did, registry, block, removed, event)
-             VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7::jsonb)`,
+                (namespace, kind, did, registry, block, removed, event, lifecycle_version)
+             VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7::jsonb, 1)`,
             [
                 this.dbName,
                 change.kind,
@@ -354,10 +380,16 @@ export default class DbPostgres implements GatekeeperDb {
             idleTimeoutMillis,
             maxLifetimeSeconds,
         });
-        await this.withTx(async client => {
-            await this.ensureSchema(client);
-            await this.ensureIndexEpoch(client);
-        });
+        try {
+            await this.withTx(async client => {
+                await this.ensureSchema(client);
+                await this.ensureIndexEpoch(client);
+            });
+            await this.initializeLifecycleIndex();
+        } catch (error) {
+            try { await this.stop(); } catch { /* Preserve the startup failure. */ }
+            throw error;
+        }
     }
 
     async stop(): Promise<void> {
@@ -407,18 +439,71 @@ export default class DbPostgres implements GatekeeperDb {
         }
     }
 
+    private async tryTruncateForReset(client: PoolClient): Promise<string | undefined> {
+        await client.query('SAVEPOINT reset_truncate');
+        let reason: string | undefined;
+        try {
+            await client.query(`LOCK TABLE gatekeeper_events, gatekeeper_queue, gatekeeper_blocks,
+                gatekeeper_index_changes, gatekeeper_lifecycle IN ACCESS EXCLUSIVE MODE NOWAIT`);
+            await client.query('LOCK TABLE gatekeeper_metadata IN ROW EXCLUSIVE MODE NOWAIT');
+            const protectedTables = await client.query<{ protected: boolean }>(`SELECT EXISTS (
+                SELECT 1 FROM pg_class c WHERE c.oid IN (
+                    'gatekeeper_events'::regclass, 'gatekeeper_queue'::regclass,
+                    'gatekeeper_blocks'::regclass, 'gatekeeper_index_changes'::regclass,
+                    'gatekeeper_lifecycle'::regclass, 'gatekeeper_metadata'::regclass
+                ) AND (c.relrowsecurity OR EXISTS (
+                    SELECT 1 FROM pg_trigger t WHERE t.tgrelid = c.oid AND NOT t.tgisinternal
+                ))
+            ) AS protected`);
+            if (protectedTables.rows[0].protected) {
+                reason = 'row_security_or_triggers';
+            } else {
+                const shared = await client.query<{ shared: boolean }>(`SELECT EXISTS (
+                    SELECT 1 FROM gatekeeper_events WHERE namespace <> $1
+                    UNION ALL SELECT 1 FROM gatekeeper_queue WHERE namespace <> $1
+                    UNION ALL SELECT 1 FROM gatekeeper_blocks WHERE namespace <> $1
+                    UNION ALL SELECT 1 FROM gatekeeper_index_changes WHERE namespace <> $1
+                    UNION ALL SELECT 1 FROM gatekeeper_lifecycle WHERE namespace <> $1
+                ) AS shared`, [this.dbName]);
+                if (shared.rows[0].shared) reason = 'shared_namespace';
+                else await client.query(`TRUNCATE TABLE gatekeeper_events, gatekeeper_queue,
+                    gatekeeper_blocks, gatekeeper_index_changes, gatekeeper_lifecycle
+                    CONTINUE IDENTITY RESTRICT`);
+            }
+        } catch (error) {
+            const code = (error as { code?: string } | null)?.code;
+            if (code !== '55P03' && code !== '42501' && code !== '0A000') throw error;
+            reason = code;
+        }
+        // A failed multi-table lock may already hold earlier locks and abort the transaction.
+        if (reason) await client.query('ROLLBACK TO SAVEPOINT reset_truncate');
+        await client.query('RELEASE SAVEPOINT reset_truncate');
+        return reason;
+    }
+
     async resetDb(): Promise<void> {
-        await this.withTx(async client => {
-            await client.query('DELETE FROM gatekeeper_events WHERE namespace = $1', [this.dbName]);
-            await client.query('DELETE FROM gatekeeper_queue WHERE namespace = $1', [this.dbName]);
-            await client.query('DELETE FROM gatekeeper_blocks WHERE namespace = $1', [this.dbName]);
-            await client.query('DELETE FROM gatekeeper_index_changes WHERE namespace = $1', [this.dbName]);
-            await client.query(
-                `INSERT INTO gatekeeper_metadata (namespace, key, value)
-                 VALUES ($1, 'indexEpoch', $2)
-                 ON CONFLICT (namespace, key) DO UPDATE SET value = excluded.value`,
-                [this.dbName, randomUUID()]
-            );
+        return this.runExclusive(async () => {
+            const reason = await this.withTx(async client => {
+                const fallback = await this.tryTruncateForReset(client);
+                if (fallback) {
+                    await client.query('DELETE FROM gatekeeper_lifecycle WHERE namespace = $1', [this.dbName]);
+                }
+                await client.query("DELETE FROM gatekeeper_metadata WHERE namespace = $1 AND key = 'lifecycle'", [this.dbName]);
+                if (fallback) {
+                    await client.query('DELETE FROM gatekeeper_events WHERE namespace = $1', [this.dbName]);
+                    await client.query('DELETE FROM gatekeeper_queue WHERE namespace = $1', [this.dbName]);
+                    await client.query('DELETE FROM gatekeeper_blocks WHERE namespace = $1', [this.dbName]);
+                    await client.query('DELETE FROM gatekeeper_index_changes WHERE namespace = $1', [this.dbName]);
+                }
+                await client.query(
+                    `INSERT INTO gatekeeper_metadata (namespace, key, value)
+                     VALUES ($1, 'indexEpoch', $2)
+                     ON CONFLICT (namespace, key) DO UPDATE SET value = excluded.value`,
+                    [this.dbName, randomUUID()]
+                );
+                return fallback;
+            });
+            log.info({ strategy: reason ? 'delete' : 'truncate', reason }, 'Gatekeeper database reset complete');
         });
     }
 
@@ -429,83 +514,123 @@ export default class DbPostgres implements GatekeeperDb {
         event: GatekeeperEvent
     ): Promise<number> {
         const serializedEvent = JSON.stringify(event);
-        const result = await executor.query<LengthRow>(
-            `WITH inserted_event AS (
+        const lifecycle = projectLifecycle(did, [event]);
+        // Reuse the plan for this large statement on each pooled connection.
+        const result = await executor.query<LengthRow>({
+            name: 'gatekeeper-append-event-v1',
+            text: `WITH inserted_event AS (
                 INSERT INTO gatekeeper_events (namespace, id, seq, event)
                 SELECT $1, $2, COALESCE(MAX(seq), -1) + 1, $3::jsonb
                 FROM gatekeeper_events
                 WHERE namespace = $1 AND id = $2
-                RETURNING 1
+                RETURNING seq
              ), inserted_change AS (
                 INSERT INTO gatekeeper_index_changes
-                    (namespace, kind, did, registry, block, removed, event)
-                SELECT $1, 'did', $4, NULL, NULL, FALSE, $3::jsonb
+                    (namespace, kind, did, registry, block, removed, event, lifecycle_version)
+                SELECT $1, 'did', $4, NULL, NULL, FALSE, $3::jsonb, 1
                 FROM inserted_event
                 RETURNING 1
+             ), projected_lifecycle AS (
+                SELECT CASE
+                    WHEN $6 = 'create' AND inserted_event.seq > 0 THEN
+                        jsonb_set(previous.record, '{revision}', to_jsonb($7::text))
+                    WHEN $6 = 'delete' AND previous.record IS NOT NULL THEN
+                        CASE WHEN previous.expires_at IS NOT NULL OR COALESCE((previous.record->>'unresolved')::boolean, false) THEN
+                            (CASE WHEN COALESCE((previous.record->>'controllerUnknown')::boolean, false)
+                                AND previous.record->>'type' IN ('agent', 'asset') AND previous.expires_at IS NOT NULL
+                            THEN previous.record - 'controller' - 'controllerUnknown' - 'unresolved'
+                            ELSE previous.record - 'controller' - 'controllerUnknown' END)
+                            || jsonb_build_object('revision', $7::text, 'did', $4::text)
+                        ELSE NULL END
+                    WHEN $6 = 'delete' AND inserted_event.seq > 0 THEN NULL
+                    ELSE $5::jsonb END AS record
+                FROM inserted_event LEFT JOIN gatekeeper_lifecycle previous
+                    ON previous.namespace = $1 AND previous.kind = 'did' AND previous.id = $2
+             ), saved_lifecycle AS (
+                INSERT INTO gatekeeper_lifecycle(namespace, kind, id, record, expires_at, controller, unresolved)
+                SELECT $1, 'did', $2, projected.record, (projected.record->>'expiresAt')::bigint,
+                    projected.record->>'controller', COALESCE((projected.record->>'controllerUnknown')::boolean, false)
+                FROM inserted_change CROSS JOIN projected_lifecycle projected WHERE projected.record IS NOT NULL
+                ON CONFLICT(namespace, kind, id) DO UPDATE SET record = excluded.record,
+                    expires_at = excluded.expires_at, controller = excluded.controller, unresolved = excluded.unresolved
+             ), cleared_lifecycle AS (
+                DELETE FROM gatekeeper_lifecycle WHERE namespace = $1 AND kind = 'did' AND id = $2
+                    AND EXISTS(SELECT 1 FROM projected_lifecycle WHERE record IS NULL)
+             ), cancelled_job AS (
+                DELETE FROM gatekeeper_lifecycle WHERE namespace = $1 AND kind = 'job' AND id = $2
+                    AND EXISTS(SELECT 1 FROM inserted_change)
+                    AND EXISTS(SELECT 1 FROM projected_lifecycle projected WHERE projected.record IS NULL
+                        OR gatekeeper_lifecycle.record->>'expiresAt' IS DISTINCT FROM projected.record->>'expiresAt'
+                        OR projected.record->>'type' IS DISTINCT FROM 'agent')
              )
              SELECT COUNT(*) AS length
              FROM inserted_change`,
-            [this.dbName, id, serializedEvent, did]
-        );
+            values: [this.dbName, id, serializedEvent, did, lifecycle ? JSON.stringify(lifecycle) : null,
+                event.operation.type, randomUUID()]
+        });
 
         return this.toNumber(result.rows[0]?.length ?? 0);
     }
 
     async addEvent(did: string, event: GatekeeperEvent): Promise<number> {
-        const id = this.splitSuffix(did);
-        return this.addEventStrict(this.getPool(), did, id, event);
+        return this.addEventAndQueue(did, event, []);
     }
 
     async addEventAndQueue(did: string, event: GatekeeperEvent, queueRegistries: string[]): Promise<number> {
-        const id = this.splitSuffix(did);
-        if (queueRegistries.length === 0) {
-            return this.addEventStrict(this.getPool(), did, id, event);
-        }
-
-        return this.withTx(async client => {
-            const count = await this.addEventStrict(client, did, id, event);
-            for (const registry of queueRegistries) {
-                await client.query(
-                    `INSERT INTO gatekeeper_queue (namespace, id, ops)
-                     VALUES ($1, $2, $3::jsonb)
-                     ON CONFLICT (namespace, id)
-                     DO UPDATE SET ops = COALESCE(gatekeeper_queue.ops, '[]'::jsonb) || EXCLUDED.ops`,
-                    [this.dbName, registry, JSON.stringify([event.operation])]
-                );
+        return this.runExclusive(async () => {
+            const id = this.splitSuffix(did);
+            if (queueRegistries.length === 0) {
+                return this.addEventStrict(this.getPool(), did, id, event);
             }
-            return count;
+
+            return this.withTx(async client => {
+                const count = await this.addEventStrict(client, did, id, event);
+                for (const registry of queueRegistries) {
+                    await client.query(
+                        `INSERT INTO gatekeeper_queue (namespace, id, ops)
+                         VALUES ($1, $2, $3::jsonb)
+                         ON CONFLICT (namespace, id)
+                         DO UPDATE SET ops = COALESCE(gatekeeper_queue.ops, '[]'::jsonb) || EXCLUDED.ops`,
+                        [this.dbName, registry, JSON.stringify([event.operation])]
+                    );
+                }
+                return count;
+            });
         });
     }
 
     async setEvents(did: string, events: GatekeeperEvent[], options?: SetEventsOptions): Promise<number> {
-        const id = this.splitSuffix(did);
+        return this.runExclusive(async () => {
+            const id = this.splitSuffix(did);
 
-        return this.withTx(async client => {
-            await client.query(
-                `DELETE FROM gatekeeper_events
-                 WHERE namespace = $1 AND id = $2`,
-                [this.dbName, id]
-            );
+            return this.withTx(async client => {
+                await client.query(
+                    `DELETE FROM gatekeeper_events
+                     WHERE namespace = $1 AND id = $2`,
+                    [this.dbName, id]
+                );
 
-            const inserted = await this.insertEventRows(client, id, events);
-            const operationEvents = options?.operationEvents ?? [];
+                const inserted = await this.insertEventRows(client, id, events);
+                await this.writeLifecycle(client, did, events);
+                const operationEvents = options?.operationEvents ?? [];
 
-            if (operationEvents.length === 0) {
-                await this.recordIndexChange(client, {
-                    kind: 'did',
-                    did,
-                });
-            } else {
-                for (const event of operationEvents) {
+                if (operationEvents.length === 0) {
                     await this.recordIndexChange(client, {
                         kind: 'did',
                         did,
-                        event,
                     });
+                } else {
+                    for (const event of operationEvents) {
+                        await this.recordIndexChange(client, {
+                            kind: 'did',
+                            did,
+                            event,
+                        });
+                    }
                 }
-            }
 
-            return inserted;
+                return inserted;
+            });
         });
     }
 
@@ -523,28 +648,197 @@ export default class DbPostgres implements GatekeeperDb {
         return result.rows.map(row => this.parseEvent(row.event));
     }
 
-    async deleteEvents(did: string): Promise<number> {
-        const id = this.splitSuffix(did);
+    async deleteEvents(did: string, expected?: DeleteEventsOptions): Promise<number> {
+        return this.runExclusive(async () => {
+            const id = this.splitSuffix(did);
 
-        return this.withTx(async client => {
-            const result = await client.query<EventRow>(
-                `DELETE FROM gatekeeper_events
-                 WHERE namespace = $1 AND id = $2
-                 RETURNING event`,
-                [this.dbName, id]
-            );
+            return this.withTx(async client => {
+                if (expected) {
+                    const epoch = await this.ensureIndexEpoch(client);
+                    const stored = (await client.query<{ value: string }>(
+                        `SELECT value FROM gatekeeper_metadata WHERE namespace = $1 AND key = 'lifecycle'
+                            AND EXISTS(SELECT 1 FROM gatekeeper_lifecycle WHERE namespace = $1 AND kind = 'metadata' AND id = 'version')`, [this.dbName])).rows[0];
+                    const state: unknown = stored && JSON.parse(stored.value);
+                    if (!isLifecycleMetadata(state) || !state.complete || state.version !== LIFECYCLE_VERSION || state.epoch !== epoch) {
+                        throw new Error('Lifecycle index is not initialized');
+                    }
+                    const row = (await client.query<{ record: DIDLifecycle }>(
+                        "SELECT record FROM gatekeeper_lifecycle WHERE namespace = $1 AND kind = 'did' AND id = $2 FOR UPDATE", [this.dbName, id])).rows[0];
+                    if (epoch !== expected.epoch || (!row || this.parseLifecycle(row.record).revision !== expected.revision)) return 0;
+                }
+                await client.query("DELETE FROM gatekeeper_lifecycle WHERE namespace = $1 AND kind = 'did' AND id = $2", [this.dbName, id]);
+                const result = await client.query<EventRow>(
+                    `DELETE FROM gatekeeper_events
+                     WHERE namespace = $1 AND id = $2
+                     RETURNING event`,
+                    [this.dbName, id]
+                );
 
-            for (const row of result.rows) {
-                await this.recordIndexChange(client, {
-                    kind: 'did',
-                    did,
-                    event: this.parseEvent(row.event),
-                    removed: true,
+                for (const row of result.rows) {
+                    await this.recordIndexChange(client, {
+                        kind: 'did',
+                        did,
+                        event: this.parseEvent(row.event),
+                        removed: true,
+                    });
+                }
+
+                return result.rowCount ?? 0;
+            });
+        });
+    }
+
+    private async writeLifecycle(client: PoolClient, did: string, events: GatekeeperEvent[]): Promise<void> {
+        const row = projectLifecycle(did, events);
+        await client.query('DELETE FROM gatekeeper_lifecycle WHERE namespace = $1 AND kind = $2 AND id = $3',
+            [this.dbName, 'did', this.splitSuffix(did)]);
+        if (row) await this.insertLifecycleRows(client, [row]);
+        if (events.length === 0) return;
+        await client.query(`DELETE FROM gatekeeper_lifecycle WHERE namespace = $1 AND kind = 'job' AND id = $2
+            AND ($3::jsonb IS NULL OR record->>'expiresAt' IS DISTINCT FROM $3::jsonb->>'expiresAt'
+                OR $3::jsonb->>'type' IS DISTINCT FROM 'agent')`,
+        [this.dbName, this.splitSuffix(did), row ? JSON.stringify(row) : null]);
+    }
+
+    private async insertLifecycleRows(client: PoolClient, rows: DIDLifecycle[]): Promise<void> {
+        if (!rows.length) return;
+        await client.query(`INSERT INTO gatekeeper_lifecycle(namespace, kind, id, record, expires_at, controller, unresolved)
+            SELECT $1, 'did', value->>'suffix', value, (value->>'expiresAt')::bigint,
+                value->>'controller', COALESCE((value->>'controllerUnknown')::boolean, false)
+            FROM jsonb_array_elements($2::jsonb)
+            ON CONFLICT(namespace, kind, id) DO UPDATE SET record = excluded.record,
+                expires_at = excluded.expires_at, controller = excluded.controller, unresolved = excluded.unresolved`,
+        [this.dbName, JSON.stringify(rows)]);
+    }
+
+    async initializeLifecycleIndex(): Promise<void> {
+        return this.runExclusive(async () => {
+            const pool = this.getPool();
+            const epoch = await this.getIndexEpoch();
+            const checkpoint = (await pool.query<{ seq: string }>(
+                'SELECT COALESCE(MAX(seq), 0)::text AS seq FROM gatekeeper_index_changes WHERE namespace = $1', [this.dbName])).rows[0].seq;
+            const stored = (await pool.query<{ value: string; present: boolean }>(
+                `SELECT value, EXISTS(SELECT 1 FROM gatekeeper_lifecycle WHERE namespace = $1 AND kind = 'metadata' AND id = 'version') AS present
+                    FROM gatekeeper_metadata WHERE namespace = $1 AND key = 'lifecycle'`, [this.dbName])).rows[0];
+            let state: LifecycleMetadata | undefined = stored ? JSON.parse(stored.value) : undefined;
+            if (state !== undefined && !isLifecycleMetadata(state)) throw new Error('Invalid lifecycle metadata');
+            const uncovered = state && (await pool.query(`SELECT 1 FROM gatekeeper_index_changes
+                WHERE namespace = $1 AND seq > $2 AND kind = 'did' AND lifecycle_version IS DISTINCT FROM ${LIFECYCLE_VERSION} LIMIT 1`,
+            [this.dbName, state.checkedCursor])).rows.length > 0;
+            const valid = state?.version === LIFECYCLE_VERSION && state.epoch === epoch && stored?.present
+                && BigInt(state.checkedCursor) <= BigInt(checkpoint);
+            if (!valid || uncovered) {
+                const discardJobs = state?.epoch !== epoch;
+                state = { version: LIFECYCLE_VERSION, epoch, complete: false, checkedCursor: checkpoint };
+                await this.withTx(async client => {
+                    await client.query("DELETE FROM gatekeeper_lifecycle WHERE namespace = $1 AND kind = 'did'", [this.dbName]);
+                    if (discardJobs) await client.query("DELETE FROM gatekeeper_lifecycle WHERE namespace = $1 AND kind = 'job'", [this.dbName]);
+                    await client.query(`INSERT INTO gatekeeper_lifecycle(namespace, kind, id, record)
+                        VALUES ($1, 'metadata', 'version', $2::jsonb) ON CONFLICT(namespace, kind, id) DO UPDATE SET record = excluded.record`,
+                    [this.dbName, JSON.stringify({ version: LIFECYCLE_VERSION })]);
+                    await this.saveLifecycleMetadata(client, state!);
                 });
             }
-
-            return result.rowCount ?? 0;
+            if (!state!.complete) {
+                while (true) {
+                    const page = await pool.query<{ id: string; events: GatekeeperEvent[] }>(`SELECT id, jsonb_agg(event ORDER BY seq) AS events
+                        FROM gatekeeper_events WHERE namespace = $1 AND id IN
+                            (SELECT DISTINCT id FROM gatekeeper_events WHERE namespace = $1 AND id > $2 ORDER BY id LIMIT $3)
+                        GROUP BY id ORDER BY id`, [this.dbName, state!.backfillCursor ?? '', LIFECYCLE_PAGE_SIZE]);
+                    if (!page.rows.length) break;
+                    const rows = page.rows.flatMap(({ id, events }) => {
+                        const row = projectLifecycle(id, events);
+                        return row ? [row] : [];
+                    });
+                    state!.backfillCursor = page.rows[page.rows.length - 1].id;
+                    await this.withTx(async client => {
+                        await this.insertLifecycleRows(client, rows);
+                        await this.saveLifecycleMetadata(client, state!);
+                    });
+                }
+            }
+            state = { version: LIFECYCLE_VERSION, epoch, complete: true, checkedCursor: checkpoint };
+            await this.withTx(client => this.saveLifecycleMetadata(client, state!));
         });
+    }
+
+    private async saveLifecycleMetadata(client: PoolClient, state: LifecycleMetadata): Promise<void> {
+        await client.query(`INSERT INTO gatekeeper_metadata(namespace, key, value) VALUES ($1, 'lifecycle', $2)
+            ON CONFLICT(namespace, key) DO UPDATE SET value = excluded.value`, [this.dbName, JSON.stringify(state)]);
+    }
+
+    async getLifecycleMetadata(): Promise<LifecycleMetadata> {
+        const row = (await this.getPool().query<{ value: string }>(
+            `SELECT value FROM gatekeeper_metadata WHERE namespace = $1 AND key = 'lifecycle'
+                AND EXISTS(SELECT 1 FROM gatekeeper_lifecycle WHERE namespace = $1 AND kind = 'metadata' AND id = 'version')`, [this.dbName])).rows[0];
+        const state: LifecycleMetadata | undefined = row && JSON.parse(row.value);
+        if (!isLifecycleMetadata(state) || !state.complete || state.version !== LIFECYCLE_VERSION || state.epoch !== await this.getIndexEpoch()) {
+            throw new Error('Lifecycle index is not initialized');
+        }
+        return state;
+    }
+
+    async getLifecycle(did: string): Promise<DIDLifecycle | null> {
+        const row = (await this.getPool().query<{ record: DIDLifecycle }>(
+            "SELECT record FROM gatekeeper_lifecycle WHERE namespace = $1 AND kind = 'did' AND id = $2",
+            [this.dbName, this.splitSuffix(did)])).rows[0];
+        return row ? this.parseLifecycle(row.record) : null;
+    }
+
+    private parseLifecycle(value: unknown): DIDLifecycle {
+        if (!isDIDLifecycle(value)) throw new Error('Invalid lifecycle record');
+        return value;
+    }
+
+    private parseExpirationJob(value: unknown): ExpirationJob {
+        if (!isExpirationJob(value)) throw new Error('Invalid expiration cleanup record');
+        return value;
+    }
+
+    async getDueDIDs(cutoff: number, limit: number, after?: DueDIDCursor): Promise<DIDLifecycle[]> {
+        const result = await this.getPool().query<{ record: DIDLifecycle }>(`SELECT record FROM gatekeeper_lifecycle
+            WHERE namespace = $1 AND kind = 'did' AND NOT unresolved
+                AND COALESCE((record->>'unresolved')::boolean, false) = false AND expires_at < $2
+                AND (expires_at, id) > ($3::bigint, $4::text)
+            ORDER BY expires_at, id LIMIT $5`,
+        [this.dbName, cutoff, after?.expiresAt ?? -8_640_000_000_000_001, after?.suffix ?? '', lifecycleLimit(limit)]);
+        return result.rows.map(row => this.parseLifecycle(row.record));
+    }
+
+    async getControlledDIDs(controller: string, limit: number, after?: string): Promise<DIDLifecycle[]> {
+        const result = await this.getPool().query<{ record: DIDLifecycle }>(`SELECT record FROM gatekeeper_lifecycle
+            WHERE namespace = $1 AND kind = 'did' AND controller = $2 AND id > $3 AND record->>'type' = 'asset'
+            ORDER BY id LIMIT $4`, [this.dbName, this.splitSuffix(controller), after ?? '', lifecycleLimit(limit)]);
+        return result.rows.map(row => this.parseLifecycle(row.record));
+    }
+
+    async hasUnresolvedLifecycle(): Promise<boolean> {
+        return (await this.getPool().query(`SELECT 1 FROM gatekeeper_lifecycle
+            WHERE namespace = $1 AND kind = 'did' AND unresolved LIMIT 1`, [this.dbName])).rows.length > 0;
+    }
+
+    async getExpirationJobs(limit: number, after?: string): Promise<ExpirationJob[]> {
+        const result = await this.getPool().query<{ record: ExpirationJob }>(`SELECT record FROM gatekeeper_lifecycle
+            WHERE namespace = $1 AND kind = 'job' AND id > $2 ORDER BY id LIMIT $3`,
+        [this.dbName, after ?? '', lifecycleLimit(limit)]);
+        return result.rows.map(row => this.parseExpirationJob(row.record));
+    }
+
+    async getExpirationJob(suffix: string): Promise<ExpirationJob | null> {
+        const row = (await this.getPool().query<{ record: unknown }>(
+            "SELECT record FROM gatekeeper_lifecycle WHERE namespace = $1 AND kind = 'job' AND id = $2", [this.dbName, suffix])).rows[0];
+        return row ? this.parseExpirationJob(row.record) : null;
+    }
+
+    async saveExpirationJob(suffix: string, job: ExpirationJob | null): Promise<void> {
+        if (job && (!isExpirationJob(job) || job.suffix !== suffix)) throw new Error('Invalid expiration cleanup record');
+        if (!job) {
+            await this.getPool().query("DELETE FROM gatekeeper_lifecycle WHERE namespace = $1 AND kind = 'job' AND id = $2", [this.dbName, suffix]);
+            return;
+        }
+        await this.getPool().query(`INSERT INTO gatekeeper_lifecycle(namespace, kind, id, record)
+            VALUES ($1, 'job', $2, $3::jsonb) ON CONFLICT(namespace, kind, id) DO UPDATE SET record = excluded.record`,
+        [this.dbName, suffix, JSON.stringify(job)]);
     }
 
     async getAllKeys(): Promise<string[]> {

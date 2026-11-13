@@ -53,6 +53,7 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
     }
 
     async function flush(): Promise<void> {
+        const indexEpoch = options.getImportPipeline().indexEpoch;
         const batch = await options.gatekeeper.getQueue(options.registry);
         if (batch.length === 0) {
             return;
@@ -61,10 +62,12 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
         const imported = await options.getImportPipeline().enqueue({
             kind: 'local_queue',
             phase: 'persist',
+            indexEpoch,
             name: options.getNodeKey(),
             data: batch,
         });
         if (imported.retryable) {
+            if (imported.indexEpochChanged) return;
             throw new Error('failed to import local Gatekeeper queue');
         }
 
@@ -80,16 +83,25 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
         const hashes = batch
             .map(operation => operation.signature?.hash)
             .filter((hash): hash is string => !!hash);
-        await options.gatekeeper.clearQueue(options.registry, hashes);
+        try {
+            if (indexEpoch === undefined) await options.gatekeeper.clearQueue(options.registry, hashes);
+            else await options.gatekeeper.clearQueue(options.registry, hashes, indexEpoch);
+        } catch (error) {
+            const conflict = error as { error?: string; code?: string } | null;
+            if ((conflict?.error ?? conflict?.code) === 'gatekeeper_index_epoch_changed') return;
+            throw error;
+        }
         await options.relay(message);
 
         const merged = await options.getImportPipeline().enqueue({
             kind: 'local_queue',
             phase: 'merge',
+            indexEpoch,
             name: options.getNodeKey(),
             data: batch,
         });
         if (merged.retryable) {
+            if (merged.indexEpochChanged) return;
             throw new Error('failed to merge local Gatekeeper queue');
         }
     }

@@ -34,6 +34,7 @@ type OrderedCatchupTerminalReason = 'ordered_catchup_complete' | 'ordered_catchu
 type OrderedCatchupMessageType = OrderedCatchupMessage['type'];
 
 interface ClientSession {
+    indexEpoch?: string;
     peerKey: string;
     sessionId: string;
     cursor: SyncStoreOrderedCursor | null;
@@ -286,7 +287,7 @@ export function createOrderedCatchupCoordinator(
         void trackWork(finishClient(session));
     }
 
-    function settleImport(session: ClientSession, retryable: boolean): void {
+    function settleImport(session: ClientSession, retryable: boolean, indexEpochChanged = false): void {
         session.pendingImports = Math.max(0, session.pendingImports - 1);
         if (retryable) {
             session.importsAborted = true;
@@ -295,7 +296,7 @@ export function createOrderedCatchupCoordinator(
             return;
         }
         if (retryable) {
-            failClient(session.peerKey, 'ordered_catchup_import_retryable');
+            failClient(session.peerKey, indexEpochChanged ? 'gatekeeper_reset' : 'ordered_catchup_import_retryable');
             return;
         }
         touchClient(session);
@@ -313,11 +314,12 @@ export function createOrderedCatchupCoordinator(
                 kind: 'remote',
                 name: session.peerKey,
                 data: batch,
+                indexEpoch: session.indexEpoch,
                 cancelled: () => session.importsAborted,
             },
             imported => {
                 try {
-                    settleImport(session, imported.retryable);
+                    settleImport(session, imported.retryable, imported.indexEpochChanged);
                 }
                 catch (error) {
                     log.error({ error, peer: shortName(session.peerKey), sessionId: session.sessionId }, 'ordered catch-up import completion failed');
@@ -513,6 +515,7 @@ export function createOrderedCatchupCoordinator(
         }
         const now = Date.now();
         const session: ClientSession = {
+            indexEpoch: options.importPipeline.indexEpoch,
             peerKey,
             sessionId,
             cursor: null,

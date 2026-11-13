@@ -34,6 +34,20 @@ export interface MapIndexExportChangesResult extends MapAcceptedResult {
     deleteIds: string[];
 }
 
+// shortcut: active cursors must stay below 2**52 - 1, widen ordering before reaching that range.
+export const RETIRED_SYNC_ORDER_OFFSET = 2 ** 52;
+
+function isRetiredSyncOrder(order: number | undefined): boolean {
+    return order !== undefined && order >= RETIRED_SYNC_ORDER_OFFSET && order < Number.MAX_SAFE_INTEGER;
+}
+
+function requireActiveSyncOrder(order: number): number {
+    if (!Number.isSafeInteger(order) || order < 0 || order >= RETIRED_SYNC_ORDER_OFFSET - 1) {
+        throw new Error('Gatekeeper sync order exceeds the active history range');
+    }
+    return order;
+}
+
 export interface FilterKnownOperationsResult {
     operations: Operation[];
     knownIds: string[];
@@ -207,8 +221,11 @@ export function mapIndexExportOperationsToSyncRecords(operations: IndexExportOpe
 export function mapIndexExportChangesToSyncPage(
     operations: IndexExportOperationRecord[],
     removedOperations: IndexExportRemovedOperationRecord[] = [],
+    existingRecords: readonly SyncPersistenceRecord[] = [],
 ): MapIndexExportChangesResult {
-    const actions = new Map<string, SyncPersistenceRecord | null>();
+    const actions = new Map<string, SyncPersistenceRecord>();
+    const existing = new Map(existingRecords.map(record => [record.id, record]));
+    const replacements = new Set<string>();
     let invalid = 0;
     const changes = [
         ...operations.map(record => ({ kind: 'upsert' as const, record })),
@@ -226,28 +243,35 @@ export function mapIndexExportChangesToSyncPage(
                 invalid += 1;
                 continue;
             }
-            actions.set(id, null);
+            const previous = actions.get(id) ?? existing.get(id);
+            // An unknown removal is not proof of an operation's contents or acceptance.
+            if (!previous || previous.syncOrder === undefined ||
+                previous.syncOrder === Number.MAX_SAFE_INTEGER || isRetiredSyncOrder(previous.syncOrder)) {
+                continue;
+            }
+            actions.set(id, {
+                ...previous,
+                syncOrder: RETIRED_SYNC_ORDER_OFFSET + requireActiveSyncOrder(previous.syncOrder),
+            });
+            replacements.add(id);
             continue;
         }
 
         const mapped = mapIndexExportOperationsToSyncRecords([change.record]);
         invalid += mapped.invalid;
         if (mapped.records[0]) {
-            actions.set(mapped.records[0].id, mapped.records[0]);
+            const record = mapped.records[0];
+            requireActiveSyncOrder(record.syncOrder!);
+            const previous = actions.get(record.id) ?? existing.get(record.id);
+            if (isRetiredSyncOrder(previous?.syncOrder) || previous?.syncOrder === Number.MAX_SAFE_INTEGER) {
+                replacements.add(record.id);
+            }
+            actions.set(record.id, record);
         }
     }
 
-    const records: SyncPersistenceRecord[] = [];
-    const deleteIds: string[] = [];
-    for (const [id, record] of actions) {
-        if (record) {
-            records.push(record);
-        } else {
-            deleteIds.push(id);
-        }
-    }
-
-    return { records, deleteIds, invalid };
+    // applySyncPage atomically replaces ordering metadata without losing retained history.
+    return { records: Array.from(actions.values()), deleteIds: Array.from(replacements), invalid };
 }
 
 export async function filterKnownOperations(

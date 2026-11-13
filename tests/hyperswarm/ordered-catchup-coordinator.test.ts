@@ -32,7 +32,7 @@ function nextTurn(): Promise<void> {
 
 function createCoordinator(overrides: Partial<Pick<
     OrderedCatchupCoordinatorOptions,
-    'onFailure' | 'onIndexRefreshed'
+    'onFailure' | 'onIndexRefreshed' | 'importPipeline'
 >> = {}) {
     const connection = {
         capabilities: normalizePeerCapabilities({
@@ -40,7 +40,7 @@ function createCoordinator(overrides: Partial<Pick<
             orderedCatchupVersion: 1,
         }),
     } as ConnectionInfo;
-    const importPipeline = {
+    const importPipeline = overrides.importPipeline ?? {
         waitForIdle: jest.fn(async () => undefined),
         refreshIndex: jest.fn(async () => bootstrapResult),
     } as unknown as ImportPipeline;
@@ -64,6 +64,32 @@ function createCoordinator(overrides: Partial<Pick<
 }
 
 describe('ordered catch-up coordinator shutdown', () => {
+    it.each([true, false])('classifies an epoch-cancelled import separately from other retries: %s', async indexEpochChanged => {
+        const onFailure = jest.fn(async () => undefined);
+        const importPipeline = {
+            enqueue: jest.fn<ImportPipeline['enqueue']>(async (_request, onComplete) => {
+                const result = { knownIds: [], persistedIds: [], retryable: true, indexEpochChanged };
+                onComplete?.(result);
+                return result;
+            }),
+        } as unknown as ImportPipeline;
+        const coordinator = createCoordinator({ onFailure, importPipeline });
+        expect(coordinator.createClientSession(peerKey, 'reset-session')).toBe(true);
+        await coordinator.handleMessage(peerKey, {
+            type: 'ordered_catchup_push', sessionId: 'reset-session', time: '', node: '', relays: [],
+            cursor: { syncOrder: 1, id: 'b'.repeat(64) }, hasMore: false,
+            data: [{
+                type: 'create',
+                signature: { hash: 'b'.repeat(64), signed: '2026-01-01T00:00:00.000Z', value: 'signature' },
+            }],
+        });
+        await nextTurn();
+        expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({
+            reason: indexEpochChanged ? 'gatekeeper_reset' : 'ordered_catchup_import_retryable',
+        }));
+        await coordinator.shutdown();
+    });
+
     it('drains an asynchronous client failure callback', async () => {
         let releaseFailure!: () => void;
         let markFailureStarted!: () => void;
