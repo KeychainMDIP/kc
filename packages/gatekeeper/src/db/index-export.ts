@@ -8,6 +8,7 @@ import {
     IndexExportChangesOptions,
     IndexExportSnapshotOptions,
 } from '../types.js';
+import { lifecycleSuffix } from './lifecycle.js';
 
 const DEFAULT_INDEX_EXPORT_LIMIT = 500;
 const MAX_INDEX_EXPORT_LIMIT = 5000;
@@ -196,6 +197,15 @@ export async function buildIndexChangesResponse(
     const eventsByDid = new Map<string, GatekeeperEvent[]>();
 
     for (const [did, change] of didChanges.entries()) {
+        if (options.includeDIDHistories === false) {
+            const suffix = lifecycleSuffix(did);
+            dids.delete(suffix);
+            if (change.removed) {
+                dids.set(suffix, { did, events: [], removed: true });
+            }
+            continue;
+        }
+
         if (change.removed) {
             dids.set(did, {
                 did,

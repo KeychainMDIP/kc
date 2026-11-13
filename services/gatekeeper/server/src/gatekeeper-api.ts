@@ -1014,6 +1014,10 @@ v1router.post('/dids/', trackedRoute(async (req, res) => {
  *               includeOperations:
  *                 type: boolean
  *                 description: Changes-only. Include event-level operation records for consumers that need replay order.
+ *               includeDIDHistories:
+ *                 type: boolean
+ *                 default: true
+ *                 description: Changes-only. Set false to omit live DID histories and return only per-page DID removal records in dids. Independent of includeOperations. Snapshots always include histories.
  *
  *     responses:
  *       200:
@@ -1070,6 +1074,7 @@ v1router.post('/dids/', trackedRoute(async (req, res) => {
  *                       type: boolean
  *                     dids:
  *                       type: array
+ *                       description: Changed DID histories by default. When includeDIDHistories is false, only per-page DID removals, consolidated by canonical DID suffix, are returned.
  *                       items:
  *                         type: object
  *                     blocks:

@@ -84,6 +84,12 @@ into the next snapshot request. Once the snapshot is complete, use its
 Set `includeOperations` to request operation and removal records with changes.
 Leave `checkpointCursor` unset on changes requests.
 
+Set `includeDIDHistories = false` on changes requests to skip loading full DID
+histories. The `dids` array then contains only per-page removal records, or is
+empty. Also set `includeOperations = true` when operation records are needed.
+An unset history flag preserves the existing response. Snapshots always include
+histories. Continue using `hasMore` even when `dids` is empty.
+
 Cursors are opaque strings and must be passed back unchanged. Check
 `indexEpoch` for a database reset or replacement and start a fresh snapshot
 when it changes. The client returns one page per call and does not manage a

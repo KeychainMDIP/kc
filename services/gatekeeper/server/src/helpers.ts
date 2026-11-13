@@ -417,6 +417,7 @@ export function parseIndexExportRequest(body: unknown): IndexExportRequest {
             cursor: parseOptionalString(raw.cursor, 'cursor'),
             limit: parseOptionalPositiveInteger(raw.limit, 'limit'),
             includeOperations: parseOptionalBoolean(raw.includeOperations, 'includeOperations'),
+            includeDIDHistories: parseOptionalBoolean(raw.includeDIDHistories, 'includeDIDHistories'),
         };
     }
 

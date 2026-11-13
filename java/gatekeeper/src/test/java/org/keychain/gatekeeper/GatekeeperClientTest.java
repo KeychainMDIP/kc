@@ -21,6 +21,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.keychain.gatekeeper.model.BlockId;
 import org.keychain.gatekeeper.model.BlockInfo;
@@ -368,6 +369,49 @@ class GatekeeperClientTest {
         assertEquals(request.cursor, body.get("cursor").asText());
         assertEquals(includeOperations, body.get("includeOperations").asBoolean());
         assertFalse(body.has("checkpointCursor"));
+    }
+
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(booleans = {false, true})
+    void changeExportsForwardOptionalHistoryFlag(Boolean includeDIDHistories) throws Exception {
+        ObjectNode response = (ObjectNode) fixture("changes");
+        response.remove("removedOperations");
+        response.putArray("dids");
+        if (!Boolean.FALSE.equals(includeDIDHistories)) {
+            response.withArray("dids").addObject()
+                .put("did", "did:test:example")
+                .putArray("events").add(response.get("operations").get(0).get("event"));
+        }
+        server.enqueue(new MockResponse().setBody(response.toString()));
+        IndexExportRequest request = new IndexExportRequest();
+        request.mode = "changes";
+        request.includeOperations = true;
+        request.includeDIDHistories = includeDIDHistories;
+
+        IndexExportResponse page = client.exportIndex(request);
+
+        if (Boolean.FALSE.equals(includeDIDHistories)) {
+            assertTrue(page.dids.isEmpty());
+        } else {
+            assertEquals(1, page.dids.size());
+            assertEquals("did:test:example", page.dids.get(0).did);
+            assertEquals("operation-cid", page.dids.get(0).events.get(0).opid);
+        }
+        assertEquals(4294967296L, page.operations.get(0).seq);
+        assertEquals("accepted-hash", page.operations.get(0).operationHash);
+        assertNull(page.removedOperations);
+        assertEquals("epoch-two", page.indexEpoch);
+        ObjectNode expected = mapper.createObjectNode();
+        expected.put("mode", "changes");
+        expected.put("includeOperations", true);
+        if (includeDIDHistories != null) {
+            expected.put("includeDIDHistories", includeDIDHistories);
+        }
+        RecordedRequest sent = takeRequest();
+        assertEquals("POST", sent.getMethod());
+        assertEquals("/api/v1/index/export", sent.getPath());
+        assertEquals(expected, mapper.readTree(sent.getBody().readUtf8()));
     }
 
     @ParameterizedTest

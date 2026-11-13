@@ -5,6 +5,8 @@ import { jest } from '@jest/globals';
 import * as sqlite from 'sqlite';
 import sqlite3 from 'sqlite3';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory.ts';
+import DbJson from '@mdip/gatekeeper/db/json.ts';
+import DbJsonCache from '@mdip/gatekeeper/db/json-cache.ts';
 import DbMongo from '@mdip/gatekeeper/db/mongo.ts';
 import DbPostgres from '@mdip/gatekeeper/db/postgres.ts';
 import DbRedis from '@mdip/gatekeeper/db/redis.ts';
@@ -1072,6 +1074,136 @@ const adapterFactories: Array<[string, () => Promise<AdapterFixture> | AdapterFi
 ];
 const productionAdapterFactories = adapterFactories.filter(([name]) => name !== 'json-memory');
 
+describe('history-free incremental exports', () => {
+    it.each([
+        { name: 'removal followed by alias recreation', entries: [[didA, true], ['did:mdip:z1', false]], expected: [] },
+        { name: 'recreation followed by alias removal', entries: [[didA, false], ['did:mdip:z1', true]], expected: ['did:mdip:z1'] },
+        { name: 'repeated alias removals', entries: [[didA, true], [didB, true], ['did:mdip:z1', true]], expected: [didB, 'did:mdip:z1'] },
+        { name: 'recreation cancels only the matching suffix', entries: [[didA, true], [didB, true], ['did:mdip:z1', false]], expected: [didB] },
+        { name: 'CID case is significant', entries: [['did:test:zA', true], ['did:mdip:za', false]], expected: ['did:test:zA'] },
+    ])('handles $name without reading histories', async ({ entries, expected }) => {
+        const changes: IndexChangeRecord[] = entries.map(([did, removed], index) => ({
+            kind: 'did', seq: index + 1, did: did as string, removed: removed as boolean,
+            event: withOperationHash(createEvent(did as string, eventA.time), String(index).repeat(64)),
+        }));
+        const read = jest.fn(async (): Promise<GatekeeperEvent[]> => { throw new Error('history read'); });
+        const page = await buildIndexChangesResponse(
+            changes, false, { includeOperations: true, includeDIDHistories: false },
+            String(changes.length), read, 'epoch',
+        );
+        expect(page.dids).toStrictEqual(expected.map(did => ({ did, events: [], removed: true })));
+        expect(page.operations!.map(record => record.seq)).toEqual(changes.filter(change => !change.removed).map(change => change.seq));
+        expect(page.removedOperations!.map(record => record.seq)).toEqual(changes.filter(change => change.removed).map(change => change.seq));
+        expect(read).not.toHaveBeenCalled();
+    });
+
+    it('preserves default alias canonicalization while suppressing stale opt-out removals', async () => {
+        const changes: IndexChangeRecord[] = [
+            { seq: 1, kind: 'did', did: didA, removed: true },
+            { seq: 2, kind: 'did', did: 'did:mdip:z1', event: eventA },
+        ];
+        const read = jest.fn(async () => [eventA]);
+        const standard = await buildIndexChangesResponse(changes, false, {}, '2', read, 'epoch');
+        expect(standard.dids).toStrictEqual([{ did: didA, events: [eventA] }]);
+        expect(read).toHaveBeenCalledTimes(1);
+        read.mockClear();
+        const omitted = await buildIndexChangesResponse(
+            changes, false, { includeDIDHistories: false }, '2', read, 'epoch',
+        );
+        expect(omitted.dids).toStrictEqual([]);
+        expect(omitted).not.toHaveProperty('operations');
+        expect(omitted).not.toHaveProperty('removedOperations');
+        expect(read).not.toHaveBeenCalled();
+    });
+
+    it('keeps metadata-only and empty pages without fabricating operations', async () => {
+        const read = jest.fn(async (): Promise<GatekeeperEvent[]> => { throw new Error('history read'); });
+        const options = { cursor: '4', includeOperations: true, includeDIDHistories: false };
+        const page = await buildIndexChangesResponse([
+            { seq: 5, kind: 'did', did: didA },
+            { seq: 6, kind: 'did', did: didB, removed: true },
+        ], true, options, '7', read, 'epoch');
+        expect(page).toStrictEqual({
+            mode: 'changes', indexEpoch: 'epoch', cursor: '6', checkpointCursor: '7', hasMore: true,
+            dids: [{ did: didB, events: [], removed: true }], blocks: [], operations: [],
+        });
+        const empty = await buildIndexChangesResponse([], false, options, '7', read, 'epoch');
+        expect(empty).toStrictEqual({
+            mode: 'changes', indexEpoch: 'epoch', cursor: '4', checkpointCursor: '7', hasMore: false,
+            dids: [], blocks: [], operations: [],
+        });
+        expect(read).not.toHaveBeenCalled();
+    });
+
+    it('avoids the 100 history reads required by the default export of 100 changed DIDs', async () => {
+        const db = new DbJsonMemory('history-read-count');
+        await db.start();
+        for (let index = 0; index < 100; index += 1) {
+            const did = `did:test:z${index}`;
+            await db.addEvent(did, createEvent(did, eventA.time));
+        }
+        const reads = jest.spyOn(db, 'getEvents');
+        try {
+            const standard = await db.exportIndexChanges({ includeOperations: true });
+            expect(reads).toHaveBeenCalledTimes(100);
+            reads.mockClear().mockRejectedValue(new Error('history read'));
+            const page = await db.exportIndexChanges({ includeOperations: true, includeDIDHistories: false });
+            expect(page.dids).toStrictEqual([]);
+            expect(page.operations).toHaveLength(100);
+            expect({ ...page, dids: standard.dids }).toStrictEqual(standard);
+            expect(reads).not.toHaveBeenCalled();
+        } finally { reads.mockRestore(); await db.stop(); }
+    });
+
+    it('exports a single replacement without loading its 500-event history', async () => {
+        const db = new DbJsonMemory('large-history');
+        await db.start();
+        const history = Array.from({ length: 500 }, (_, index) => {
+            const event = createEvent(didA, eventA.time, index === 0 ? 'create' : 'update');
+            return { ...event, operation: { ...event.operation, data: { historyOnly: index } } };
+        });
+        await db.setEvents(didA, history);
+        const checkpoint = await db.exportIndexChanges();
+        const latest = withOperationHash(createEvent(didA, eventA.time, 'update'), 'a'.repeat(64));
+        latest.operation.doc = {
+            didDocument: { id: didA }, didDocumentData: { current: true },
+            mdip: { version: 1, type: 'agent', registry: 'local' },
+        };
+        await db.addEvent(didA, latest);
+        const reads = jest.spyOn(db, 'getEvents').mockRejectedValue(new Error('history read'));
+        try {
+            const page = await db.exportIndexChanges({
+                cursor: checkpoint.cursor, includeOperations: true, includeDIDHistories: false,
+            });
+            expect(page.dids).toStrictEqual([]);
+            expect(page.operations).toHaveLength(1);
+            expect(page.operations![0].event).toStrictEqual(latest);
+            expect(JSON.stringify(page)).not.toContain('historyOnly');
+            expect(reads).not.toHaveBeenCalled();
+        } finally { reads.mockRestore(); await db.stop(); }
+    });
+});
+
+describe.each([DbJson, DbJsonCache])('file-backed history omission with %p', Adapter => {
+    it('inherits history omission without changing the persisted database', async () => {
+        const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'gatekeeper-history-export-'));
+        const db = new Adapter('test', folder);
+        try {
+            await db.start();
+            await db.addEvent(didA, eventA);
+            const before = fs.readFileSync(path.join(folder, 'test.json'), 'utf8');
+            const read = jest.spyOn(db, 'getEvents').mockRejectedValue(new Error('history read'));
+            try {
+                const page = await db.exportIndexChanges({ includeOperations: true, includeDIDHistories: false });
+                expect(page.dids).toStrictEqual([]);
+                expect(page.operations![0].event).toStrictEqual(eventA);
+                expect(read).not.toHaveBeenCalled();
+                expect(fs.readFileSync(path.join(folder, 'test.json'), 'utf8')).toBe(before);
+            } finally { read.mockRestore(); }
+        } finally { await db.stop(); fs.rmSync(folder, { recursive: true, force: true }); }
+    });
+});
+
 describe('Gatekeeper index export request parsing', () => {
     it('normalizes index export limits and numeric cursors', () => {
         expect(normalizeIndexExportLimit()).toBe(500);
@@ -1647,6 +1779,49 @@ describe.each(adapterFactories)('Gatekeeper DB index export adapter: %s', (_name
 
     afterEach(async () => {
         await fixture.cleanup?.();
+    });
+
+    it.each([false, true])('omits histories while preserving the change ledger with includeOperations=%s', async includeOperations => {
+        const removedDid = 'did:test:zRemoved';
+        await fixture.db.addEvent(removedDid, withOperationHash(
+            createEvent(removedDid, '2026-01-01T00:00:04.000Z'), 'A'.repeat(64),
+        ));
+        await fixture.db.deleteEvents(removedDid);
+        const options = { includeOperations };
+        const standard = await fixture.db.exportIndexChanges(options);
+        expect(await fixture.db.exportIndexChanges({ ...options, includeDIDHistories: true })).toStrictEqual(standard);
+        const reads = jest.spyOn(fixture.db, 'getEvents').mockRejectedValue(new Error('history must not be loaded'));
+        try {
+            const page = await fixture.db.exportIndexChanges({ ...options, includeDIDHistories: false });
+            expect(page.dids).toStrictEqual([{ did: removedDid, events: [], removed: true }]);
+            expect({ ...page, dids: standard.dids }).toStrictEqual(standard);
+            expect(reads).not.toHaveBeenCalled();
+        } finally { reads.mockRestore(); }
+    });
+
+    it('advances through history-free operation and block pages using raw change cursors', async () => {
+        await fixture.db.addEvent('did:test:z3', createEvent('did:test:z3', '2026-01-01T00:00:04.000Z'));
+        const reads = jest.spyOn(fixture.db, 'getEvents').mockRejectedValue(new Error('history must not be loaded'));
+        try {
+            const pages = [];
+            let cursor: string | null = null;
+            do {
+                const page = await fixture.db.exportIndexChanges({
+                    cursor, limit: 1, includeOperations: true, includeDIDHistories: false,
+                });
+                pages.push(page);
+                expect(page.dids).toStrictEqual([]);
+                expect(page.cursor).not.toBe(cursor);
+                cursor = page.cursor;
+                expect(pages.length).toBeLessThanOrEqual(4);
+            } while (pages.at(-1)!.hasMore);
+            expect(pages.map(page => page.cursor)).toEqual(['1', '2', '3', '4']);
+            expect(pages.map(page => page.checkpointCursor)).toEqual(['4', '4', '4', '4']);
+            expect(pages.map(page => page.operations!.length)).toEqual([1, 1, 0, 1]);
+            expect(pages.map(page => page.blocks.length)).toEqual([0, 0, 1, 0]);
+            expect(new Set(pages.map(page => page.indexEpoch)).size).toBe(1);
+            expect(reads).not.toHaveBeenCalled();
+        } finally { reads.mockRestore(); }
     });
 
     it('commits an event with its publication queues', async () => {

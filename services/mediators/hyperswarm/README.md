@@ -63,6 +63,13 @@ Set `KC_IPFS_ENABLE=false` to run the mediator without IPFS or Keymaster integra
 
 ## Sync store
 
+Incremental Gatekeeper mirroring requests `includeOperations: true` and
+`includeDIDHistories: false` to avoid loading complete DID histories. Operations,
+removals and cursors still reach the sync store atomically. Snapshot bootstrapping
+continues to use full histories. Older Gatekeepers that support operation exports
+may return extra histories, which the mediator ignores. No database reset is
+needed for this change.
+
 The mediator includes these sync-store implementations in `src/db/`:
 
 - `SqliteOperationSyncStore` for persistent ordered storage

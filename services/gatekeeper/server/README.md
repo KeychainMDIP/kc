@@ -114,7 +114,45 @@ clearing the database. Requests carrying the previous epoch then return HTTP
 Discard old queued synchronization work and refresh the index before retrying.
 Requests without this header retain their existing behavior.
 
-## Index export limitation
+
+## Index export
+
+`POST /api/v1/index/export` supports paginated snapshots and incremental changes.
+Snapshots always contain DID histories. Changes include histories by default.
+To request operations without loading complete histories, send:
+
+```json
+{
+  "mode": "changes",
+  "cursor": "1234",
+  "limit": 500,
+  "includeOperations": true,
+  "includeDIDHistories": false
+}
+```
+
+`includeDIDHistories` defaults to true. When false, `dids` contains only per-page
+removal records shaped as `{ "did": "...", "events": [], "removed": true }`,
+or an empty array. The last change for each canonical DID suffix wins across
+prefix aliases, so recreation under an alias cancels an earlier removal in the
+same page. These records describe the selected page, not a separate lookup of
+current DID existence. Signed operations and their DID labels remain unchanged.
+
+The two options are independent. Setting `includeDIDHistories` to false does
+not enable `includeOperations`. When operations are requested, `operations` is
+an array even when empty, and `removedOperations` is omitted when empty.
+`blocks`, cursors, `indexEpoch` and `hasMore` retain their existing meanings.
+Continue while `hasMore` is true even when `dids` or `operations` is empty.
+Pass returned cursors back unchanged. After a snapshot, use its
+`checkpointCursor` as the first changes cursor. Restart the snapshot when
+`indexEpoch` changes.
+
+Omitting the new option preserves existing responses. Older servers that already
+support operation exports may ignore it and continue returning histories.
+Search Server uses the default histories. No database reset is needed for this
+option.
+
+### Index export limitation
 
 `POST /api/v1/index/export` is intended to let consumers sync DID event histories using a cursor to avoid full database reads. Snapshot export includes DID events, the checkpoint cursor used to continue with incremental changes, and an `indexEpoch` that changes when the backing index database is reset or replaced. It does not currently include Gatekeeper's blockchain table.
 
