@@ -135,6 +135,22 @@ describe('hyperswarm config', () => {
         expect(config.negentropyMaxRecordsPerWindow).toBe(500);
     });
 
+    it('accepts the maximum Negentropy window size', async () => {
+        process.env.KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW = '25000';
+
+        const config = await importConfigIsolated();
+
+        expect(config.negentropyMaxRecordsPerWindow).toBe(25000);
+    });
+
+    it('rejects a Negentropy window size above the hard limit', async () => {
+        process.env.KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW = '25001';
+
+        await expect(importConfigIsolated())
+            .rejects
+            .toThrow('KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW must be <= 25000');
+    });
+
     it('throws when KC_HYPR_DB is empty or whitespace', async () => {
         process.env.KC_HYPR_DB = '';
 
