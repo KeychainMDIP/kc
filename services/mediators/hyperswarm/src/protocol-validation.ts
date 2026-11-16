@@ -30,8 +30,10 @@ const MESSAGE_TYPES = new Set<HyperMessage['type']>([
     'ordered_catchup_done',
     'neg_open',
     'neg_msg',
+    'ops_offer',
     'ops_req',
     'ops_push',
+    'ops_ack',
     'neg_close',
 ]);
 
@@ -241,6 +243,13 @@ function validateSessionEnvelope(message: Record<string, unknown>): string | nul
     }
     return validateRequiredBoundedString(message.windowId, 'windowId')
         ?? validateSafeInteger(message.round, 'round')
+        ?? (message.type === 'ops_offer' ? validateSafeInteger(message.offerId, 'offerId') : null)
+        ?? (message.type === 'ops_req' || message.type === 'ops_push' || message.type === 'ops_ack'
+            ? validateSafeInteger(message.requestId, 'requestId')
+            : null)
+        ?? (message.type === 'ops_push' || message.type === 'ops_ack'
+            ? validateSafeInteger(message.page, 'page')
+            : null)
         ?? (message.type === 'neg_close' && message.reason !== undefined
             ? validateBoundedString(message.reason, 'reason')
             : null);
@@ -274,9 +283,26 @@ export function validateHyperMessagePayload(
     limits: ProtocolPayloadLimits,
 ): ProtocolValidationResult<HyperMessage> {
     let reason: string | null = null;
-    if (message.type === 'queue' || message.type === 'ops_push') {
+    if (message.type === 'queue') {
         const result = validateOperationPage(message.data, limits);
         return result.ok ? { ok: true, value: message } : result;
+    }
+    if (message.type === 'ops_push') {
+        if (typeof message.hasMore !== 'boolean') {
+            return { ok: false, reason: 'hasMore must be a boolean' };
+        }
+        const result = validateOperationPage(message.data, limits);
+        if (!result.ok) {
+            return result;
+        }
+        return message.hasMore && result.value.operations.length === 0
+            ? { ok: false, reason: 'a non-final ops_push page must not be empty' }
+            : { ok: true, value: message };
+    }
+    if (message.type === 'ops_ack') {
+        return message.deferred === undefined || typeof message.deferred === 'boolean'
+            ? { ok: true, value: message }
+            : { ok: false, reason: 'deferred must be a boolean' };
     }
     if (message.type === 'ordered_catchup_push') {
         reason = validateCursor(message.cursor, 'cursor');
@@ -285,15 +311,43 @@ export function validateHyperMessagePayload(
             return result.ok ? { ok: true, value: message } : result;
         }
     }
+    if (message.type === 'ops_offer') {
+        const result = validateIdList(message.ids, limits.maxIdsPerRequest);
+        if (!result.ok) {
+            return result;
+        }
+        return message.ids.length === 0
+            ? { ok: false, reason: 'ops_offer ids must not be empty' }
+            : { ok: true, value: message };
+    }
     if (message.type === 'ops_req') {
         const result = validateIdList(message.ids, limits.maxIdsPerRequest);
-        return result.ok ? { ok: true, value: message } : result;
+        if (!result.ok) {
+            return result;
+        }
+        if (message.offerId !== undefined) {
+            const offerError = validateSafeInteger(message.offerId, 'offerId');
+            if (offerError) {
+                return { ok: false, reason: offerError };
+            }
+            if (message.deferred !== undefined && typeof message.deferred !== 'boolean') {
+                return { ok: false, reason: 'deferred must be a boolean' };
+            }
+            return { ok: true, value: message };
+        }
+        if (message.ids.length === 0) {
+            return { ok: false, reason: 'a direct ops_req must not be empty' };
+        }
+        return message.deferred === undefined
+            ? { ok: true, value: message }
+            : { ok: false, reason: 'deferred is valid only for an offered request' };
     }
     if (message.type === 'ordered_catchup_req') {
         reason = validateCursor(message.cursor, 'cursor');
     } else if (message.type === 'neg_open') {
         reason = validateWindow(message.window, limits.maxRecordsPerWindow)
-            ?? validateFrame(message.frame, limits.maxFrameBytes);
+            ?? validateFrame(message.frame, limits.maxFrameBytes)
+            ?? validateWindowProgress(message.previousWindowProgress, 'previousWindowProgress');
     } else if (message.type === 'neg_msg') {
         reason = validateFrame(message.frame, limits.maxFrameBytes)
             ?? validateWindowProgress(message.windowProgress, 'windowProgress');

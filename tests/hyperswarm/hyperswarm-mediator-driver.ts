@@ -37,6 +37,7 @@ export interface MediatorDriverOptions {
     maxRecordsPerWindow?: number;
     maxRoundsPerSession?: number;
     frameSizeLimit?: number;
+    negentropyIntervalSeconds?: number;
 }
 
 export type MediatorTranscriptEntry = RecordedTransportWrite;
@@ -505,6 +506,7 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
     const env = {
         KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW: String(maxRecordsPerWindow),
         KC_HYPR_NEGENTROPY_MAX_ROUNDS_PER_SESSION: String(maxRoundsPerSession),
+        KC_HYPR_NEGENTROPY_INTERVAL: String(options.negentropyIntervalSeconds ?? 300),
     };
     let nodeA: MediatorNode | null = null;
     let nodeB: MediatorNode | null = null;
@@ -640,7 +642,7 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
                     ? {
                         capabilities: normalizePeerCapabilities({
                             negentropy: true,
-                            negentropyVersion: 1,
+                            negentropyVersion: 2,
                             orderedCatchup: false,
                         }),
                         syncMode: 'negentropy',

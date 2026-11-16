@@ -70,6 +70,7 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
     let shutdownPromise: Promise<void> | null = null;
     let recoveryGeneration = 0;
     const recoveryRepairs = new Set<string>();
+    let lastStartOpportunityPeerKey: string | null = null;
 
     function trackWork<T>(task: Promise<T>): Promise<T> {
         activeWork.add(task);
@@ -168,7 +169,8 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
         peerKey: string,
     ): Promise<void> {
         const conn = options.getConnection(peerKey);
-        if (!conn || !await options.waitForInitialPing(peerKey, conn) || !accepting) {
+        if (!conn || !await options.waitForInitialPing(peerKey, conn) || !accepting
+            || options.getConnection(peerKey) !== conn || conn.terminationStarted) {
             return;
         }
 
@@ -185,7 +187,7 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
             negentropy.interruptForOrderedCatchup();
             await pipeline.waitForIdle();
             const localOperationCount = await options.getSyncStore().count();
-            if (!accepting || options.getConnection(peerKey) !== conn
+            if (!accepting || options.getConnection(peerKey) !== conn || conn.terminationStarted
                 || conn.negentropySynced || !pipeline.available || ordered.hasActiveOutbound()
                 || !supportsPeerNegentropyTransport(conn)) {
                 return;
@@ -197,6 +199,7 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
                 windowSize: options.windowSize,
             });
             if (decision.useOrderedCatchup) {
+                conn.orderedCatchupRetryAfter = 0;
                 conn.orderedCatchupAttempted = true;
                 if (ordered.startClient(peerKey, decision.reason, decision.gap)) {
                     conn.syncMode = 'negentropy';
@@ -214,9 +217,12 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
         decision: OrderedCatchupDecision;
     } | undefined {
         let preferred: ReturnType<typeof preferredOrderedPeer>;
+        const now = Date.now();
         for (const peerKey of options.getPeerKeys()) {
             const conn = options.getConnection(peerKey);
-            if (!conn || !conn.initialPingSent || conn.negentropySynced || conn.orderedCatchupAttempted
+            if (!conn || !conn.initialPingSent || conn.terminationStarted || conn.negentropySynced
+                || conn.negentropyRetryAfter > now || conn.orderedCatchupRetryAfter > now
+                || conn.orderedCatchupAttempted && conn.orderedCatchupRetryAfter <= 0
                 || !supportsPeerNegentropyTransport(conn)
                 || options.getOrderedCatchupCoordinator().hasActiveForPeer(peerKey)) {
                 continue;
@@ -243,13 +249,17 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
             return;
         }
         const conn = options.getConnection(peerKey);
-        if (!conn || !await options.waitForInitialPing(peerKey, conn) || !accepting) {
+        if (!conn || !await options.waitForInitialPing(peerKey, conn) || !accepting
+            || options.getConnection(peerKey) !== conn || conn.terminationStarted) {
             return;
         }
         if (conn.orderedCatchupRetryAfter > 0
             && conn.orderedCatchupRetryAfter <= Date.now()) {
             conn.orderedCatchupRetryAfter = 0;
             conn.orderedCatchupAttempted = false;
+        }
+        if (conn.negentropyRetryAfter > Date.now()) {
+            return;
         }
 
         let mode: SyncMode | 'unknown' | null;
@@ -397,25 +407,43 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
 
     async function schedulePreferredSyncs(orderedOnly = false): Promise<void> {
         const negentropy = options.getNegentropyCoordinator();
-        for (const peerKey of options.getPeerKeys()) {
-            await maybeStartPeerSync(peerKey, 'periodic', orderedOnly);
-            if (!accepting || negentropy.getActiveSessionCount() > 0) {
+        if (orderedCatchupPending) {
+            return;
+        }
+        const hadActiveNegentropy = negentropy.getActiveSessionCount() > 0;
+        if (hadActiveNegentropy && !preferredOrderedPeer(0)) {
+            return;
+        }
+        const peerKeys = [...options.getPeerKeys()].sort();
+        if (peerKeys.length === 0) {
+            return;
+        }
+        const previousPeerKey = lastStartOpportunityPeerKey;
+        const startIndex = previousPeerKey === null
+            ? 0
+            : Math.max(0, peerKeys.findIndex(key => key > previousPeerKey));
+        const orderedPeerKeys = [
+            ...peerKeys.slice(startIndex),
+            ...peerKeys.slice(0, startIndex),
+        ];
+        for (const peerKey of orderedPeerKeys) {
+            if (!hadActiveNegentropy) {
+                lastStartOpportunityPeerKey = peerKey;
+            }
+            try {
+                await maybeStartPeerSync(peerKey, 'periodic', orderedOnly);
+            }
+            catch (error) {
+                log.error({ error, peer: shortName(peerKey) }, 'periodic negentropy repair error');
+            }
+            if (!accepting || !hadActiveNegentropy && negentropy.getActiveSessionCount() > 0
+                || options.getOrderedCatchupCoordinator().hasActiveOutbound()) {
                 return;
             }
         }
     }
 
     async function runPeriodicRepairs(): Promise<void> {
-        for (const peerKey of options.getPeerKeys()) {
-            try {
-                await maybeStartPeerSync(peerKey, 'periodic');
-            } catch (error) {
-                log.error({ error, peer: shortName(peerKey) }, 'periodic negentropy repair error');
-            }
-            if (!accepting) {
-                return;
-            }
-        }
         await schedulePreferredSyncs();
     }
 
@@ -507,7 +535,8 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
         if (accepting
             && reason !== 'ordered_catchup_active'
             && reason !== 'gatekeeper_reset'
-            && reason !== 'snapshot_busy') {
+            && reason !== 'snapshot_busy'
+            && reason !== 'sync_busy') {
             await schedulePreferredSyncs();
         }
     }
@@ -524,8 +553,10 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
         }
         if (message.type !== 'neg_open'
             && message.type !== 'neg_msg'
+            && message.type !== 'ops_offer'
             && message.type !== 'ops_req'
             && message.type !== 'ops_push'
+            && message.type !== 'ops_ack'
             && message.type !== 'neg_close') {
             return;
         }
@@ -583,6 +614,9 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
         conn.syncMode = 'unknown';
         conn.syncStarted = false;
         conn.lastNegentropyAttemptAt = 0;
+        conn.negentropyRetryAfter = 0;
+        conn.negentropyBusyGeneration = -1;
+        conn.negentropyBusyRetryAfter = 0;
         conn.negentropySynced = false;
         conn.orderedCatchupAttempted = false;
         conn.orderedCatchupRetryAfter = 0;
@@ -728,8 +762,10 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
         },
         reset(): void {
             outboundStartInProgress = false;
+            orderedCatchupPending = false;
             recoveryGeneration = 0;
             recoveryRepairs.clear();
+            lastStartOpportunityPeerKey = null;
         },
         shutdown,
     };

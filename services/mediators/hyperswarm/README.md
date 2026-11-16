@@ -10,6 +10,11 @@ Negentropy synchronization, it closes those sessions and drains admitted imports
 before switching to ordered catch-up. Negentropy still reconciles any differences
 after the ordered transfer.
 
+The current wire contract requires Negentropy v2 over framed transport v1. V2
+authorizes operation transfer through offers and requests, then sends one bounded
+page at a time and waits for an import acknowledgement. All network nodes must
+upgrade together because Negentropy v1 peers are intentionally incompatible.
+
 Realtime propagation is always handled by the Gatekeeper queue gossip path:
 
 - mediator polls `gatekeeper.getQueue('hyperswarm')`

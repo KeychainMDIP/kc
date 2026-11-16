@@ -101,6 +101,11 @@ export interface ImportPipeline {
         onComplete?: (result: ImportQueueResult) => void,
     ): Promise<ImportQueueResult>;
     waitForIdle(): Promise<void>;
+    filterRetryDelayedIds(ids: string[]): {
+        eligibleIds: string[];
+        pendingIds: string[];
+        capacityDeferredIds: string[];
+    };
     refreshIndex(source: string): Promise<BootstrapResult>;
     shutdown(): Promise<void>;
 }
@@ -299,6 +304,31 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
             pendingIds: Array.from(new Set(pendingIds)),
             capacityDeferredIds: Array.from(new Set(capacityDeferredIds)),
         };
+    }
+
+    function filterRetryDelayedIds(ids: string[]): {
+        eligibleIds: string[];
+        pendingIds: string[];
+        capacityDeferredIds: string[];
+    } {
+        const now = Date.now();
+        const eligibleIds: string[] = [];
+        const pendingIds: string[] = [];
+        const capacityDeferredIds: string[] = [];
+
+        for (const id of ids) {
+            const delayed = retryDelays.get(id);
+            if (!delayed || delayed.deadline <= now) {
+                if (delayed) {
+                    retryDelays.delete(id);
+                }
+                eligibleIds.push(id);
+                continue;
+            }
+            (delayed.kind === 'pending' ? pendingIds : capacityDeferredIds).push(id);
+        }
+
+        return { eligibleIds, pendingIds, capacityDeferredIds };
     }
 
     async function importBatch(batch: Operation[], expectedIndexEpoch?: string) {
@@ -970,6 +1000,7 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
             });
         },
         waitForIdle,
+        filterRetryDelayedIds,
         refreshIndex(source): Promise<BootstrapResult> {
             if (!accepting) {
                 return Promise.reject(new Error('import pipeline is shutting down'));

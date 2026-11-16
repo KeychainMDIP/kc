@@ -53,6 +53,10 @@ function ping(overrides: Record<string, unknown> = {}) {
         relays: [],
         peers: [],
         transportFramingVersion: 1,
+        capabilities: {
+            negentropy: true,
+            negentropyVersion: 2,
+        },
         ...overrides,
     };
 }
@@ -70,6 +74,7 @@ function createTransport(overrides: {
     const onDisconnected = jest.fn();
     const transport = createHyperswarmTransport({
         framingVersion: 1,
+        requiredNegentropyVersion: 2,
         payloadLimits,
         syncStats,
         now: overrides.now,
@@ -145,6 +150,35 @@ describe('hyperswarm transport routing', () => {
         expect(onQueue).not.toHaveBeenCalled();
         expect(connection.destroyed).toBe(true);
         expect(syncStats.transportFramingIncompatibilityClosures).toBe(1);
+        expect(syncStats.protocolViolationCooldowns).toBe(0);
+        expect(transport.getAdmissionCounts()).toMatchObject({ compatibility: 1, total: 1 });
+    });
+
+    it.each([
+        ['missing', undefined],
+        ['unsupported', { negentropy: true, negentropyVersion: 1 }],
+    ])('closes a peer with %s Negentropy capabilities before routing application traffic', async (
+        _case,
+        capabilities,
+    ) => {
+        const peerKey = Buffer.alloc(32, 0x29).toString('hex');
+        const connection = new FakeConnection(0x29);
+        const { transport, syncStats, onPing, onQueue } = createTransport();
+        transport.setConnection(peerKey, createConnectionInfo({
+            connection: connection as unknown as HyperswarmConnection,
+            peerName: 'peer',
+        }));
+        const input = Buffer.concat([
+            encodeFramedMessage(JSON.stringify(ping({ capabilities }))),
+            encodeFramedMessage(JSON.stringify({ type: 'queue', time: '', node: 'peer', relays: [], data: [] })),
+        ]);
+
+        await transport.processInboundPeerData(peerKey, input);
+
+        expect(onPing).not.toHaveBeenCalled();
+        expect(onQueue).not.toHaveBeenCalled();
+        expect(connection.destroyed).toBe(true);
+        expect(syncStats.negentropyVersionIncompatibilityClosures).toBe(1);
         expect(syncStats.protocolViolationCooldowns).toBe(0);
         expect(transport.getAdmissionCounts()).toMatchObject({ compatibility: 1, total: 1 });
     });
@@ -231,6 +265,7 @@ describe('hyperswarm transport routing', () => {
     it('rejects invalid timing options', () => {
         expect(() => createHyperswarmTransport({
             framingVersion: 1,
+            requiredNegentropyVersion: 2,
             payloadLimits,
             syncStats: createMediatorSyncStats(),
             pingIntervalMs: 0,
@@ -242,6 +277,7 @@ describe('hyperswarm transport routing', () => {
         })).toThrow('pingIntervalMs must be a positive finite number');
         expect(() => createHyperswarmTransport({
             framingVersion: 1,
+            requiredNegentropyVersion: 2,
             payloadLimits,
             syncStats: createMediatorSyncStats(),
             staleConnectionMs: Number.NaN,

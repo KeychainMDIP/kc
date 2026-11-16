@@ -24,8 +24,10 @@ jest.setTimeout(60_000);
 const NEGENTROPY_MESSAGE_TYPES = new Set([
     'neg_open',
     'neg_msg',
+    'ops_offer',
     'ops_req',
     'ops_push',
+    'ops_ack',
     'neg_close',
 ]);
 
@@ -800,6 +802,7 @@ describe('hyperswarm mediator behavior', () => {
         driver = await createMediatorDriver({
             operationsA,
             operationsB,
+            negentropyIntervalSeconds: 1,
             syncOrderByIdA: new Map(operationsA.map((operation, index) => [
                 operation.signature!.hash,
                 index + 1,
@@ -815,6 +818,25 @@ describe('hyperswarm mediator behavior', () => {
         };
 
         await driver.startSync();
+        await driver.driveUntilQuiescent({
+            a: {
+                gatekeeper: idsA,
+                store: operationIds([...operationsA, fixtures.branchB]),
+            },
+            b: {
+                gatekeeper: idsB,
+                store: operationIds([...operationsB, fixtures.branchA]),
+            },
+        }, { timeoutMs: 10_000 });
+        expect(decodeWire(driver.transport)).toContainEqual(expect.objectContaining({
+            body: expect.objectContaining({ type: 'neg_close', reason: 'incomplete' }),
+        }));
+
+        await new Promise(resolve => setTimeout(resolve, 1_100));
+        const peerKeyA = driver.nodeA.publicKey.toString('hex');
+        const peerKeyB = driver.nodeB.publicKey.toString('hex');
+        await driver.nodeA.run(() => driver!.nodeA.mediator.__test.maybeStartPeerSync(peerKeyB, 'periodic'));
+        await driver.nodeB.run(() => driver!.nodeB.mediator.__test.maybeStartPeerSync(peerKeyA, 'periodic'));
         await driver.driveUntilQuiescent(expected, { timeoutMs: 10_000 });
 
         expect(await gatekeeperIds(driver.nodeA.gatekeeper)).toStrictEqual(idsA);
@@ -979,12 +1001,14 @@ describe('hyperswarm mediator behavior', () => {
                 assertNoOperationTransfer(firstLink);
             }
             if (scenario.knownOutsideId) {
-                const pushedIds = firstMessages
-                    .filter(message => message.body.type === 'ops_push')
-                    .flatMap(message => message.body.data ?? [])
-                    .map(operation => operationCursor(operation).id);
-                expect(pushedIds).toContain(scenario.knownOutsideId);
+                const requestedIds = firstMessages
+                    .filter(message => message.body.type === 'ops_req')
+                    .flatMap(message => message.body.ids ?? []);
+                if (publicKeyA.compare(publicKeyB) < 0) {
+                    expect(requestedIds).toContain(scenario.knownOutsideId);
+                }
                 expect(importedOperationIds(driver.nodeA)).not.toContain(scenario.knownOutsideId);
+                expect(importedOperationIds(driver.nodeB)).not.toContain(scenario.knownOutsideId);
             }
             await assertConverged(driver, union);
 
@@ -999,64 +1023,6 @@ describe('hyperswarm mediator behavior', () => {
             assertNoOperationTransfer(driver.transport);
             await assertConverged(driver, union);
         });
-    });
-
-    it('rechecks a proven operation when it reappears in a continuation window', async () => {
-        const operations = await createIndependentOperations([
-            Date.now() - (60 * 60 * 1_000),
-            Date.now() - (59 * 60 * 1_000),
-        ]);
-        const expectedIds = operationIds(operations);
-        driver = await createMediatorDriver({
-            operationsA: operations,
-            operationsB: [],
-            maxRecordsPerWindow: 1,
-            publicKeyA: Buffer.alloc(32, 0x22),
-            publicKeyB: Buffer.alloc(32, 0x11),
-        });
-
-        await driver.startSync();
-        await pumpUntilPendingMessage(driver.transport, 'a-to-b', 'ops_push');
-        const firstPush = decodeWire(driver.transport)
-            .filter(message => message.body.type === 'ops_push')
-            .at(-1);
-        const firstOperation = firstPush?.body.data?.[0];
-        if (!firstOperation) {
-            throw new Error('first capped window did not send an operation');
-        }
-        expect(await driver.transport.deliverNext()).toBe(true);
-
-        await pumpUntilPendingMessage(driver.transport, 'b-to-a', 'neg_open');
-        const continuationOpen = decodeWire(driver.transport)
-            .filter(message => message.body.type === 'neg_open')
-            .at(-1);
-        expect(continuationOpen?.body.window?.order).toBe(1);
-        expect(await driver.transport.deliverNext()).toBe(true);
-
-        const continuationResponse = driver.transport.peekNext();
-        if (!continuationResponse || continuationResponse.direction !== 'a-to-b') {
-            throw new Error('continuation window did not produce a responder message');
-        }
-        expect(driver.transport.dropNext()).toBe(true);
-
-        const getByIds = jest.mocked(driver.storeB.getByIds);
-        const lookupCount = getByIds.mock.calls.length;
-        driver.transport.connectionA.write(encodeFramedMessage(JSON.stringify({
-            type: 'ops_push',
-            time: new Date().toISOString(),
-            node: 'node-a',
-            relays: [],
-            sessionId: continuationOpen!.body.sessionId,
-            windowId: continuationOpen!.body.windowId,
-            round: continuationOpen!.body.round ?? 0,
-            data: [firstOperation],
-        })));
-        expect(await driver.transport.deliverNext()).toBe(true);
-        expect(getByIds.mock.calls.length).toBeGreaterThan(lookupCount);
-
-        driver.transport.connectionA.write(continuationResponse.raw);
-        await driver.driveUntilQuiescent(expectedIds, { timeoutMs: 10_000 });
-        await assertConverged(driver, operations);
     });
 
     it.each([
