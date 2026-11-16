@@ -9,6 +9,7 @@ import { IPFSClient } from './types.js';
 import { childLogger } from '@mdip/common/logger';
 
 const log = childLogger({ service: 'ipfs-kubo-client' });
+const DEFAULT_KUBO_REQUEST_TIMEOUT_MS = 10_000;
 
 interface KuboClientConfig {
     url: string;
@@ -19,7 +20,12 @@ interface KuboClientConfig {
     maxRetries?: number;
 }
 
-interface PeeringPeer {
+export interface KuboRequestOptions {
+    signal?: AbortSignal;
+    timeoutMs?: number;
+}
+
+export interface PeeringPeer {
     ID: string;
     Addrs: string[];
 }
@@ -138,8 +144,8 @@ class KuboClient implements IPFSClient {
         return this.ipfs.id();
     }
 
-    async getPeerID(): Promise<string> {
-        const id = await this.ipfs.id();
+    async getPeerID(options: KuboRequestOptions = {}): Promise<string> {
+        const id = await this.ipfs.id(this.rpcOptions(options));
         return id.id.toString();
     }
 
@@ -225,8 +231,24 @@ class KuboClient implements IPFSClient {
     // Peering.Peers is a list of permanent peers
     readonly PeeringPeers = 'Peering.Peers';
 
-    async addPeeringPeer(id: string, addresses: string[]): Promise<void> {
-        const peerID = await this.getPeerID();
+    private rpcOptions(options: KuboRequestOptions): { signal?: AbortSignal; timeout?: number } {
+        const timeout = options.timeoutMs ?? DEFAULT_KUBO_REQUEST_TIMEOUT_MS;
+        if (!Number.isFinite(timeout) || timeout <= 0) {
+            throw new Error('timeoutMs must be a positive finite number');
+        }
+        return {
+            ...(options.signal ? { signal: options.signal } : {}),
+            timeout,
+        };
+    }
+
+    async addPeeringPeer(
+        id: string,
+        addresses: string[],
+        options: KuboRequestOptions = {},
+    ): Promise<void> {
+        const requestOptions = this.rpcOptions(options);
+        const peerID = await this.getPeerID(options);
 
         if (peerID === id) {
             // Not valid to add self as a peering peer
@@ -237,7 +259,7 @@ class KuboClient implements IPFSClient {
         const validAddresses: string[] = [];
         for (const addr of addresses) {
             try {
-                await this.ipfs.swarm.connect(addr);
+                await this.ipfs.swarm.connect(addr, requestOptions);
                 validAddresses.push(addr);
             } catch {
                 // Ignore errors, just skip invalid addresses
@@ -248,7 +270,7 @@ class KuboClient implements IPFSClient {
             return;
         }
 
-        const currentPeers: PeeringPeer[] = await this.getPeeringPeers();
+        const currentPeers: PeeringPeer[] = await this.getPeeringPeers(options);
 
         // Check if peer is already present
         const existing = currentPeers.find(p => p.ID === id);
@@ -260,23 +282,32 @@ class KuboClient implements IPFSClient {
             currentPeers.push({ ID: id, Addrs: validAddresses });
         }
 
-        await this.ipfs.config.set(this.PeeringPeers, currentPeers, { json: true });
+        await this.ipfs.config.set(this.PeeringPeers, currentPeers, {
+            json: true,
+            ...requestOptions,
+        });
     }
 
-    async removePeeringPeer(id: string): Promise<void> {
-        const currentPeers: PeeringPeer[] = await this.getPeeringPeers();
+    async removePeeringPeer(id: string, options: KuboRequestOptions = {}): Promise<void> {
+        const currentPeers: PeeringPeer[] = await this.getPeeringPeers(options);
         const filtered = currentPeers.filter(p => p.ID !== id);
 
-        await this.ipfs.config.set(this.PeeringPeers, filtered, { json: true });
+        await this.ipfs.config.set(this.PeeringPeers, filtered, {
+            json: true,
+            ...this.rpcOptions(options),
+        });
     }
 
-    async getPeeringPeers(): Promise<PeeringPeer[]> {
-        return (await this.ipfs.config.get(this.PeeringPeers)) || [];
+    async getPeeringPeers(options: KuboRequestOptions = {}): Promise<PeeringPeer[]> {
+        return (await this.ipfs.config.get(this.PeeringPeers, this.rpcOptions(options))) || [];
     }
 
-    async resetPeeringPeers(): Promise<void> {
+    async resetPeeringPeers(options: KuboRequestOptions = {}): Promise<void> {
         // Reset Peering.Peers to an empty array
-        await this.ipfs.config.set(this.PeeringPeers, [], { json: true });
+        await this.ipfs.config.set(this.PeeringPeers, [], {
+            json: true,
+            ...this.rpcOptions(options),
+        });
     }
 }
 

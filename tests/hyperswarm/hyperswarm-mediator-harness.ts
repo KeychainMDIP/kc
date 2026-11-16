@@ -47,6 +47,7 @@ export type KuboClientDelegates = MockMethods<KuboClient,
     | 'getAddresses'
     | 'addPeeringPeer'
     | 'getPeeringPeers'
+    | 'removePeeringPeer'
 >;
 
 type HyperswarmJoin = (
@@ -168,6 +169,7 @@ function createKuboClientDelegates(): KuboClientDelegates {
         getAddresses: jest.fn<KuboClient['getAddresses']>(async () => []),
         addPeeringPeer: jest.fn<KuboClient['addPeeringPeer']>(async () => undefined),
         getPeeringPeers: jest.fn<KuboClient['getPeeringPeers']>(async () => []),
+        removePeeringPeer: jest.fn<KuboClient['removePeeringPeer']>(async () => undefined),
     };
 }
 

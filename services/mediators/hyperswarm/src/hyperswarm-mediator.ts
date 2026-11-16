@@ -25,7 +25,6 @@ import { createHyperswarmTransport } from './hyperswarm-transport.js';
 import { createPeerDirectory } from './peer-directory.js';
 import { createQueueCoordinator } from './queue-coordinator.js';
 import {
-    MAX_ADVERTISED_PEERS,
     MAX_NEGENTROPY_WINDOW_RECORDS,
 } from './protocol-limits.js';
 import type {
@@ -275,6 +274,7 @@ function cleanup(): Promise<void> {
             Promise.resolve().then(() => peerSyncCoordinator.shutdown()),
             Promise.resolve().then(() => orderedCatchupCoordinator.shutdown()),
             Promise.resolve().then(() => negentropyCoordinator.shutdown()),
+            Promise.resolve().then(() => peerDirectory.shutdown()),
         ];
 
         if (swarm) {
@@ -370,7 +370,7 @@ async function buildPingMessage(): Promise<PingMessage> {
 
     return {
         ...createBaseMessage('ping'),
-        peers: peerDirectory.getKnownDids().slice(0, MAX_ADVERTISED_PEERS),
+        peers: peerDirectory.getKnownDids(),
         capabilities,
         transportFramingVersion: TRANSPORT_FRAMING_VERSION,
     };
@@ -581,7 +581,7 @@ async function main(): Promise<void> {
             intervalSeconds: 5,
             chatty: true,
         });
-        await ipfs.resetPeeringPeers();
+        await peerDirectory.initialize();
 
         const ipfsID = await ipfs.getPeerID();
         const ipfsAddresses = await ipfs.getAddresses();
