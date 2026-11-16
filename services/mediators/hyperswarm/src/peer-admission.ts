@@ -45,6 +45,7 @@ export function createPeerAdmissionPolicy(options: PeerAdmissionPolicyOptions = 
     }
 
     const states = new Map<string, PeerAdmissionState>();
+    let evictions = 0;
 
     function pruneState(peerKey: string, at: number): PeerAdmissionState | null {
         const state = states.get(peerKey);
@@ -80,6 +81,7 @@ export function createPeerAdmissionPolicy(options: PeerAdmissionPolicyOptions = 
             }
         }
         states.delete(oldest[0]);
+        evictions += 1;
     }
 
     function enforceBound(at: number): void {
@@ -228,6 +230,9 @@ export function createPeerAdmissionPolicy(options: PeerAdmissionPolicyOptions = 
 
     return {
         counts,
+        get evictions(): number {
+            return evictions;
+        },
         getRestriction,
         noteCompatibilityMismatch,
         noteRejectedConnection,

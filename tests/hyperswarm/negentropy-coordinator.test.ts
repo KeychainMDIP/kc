@@ -363,6 +363,7 @@ describe('Negentropy coordinator', () => {
         });
         const importPipeline: ImportPipeline = {
             available: true, recovering: false,
+            getMetrics: () => ({ activeRetryDelayedIds: 0, persistenceRetries: 0 }),
             get queued() {
                 return 0;
             },
@@ -626,6 +627,7 @@ describe('Negentropy coordinator', () => {
         connection.peerTransportFramingVersion = 1;
         const importPipeline: ImportPipeline = {
             available: true, recovering: false,
+            getMetrics: () => ({ activeRetryDelayedIds: 0, persistenceRetries: 0 }),
             get queued() { return 0; },
             get running() { return 0; },
             async enqueue() {
