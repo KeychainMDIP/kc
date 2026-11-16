@@ -147,13 +147,6 @@ export function createOrderedCatchupCoordinator(
             options.onProtocolViolation(peerKey, `invalid_${message.type}: ${result.reason}`, connection);
             return false;
         }
-        if (message.type === 'ordered_catchup_push') {
-            const content = validateOperationContentIds(message.data, options.cipher);
-            if (!content.ok) {
-                options.onProtocolViolation(peerKey, `invalid_ordered_catchup_push: ${content.reason}`, connection);
-                return false;
-            }
-        }
         return true;
     }
 
@@ -434,9 +427,6 @@ export function createOrderedCatchupCoordinator(
             log.warn({ peer: shortName(peerKey), sessionId: message.sessionId }, 'ignoring ordered catch-up request from unsupported peer');
             return;
         }
-        if (!validateCurrentPayload(peerKey, message, connection)) {
-            return;
-        }
         const cursor = parseOrderedCatchupCursor(message.cursor);
         if (cursor === null) {
             rejectProtocolMessage(peerKey, null, connection, 'invalid_ordered_catchup_req_cursor');
@@ -621,7 +611,7 @@ export function createOrderedCatchupCoordinator(
             return;
         }
         const connection = options.getConnection(peerKey);
-        if (!connection || !validateCurrentPayload(peerKey, message, connection)) {
+        if (!connection) {
             return;
         }
         if (!session.requestOutstanding) {
@@ -652,6 +642,11 @@ export function createOrderedCatchupCoordinator(
         });
         if (!page.ok) {
             rejectProtocolMessage(peerKey, session, connection, `invalid_ordered_catchup_push: ${page.reason}`);
+            return;
+        }
+        const content = validateOperationContentIds(message.data, options.cipher);
+        if (!content.ok) {
+            rejectProtocolMessage(peerKey, session, connection, `invalid_ordered_catchup_push: ${content.reason}`);
             return;
         }
         const reservation = options.operationPages.reserve(page.value.bytes);
@@ -694,7 +689,7 @@ export function createOrderedCatchupCoordinator(
             return;
         }
         const connection = options.getConnection(peerKey);
-        if (!connection || !validateCurrentPayload(peerKey, message, connection)) {
+        if (!connection) {
             return;
         }
         if (!session.requestOutstanding) {
@@ -720,6 +715,12 @@ export function createOrderedCatchupCoordinator(
     }
 
     async function dispatchMessage(peerKey: string, message: OrderedCatchupMessage): Promise<void> {
+        const connection = options.getConnection(peerKey);
+        // Apply page limits before session lookup so stale or invented session IDs cannot
+        // bypass bounded ingress with an oversized push.
+        if (!connection || !validateCurrentPayload(peerKey, message, connection)) {
+            return;
+        }
         if (message.type === 'ordered_catchup_req') {
             await handleRequest(peerKey, message);
         }

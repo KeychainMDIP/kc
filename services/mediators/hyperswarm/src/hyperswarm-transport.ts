@@ -1018,12 +1018,8 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
         reset(): void {
             for (const peerKey of Object.keys(connections)) {
                 const connection = connections[peerKey];
-                delete connections[peerKey];
-                connection.terminationStarted = true;
-                cleanupConnection(peerKey, connection, 'transport_reset');
+                terminatePeer(peerKey, 'transport_reset', connection);
             }
-            trackedConnections.clear();
-            drainingConnections.clear();
             admission.reset();
         },
         sendInitialPing,

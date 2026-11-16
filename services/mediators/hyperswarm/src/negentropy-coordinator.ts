@@ -1986,9 +1986,6 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             );
             return;
         }
-        if (!validateCurrentPayload(peerKey, msg)) {
-            return;
-        }
         if (session?.sessionId === msg.sessionId) {
             if (!isExpectedRound(peerKey, msg.round, session.rounds, 'neg_open')) {
                 return;
@@ -2114,9 +2111,6 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         if (!isCurrentSessionWindow(peerKey, session, msg.windowId, 'neg_msg')) {
             return;
         }
-        if (!validateCurrentPayload(peerKey, msg)) {
-            return;
-        }
         if (session.activeOffer || session.localRequest || session.receivedRequest) {
             reportProtocolViolation(peerKey, 'neg_msg arrived before the current transfer round drained');
             return;
@@ -2170,7 +2164,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
 
     async function handleOpsOfferMessage(peerKey: string, msg: OpsOfferMessage): Promise<void> {
         const session = getCurrentTransferSession(peerKey, msg);
-        if (!session || !validateCurrentPayload(peerKey, msg)) {
+        if (!session) {
             return;
         }
         if (session.initiator || session.localRequest || msg.offerId !== session.nextRemoteOfferId
@@ -2216,7 +2210,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
 
     async function handleOpsReqMessage(peerKey: string, msg: OpsReqMessage): Promise<void> {
         const session = getCurrentTransferSession(peerKey, msg);
-        if (!session || !validateCurrentPayload(peerKey, msg)) {
+        if (!session) {
             return;
         }
         if (msg.requestId !== session.nextRemoteRequestId
@@ -2327,9 +2321,6 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         if (!request || request.requestId !== msg.requestId || request.round !== msg.round
             || request.nextPage !== msg.page) {
             reportProtocolViolation(peerKey, 'ops_push does not match the active request');
-            return;
-        }
-        if (!validateCurrentPayload(peerKey, msg)) {
             return;
         }
         const content = validateOperationContentIds(msg.data, options.cipher);
@@ -2481,7 +2472,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
 
     async function handleOpsAckMessage(peerKey: string, msg: OpsAckMessage): Promise<void> {
         const session = getCurrentTransferSession(peerKey, msg);
-        if (!session || !validateCurrentPayload(peerKey, msg)) {
+        if (!session) {
             return;
         }
         const request = session.receivedRequest;
@@ -2519,8 +2510,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             return;
         }
         if (!isExpectedRound(peerKey, msg.round, session.rounds, 'neg_close')
-            || !isCurrentSessionWindow(peerKey, session, msg.windowId, 'neg_close')
-            || !validateCurrentPayload(peerKey, msg)) {
+            || !isCurrentSessionWindow(peerKey, session, msg.windowId, 'neg_close')) {
             return;
         }
         trackRemoteWindowProgress(session, msg.windowProgress);
@@ -2663,6 +2653,12 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         schedulingState?: NegOpenSchedulingState,
     ): Promise<void> {
         if (shutdownStarted) {
+            return;
+        }
+        // Validate transfer bounds before looking up protocol state. Otherwise a peer can
+        // send oversized messages for made-up sessions and bypass the limits through an
+        // early "unknown session" return.
+        if (!validateCurrentPayload(peerKey, message)) {
             return;
         }
         try {

@@ -1014,4 +1014,30 @@ describe('hyperswarm transport resource bounds', () => {
         expect(transport.getAccounting().inboundBytes).toBe(0);
         await transport.shutdown();
     });
+
+    it('keeps reset connections tracked until their inbound handlers drain', async () => {
+        const blocked = deferred<void>();
+        const state = createConnectionInfo({
+            connection: new FakeConnection(0x50) as unknown as HyperswarmConnection,
+            peerName: 'peer',
+        });
+        state.inboundReceiveChain = blocked.promise;
+        const peerKey = Buffer.alloc(32, 0x50).toString('hex');
+        const { transport } = createTransport();
+        transport.setConnection(peerKey, state);
+
+        transport.reset();
+
+        expect((state.connection as unknown as FakeConnection).destroyed).toBe(true);
+        expect(transport.getSecurityMetrics().trackedConnections).toBe(1);
+        const replacement = new FakeConnection(0x50);
+        transport.addConnection(replacement as unknown as HyperswarmConnection);
+        expect(replacement.destroyed).toBe(true);
+
+        blocked.resolve();
+        await state.inboundReceiveChain;
+        await nextTurn();
+        expect(transport.getSecurityMetrics().trackedConnections).toBe(0);
+        await transport.shutdown();
+    });
 });

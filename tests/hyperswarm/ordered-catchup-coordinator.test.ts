@@ -401,6 +401,54 @@ describe('ordered catch-up coordinator shutdown', () => {
 });
 
 describe('ordered catch-up request authorization', () => {
+    it('enforces page bounds before ignoring an unknown session', async () => {
+        const onProtocolViolation = jest.fn();
+        const coordinator = createCoordinator({ onProtocolViolation });
+        const operation = makeOperation();
+
+        await coordinator.handleMessage(peerKey, {
+            type: 'ordered_catchup_push',
+            time: '',
+            node: '',
+            relays: [],
+            sessionId: 'unknown-session',
+            cursor: { syncOrder: 1, id: operation.signature.hash },
+            hasMore: false,
+            data: Array.from({ length: 257 }, () => operation),
+        });
+
+        expect(onProtocolViolation).toHaveBeenCalledWith(
+            peerKey,
+            'invalid_ordered_catchup_push: operation page exceeds 256 operations',
+            expect.any(Object),
+        );
+        await coordinator.shutdown();
+    });
+
+    it('does not verify operation content for an unknown bounded session', async () => {
+        const onProtocolViolation = jest.fn();
+        const coordinator = createCoordinator({ onProtocolViolation });
+        const validOperation = makeOperation();
+        const operation = {
+            ...validOperation,
+            signature: { ...validOperation.signature, hash: 'f'.repeat(64) },
+        };
+
+        await coordinator.handleMessage(peerKey, {
+            type: 'ordered_catchup_push',
+            time: '',
+            node: '',
+            relays: [],
+            sessionId: 'unknown-session',
+            cursor: { syncOrder: 1, id: operation.signature.hash },
+            hasMore: false,
+            data: [operation],
+        });
+
+        expect(onProtocolViolation).not.toHaveBeenCalled();
+        await coordinator.shutdown();
+    });
+
     it.each(['ordered_catchup_push', 'ordered_catchup_done'] as const)(
         'rejects unsolicited %s messages for a live session',
         async type => {

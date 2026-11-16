@@ -337,9 +337,16 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
             await running.node.run(() => jest.advanceTimersByTimeAsync(60_000));
         }
         await settle();
+        const outageWindow = {
+            name: 'outage-window',
+            fromTs: 0,
+            toTs: 10,
+            maxRecords: 16,
+            order: 0,
+        };
         await sendPeerMessage(other, {
-            type: 'neg_open', sessionId: 'inbound-during-outage', windowId: 'window', round: 0,
-            time: '', node: '', relays: [], frame: '', window: { fromTs: 0, toTs: 10 },
+            type: 'neg_open', sessionId: 'inbound-during-outage', windowId: makeWindowId(outageWindow), round: 0,
+            time: '', node: '', relays: [], frame: encodeNegentropyFrame('outage-open'), window: outageWindow,
         });
         await sendPeerMessage(other, queueMessage(operation));
         expect(running.node.gatekeeperClient.importBatch).toHaveBeenCalledTimes(imports);

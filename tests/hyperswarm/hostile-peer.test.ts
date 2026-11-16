@@ -320,6 +320,28 @@ describe('hostile peer integration', () => {
         finally { await h.close(); }
     });
 
+    it('enforces transfer bounds before ignoring an unknown Negentropy session', async () => {
+        const h = await createHarness();
+        try {
+            const peer = await h.connect(1);
+            await h.send(peer, {
+                ...base,
+                type: 'ops_req',
+                sessionId: 'invented-session',
+                windowId: 'invented-window',
+                round: 0,
+                requestId: 0,
+                ids: Array.from({ length: limits.maxIdsPerRequest + 1 }, (_, index) =>
+                    index.toString(16).padStart(64, '0')),
+            });
+
+            expect(peer.destroyed).toBe(true);
+            expect(h.stats.hardening.oversizedIdMessages).toBe(1);
+            expect(h.stats.protocolViolationCooldowns).toBe(1);
+        }
+        finally { await h.close(); }
+    });
+
     it('bounds advertised peer resolution and preserves the operator Kubo baseline', async () => {
         const stats = createMediatorSyncStats();
         const blocked = deferred();
