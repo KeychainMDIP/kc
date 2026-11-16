@@ -71,7 +71,8 @@ export interface HyperswarmTransportOptions {
     onPing(peerKey: string, message: PingMessage, connection: ConnectionInfo): void | Promise<void>;
     onQueue(peerKey: string, message: QueueMessage, connection: ConnectionInfo): void | Promise<void>;
     onSyncMessage(peerKey: string, message: SyncMessage, connection: ConnectionInfo): void | Promise<void>;
-    onDisconnected(peerKey: string, reason: string): void;
+    onDisconnected(peerKey: string, reason: string, connection: ConnectionInfo): void;
+    onRelayFailure?(peerKey: string, connection: ConnectionInfo): void;
     maxMessageBytes?: number;
     maxPeerStates?: number;
     now?: () => number;
@@ -208,9 +209,13 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
         return true;
     }
 
-    function notifyDisconnected(peerKey: string, reason: string): void {
+    function notifyDisconnected(
+        peerKey: string,
+        reason: string,
+        connection: ConnectionInfo,
+    ): void {
         try {
-            options.onDisconnected(peerKey, reason);
+            options.onDisconnected(peerKey, reason, connection);
         } catch (error) {
             log.error({ error, peer: shortName(peerKey), reason }, 'peer disconnect callback failed');
         }
@@ -387,7 +392,7 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
             delete connections[peerKey];
         }
         cleanupConnection(peerKey, connection, reason);
-        notifyDisconnected(peerKey, reason);
+        notifyDisconnected(peerKey, reason, connection);
         log.info(`* connection closed with: ${connection.peerName} (${connection.nodeName}) *`);
     }
 
@@ -408,7 +413,7 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
             delete connections[peerKey];
         }
         cleanupConnection(peerKey, connection, reason);
-        notifyDisconnected(peerKey, reason);
+        notifyDisconnected(peerKey, reason, connection);
         try {
             if (typeof connection.connection.destroy === 'function') {
                 connection.connection.destroy();
@@ -939,16 +944,31 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
             || message.type === 'ordered_catchup_push'
             || message.type === 'ops_push';
         const pending: Promise<unknown>[] = [];
+        const failedRecipients: Array<[string, ConnectionInfo]> = [];
         for (const peerKey of Object.keys(connections)) {
-            if (!message.relays.includes(peerKey)) {
-                if (bulk) {
-                    pending.push(sendAwaited(peerKey, message));
-                } else {
-                    send(peerKey, message);
-                }
+            const connection = connections[peerKey];
+            if (!connection || message.relays.includes(peerKey)) continue;
+            if (bulk) {
+                pending.push(sendAwaited(peerKey, message, connection).then(delivered => {
+                    if (!delivered) failedRecipients.push([peerKey, connection]);
+                }));
+            }
+            else {
+                send(peerKey, message);
             }
         }
         await Promise.allSettled(pending);
+        if (message.type === 'queue') {
+            for (const [peerKey, connection] of failedRecipients) {
+                if (connections[peerKey] !== connection || connection.terminationStarted) continue;
+                try {
+                    options.onRelayFailure?.(peerKey, connection);
+                }
+                catch (error) {
+                    log.error({ error, peer: shortName(peerKey) }, 'queue relay failure callback failed');
+                }
+            }
+        }
     }
 
     function expireStaleConnections(now = Date.now()): void {

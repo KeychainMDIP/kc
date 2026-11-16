@@ -15,13 +15,20 @@ authorizes operation transfer through offers and requests, then sends one bounde
 page at a time and waits for an import acknowledgement. All network nodes must
 upgrade together because Negentropy v1 peers are intentionally incompatible.
 
-Realtime propagation is always handled by the Gatekeeper queue gossip path:
+Realtime propagation uses best-effort Gatekeeper queue gossip:
 
 - mediator polls `gatekeeper.getQueue('hyperswarm')`
 - relays queue operations with a `queue` message
-- peers import and further relay `queue` messages
+- peers import operations, persist the shareable results, then relay them with
+  fresh relay metadata
 
-This keeps low latency for new operations while negentropy handles catch-up.
+Each receiver admits at most two gossip batches and bounds recent outcomes.
+Overload, incomplete imports and outbound delivery failures schedule targeted
+Negentropy repair without penalizing the source peer. Persisted pages are relayed
+as they drain, so older accepted operations do not wait for a complete batch.
+
+This keeps low latency for new operations while Negentropy handles catch-up and
+recovers best-effort delivery failures.
 
 ## Sync mode behavior
 

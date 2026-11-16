@@ -56,6 +56,7 @@ interface PeerSyncCoordinatorOptions {
     getOrderedCatchupCoordinator(): OrderedCatchupCoordinator;
     waitForInitialPing(peerKey: string, connection: ConnectionInfo): Promise<boolean>;
     onPeersAdvertised(dids: string[]): void;
+    onIndexReset?(): void;
 }
 
 function shortName(peerKey: string): string {
@@ -447,6 +448,45 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
         await schedulePreferredSyncs();
     }
 
+    async function requestRepair(
+        peerKey: string,
+        expectedConnection: ConnectionInfo,
+    ): Promise<boolean> {
+        const conn = options.getConnection(peerKey);
+        if (conn !== expectedConnection
+            || !await options.waitForInitialPing(peerKey, conn)
+            || !accepting
+            || options.getConnection(peerKey) !== conn
+            || !supportsPeerNegentropyTransport(conn)
+            || conn.negentropyRetryAfter > Date.now()) {
+            return false;
+        }
+
+        const negentropy = options.getNegentropyCoordinator();
+        const ordered = options.getOrderedCatchupCoordinator();
+        const pipeline = options.getImportPipeline();
+        ordered.expireServerExpectation(peerKey);
+        if (outboundStartInProgress
+            || negentropy.getActiveSessionCount() > 0
+            || ordered.hasActiveOutbound()
+            || ordered.hasActiveForPeer(peerKey)
+            || pipeline.queued > 0
+            || pipeline.running > 0) {
+            return false;
+        }
+
+        outboundStartInProgress = true;
+        try {
+            conn.negentropySynced = false;
+            conn.syncMode = 'negentropy';
+            conn.syncStarted = true;
+            return await startNegentropySession(peerKey, 'periodic', null, true);
+        }
+        finally {
+            outboundStartInProgress = false;
+        }
+    }
+
     async function startPostOrderedCatchupNegentropy(peerKey: string, reason: string): Promise<boolean> {
         const conn = options.getConnection(peerKey);
         const negentropy = options.getNegentropyCoordinator();
@@ -623,6 +663,7 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
     }
 
     function resetAfterGatekeeperReset(sync: BootstrapResult): void {
+        options.onIndexReset?.();
         recoveryRepairs.clear();
         const negentropy = options.getNegentropyCoordinator();
         const activeSessions = negentropy.getActiveSessionCount();
@@ -737,6 +778,9 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
         },
         runPeriodicRepairs(): Promise<void> {
             return tracked(runPeriodicRepairs, undefined);
+        },
+        requestRepair(peerKey: string, connection: ConnectionInfo): Promise<boolean> {
+            return tracked(() => requestRepair(peerKey, connection), false);
         },
         handleMessage(peerKey: string, message: HyperMessage): Promise<void> {
             return tracked(() => handleMessage(peerKey, message), undefined);

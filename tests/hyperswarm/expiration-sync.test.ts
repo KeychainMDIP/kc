@@ -38,10 +38,13 @@ describe('expiration and historical synchronization', () => {
         const relay = jest.fn(async () => {});
         const coordinator = createQueueCoordinator({
             registry: 'hyperswarm', maxOpsPerPage: 300, maxBytesPerPage: 512 * 1024,
+            repairIntervalMs: 1_000,
             gatekeeper, cipher, syncStats: stats,
             bulkReads: createBulkWorkScheduler(2),
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getImportPipeline: () => pipeline, getNodeKey: () => 'local',
+            getConnection: () => undefined,
+            requestRepair: async () => false,
             createQueueMessage: () => ({ type: 'queue', time: '', node: '', relays: [] }), relay,
             onProtocolViolation: jest.fn(),
         });

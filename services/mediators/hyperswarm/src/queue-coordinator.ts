@@ -1,7 +1,7 @@
 import type CipherNode from '@mdip/cipher/node';
+import { childLogger } from '@mdip/common/logger';
 import type GatekeeperClient from '@mdip/gatekeeper/client';
 import type { Operation } from '@mdip/gatekeeper/types';
-import { childLogger } from '@mdip/common/logger';
 
 import type { ImportPipeline } from './import-pipeline.js';
 import type { ConnectionInfo } from './mediator-state.js';
@@ -25,11 +25,14 @@ import type { OperationPageBudget } from './operation-page-budget.js';
 import type { BulkWorkScheduler } from './bulk-work-scheduler.js';
 
 const log = childLogger({ service: 'hyperswarm-mediator' });
+const MAX_ADMITTED_GOSSIP = 2;
+const MAX_RECENT_GOSSIP_OUTCOMES = 4_096;
 
 interface QueueCoordinatorOptions {
     registry: string;
     maxOpsPerPage: number;
     maxBytesPerPage: number;
+    repairIntervalMs: number;
     gatekeeper: Pick<GatekeeperClient, 'getQueue' | 'clearQueue'>;
     cipher: Pick<CipherNode, 'hashJSON'>;
     syncStats: MediatorSyncStats;
@@ -37,15 +40,51 @@ interface QueueCoordinatorOptions {
     operationPages: OperationPageBudget;
     getImportPipeline(): ImportPipeline;
     getNodeKey(): string;
+    getConnection(peerKey: string): ConnectionInfo | undefined;
+    requestRepair(peerKey: string, connection: ConnectionInfo): Promise<boolean>;
     createQueueMessage(): Omit<QueueMessage, 'data'>;
     relay(message: QueueMessage): Promise<void>;
     onProtocolViolation(peerKey: string, reason: string, connection: ConnectionInfo): void;
+    now?: () => number;
+    maxRecentOutcomes?: number;
 }
 
+interface GossipSource {
+    peerKey: string;
+    connection: ConnectionInfo;
+}
+
+interface InFlightGossip {
+    source: GossipSource;
+    alternative?: GossipSource;
+}
+
+interface PendingRepair {
+    connection: ConnectionInfo;
+}
+
+type RecentGossipOutcome = {
+    kind: 'completed';
+} | {
+    kind: 'retry';
+    retryAfter: number;
+};
+
 export function createQueueCoordinator(options: QueueCoordinatorOptions) {
-    const batchesSeen = new Set<string>();
+    const now = options.now ?? (() => Date.now());
+    const maxRecentOutcomes = options.maxRecentOutcomes ?? MAX_RECENT_GOSSIP_OUTCOMES;
+    if (!Number.isSafeInteger(maxRecentOutcomes) || maxRecentOutcomes < 1) {
+        throw new Error('maxRecentOutcomes must be a positive safe integer');
+    }
+
+    const inFlight = new Map<string, InFlightGossip>();
+    const recentOutcomes = new Map<string, RecentGossipOutcome>();
+    const repairNeeded = new Map<string, PendingRepair>();
     const activeWork = new Set<Promise<unknown>>();
     let admittedGossip = 0;
+    let repairYieldNeeded = false;
+    let repairWork: Promise<void> | null = null;
+    let resetGeneration = 0;
     let accepting = true;
     let shutdownPromise: Promise<void> | null = null;
 
@@ -94,13 +133,139 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
         return work;
     }
 
-    function reserveBatch(batch: Operation[]): string | null {
-        const hash = options.cipher.hashJSON(batch);
-        if (batchesSeen.has(hash)) {
-            return null;
+    function pruneExpiredOutcomes(at = now()): void {
+        for (const [hash, outcome] of recentOutcomes) {
+            if (outcome.kind === 'retry' && outcome.retryAfter <= at) {
+                recentOutcomes.delete(hash);
+            }
         }
-        batchesSeen.add(hash);
-        return hash;
+    }
+
+    function rememberOutcome(hash: string, outcome: RecentGossipOutcome): void {
+        recentOutcomes.delete(hash);
+        recentOutcomes.set(hash, outcome);
+        if (recentOutcomes.size > maxRecentOutcomes) {
+            pruneExpiredOutcomes();
+        }
+        while (recentOutcomes.size > maxRecentOutcomes) {
+            const oldest = recentOutcomes.keys().next().value!;
+            recentOutcomes.delete(oldest);
+        }
+    }
+
+    function getRecentOutcome(hash: string): RecentGossipOutcome | undefined {
+        const outcome = recentOutcomes.get(hash);
+        if (outcome?.kind === 'retry' && outcome.retryAfter <= now()) {
+            recentOutcomes.delete(hash);
+            return undefined;
+        }
+        return outcome;
+    }
+
+    function connectedSource(source: GossipSource): GossipSource | undefined {
+        const connection = options.getConnection(source.peerKey);
+        return connection ? { peerKey: source.peerKey, connection } : undefined;
+    }
+
+    function rememberRepair(source: GossipSource): boolean {
+        const connected = connectedSource(source);
+        if (!connected) {
+            return false;
+        }
+        const existing = repairNeeded.get(connected.peerKey);
+        repairNeeded.set(connected.peerKey, {
+            connection: connected.connection,
+        });
+        return !existing;
+    }
+
+    function rememberRetry(hash: string, source?: GossipSource): boolean {
+        rememberOutcome(hash, {
+            kind: 'retry',
+            retryAfter: now() + options.repairIntervalMs,
+        });
+        return source ? rememberRepair(source) : false;
+    }
+
+    function chooseRepairSource(batch: InFlightGossip): GossipSource | undefined {
+        return connectedSource(batch.source)
+            ?? (batch.alternative ? connectedSource(batch.alternative) : undefined);
+    }
+
+    async function attemptOldestRepair(): Promise<void> {
+        for (const [peerKey, recorded] of repairNeeded) {
+            const connection = options.getConnection(peerKey);
+            if (!connection) {
+                repairNeeded.delete(peerKey);
+                continue;
+            }
+            if (connection !== recorded.connection) {
+                recorded.connection = connection;
+            }
+            try {
+                if (await options.requestRepair(peerKey, connection)) {
+                    if (repairNeeded.get(peerKey) === recorded) {
+                        repairNeeded.delete(peerKey);
+                    }
+                }
+            }
+            finally {
+                const pending = repairNeeded.get(peerKey);
+                if (pending) {
+                    repairNeeded.delete(peerKey);
+                    repairNeeded.set(peerKey, pending);
+                }
+            }
+            return;
+        }
+    }
+
+    function startRepairOpportunity(): Promise<void> {
+        if (!accepting || admittedGossip > 0 || repairWork) {
+            return repairWork ?? Promise.resolve();
+        }
+        repairYieldNeeded = false;
+        const work = (async () => {
+            try {
+                await attemptOldestRepair();
+            }
+            catch (error) {
+                log.error({ error }, 'queue gossip repair attempt failed');
+            }
+        })();
+        repairWork = work;
+        activeWork.add(work);
+        work.finally(() => {
+            if (repairWork === work) {
+                repairWork = null;
+            }
+            activeWork.delete(work);
+            if (repairYieldNeeded && admittedGossip === 0) {
+                void startRepairOpportunity();
+            }
+        });
+        return work;
+    }
+
+    function noteAdmissionDrop(hash: string, source: GossipSource): void {
+        if (!rememberRetry(hash, source)) {
+            return;
+        }
+        repairYieldNeeded = true;
+        if (admittedGossip === 0) {
+            void startRepairOpportunity();
+        }
+    }
+
+    function rememberAlternative(batch: InFlightGossip, source: GossipSource): void {
+        if (batch.source.peerKey === source.peerKey) {
+            batch.source = source;
+            return;
+        }
+        if ((!batch.alternative || !connectedSource(batch.alternative))
+            && options.getConnection(source.peerKey) === source.connection) {
+            batch.alternative = source;
+        }
     }
 
     async function processMessage(
@@ -121,7 +286,22 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
             options.onProtocolViolation(peerKey, `invalid_queue_operation: ${content.reason}`, connection);
             return;
         }
-        if (admittedGossip >= 2) {
+        const source = { peerKey, connection };
+        const batchHash = options.cipher.hashJSON(page.value.operations);
+        const recent = getRecentOutcome(batchHash);
+        if (recent?.kind === 'completed') {
+            return;
+        }
+        if (recent?.kind === 'retry') {
+            return;
+        }
+        const existing = inFlight.get(batchHash);
+        if (existing) {
+            rememberAlternative(existing, source);
+            return;
+        }
+        if (repairYieldNeeded || admittedGossip >= MAX_ADMITTED_GOSSIP) {
+            noteAdmissionDrop(batchHash, source);
             return;
         }
         if (!options.getImportPipeline().available) {
@@ -129,15 +309,15 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
         }
         const reservation = options.operationPages.reserve(page.value.bytes);
         if (!reservation) {
+            noteAdmissionDrop(batchHash, source);
             return;
         }
+
+        const current: InFlightGossip = { source };
+        const generation = resetGeneration;
+        inFlight.set(batchHash, current);
         admittedGossip += 1;
         try {
-            const batchHash = reserveBatch(page.value.operations);
-            if (!batchHash) {
-                return;
-            }
-
             let relayFailed = false;
             let imported;
             try {
@@ -145,7 +325,7 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
                     kind: 'remote',
                     name: peerKey,
                     node: message.node,
-                    data: message.data,
+                    data: page.value.operations,
                     queueGossip: true,
                     onPersistedPage: async persisted => {
                         if (!await relayPersistedPage(peerKey, persisted)) {
@@ -155,26 +335,31 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
                 });
             }
             catch (error) {
-                batchesSeen.delete(batchHash);
-                throw error;
-            }
-            if (imported.retryable) {
-                batchesSeen.delete(batchHash);
+                if (generation === resetGeneration) {
+                    rememberRetry(batchHash, chooseRepairSource(current));
+                }
+                log.error({ error, peer: peerKey }, 'queue gossip import failed');
                 return;
             }
+            if (imported.retryable) {
+                if (generation === resetGeneration) {
+                    const repairSource = chooseRepairSource(current);
+                    rememberRetry(batchHash, repairSource);
+                }
+                return;
+            }
+
             const handledIds = new Set([...imported.knownIds, ...imported.persistedIds]);
-            const complete = (imported.pendingIds?.length ?? 0) === 0
+            const complete = !relayFailed
+            && (imported.pendingIds?.length ?? 0) === 0
             && (imported.capacityDeferredIds?.length ?? 0) === 0
             && (imported.unaddressableOperations?.length ?? 0) === 0
-            && message.data.every(operation => {
+            && page.value.operations.every(operation => {
                 const mapped = mapOperationToSyncKey(operation);
                 return mapped.ok
                     && hasContentVerifiedOperationId(operation, options.cipher)
                     && handledIds.has(mapped.value.idHex);
             });
-            if (!complete) {
-                batchesSeen.delete(batchHash);
-            }
             if ((imported.acceptedOperations?.length ?? 0) > 0
                 || (imported.portableTerminalOperations?.length ?? 0) > 0) {
                 if (!await relayPersistedPage(peerKey, {
@@ -184,13 +369,26 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
                     relayFailed = true;
                 }
             }
-            if (relayFailed) {
-                batchesSeen.delete(batchHash);
+            if (generation !== resetGeneration) {
+                return;
+            }
+            if (complete && !relayFailed) {
+                rememberOutcome(batchHash, { kind: 'completed' });
+            }
+            else {
+                const repairSource = chooseRepairSource(current);
+                rememberRetry(batchHash, repairSource);
             }
         }
         finally {
+            if (inFlight.get(batchHash) === current) {
+                inFlight.delete(batchHash);
+            }
             admittedGossip -= 1;
             reservation.release();
+            if (repairYieldNeeded && admittedGossip === 0) {
+                void startRepairOpportunity();
+            }
         }
     }
 
@@ -200,6 +398,7 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
             return;
         }
 
+        const generation = resetGeneration;
         try {
             if (!options.getImportPipeline().available) return;
             const indexEpoch = options.getImportPipeline().indexEpoch;
@@ -258,6 +457,9 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
                 throw error;
             }
             for (const page of pages) {
+                if (generation === resetGeneration) {
+                    rememberOutcome(options.cipher.hashJSON(page), { kind: 'completed' });
+                }
                 await options.relay({
                     ...options.createQueueMessage(),
                     data: page,
@@ -286,11 +488,49 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
                 ? trackWork(processMessage(peerKey, message, connection))
                 : Promise.resolve();
         },
+        handleDisconnected(
+            peerKey: string,
+            reason: string,
+            connection: ConnectionInfo,
+        ): void {
+            if (reason === 'connection_replaced') {
+                return;
+            }
+            const current = options.getConnection(peerKey);
+            if (!current || current === connection) {
+                repairNeeded.delete(peerKey);
+            }
+        },
+        handleRelayFailure(peerKey: string, connection: ConnectionInfo): void {
+            if (!accepting || options.getConnection(peerKey) !== connection) {
+                return;
+            }
+            if (rememberRepair({ peerKey, connection })) {
+                repairYieldNeeded = true;
+                if (admittedGossip === 0) {
+                    void startRepairOpportunity();
+                }
+            }
+        },
+        runRepairs(): Promise<void> {
+            return accepting ? startRepairOpportunity() : Promise.resolve();
+        },
+        reset(): void {
+            resetGeneration += 1;
+            recentOutcomes.clear();
+            repairNeeded.clear();
+            repairYieldNeeded = false;
+        },
         shutdown(): Promise<void> {
             if (!shutdownPromise) {
                 accepting = false;
                 options.bulkReads.cancel(`queue:${options.registry}`);
-                shutdownPromise = Promise.allSettled([...activeWork]).then(() => undefined);
+                shutdownPromise = Promise.allSettled([...activeWork]).then(() => {
+                    inFlight.clear();
+                    recentOutcomes.clear();
+                    repairNeeded.clear();
+                    repairYieldNeeded = false;
+                });
             }
             return shutdownPromise;
         },
