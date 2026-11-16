@@ -111,6 +111,43 @@ function makeValidOperation(index: number): Operation {
 }
 
 describe('import pipeline', () => {
+    it('keeps the queue usable when a completion callback throws', async () => {
+        const processEvents = jest.fn<GatekeeperClient['processEvents']>();
+        const pipeline = createPipeline(jest.fn(async () => true), undefined, { processEvents });
+        const failure = new Error('completion failed');
+        const completion = jest.fn(() => { throw failure; });
+        try {
+            await expect(pipeline.enqueue({ kind: 'remote', name: 'peer', data: [] }, completion))
+                .rejects.toBe(failure);
+            await expect(pipeline.enqueue({ kind: 'remote', name: 'peer', data: [] }))
+                .resolves.toMatchObject({ retryable: false, persistedIds: [] });
+            expect(completion).toHaveBeenCalledTimes(1);
+            expect(processEvents).not.toHaveBeenCalled();
+        } finally { await pipeline.shutdown(); }
+    });
+
+    it('retries accepted sync records after a failed write without needing another acceptance response', async () => {
+        const accepted = makeValidOperation(1);
+        const store = new InMemoryOperationSyncStore();
+        const upsertMany = jest.spyOn(store, 'upsertMany').mockRejectedValueOnce(new Error('database unavailable'));
+        const processEvents = jest.fn<GatekeeperClient['processEvents']>()
+            .mockResolvedValueOnce({ added: 1, acceptedHashes: [accepted.signature!.hash], hasMore: false })
+            .mockResolvedValueOnce({ hasMore: false });
+        const pipeline = createPipeline(jest.fn(async () => true), store, {
+            importBatch: jest.fn(async () => ({ queued: 1, processed: 0, rejected: 0, total: 1, rejectedIndices: [] })),
+            processEvents,
+        });
+        try {
+            await expect(pipeline.enqueue({ kind: 'remote', name: 'peer', data: [accepted] }))
+                .resolves.toMatchObject({ retryable: true, persistedIds: [] });
+            expect(await store.has(accepted.signature!.hash)).toBe(false);
+            await expect(pipeline.enqueue({ kind: 'remote', name: 'peer', data: [accepted] }))
+                .resolves.toMatchObject({ retryable: false, persistedIds: [accepted.signature!.hash] });
+            expect(upsertMany).toHaveBeenCalledTimes(2);
+            expect(await store.count()).toBe(1);
+        } finally { await pipeline.shutdown(); }
+    });
+
     it('shares the accepted event instead of a rejected request with the same unsigned hash', async () => {
         const cipher = new CipherNode();
         const db = new DbJsonMemory('accepted-signature-variant');

@@ -142,6 +142,34 @@ describe('Gatekeeper processing recovery', () => {
         } finally { await pipeline.shutdown(); }
     });
 
+    it.each(['code', 'error'] as const)('recovers when reset interrupts an owed processing drain using %s', async field => {
+        const { pipeline, gatekeeper, reset } = fixture();
+        await pipeline.refreshIndex('startup');
+        gatekeeper.processEvents.mockRejectedValueOnce('timeout of 60000ms exceeded');
+        gatekeeper.getStatus.mockRejectedValue(new Error('status unavailable'));
+        try {
+            const importing = pipeline.enqueue(request);
+            await nextTurn();
+            await jest.advanceTimersByTimeAsync(300_000);
+            await expect(importing).resolves.toMatchObject({ retryable: true, dependencyUnavailable: true });
+            gatekeeper.getStatus.mockResolvedValue(status(false));
+            await jest.advanceTimersByTimeAsync(5_000);
+            const failure = { [field]: 'gatekeeper_index_epoch_changed' };
+            gatekeeper.processEvents.mockRejectedValueOnce(failure);
+            await expect(pipeline.refreshIndex('interrupted-drain')).rejects.toThrow();
+            expect(pipeline.available).toBe(false);
+            expect(gatekeeper.processEvents.mock.calls.at(-1)?.[0]).toBe('epoch-a');
+            reset();
+            await jest.advanceTimersByTimeAsync(5_000);
+            await expect(pipeline.refreshIndex('new-epoch')).resolves.toMatchObject({
+                resetReason: 'gatekeeper_index_epoch_changed',
+            });
+            expect(pipeline.indexEpoch).toBe('epoch-b');
+            expect(pipeline.available).toBe(true);
+            expect(gatekeeper.importBatch).toHaveBeenCalledTimes(1);
+        } finally { await pipeline.shutdown(); }
+    });
+
     it('cancels recovery on a later page before admitting the next bounded chunk', async () => {
         const { pipeline, gatekeeper, store } = fixture();
         const data = makeOperations(101);
