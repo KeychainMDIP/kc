@@ -1,9 +1,5 @@
 const FRAME_HEADER_BYTES = 4;
 const EMPTY_BUFFER: Buffer = Buffer.alloc(0);
-const JSON_OBJECT_START = 0x7b;
-const JSON_OBJECT_END = 0x7d;
-const JSON_QUOTE = 0x22;
-const JSON_ESCAPE = 0x5c;
 
 export const DEFAULT_MAX_FRAMED_MESSAGE_BYTES = 16 * 1024 * 1024;
 
@@ -11,16 +7,6 @@ export interface DecodedFramedMessagesResult {
     messages: Buffer[];
     remaining: Buffer;
     error?: string;
-}
-
-export interface DecodedLegacyJsonMessagesResult {
-    messages: Buffer[];
-    remaining: Buffer;
-    error?: string;
-}
-
-function isJsonWhitespace(byte: number): boolean {
-    return byte === 0x20 || byte === 0x09 || byte === 0x0a || byte === 0x0d;
 }
 
 export function encodeFramedMessage(
@@ -87,123 +73,6 @@ export function decodeFramedMessages(
 
         messages.push(buffer.subarray(offset + FRAME_HEADER_BYTES, frameEnd));
         offset = frameEnd;
-    }
-
-    return {
-        messages,
-        remaining: offset === buffer.length ? EMPTY_BUFFER : Buffer.from(buffer.subarray(offset)),
-    };
-}
-
-export function decodeLegacyJsonMessages(
-    buffer: Buffer,
-    maxMessageBytes = DEFAULT_MAX_FRAMED_MESSAGE_BYTES,
-    maxMessages = Number.MAX_SAFE_INTEGER,
-): DecodedLegacyJsonMessagesResult {
-    if (!Buffer.isBuffer(buffer)) {
-        throw new Error('buffer must be a Buffer');
-    }
-
-    if (!Number.isInteger(maxMessageBytes) || maxMessageBytes <= 0) {
-        throw new Error('maxMessageBytes must be a positive integer');
-    }
-
-    if (!Number.isInteger(maxMessages) || maxMessages <= 0) {
-        throw new Error('maxMessages must be a positive integer');
-    }
-
-    let offset = 0;
-    const messages: Buffer[] = [];
-
-    while (offset < buffer.length && messages.length < maxMessages) {
-        while (offset < buffer.length && isJsonWhitespace(buffer[offset])) {
-            offset += 1;
-        }
-
-        if (offset >= buffer.length) {
-            break;
-        }
-
-        const start = offset;
-        if (buffer[start] !== JSON_OBJECT_START) {
-            return {
-                messages,
-                remaining: EMPTY_BUFFER,
-                error: `invalid legacy JSON message prefix byte ${buffer[start]}`,
-            };
-        }
-
-        let depth = 0;
-        let inString = false;
-        let escaped = false;
-        let messageEnd = -1;
-
-        for (let index = start; index < buffer.length; index += 1) {
-            const byte = buffer[index];
-
-            if (inString) {
-                if (escaped) {
-                    escaped = false;
-                    continue;
-                }
-
-                if (byte === JSON_ESCAPE) {
-                    escaped = true;
-                    continue;
-                }
-
-                if (byte === JSON_QUOTE) {
-                    inString = false;
-                }
-                continue;
-            }
-
-            if (byte === JSON_QUOTE) {
-                inString = true;
-                continue;
-            }
-
-            if (byte === JSON_OBJECT_START) {
-                depth += 1;
-                continue;
-            }
-
-            if (byte === JSON_OBJECT_END) {
-                depth -= 1;
-                if (depth === 0) {
-                    messageEnd = index + 1;
-                    break;
-                }
-            }
-        }
-
-        if (messageEnd === -1) {
-            const pendingLength = buffer.length - start;
-            if (pendingLength > maxMessageBytes) {
-                return {
-                    messages,
-                    remaining: EMPTY_BUFFER,
-                    error: `legacy JSON message length ${pendingLength} exceeds max ${maxMessageBytes}`,
-                };
-            }
-
-            return {
-                messages,
-                remaining: Buffer.from(buffer.subarray(start)),
-            };
-        }
-
-        const messageLength = messageEnd - start;
-        if (messageLength > maxMessageBytes) {
-            return {
-                messages,
-                remaining: EMPTY_BUFFER,
-                error: `legacy JSON message length ${messageLength} exceeds max ${maxMessageBytes}`,
-            };
-        }
-
-        messages.push(buffer.subarray(start, messageEnd));
-        offset = messageEnd;
     }
 
     return {

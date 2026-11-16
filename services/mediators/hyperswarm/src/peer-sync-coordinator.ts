@@ -92,8 +92,7 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
     }
 
     function supportsPeerNegentropyTransport(conn: ConnectionInfo): boolean {
-        return !conn.legacyTransportQuarantined
-            && supportsPeerNegentropy(conn.capabilities, options.negentropyVersion)
+        return supportsPeerNegentropy(conn.capabilities, options.negentropyVersion)
             && conn.peerTransportFramingVersion === options.transportFramingVersion;
     }
 
@@ -554,20 +553,6 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
         options.getNegentropyCoordinator().removePeer(peerKey, reason);
     }
 
-    function handleQuarantined(
-        peerKey: string,
-        reason: string,
-        expectedConnection: ConnectionInfo,
-    ): void {
-        if (options.getConnection(peerKey) !== expectedConnection) {
-            return;
-        }
-        expectedConnection.syncMode = 'unknown';
-        expectedConnection.syncStarted = false;
-        expectedConnection.negentropySynced = false;
-        handleDisconnected(peerKey, reason);
-    }
-
     function resetConnection(conn: ConnectionInfo): void {
         conn.syncMode = 'unknown';
         conn.syncStarted = false;
@@ -699,7 +684,6 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
             return tracked(() => handlePing(peerKey, message, connection), undefined);
         },
         handleDisconnected,
-        handleQuarantined,
         handleIndexRefreshed(source: string, sync: BootstrapResult): Promise<void> {
             return tracked(() => handleIndexRefreshed(source, sync), undefined);
         },

@@ -1,4 +1,5 @@
 import { jest } from '@jest/globals';
+import CipherNode from '@mdip/cipher/node';
 
 import type { ImportPipeline } from '../../services/mediators/hyperswarm/src/import-pipeline.ts';
 import type { ReconciliationWindow } from '../../services/mediators/hyperswarm/src/negentropy/adapter.ts';
@@ -101,8 +102,14 @@ describe('Negentropy coordinator', () => {
             peerName: 'test-peer',
         });
         const store = new InMemoryOperationSyncStore();
-        const operation = { type: 'create' as const, signature: {
-            hash: 'b'.repeat(64), signed: '2026-01-01T00:00:00.000Z', value: 'signature',
+        const cipher = new CipherNode();
+        const unsigned = {
+            type: 'create' as const,
+            created: '2026-01-01T00:00:00.000Z',
+            mdip: { version: 1, type: 'agent' as const, registry: 'hyperswarm' },
+        };
+        const operation = { ...unsigned, signature: {
+            hash: cipher.hashJSON(unsigned), signed: unsigned.created, value: 'signature',
         } };
         const lookup = jest.spyOn(store, 'getByIds');
         const failure = outcome === 'unavailable'
@@ -128,9 +135,11 @@ describe('Negentropy coordinator', () => {
             version: 1, transportFramingVersion: 1, frameSizeLimit: 0, maxRecordsPerWindow: 16,
             maxRoundsPerSession: 8, maxIdsPerRequest: 1_000, maxIdsPerLookup: 1_000,
             maxOpsPerPush: 300, maxBytesPerPush: 512 * 1024, idleTimeoutMs: 120_000,
-            syncStore: store, importPipeline, syncStats: createMediatorSyncStats(), getConnection: () => connection,
+            syncStore: store, importPipeline, syncStats: createMediatorSyncStats(), cipher,
+            getConnection: () => connection,
             createSessionId: () => 'session', createBaseMessage: type => ({ type, time: '', node: '', relays: [] }),
-            sendToPeer, canStartBackgroundPrebuild: () => false, terminatePeerConnection, onSessionClosed, onIndexRefreshed,
+            sendToPeer, canStartBackgroundPrebuild: () => false, terminatePeerConnection,
+            onProtocolViolation: jest.fn(), onSessionClosed, onIndexRefreshed,
         });
         try {
             await coordinator.initializeAdapter();
@@ -215,15 +224,25 @@ describe('Negentropy coordinator', () => {
         const sendToPeer = jest.fn<Parameters<typeof createNegentropyCoordinator>[0]['sendToPeer']>(() => true);
         const onSessionClosed = jest.fn(async () => undefined);
         const terminatePeerConnection = jest.fn();
+        const cipher = new CipherNode();
+        const unsigned = {
+            type: 'create' as const,
+            created: '2026-01-01T00:00:00.000Z',
+            mdip: { version: 1, type: 'agent' as const, registry: 'hyperswarm' },
+        };
+        const operation = { ...unsigned, signature: {
+            hash: cipher.hashJSON(unsigned), signed: unsigned.created, value: 'signature',
+        } };
         const coordinator = createNegentropyCoordinator({
             version: 1, transportFramingVersion: 1, frameSizeLimit: 0,
             maxRecordsPerWindow: 16, maxRoundsPerSession: 8, maxIdsPerRequest: 1_000,
             maxIdsPerLookup: 1_000, maxOpsPerPush: 300, maxBytesPerPush: 512 * 1024,
-            idleTimeoutMs: 120_000, syncStore: store, importPipeline, syncStats: createMediatorSyncStats(),
+            idleTimeoutMs: 120_000, syncStore: store, importPipeline, syncStats: createMediatorSyncStats(), cipher,
             getConnection: key => key === peerKey ? connection : undefined,
             createSessionId: () => 'reset-session',
             createBaseMessage: type => ({ type, time: '', node: '', relays: [] }),
-            sendToPeer, canStartBackgroundPrebuild: () => false, terminatePeerConnection, onSessionClosed,
+            sendToPeer, canStartBackgroundPrebuild: () => false, terminatePeerConnection,
+            onProtocolViolation: jest.fn(), onSessionClosed,
             onIndexRefreshed: async () => {},
         });
         try {
@@ -234,9 +253,7 @@ describe('Negentropy coordinator', () => {
             const push = coordinator.handleMessage(peerKey, {
                 type: 'ops_push', sessionId: 'reset-session', windowId: open.windowId, round: 0,
                 time: '', node: '', relays: [],
-                data: [{ type: 'create', signature: {
-                    hash: 'b'.repeat(64), signed: '2026-01-01T00:00:00.000Z', value: 'signature',
-                } }],
+                data: [operation],
             });
             if (phase === 'remote') {
                 await new Promise<void>(resolve => setImmediate(resolve));
@@ -330,6 +347,7 @@ describe('Negentropy coordinator', () => {
             syncStore: store,
             importPipeline,
             syncStats: createMediatorSyncStats(),
+            cipher: new CipherNode(),
             getConnection: key => key === peerKey ? connection : undefined,
             createSessionId: () => 'test-session',
             createBaseMessage: type => ({
@@ -341,6 +359,7 @@ describe('Negentropy coordinator', () => {
             sendToPeer: () => true,
             canStartBackgroundPrebuild: () => true,
             terminatePeerConnection: () => undefined,
+            onProtocolViolation: () => undefined,
             onSessionClosed,
             onIndexRefreshed: async () => {},
         });
@@ -556,6 +575,7 @@ describe('Negentropy coordinator', () => {
             syncStore: store,
             importPipeline,
             syncStats: createMediatorSyncStats(),
+            cipher: new CipherNode(),
             getConnection: key => key === peerKey ? connection : undefined,
             createSessionId: () => 'test-session',
             createBaseMessage: type => ({
@@ -567,6 +587,7 @@ describe('Negentropy coordinator', () => {
             sendToPeer,
             canStartBackgroundPrebuild: () => false,
             terminatePeerConnection: () => undefined,
+            onProtocolViolation: () => undefined,
             onSessionClosed,
             onIndexRefreshed: async () => {},
         });

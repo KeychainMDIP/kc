@@ -21,6 +21,10 @@ import type {
     OrderedCatchupReqMessage,
 } from './protocol-messages.js';
 import type { MediatorSyncStats } from './sync-stats.js';
+import {
+    validateHyperMessagePayload,
+    validateOperationContentIds,
+} from './protocol-validation.js';
 
 const log = childLogger({ service: 'hyperswarm-mediator' });
 const PREFETCH_BATCHES = 2;
@@ -82,6 +86,7 @@ export interface OrderedCatchupCoordinatorOptions {
     syncStore: OperationSyncStore;
     importPipeline: ImportPipeline;
     syncStats: MediatorSyncStats;
+    cipher: { hashJSON(value: unknown): string };
     getConnection(peerKey: string): ConnectionInfo | undefined;
     createSessionId(peerKey: string): string;
     createBaseMessage: CreateBaseMessage;
@@ -90,6 +95,7 @@ export interface OrderedCatchupCoordinatorOptions {
     onComplete(outcome: OrderedCatchupOutcome): boolean | Promise<boolean>;
     onHandoffDeferred(): void | Promise<void>;
     onFailure(outcome: OrderedCatchupOutcome): void | Promise<void>;
+    onProtocolViolation(peerKey: string, reason: string, connection: ConnectionInfo): void;
 }
 
 function shortName(peerKey: string): string {
@@ -107,6 +113,32 @@ export function createOrderedCatchupCoordinator(
     let accepting = true;
     let generation = 0;
     let shutdownPromise: Promise<void> | null = null;
+
+    function validateCurrentPayload(
+        peerKey: string,
+        message: OrderedCatchupMessage,
+        connection: ConnectionInfo,
+    ): boolean {
+        const result = validateHyperMessagePayload(message, {
+            maxIdsPerRequest: 1,
+            maxOpsPerPush: options.maxOpsPerPage,
+            maxBytesPerPush: options.maxBytesPerPage,
+            maxFrameBytes: 0,
+            maxRecordsPerWindow: 1,
+        });
+        if (!result.ok) {
+            options.onProtocolViolation(peerKey, `invalid_${message.type}: ${result.reason}`, connection);
+            return false;
+        }
+        if (message.type === 'ordered_catchup_push') {
+            const content = validateOperationContentIds(message.data, options.cipher);
+            if (!content.ok) {
+                options.onProtocolViolation(peerKey, `invalid_ordered_catchup_push: ${content.reason}`, connection);
+                return false;
+            }
+        }
+        return true;
+    }
 
     function trackWork<T>(task: Promise<T>): Promise<T> {
         activeWork.add(task);
@@ -352,12 +384,15 @@ export function createOrderedCatchupCoordinator(
         if (!connection) {
             return;
         }
-        clearExpectation(peerKey, 'ordered_catchup_req_received');
         if (connection.capabilities.orderedCatchup !== true
             || connection.capabilities.orderedCatchupVersion !== options.version) {
             log.warn({ peer: shortName(peerKey), sessionId: message.sessionId }, 'ignoring ordered catch-up request from unsupported peer');
             return;
         }
+        if (!validateCurrentPayload(peerKey, message, connection)) {
+            return;
+        }
+        clearExpectation(peerKey, 'ordered_catchup_req_received');
 
         const cursor = parseOrderedCatchupCursor(message.cursor);
         if (cursor === null) {
@@ -430,6 +465,10 @@ export function createOrderedCatchupCoordinator(
         }
         if (session.terminalReason) {
             log.debug({ peer: shortName(peerKey), sessionId: message.sessionId }, 'ignoring ordered catch-up push after terminal message');
+            return;
+        }
+        const connection = options.getConnection(peerKey);
+        if (!connection || !validateCurrentPayload(peerKey, message, connection)) {
             return;
         }
         if (!session.requestOutstanding && session.pendingImports > PREFETCH_BATCHES) {
@@ -646,6 +685,10 @@ export function createOrderedCatchupCoordinator(
             const server = servers.get(peerKey);
             if (server) {
                 clearServer(peerKey, server.sessionId, reason);
+            }
+            const client = clients.get(peerKey);
+            if (client) {
+                client.importsAborted = true;
             }
             failClient(peerKey, reason);
             const transition = transitions.get(peerKey);

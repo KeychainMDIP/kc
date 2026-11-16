@@ -35,9 +35,11 @@ describe('expiration and historical synchronization', () => {
         });
         const relay = jest.fn(async () => {});
         const coordinator = createQueueCoordinator({
-            registry: 'hyperswarm', gatekeeper, cipher, syncStats: stats,
+            registry: 'hyperswarm', maxOpsPerPage: 300, maxBytesPerPage: 512 * 1024,
+            gatekeeper, cipher, syncStats: stats,
             getImportPipeline: () => pipeline, getNodeKey: () => 'local',
             createQueueMessage: () => ({ type: 'queue', time: '', node: '', relays: [] }), relay,
+            onProtocolViolation: jest.fn(),
         });
         try {
             await pipeline.refreshIndex('startup');

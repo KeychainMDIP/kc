@@ -10,6 +10,7 @@ import type { ImportPipeline } from './import-pipeline.js';
 import type { BootstrapResult } from './bootstrap.js';
 import type { ConnectionInfo } from './mediator-state.js';
 import NegentropyAdapter, {
+    type NegentropyReconcileResult,
     type NegentropyWindowEngine,
     type NegentropyWindowSnapshot,
     type NegentropyWindowStats,
@@ -30,11 +31,17 @@ import {
     collectNewIds,
     chunkIds,
     chunkOperationsForPush,
+    validateIdList,
 } from './negentropy/transfer.js';
 import {
     normalizeInboundOpsPushBatch,
     orderSyncRecordsForPush,
 } from './operation-order.js';
+import {
+    validateHyperMessagePayload,
+    validateOperationContentIds,
+} from './protocol-validation.js';
+import { MAX_NEGENTROPY_WINDOW_RECORDS } from './protocol-limits.js';
 import {
     compareSyncCursor,
     getContinuationCursorDecision,
@@ -120,6 +127,7 @@ interface NegentropyCoordinatorOptions {
     syncStore: OperationSyncStore;
     importPipeline: ImportPipeline;
     syncStats: MediatorSyncStats;
+    cipher: { hashJSON(value: unknown): string };
     getConnection(peerKey: string): ConnectionInfo | undefined;
     createSessionId(peerKey: string): string;
     createBaseMessage<T extends NegentropyMessage['type']>(
@@ -127,6 +135,7 @@ interface NegentropyCoordinatorOptions {
     ): Omit<HyperMessageBase, 'type'> & { type: T };
     sendToPeer(peerKey: string, message: HyperMessage): boolean;
     canStartBackgroundPrebuild(): boolean;
+    onProtocolViolation(peerKey: string, reason: string, connection: ConnectionInfo): void;
     terminatePeerConnection(peerKey: string, reason: string): void;
     onSessionClosed(peerKey: string, reason: string): void | Promise<void>;
     onIndexRefreshed(source: string, sync: BootstrapResult): Promise<void>;
@@ -252,6 +261,24 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
     let backgroundPrebuildPromise: Promise<void> | null = null;
     let shutdownStarted = false;
     let shutdownPromise: Promise<void> | null = null;
+
+    function validateCurrentPayload(peerKey: string, message: NegentropyMessage): boolean {
+        const result = validateHyperMessagePayload(message, {
+            maxIdsPerRequest: options.maxIdsPerRequest,
+            maxOpsPerPush: options.maxOpsPerPush,
+            maxBytesPerPush: options.maxBytesPerPush,
+            maxFrameBytes: options.frameSizeLimit,
+            maxRecordsPerWindow: MAX_NEGENTROPY_WINDOW_RECORDS,
+        });
+        if (result.ok) {
+            return true;
+        }
+        const connection = options.getConnection(peerKey);
+        if (connection) {
+            options.onProtocolViolation(peerKey, `invalid_${message.type}: ${result.reason}`, connection);
+        }
+        return false;
+    }
 
     function trackWork<T>(task: Promise<T>): Promise<T> {
         activeWork.add(task);
@@ -1123,9 +1150,21 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             return null;
         }
 
-        const result = session.currentWindowEngine
-            ? await session.currentWindowEngine.reconcile(frame)
-            : await negentropyAdapter.reconcile(frame);
+        const connection = options.getConnection(peerKey);
+        let result: NegentropyReconcileResult;
+        try {
+            result = session.currentWindowEngine
+                ? await session.currentWindowEngine.reconcile(frame)
+                : await negentropyAdapter.reconcile(frame);
+        }
+        catch {
+            if (connection
+                && options.getConnection(peerKey) === connection
+                && peerSessions.get(peerKey) === session) {
+                options.onProtocolViolation(peerKey, 'invalid_negentropy_frame', connection);
+            }
+            return null;
+        }
         if (peerSessions.get(peerKey) !== session) {
             return null;
         }
@@ -1469,7 +1508,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         schedulingState?: NegOpenSchedulingState,
     ): Promise<void> {
         let session = peerSessions.get(peerKey);
-        const remoteSessionId = typeof msg.sessionId === 'string' ? msg.sessionId : '';
+        const remoteSessionId = msg.sessionId;
         const activeOrderedCatchupSessionId = schedulingState?.activeSessionId ?? null;
         const conflictDecision = decideInboundNegOpenConflict({
             activeSessionMode: session ? 'negentropy' : null,
@@ -1528,17 +1567,15 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             );
             return;
         }
+        if (!validateCurrentPayload(peerKey, msg)) {
+            return;
+        }
 
         const window = parseRemoteWindow(msg.window, options.maxRecordsPerWindow);
         if (!window) {
             log.warn({ peer: shortName(peerKey), sessionId: msg.sessionId }, 'ignoring neg_open with invalid window');
             return;
         }
-        if (typeof msg.windowId !== 'string' || msg.windowId.length === 0) {
-            log.warn({ peer: shortName(peerKey), sessionId: msg.sessionId }, 'ignoring neg_open with invalid windowId');
-            return;
-        }
-
         if (conflictDecision.action === 'replace' && session) {
             closePeerSession(peerKey, 'replaced_by_remote_open');
             session = undefined;
@@ -1602,6 +1639,9 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         if (!isCurrentSessionWindow(peerKey, session, msg.windowId, 'neg_msg')) {
             return;
         }
+        if (!validateCurrentPayload(peerKey, msg)) {
+            return;
+        }
 
         trackRemoteWindowProgress(session, msg.windowProgress);
         touchPeerSession(peerKey);
@@ -1622,9 +1662,15 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             return;
         }
 
-        const requestedIds = Array.isArray(msg.ids)
-            ? Array.from(new Set(msg.ids.map(id => String(id).toLowerCase()).filter(id => NEG_SYNC_ID_RE.test(id))))
-            : [];
+        const validated = validateIdList(msg.ids, options.maxIdsPerRequest);
+        if (!validated.ok) {
+            const connection = options.getConnection(peerKey);
+            if (connection) {
+                options.onProtocolViolation(peerKey, `invalid_ops_req: ${validated.reason}`, connection);
+            }
+            return;
+        }
+        const requestedIds = validated.value;
         options.syncStats.negentropyOpsReqReceived += requestedIds.length;
         await sendOpsPushForIds(peerKey, session, requestedIds);
         if (peerSessions.get(peerKey) === session) {
@@ -1688,6 +1734,17 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             return;
         }
 
+        if (!validateCurrentPayload(peerKey, msg)) {
+            return;
+        }
+        const content = validateOperationContentIds(msg.data, options.cipher);
+        if (!content.ok) {
+            const connection = options.getConnection(peerKey);
+            if (connection) {
+                options.onProtocolViolation(peerKey, `invalid_ops_push: ${content.reason}`, connection);
+            }
+            return;
+        }
         const batch = normalizeInboundOpsPushBatch(msg.data);
         if (batch.length > 0) {
             options.syncStats.negentropyOpsPushReceived += batch.length;
@@ -1791,6 +1848,9 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
     async function handleNegCloseMessage(peerKey: string, msg: NegCloseMessage): Promise<void> {
         const session = peerSessions.get(peerKey);
         if (session && session.sessionId === msg.sessionId && (!session.windowId || msg.windowId === session.windowId)) {
+            if (!validateCurrentPayload(peerKey, msg)) {
+                return;
+            }
             trackRemoteWindowProgress(session, msg.windowProgress);
             if (session.initiator && msg.reason === 'max_rounds_reached') {
                 finalizeCurrentWindowStats(session, { completed: false, cappedByRounds: true });
