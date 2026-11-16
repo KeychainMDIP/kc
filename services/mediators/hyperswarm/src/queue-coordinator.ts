@@ -18,6 +18,8 @@ import {
 } from './negentropy/transfer.js';
 import { MAX_RELAY_HINTS } from './protocol-limits.js';
 import { validateOperationContentIds } from './protocol-validation.js';
+import type { OperationPageBudget } from './operation-page-budget.js';
+import type { BulkWorkScheduler } from './bulk-work-scheduler.js';
 
 interface QueueCoordinatorOptions {
     registry: string;
@@ -26,6 +28,8 @@ interface QueueCoordinatorOptions {
     gatekeeper: Pick<GatekeeperClient, 'getQueue' | 'clearQueue'>;
     cipher: Pick<CipherNode, 'hashJSON'>;
     syncStats: MediatorSyncStats;
+    bulkReads: BulkWorkScheduler;
+    operationPages: OperationPageBudget;
     getImportPipeline(): ImportPipeline;
     getNodeKey(): string;
     createQueueMessage(): Omit<QueueMessage, 'data'>;
@@ -35,6 +39,19 @@ interface QueueCoordinatorOptions {
 
 export function createQueueCoordinator(options: QueueCoordinatorOptions) {
     const batchesSeen = new Set<string>();
+    const activeWork = new Set<Promise<unknown>>();
+    let admittedGossip = 0;
+    let accepting = true;
+    let shutdownPromise: Promise<void> | null = null;
+
+    function trackWork<T>(work: Promise<T>): Promise<T> {
+        activeWork.add(work);
+        work.then(
+            () => activeWork.delete(work),
+            () => activeWork.delete(work),
+        );
+        return work;
+    }
 
     function reserveBatch(batch: Operation[]): string | null {
         const hash = options.cipher.hashJSON(batch);
@@ -45,7 +62,7 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
         return hash;
     }
 
-    async function handleMessage(
+    async function processMessage(
         peerKey: string,
         message: QueueMessage,
         connection: ConnectionInfo,
@@ -63,30 +80,39 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
             options.onProtocolViolation(peerKey, `invalid_queue_operation: ${content.reason}`, connection);
             return;
         }
+        if (admittedGossip >= 2) {
+            return;
+        }
         if (!options.getImportPipeline().available) {
             return;
         }
-        const batchHash = reserveBatch(page.value.operations);
-        if (!batchHash) {
+        const reservation = options.operationPages.reserve(page.value.bytes);
+        if (!reservation) {
             return;
         }
-
-        let imported;
+        admittedGossip += 1;
         try {
-            imported = await options.getImportPipeline().enqueue({
-                kind: 'remote',
-                name: peerKey,
-                node: message.node,
-                data: message.data,
-                queueGossip: true,
-            });
-        }
-        catch (error) {
-            batchesSeen.delete(batchHash);
-            throw error;
-        }
-        const handledIds = new Set([...imported.knownIds, ...imported.persistedIds]);
-        const complete = !imported.retryable
+            const batchHash = reserveBatch(page.value.operations);
+            if (!batchHash) {
+                return;
+            }
+
+            let imported;
+            try {
+                imported = await options.getImportPipeline().enqueue({
+                    kind: 'remote',
+                    name: peerKey,
+                    node: message.node,
+                    data: message.data,
+                    queueGossip: true,
+                });
+            }
+            catch (error) {
+                batchesSeen.delete(batchHash);
+                throw error;
+            }
+            const handledIds = new Set([...imported.knownIds, ...imported.persistedIds]);
+            const complete = !imported.retryable
             && (imported.pendingIds?.length ?? 0) === 0
             && (imported.capacityDeferredIds?.length ?? 0) === 0
             && message.data.every(operation => {
@@ -95,86 +121,123 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
                     && hasContentVerifiedOperationId(operation, options.cipher)
                     && handledIds.has(mapped.value.idHex);
             });
-        if (!complete) {
-            batchesSeen.delete(batchHash);
-            return;
-        }
-        const relays = (Array.isArray(message.relays) ? message.relays : [])
-            .filter(relay => relay !== peerKey)
-            .slice(-(MAX_RELAY_HINTS - 1));
-        await options.relay({
-            ...message,
-            relays: [...relays, peerKey],
-        });
-    }
-
-    async function flush(): Promise<void> {
-        if (!options.getImportPipeline().available) return;
-        const indexEpoch = options.getImportPipeline().indexEpoch;
-        const batch = await options.gatekeeper.getQueue(options.registry);
-        if (batch.length === 0) {
-            return;
-        }
-
-        const imported = await options.getImportPipeline().enqueue({
-            kind: 'local_queue',
-            phase: 'persist',
-            indexEpoch,
-            name: options.getNodeKey(),
-            data: batch,
-        });
-        if (imported.retryable) {
-            if (imported.indexEpochChanged || imported.dependencyUnavailable) return;
-            throw new Error('failed to import local Gatekeeper queue');
-        }
-
-        if (!options.getImportPipeline().available) return;
-        const merged = await options.getImportPipeline().enqueue({
-            kind: 'local_queue',
-            phase: 'merge',
-            indexEpoch,
-            name: options.getNodeKey(),
-            data: batch,
-        });
-        if (merged.retryable
-            || (merged.capacityDeferredIds?.length ?? 0) > 0) {
-            if (merged.indexEpochChanged || merged.dependencyUnavailable) return;
-            throw new Error('failed to merge local Gatekeeper queue');
-        }
-
-        // These operations were already accepted locally and persisted above. GC or a history
-        // change can remove their dependencies before confirmation, without invalidating the
-        // historical operations. Gatekeeper owns retained pending confirmations, while the
-        // capacity-refused inputs above still need caller retries before clearing the queue.
-
-        options.syncStats.queueOpsRelayed += batch.length;
-        for (const sample of collectQueueDelaySamples(batch)) {
-            addAggregateSample(options.syncStats.queueDelayMs, sample);
-        }
-
-        const pages = chunkOperationsForPush(batch, {
-            maxOpsPerPush: options.maxOpsPerPage,
-            maxBytesPerPush: options.maxBytesPerPage,
-        });
-        const hashes = batch
-            .map(operation => operation.signature?.hash)
-            .filter((hash): hash is string => !!hash);
-        if (!options.getImportPipeline().available) return;
-        try {
-            if (indexEpoch === undefined) await options.gatekeeper.clearQueue(options.registry, hashes);
-            else await options.gatekeeper.clearQueue(options.registry, hashes, indexEpoch);
-        } catch (error) {
-            const conflict = error as { error?: string; code?: string } | null;
-            if ((conflict?.error ?? conflict?.code) === 'gatekeeper_index_epoch_changed') return;
-            throw error;
-        }
-        for (const page of pages) {
+            if (!complete) {
+                batchesSeen.delete(batchHash);
+                return;
+            }
+            const relays = (Array.isArray(message.relays) ? message.relays : [])
+                .filter(relay => relay !== peerKey)
+                .slice(-(MAX_RELAY_HINTS - 1));
             await options.relay({
-                ...options.createQueueMessage(),
-                data: page,
+                ...message,
+                relays: [...relays, peerKey],
             });
         }
+        finally {
+            admittedGossip -= 1;
+            reservation.release();
+        }
     }
 
-    return { flush, handleMessage };
+    async function buildAndRelayLocalQueue(): Promise<void> {
+        const reservation = options.operationPages.reserve(options.maxBytesPerPage);
+        if (!reservation) {
+            return;
+        }
+
+        try {
+            if (!options.getImportPipeline().available) return;
+            const indexEpoch = options.getImportPipeline().indexEpoch;
+            const batch = await options.gatekeeper.getQueue(options.registry);
+            if (batch.length === 0) {
+                return;
+            }
+
+            const imported = await options.getImportPipeline().enqueue({
+                kind: 'local_queue',
+                phase: 'persist',
+                indexEpoch,
+                name: options.getNodeKey(),
+                data: batch,
+            });
+            if (imported.retryable) {
+                if (imported.indexEpochChanged || imported.dependencyUnavailable) return;
+                throw new Error('failed to import local Gatekeeper queue');
+            }
+
+            if (!options.getImportPipeline().available) return;
+            const merged = await options.getImportPipeline().enqueue({
+                kind: 'local_queue',
+                phase: 'merge',
+                indexEpoch,
+                name: options.getNodeKey(),
+                data: batch,
+            });
+            if (merged.retryable
+            || (merged.capacityDeferredIds?.length ?? 0) > 0) {
+                if (merged.indexEpochChanged || merged.dependencyUnavailable) return;
+                throw new Error('failed to merge local Gatekeeper queue');
+            }
+
+            // Accepted local operations remain Gatekeeper's responsibility while pending.
+            options.syncStats.queueOpsRelayed += batch.length;
+            for (const sample of collectQueueDelaySamples(batch)) {
+                addAggregateSample(options.syncStats.queueDelayMs, sample);
+            }
+
+            const pages = chunkOperationsForPush(batch, {
+                maxOpsPerPush: options.maxOpsPerPage,
+                maxBytesPerPush: options.maxBytesPerPage,
+            });
+            const hashes = batch
+                .map(operation => operation.signature?.hash)
+                .filter((hash): hash is string => !!hash);
+            if (!options.getImportPipeline().available) return;
+            try {
+                if (indexEpoch === undefined) await options.gatekeeper.clearQueue(options.registry, hashes);
+                else await options.gatekeeper.clearQueue(options.registry, hashes, indexEpoch);
+            }
+            catch (error) {
+                const conflict = error as { error?: string; code?: string } | null;
+                if ((conflict?.error ?? conflict?.code) === 'gatekeeper_index_epoch_changed') return;
+                throw error;
+            }
+            for (const page of pages) {
+                await options.relay({
+                    ...options.createQueueMessage(),
+                    data: page,
+                });
+            }
+        }
+        finally {
+            reservation.release();
+        }
+    }
+
+    async function processFlush(): Promise<void> {
+        await options.bulkReads.run(`queue:${options.registry}`, buildAndRelayLocalQueue);
+    }
+
+    return {
+        flush(): Promise<void> {
+            return accepting ? trackWork(processFlush()) : Promise.resolve();
+        },
+        handleMessage(
+            peerKey: string,
+            message: QueueMessage,
+            connection: ConnectionInfo,
+        ): Promise<void> {
+            return accepting
+                ? trackWork(processMessage(peerKey, message, connection))
+                : Promise.resolve();
+        },
+        shutdown(): Promise<void> {
+            if (!shutdownPromise) {
+                accepting = false;
+                options.bulkReads.cancel(`queue:${options.registry}`);
+                shutdownPromise = Promise.allSettled([...activeWork]).then(() => undefined);
+            }
+            return shutdownPromise;
+        },
+    };
 }

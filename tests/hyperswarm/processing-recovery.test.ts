@@ -12,6 +12,8 @@ import InMemoryOperationSyncStore from '../../services/mediators/hyperswarm/src/
 import { createOrderedCatchupCoordinator } from '../../services/mediators/hyperswarm/src/ordered-catchup-coordinator.ts';
 import type { ConnectionInfo } from '../../services/mediators/hyperswarm/src/mediator-state.ts';
 import { createMediatorSyncStats } from '../../services/mediators/hyperswarm/src/sync-stats.ts';
+import { createBulkWorkScheduler } from '../../services/mediators/hyperswarm/src/bulk-work-scheduler.ts';
+import { createOperationPageBudget } from '../../services/mediators/hyperswarm/src/operation-page-budget.ts';
 import TestHelper from '../gatekeeper/helper.ts';
 
 const operation: Operation = {
@@ -460,8 +462,11 @@ describe('Gatekeeper processing recovery', () => {
             version: 1, maxOpsPerPage: 300, maxBytesPerPage: 512 * 1024, idleTimeoutMs: 120_000,
             syncStore: new InMemoryOperationSyncStore(), importPipeline: pipeline,
             syncStats: createMediatorSyncStats(), cipher: new CipherNode(),
+            bulkReads: createBulkWorkScheduler(2),
+            operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getConnection: () => ({} as ConnectionInfo), createSessionId: () => 'session',
             createBaseMessage: type => ({ type, time: '', node: '', relays: [] }), sendToPeer,
+            sendBulkToPeer: async () => sendToPeer(),
             onFailure, onIndexRefreshed: async () => {}, onComplete: async () => false, onHandoffDeferred: async () => {},
             onProtocolViolation: jest.fn(),
         });
@@ -519,8 +524,11 @@ describe('Gatekeeper processing recovery', () => {
         const coordinator = createOrderedCatchupCoordinator({
             version: 1, maxOpsPerPage: 300, maxBytesPerPage: 512 * 1024, idleTimeoutMs: 120_000,
             syncStore: store, importPipeline: pipeline, syncStats: createMediatorSyncStats(), cipher: new CipherNode(),
+            bulkReads: createBulkWorkScheduler(2),
+            operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getConnection: () => ({} as ConnectionInfo), createSessionId: () => 'session',
             createBaseMessage: type => ({ type, time: '', node: '', relays: [] }), sendToPeer: () => true,
+            sendBulkToPeer: async () => true,
             onFailure, onIndexRefreshed: async () => {}, onComplete: async () => false, onHandoffDeferred: async () => {},
             onProtocolViolation: jest.fn(),
         });

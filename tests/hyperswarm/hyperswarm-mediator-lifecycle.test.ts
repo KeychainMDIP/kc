@@ -1719,7 +1719,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
                 entry => entry.direction === 'a-to-b' && entry.messageType === 'neg_open',
             )).toHaveLength(initialNegOpenCount);
             expect(running.node.run(
-                () => running.node.mediator.__test.getConnectionState(peer.peerKey)?.activeSession,
+                () => running.node.mediator.__test.getConnectionState(peer.peerKey),
             )).toBeNull();
             expect(running.stopSpy).toHaveBeenCalledTimes(1);
             running.node.run(() => {
@@ -1942,7 +1942,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
                         || entry.messageType === 'ordered_catchup_done')
                 ))).toBe(false);
                 expect(running.node.run(
-                    () => running.node.mediator.__test.getConnectionState(peer.peerKey)?.activeSession,
+                    () => running.node.mediator.__test.getConnectionState(peer.peerKey),
                 )).toBeNull();
                 running.node.run(() => {
                     getMediatorNodeContext().shutdownHook = null;

@@ -8,6 +8,8 @@ import { createImportPipeline } from '../../services/mediators/hyperswarm/src/im
 import { createQueueCoordinator } from '../../services/mediators/hyperswarm/src/queue-coordinator.ts';
 import { createMediatorSyncStats } from '../../services/mediators/hyperswarm/src/sync-stats.ts';
 import { bootstrapSyncStoreFromGatekeeper } from '../../services/mediators/hyperswarm/src/bootstrap.ts';
+import { createBulkWorkScheduler } from '../../services/mediators/hyperswarm/src/bulk-work-scheduler.ts';
+import { createOperationPageBudget } from '../../services/mediators/hyperswarm/src/operation-page-budget.ts';
 import TestHelper from '../gatekeeper/helper.ts';
 
 describe('expiration and historical synchronization', () => {
@@ -37,6 +39,8 @@ describe('expiration and historical synchronization', () => {
         const coordinator = createQueueCoordinator({
             registry: 'hyperswarm', maxOpsPerPage: 300, maxBytesPerPage: 512 * 1024,
             gatekeeper, cipher, syncStats: stats,
+            bulkReads: createBulkWorkScheduler(2),
+            operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getImportPipeline: () => pipeline, getNodeKey: () => 'local',
             createQueueMessage: () => ({ type: 'queue', time: '', node: '', relays: [] }), relay,
             onProtocolViolation: jest.fn(),

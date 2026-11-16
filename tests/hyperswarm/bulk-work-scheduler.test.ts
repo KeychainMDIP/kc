@@ -55,16 +55,18 @@ describe('bulk work scheduler', () => {
         await expect(scheduler.waitForIdle()).resolves.toBeUndefined();
     });
 
-    it('admits one job per key and releases the key after failure', async () => {
+    it('admits one active and one pending job per key', async () => {
         const scheduler = createBulkWorkScheduler(1);
         const blocked = deferred<void>();
         const running = scheduler.run('peer', () => blocked.promise);
+        const pending = scheduler.run('peer', async () => 'next');
 
         await expect(scheduler.run('peer', async () => undefined)).rejects.toThrow(
             'bulk work already admitted for peer',
         );
         blocked.reject(new Error('read failed'));
         await expect(running).rejects.toThrow('read failed');
+        await expect(pending).resolves.toBe('next');
         await expect(scheduler.run('peer', async () => 'retry')).resolves.toBe('retry');
     });
 

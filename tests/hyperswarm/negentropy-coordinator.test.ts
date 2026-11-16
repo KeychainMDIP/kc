@@ -4,6 +4,8 @@ import CipherNode from '@mdip/cipher/node';
 import type { ImportPipeline } from '../../services/mediators/hyperswarm/src/import-pipeline.ts';
 import type { ReconciliationWindow } from '../../services/mediators/hyperswarm/src/negentropy/adapter.ts';
 import { normalizePeerCapabilities } from '../../services/mediators/hyperswarm/src/negentropy/protocol.ts';
+import { createBulkWorkScheduler } from '../../services/mediators/hyperswarm/src/bulk-work-scheduler.ts';
+import { createOperationPageBudget } from '../../services/mediators/hyperswarm/src/operation-page-budget.ts';
 
 const mockLogger = {
     debug: jest.fn(),
@@ -144,9 +146,12 @@ describe('Negentropy coordinator', () => {
             maxOpsPerPush: 300, maxBytesPerPush: 512 * 1024, idleTimeoutMs: 120_000,
             repairIntervalMs: 60_000,
             syncStore: store, importPipeline, syncStats: createMediatorSyncStats(), cipher,
+            bulkReads: createBulkWorkScheduler(2),
+            operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getConnection: () => connection,
             createSessionId: () => 'session', createBaseMessage: type => ({ type, time: '', node: '', relays: [] }),
-            sendToPeer, canStartBackgroundPrebuild: () => false, terminatePeerConnection,
+            sendToPeer, sendBulkToPeer: async (key, message) => sendToPeer(key, message),
+            canStartBackgroundPrebuild: () => false, terminatePeerConnection,
             onProtocolViolation: jest.fn(), onSessionClosed, onIndexRefreshed,
         });
         try {
@@ -264,10 +269,13 @@ describe('Negentropy coordinator', () => {
             maxIdsPerLookup: 1_000, maxOpsPerPush: 300, maxBytesPerPush: 512 * 1024,
             idleTimeoutMs: 120_000, syncStore: store, importPipeline, syncStats: createMediatorSyncStats(), cipher,
             repairIntervalMs: 60_000,
+            bulkReads: createBulkWorkScheduler(2),
+            operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getConnection: key => key === peerKey ? connection : undefined,
             createSessionId: () => 'reset-session',
             createBaseMessage: type => ({ type, time: '', node: '', relays: [] }),
-            sendToPeer, canStartBackgroundPrebuild: () => false, terminatePeerConnection,
+            sendToPeer, sendBulkToPeer: async (key, message) => sendToPeer(key, message),
+            canStartBackgroundPrebuild: () => false, terminatePeerConnection,
             onProtocolViolation: jest.fn(), onSessionClosed,
             onIndexRefreshed: async () => {},
         });
@@ -375,6 +383,8 @@ describe('Negentropy coordinator', () => {
         const onSessionClosed = jest.fn(async () => {
             throw callbackError;
         });
+        const bulkReads = createBulkWorkScheduler(2);
+        const cancelBulkReads = jest.spyOn(bulkReads, 'cancel');
         const coordinator = createNegentropyCoordinator({
             version: 2,
             transportFramingVersion: 1,
@@ -391,6 +401,8 @@ describe('Negentropy coordinator', () => {
             importPipeline,
             syncStats: createMediatorSyncStats(),
             cipher: new CipherNode(),
+            bulkReads,
+            operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getConnection: key => key === peerKey ? connection : undefined,
             createSessionId: () => 'test-session',
             createBaseMessage: type => ({
@@ -400,6 +412,7 @@ describe('Negentropy coordinator', () => {
                 relays: [],
             }),
             sendToPeer: () => true,
+            sendBulkToPeer: async () => true,
             canStartBackgroundPrebuild: () => true,
             terminatePeerConnection: () => undefined,
             onProtocolViolation: () => undefined,
@@ -415,7 +428,21 @@ describe('Negentropy coordinator', () => {
         })).toBe(true);
 
         coordinator.removePeer(peerKey, 'test_close');
+        expect(await coordinator.startSession(peerKey, {
+            source: 'connect',
+            modeReason: 'negentropy_supported',
+            initiator: true,
+        })).toBe(true);
+        coordinator.reset();
+        expect(coordinator.getActiveSessionCount()).toBe(0);
+        expect(await coordinator.startSession(peerKey, {
+            source: 'connect',
+            modeReason: 'negentropy_supported',
+            initiator: true,
+        })).toBe(true);
+        cancelBulkReads.mockClear();
         await coordinator.shutdown();
+        expect(cancelBulkReads).toHaveBeenCalledWith(peerKey);
 
         expect(onSessionClosed).toHaveBeenCalledTimes(1);
         expect(mockLogger.error).toHaveBeenCalledWith(
@@ -624,6 +651,8 @@ describe('Negentropy coordinator', () => {
             importPipeline,
             syncStats: createMediatorSyncStats(),
             cipher: new CipherNode(),
+            bulkReads: createBulkWorkScheduler(2),
+            operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getConnection: key => key === peerKey ? connection : undefined,
             createSessionId: () => 'test-session',
             createBaseMessage: type => ({
@@ -633,6 +662,7 @@ describe('Negentropy coordinator', () => {
                 relays: [],
             }),
             sendToPeer,
+            sendBulkToPeer: async () => true,
             canStartBackgroundPrebuild: () => false,
             terminatePeerConnection: () => undefined,
             onProtocolViolation: () => undefined,

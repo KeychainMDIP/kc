@@ -1,4 +1,4 @@
-const FRAME_HEADER_BYTES = 4;
+export const FRAME_HEADER_BYTES = 4;
 const EMPTY_BUFFER: Buffer = Buffer.alloc(0);
 
 export const DEFAULT_MAX_FRAMED_MESSAGE_BYTES = 16 * 1024 * 1024;
