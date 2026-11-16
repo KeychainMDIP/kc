@@ -80,36 +80,3 @@ export function decodeFramedMessages(
         remaining: offset === buffer.length ? EMPTY_BUFFER : Buffer.from(buffer.subarray(offset)),
     };
 }
-
-export class FramedMessageParser {
-    private buffer: Buffer = EMPTY_BUFFER;
-    private readonly maxMessageBytes: number;
-
-    constructor(maxMessageBytes = DEFAULT_MAX_FRAMED_MESSAGE_BYTES) {
-        if (!Number.isInteger(maxMessageBytes) || maxMessageBytes <= 0) {
-            throw new Error('maxMessageBytes must be a positive integer');
-        }
-
-        this.maxMessageBytes = maxMessageBytes;
-    }
-
-    push(chunk: Buffer | Uint8Array): { messages: Buffer[]; error?: string } {
-        const incoming = Buffer.from(chunk);
-        if (incoming.length === 0) {
-            return { messages: [] };
-        }
-
-        this.buffer = this.buffer.length === 0 ? incoming : Buffer.concat([this.buffer, incoming]);
-        const decoded = decodeFramedMessages(this.buffer, this.maxMessageBytes);
-        this.buffer = decoded.error ? EMPTY_BUFFER : decoded.remaining;
-
-        return {
-            messages: decoded.messages,
-            error: decoded.error,
-        };
-    }
-
-    get pendingBytes(): number {
-        return this.buffer.length;
-    }
-}

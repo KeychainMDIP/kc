@@ -158,16 +158,6 @@ const SYNC_MESSAGE_TYPES = new Set<SyncMessage['type']>([
     'neg_close',
 ]);
 
-export function isHyperMessage(value: unknown): value is HyperMessage {
-    if (!value || typeof value !== 'object' || !('type' in value)) {
-        return false;
-    }
-
-    const type = (value as { type?: unknown }).type;
-    return type === 'ping' || type === 'queue'
-        || (typeof type === 'string' && SYNC_MESSAGE_TYPES.has(type as SyncMessage['type']));
-}
-
 export function isSyncMessage(message: HyperMessage): message is SyncMessage {
     return SYNC_MESSAGE_TYPES.has(message.type as SyncMessage['type']);
 }

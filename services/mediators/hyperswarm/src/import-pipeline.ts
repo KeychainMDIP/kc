@@ -1152,7 +1152,6 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
                     pendingSyncRecords.clear();
                     retryDelays.clear();
                     terminalOperationCids.clear();
-                    retryDelays.clear();
                 })();
             }
             return shutdownPromise;
