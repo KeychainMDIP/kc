@@ -1,6 +1,7 @@
 import type CipherNode from '@mdip/cipher/node';
 import type GatekeeperClient from '@mdip/gatekeeper/client';
 import type { Operation } from '@mdip/gatekeeper/types';
+import { childLogger } from '@mdip/common/logger';
 
 import type { ImportPipeline } from './import-pipeline.js';
 import type { ConnectionInfo } from './mediator-state.js';
@@ -10,16 +11,20 @@ import {
 } from './negentropy/observability.js';
 import type { QueueMessage } from './protocol-messages.js';
 import type { MediatorSyncStats } from './sync-stats.js';
-import { hasContentVerifiedOperationId } from './sync-persistence.js';
+import {
+    dedupeOperationsByHash,
+    hasContentVerifiedOperationId,
+} from './sync-persistence.js';
 import { mapOperationToSyncKey } from './sync-mapping.js';
 import {
     chunkOperationsForPush,
     validateOperationPage,
 } from './negentropy/transfer.js';
-import { MAX_RELAY_HINTS } from './protocol-limits.js';
 import { validateOperationContentIds } from './protocol-validation.js';
 import type { OperationPageBudget } from './operation-page-budget.js';
 import type { BulkWorkScheduler } from './bulk-work-scheduler.js';
+
+const log = childLogger({ service: 'hyperswarm-mediator' });
 
 interface QueueCoordinatorOptions {
     registry: string;
@@ -43,6 +48,42 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
     let admittedGossip = 0;
     let accepting = true;
     let shutdownPromise: Promise<void> | null = null;
+
+    async function relayPersistedPage(
+        peerKey: string,
+        persisted: { acceptedOperations: Operation[]; portableTerminalOperations: Operation[] },
+    ): Promise<boolean> {
+        const shareable = dedupeOperationsByHash([
+            ...persisted.acceptedOperations,
+            ...persisted.portableTerminalOperations,
+        ]);
+        let pages: Operation[][];
+        try {
+            pages = chunkOperationsForPush(shareable, {
+                maxOpsPerPush: options.maxOpsPerPage,
+                maxBytesPerPush: options.maxBytesPerPage,
+            });
+        }
+        catch (error) {
+            log.error({ error, peer: peerKey }, 'persisted queue gossip cannot be relayed');
+            return false;
+        }
+        let relayed = true;
+        for (const data of pages) {
+            try {
+                await options.relay({
+                    ...options.createQueueMessage(),
+                    relays: [peerKey],
+                    data,
+                });
+            }
+            catch (error) {
+                relayed = false;
+                log.error({ error, peer: peerKey }, 'persisted queue gossip relay failed');
+            }
+        }
+        return relayed;
+    }
 
     function trackWork<T>(work: Promise<T>): Promise<T> {
         activeWork.add(work);
@@ -97,6 +138,7 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
                 return;
             }
 
+            let relayFailed = false;
             let imported;
             try {
                 imported = await options.getImportPipeline().enqueue({
@@ -105,16 +147,25 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
                     node: message.node,
                     data: message.data,
                     queueGossip: true,
+                    onPersistedPage: async persisted => {
+                        if (!await relayPersistedPage(peerKey, persisted)) {
+                            relayFailed = true;
+                        }
+                    },
                 });
             }
             catch (error) {
                 batchesSeen.delete(batchHash);
                 throw error;
             }
+            if (imported.retryable) {
+                batchesSeen.delete(batchHash);
+                return;
+            }
             const handledIds = new Set([...imported.knownIds, ...imported.persistedIds]);
-            const complete = !imported.retryable
-            && (imported.pendingIds?.length ?? 0) === 0
+            const complete = (imported.pendingIds?.length ?? 0) === 0
             && (imported.capacityDeferredIds?.length ?? 0) === 0
+            && (imported.unaddressableOperations?.length ?? 0) === 0
             && message.data.every(operation => {
                 const mapped = mapOperationToSyncKey(operation);
                 return mapped.ok
@@ -123,15 +174,19 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
             });
             if (!complete) {
                 batchesSeen.delete(batchHash);
-                return;
             }
-            const relays = (Array.isArray(message.relays) ? message.relays : [])
-                .filter(relay => relay !== peerKey)
-                .slice(-(MAX_RELAY_HINTS - 1));
-            await options.relay({
-                ...message,
-                relays: [...relays, peerKey],
-            });
+            if ((imported.acceptedOperations?.length ?? 0) > 0
+                || (imported.portableTerminalOperations?.length ?? 0) > 0) {
+                if (!await relayPersistedPage(peerKey, {
+                    acceptedOperations: imported.acceptedOperations ?? [],
+                    portableTerminalOperations: imported.portableTerminalOperations ?? [],
+                })) {
+                    relayFailed = true;
+                }
+            }
+            if (relayFailed) {
+                batchesSeen.delete(batchHash);
+            }
         }
         finally {
             admittedGossip -= 1;

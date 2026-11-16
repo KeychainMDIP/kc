@@ -55,6 +55,9 @@ const importResult = {
     persistedIds: [],
     pendingIds: [],
     capacityDeferredIds: [],
+    acceptedOperations: [],
+    portableTerminalOperations: [],
+    unaddressableOperations: [],
     retryable: false,
 };
 
@@ -114,7 +117,7 @@ describe('ordered catch-up coordinator shutdown', () => {
         const importPipeline = {
             available: true, recovering: false,
             enqueue: jest.fn<ImportPipeline['enqueue']>(async (_request, onComplete) => {
-                const result = { knownIds: [], persistedIds: [], pendingIds: [], capacityDeferredIds: [], retryable: true, indexEpochChanged };
+                const result = { ...importResult, retryable: true, indexEpochChanged };
                 onComplete?.(result);
                 return result;
             }),

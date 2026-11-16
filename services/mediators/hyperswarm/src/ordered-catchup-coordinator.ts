@@ -415,6 +415,9 @@ export function createOrderedCatchupCoordinator(
                 persistedIds: [],
                 pendingIds: [],
                 capacityDeferredIds: [],
+                acceptedOperations: [],
+                portableTerminalOperations: [],
+                unaddressableOperations: [],
                 retryable: true,
             });
         });

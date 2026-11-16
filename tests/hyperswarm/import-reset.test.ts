@@ -5,10 +5,17 @@ import InMemoryOperationSyncStore from '../../services/mediators/hyperswarm/src/
 import { createImportPipeline, type ImportPipelineOptions } from '../../services/mediators/hyperswarm/src/import-pipeline.ts';
 import { createMediatorSyncStats } from '../../services/mediators/hyperswarm/src/sync-stats.ts';
 
-const operation: Operation = {
+const unsignedOperation: Operation = {
     type: 'create', created: '2026-01-01T00:00:00.000Z',
     mdip: { version: 1, type: 'agent', registry: 'hyperswarm' },
-    signature: { signed: '2026-01-01T00:00:00.000Z', hash: 'a'.repeat(64), value: 'signature' },
+};
+const operation: Operation = {
+    ...unsignedOperation,
+    signature: {
+        signed: unsignedOperation.created!,
+        hash: new CipherNode().hashJSON(unsignedOperation),
+        value: 'signature',
+    },
 };
 
 function fixture() {
@@ -96,9 +103,20 @@ describe('Hyperswarm import reset boundary', () => {
     it('stops old chunks and queued sessions when reset interrupts admission', async () => {
         const { pipeline, importBatch, processEvents, reset } = fixture();
         await pipeline.refreshIndex('startup');
-        const batch = Array.from({ length: 250 }, (_, index) => ({
-            ...operation, signature: { ...operation.signature!, hash: index.toString(16).padStart(64, '0') },
-        }));
+        const cipher = new CipherNode();
+        const batch = Array.from({ length: 250 }, (_, index) => {
+            const unsigned: Operation = {
+                type: 'create',
+                created: new Date(Date.UTC(2026, 0, 1, 0, 0, 0, index)).toISOString(),
+                mdip: operation.mdip,
+            };
+            return {
+                ...unsigned,
+                signature: {
+                    signed: unsigned.created!, hash: cipher.hashJSON(unsigned), value: 'signature',
+                },
+            };
+        });
         importBatch.mockImplementationOnce(async () => {
             reset();
             return { queued: 100, processed: 0, rejected: 0, total: 100, rejectedIndices: [] };

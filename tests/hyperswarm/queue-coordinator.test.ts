@@ -3,7 +3,10 @@ import CipherNode from '@mdip/cipher/node';
 import type GatekeeperClient from '@mdip/gatekeeper/client';
 import type { Operation } from '@mdip/gatekeeper/types';
 
-import type { ImportPipeline } from '../../services/mediators/hyperswarm/src/import-pipeline.ts';
+import type {
+    ImportPipeline,
+    ImportQueueResult,
+} from '../../services/mediators/hyperswarm/src/import-pipeline.ts';
 import type { ConnectionInfo } from '../../services/mediators/hyperswarm/src/mediator-state.ts';
 import type { QueueMessage } from '../../services/mediators/hyperswarm/src/protocol-messages.ts';
 import { createQueueCoordinator as createQueueCoordinatorImpl } from '../../services/mediators/hyperswarm/src/queue-coordinator.ts';
@@ -44,6 +47,20 @@ function makeOperation(created = '2026-08-01T12:00:00.000Z'): { cipher: CipherNo
     };
 }
 
+function importResult(overrides: Partial<ImportQueueResult> = {}): ImportQueueResult {
+    return {
+        knownIds: [],
+        persistedIds: [],
+        pendingIds: [],
+        capacityDeferredIds: [],
+        acceptedOperations: [],
+        portableTerminalOperations: [],
+        unaddressableOperations: [],
+        retryable: false,
+        ...overrides,
+    };
+}
+
 describe('queue coordinator', () => {
     const connection = {} as ConnectionInfo;
 
@@ -74,8 +91,8 @@ describe('queue coordinator', () => {
     it('leaves gossip unseen and the publication queue intact while processing is paused', async () => {
         let available = false;
         const { cipher, operation } = makeOperation();
-        const enqueue = jest.fn(async () => ({
-            knownIds: [], persistedIds: [operation.signature!.hash], pendingIds: [], capacityDeferredIds: [], retryable: false,
+        const enqueue = jest.fn(async () => importResult({
+            persistedIds: [operation.signature!.hash], acceptedOperations: [operation],
         }));
         const getQueue = jest.fn(async () => []);
         const clearQueue = jest.fn(async () => true);
@@ -176,13 +193,10 @@ describe('queue coordinator', () => {
         const order: string[] = [];
         const enqueue = jest.fn(async (request: { phase?: string }) => {
             order.push(request.phase ?? 'remote');
-            return {
-                knownIds: [],
+            return importResult({
                 persistedIds: [operation.signature!.hash],
-                pendingIds: [],
-                capacityDeferredIds: [],
-                retryable: false,
-            };
+                acceptedOperations: [operation],
+            });
         });
         const clearQueue = jest.fn(async () => { order.push('clear'); });
         const relay = jest.fn(async () => { order.push('relay'); });
@@ -229,13 +243,12 @@ describe('queue coordinator', () => {
         let attempt = 0;
         const enqueue = jest.fn(async () => {
             attempt += 1;
-            return attempt === 1 ? {
-                knownIds: [], persistedIds: [], pendingIds: [operation.signature!.hash],
-                capacityDeferredIds: [], retryable: false,
-            } : {
-                knownIds: [], persistedIds: [operation.signature!.hash], pendingIds: [],
-                capacityDeferredIds: [], retryable: false,
-            };
+            return attempt === 1
+                ? importResult({ pendingIds: [operation.signature!.hash] })
+                : importResult({
+                    persistedIds: [operation.signature!.hash],
+                    acceptedOperations: [operation],
+                });
         });
         const relay = jest.fn(async (_message: QueueMessage) => undefined);
         const coordinator = createQueueCoordinator({
@@ -265,16 +278,149 @@ describe('queue coordinator', () => {
         expect(relay).toHaveBeenCalledTimes(1);
     });
 
+    it('relays only persisted accepted and portable-terminal subsets', async () => {
+        const accepted = makeOperation('2026-08-01T12:00:00.000Z');
+        const terminal = makeOperation('2026-08-01T12:00:01.000Z').operation;
+        const pending = makeOperation('2026-08-01T12:00:02.000Z').operation;
+        const unrelatedInvalid = makeOperation('2026-08-01T12:00:03.000Z').operation;
+        const relay = jest.fn(async (_message: QueueMessage) => undefined);
+        const coordinator = createQueueCoordinator({
+            registry: 'hyperswarm',
+            maxOpsPerPage: 1,
+            maxBytesPerPage: 512 * 1024,
+            gatekeeper: {
+                getQueue: jest.fn(async () => []),
+                clearQueue: jest.fn(async () => true),
+            } as unknown as Pick<GatekeeperClient, 'getQueue' | 'clearQueue'>,
+            cipher: accepted.cipher,
+            syncStats: createMediatorSyncStats(),
+            bulkReads: createBulkWorkScheduler(2),
+            operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
+            getImportPipeline: () => ({
+                available: true,
+                enqueue: jest.fn(async () => importResult({
+                    persistedIds: [accepted.operation.signature!.hash, terminal.signature!.hash],
+                    pendingIds: [pending.signature!.hash],
+                    acceptedOperations: [accepted.operation],
+                    portableTerminalOperations: [terminal],
+                    unaddressableOperations: [unrelatedInvalid],
+                })),
+            } as unknown as ImportPipeline),
+            getNodeKey: () => 'local-key',
+            createQueueMessage: () => ({ type: 'queue', time: 'local-time', node: 'local', relays: [] }),
+            relay,
+            onProtocolViolation: jest.fn(),
+        });
+
+        await coordinator.handleMessage('peer-key', {
+            type: 'queue', time: 'untrusted-time', node: 'untrusted-node', relays: [],
+            data: [pending],
+        }, connection);
+
+        expect(relay).toHaveBeenCalledTimes(2);
+        expect(relay.mock.calls.map(([message]) => message)).toEqual([
+            {
+                type: 'queue', time: 'local-time', node: 'local', relays: ['peer-key'],
+                data: [accepted.operation],
+            },
+            {
+                type: 'queue', time: 'local-time', node: 'local', relays: ['peer-key'],
+                data: [terminal],
+            },
+        ]);
+    });
+
+    it('drains persisted pages after a relay failure without failing the import', async () => {
+        const first = makeOperation('2026-08-01T12:00:00.000Z');
+        const second = makeOperation('2026-08-01T12:00:01.000Z').operation;
+        const enqueue = jest.fn<ImportPipeline['enqueue']>()
+            .mockImplementationOnce(async request => {
+                if (request.kind !== 'remote' || !request.onPersistedPage) {
+                    throw new Error('missing persisted-page callback');
+                }
+                await request.onPersistedPage({
+                    acceptedOperations: [first.operation],
+                    portableTerminalOperations: [],
+                });
+                await request.onPersistedPage({
+                    acceptedOperations: [second],
+                    portableTerminalOperations: [],
+                });
+                return importResult({ persistedIds: [first.operation.signature!.hash] });
+            })
+            .mockResolvedValueOnce(importResult({ knownIds: [first.operation.signature!.hash] }));
+        const relay = jest.fn<(_message: QueueMessage) => Promise<void>>()
+            .mockRejectedValueOnce(new Error('relay unavailable'))
+            .mockResolvedValue(undefined);
+        const coordinator = createQueueCoordinator({
+            registry: 'hyperswarm',
+            maxOpsPerPage: 300,
+            maxBytesPerPage: 512 * 1024,
+            gatekeeper: {
+                getQueue: jest.fn(async () => []),
+                clearQueue: jest.fn(async () => true),
+            } as unknown as Pick<GatekeeperClient, 'getQueue' | 'clearQueue'>,
+            cipher: first.cipher,
+            syncStats: createMediatorSyncStats(),
+            bulkReads: createBulkWorkScheduler(2),
+            operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
+            getImportPipeline: () => ({ available: true, enqueue } as unknown as ImportPipeline),
+            getNodeKey: () => 'local-key',
+            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            relay,
+            onProtocolViolation: jest.fn(),
+        });
+        const message: QueueMessage = {
+            type: 'queue', time: '', node: 'peer', relays: [], data: [first.operation],
+        };
+
+        await expect(coordinator.handleMessage('peer-key', message, connection)).resolves.toBeUndefined();
+        expect(relay).toHaveBeenCalledTimes(2);
+        await coordinator.handleMessage('peer-key', message, connection);
+        expect(enqueue).toHaveBeenCalledTimes(2);
+    });
+
+    it('relays nothing when the import result is retryable', async () => {
+        const { cipher, operation } = makeOperation();
+        const enqueue = jest.fn(async () => importResult({
+            acceptedOperations: [operation],
+            retryable: true,
+        }));
+        const relay = jest.fn(async () => undefined);
+        const coordinator = createQueueCoordinator({
+            registry: 'hyperswarm',
+            maxOpsPerPage: 300,
+            maxBytesPerPage: 512 * 1024,
+            gatekeeper: {
+                getQueue: jest.fn(async () => []),
+                clearQueue: jest.fn(async () => true),
+            } as unknown as Pick<GatekeeperClient, 'getQueue' | 'clearQueue'>,
+            cipher,
+            syncStats: createMediatorSyncStats(),
+            bulkReads: createBulkWorkScheduler(2),
+            operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
+            getImportPipeline: () => ({ available: true, enqueue } as unknown as ImportPipeline),
+            getNodeKey: () => 'local-key',
+            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            relay,
+            onProtocolViolation: jest.fn(),
+        });
+        const message = { type: 'queue' as const, time: '', node: 'peer', relays: [], data: [operation] };
+
+        await coordinator.handleMessage('peer-key', message, connection);
+        await coordinator.handleMessage('peer-key', message, connection);
+
+        expect(enqueue).toHaveBeenCalledTimes(2);
+        expect(relay).not.toHaveBeenCalled();
+    });
+
     it('drops gossip on local page pressure without penalizing the peer and permits retry', async () => {
         const { cipher, operation } = makeOperation();
         const operationPages = createOperationPageBudget(1, 512 * 1024);
         const held = operationPages.reserve(1)!;
-        const enqueue = jest.fn(async () => ({
-            knownIds: [],
+        const enqueue = jest.fn(async () => importResult({
             persistedIds: [operation.signature!.hash],
-            pendingIds: [],
-            capacityDeferredIds: [],
-            retryable: false,
+            acceptedOperations: [operation],
         }));
         const relay = jest.fn(async () => undefined);
         const onProtocolViolation = jest.fn();
@@ -321,13 +467,10 @@ describe('queue coordinator', () => {
         const third = makeOperation('2026-08-01T12:00:02.000Z');
         const completions: Array<() => void> = [];
         const enqueue = jest.fn((request: { data: Operation[] }) => new Promise(resolve => {
-            completions.push(() => resolve({
-                knownIds: [],
+            completions.push(() => resolve(importResult({
                 persistedIds: request.data.map(operation => operation.signature!.hash),
-                pendingIds: [],
-                capacityDeferredIds: [],
-                retryable: false,
-            }));
+                acceptedOperations: request.data,
+            })));
         }));
         const relay = jest.fn(async () => undefined);
         const coordinator = createQueueCoordinator({
@@ -367,7 +510,7 @@ describe('queue coordinator', () => {
         expect(relay).toHaveBeenCalledTimes(3);
     });
 
-    it('keeps forwarded relay hints within the protocol limit', async () => {
+    it('replaces untrusted relay hints with the immediate sender', async () => {
         const { cipher, operation } = makeOperation();
         const relay = jest.fn(async (_message: QueueMessage) => undefined);
         const coordinator = createQueueCoordinator({
@@ -384,12 +527,9 @@ describe('queue coordinator', () => {
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getImportPipeline: () => ({
                 available: true,
-                enqueue: jest.fn(async () => ({
-                    knownIds: [],
+                enqueue: jest.fn(async () => importResult({
                     persistedIds: [operation.signature!.hash],
-                    pendingIds: [],
-                    capacityDeferredIds: [],
-                    retryable: false,
+                    acceptedOperations: [operation],
                 })),
             } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
@@ -405,19 +545,17 @@ describe('queue coordinator', () => {
         }, connection);
 
         const forwarded = relay.mock.calls[0][0];
-        expect(forwarded.relays).toHaveLength(64);
-        expect(forwarded.relays).toContain(peerKey);
-        expect(forwarded.relays).not.toContain(relays[0]);
+        expect(forwarded.relays).toEqual([peerKey]);
     });
 
     it('rejects malformed gossip and permits retry after an import failure', async () => {
         const { cipher, operation } = makeOperation();
         const enqueue = jest.fn<ImportPipeline['enqueue']>()
             .mockRejectedValueOnce(new Error('import failed'))
-            .mockResolvedValueOnce({
-                knownIds: [], persistedIds: [operation.signature!.hash], pendingIds: [],
-                capacityDeferredIds: [], retryable: false,
-            });
+            .mockResolvedValueOnce(importResult({
+                persistedIds: [operation.signature!.hash],
+                acceptedOperations: [operation],
+            }));
         const relay = jest.fn(async () => undefined);
         const onProtocolViolation = jest.fn();
         const coordinator = createQueueCoordinator({
@@ -464,14 +602,13 @@ describe('queue coordinator', () => {
     it('retains a local queue when merging reports backpressure', async () => {
         const { cipher, operation } = makeOperation();
         const enqueue = jest.fn<ImportPipeline['enqueue']>()
-            .mockResolvedValueOnce({
-                knownIds: [], persistedIds: [operation.signature!.hash], pendingIds: [],
-                capacityDeferredIds: [], retryable: false,
-            })
-            .mockResolvedValueOnce({
-                knownIds: [], persistedIds: [], pendingIds: [],
-                capacityDeferredIds: [operation.signature!.hash], retryable: false,
-            });
+            .mockResolvedValueOnce(importResult({
+                persistedIds: [operation.signature!.hash],
+                acceptedOperations: [operation],
+            }))
+            .mockResolvedValueOnce(importResult({
+                capacityDeferredIds: [operation.signature!.hash],
+            }));
         const clearQueue = jest.fn(async () => true);
         const coordinator = createQueueCoordinator({
             registry: 'hyperswarm',
@@ -558,12 +695,9 @@ describe('queue coordinator', () => {
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getImportPipeline: () => ({
                 available: true,
-                enqueue: jest.fn(async () => ({
-                    knownIds: [],
+                enqueue: jest.fn(async () => importResult({
                     persistedIds: batch.map(operation => operation.signature!.hash),
-                    pendingIds: [],
-                    capacityDeferredIds: [],
-                    retryable: false,
+                    acceptedOperations: batch,
                 })),
             } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',

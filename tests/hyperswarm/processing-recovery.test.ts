@@ -16,10 +16,17 @@ import { createBulkWorkScheduler } from '../../services/mediators/hyperswarm/src
 import { createOperationPageBudget } from '../../services/mediators/hyperswarm/src/operation-page-budget.ts';
 import TestHelper from '../gatekeeper/helper.ts';
 
-const operation: Operation = {
+const unsignedOperation: Operation = {
     type: 'create', created: '2026-01-01T00:00:00.000Z',
     mdip: { version: 1, type: 'agent', registry: 'hyperswarm' },
-    signature: { signed: '2026-01-01T00:00:00.000Z', hash: 'a'.repeat(64), value: 'signature' },
+};
+const operation: Operation = {
+    ...unsignedOperation,
+    signature: {
+        signed: unsignedOperation.created!,
+        hash: new CipherNode().hashJSON(unsignedOperation),
+        value: 'signature',
+    },
 };
 const request = { kind: 'remote' as const, name: 'peer', data: [operation] };
 function makeOperations(count: number): Operation[] {
@@ -279,8 +286,8 @@ describe('Gatekeeper processing recovery', () => {
             await jest.advanceTimersByTimeAsync(2_000);
             await expect(first).resolves.toMatchObject({ retryable: false });
             await expect(second).resolves.toMatchObject({ retryable: false });
-            expect(gatekeeper.importBatch).toHaveBeenCalledTimes(2);
-            expect(gatekeeper.processEvents).toHaveBeenCalledTimes(3);
+            expect(gatekeeper.importBatch).toHaveBeenCalledTimes(1);
+            expect(gatekeeper.processEvents).toHaveBeenCalledTimes(2);
             expect(gatekeeper.getStatus).toHaveBeenCalledTimes(2);
             expect(gatekeeper.getStatus).toHaveBeenCalledWith(expect.objectContaining({ timeoutMs: 5_000, maxResponseBytes: 65_536 }));
             const recoveryLogs = jest.mocked(logger.child).mock.results.flatMap(child => jest.mocked((child.value as typeof logger).info).mock.calls);

@@ -241,9 +241,13 @@ describe('Negentropy coordinator', () => {
         let releaseImport!: () => void;
         const held = new Promise<void>(resolve => { releaseImport = resolve; });
         const enqueue = jest.fn<ImportPipeline['enqueue']>(async request => {
-            if (request.kind !== phase) return { knownIds: [], persistedIds: [], pendingIds: [], capacityDeferredIds: [], retryable: false };
+            const base = {
+                knownIds: [], persistedIds: [], pendingIds: [], capacityDeferredIds: [],
+                acceptedOperations: [], portableTerminalOperations: [], unaddressableOperations: [],
+            };
+            if (request.kind !== phase) return { ...base, retryable: false };
             if (phase === 'remote') await held;
-            return { knownIds: [], persistedIds: [], pendingIds: [], capacityDeferredIds: [], retryable: true,
+            return { ...base, retryable: true,
                 indexEpochChanged, dependencyUnavailable: !indexEpochChanged };
         });
         let recovering = phase === 'remote';
@@ -367,7 +371,9 @@ describe('Negentropy coordinator', () => {
             },
             async enqueue() {
                 return {
-                    knownIds: [], persistedIds: [], pendingIds: [], capacityDeferredIds: [], retryable: false,
+                    knownIds: [], persistedIds: [], pendingIds: [], capacityDeferredIds: [],
+                    acceptedOperations: [], portableTerminalOperations: [], unaddressableOperations: [],
+                    retryable: false,
                 };
             },
             async waitForIdle() {},
@@ -624,7 +630,9 @@ describe('Negentropy coordinator', () => {
             get running() { return 0; },
             async enqueue() {
                 return {
-                    knownIds: [], persistedIds: [], pendingIds: [], capacityDeferredIds: [], retryable: false,
+                    knownIds: [], persistedIds: [], pendingIds: [], capacityDeferredIds: [],
+                    acceptedOperations: [], portableTerminalOperations: [], unaddressableOperations: [],
+                    retryable: false,
                 };
             },
             async waitForIdle() {},

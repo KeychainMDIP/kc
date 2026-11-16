@@ -23,6 +23,7 @@ import {
 import { mapOperationToSyncKey } from './sync-mapping.js';
 import { resolveAcceptedOperationsToPersist } from './sync-store-mirroring.js';
 import type { MediatorSyncStats } from './sync-stats.js';
+import { chunkOperationsForPush, estimateOperationBytes } from './negentropy/transfer.js';
 
 const log = childLogger({ service: 'hyperswarm-mediator' });
 const REGISTRY = 'hyperswarm';
@@ -34,6 +35,8 @@ const PROCESSING_RECOVERY_MS = 5 * 60_000;
 const STATUS_TIMEOUT_MS = 5_000;
 const MAX_RECOVERY_DELAY_MS = 5_000;
 const MAX_RETRY_DELAY_IDS = 25_000;
+const MAX_RESULT_OPERATIONS = 300;
+const MAX_RESULT_BYTES = 512 * 1024;
 export const TERMINAL_REJECTED_SYNC_ORDER = Number.MAX_SAFE_INTEGER;
 
 export interface ImportQueueResult {
@@ -41,10 +44,20 @@ export interface ImportQueueResult {
     persistedIds: string[];
     pendingIds: string[];
     capacityDeferredIds: string[];
+    acceptedOperations: Operation[];
+    portableTerminalOperations: Operation[];
+    unaddressableOperations: Operation[];
     retryable: boolean;
     indexEpochChanged?: boolean;
     dependencyUnavailable?: boolean;
     indexRefreshRequired?: boolean;
+}
+
+interface PersistProcessedOperationsResult {
+    persistedIds: string[];
+    acceptedOperations: Operation[];
+    portableTerminalOperations: Operation[];
+    unaddressableOperations: Operation[];
 }
 
 interface ImportRequestBase {
@@ -53,11 +66,17 @@ interface ImportRequestBase {
     indexEpoch?: string;
 }
 
+export interface PersistedOperationsPage {
+    acceptedOperations: Operation[];
+    portableTerminalOperations: Operation[];
+}
+
 interface RemoteImportRequest extends ImportRequestBase {
     kind: 'remote';
     node?: string;
     queueGossip?: boolean;
     cancelled?: () => boolean;
+    onPersistedPage?: (page: PersistedOperationsPage) => Promise<void>;
 }
 
 interface LocalQueueImportRequest extends ImportRequestBase {
@@ -116,6 +135,9 @@ function emptyResult(retryable = false): ImportQueueResult {
         persistedIds: [],
         pendingIds: [],
         capacityDeferredIds: [],
+        acceptedOperations: [],
+        portableTerminalOperations: [],
+        unaddressableOperations: [],
         retryable,
     };
 }
@@ -383,11 +405,15 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
         rejectedOperations: Operation[],
         source: string,
         retryIds: Iterable<string> = [],
-    ): Promise<string[]> {
+    ): Promise<PersistProcessedOperationsResult> {
         const accepted = mapAcceptedOperationsToSyncRecords(acceptedOperations);
-        const verifiedRejectedOperations = rejectedOperations.filter(
-            operation => hasContentVerifiedOperationId(operation, cipher)
-        );
+        const verifiedRejectedOperations: Operation[] = [];
+        const unaddressableOperations: Operation[] = [];
+        for (const operation of rejectedOperations) {
+            (hasContentVerifiedOperationId(operation, cipher)
+                ? verifiedRejectedOperations
+                : unaddressableOperations).push(operation);
+        }
         const rejectedHashMismatches = rejectedOperations.length - verifiedRejectedOperations.length;
         const rejected = mapAcceptedOperationsToSyncRecords(verifiedRejectedOperations.map(operation => ({
             operation,
@@ -430,7 +456,12 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
                 attempted: operationCount,
                 invalid,
             }, 'sync-store persist skipped');
-            return [];
+            return {
+                persistedIds: [],
+                acceptedOperations: [],
+                portableTerminalOperations: [],
+                unaddressableOperations,
+            };
         }
 
         let result;
@@ -475,18 +506,13 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
                 pendingSyncRecords.delete(record.id);
             }
         }
-        const terminalRecordIds = new Set(
-            attemptedRecords
-                .filter(record => record.syncOrder === TERMINAL_REJECTED_SYNC_ORDER)
-                .map(record => record.id)
-        );
-        await recordTerminalOperationCids(
-            verifiedRejectedOperations.filter(operation => {
-                const mapped = mapOperationToSyncKey(operation);
-                return mapped.ok && terminalRecordIds.has(mapped.value.idHex);
-            }),
-            source,
-        );
+        const portableTerminalOperations = attemptedRecords
+            .filter(record => record.syncOrder === TERMINAL_REJECTED_SYNC_ORDER)
+            .map(record => record.operation);
+        const persistedAcceptedOperations = attemptedRecords
+            .filter(record => record.syncOrder !== TERMINAL_REJECTED_SYNC_ORDER)
+            .map(record => record.operation);
+        await recordTerminalOperationCids(portableTerminalOperations, source);
 
         if (result.inserted > 0 || result.updated > 0) {
             onStoreChanged(storeChangeSource);
@@ -510,7 +536,12 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
         );
         const persistedIds = attemptedRecords.map(record => record.id);
         clearRetryDelays(persistedIds);
-        return persistedIds;
+        return {
+            persistedIds,
+            acceptedOperations: persistedAcceptedOperations,
+            portableTerminalOperations,
+            unaddressableOperations,
+        };
     }
 
     async function mergeBatch(
@@ -519,12 +550,60 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
         expectedIndexEpoch?: string,
         cancelled?: () => boolean,
         source = 'local_queue',
+        onPersistedPage?: RemoteImportRequest['onPersistedPage'],
     ): Promise<Omit<ImportQueueResult, 'knownIds'>> {
         const persistedIds = new Set<string>();
         const pendingIds = new Set<string>();
         const capacityDeferredIds = new Set<string>();
+        const acceptedOperations: Operation[] = [];
+        const portableTerminalOperations: Operation[] = [];
+        const unaddressableOperations: Operation[] = [];
+        let requestFingerprints: Set<string> | undefined;
+        const resultKeys = new Set<string>();
+        let resultBytes = 0;
         let retryable = false;
         let indexRefreshRequired = false;
+
+        function retainResult(operation: Operation, target: Operation[], key: string): void {
+            if (resultKeys.has(key)) return;
+            const bytes = estimateOperationBytes(operation);
+            if (resultKeys.size >= MAX_RESULT_OPERATIONS || resultBytes + bytes > MAX_RESULT_BYTES) return;
+            resultKeys.add(key);
+            resultBytes += bytes;
+            target.push(operation);
+        }
+
+        async function publishPersistedPage(persisted: PersistProcessedOperationsResult): Promise<void> {
+            for (const operation of persisted.unaddressableOperations) {
+                requestFingerprints ??= new Set(batch.map(item => cipher.hashJSON(item)));
+                const fingerprint = cipher.hashJSON(operation);
+                if (requestFingerprints.has(fingerprint)) {
+                    retainResult(operation, unaddressableOperations, `operation:${fingerprint}`);
+                }
+            }
+            if (onPersistedPage) {
+                const accepted = new Set(persisted.acceptedOperations);
+                for (const operations of chunkOperationsForPush([
+                    ...persisted.acceptedOperations,
+                    ...persisted.portableTerminalOperations,
+                ], { maxOpsPerPush: MAX_RESULT_OPERATIONS, maxBytesPerPush: MAX_RESULT_BYTES })) {
+                    await onPersistedPage({
+                        acceptedOperations: operations.filter(operation => accepted.has(operation)),
+                        portableTerminalOperations: operations.filter(operation => !accepted.has(operation)),
+                    });
+                }
+                return;
+            }
+            for (const [operations, target] of [
+                [persisted.acceptedOperations, acceptedOperations],
+                [persisted.portableTerminalOperations, portableTerminalOperations],
+            ] as const) {
+                for (const operation of operations) {
+                    const id = getVerifiedOperationId(operation);
+                    if (id && requestIds.has(id)) retainResult(operation, target, `id:${id}`);
+                }
+            }
+        }
 
         for (let offset = 0; offset < batch.length || processRetryNeeded; offset += GATEKEEPER_BATCH_SIZE) {
             assertCurrentEpoch(expectedIndexEpoch);
@@ -548,9 +627,6 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
                     .map(getVerifiedOperationId)
                     .filter((id): id is string => !!id)
             );
-            if (imported.capacityDeferredOperations.some(operation => !getVerifiedOperationId(operation))) {
-                retryable = true;
-            }
             const retryIds = new Set(chunk.map(mapOperationToSyncKey)
                 .filter(mapped => mapped.ok)
                 .map(mapped => mapped.value.idHex));
@@ -592,7 +668,8 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
                             'mergeBatch',
                             retryIds,
                         );
-                        for (const id of pagePersisted) {
+                        await publishPersistedPage(pagePersisted);
+                        for (const id of pagePersisted.persistedIds) {
                             if (requestIds.has(id)) {
                                 persistedIds.add(id);
                             }
@@ -625,7 +702,8 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
                     'mergeBatch',
                     retryIds,
                 );
-                for (const id of rejectedPersisted) {
+                await publishPersistedPage(rejectedPersisted);
+                for (const id of rejectedPersisted.persistedIds) {
                     if (requestIds.has(id)) {
                         persistedIds.add(id);
                     }
@@ -650,7 +728,8 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
                         capacityDeferredIds.add(id);
                     }
                     else {
-                        retryable = true;
+                        const fingerprint = cipher.hashJSON(operation);
+                        retainResult(operation, unaddressableOperations, `operation:${fingerprint}`);
                     }
                 }
                 break;
@@ -669,6 +748,9 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
             persistedIds: Array.from(persistedIds),
             pendingIds: Array.from(pendingIds),
             capacityDeferredIds: Array.from(capacityDeferredIds),
+            acceptedOperations: dedupeOperationsByHash(acceptedOperations),
+            portableTerminalOperations: dedupeOperationsByHash(portableTerminalOperations),
+            unaddressableOperations,
             retryable,
             ...(indexRefreshRequired && { indexRefreshRequired: true }),
         };
@@ -676,6 +758,7 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
 
     async function mergeWithRetryDelays(
         batch: Operation[], expectedIndexEpoch?: string, cancelled?: () => boolean, source = 'local_queue',
+        onPersistedPage?: RemoteImportRequest['onPersistedPage'],
     ): Promise<Omit<ImportQueueResult, 'knownIds'>> {
         const delayed = filterRetryDelayedOperations(batch);
         if (delayed.operations.length === 0) {
@@ -683,12 +766,17 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
                 persistedIds: [],
                 pendingIds: delayed.pendingIds,
                 capacityDeferredIds: delayed.capacityDeferredIds,
+                acceptedOperations: [],
+                portableTerminalOperations: [],
+                unaddressableOperations: [],
                 retryable: false,
             };
         }
 
         const requestIds = new Set(batch.map(getVerifiedOperationId).filter((id): id is string => !!id));
-        const merged = await mergeBatch(delayed.operations, requestIds, expectedIndexEpoch, cancelled, source);
+        const merged = await mergeBatch(
+            delayed.operations, requestIds, expectedIndexEpoch, cancelled, source, onPersistedPage,
+        );
         const persistedIds = new Set(merged.persistedIds);
         return {
             persistedIds: merged.persistedIds,
@@ -698,6 +786,9 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
                 ...delayed.capacityDeferredIds,
                 ...merged.capacityDeferredIds,
             ])).filter(id => !persistedIds.has(id)),
+            acceptedOperations: merged.acceptedOperations,
+            portableTerminalOperations: merged.portableTerminalOperations,
+            unaddressableOperations: merged.unaddressableOperations,
             retryable: merged.retryable,
             ...(merged.indexRefreshRequired && { indexRefreshRequired: true }),
         };
@@ -778,7 +869,7 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
 
             if (request.kind === 'local_queue') {
                 if (request.phase === 'persist') {
-                    result.persistedIds = await persistProcessedOperations(request.data, [], 'flushQueue');
+                    Object.assign(result, await persistProcessedOperations(request.data, [], 'flushQueue'));
                 }
                 else {
                     Object.assign(result, await mergeWithRetryDelays(request.data, expectedIndexEpoch));
@@ -800,11 +891,11 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
                 if (request.cancelled?.()) {
                     return result;
                 }
-                result.persistedIds = await persistProcessedOperations(
+                Object.assign(result, await persistProcessedOperations(
                     [],
                     terminal,
                     'negentropy_terminal_unresolved',
-                );
+                ));
                 return result;
             }
 
@@ -815,8 +906,13 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
                 }
             }
 
+            const addressableOperations = request.data.filter(operation => {
+                if (getVerifiedOperationId(operation)) return true;
+                result.unaddressableOperations.push(operation);
+                return false;
+            });
             const filtered = await filterKnownOperations(
-                request.data,
+                addressableOperations,
                 syncStore,
                 KNOWN_OPERATION_LOOKUP_LIMIT,
             );
@@ -843,7 +939,17 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
             log.debug(
                 `* merging batch (${filtered.operations.length}/${request.data.length} events) from: ${shortName(request.name)} (${request.node || 'anon'}) *`
             );
-            Object.assign(result, await mergeWithRetryDelays(filtered.operations, expectedIndexEpoch, request.cancelled, request.name));
+            const merged = await mergeWithRetryDelays(
+                filtered.operations, expectedIndexEpoch, request.cancelled, request.name, request.onPersistedPage,
+            );
+            result.persistedIds = merged.persistedIds;
+            result.pendingIds = merged.pendingIds;
+            result.capacityDeferredIds = merged.capacityDeferredIds;
+            result.acceptedOperations = merged.acceptedOperations;
+            result.portableTerminalOperations = merged.portableTerminalOperations;
+            result.unaddressableOperations.push(...merged.unaddressableOperations);
+            result.retryable = merged.retryable;
+            if (merged.indexRefreshRequired) result.indexRefreshRequired = true;
         }
         catch (error) {
             result.retryable = true;
