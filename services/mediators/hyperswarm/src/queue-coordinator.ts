@@ -9,6 +9,8 @@ import {
 } from './negentropy/observability.js';
 import type { QueueMessage } from './protocol-messages.js';
 import type { MediatorSyncStats } from './sync-stats.js';
+import { hasContentVerifiedOperationId } from './sync-persistence.js';
+import { mapOperationToSyncKey } from './sync-mapping.js';
 
 interface QueueCoordinatorOptions {
     registry: string;
@@ -24,27 +26,52 @@ interface QueueCoordinatorOptions {
 export function createQueueCoordinator(options: QueueCoordinatorOptions) {
     const batchesSeen = new Set<string>();
 
-    function isNewBatch(batch: Operation[]): boolean {
+    function reserveBatch(batch: Operation[]): string | null {
         const hash = options.cipher.hashJSON(batch);
         if (batchesSeen.has(hash)) {
-            return false;
+            return null;
         }
         batchesSeen.add(hash);
-        return true;
+        return hash;
     }
 
     async function handleMessage(peerKey: string, message: QueueMessage): Promise<void> {
-        if (!options.getImportPipeline().available || !Array.isArray(message.data) || !isNewBatch(message.data)) {
+        if (!options.getImportPipeline().available || !Array.isArray(message.data)) {
+            return;
+        }
+        const batchHash = reserveBatch(message.data);
+        if (!batchHash) {
             return;
         }
 
-        options.getImportPipeline().enqueue({
-            kind: 'remote',
-            name: peerKey,
-            node: message.node,
-            data: message.data,
-            queueGossip: true,
-        });
+        let imported;
+        try {
+            imported = await options.getImportPipeline().enqueue({
+                kind: 'remote',
+                name: peerKey,
+                node: message.node,
+                data: message.data,
+                queueGossip: true,
+            });
+        }
+        catch (error) {
+            batchesSeen.delete(batchHash);
+            throw error;
+        }
+        const handledIds = new Set([...imported.knownIds, ...imported.persistedIds]);
+        const complete = !imported.retryable
+            && (imported.pendingIds?.length ?? 0) === 0
+            && (imported.capacityDeferredIds?.length ?? 0) === 0
+            && message.data.every(operation => {
+                const mapped = mapOperationToSyncKey(operation);
+                return mapped.ok
+                    && hasContentVerifiedOperationId(operation, options.cipher)
+                    && handledIds.has(mapped.value.idHex);
+            });
+        if (!complete) {
+            batchesSeen.delete(batchHash);
+            return;
+        }
         if (!Array.isArray(message.relays)) {
             message.relays = [];
         }
@@ -72,6 +99,25 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
             throw new Error('failed to import local Gatekeeper queue');
         }
 
+        if (!options.getImportPipeline().available) return;
+        const merged = await options.getImportPipeline().enqueue({
+            kind: 'local_queue',
+            phase: 'merge',
+            indexEpoch,
+            name: options.getNodeKey(),
+            data: batch,
+        });
+        if (merged.retryable
+            || (merged.capacityDeferredIds?.length ?? 0) > 0) {
+            if (merged.indexEpochChanged || merged.dependencyUnavailable) return;
+            throw new Error('failed to merge local Gatekeeper queue');
+        }
+
+        // These operations were already accepted locally and persisted above. GC or a history
+        // change can remove their dependencies before confirmation, without invalidating the
+        // historical operations. Gatekeeper owns retained pending confirmations, while the
+        // capacity-refused inputs above still need caller retries before clearing the queue.
+
         options.syncStats.queueOpsRelayed += batch.length;
         for (const sample of collectQueueDelaySamples(batch)) {
             addAggregateSample(options.syncStats.queueDelayMs, sample);
@@ -94,18 +140,6 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
             throw error;
         }
         await options.relay(message);
-
-        const merged = await options.getImportPipeline().enqueue({
-            kind: 'local_queue',
-            phase: 'merge',
-            indexEpoch,
-            name: options.getNodeKey(),
-            data: batch,
-        });
-        if (merged.retryable) {
-            if (merged.indexEpochChanged || merged.dependencyUnavailable) return;
-            throw new Error('failed to merge local Gatekeeper queue');
-        }
     }
 
     return { flush, handleMessage };

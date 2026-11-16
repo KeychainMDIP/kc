@@ -95,6 +95,7 @@ function buildImportPipeline(store: OperationSyncStore): ImportPipeline {
         syncStore: store,
         cipher,
         syncStats,
+        retryDelayMs: NEG_REPAIR_INTERVAL_MS,
         beginStoreMutation() {
             return negentropyCoordinator.beginStoreMutation();
         },
@@ -451,7 +452,7 @@ async function connectionLoop(): Promise<void> {
         await transport.relay(msg);
         await peerSyncCoordinator.runPeriodicRepairs();
 
-        log.debug({ syncStats: buildSyncStatsSnapshot(syncStats) }, 'hyperswarm sync stats');
+        log.info({ syncStats: buildSyncStatsSnapshot(syncStats) }, 'hyperswarm sync stats');
 
         if (config.ipfsEnabled) {
             const peeringPeers = await ipfs.getPeeringPeers();

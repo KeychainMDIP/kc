@@ -7,6 +7,9 @@ The mediator has two responsibilities:
 - **Import**: Scans confirmed transactions for MDIP DIDs in the `OP_RETURN` field, resolves each discovered batch DID at its immutable create version, and imports its operations into Gatekeeper.
 - **Export**: Polls the corresponding Gatekeeper queue, creates a batch asset, and sends a transaction containing that batch DID in the `OP_RETURN` field.
 
+Imports are admitted and processed in bounded batches. Capacity refusals stay retryable, and later operations and batches can supply missing controllers or predecessors.
+Processing rejections are matched against the exact `rejectedEvents` envelope, so a different registry or ordering envelope cannot cause native confirmation to be skipped.
+
 Gatekeeper currently accepts the plain-chain registries `TBTC`, `Signet`, and `TFTC`. Bitcoin mainnet uses the inscription mediator and registry `BTC-Inscription`.
 
 ## Environment variables

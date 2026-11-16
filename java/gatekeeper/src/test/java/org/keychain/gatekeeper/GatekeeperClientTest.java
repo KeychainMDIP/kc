@@ -208,6 +208,42 @@ class GatekeeperClientTest {
     }
 
     @Test
+    void importBatchReadsBoundedAdmissionFields() throws Exception {
+        server.enqueue(new MockResponse().setBody(
+            "{\"queued\":0,\"processed\":1,\"rejected\":0,\"total\":1,"
+                + "\"rejectedIndices\":[],\"processedIndices\":[0],"
+                + "\"capacityDeferred\":1,\"capacityDeferredIndices\":[1]}"
+        ).setResponseCode(200));
+
+        ImportBatchResult result = client.importBatch(List.of(new GatekeeperEvent()));
+
+        assertEquals(1, result.processed);
+        assertEquals(0, result.processedIndices[0]);
+        assertEquals(1, result.capacityDeferred);
+        assertEquals(1, result.capacityDeferredIndices[0]);
+    }
+
+    @Test
+    void processEventsReadsBoundedPageFields() throws Exception {
+        server.enqueue(new MockResponse().setBody(
+            "{\"added\":0,\"merged\":0,\"rejected\":1,\"pending\":1,"
+                + "\"hasMore\":true,\"capacityDeferred\":1,"
+                + "\"capacityDeferredHashes\":[\"abc\"],\"rejectedEvents\":[{"
+                + "\"registry\":\"TBTC\",\"time\":\"2026-11-16T00:00:00.000Z\","
+                + "\"ordinal\":[42,0],\"operation\":{\"type\":\"update\"}}]}"
+        ).setResponseCode(200));
+
+        ProcessEventsResult result = client.processEvents();
+
+        assertTrue(result.hasMore);
+        assertEquals(1, result.capacityDeferred);
+        assertEquals("abc", result.capacityDeferredHashes[0]);
+        assertEquals("TBTC", result.rejectedEvents.get(0).registry);
+        assertEquals(List.of(42L, 0L), result.rejectedEvents.get(0).ordinal);
+        assertEquals("update", result.rejectedEvents.get(0).operation.type);
+    }
+
+    @Test
     void baseUrlStripsApiSuffix() throws Exception {
         server.enqueue(new MockResponse().setBody("{}").setResponseCode(200));
 

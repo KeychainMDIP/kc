@@ -33,11 +33,14 @@ const MAX_PENDING_SYNC_RECORDS = 1_000;
 const PROCESSING_RECOVERY_MS = 5 * 60_000;
 const STATUS_TIMEOUT_MS = 5_000;
 const MAX_RECOVERY_DELAY_MS = 5_000;
+const MAX_RETRY_DELAY_IDS = 25_000;
 export const TERMINAL_REJECTED_SYNC_ORDER = Number.MAX_SAFE_INTEGER;
 
-interface ImportQueueResult {
+export interface ImportQueueResult {
     knownIds: string[];
     persistedIds: string[];
+    pendingIds: string[];
+    capacityDeferredIds: string[];
     retryable: boolean;
     indexEpochChanged?: boolean;
     dependencyUnavailable?: boolean;
@@ -82,6 +85,7 @@ export interface ImportPipelineOptions {
     syncStore: OperationSyncStore;
     cipher: Pick<CipherNode, 'canonicalizeJSON' | 'hashJSON'>;
     syncStats: MediatorSyncStats;
+    retryDelayMs: number;
     beginStoreMutation(source: string): () => void;
     onStoreChanged(source: string): void;
 }
@@ -102,7 +106,13 @@ export interface ImportPipeline {
 }
 
 function emptyResult(retryable = false): ImportQueueResult {
-    return { knownIds: [], persistedIds: [], retryable };
+    return {
+        knownIds: [],
+        persistedIds: [],
+        pendingIds: [],
+        capacityDeferredIds: [],
+        retryable,
+    };
 }
 
 function shortName(value: string): string {
@@ -115,15 +125,18 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
         syncStore,
         cipher,
         syncStats,
+        retryDelayMs,
         beginStoreMutation,
         onStoreChanged,
     } = options;
     const pendingSyncRecords = new Map<string, SyncOperationWriteRecord>();
+    const retryDelays = new Map<string, { kind: 'pending' | 'capacity'; deadline: number }>();
     const terminalOperationCids = new Set<string>();
     const activeIndexRefreshes = new Set<Promise<BootstrapResult>>();
     let accepting = true;
     let indexEpoch: string | undefined;
     let invalidatedEpoch: string | undefined;
+    let processRetryNeeded = false;
     let shutdownPromise: Promise<void> | null = null;
     let processingState: 'ready' | 'recovering' | 'paused' = 'ready';
     let recoveryGeneration = 0;
@@ -233,6 +246,61 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
         }
     }
 
+    function getVerifiedOperationId(operation: Operation): string | undefined {
+        const mapped = mapOperationToSyncKey(operation);
+        return mapped.ok && hasContentVerifiedOperationId(operation, cipher)
+            ? mapped.value.idHex
+            : undefined;
+    }
+
+    function recordRetryDelay(ids: Iterable<string>, kind: 'pending' | 'capacity'): void {
+        const deadline = Date.now() + retryDelayMs;
+        for (const id of new Set(ids)) {
+            retryDelays.delete(id);
+            retryDelays.set(id, { kind, deadline });
+            while (retryDelays.size > MAX_RETRY_DELAY_IDS) {
+                const oldestId = retryDelays.keys().next().value!;
+                retryDelays.delete(oldestId);
+            }
+        }
+    }
+
+    function clearRetryDelays(ids: Iterable<string>): void {
+        for (const id of ids) {
+            retryDelays.delete(id);
+        }
+    }
+
+    function filterRetryDelayedOperations(operations: Operation[]): {
+        operations: Operation[];
+        pendingIds: string[];
+        capacityDeferredIds: string[];
+    } {
+        const now = Date.now();
+        const eligible: Operation[] = [];
+        const pendingIds: string[] = [];
+        const capacityDeferredIds: string[] = [];
+
+        for (const operation of operations) {
+            const id = getVerifiedOperationId(operation);
+            const delayed = id ? retryDelays.get(id) : undefined;
+            if (!delayed || delayed.deadline <= now) {
+                if (id && delayed) {
+                    retryDelays.delete(id);
+                }
+                eligible.push(operation);
+                continue;
+            }
+            (delayed.kind === 'pending' ? pendingIds : capacityDeferredIds).push(id!);
+        }
+
+        return {
+            operations: eligible,
+            pendingIds: Array.from(new Set(pendingIds)),
+            capacityDeferredIds: Array.from(new Set(capacityDeferredIds)),
+        };
+    }
+
     async function importBatch(batch: Operation[], expectedIndexEpoch?: string) {
         const hash = cipher.hashJSON(batch);
         const now = new Date();
@@ -247,14 +315,26 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
 
         log.debug(`importBatch: ${shortName(hash)} merging ${events.length} events...`);
         const importStart = Date.now();
-        const response = expectedIndexEpoch === undefined
-            ? await gatekeeper.importBatch(events)
-            : await gatekeeper.importBatch(events, expectedIndexEpoch);
+        const response = await (expectedIndexEpoch === undefined
+            ? gatekeeper.importBatch(events)
+            : gatekeeper.importBatch(events, expectedIndexEpoch)).catch(error => {
+            // The server may have admitted work before its response was lost.
+            processRetryNeeded = true;
+            throw error;
+        });
         log.debug({ durationMs: Date.now() - importStart }, 'importBatch');
         log.debug(`* ${JSON.stringify(response)}`);
         syncStats.opsRejected += response.rejected ?? 0;
 
-        return partitionImportBatchOperations(batch, response.rejectedIndices);
+        return {
+            response,
+            ...partitionImportBatchOperations(
+                batch,
+                response.rejectedIndices,
+                response.capacityDeferredIndices,
+                response.processedIndices,
+            ),
+        };
     }
 
     async function recordTerminalOperationCids(operations: Operation[], source: string): Promise<void> {
@@ -398,61 +478,198 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
             },
             'sync-store persist processed ops'
         );
-        return attemptedRecords.map(record => record.id);
+        const persistedIds = attemptedRecords.map(record => record.id);
+        clearRetryDelays(persistedIds);
+        return persistedIds;
     }
 
     async function mergeBatch(
-        batch: Operation[], expectedIndexEpoch?: string, cancelled?: () => boolean, source = 'local_queue',
-    ): Promise<Pick<ImportQueueResult, 'persistedIds' | 'indexRefreshRequired'>> {
-        const processCandidates: Operation[] = [];
-        const structurallyRejected: Operation[] = [];
+        batch: Operation[],
+        requestIds: Set<string>,
+        expectedIndexEpoch?: string,
+        cancelled?: () => boolean,
+        source = 'local_queue',
+    ): Promise<Omit<ImportQueueResult, 'knownIds'>> {
+        const persistedIds = new Set<string>();
+        const pendingIds = new Set<string>();
+        const capacityDeferredIds = new Set<string>();
+        let retryable = false;
+        let indexRefreshRequired = false;
 
-        for (let offset = 0; offset < batch.length; offset += GATEKEEPER_BATCH_SIZE) {
+        for (let offset = 0; offset < batch.length || processRetryNeeded; offset += GATEKEEPER_BATCH_SIZE) {
             assertCurrentEpoch(expectedIndexEpoch);
             if (cancelled?.()) break;
-            const imported = await importBatch(batch.slice(offset, offset + GATEKEEPER_BATCH_SIZE), expectedIndexEpoch);
-            processCandidates.push(...imported.processCandidates);
-            structurallyRejected.push(...imported.rejectedOperations);
-        }
+            const chunk = batch.slice(offset, offset + GATEKEEPER_BATCH_SIZE);
+            const imported = chunk.length > 0 ? await importBatch(chunk, expectedIndexEpoch) : {
+                response: {
+                    queued: 0, processed: 0, rejected: 0, total: 0, rejectedIndices: [] as number[],
+                    capacityDeferred: 0, capacityDeferredIndices: [] as number[], processedIndices: [] as number[],
+                },
+                processCandidates: [], processedOperations: [], rejectedOperations: [], capacityDeferredOperations: [],
+            };
+            assertCurrentEpoch(expectedIndexEpoch);
+            const chunkIds = new Set(chunk.map(getVerifiedOperationId).filter((id): id is string => !!id));
+            const provisionalIds = new Set([
+                ...imported.processCandidates,
+                ...imported.processedOperations,
+            ].map(getVerifiedOperationId).filter((id): id is string => !!id));
+            const chunkCapacityIds = new Set(
+                imported.capacityDeferredOperations
+                    .map(getVerifiedOperationId)
+                    .filter((id): id is string => !!id)
+            );
+            if (imported.capacityDeferredOperations.some(operation => !getVerifiedOperationId(operation))) {
+                retryable = true;
+            }
+            const retryIds = new Set(chunk.map(mapOperationToSyncKey)
+                .filter(mapped => mapped.ok)
+                .map(mapped => mapped.value.idHex));
+            let structuralRejected = imported.rejectedOperations;
+            let capacityReported = (imported.response.capacityDeferred ?? 0) > 0
+                || (imported.response.capacityDeferredIndices?.length ?? 0) > 0;
 
-        if (processCandidates.length === 0 && structurallyRejected.length === 0) return { persistedIds: [] };
-        const processStart = Date.now();
-        assertCurrentEpoch(expectedIndexEpoch);
-        const { response, recovered } = await processEvents(expectedIndexEpoch, source);
-        assertCurrentEpoch(expectedIndexEpoch);
-        log.debug({ durationMs: Date.now() - processStart }, 'processEvents');
-        const processSummary = { ...response };
-        delete processSummary.acceptedHashes;
-        delete processSummary.acceptedEvents;
-        delete processSummary.rejectedOperations;
-        log.debug(`mergeBatch: ${JSON.stringify(processSummary)}`);
-        syncStats.opsApplied += (response.added ?? 0) + (response.merged ?? 0);
-        syncStats.opsRejected += response.rejected ?? 0;
+            if (imported.response.queued > 0 || imported.response.processed > 0 || capacityReported || processRetryNeeded) {
+                try {
+                    let hasMore = true;
+                    while (hasMore) {
+                        const processStart = Date.now();
+                        const { response, recovered } = await processEvents(expectedIndexEpoch, source);
+                        assertCurrentEpoch(expectedIndexEpoch);
+                        indexRefreshRequired ||= recovered;
+                        log.debug({ durationMs: Date.now() - processStart }, 'processEvents');
+                        const processSummary = { ...response };
+                        delete processSummary.acceptedHashes;
+                        delete processSummary.acceptedEvents;
+                        delete processSummary.rejectedOperations;
+                        delete processSummary.rejectedEvents;
+                        log.debug(`mergeBatch: ${JSON.stringify(processSummary)}`);
+                        syncStats.opsApplied += (response.added ?? 0) + (response.merged ?? 0);
+                        syncStats.opsRejected += response.rejected ?? 0;
 
-        const acceptedToPersist = resolveAcceptedOperationsToPersist(
-            processCandidates,
-            response.acceptedHashes,
-            response.acceptedEvents,
-        );
-        const rejectedToPersist = dedupeOperationsByHash([
-            ...structurallyRejected,
-            ...dedupeOperationsByHash(response.rejectedOperations ?? []),
-        ]);
-        const retryIds = new Set<string>();
-        for (const operation of batch) {
-            const mapped = mapOperationToSyncKey(operation);
-            if (mapped.ok) {
-                retryIds.add(mapped.value.idHex);
+                        const acceptedToPersist = resolveAcceptedOperationsToPersist(
+                            imported.processCandidates,
+                            response.acceptedHashes,
+                            response.acceptedEvents,
+                        );
+                        const rejectedToPersist = dedupeOperationsByHash([
+                            ...structuralRejected,
+                            ...dedupeOperationsByHash(response.rejectedOperations ?? []),
+                        ]);
+                        structuralRejected = [];
+                        const pagePersisted = await persistProcessedOperations(
+                            acceptedToPersist,
+                            rejectedToPersist,
+                            'mergeBatch',
+                            retryIds,
+                        );
+                        for (const id of pagePersisted) {
+                            if (requestIds.has(id)) {
+                                persistedIds.add(id);
+                            }
+                        }
+                        const pageCapacityHashes = response.capacityDeferredHashes ?? [];
+                        let chunkCapacityReported = false;
+                        for (const hash of pageCapacityHashes) {
+                            const id = hash.toLowerCase();
+                            if (chunkIds.has(id)) {
+                                chunkCapacityIds.add(id);
+                                chunkCapacityReported = true;
+                            }
+                        }
+                        // Without hashes, an older response cannot attribute backpressure to a request.
+                        capacityReported ||= chunkCapacityReported
+                            || (response.capacityDeferred ?? 0) > 0 && pageCapacityHashes.length === 0;
+                        hasMore = response.hasMore === true;
+                    }
+                    processRetryNeeded = false;
+                }
+                catch (error) {
+                    processRetryNeeded = true;
+                    throw error;
+                }
+            }
+            else if (structuralRejected.length > 0) {
+                const rejectedPersisted = await persistProcessedOperations(
+                    [],
+                    structuralRejected,
+                    'mergeBatch',
+                    retryIds,
+                );
+                for (const id of rejectedPersisted) {
+                    if (requestIds.has(id)) {
+                        persistedIds.add(id);
+                    }
+                }
+            }
+
+            for (const id of chunkCapacityIds) {
+                if (!persistedIds.has(id)) {
+                    capacityDeferredIds.add(id);
+                }
+            }
+            for (const id of provisionalIds) {
+                if (!persistedIds.has(id) && !capacityDeferredIds.has(id)) {
+                    pendingIds.add(id);
+                }
+            }
+
+            if (capacityReported) {
+                for (const operation of batch.slice(offset + chunk.length)) {
+                    const id = getVerifiedOperationId(operation);
+                    if (id) {
+                        capacityDeferredIds.add(id);
+                    }
+                    else {
+                        retryable = true;
+                    }
+                }
+                break;
             }
         }
+
+        for (const id of persistedIds) {
+            pendingIds.delete(id);
+            capacityDeferredIds.delete(id);
+        }
+        recordRetryDelay(pendingIds, 'pending');
+        recordRetryDelay(capacityDeferredIds, 'capacity');
+        clearRetryDelays(persistedIds);
+
         return {
-            persistedIds: await persistProcessedOperations(
-                acceptedToPersist,
-                rejectedToPersist,
-                'mergeBatch',
-                retryIds,
-            ),
-            ...(recovered && { indexRefreshRequired: true }),
+            persistedIds: Array.from(persistedIds),
+            pendingIds: Array.from(pendingIds),
+            capacityDeferredIds: Array.from(capacityDeferredIds),
+            retryable,
+            ...(indexRefreshRequired && { indexRefreshRequired: true }),
+        };
+    }
+
+    async function mergeWithRetryDelays(
+        batch: Operation[], expectedIndexEpoch?: string, cancelled?: () => boolean, source = 'local_queue',
+    ): Promise<Omit<ImportQueueResult, 'knownIds'>> {
+        const delayed = filterRetryDelayedOperations(batch);
+        if (delayed.operations.length === 0) {
+            return {
+                persistedIds: [],
+                pendingIds: delayed.pendingIds,
+                capacityDeferredIds: delayed.capacityDeferredIds,
+                retryable: false,
+            };
+        }
+
+        const requestIds = new Set(batch.map(getVerifiedOperationId).filter((id): id is string => !!id));
+        const merged = await mergeBatch(delayed.operations, requestIds, expectedIndexEpoch, cancelled, source);
+        const persistedIds = new Set(merged.persistedIds);
+        return {
+            persistedIds: merged.persistedIds,
+            pendingIds: Array.from(new Set([...delayed.pendingIds, ...merged.pendingIds]))
+                .filter(id => !persistedIds.has(id)),
+            capacityDeferredIds: Array.from(new Set([
+                ...delayed.capacityDeferredIds,
+                ...merged.capacityDeferredIds,
+            ])).filter(id => !persistedIds.has(id)),
+            retryable: merged.retryable,
+            ...(merged.indexRefreshRequired && { indexRefreshRequired: true }),
         };
     }
 
@@ -534,7 +751,7 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
                     result.persistedIds = await persistProcessedOperations(request.data, [], 'flushQueue');
                 }
                 else {
-                    Object.assign(result, await mergeBatch(request.data, expectedIndexEpoch));
+                    Object.assign(result, await mergeWithRetryDelays(request.data, expectedIndexEpoch));
                 }
                 return result;
             }
@@ -545,6 +762,7 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
                     KNOWN_OPERATION_LOOKUP_LIMIT,
                 );
                 result.knownIds = filtered.knownIds;
+                clearRetryDelays(result.knownIds);
                 if (request.cancelled?.()) {
                     return result;
                 }
@@ -573,6 +791,7 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
                 KNOWN_OPERATION_LOOKUP_LIMIT,
             );
             result.knownIds = filtered.knownIds;
+            clearRetryDelays(result.knownIds);
             if (filtered.known > 0) {
                 log.debug(
                     {
@@ -594,7 +813,7 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
             log.debug(
                 `* merging batch (${filtered.operations.length}/${request.data.length} events) from: ${shortName(request.name)} (${request.node || 'anon'}) *`
             );
-            Object.assign(result, await mergeBatch(filtered.operations, expectedIndexEpoch, request.cancelled, request.name));
+            Object.assign(result, await mergeWithRetryDelays(filtered.operations, expectedIndexEpoch, request.cancelled, request.name));
         }
         catch (error) {
             result.retryable = true;
@@ -618,7 +837,8 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
                 log.debug({ err: error }, 'Gatekeeper import cancelled during shutdown');
             }
             else if (code !== 'stale_import_epoch') {
-                log.error({ err: error }, 'mergeBatch error');
+                log.error({ error, kind: request.kind, peer: shortName(request.name), operations: request.data.length },
+                    'mergeBatch error');
             }
         }
         return result;
@@ -640,16 +860,33 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
             && (Date.now() < nextRecoveryProbeAt || !await processingIdle())) {
             throw processingUnavailable();
         }
-        const sync = await bootstrapSyncStoreFromGatekeeper(syncStore, gatekeeper, {
-            beginStoreMutation: () => beginStoreMutation(`refresh_${source}`),
-        });
-        indexEpoch = (await syncStore.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.gatekeeperIndexEpoch)) ?? undefined;
-        invalidatedEpoch = undefined;
-        if (sync.resetReason) {
-            pendingSyncRecords.clear();
-            terminalOperationCids.clear();
+        let sync: BootstrapResult;
+        for (;;) {
+            sync = await bootstrapSyncStoreFromGatekeeper(syncStore, gatekeeper, {
+                beginStoreMutation: () => beginStoreMutation(`refresh_${source}`),
+            });
+            indexEpoch = (await syncStore.loadSyncState(HYPR_INDEX_SYNC_STATE_KEYS.gatekeeperIndexEpoch)) ?? undefined;
+            invalidatedEpoch = undefined;
+            if (sync.resetReason) {
+                pendingSyncRecords.clear();
+                retryDelays.clear();
+                processRetryNeeded = false;
+                terminalOperationCids.clear();
+                break;
+            }
+            if (!processRetryNeeded) break;
+            try {
+                // A lost processing response may leave shared staged work after every requested ID is known.
+                await mergeBatch([], new Set<string>(), indexEpoch, undefined, source);
+            }
+            catch (error) {
+                const code = (error as { code?: string; error?: string } | null)?.code
+                    ?? (error as { error?: string } | null)?.error;
+                if (code === 'gatekeeper_index_epoch_changed') invalidatedEpoch = indexEpoch;
+                throw error;
+            }
         }
-        else if (pendingSyncRecords.size > 0) {
+        if (pendingSyncRecords.size > 0) {
             try {
                 const pruned = await prunePersistedSyncRecords(
                     pendingSyncRecords,
@@ -663,6 +900,24 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
                     { error, source, remaining: pendingSyncRecords.size },
                     'failed to prune persisted sync-store retries'
                 );
+            }
+        }
+        if (retryDelays.size > 0) {
+            try {
+                const ids = Array.from(retryDelays.keys());
+                let removed = 0;
+                for (let offset = 0; offset < ids.length; offset += RETRY_LOOKUP_LIMIT) {
+                    const rows = await syncStore.getByIds(ids.slice(offset, offset + RETRY_LOOKUP_LIMIT));
+                    for (const row of rows) {
+                        if (retryDelays.delete(row.id)) {
+                            removed += 1;
+                        }
+                    }
+                }
+                log.debug({ source, checked: ids.length, removed, remaining: retryDelays.size }, 'pruned persisted import delays');
+            }
+            catch (error) {
+                log.warn({ error, source, remaining: retryDelays.size }, 'failed to prune persisted import delays');
             }
         }
         if (processingState === 'paused') {
@@ -741,7 +996,9 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
                     await waitForIdle();
                     await Promise.allSettled([...activeIndexRefreshes]);
                     pendingSyncRecords.clear();
+                    retryDelays.clear();
                     terminalOperationCids.clear();
+                    retryDelays.clear();
                 })();
             }
             return shutdownPromise;

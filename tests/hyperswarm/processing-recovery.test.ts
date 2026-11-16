@@ -20,6 +20,14 @@ const operation: Operation = {
     signature: { signed: '2026-01-01T00:00:00.000Z', hash: 'a'.repeat(64), value: 'signature' },
 };
 const request = { kind: 'remote' as const, name: 'peer', data: [operation] };
+function makeOperations(count: number): Operation[] {
+    const cipher = new CipherNode();
+    return Array.from({ length: count }, (_, index) => {
+        const unsigned: Operation = { ...operation, created: `2026-01-01T00:00:00.${String(index).padStart(3, '0')}Z` };
+        delete unsigned.signature;
+        return { ...unsigned, signature: { ...operation.signature!, hash: cipher.hashJSON(unsigned) } };
+    });
+}
 const nextTurn = () => new Promise<void>(resolve => setImmediate(resolve));
 const status = (active: boolean): GetStatusResult => ({
     uptimeSeconds: 0, memoryUsage: process.memoryUsage(),
@@ -45,6 +53,7 @@ function fixture() {
     };
     const pipeline = createImportPipeline({
         gatekeeper, syncStore: store, cipher: new CipherNode(), syncStats: createMediatorSyncStats(),
+        retryDelayMs: 300_000,
         beginStoreMutation: () => () => {}, onStoreChanged() {},
     });
     return { pipeline, gatekeeper, store, reset() { epoch = 'epoch-b'; } };
@@ -60,6 +69,166 @@ describe('Gatekeeper processing recovery', () => {
             await expect(pipeline.enqueue(request)).resolves.toMatchObject({ retryable: false, persistedIds: [] });
             expect(gatekeeper.getStatus).not.toHaveBeenCalled();
             expect(pipeline.available).toBe(true);
+        } finally { await pipeline.shutdown(); }
+    });
+
+    it('recovers a later processing page without readmitting accepted, pending or capacity-deferred operations', async () => {
+        const { pipeline, gatekeeper, store } = fixture();
+        const [accepted, pending, refused] = makeOperations(3);
+        await pipeline.refreshIndex('startup');
+        gatekeeper.importBatch.mockResolvedValueOnce({
+            queued: 2, processed: 0, rejected: 0, total: 2, rejectedIndices: [],
+            capacityDeferred: 1, capacityDeferredIndices: [2], processedIndices: [],
+        });
+        gatekeeper.processEvents.mockResolvedValueOnce({
+            added: 1, acceptedHashes: [accepted.signature!.hash], hasMore: true,
+        }).mockRejectedValueOnce('timeout of 60000ms exceeded').mockResolvedValueOnce({
+            pending: 1, hasMore: false,
+        });
+        gatekeeper.getStatus.mockResolvedValueOnce(status(true));
+        const data = [accepted, pending, refused];
+        const importing = pipeline.enqueue({ ...request, data });
+        try {
+            await nextTurn();
+            expect(await store.has(accepted.signature!.hash)).toBe(true);
+            expect(pipeline.recovering).toBe(true);
+            await jest.advanceTimersByTimeAsync(1_000);
+            expect(gatekeeper.importBatch).toHaveBeenCalledTimes(1);
+            expect(gatekeeper.processEvents).toHaveBeenCalledTimes(2);
+            await jest.advanceTimersByTimeAsync(2_000);
+            await expect(importing).resolves.toMatchObject({
+                persistedIds: [accepted.signature!.hash], pendingIds: [pending.signature!.hash],
+                capacityDeferredIds: [refused.signature!.hash], retryable: false, indexRefreshRequired: true,
+            });
+            expect(gatekeeper.processEvents.mock.calls).toEqual([['epoch-a'], ['epoch-a'], ['epoch-a']]);
+            await expect(pipeline.enqueue({ ...request, data })).resolves.toMatchObject({
+                knownIds: [accepted.signature!.hash], pendingIds: [pending.signature!.hash],
+                capacityDeferredIds: [refused.signature!.hash], persistedIds: [], retryable: false,
+            });
+            expect(gatekeeper.importBatch).toHaveBeenCalledTimes(1);
+            expect(gatekeeper.processEvents).toHaveBeenCalledTimes(3);
+            expect(await store.count()).toBe(1);
+        } finally { await pipeline.shutdown(); }
+    });
+
+    it('keeps later-page recovery in the original epoch and clears capacity delays after reset', async () => {
+        const { pipeline, gatekeeper, reset } = fixture();
+        const [refused, accepted] = makeOperations(2);
+        await pipeline.refreshIndex('startup');
+        gatekeeper.importBatch.mockResolvedValueOnce({
+            queued: 0, processed: 0, rejected: 0, total: 0, rejectedIndices: [],
+            capacityDeferred: 1, capacityDeferredIndices: [0], processedIndices: [],
+        });
+        await expect(pipeline.enqueue({ ...request, data: [refused] })).resolves.toMatchObject({
+            capacityDeferredIds: [refused.signature!.hash],
+        });
+        gatekeeper.processEvents.mockResolvedValueOnce({
+            added: 1, acceptedHashes: [accepted.signature!.hash], hasMore: true,
+        }).mockResolvedValueOnce({ busy: true }).mockRejectedValueOnce({ error: 'gatekeeper_index_epoch_changed' });
+        const importing = pipeline.enqueue({ ...request, data: [accepted] });
+        try {
+            await nextTurn();
+            reset();
+            await jest.advanceTimersByTimeAsync(1_000);
+            await expect(importing).resolves.toMatchObject({ retryable: true, indexEpochChanged: true });
+            expect(gatekeeper.processEvents.mock.calls.slice(1)).toEqual([['epoch-a'], ['epoch-a'], ['epoch-a']]);
+            expect(gatekeeper.importBatch).toHaveBeenCalledTimes(2);
+            await jest.advanceTimersByTimeAsync(5_000);
+            await pipeline.refreshIndex('new-epoch');
+            expect(pipeline.indexEpoch).toBe('epoch-b');
+            await pipeline.enqueue({ ...request, data: [refused] });
+            expect(gatekeeper.importBatch).toHaveBeenCalledTimes(3);
+            expect(gatekeeper.importBatch.mock.calls.at(-1)?.[1]).toBe('epoch-b');
+        } finally { await pipeline.shutdown(); }
+    });
+
+    it('cancels recovery on a later page before admitting the next bounded chunk', async () => {
+        const { pipeline, gatekeeper, store } = fixture();
+        const data = makeOperations(101);
+        gatekeeper.importBatch.mockResolvedValueOnce({
+            queued: 100, processed: 0, rejected: 0, total: 100, rejectedIndices: [],
+        });
+        gatekeeper.processEvents.mockResolvedValueOnce({
+            added: 1, acceptedHashes: [data[0].signature!.hash], hasMore: true,
+        }).mockResolvedValueOnce({ busy: true });
+        const onComplete = jest.fn();
+        const importing = pipeline.enqueue({ ...request, data }, onComplete);
+        try {
+            await nextTurn();
+            expect(pipeline.recovering).toBe(true);
+            await pipeline.shutdown();
+            await expect(importing).resolves.toMatchObject({ retryable: true });
+            expect(onComplete).toHaveBeenCalledTimes(1);
+            expect(gatekeeper.importBatch).toHaveBeenCalledTimes(1);
+            expect(gatekeeper.importBatch.mock.calls[0][0]).toHaveLength(100);
+            expect(gatekeeper.processEvents).toHaveBeenCalledTimes(2);
+            expect(gatekeeper.getStatus).not.toHaveBeenCalled();
+            expect(await store.has(data[0].signature!.hash)).toBe(true);
+        } finally { await pipeline.shutdown(); }
+    });
+
+    it('drains shared staged work after a lost later-page response even when the requested operations are already known', async () => {
+        const cipher = new CipherNode();
+        const db = new DbJsonMemory('paged-processing-recovery');
+        const gatekeeper = new Gatekeeper({ db, ipfsEnabled: false });
+        const helper = new TestHelper(gatekeeper, cipher);
+        const operations = await Promise.all(Array.from({ length: 3 }, () =>
+            helper.createAgentOp(cipher.generateRandomJwk(), { registry: 'hyperswarm' })));
+        const store = new InMemoryOperationSyncStore();
+        const queueState = gatekeeper as unknown as { stagedEvents: Array<{ bytes: number }>; maxEventPageBytes: number };
+        const importBatch = jest.fn<ImportPipelineOptions['gatekeeper']['importBatch']>(async (...args) => {
+            const result = await gatekeeper.importBatch(...args);
+            queueState.maxEventPageBytes = Math.max(...queueState.stagedEvents.map(entry => entry.bytes));
+            return result;
+        });
+        let calls = 0;
+        const processEvents = jest.fn<ImportPipelineOptions['gatekeeper']['processEvents']>(async expectedEpoch => {
+            calls += 1;
+            if (calls === 2) {
+                await gatekeeper.importBatch([{
+                    registry: 'hyperswarm', time: operations[2].created!, ordinal: [Date.now(), 0], operation: operations[2],
+                }]);
+            }
+            const result = await gatekeeper.processEvents(expectedEpoch);
+            if (calls === 2) {
+                expect(result.hasMore).toBe(true);
+                throw 'timeout of 60000ms exceeded';
+            }
+            return result;
+        });
+        let offline = true;
+        const pipeline = createImportPipeline({
+            gatekeeper: {
+                isReady: async () => true, importBatch, processEvents,
+                getStatus: async () => {
+                    if (offline) throw new Error('status unavailable');
+                    return { ...status(false), eventsQueue: gatekeeper.getQueueStatus() };
+                },
+                exportIndex: async input => input.mode === 'snapshot'
+                    ? db.exportIndexSnapshot(input) : db.exportIndexChanges(input),
+            },
+            syncStore: store, cipher, syncStats: createMediatorSyncStats(), retryDelayMs: 300_000,
+            beginStoreMutation: () => () => {}, onStoreChanged() {},
+        });
+        try {
+            await pipeline.refreshIndex('startup');
+            const epoch = pipeline.indexEpoch;
+            const importing = pipeline.enqueue({ ...request, data: operations.slice(0, 2) });
+            await nextTurn();
+            await jest.advanceTimersByTimeAsync(300_000);
+            await expect(importing).resolves.toMatchObject({ retryable: true, dependencyUnavailable: true });
+            expect(gatekeeper.getQueueStatus()).toMatchObject({ staged: 1, processing: 0, active: false });
+            expect(await store.has(operations[0].signature!.hash)).toBe(true);
+            expect(await store.has(operations[1].signature!.hash)).toBe(false);
+            offline = false;
+            await jest.advanceTimersByTimeAsync(5_000);
+            await pipeline.refreshIndex('resume-and-drain');
+            expect(gatekeeper.getQueueStatus().total).toBe(0);
+            expect(await store.count()).toBe(3);
+            expect(await gatekeeper.getDIDs()).toHaveLength(3);
+            expect(pipeline.available).toBe(true);
+            expect(processEvents.mock.calls).toEqual([[epoch], [epoch], [epoch]]);
+            expect(importBatch).toHaveBeenCalledTimes(1);
         } finally { await pipeline.shutdown(); }
     });
 
@@ -136,6 +305,7 @@ describe('Gatekeeper processing recovery', () => {
             await expect(pipeline.refreshIndex('backoff')).rejects.toThrow('processing is unavailable');
             expect(gatekeeper.getStatus).toHaveBeenCalledTimes(probes);
             gatekeeper.getStatus.mockResolvedValue(status(false));
+            gatekeeper.processEvents.mockResolvedValue({ hasMore: false, pending: 17 });
             gatekeeper.exportIndex.mockRejectedValueOnce(new Error('export failed'));
             await jest.advanceTimersByTimeAsync(5_000);
             await expect(pipeline.refreshIndex('failed-export')).rejects.toThrow('export failed');
@@ -390,6 +560,7 @@ describe('real Gatekeeper HTTP processing timeout', () => {
                     ? db.exportIndexSnapshot(input) : db.exportIndexChanges(input),
             },
             syncStore: store, cipher, syncStats: createMediatorSyncStats(),
+            retryDelayMs: 300_000,
             beginStoreMutation: () => () => {}, onStoreChanged() {},
         });
         try {

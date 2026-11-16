@@ -99,6 +99,24 @@ Event ordinal entries use `Long` values so millisecond timestamps fit.
 Code that constructs ordinals should use long values, such as `List.of(0L)`.
 Index operation sequence values also use 64-bit integers.
 
+## Event import processing
+
+`importBatch()` and `importDIDs()` return retryable capacity refusals in
+`capacityDeferredIndices`. Keep those inputs and retry them later.
+`processedIndices` identifies events already held by Gatekeeper, which may
+still be waiting for validation or dependencies. For `importDIDs()`, indices
+refer to the flattened list of events. Admission is not durable acceptance.
+
+`processEvents()` returns one bounded page. Consume its result and call again
+while `hasMore` is true. `capacityDeferredHashes` identifies operations refused
+from retained pending capacity after processing. A false `hasMore` with non-zero
+`pending` means the remaining events await dependencies. A busy response or
+request timeout does not cancel server processing. The client does not manage
+these processing or retry loops automatically.
+`rejectedEvents` preserves the exact rejected registry and ordering envelope.
+Use it to attribute a rejection to a submitted event, since the same signed
+operation can have different outcomes in other envelopes.
+
 ## Queues and custom headers
 
 `clearQueue()` accepts either a list of operations or a list of their signature

@@ -202,9 +202,10 @@ describe('Negentropy coordinator', () => {
         let releaseImport!: () => void;
         const held = new Promise<void>(resolve => { releaseImport = resolve; });
         const enqueue = jest.fn<ImportPipeline['enqueue']>(async request => {
-            if (request.kind !== phase) return { knownIds: [], persistedIds: [], retryable: false };
+            if (request.kind !== phase) return { knownIds: [], persistedIds: [], pendingIds: [], capacityDeferredIds: [], retryable: false };
             if (phase === 'remote') await held;
-            return { knownIds: [], persistedIds: [], retryable: true, indexEpochChanged, dependencyUnavailable: !indexEpochChanged };
+            return { knownIds: [], persistedIds: [], pendingIds: [], capacityDeferredIds: [], retryable: true,
+                indexEpochChanged, dependencyUnavailable: !indexEpochChanged };
         });
         let recovering = phase === 'remote';
         const importPipeline = {
@@ -300,7 +301,9 @@ describe('Negentropy coordinator', () => {
                 return 0;
             },
             async enqueue() {
-                return { knownIds: [], persistedIds: [], retryable: false };
+                return {
+                    knownIds: [], persistedIds: [], pendingIds: [], capacityDeferredIds: [], retryable: false,
+                };
             },
             async waitForIdle() {},
             async refreshIndex() {
@@ -356,6 +359,12 @@ describe('Negentropy coordinator', () => {
             { error: callbackError, peer: '2222-2222', reason: 'test_close' },
             'negentropy session-close callback failed',
         );
+        expect(mockLogger.info).toHaveBeenCalledWith(expect.objectContaining({
+            peer: '2222-2222',
+            sessionId: 'test-session',
+            durationMs: expect.any(Number),
+            reason: 'test_close',
+        }), 'peer sync session closed');
         await store.stop();
     });
 
@@ -407,7 +416,11 @@ describe('Negentropy coordinator', () => {
             available: true, recovering: false,
             get queued() { return 0; },
             get running() { return 0; },
-            async enqueue() { return { knownIds: [], persistedIds: [], retryable: false }; },
+            async enqueue() {
+                return {
+                    knownIds: [], persistedIds: [], pendingIds: [], capacityDeferredIds: [], retryable: false,
+                };
+            },
             async waitForIdle() {},
             async refreshIndex() { throw new Error('unexpected index refresh'); },
             async shutdown() {},

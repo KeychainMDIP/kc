@@ -8,6 +8,9 @@ public class ImportBatchResult {
     public int rejected;
     public int total;
     public List<Integer> rejectedIndices;
+    public Integer capacityDeferred;
+    public int[] capacityDeferredIndices;
+    public int[] processedIndices;
 
     public ImportBatchResult() {}
 }

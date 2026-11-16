@@ -31,6 +31,7 @@ function fixture() {
                 eventsQueue: { staged: 0, pending: 0, processing: 0, total: 0, active: false } }),
         },
         syncStore: store, cipher, syncStats: createMediatorSyncStats(),
+        retryDelayMs: 300_000,
         beginStoreMutation: () => () => {}, onStoreChanged: () => {},
     });
     return { store, cipher, pipeline, importBatch, processEvents, exportIndex, reset() { serverEpoch = 'epoch-b'; } };
@@ -110,7 +111,8 @@ describe('Hyperswarm import reset boundary', () => {
             await expect(queued).resolves.toMatchObject({ retryable: true, indexEpochChanged: true, persistedIds: [] });
             await expect(refresh).resolves.toMatchObject({ resetReason: 'gatekeeper_index_epoch_changed' });
             expect(importBatch).toHaveBeenCalledTimes(2);
-            expect(processEvents).not.toHaveBeenCalled();
+            // Each admitted chunk drains before the next admission detects the reset.
+            expect(processEvents.mock.calls).toEqual([['epoch-a']]);
             expect(pipeline.indexEpoch).toBe('epoch-b');
             await expect(pipeline.enqueue({
                 kind: 'remote', name: 'old-session', data: [operation], indexEpoch: 'epoch-a',

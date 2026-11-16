@@ -214,9 +214,9 @@ Commands:
   get-status                                                   Report gatekeeper status
   hash-dids <file>                                             Compute hash of batch
   help [command]                                               display help for command
-  import-batch-file <file> [registry]                          Import batch of events
-  import-did <file>                                            Import DID from file
-  import-dids <file>                                           Import DIDs from file
+  import-batch-file <file> [registry]                          Import and process batch of events
+  import-did <file>                                            Import and process DID from file
+  import-dids <file>                                           Import and process DIDs from file
   list-registries                                              List supported registries
   perf-test [full]                                             DID resolution performance test
   process-events                                               Process events queue
