@@ -4,6 +4,7 @@ import CipherNode from '@mdip/cipher/node';
 import type { ImportPipeline } from '../../services/mediators/hyperswarm/src/import-pipeline.ts';
 import type { ReconciliationWindow } from '../../services/mediators/hyperswarm/src/negentropy/adapter.ts';
 import { normalizePeerCapabilities } from '../../services/mediators/hyperswarm/src/negentropy/protocol.ts';
+import { makeWindowId } from '../../services/mediators/hyperswarm/src/negentropy/windows.ts';
 import { createBulkWorkScheduler } from '../../services/mediators/hyperswarm/src/bulk-work-scheduler.ts';
 import { createOperationPageBudget } from '../../services/mediators/hyperswarm/src/operation-page-budget.ts';
 
@@ -523,10 +524,13 @@ describe('Negentropy coordinator', () => {
             maxIdsPerLookup: 1_000, maxOpsPerPush: 300, maxBytesPerPush: 512 * 1024,
             idleTimeoutMs: 120_000, repairIntervalMs: 60_000,
             syncStore: store, importPipeline, syncStats: createMediatorSyncStats(),
-            cipher: new CipherNode(), getConnection: () => connection,
+            cipher: new CipherNode(), bulkReads: createBulkWorkScheduler(2),
+            operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
+            getConnection: () => connection,
             createSessionId: () => 'test-session',
             createBaseMessage: type => ({ type, time: '', node: '', relays: [] }),
-            sendToPeer, canStartBackgroundPrebuild: () => false, terminatePeerConnection,
+            sendToPeer, sendBulkToPeer: async () => true,
+            canStartBackgroundPrebuild: () => false, terminatePeerConnection,
             onProtocolViolation: () => undefined, onSessionClosed, onIndexRefreshed: async () => {},
         });
 
@@ -539,7 +543,7 @@ describe('Negentropy coordinator', () => {
 
             await expect(coordinator.handleMessage(peerKey, {
                 type: 'neg_msg', sessionId: 'test-session', windowId: open.windowId,
-                round: 0, frame: { encoding: 'base64', data: '' }, time: '', node: '', relays: [],
+                round: 1, frame: { encoding: 'base64', data: '' }, time: '', node: '', relays: [],
             })).resolves.toBeUndefined();
 
             expect(coordinator.hasActiveSession(peerKey)).toBe(false);
@@ -622,7 +626,7 @@ describe('Negentropy coordinator', () => {
         });
         connection.capabilities = normalizePeerCapabilities({
             negentropy: true,
-            negentropyVersion: 1,
+            negentropyVersion: 2,
         });
         connection.peerTransportFramingVersion = 1;
         const importPipeline: ImportPipeline = {
@@ -787,19 +791,20 @@ describe('Negentropy coordinator', () => {
             buildSnapshot.mockRejectedValueOnce(buildFailure);
             const dirtyBeforeFailure = coordinator.beginStoreMutation();
             dirtyBeforeFailure();
+            const remoteWindow: ReconciliationWindow = {
+                name: 'history_paged',
+                fromTs: 0,
+                toTs: 1_800_000_000,
+                maxRecords: 16,
+                order: 0,
+            };
             await expect(coordinator.handleMessage(peerKey, {
                 type: 'neg_open',
                 sessionId: 'remote-session',
-                windowId: 'remote-window',
-                window: {
-                    name: 'history_paged',
-                    fromTs: 0,
-                    toTs: 1_800_000_000,
-                    maxRecords: 16,
-                    order: 0,
-                },
+                windowId: makeWindowId(remoteWindow),
+                window: remoteWindow,
                 round: 0,
-                frame: '' as never,
+                frame: { encoding: 'base64', data: '' },
                 time: '',
                 node: '',
                 relays: [],
@@ -808,7 +813,7 @@ describe('Negentropy coordinator', () => {
             expect(sendToPeer).toHaveBeenLastCalledWith(peerKey, expect.objectContaining({
                 type: 'neg_close',
                 sessionId: 'remote-session',
-                windowId: 'remote-window',
+                windowId: makeWindowId(remoteWindow),
                 reason: 'snapshot_build_failed',
             }));
             expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'snapshot_build_failed');
