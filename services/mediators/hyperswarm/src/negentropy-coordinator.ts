@@ -1906,26 +1906,46 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         if (shutdownStarted) {
             return;
         }
-        if (message.type === 'neg_open') {
-            const conn = options.getConnection(peerKey);
-            if (conn) {
-                await handleNegOpenMessage(peerKey, conn, message, schedulingState);
+        try {
+            if (message.type === 'neg_open') {
+                const conn = options.getConnection(peerKey);
+                if (conn) {
+                    await handleNegOpenMessage(peerKey, conn, message, schedulingState);
+                }
+                return;
             }
-            return;
+            if (message.type === 'neg_msg') {
+                await handleNegMsgMessage(peerKey, message);
+                return;
+            }
+            if (message.type === 'ops_req') {
+                await handleOpsReqMessage(peerKey, message);
+                return;
+            }
+            if (message.type === 'ops_push') {
+                await handleOpsPushMessage(peerKey, message);
+                return;
+            }
+            await handleNegCloseMessage(peerKey, message);
         }
-        if (message.type === 'neg_msg') {
-            await handleNegMsgMessage(peerKey, message);
-            return;
+        catch (error) {
+            if (!(error instanceof SnapshotContentionError)) {
+                throw error;
+            }
+
+            const currentSession = peerSessions.get(peerKey);
+            const session = currentSession?.sessionId === message.sessionId
+                ? currentSession
+                : undefined;
+            if (session) {
+                sendNegClose(peerKey, session, 'snapshot_busy');
+                closePeerSession(peerKey, 'snapshot_busy');
+            }
+            log.debug(
+                { peer: shortName(peerKey), sessionId: message.sessionId },
+                'negentropy session deferred after snapshot contention',
+            );
         }
-        if (message.type === 'ops_req') {
-            await handleOpsReqMessage(peerKey, message);
-            return;
-        }
-        if (message.type === 'ops_push') {
-            await handleOpsPushMessage(peerKey, message);
-            return;
-        }
-        await handleNegCloseMessage(peerKey, message);
     }
 
     async function initializeAdapter(): Promise<void> {

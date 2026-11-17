@@ -1,6 +1,7 @@
 import { jest } from '@jest/globals';
 
 import type { ImportPipeline } from '../../services/mediators/hyperswarm/src/import-pipeline.ts';
+import type { ReconciliationWindow } from '../../services/mediators/hyperswarm/src/negentropy/adapter.ts';
 
 const mockLogger = {
     debug: jest.fn(),
@@ -366,6 +367,96 @@ describe('Negentropy coordinator', () => {
             reason: 'test_close',
         }), 'peer sync session closed');
         await store.stop();
+    });
+
+    it('closes only the session when snapshot contention occurs during a message', async () => {
+        const [
+            { createNegentropyCoordinator },
+            { default: InMemoryOperationSyncStore },
+            { createConnectionInfo },
+            { createMediatorSyncStats },
+        ] = await Promise.all([
+            import('../../services/mediators/hyperswarm/src/negentropy-coordinator.ts'),
+            import('../../services/mediators/hyperswarm/src/db/memory.ts'),
+            import('../../services/mediators/hyperswarm/src/mediator-state.ts'),
+            import('../../services/mediators/hyperswarm/src/sync-stats.ts'),
+        ]);
+        const peerKey = '22'.repeat(32);
+        const store = new InMemoryOperationSyncStore();
+        await store.start();
+        let coordinator: ReturnType<typeof createNegentropyCoordinator>;
+        const buildSnapshotForWindow = jest.fn(async (window: ReconciliationWindow) => {
+            if (buildSnapshotForWindow.mock.calls.length > 1) {
+                coordinator.beginStoreMutation()();
+            }
+            return {
+                window,
+                storage: {} as never,
+                stats: {
+                    loaded: 16, skipped: 0, durationMs: 0, frameSizeLimit: 0,
+                    windowName: window.name, fromTs: window.fromTs, toTs: window.toTs,
+                    rounds: 0, completed: false, cappedByRecords: true, cappedByRounds: false,
+                    lastCursor: { ts: 1_750_000_000, id: 'a'.repeat(64) },
+                },
+            };
+        });
+        const adapter = {
+            buildSnapshotForWindow,
+            createEngineForSnapshot: () => ({
+                initiate: async () => new Uint8Array(),
+                reconcile: async () => ({ nextMsg: null, haveIds: [], needIds: [] }),
+            }),
+        };
+        const connection = createConnectionInfo({
+            connection: {
+                write: () => undefined,
+                destroy: () => undefined,
+                remotePublicKey: Buffer.from(peerKey, 'hex'),
+            } as never,
+            peerName: 'test-peer',
+        });
+        const importPipeline = {
+            available: true, recovering: false, queued: 0, running: 0, indexEpoch: 'epoch',
+        } as unknown as ImportPipeline;
+        const sendToPeer = jest.fn<Parameters<typeof createNegentropyCoordinator>[0]['sendToPeer']>(() => true);
+        const terminatePeerConnection = jest.fn();
+        const onSessionClosed = jest.fn(async () => undefined);
+        coordinator = createNegentropyCoordinator({
+            version: 1, transportFramingVersion: 1, frameSizeLimit: 0,
+            maxRecordsPerWindow: 16, maxRoundsPerSession: 8, maxIdsPerRequest: 1_000,
+            maxIdsPerLookup: 1_000, maxOpsPerPush: 300, maxBytesPerPush: 512 * 1024,
+            idleTimeoutMs: 120_000, syncStore: store, importPipeline,
+            syncStats: createMediatorSyncStats(), getConnection: () => connection,
+            createSessionId: () => 'test-session',
+            createBaseMessage: type => ({ type, time: '', node: '', relays: [] }),
+            sendToPeer, canStartBackgroundPrebuild: () => false, terminatePeerConnection,
+            onSessionClosed, onIndexRefreshed: async () => {},
+        });
+
+        try {
+            coordinator.setAdapter(adapter as never);
+            await coordinator.startSession(peerKey, {
+                source: 'connect', modeReason: 'negentropy_supported', initiator: true,
+            });
+            const open = sendToPeer.mock.calls[0]?.[1] as { windowId: string };
+
+            await expect(coordinator.handleMessage(peerKey, {
+                type: 'neg_msg', sessionId: 'test-session', windowId: open.windowId,
+                round: 0, frame: { encoding: 'base64', data: '' }, time: '', node: '', relays: [],
+            })).resolves.toBeUndefined();
+
+            expect(coordinator.hasActiveSession(peerKey)).toBe(false);
+            expect(sendToPeer).toHaveBeenLastCalledWith(peerKey, expect.objectContaining({
+                type: 'neg_close', sessionId: 'test-session', reason: 'snapshot_busy',
+            }));
+            expect(onSessionClosed).toHaveBeenCalledWith(peerKey, 'snapshot_busy');
+            expect(terminatePeerConnection).not.toHaveBeenCalled();
+            expect(buildSnapshotForWindow).toHaveBeenCalledTimes(3);
+        }
+        finally {
+            await coordinator.shutdown();
+            await store.stop();
+        }
     });
 
     it('rebuilds a snapshot dirtied by a completed store mutation before opening a session', async () => {
