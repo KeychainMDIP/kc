@@ -2134,7 +2134,7 @@ describe('DidIndexer published credential indexing', () => {
         expect(gatekeeper.exportIndex).toHaveBeenCalledWith({
             mode: 'snapshot',
             cursor: null,
-            limit: 500,
+            limit: 200,
         });
         expect(gatekeeper.getDIDs).not.toHaveBeenCalled();
         expect(gatekeeper.resolveDID).not.toHaveBeenCalled();
@@ -2215,7 +2215,7 @@ describe('DidIndexer published credential indexing', () => {
         expect(gatekeeper.exportIndex).toHaveBeenCalledWith({
             mode: 'changes',
             cursor: null,
-            limit: 500,
+            limit: 200,
         });
         expect(applySpy.mock.results[0].type).toBe('return');
         const result = await applySpy.mock.results[0].value as ApplyIndexPageResult;

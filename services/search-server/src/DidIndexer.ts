@@ -43,6 +43,8 @@ interface SyncRunStats {
 }
 
 const INITIAL_METRICS_QUIET_RUNS = 2;
+const DEFAULT_INDEX_EXPORT_PAGE_LIMIT = 200;
+const NETWORK_METRICS_HISTORY_PAGE_SIZE = 500;
 
 function isCancellationError(error: unknown): boolean {
     if (error === 'canceled') {
@@ -79,7 +81,7 @@ export default class DidIndexer {
         this.gatekeeper = gatekeeper;
         this.db = db;
         this.intervalMs = options.intervalMs;
-        this.pageLimit = options.pageLimit ?? 500;
+        this.pageLimit = options.pageLimit ?? DEFAULT_INDEX_EXPORT_PAGE_LIMIT;
         this.metricsRefreshIntervalMs = options.metricsRefreshIntervalMs ?? null;
         this.didPrefix = options.didPrefix;
         this.timer = null;
@@ -453,7 +455,7 @@ export default class DidIndexer {
                 await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.metricsDidPrefix, null);
             }
 
-            const histories = this.db.iterateDIDEventHistories(this.pageLimit);
+            const histories = this.db.iterateDIDEventHistories(NETWORK_METRICS_HISTORY_PAGE_SIZE);
             const result = await buildNetworkMetricSnapshots(histories, now, this.didPrefix);
             await this.db.replaceNetworkMetricSnapshots(result.snapshots);
             await this.db.saveSyncState(INDEX_SYNC_STATE_KEYS.metricsLastRebuiltAt, now.toISOString());

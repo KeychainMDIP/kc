@@ -257,12 +257,12 @@ describe('DidIndexer gatekeeper read boundary', () => {
         expect(gatekeeper.exportIndex).toHaveBeenNthCalledWith(1, {
             mode: 'snapshot',
             cursor: null,
-            limit: 500,
+            limit: 200,
         });
         expect(gatekeeper.exportIndex).toHaveBeenNthCalledWith(2, {
             mode: 'changes',
             cursor: '4',
-            limit: 500,
+            limit: 200,
         });
         expect(gatekeeper.getDIDs).not.toHaveBeenCalled();
         expect(gatekeeper.resolveDID).not.toHaveBeenCalled();
@@ -544,12 +544,12 @@ describe('DidIndexer gatekeeper read boundary', () => {
         expect(gatekeeper.exportIndex).toHaveBeenNthCalledWith(1, {
             mode: 'changes',
             cursor: '7',
-            limit: 500,
+            limit: 200,
         });
         expect(gatekeeper.exportIndex).toHaveBeenNthCalledWith(2, {
             mode: 'changes',
             cursor: '8',
-            limit: 500,
+            limit: 200,
         });
         expect(await db.loadSyncState('index.changes.cursor')).toBe('9');
     });
@@ -595,12 +595,12 @@ describe('DidIndexer gatekeeper read boundary', () => {
         expect(gatekeeper.exportIndex).toHaveBeenNthCalledWith(1, {
             mode: 'changes',
             cursor: null,
-            limit: 500,
+            limit: 200,
         });
         expect(gatekeeper.exportIndex).toHaveBeenNthCalledWith(2, {
             mode: 'changes',
             cursor: '7',
-            limit: 500,
+            limit: 200,
         });
         expect(applyIndexPage.mock.calls[0][0]).not.toHaveProperty('operations');
         expect(applyIndexPage.mock.calls[1][0]).toMatchObject({
