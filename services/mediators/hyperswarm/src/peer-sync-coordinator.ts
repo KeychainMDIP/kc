@@ -479,7 +479,10 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
                 if (reason === 'gatekeeper_processing_unavailable') conn.lastNegentropyAttemptAt = 0;
             }
         }
-        if (accepting && reason !== 'ordered_catchup_active' && reason !== 'gatekeeper_reset') {
+        if (accepting
+            && reason !== 'ordered_catchup_active'
+            && reason !== 'gatekeeper_reset'
+            && reason !== 'snapshot_busy') {
             await schedulePreferredSyncs();
         }
     }

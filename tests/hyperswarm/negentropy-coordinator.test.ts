@@ -368,7 +368,7 @@ describe('Negentropy coordinator', () => {
         await store.stop();
     });
 
-    it('does not retain snapshots while a store mutation is pending', async () => {
+    it('rebuilds a snapshot dirtied by a completed store mutation before opening a session', async () => {
         const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(1_800_000_000_000);
         const [
             { createNegentropyCoordinator },
@@ -376,12 +376,14 @@ describe('Negentropy coordinator', () => {
             { default: NegentropyAdapter },
             { createConnectionInfo },
             { createMediatorSyncStats },
+            { normalizePeerCapabilities },
         ] = await Promise.all([
             import('../../services/mediators/hyperswarm/src/negentropy-coordinator.ts'),
             import('../../services/mediators/hyperswarm/src/db/memory.ts'),
             import('../../services/mediators/hyperswarm/src/negentropy/adapter.ts'),
             import('../../services/mediators/hyperswarm/src/mediator-state.ts'),
             import('../../services/mediators/hyperswarm/src/sync-stats.ts'),
+            import('../../services/mediators/hyperswarm/src/negentropy/protocol.ts'),
         ]);
         const store = new InMemoryOperationSyncStore();
         await store.start();
@@ -399,10 +401,28 @@ describe('Negentropy coordinator', () => {
         })));
         const adapter = await NegentropyAdapter.create({
             syncStore: store,
-            maxRecordsPerWindow: 2,
+            maxRecordsPerWindow: 16,
             deferInitialBuild: true,
         });
-        const buildSnapshot = jest.spyOn(adapter, 'buildSnapshotForWindow');
+        const buildSnapshotForWindow = adapter.buildSnapshotForWindow.bind(adapter);
+        let markFirstBuildCaptured!: () => void;
+        const firstBuildCaptured = new Promise<void>(resolve => {
+            markFirstBuildCaptured = resolve;
+        });
+        let releaseFirstBuild!: () => void;
+        const firstBuildBlocked = new Promise<void>(resolve => {
+            releaseFirstBuild = resolve;
+        });
+        const buildSnapshot = jest.spyOn(adapter, 'buildSnapshotForWindow').mockImplementation(async window => {
+            const snapshot = await buildSnapshotForWindow(window);
+            if (buildSnapshot.mock.calls.length === 1) {
+                markFirstBuildCaptured();
+                await firstBuildBlocked;
+            }
+            return snapshot;
+        });
+        const createEngine = jest.spyOn(adapter, 'createEngineForSnapshot');
+        const onSessionClosed = jest.fn(() => undefined);
         const peerKey = '22'.repeat(32);
         const connection = createConnectionInfo({
             connection: {
@@ -412,6 +432,11 @@ describe('Negentropy coordinator', () => {
             } as never,
             peerName: 'test-peer',
         });
+        connection.capabilities = normalizePeerCapabilities({
+            negentropy: true,
+            negentropyVersion: 1,
+        });
+        connection.peerTransportFramingVersion = 1;
         const importPipeline: ImportPipeline = {
             available: true, recovering: false,
             get queued() { return 0; },
@@ -425,11 +450,12 @@ describe('Negentropy coordinator', () => {
             async refreshIndex() { throw new Error('unexpected index refresh'); },
             async shutdown() {},
         };
+        const sendToPeer = jest.fn(() => true);
         const coordinator = createNegentropyCoordinator({
             version: 1,
             transportFramingVersion: 1,
             frameSizeLimit: 0,
-            maxRecordsPerWindow: 2,
+            maxRecordsPerWindow: 16,
             maxRoundsPerSession: 8,
             maxIdsPerRequest: 1_000,
             maxIdsPerLookup: 1_000,
@@ -440,44 +466,174 @@ describe('Negentropy coordinator', () => {
             importPipeline,
             syncStats: createMediatorSyncStats(),
             getConnection: key => key === peerKey ? connection : undefined,
-            createSessionId: () => `test-session-${buildSnapshot.mock.calls.length}`,
+            createSessionId: () => 'test-session',
             createBaseMessage: type => ({
                 type,
                 time: new Date().toISOString(),
                 node: 'test-node',
                 relays: [],
             }),
-            sendToPeer: () => true,
+            sendToPeer,
             canStartBackgroundPrebuild: () => false,
             terminatePeerConnection: () => undefined,
-            onSessionClosed: () => undefined,
+            onSessionClosed,
             onIndexRefreshed: async () => {},
         });
         coordinator.setAdapter(adapter);
-        const startAndClose = async (): Promise<void> => {
-            await coordinator.startSession(peerKey, {
+        let starting: Promise<boolean> | null = null;
+        let finishFirstMutation: () => void = () => undefined;
+        let finishSecondMutation: () => void = () => undefined;
+        let finishWakeRaceMutation: () => void = () => undefined;
+        let finishShutdownMutation: () => void = () => undefined;
+        try {
+            starting = coordinator.startSession(peerKey, {
                 source: 'connect',
                 modeReason: 'negentropy_supported',
                 initiator: true,
             });
+            await firstBuildCaptured;
+            finishFirstMutation = coordinator.beginStoreMutation();
+            finishSecondMutation = coordinator.beginStoreMutation();
+            await store.upsertMany([{
+                id: 'd'.repeat(64),
+                signedTs: 1_750_000_003,
+                operation: {
+                    type: 'create',
+                    signature: {
+                        hash: 'd'.repeat(64),
+                        signed: new Date(1_750_000_003 * 1000).toISOString(),
+                        value: 'sig-d',
+                    },
+                },
+            }]);
+            releaseFirstBuild();
+            await new Promise<void>(resolve => setImmediate(resolve));
+            expect(buildSnapshot).toHaveBeenCalledTimes(1);
+            finishFirstMutation();
+            finishFirstMutation();
+            await new Promise<void>(resolve => setImmediate(resolve));
+            expect(buildSnapshot).toHaveBeenCalledTimes(1);
+            finishSecondMutation();
+            finishWakeRaceMutation = coordinator.beginStoreMutation();
+            await new Promise<void>(resolve => setImmediate(resolve));
+            expect(buildSnapshot).toHaveBeenCalledTimes(1);
+            finishWakeRaceMutation();
+            expect(await starting).toBe(true);
+            expect(buildSnapshot).toHaveBeenCalledTimes(2);
+            expect(createEngine).toHaveBeenCalledTimes(1);
+            expect(createEngine.mock.calls[0]?.[0].stats.loaded).toBe(4);
+
             coordinator.removePeer(peerKey, 'test_close');
-        };
+            let markThirdBuildStarted!: () => void;
+            const thirdBuildStarted = new Promise<void>(resolve => {
+                markThirdBuildStarted = resolve;
+            });
+            let releaseThirdBuild!: () => void;
+            const thirdBuildBlocked = new Promise<void>(resolve => {
+                releaseThirdBuild = resolve;
+            });
+            let markFourthBuildStarted!: () => void;
+            const fourthBuildStarted = new Promise<void>(resolve => {
+                markFourthBuildStarted = resolve;
+            });
+            let releaseFourthBuild!: () => void;
+            const fourthBuildBlocked = new Promise<void>(resolve => {
+                releaseFourthBuild = resolve;
+            });
+            buildSnapshot.mockImplementation(async window => {
+                const snapshot = await buildSnapshotForWindow(window);
+                if (buildSnapshot.mock.calls.length === 3) {
+                    markThirdBuildStarted();
+                    await thirdBuildBlocked;
+                }
+                if (buildSnapshot.mock.calls.length === 4) {
+                    markFourthBuildStarted();
+                    await fourthBuildBlocked;
+                }
+                return snapshot;
+            });
 
-        await startAndClose();
-        expect(buildSnapshot).toHaveBeenCalledTimes(1);
+            const markDirty = coordinator.beginStoreMutation();
+            markDirty();
+            const contending = coordinator.startSession(peerKey, {
+                source: 'periodic',
+                modeReason: 'negentropy_supported',
+                initiator: true,
+            });
+            await thirdBuildStarted;
+            const finishThirdBuildMutation = coordinator.beginStoreMutation();
+            finishThirdBuildMutation();
+            releaseThirdBuild();
+            await fourthBuildStarted;
+            const finishFourthBuildMutation = coordinator.beginStoreMutation();
+            finishFourthBuildMutation();
+            releaseFourthBuild();
 
-        const finishStoreMutation = coordinator.beginStoreMutation();
-        await startAndClose();
-        await startAndClose();
-        expect(buildSnapshot).toHaveBeenCalledTimes(3);
+            expect(await contending).toBe(false);
+            expect(buildSnapshot).toHaveBeenCalledTimes(4);
+            expect(createEngine).toHaveBeenCalledTimes(1);
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'snapshot_busy');
 
-        finishStoreMutation();
-        await startAndClose();
-        await startAndClose();
-        expect(buildSnapshot).toHaveBeenCalledTimes(4);
+            expect(await coordinator.startSession(peerKey, {
+                source: 'periodic',
+                modeReason: 'negentropy_supported',
+                initiator: true,
+            })).toBe(true);
+            expect(buildSnapshot).toHaveBeenCalledTimes(5);
+            expect(createEngine).toHaveBeenCalledTimes(2);
 
-        await coordinator.shutdown();
-        await store.stop();
-        nowSpy.mockRestore();
+            coordinator.removePeer(peerKey, 'test_close');
+            const buildFailure = new Error('snapshot read failed');
+            buildSnapshot.mockRejectedValueOnce(buildFailure);
+            const dirtyBeforeFailure = coordinator.beginStoreMutation();
+            dirtyBeforeFailure();
+            await expect(coordinator.handleMessage(peerKey, {
+                type: 'neg_open',
+                sessionId: 'remote-session',
+                windowId: 'remote-window',
+                window: {
+                    name: 'history_paged',
+                    fromTs: 0,
+                    toTs: 1_800_000_000,
+                    maxRecords: 16,
+                    order: 0,
+                },
+                round: 0,
+                frame: '' as never,
+                time: '',
+                node: '',
+                relays: [],
+            })).rejects.toBe(buildFailure);
+            expect(coordinator.hasActiveSession(peerKey)).toBe(false);
+            expect(sendToPeer).toHaveBeenLastCalledWith(peerKey, expect.objectContaining({
+                type: 'neg_close',
+                sessionId: 'remote-session',
+                windowId: 'remote-window',
+                reason: 'snapshot_build_failed',
+            }));
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'snapshot_build_failed');
+
+            finishShutdownMutation = coordinator.beginStoreMutation();
+            const waitingForMutation = coordinator.startSession(peerKey, {
+                source: 'periodic',
+                modeReason: 'negentropy_supported',
+                initiator: true,
+            });
+            await new Promise<void>(resolve => setImmediate(resolve));
+            const shuttingDown = coordinator.shutdown();
+            await expect(waitingForMutation).rejects.toThrow('mediator is shutting down');
+            await shuttingDown;
+        }
+        finally {
+            finishFirstMutation();
+            finishSecondMutation();
+            finishWakeRaceMutation();
+            finishShutdownMutation();
+            releaseFirstBuild();
+            await starting?.catch(() => undefined);
+            await coordinator.shutdown();
+            await store.stop();
+            nowSpy.mockRestore();
+        }
     });
 });
