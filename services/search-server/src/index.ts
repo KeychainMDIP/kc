@@ -86,6 +86,32 @@ async function cleanup(): Promise<void> {
     }
 }
 
+function createDatabase(): DIDsDb {
+    log.info(`Search Server persisting to ${config.db}`);
+
+    if (config.db === 'sqlite') {
+        return new DIDsSQLite();
+    }
+    if (config.db === 'postgres') {
+        return new DIDsPostgres(config.postgresURL);
+    }
+    return new DIDsDbMemory();
+}
+
+async function resetDatabase(shutdown: Shutdown): Promise<void> {
+    log.warn('Resetting the Search Server database and exiting');
+    const didDb = createDatabase();
+    activeDb = didDb;
+    await didDb.connect(true);
+    log.info('Search Server database reset complete');
+    await shutdown();
+}
+
+async function invalidResetArguments(shutdown: Shutdown): Promise<void> {
+    log.error('Usage: node dist/index.js [--reset-db]');
+    await shutdown(1);
+}
+
 async function main(shutdown: Shutdown) {
     const app = express();
     const v1router = express.Router();
@@ -145,19 +171,10 @@ async function main(shutdown: Shutdown) {
     app.use(cors(corsOptions));
     app.use(express.json({ limit: config.jsonLimit }));
 
-    let didDb: DIDsDb;
-    log.info(`Search Server persisting to ${config.db}`);
-
     if (config.resetDb) {
         log.warn('KC_SEARCH_SERVER_RESET_DB is enabled. Rebuilding the Search Server database before indexing.');
     }
-    if (config.db === 'sqlite') {
-        didDb = new DIDsSQLite();
-    } else if (config.db === 'postgres') {
-        didDb = new DIDsPostgres(config.postgresURL);
-    } else {
-        didDb = new DIDsDbMemory();
-    }
+    const didDb = createDatabase();
     activeDb = didDb;
 
     const gatekeeper = new GatekeeperClient();
@@ -627,8 +644,17 @@ async function main(shutdown: Shutdown) {
     });
 }
 
+const applicationArgs = process.argv.slice(2);
+const resetArgumentCount = applicationArgs.filter(arg => arg === '--reset-db').length;
+let start = main;
+if (resetArgumentCount > 0) {
+    start = resetArgumentCount === 1 && applicationArgs.length === 1
+        ? resetDatabase
+        : invalidResetArguments;
+}
+
 runService({
-    start: main,
+    start,
     cleanup,
     log,
     timeoutMs: SHUTDOWN_TIMEOUT_MS,

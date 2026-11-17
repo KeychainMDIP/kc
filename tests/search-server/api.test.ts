@@ -31,6 +31,7 @@ let server: Server | undefined;
 let base: string;
 let limiter: { skip: (req: any) => boolean };
 let processListeners: Record<string, ReturnType<typeof process.listeners>>;
+let processArgs: string[];
 const lifecycleEvents = ['SIGTERM', 'SIGINT', 'uncaughtException', 'unhandledRejection'] as const;
 
 jest.unstable_mockModule(require.resolve('express'), () => ({ default: Object.assign(() => app, express) }));
@@ -80,6 +81,7 @@ beforeEach(() => {
         await getBlock('local', 1);
         return { didDocument: { id: did } };
     });
+    processArgs = [...process.argv];
     processListeners = Object.fromEntries(lifecycleEvents.map(event => [event, process.listeners(event)]));
     jest.spyOn(process, 'exit').mockImplementation(() => undefined as never);
 });
@@ -94,6 +96,7 @@ afterEach(async () => {
             if (!processListeners[event].includes(listener)) process.removeListener(event, listener);
         }
     }
+    process.argv = processArgs;
     jest.restoreAllMocks();
 });
 
@@ -122,6 +125,63 @@ async function waitForCall(mock: ReturnType<typeof jest.fn>): Promise<void> {
         await new Promise(resolve => setImmediate(resolve));
     }
 }
+
+describe('Search Server reset command', () => {
+    it('resets the configured database, disconnects, and exits without starting the service', async () => {
+        config.db = 'postgres';
+        process.argv = [processArgs[0], processArgs[1], '--reset-db'];
+        const initialize = jest.spyOn(db, 'connect');
+        const disconnect = jest.spyOn(db, 'disconnect');
+        const listen = jest.spyOn(app, 'listen');
+
+        await import(serverEntry);
+        await waitForCall(process.exit as any);
+
+        expect(postgresCreate).toHaveBeenCalledWith(config.postgresURL);
+        expect(initialize).toHaveBeenCalledWith(true);
+        expect(disconnect).toHaveBeenCalledTimes(1);
+        expect(connect).not.toHaveBeenCalled();
+        expect(listen).not.toHaveBeenCalled();
+        expect(startIndexing).not.toHaveBeenCalled();
+        expect(logger.info).toHaveBeenCalledWith('Search Server database reset complete');
+        expect(process.exit).toHaveBeenCalledWith(0);
+    });
+
+    it('disconnects and exits non-zero when the reset fails', async () => {
+        process.argv = [processArgs[0], processArgs[1], '--reset-db'];
+        const failure = new Error('reset failed');
+        jest.spyOn(db, 'connect').mockRejectedValueOnce(failure);
+        const disconnect = jest.spyOn(db, 'disconnect');
+
+        await import(serverEntry);
+        await waitForCall(process.exit as any);
+
+        expect(disconnect).toHaveBeenCalledTimes(1);
+        expect(connect).not.toHaveBeenCalled();
+        expect(startIndexing).not.toHaveBeenCalled();
+        expect(logger.error).toHaveBeenCalledWith({ err: failure }, '[search-server] Fatal error');
+        expect(process.exit).toHaveBeenCalledWith(1);
+    });
+
+    it.each([
+        ['combined', ['--reset-db', 'unexpected']],
+        ['repeated', ['--reset-db', '--reset-db']],
+    ])('rejects %s reset arguments before opening the database', async (_description, args) => {
+        config.db = 'postgres';
+        process.argv = [processArgs[0], processArgs[1], ...args];
+        const initialize = jest.spyOn(db, 'connect');
+
+        await import(serverEntry);
+        await waitForCall(process.exit as any);
+
+        expect(sqliteCreate).not.toHaveBeenCalled();
+        expect(postgresCreate).not.toHaveBeenCalled();
+        expect(initialize).not.toHaveBeenCalled();
+        expect(connect).not.toHaveBeenCalled();
+        expect(logger.error).toHaveBeenCalledWith('Usage: node dist/index.js [--reset-db]');
+        expect(process.exit).toHaveBeenCalledWith(1);
+    });
+});
 
 describe('Search Server HTTP routes', () => {
     it('adds scoped statistics to status while preserving synchronization and metrics fields', async () => {

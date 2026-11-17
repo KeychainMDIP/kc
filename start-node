@@ -2,7 +2,30 @@
 set -e
 
 PROFILE_ARGS=()
-SERVICES=("$@")
+SERVICES=()
+RESET_DB=false
+RESET_DB_COUNT=0
+
+for ARG in "$@"; do
+    if [ "$ARG" = "--reset-db" ]; then
+        RESET_DB=true
+        RESET_DB_COUNT=$((RESET_DB_COUNT + 1))
+    else
+        SERVICES+=("$ARG")
+    fi
+done
+
+if [ "$RESET_DB_COUNT" -gt 1 ]; then
+    echo "Error: --reset-db may be specified only once" >&2
+    exit 2
+fi
+
+if [ "$RESET_DB" = true ] && [ ${#SERVICES[@]} -gt 0 ]; then
+    if ! printf '%s\n' "${SERVICES[@]}" | grep -qx "search-server"; then
+        echo "Error: --reset-db requires search-server in the service list" >&2
+        exit 2
+    fi
+fi
 
 if [ -f .env ]; then
     set -a
@@ -26,4 +49,9 @@ fi
 docker compose --profile ipfs down
 docker compose down
 docker compose "${PROFILE_ARGS[@]}" build "${SERVICES[@]}"
-docker compose "${PROFILE_ARGS[@]}" up "${SERVICES[@]}"
+if [ "$RESET_DB" = true ]; then
+    docker compose "${PROFILE_ARGS[@]}" run --rm search-server node dist/index.js --reset-db
+    KC_SEARCH_SERVER_RESET_DB=false docker compose "${PROFILE_ARGS[@]}" up "${SERVICES[@]}"
+else
+    docker compose "${PROFILE_ARGS[@]}" up "${SERVICES[@]}"
+fi

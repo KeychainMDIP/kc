@@ -22,6 +22,16 @@ $ ./start-node gatekeeper keymaster hypr-mediator cli
 
 `start-node` is a repository-root Docker Compose wrapper. The command above starts a core node that exchanges operations over Hyperswarm and includes the CLI container, without starting the Bitcoin-family nodes. Running `./start-node` without service names starts every Compose service, including all blockchain nodes and mediators. See the [deployment guide](https://keychain.org/docs/server/deployment/) for isolated and optional-service configurations.
 
+To rebuild Search Server's disposable index before a local startup, include
+`search-server` and the one-shot reset option. The wrapper completes the reset
+and then leaves Search Server running normally:
+
+```bash
+./start-node gatekeeper keymaster hypr-mediator cli search-server --reset-db
+```
+
+See the [Search Server reset documentation](services/search-server/README.md#resetting-the-search-database) before using this destructive option.
+
 REST API references: [Gatekeeper OpenAPI](doc/gatekeeper-api.json) and [Keymaster OpenAPI](doc/keymaster-api.json).
 
 ### Local Development (for developers)
