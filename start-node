@@ -50,8 +50,7 @@ docker compose --profile ipfs down
 docker compose down
 docker compose "${PROFILE_ARGS[@]}" build "${SERVICES[@]}"
 if [ "$RESET_DB" = true ]; then
-    docker compose "${PROFILE_ARGS[@]}" run --rm search-server node dist/index.js --reset-db
-    KC_SEARCH_SERVER_RESET_DB=false docker compose "${PROFILE_ARGS[@]}" up "${SERVICES[@]}"
+    KC_SEARCH_SERVER_RESET_DB=true docker compose "${PROFILE_ARGS[@]}" up "${SERVICES[@]}"
 else
     docker compose "${PROFILE_ARGS[@]}" up "${SERVICES[@]}"
 fi

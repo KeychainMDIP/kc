@@ -24,7 +24,7 @@ printf '\n' >> "\${DOCKER_LOG}"
 `, { mode: 0o755 });
         fs.writeFileSync(path.join(folder, '.env'), [
             'KC_IPFS_ENABLE=false',
-            'KC_SEARCH_SERVER_RESET_DB=true',
+            'KC_SEARCH_SERVER_RESET_DB=false',
             '',
         ].join('\n'));
     });
@@ -49,19 +49,23 @@ printf '\n' >> "\${DOCKER_LOG}"
         return fs.readFileSync(dockerLog, 'utf8').trim().split('\n');
     }
 
-    it('runs one reset before starting Search normally', async () => {
+    it('starts Search with reset enabled in the long-running process', async () => {
         await run(['search-server', '--reset-db']);
 
         expect(dockerCalls()).toEqual([
-            'RESET=true|compose --profile ipfs down ',
-            'RESET=true|compose down ',
-            'RESET=true|compose build search-server ',
-            'RESET=true|compose run --rm search-server node dist/index.js --reset-db ',
-            'RESET=false|compose up search-server',
+            'RESET=false|compose --profile ipfs down ',
+            'RESET=false|compose down ',
+            'RESET=false|compose build search-server ',
+            'RESET=true|compose up search-server',
         ]);
     });
 
     it('preserves ordinary startup and its configured reset environment', async () => {
+        fs.writeFileSync(path.join(folder, '.env'), [
+            'KC_IPFS_ENABLE=false',
+            'KC_SEARCH_SERVER_RESET_DB=true',
+            '',
+        ].join('\n'));
         await run(['search-server']);
 
         expect(dockerCalls()).toEqual([

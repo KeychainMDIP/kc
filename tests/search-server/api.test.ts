@@ -127,38 +127,35 @@ async function waitForCall(mock: ReturnType<typeof jest.fn>): Promise<void> {
 }
 
 describe('Search Server reset command', () => {
-    it('resets the configured database, disconnects, and exits without starting the service', async () => {
+    it('resets the configured database and continues running the service', async () => {
         config.db = 'postgres';
         process.argv = [processArgs[0], processArgs[1], '--reset-db'];
         const initialize = jest.spyOn(db, 'connect');
-        const disconnect = jest.spyOn(db, 'disconnect');
-        const listen = jest.spyOn(app, 'listen');
 
-        await import(serverEntry);
-        await waitForCall(process.exit as any);
+        await boot();
+        await waitForCall(startIndexing);
 
         expect(postgresCreate).toHaveBeenCalledWith(config.postgresURL);
-        expect(initialize).toHaveBeenCalledWith(true);
-        expect(disconnect).toHaveBeenCalledTimes(1);
-        expect(connect).not.toHaveBeenCalled();
-        expect(listen).not.toHaveBeenCalled();
-        expect(startIndexing).not.toHaveBeenCalled();
-        expect(logger.info).toHaveBeenCalledWith('Search Server database reset complete');
-        expect(process.exit).toHaveBeenCalledWith(0);
+        expect(initialize).toHaveBeenCalledWith(expect.any(AbortSignal), true);
+        expect(connect).toHaveBeenCalledTimes(1);
+        expect(startIndexing).toHaveBeenCalledTimes(1);
+        expect(server!.listening).toBe(true);
+        expect(process.exit).not.toHaveBeenCalled();
+        expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('database reset is enabled'));
     });
 
-    it('disconnects and exits non-zero when the reset fails', async () => {
+    it('shuts down when the reset fails during startup', async () => {
         process.argv = [processArgs[0], processArgs[1], '--reset-db'];
         const failure = new Error('reset failed');
         jest.spyOn(db, 'connect').mockRejectedValueOnce(failure);
         const disconnect = jest.spyOn(db, 'disconnect');
 
-        await import(serverEntry);
+        await boot();
         await waitForCall(process.exit as any);
 
         expect(disconnect).toHaveBeenCalledTimes(1);
-        expect(connect).not.toHaveBeenCalled();
         expect(startIndexing).not.toHaveBeenCalled();
+        expect(server!.listening).toBe(false);
         expect(logger.error).toHaveBeenCalledWith({ err: failure }, '[search-server] Fatal error');
         expect(process.exit).toHaveBeenCalledWith(1);
     });
@@ -801,7 +798,7 @@ describe('Search Server HTTP routes', () => {
         await boot();
         if (name === 'sqlite') expect(initialize).toHaveBeenCalledWith(true);
         else expect(initialize).toHaveBeenCalledWith(expect.any(AbortSignal), true);
-        expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('KC_SEARCH_SERVER_RESET_DB'));
+        expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('database reset is enabled'));
     });
 
     it('closes the listener without starting indexing after a startup reset failure', async () => {

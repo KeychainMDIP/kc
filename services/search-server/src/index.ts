@@ -98,21 +98,12 @@ function createDatabase(): DIDsDb {
     return new DIDsDbMemory();
 }
 
-async function resetDatabase(shutdown: Shutdown): Promise<void> {
-    log.warn('Resetting the Search Server database and exiting');
-    const didDb = createDatabase();
-    activeDb = didDb;
-    await didDb.connect(true);
-    log.info('Search Server database reset complete');
-    await shutdown();
-}
-
 async function invalidResetArguments(shutdown: Shutdown): Promise<void> {
     log.error('Usage: node dist/index.js [--reset-db]');
     await shutdown(1);
 }
 
-async function main(shutdown: Shutdown) {
+async function main(shutdown: Shutdown, resetDb = config.resetDb) {
     const app = express();
     const v1router = express.Router();
     let initialized = false;
@@ -171,8 +162,8 @@ async function main(shutdown: Shutdown) {
     app.use(cors(corsOptions));
     app.use(express.json({ limit: config.jsonLimit }));
 
-    if (config.resetDb) {
-        log.warn('KC_SEARCH_SERVER_RESET_DB is enabled. Rebuilding the Search Server database before indexing.');
+    if (resetDb) {
+        log.warn('Search Server database reset is enabled. Rebuilding the database before indexing.');
     }
     const didDb = createDatabase();
     activeDb = didDb;
@@ -628,8 +619,8 @@ async function main(shutdown: Shutdown) {
     });
 
     initialization = config.db === 'postgres'
-        ? (didDb as DIDsPostgres).connect(dependencyRequests.signal, config.resetDb)
-        : didDb.connect(config.resetDb);
+        ? (didDb as DIDsPostgres).connect(dependencyRequests.signal, resetDb)
+        : didDb.connect(resetDb);
     await initialization;
     if (dependencyRequests.signal.aborted) return;
     initialized = true;
@@ -646,12 +637,10 @@ async function main(shutdown: Shutdown) {
 
 const applicationArgs = process.argv.slice(2);
 const resetArgumentCount = applicationArgs.filter(arg => arg === '--reset-db').length;
-let start = main;
-if (resetArgumentCount > 0) {
-    start = resetArgumentCount === 1 && applicationArgs.length === 1
-        ? resetDatabase
-        : invalidResetArguments;
-}
+const validResetArgument = resetArgumentCount === 1 && applicationArgs.length === 1;
+const start = resetArgumentCount > 0 && !validResetArgument
+    ? invalidResetArguments
+    : (shutdown: Shutdown) => main(shutdown, config.resetDb || validResetArgument);
 
 runService({
     start,

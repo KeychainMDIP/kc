@@ -84,27 +84,27 @@ then continues serving and indexing. It defaults to `false`. An environment
 value retained by a process manager is also present on later process restarts,
 so do not leave it set to `true` unless every restart should reset Search.
 
-Use the one-shot command when reset intent should belong to a temporary
-process:
+The equivalent startup option resets the database and then keeps the Search
+Server running normally:
 
 ```bash
 node dist/index.js --reset-db
 ```
 
-It uses the same configured database and coordinated reset path, then exits.
-It does not connect to Gatekeeper, listen on HTTP, or start indexing. Wait for
-exit status `0` before starting the normal Search Server without the argument.
-A reset or cleanup failure exits non-zero.
+It uses the same configured database and coordinated reset path as the
+environment variable. A reset failure stops startup rather than serving a
+partially initialized database. Like an environment value, an argument retained
+by a process manager is applied again on every restart.
 
-The repository wrapper performs both stages in one invocation:
+The repository wrapper accepts the same startup option:
 
 ```bash
 ./start-node gatekeeper keymaster hypr-mediator cli search-server --reset-db
 ```
 
-It runs the one-shot reset first and then leaves the requested services,
-including the normal Search Server, running. The argument is valid only when
-`search-server` is explicitly selected or when no service list is supplied.
+It starts the requested services with database reset enabled for Search Server.
+The argument is valid only when `search-server` is explicitly selected or when
+no service list is supplied.
 
 PostgreSQL stores a generated lowercase copy of each document's JSONB-rendered
 text in `did_docs.search_text` and maintains one trigram GIN index on that
