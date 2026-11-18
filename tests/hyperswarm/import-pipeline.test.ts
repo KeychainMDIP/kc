@@ -111,6 +111,18 @@ function makeValidOperation(index: number): Operation {
     };
 }
 
+function createEmptyExportIndex() {
+    return jest.fn<GatekeeperClient['exportIndex']>(async request => request.mode === 'snapshot'
+        ? {
+            mode: 'snapshot', indexEpoch: 'epoch-a', cursor: null, checkpointCursor: '0',
+            hasMore: false, dids: [], blocks: [],
+        }
+        : {
+            mode: 'changes', indexEpoch: 'epoch-a', cursor: request.cursor ?? '0', checkpointCursor: '0',
+            hasMore: false, dids: [], blocks: [], operations: [], removedOperations: [],
+        });
+}
+
 describe('import pipeline', () => {
     it('keeps the queue usable when a completion callback throws', async () => {
         const processEvents = jest.fn<GatekeeperClient['processEvents']>();
@@ -792,6 +804,117 @@ describe('import pipeline', () => {
         jest.useRealTimers();
     });
 
+    it('restores active retry delays after restart and removes them after expiry', async () => {
+        jest.useFakeTimers();
+        jest.setSystemTime(new Date('2026-08-01T12:00:00.000Z'));
+        const deferred = makeValidOperation(1);
+        const store = new InMemoryOperationSyncStore();
+        const exportIndex = createEmptyExportIndex();
+        const gatekeeper = {
+            exportIndex,
+            importBatch: jest.fn(async () => ({
+                queued: 0, processed: 0, rejected: 0, total: 0,
+                rejectedIndices: [], capacityDeferred: 1, capacityDeferredIndices: [0], processedIndices: [],
+            })),
+            processEvents: jest.fn<GatekeeperClient['processEvents']>(async () => ({ hasMore: false })),
+        };
+
+        try {
+            const first = createPipeline(jest.fn(async () => true), store, gatekeeper);
+            await first.refreshIndex('startup');
+            await first.enqueue({ kind: 'remote', name: 'peer-a', data: [deferred] });
+            await expect(store.loadSyncStateByPrefix('import.retryDelay.', { limit: 10 }))
+                .resolves.toHaveLength(1);
+            await first.shutdown();
+
+            const restarted = createPipeline(jest.fn(async () => true), store, gatekeeper);
+            await restarted.refreshIndex('startup');
+            expect(restarted.filterRetryDelayedIds([deferred.signature!.hash])).toEqual({
+                eligibleIds: [], pendingIds: [], capacityDeferredIds: [deferred.signature!.hash],
+            });
+            await jest.advanceTimersByTimeAsync(300_000);
+            expect(restarted.filterRetryDelayedIds([deferred.signature!.hash])).toEqual({
+                eligibleIds: [deferred.signature!.hash], pendingIds: [], capacityDeferredIds: [],
+            });
+            await restarted.refreshIndex('expiry-cleanup');
+            await expect(store.loadSyncStateByPrefix('import.retryDelay.', { limit: 10 }))
+                .resolves.toEqual([]);
+            await restarted.shutdown();
+
+            const afterExpiry = createPipeline(jest.fn(async () => true), store, gatekeeper);
+            await afterExpiry.refreshIndex('startup');
+            await expect(store.loadSyncStateByPrefix('import.retryDelay.', { limit: 10 }))
+                .resolves.toEqual([]);
+            await afterExpiry.shutdown();
+        }
+        finally {
+            jest.useRealTimers();
+        }
+    });
+
+    it('retries failed durable retry-delay writes during index refresh', async () => {
+        const deferred = makeValidOperation(1);
+        const store = new InMemoryOperationSyncStore();
+        const pipeline = createPipeline(jest.fn(async () => true), store, {
+            exportIndex: createEmptyExportIndex(),
+            importBatch: jest.fn(async () => ({
+                queued: 0, processed: 0, rejected: 0, total: 0,
+                rejectedIndices: [], capacityDeferred: 1, capacityDeferredIndices: [0], processedIndices: [],
+            })),
+            processEvents: jest.fn<GatekeeperClient['processEvents']>(async () => ({ hasMore: false })),
+        });
+
+        await pipeline.refreshIndex('startup');
+        jest.spyOn(store, 'applySyncPage').mockRejectedValueOnce(new Error('database unavailable'));
+        await expect(pipeline.enqueue({ kind: 'remote', name: 'peer-a', data: [deferred] }))
+            .resolves.toMatchObject({ retryable: true });
+        expect(pipeline.getMetrics()).toEqual({ activeRetryDelayedIds: 1, persistenceRetries: 1 });
+
+        await expect(pipeline.refreshIndex('retry')).resolves.toMatchObject({ mode: 'changes' });
+        expect(pipeline.getMetrics()).toEqual({ activeRetryDelayedIds: 1, persistenceRetries: 0 });
+        await expect(store.loadSyncStateByPrefix('import.retryDelay.', { limit: 10 }))
+            .resolves.toHaveLength(1);
+        await pipeline.shutdown();
+    });
+
+    it('removes invalid retry state and bounds restored deadlines and entries', async () => {
+        jest.useFakeTimers();
+        jest.setSystemTime(new Date('2026-08-01T12:00:00.000Z'));
+        const now = Date.now();
+        const store = new InMemoryOperationSyncStore();
+        const ids = Array.from({ length: 25_001 }, (_, index) => index.toString(16).padStart(64, '0'));
+        await store.applySyncPage({
+            records: [],
+            syncStateUpdates: {
+                ...Object.fromEntries(ids.map(id => [
+                    `import.retryDelay.${id}`,
+                    JSON.stringify({ kind: 'pending', deadline: now + 600_000 }),
+                ])),
+                'import.retryDelay.invalid': JSON.stringify({ kind: 'pending', deadline: now + 1 }),
+                [`import.retryDelay.${'f'.repeat(64)}`]: '{invalid',
+                unrelated: 'preserved',
+            },
+        });
+        const syncStats = createMediatorSyncStats();
+        const pipeline = createPipeline(jest.fn(async () => true), store, {
+            exportIndex: createEmptyExportIndex(),
+        }, { syncStats });
+
+        try {
+            await pipeline.refreshIndex('startup');
+            expect(pipeline.getMetrics().activeRetryDelayedIds).toBe(25_000);
+            expect(syncStats.hardening.retryDelayEvictions).toBe(1);
+            const retryRows = await store.loadSyncStateByPrefix('import.retryDelay.', { limit: 30_000 });
+            expect(retryRows).toHaveLength(25_000);
+            expect(retryRows.every(row => JSON.parse(row.value).deadline === now + 300_000)).toBe(true);
+            await expect(store.loadSyncState('unrelated')).resolves.toBe('preserved');
+        }
+        finally {
+            await pipeline.shutdown();
+            jest.useRealTimers();
+        }
+    });
+
     it('does not put an unverified capacity result into retry suppression', async () => {
         const invalid = makeValidOperation(1);
         invalid.signature!.hash = 'f'.repeat(64);
@@ -910,7 +1033,8 @@ describe('import pipeline', () => {
                 })),
                 hasMore: false,
             }));
-        const pipeline = createPipeline(jest.fn(async () => true), new InMemoryOperationSyncStore(), {
+        const store = new InMemoryOperationSyncStore();
+        const pipeline = createPipeline(jest.fn(async () => true), store, {
             importBatch,
             processEvents,
         });
@@ -933,6 +1057,8 @@ describe('import pipeline', () => {
         });
         expect(importBatch.mock.calls[1][0]).toHaveLength(1);
         expect(importBatch.mock.calls[1][0][0].operation).toBe(dependency);
+        await expect(store.loadSyncStateByPrefix('import.retryDelay.', { limit: 10 }))
+            .resolves.toEqual([]);
         await pipeline.shutdown();
     });
 
@@ -1070,7 +1196,7 @@ describe('import pipeline', () => {
         await pipeline.shutdown();
     });
 
-    it('keeps retry delays when pruning them during an index refresh fails', async () => {
+    it('retries restoration when pruning retry delays fails', async () => {
         const deferred = makeValidOperation(1);
         const store = new InMemoryOperationSyncStore();
         const pipeline = createPipeline(jest.fn(async () => true), store, {
@@ -1080,22 +1206,15 @@ describe('import pipeline', () => {
                 capacityDeferredIndices: [0], processedIndices: [],
             })),
             processEvents: jest.fn<GatekeeperClient['processEvents']>(async () => ({ hasMore: false })),
-            exportIndex: jest.fn(async () => ({
-                mode: 'snapshot' as const,
-                dids: [],
-                blocks: [],
-                cursor: '0',
-                checkpointCursor: '0',
-                hasMore: false,
-                indexEpoch: 'epoch-a',
-            })),
+            exportIndex: createEmptyExportIndex(),
         });
 
         await pipeline.enqueue({ kind: 'remote', name: 'peer-a', data: [deferred] });
         const getByIds = jest.spyOn(store, 'getByIds').mockRejectedValueOnce(new Error('lookup failed'));
 
-        await expect(pipeline.refreshIndex('test')).resolves.toMatchObject({ snapshotComplete: true });
+        await expect(pipeline.refreshIndex('test')).rejects.toThrow('lookup failed');
         expect(getByIds).toHaveBeenCalledWith([deferred.signature!.hash]);
+        await expect(pipeline.refreshIndex('retry')).resolves.toMatchObject({ snapshotComplete: true });
         await pipeline.shutdown();
     });
 });

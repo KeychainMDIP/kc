@@ -20,6 +20,148 @@ jest.unstable_mockModule('@mdip/common/logger', () => ({
 }));
 
 describe('Negentropy coordinator', () => {
+    it('filters retry-delayed IDs from direct needs and offered requests', async () => {
+        const [
+            { createNegentropyCoordinator }, { default: InMemoryOperationSyncStore },
+            { createConnectionInfo }, { createMediatorSyncStats },
+        ] = await Promise.all([
+            import('../../services/mediators/hyperswarm/src/negentropy-coordinator.ts'),
+            import('../../services/mediators/hyperswarm/src/db/memory.ts'),
+            import('../../services/mediators/hyperswarm/src/mediator-state.ts'),
+            import('../../services/mediators/hyperswarm/src/sync-stats.ts'),
+        ]);
+        const eligibleId = 'a'.repeat(64);
+        const pendingId = 'b'.repeat(64);
+        const capacityId = 'c'.repeat(64);
+        const delayed = new Map([
+            [pendingId, 'pending' as const],
+            [capacityId, 'capacity' as const],
+        ]);
+        const outcomes = [
+            { nextMsg: null, haveIds: [], needIds: [eligibleId, pendingId, capacityId] },
+            { nextMsg: null, haveIds: [], needIds: [pendingId, capacityId] },
+            { nextMsg: null, haveIds: [], needIds: [pendingId] },
+            { nextMsg: null, haveIds: [], needIds: [] },
+            { nextMsg: null, haveIds: [], needIds: [] },
+        ];
+        const peerKey = '22'.repeat(32);
+        const connection = createConnectionInfo({
+            connection: { write() {}, destroy() {}, remotePublicKey: Buffer.from(peerKey, 'hex') } as never,
+            peerName: 'test-peer',
+        });
+        connection.capabilities = normalizePeerCapabilities({ negentropy: true, negentropyVersion: 2 });
+        connection.peerTransportFramingVersion = 1;
+        const store = new InMemoryOperationSyncStore();
+        await store.start();
+        const importPipeline = {
+            available: true, recovering: false, queued: 0, running: 0,
+            filterRetryDelayedIds(ids: string[]) {
+                return {
+                    eligibleIds: ids.filter(id => !delayed.has(id)),
+                    pendingIds: ids.filter(id => delayed.get(id) === 'pending'),
+                    capacityDeferredIds: ids.filter(id => delayed.get(id) === 'capacity'),
+                };
+            },
+        } as unknown as ImportPipeline;
+        const adapter = {
+            async buildSnapshotForWindow(window: ReconciliationWindow) {
+                return {
+                    window,
+                    storage: {} as never,
+                    stats: {
+                        loaded: 0, skipped: 0, durationMs: 0, frameSizeLimit: 0,
+                        windowName: window.name, fromTs: window.fromTs, toTs: window.toTs,
+                        rounds: 0, completed: false, cappedByRecords: false, cappedByRounds: false,
+                    },
+                };
+            },
+            createEngineForSnapshot() {
+                return {
+                    initiate: async () => new Uint8Array(),
+                    reconcile: async () => outcomes.shift()!,
+                };
+            },
+        };
+        const sendToPeer = jest.fn<Parameters<typeof createNegentropyCoordinator>[0]['sendToPeer']>(() => true);
+        const coordinator = createNegentropyCoordinator({
+            version: 2, transportFramingVersion: 1, frameSizeLimit: 0,
+            maxRecordsPerWindow: 16, maxRoundsPerSession: 8, maxIdsPerRequest: 1_000,
+            maxIdsPerLookup: 1_000, maxOpsPerPush: 300, maxBytesPerPush: 512 * 1024,
+            idleTimeoutMs: 120_000, repairIntervalMs: 60_000,
+            syncStore: store, importPipeline, syncStats: createMediatorSyncStats(),
+            cipher: new CipherNode(), bulkReads: createBulkWorkScheduler(2),
+            operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
+            getConnection: key => key === peerKey ? connection : undefined,
+            createSessionId: () => 'local-session',
+            createBaseMessage: type => ({ type, time: '', node: '', relays: [] }),
+            sendToPeer, sendBulkToPeer: async () => true,
+            canStartBackgroundPrebuild: () => false, terminatePeerConnection: () => undefined,
+            onProtocolViolation: jest.fn(), onSessionClosed: async () => {}, onIndexRefreshed: async () => {},
+        });
+        coordinator.setAdapter(adapter as never);
+
+        async function runDirectNeed(): Promise<Record<string, unknown> & { sessionId: string; windowId: string }> {
+            await coordinator.startSession(peerKey, {
+                source: 'connect', modeReason: 'negentropy_supported', initiator: true,
+            });
+            const open = sendToPeer.mock.calls.at(-1)?.[1] as unknown as Record<string, unknown>
+                & { sessionId: string; windowId: string };
+            await coordinator.handleMessage(peerKey, {
+                type: 'neg_msg', sessionId: open.sessionId, windowId: open.windowId, round: 1,
+                frame: { encoding: 'base64', data: '' }, time: '', node: '', relays: [],
+            });
+            return open;
+        }
+
+        try {
+            await runDirectNeed();
+            expect(sendToPeer.mock.calls.at(-1)?.[1]).toMatchObject({
+                type: 'ops_req', ids: [eligibleId],
+            });
+
+            coordinator.reset();
+            const requestsBefore = sendToPeer.mock.calls.filter(([, message]) => message.type === 'ops_req').length;
+            await runDirectNeed();
+            expect(sendToPeer.mock.calls.filter(([, message]) => message.type === 'ops_req')).toHaveLength(requestsBefore);
+            expect(sendToPeer.mock.calls.at(-1)?.[1]).toMatchObject({ type: 'neg_close', reason: 'incomplete' });
+
+            delayed.delete(pendingId);
+            await runDirectNeed();
+            expect(sendToPeer.mock.calls.at(-1)?.[1]).toMatchObject({ type: 'ops_req', ids: [pendingId] });
+
+            coordinator.reset();
+            const localOpen = sendToPeer.mock.calls.find(([, message]) => message.type === 'neg_open')?.[1];
+            await coordinator.handleMessage(peerKey, {
+                ...(localOpen as object), type: 'neg_open', sessionId: 'remote-mixed', round: 0,
+            } as never);
+            await coordinator.handleMessage(peerKey, {
+                type: 'ops_offer', sessionId: 'remote-mixed',
+                windowId: (localOpen as { windowId: string }).windowId, round: 1, offerId: 0,
+                ids: [eligibleId, pendingId, capacityId], time: '', node: '', relays: [],
+            });
+            expect(sendToPeer.mock.calls.at(-1)?.[1]).toMatchObject({
+                type: 'ops_req', offerId: 0, ids: [eligibleId, pendingId], deferred: true,
+            });
+
+            coordinator.reset();
+            await coordinator.handleMessage(peerKey, {
+                ...(localOpen as object), type: 'neg_open', sessionId: 'remote-delayed', round: 0,
+            } as never);
+            await coordinator.handleMessage(peerKey, {
+                type: 'ops_offer', sessionId: 'remote-delayed',
+                windowId: (localOpen as { windowId: string }).windowId, round: 1, offerId: 0,
+                ids: [capacityId], time: '', node: '', relays: [],
+            });
+            expect(sendToPeer.mock.calls.at(-1)?.[1]).toMatchObject({
+                type: 'ops_req', offerId: 0, ids: [], deferred: true,
+            });
+        }
+        finally {
+            await coordinator.shutdown();
+            await store.stop();
+        }
+    });
+
     it('repairs skipped gossip through another peer after recovery even when this node normally responds', async () => {
         const [
             { createPeerSyncCoordinator }, { createConnectionInfo },

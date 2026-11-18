@@ -159,6 +159,29 @@ describe('Hyperswarm import reset boundary', () => {
         } finally { await pipeline.shutdown(); }
     });
 
+    it('clears durable retry delays when the Gatekeeper epoch resets', async () => {
+        const { pipeline, store, reset } = fixture();
+        await pipeline.refreshIndex('startup');
+        try {
+            await expect(pipeline.enqueue({ kind: 'remote', name: 'peer', data: [operation] }))
+                .resolves.toMatchObject({ pendingIds: [operation.signature!.hash] });
+            await expect(store.loadSyncStateByPrefix('import.retryDelay.', { limit: 10 }))
+                .resolves.toHaveLength(1);
+
+            reset();
+            await expect(pipeline.refreshIndex('reset'))
+                .resolves.toMatchObject({ resetReason: 'gatekeeper_index_epoch_changed' });
+            await expect(store.loadSyncStateByPrefix('import.retryDelay.', { limit: 10 }))
+                .resolves.toEqual([]);
+            expect(pipeline.filterRetryDelayedIds([operation.signature!.hash!])).toEqual({
+                eligibleIds: [operation.signature!.hash], pendingIds: [], capacityDeferredIds: [],
+            });
+        }
+        finally {
+            await pipeline.shutdown();
+        }
+    });
+
     it('finishes accepted persistence before an epoch refresh can reset the store', async () => {
         const { pipeline, store, processEvents, exportIndex, reset } = fixture();
         await pipeline.refreshIndex('startup');

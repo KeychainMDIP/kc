@@ -35,9 +35,13 @@ const PROCESSING_RECOVERY_MS = 5 * 60_000;
 const STATUS_TIMEOUT_MS = 5_000;
 const MAX_RECOVERY_DELAY_MS = 5_000;
 const MAX_RETRY_DELAY_IDS = 25_000;
+const RETRY_DELAY_STATE_PREFIX = 'import.retryDelay.';
+const RETRY_DELAY_STATE_PAGE_LIMIT = 1_000;
 const MAX_RESULT_OPERATIONS = 300;
 const MAX_RESULT_BYTES = 512 * 1024;
 export const TERMINAL_REJECTED_SYNC_ORDER = Number.MAX_SAFE_INTEGER;
+
+type RetryDelay = { kind: 'pending' | 'capacity'; deadline: number };
 
 export interface ImportQueueResult {
     knownIds: string[];
@@ -158,10 +162,12 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
         onStoreChanged,
     } = options;
     const pendingSyncRecords = new Map<string, SyncOperationWriteRecord>();
-    const retryDelays = new Map<string, { kind: 'pending' | 'capacity'; deadline: number }>();
+    const retryDelays = new Map<string, RetryDelay>();
+    const pendingRetryStateUpdates = new Map<string, string | null>();
     const terminalOperationCids = new Set<string>();
     const activeIndexRefreshes = new Set<Promise<BootstrapResult>>();
     let accepting = true;
+    let retryStateRestored = false;
     let indexEpoch: string | undefined;
     let invalidatedEpoch: string | undefined;
     let processRetryNeeded = false;
@@ -281,14 +287,116 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
             : undefined;
     }
 
+    function retryDelayStateKey(id: string): string {
+        return `${RETRY_DELAY_STATE_PREFIX}${id}`;
+    }
+
+    function queueRetryStateUpdate(id: string, delay: RetryDelay | null): void {
+        const key = retryDelayStateKey(id);
+        pendingRetryStateUpdates.delete(key);
+        pendingRetryStateUpdates.set(key, delay === null ? null : JSON.stringify(delay));
+
+        while (pendingRetryStateUpdates.size > MAX_RETRY_DELAY_IDS) {
+            const deletion = Array.from(pendingRetryStateUpdates).find(([, value]) => value === null)?.[0];
+            if (deletion !== undefined) {
+                pendingRetryStateUpdates.delete(deletion);
+                continue;
+            }
+            const oldest = pendingRetryStateUpdates.keys().next().value;
+            if (oldest === undefined) break;
+            pendingRetryStateUpdates.delete(oldest);
+        }
+    }
+
+    async function flushRetryStateUpdates(): Promise<void> {
+        if (pendingRetryStateUpdates.size === 0) return;
+
+        const updates = Object.fromEntries(pendingRetryStateUpdates);
+        await syncStore.applySyncPage({ records: [], syncStateUpdates: updates });
+        for (const [key, value] of Object.entries(updates)) {
+            if (pendingRetryStateUpdates.get(key) === value) {
+                pendingRetryStateUpdates.delete(key);
+            }
+        }
+    }
+
+    function parseRetryDelay(value: string): RetryDelay | null {
+        try {
+            const parsed = JSON.parse(value) as Partial<RetryDelay> | null;
+            if (!parsed || (parsed.kind !== 'pending' && parsed.kind !== 'capacity')
+                || !Number.isSafeInteger(parsed.deadline)) {
+                return null;
+            }
+            return { kind: parsed.kind, deadline: parsed.deadline! };
+        }
+        catch {
+            return null;
+        }
+    }
+
+    async function restoreRetryDelays(): Promise<void> {
+        retryDelays.clear();
+        const restored: Array<[string, RetryDelay]> = [];
+        const now = Date.now();
+        const maximumDeadline = now + Math.max(0, retryDelayMs);
+        let after: string | undefined;
+
+        for (;;) {
+            const page = await syncStore.loadSyncStateByPrefix(RETRY_DELAY_STATE_PREFIX, {
+                after,
+                limit: RETRY_DELAY_STATE_PAGE_LIMIT,
+            });
+            if (page.length === 0) break;
+
+            for (const entry of page) {
+                const id = entry.key.slice(RETRY_DELAY_STATE_PREFIX.length);
+                const parsed = /^[a-f0-9]{64}$/.test(id) ? parseRetryDelay(entry.value) : null;
+                if (!parsed || parsed.deadline <= now) {
+                    pendingRetryStateUpdates.set(entry.key, null);
+                    continue;
+                }
+                const delay = parsed.deadline > maximumDeadline
+                    ? { ...parsed, deadline: maximumDeadline }
+                    : parsed;
+                if (delay.deadline <= now) {
+                    pendingRetryStateUpdates.set(entry.key, null);
+                    continue;
+                }
+                if (delay.deadline !== parsed.deadline) {
+                    pendingRetryStateUpdates.set(entry.key, JSON.stringify(delay));
+                }
+                if (restored.length < MAX_RETRY_DELAY_IDS) {
+                    restored.push([id, delay]);
+                }
+                else {
+                    pendingRetryStateUpdates.set(entry.key, null);
+                    syncStats.hardening.retryDelayEvictions += 1;
+                }
+            }
+
+            await flushRetryStateUpdates();
+            after = page.at(-1)!.key;
+            if (page.length < RETRY_DELAY_STATE_PAGE_LIMIT) break;
+        }
+
+        restored.sort(([leftId, left], [rightId, right]) =>
+            left.deadline - right.deadline || leftId.localeCompare(rightId));
+        for (const [id, delay] of restored) {
+            retryDelays.set(id, delay);
+        }
+    }
+
     function recordRetryDelay(ids: Iterable<string>, kind: 'pending' | 'capacity'): void {
         const deadline = Date.now() + retryDelayMs;
         for (const id of new Set(ids)) {
+            const delay = { kind, deadline } as const;
             retryDelays.delete(id);
-            retryDelays.set(id, { kind, deadline });
+            retryDelays.set(id, delay);
+            queueRetryStateUpdate(id, delay);
             while (retryDelays.size > MAX_RETRY_DELAY_IDS) {
                 const oldestId = retryDelays.keys().next().value!;
                 retryDelays.delete(oldestId);
+                queueRetryStateUpdate(oldestId, null);
                 syncStats.hardening.retryDelayEvictions += 1;
             }
         }
@@ -296,7 +404,9 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
 
     function clearRetryDelays(ids: Iterable<string>): void {
         for (const id of ids) {
-            retryDelays.delete(id);
+            if (retryDelays.delete(id)) {
+                queueRetryStateUpdate(id, null);
+            }
         }
     }
 
@@ -315,7 +425,7 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
             const delayed = id ? retryDelays.get(id) : undefined;
             if (!delayed || delayed.deadline <= now) {
                 if (id && delayed) {
-                    retryDelays.delete(id);
+                    clearRetryDelays([id]);
                 }
                 eligible.push(operation);
                 continue;
@@ -344,7 +454,7 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
             const delayed = retryDelays.get(id);
             if (!delayed || delayed.deadline <= now) {
                 if (delayed) {
-                    retryDelays.delete(id);
+                    clearRetryDelays([id]);
                 }
                 eligibleIds.push(id);
                 continue;
@@ -987,10 +1097,27 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
         return result;
     }
 
+    async function processPipelineWork(work: PipelineWork): Promise<ImportQueueResult | BootstrapResult> {
+        if (work.kind === 'refresh') {
+            return runIndexRefresh(work.source);
+        }
+
+        const result = await processRequest(work.request, work.indexEpoch);
+        try {
+            await flushRetryStateUpdates();
+        }
+        catch (error) {
+            log.error(
+                { error, kind: work.request.kind, pending: pendingRetryStateUpdates.size },
+                'failed to persist import retry delays'
+            );
+            result.retryable = true;
+        }
+        return result;
+    }
+
     // Mirror resets and accepted-operation persistence must share the import boundary.
-    const queue = asyncLib.queue<PipelineWork, ImportQueueResult | BootstrapResult>(async work => work.kind === 'refresh'
-        ? runIndexRefresh(work.source)
-        : processRequest(work.request, work.indexEpoch), 1);
+    const queue = asyncLib.queue<PipelineWork, ImportQueueResult | BootstrapResult>(processPipelineWork, 1);
 
     async function waitForIdle(): Promise<void> {
         if (!queue.idle()) {
@@ -1013,6 +1140,7 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
             if (sync.resetReason) {
                 pendingSyncRecords.clear();
                 retryDelays.clear();
+                pendingRetryStateUpdates.clear();
                 processRetryNeeded = false;
                 terminalOperationCids.clear();
                 break;
@@ -1028,6 +1156,10 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
                 if (code === 'gatekeeper_index_epoch_changed') invalidatedEpoch = indexEpoch;
                 throw error;
             }
+        }
+        const restoringRetryState = !retryStateRestored && !sync.resetReason;
+        if (restoringRetryState) {
+            await restoreRetryDelays();
         }
         if (pendingSyncRecords.size > 0) {
             try {
@@ -1052,7 +1184,8 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
                 for (let offset = 0; offset < ids.length; offset += RETRY_LOOKUP_LIMIT) {
                     const rows = await syncStore.getByIds(ids.slice(offset, offset + RETRY_LOOKUP_LIMIT));
                     for (const row of rows) {
-                        if (retryDelays.delete(row.id)) {
+                        if (retryDelays.has(row.id)) {
+                            clearRetryDelays([row.id]);
                             removed += 1;
                         }
                     }
@@ -1061,8 +1194,11 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
             }
             catch (error) {
                 log.warn({ error, source, remaining: retryDelays.size }, 'failed to prune persisted import delays');
+                if (restoringRetryState) throw error;
             }
         }
+        await flushRetryStateUpdates();
+        retryStateRestored = true;
         if (processingState === 'paused') {
             processingState = 'ready';
             log.info({ source, indexEpoch, eventsQueue: lastProcessingQueue }, 'Gatekeeper processing available after index refresh');
@@ -1086,7 +1222,10 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
                     activeRetryDelayedIds += 1;
                 }
             }
-            return { activeRetryDelayedIds, persistenceRetries: pendingSyncRecords.size };
+            return {
+                activeRetryDelayedIds,
+                persistenceRetries: pendingSyncRecords.size + pendingRetryStateUpdates.size,
+            };
         },
         get queued(): number {
             return queue.length();
@@ -1151,6 +1290,7 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
                     await Promise.allSettled([...activeIndexRefreshes]);
                     pendingSyncRecords.clear();
                     retryDelays.clear();
+                    pendingRetryStateUpdates.clear();
                     terminalOperationCids.clear();
                 })();
             }

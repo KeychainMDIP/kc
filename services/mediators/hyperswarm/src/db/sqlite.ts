@@ -12,6 +12,8 @@ import {
     SyncStoreListOptions,
     SyncStoreOrderedListOptions,
     SyncStorePage,
+    SyncStateEntry,
+    SyncStateListOptions,
     SyncStoreWriteResult,
 } from './types.js';
 
@@ -182,6 +184,31 @@ export default class SqliteOperationSyncStore implements OperationSyncStore {
             key
         );
         return row?.value ?? null;
+    }
+
+    async loadSyncStateByPrefix(prefix: string, options: SyncStateListOptions): Promise<SyncStateEntry[]> {
+        if (!this.db) {
+            throw new Error(SQLITE_NOT_STARTED_ERROR);
+        }
+        if (!Number.isSafeInteger(options.limit) || options.limit < 1) {
+            throw new Error('Sync state page limit must be a positive safe integer');
+        }
+
+        const after = options.after;
+        const rows = await this.db.all<SyncStateEntry[]>(
+            `SELECT key, value
+             FROM sync_state
+             WHERE substr(key, 1, length(?)) = ?
+               ${after === undefined ? '' : 'AND key > ?'}
+             ORDER BY key
+             LIMIT ?`,
+            ...(
+                after === undefined
+                    ? [prefix, prefix, options.limit]
+                    : [prefix, prefix, after, options.limit]
+            ),
+        );
+        return rows.map(row => ({ key: row.key, value: row.value }));
     }
 
     async saveSyncState(key: string, value: string | null): Promise<void> {

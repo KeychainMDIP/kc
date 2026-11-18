@@ -176,8 +176,10 @@ is full, the mediator does not advertise or relay that pending operation. It
 may relay other accepted or portable-terminal operations from the same batch
 after persistence. It delays another local submission until the normal
 Negentropy repair interval, while later synchronization remains able to retry
-the operation. Gatekeeper and mediator versions containing this contract must
-be deployed together.
+the operation. Active delays survive an ordinary mediator restart, expire at
+the normal repair deadline, and are cleared as soon as the operation becomes
+known. Gatekeeper and mediator versions containing this contract must be
+deployed together.
 
 Gatekeeper separately caps retained pending events at 10,000 events and 64 MiB,
 with a reserved transient lane for a new page that may supply a missing
