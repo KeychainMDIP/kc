@@ -416,6 +416,36 @@ describe('hyperswarm mediator protocol characterization', () => {
         });
     }
 
+    async function startRequestedTransfer(
+        protocolNode: ProtocolNode,
+        peerKey: string,
+        pair: RecordingDuplexPair,
+        operations: Operation[],
+    ): Promise<Record<string, unknown>> {
+        const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
+        jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
+            const engine = createEngine(snapshot);
+            jest.spyOn(engine, 'reconcile').mockResolvedValueOnce({
+                nextMsg: null,
+                haveIds: [],
+                needIds: operations.map(operation => operation.signature!.hash),
+            });
+            return engine;
+        });
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey));
+        const open = decodeWrites(pair).find(message => message.type === 'neg_open');
+        if (!open) {
+            throw new Error('expected local neg_open');
+        }
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'neg_msg',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            frame: encodeNegentropyFrame('request-operations'),
+        }));
+        return open;
+    }
+
     function replaceWithOrderedSession(
         protocolNode: ProtocolNode,
         peerKey: string,
@@ -891,6 +921,29 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getSyncStatsSnapshot(),
         )).toMatchObject({ transport: { protocolViolationCooldowns: 1 } });
+    });
+
+    it('rejects an oversized push before looking up its invented session', async () => {
+        const protocolNode = await createNode();
+        const { peerKey } = attachPeer(protocolNode, {});
+        const lookup = jest.spyOn(protocolNode.store, 'getByIds');
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'ops_push',
+            sessionId: 'invented-session',
+            windowId: 'invented-window',
+            round: 0,
+            requestId: 0,
+            page: 0,
+            hasMore: false,
+            data: Array.from({ length: 301 }, () => ({})),
+        }));
+
+        expect(lookup).not.toHaveBeenCalled();
+        expect(protocolNode.node.gatekeeperClient.importBatch).not.toHaveBeenCalled();
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
+        )).toBeNull();
     });
 
     it('quarantines a peer whose bounded Negentropy frame cannot be decoded', async () => {
@@ -1590,6 +1643,88 @@ describe('hyperswarm mediator protocol characterization', () => {
         )).toBeNull();
     });
 
+    it('serves byte-bounded requested pages one at a time', async () => {
+        const operations = await makeLargeAssetOperations(10, 55_000);
+        const protocolNode = await createNode({ maxRecords: operations.length });
+        await protocolNode.store.upsertMany(operations.map(operation => ({
+            id: operation.signature!.hash,
+            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            operation,
+        })));
+        const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
+        jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
+            const engine = createEngine(snapshot);
+            jest.spyOn(engine, 'reconcile').mockResolvedValueOnce({
+                nextMsg: null,
+                haveIds: operations.map(operation => operation.signature!.hash),
+                needIds: [],
+            });
+            return engine;
+        });
+        const { peerKey, pair } = attachPeer(protocolNode);
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey));
+        const open = decodeWrites(pair).find(message => message.type === 'neg_open')!;
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'neg_msg',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            frame: encodeNegentropyFrame('offer-byte-pages'),
+        }));
+        const offer = decodeWrites(pair).find(message => message.type === 'ops_offer')!;
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'ops_req',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            round: offer.round,
+            requestId: 0,
+            offerId: offer.offerId,
+            ids: offer.ids,
+        }));
+
+        let pushes = decodeWrites(pair).filter(message => message.type === 'ops_push');
+        expect(pushes).toHaveLength(1);
+        expect(pushes[0]).toMatchObject({ page: 0, hasMore: true });
+        expect((pushes[0].data as Operation[]).reduce(
+            (total, operation) => total + estimateOperationBytes(operation),
+            0,
+        )).toBeLessThanOrEqual(512 * 1024);
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'ops_ack',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            round: offer.round,
+            requestId: 0,
+            page: 0,
+        }));
+        pushes = decodeWrites(pair).filter(message => message.type === 'ops_push');
+        expect(pushes).toHaveLength(2);
+        expect(pushes[1]).toMatchObject({ page: 1, hasMore: false });
+        expect((pushes[1].data as Operation[]).reduce(
+            (total, operation) => total + estimateOperationBytes(operation),
+            0,
+        )).toBeLessThanOrEqual(512 * 1024);
+        expect(pushes.flatMap(message => (message.data as Operation[]).map(
+            operation => operation.signature!.hash,
+        )).sort()).toEqual(operations.map(operation => operation.signature!.hash).sort());
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'ops_ack',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            round: offer.round,
+            requestId: 0,
+            page: 1,
+        }));
+        expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
+            type: 'neg_close',
+            reason: 'complete',
+        }));
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+        )).toBeNull();
+    });
+
     it('rejects the next reconciliation frame while a transfer is outstanding', async () => {
         const [operation] = await makeOperations(1);
         const protocolNode = await createNode();
@@ -1754,6 +1889,31 @@ describe('hyperswarm mediator protocol characterization', () => {
         )).toBeNull();
     });
 
+    it('rejects operation data when no request is active', async () => {
+        const [operation] = await makeOperations(1);
+        const protocolNode = await createNode();
+        const { peerKey, pair } = attachPeer(protocolNode);
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey));
+        const open = decodeWrites(pair).find(message => message.type === 'neg_open')!;
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'ops_push',
+            sessionId: open.sessionId,
+            windowId: open.windowId,
+            round: open.round,
+            requestId: 0,
+            page: 0,
+            hasMore: false,
+            data: [operation],
+        }));
+
+        expect(protocolNode.node.gatekeeperClient.importBatch).not.toHaveBeenCalled();
+        expect(decodeWrites(pair).some(message => message.type === 'ops_ack')).toBe(false);
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
+        )).toBeNull();
+    });
+
     it('rejects an operation page for the wrong request', async () => {
         const [operation] = await makeOperations(1);
         const protocolNode = await createNode();
@@ -1786,6 +1946,72 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
         )).toBeNull();
+    });
+
+    it('rejects duplicate operations within one requested page', async () => {
+        const operations = await makeOperations(2);
+        const protocolNode = await createNode();
+        const { peerKey, pair } = attachPeer(protocolNode);
+        await startRequestedTransfer(protocolNode, peerKey, pair, operations);
+        const acknowledgementsBefore = decodeWrites(pair).filter(message => message.type === 'ops_ack').length;
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(
+            peerKey,
+            requestedOpsPush(pair, [operations[0], operations[0]], { hasMore: true }),
+        ));
+
+        expect(protocolNode.node.gatekeeperClient.importBatch).not.toHaveBeenCalled();
+        expect(decodeWrites(pair).filter(message => message.type === 'ops_ack')).toHaveLength(
+            acknowledgementsBefore,
+        );
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
+        )).toBeNull();
+    });
+
+    it('rejects an operation repeated across requested pages', async () => {
+        const operations = await makeOperations(2);
+        const protocolNode = await createNode();
+        const { peerKey, pair } = attachPeer(protocolNode);
+        await startRequestedTransfer(protocolNode, peerKey, pair, operations);
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(
+            peerKey,
+            requestedOpsPush(pair, [operations[0]], { hasMore: true }),
+        ));
+        expect(decodeWrites(pair).filter(message => message.type === 'ops_ack')).toHaveLength(1);
+        expect(protocolNode.node.gatekeeperClient.importBatch).toHaveBeenCalledTimes(1);
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(
+            peerKey,
+            requestedOpsPush(pair, [operations[0]], { page: 1 }),
+        ));
+
+        expect(protocolNode.node.gatekeeperClient.importBatch).toHaveBeenCalledTimes(1);
+        expect(decodeWrites(pair).filter(message => message.type === 'ops_ack')).toHaveLength(1);
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
+        )).toBeNull();
+    });
+
+    it('retires request authorization after acknowledging the final page', async () => {
+        const [operation] = await makeOperations(1);
+        const protocolNode = await createNode();
+        const { peerKey, pair } = attachPeer(protocolNode);
+        await startRequestedTransfer(protocolNode, peerKey, pair, [operation]);
+        const push = requestedOpsPush(pair, [operation]);
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, push));
+        expect(protocolNode.node.gatekeeperClient.importBatch).toHaveBeenCalledTimes(1);
+        expect(decodeWrites(pair).filter(message => message.type === 'ops_ack')).toHaveLength(1);
+        expect(protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
+        )).toBeNull();
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, push));
+
+        expect(protocolNode.node.gatekeeperClient.importBatch).toHaveBeenCalledTimes(1);
+        expect(decodeWrites(pair).filter(message => message.type === 'ops_ack')).toHaveLength(1);
     });
 
     it('rejects a non-final page that delivered every requested operation', async () => {

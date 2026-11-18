@@ -283,6 +283,11 @@ export function validateHyperMessagePayload(
     limits: ProtocolPayloadLimits,
 ): ProtocolValidationResult<HyperMessage> {
     let reason: string | null = null;
+    const messageType = message.type;
+    if (messageType !== 'ops_req' && messageType !== 'ops_ack'
+        && Object.prototype.hasOwnProperty.call(message, 'deferred')) {
+        return { ok: false, reason: `deferred is not valid for ${messageType}` };
+    }
     if (message.type === 'queue') {
         const result = validateOperationPage(message.data, limits);
         return result.ok ? { ok: true, value: message } : result;
@@ -316,6 +321,9 @@ export function validateHyperMessagePayload(
         if (!result.ok) {
             return result;
         }
+        if (result.value.length !== message.ids.length) {
+            return { ok: false, reason: 'ops_offer ids must be unique' };
+        }
         return message.ids.length === 0
             ? { ok: false, reason: 'ops_offer ids must not be empty' }
             : { ok: true, value: message };
@@ -324,6 +332,9 @@ export function validateHyperMessagePayload(
         const result = validateIdList(message.ids, limits.maxIdsPerRequest);
         if (!result.ok) {
             return result;
+        }
+        if (result.value.length !== message.ids.length) {
+            return { ok: false, reason: 'ops_req ids must be unique' };
         }
         if (message.offerId !== undefined) {
             const offerError = validateSafeInteger(message.offerId, 'offerId');

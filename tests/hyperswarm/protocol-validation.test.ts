@@ -136,6 +136,28 @@ describe('hyperswarm protocol validation', () => {
             offerId: 0, ids: ['invalid'],
         } as never, limits)).toMatchObject({ ok: false });
         expect(validateHyperMessagePayload({
+            ...base('ops_offer'), sessionId: 's', windowId: 'w', round: 0,
+            offerId: 0, ids: ['a'.repeat(64), 'A'.repeat(64)],
+        } as never, limits)).toMatchObject({
+            ok: false,
+            reason: 'ops_offer ids must be unique',
+        });
+        expect(validateHyperMessagePayload({
+            ...base('ops_req'), sessionId: 's', windowId: 'w', round: 0,
+            requestId: 0, ids: ['a'.repeat(64), 'A'.repeat(64)],
+        } as never, limits)).toMatchObject({
+            ok: false,
+            reason: 'ops_req ids must be unique',
+        });
+        expect(validateHyperMessagePayload({
+            ...base('ops_offer'), sessionId: 's', windowId: 'w', round: 0,
+            offerId: 0, ids: ['a'.repeat(64)], deferred: false,
+        } as never, limits)).toMatchObject({ ok: false });
+        expect(validateHyperMessagePayload({
+            ...base('ops_push'), sessionId: 's', windowId: 'w', round: 0,
+            requestId: 0, page: 0, hasMore: false, data: [], deferred: false,
+        } as never, limits)).toMatchObject({ ok: false });
+        expect(validateHyperMessagePayload({
             ...base('ops_req'), sessionId: 's', windowId: 'w', round: 0,
             requestId: 0, offerId: -1, ids: [],
         } as never, limits)).toMatchObject({ ok: false });
