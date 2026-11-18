@@ -773,7 +773,16 @@ describe('importBatch', () => {
     it('should return imported batch results', async () => {
         nock(GatekeeperURL)
             .post(Endpoints.batch.import)
-            .reply(200, { queued: 0, processed: 0, rejected: 0, total: 0, rejectedIndices: [] });
+            .reply(200, {
+                queued: 0,
+                processed: 1,
+                rejected: 0,
+                total: 1,
+                rejectedIndices: [],
+                processedIndices: [0],
+                capacityDeferred: 1,
+                capacityDeferredIndices: [1],
+            });
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
         // @ts-expect-error Testing without arguments
@@ -781,10 +790,13 @@ describe('importBatch', () => {
 
         expect(results).toStrictEqual({
             queued: 0,
-            processed: 0,
+            processed: 1,
             rejected: 0,
-            total: 0,
+            total: 1,
             rejectedIndices: [],
+            processedIndices: [0],
+            capacityDeferred: 1,
+            capacityDeferredIndices: [1],
         });
     });
 
@@ -890,14 +902,40 @@ describe('processEvents', () => {
         await expect(gatekeeper.processEvents('current-epoch')).resolves.toEqual({ added: 0, pending: 0 });
     });
     it('should return process status', async () => {
+        const rejectedEvents = [{
+            registry: 'TBTC',
+            time: '2026-11-16T00:00:00.000Z',
+            ordinal: [42, 0],
+            operation: { type: 'update', did: MockDID },
+        }];
         nock(GatekeeperURL)
             .post(Endpoints.events.process)
-            .reply(200, { added: 0, merged: 0, pending: 0, acceptedHashes: [], acceptedEvents: [] });
+            .reply(200, {
+                added: 0,
+                merged: 0,
+                pending: 1,
+                acceptedHashes: [],
+                acceptedEvents: [],
+                rejectedEvents,
+                hasMore: true,
+                capacityDeferred: 1,
+                capacityDeferredHashes: ['abc'],
+            });
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
         const status = await gatekeeper.processEvents();
 
-        expect(status).toStrictEqual({ added: 0, merged: 0, pending: 0, acceptedHashes: [], acceptedEvents: [] });
+        expect(status).toStrictEqual({
+            added: 0,
+            merged: 0,
+            pending: 1,
+            acceptedHashes: [],
+            acceptedEvents: [],
+            rejectedEvents,
+            hasMore: true,
+            capacityDeferred: 1,
+            capacityDeferredHashes: ['abc'],
+        });
     });
 
     it('should throw exception on processEvents server error', async () => {

@@ -86,7 +86,24 @@ async function cleanup(): Promise<void> {
     }
 }
 
-async function main(shutdown: Shutdown) {
+function createDatabase(): DIDsDb {
+    log.info(`Search Server persisting to ${config.db}`);
+
+    if (config.db === 'sqlite') {
+        return new DIDsSQLite();
+    }
+    if (config.db === 'postgres') {
+        return new DIDsPostgres(config.postgresURL);
+    }
+    return new DIDsDbMemory();
+}
+
+async function invalidResetArguments(shutdown: Shutdown): Promise<void> {
+    log.error('Usage: node dist/index.js [--reset-db]');
+    await shutdown(1);
+}
+
+async function main(shutdown: Shutdown, resetDb = config.resetDb) {
     const app = express();
     const v1router = express.Router();
     let initialized = false;
@@ -145,19 +162,10 @@ async function main(shutdown: Shutdown) {
     app.use(cors(corsOptions));
     app.use(express.json({ limit: config.jsonLimit }));
 
-    let didDb: DIDsDb;
-    log.info(`Search Server persisting to ${config.db}`);
-
-    if (config.resetDb) {
-        log.warn('KC_SEARCH_SERVER_RESET_DB is enabled. Rebuilding the Search Server database before indexing.');
+    if (resetDb) {
+        log.warn('Search Server database reset is enabled. Rebuilding the database before indexing.');
     }
-    if (config.db === 'sqlite') {
-        didDb = new DIDsSQLite();
-    } else if (config.db === 'postgres') {
-        didDb = new DIDsPostgres(config.postgresURL);
-    } else {
-        didDb = new DIDsDbMemory();
-    }
+    const didDb = createDatabase();
     activeDb = didDb;
 
     const gatekeeper = new GatekeeperClient();
@@ -611,8 +619,8 @@ async function main(shutdown: Shutdown) {
     });
 
     initialization = config.db === 'postgres'
-        ? (didDb as DIDsPostgres).connect(dependencyRequests.signal, config.resetDb)
-        : didDb.connect(config.resetDb);
+        ? (didDb as DIDsPostgres).connect(dependencyRequests.signal, resetDb)
+        : didDb.connect(resetDb);
     await initialization;
     if (dependencyRequests.signal.aborted) return;
     initialized = true;
@@ -627,8 +635,15 @@ async function main(shutdown: Shutdown) {
     });
 }
 
+const applicationArgs = process.argv.slice(2);
+const resetArgumentCount = applicationArgs.filter(arg => arg === '--reset-db').length;
+const validResetArgument = resetArgumentCount === 1 && applicationArgs.length === 1;
+const start = resetArgumentCount > 0 && !validResetArgument
+    ? invalidResetArguments
+    : (shutdown: Shutdown) => main(shutdown, config.resetDb || validResetArgument);
+
 runService({
-    start: main,
+    start,
     cleanup,
     log,
     timeoutMs: SHUTDOWN_TIMEOUT_MS,

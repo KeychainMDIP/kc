@@ -1061,6 +1061,7 @@ describe('DidIndexer network metrics scheduling', () => {
                 }),
         };
         const replace = jest.spyOn(db, 'replaceNetworkMetricSnapshots');
+        const iterateHistories = jest.spyOn(db, 'iterateDIDEventHistories');
         const indexer = new DidIndexer(gatekeeper, db, {
             intervalMs: 60_000,
             metricsRefreshIntervalMs: 60_000,
@@ -1080,6 +1081,7 @@ describe('DidIndexer network metrics scheduling', () => {
         await (indexer as any).refreshIndex();
 
         expect(replace).toHaveBeenCalledTimes(1);
+        expect(iterateHistories).toHaveBeenCalledWith(500);
         expect(log.info).toHaveBeenCalledWith({
             previousDidPrefix: null,
             didPrefix: '',

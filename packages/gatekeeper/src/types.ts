@@ -20,6 +20,9 @@ export interface ImportBatchResult {
     rejected: number;
     total: number;
     rejectedIndices: number[];
+    capacityDeferred?: number;
+    capacityDeferredIndices?: number[];
+    processedIndices?: number[];
 }
 
 export interface ProcessEventsResult {
@@ -31,6 +34,10 @@ export interface ProcessEventsResult {
     acceptedHashes?: string[];
     acceptedEvents?: GatekeeperEvent[];
     rejectedOperations?: Operation[];
+    rejectedEvents?: GatekeeperEvent[];
+    hasMore?: boolean;
+    capacityDeferred?: number;
+    capacityDeferredHashes?: string[];
 }
 
 export interface VerifyDbResult {

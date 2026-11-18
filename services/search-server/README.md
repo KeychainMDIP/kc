@@ -72,13 +72,39 @@ KC_SEARCH_SERVER_RATE_LIMIT_SKIP_PATHS=/api/v1/ready
 KC_LOG_LEVEL=info
 ```
 
-The search database is a rebuildable index and this service does not migrate
-older table layouts. Before deploying a release that changes its schema, set
-`KC_SEARCH_SERVER_RESET_DB=true` for the next startup. This drops and recreates Search Server's own tables and views,
-including saved cursors and metrics, then reindexes from Gatekeeper.
+### Resetting the Search database
 
-The flag can be supplied through `.env`. It defaults to `false`. Reset failure
-stops startup rather than serving a partially initialized database.
+The search database is a rebuildable index and this service does not migrate
+older table layouts. A reset drops and recreates Search Server's own tables and
+views, including saved cursors and metrics. Normal service startup then
+reindexes them from Gatekeeper.
+
+`KC_SEARCH_SERVER_RESET_DB=true` resets the database during normal startup and
+then continues serving and indexing. It defaults to `false`. An environment
+value retained by a process manager is also present on later process restarts,
+so do not leave it set to `true` unless every restart should reset Search.
+
+The equivalent startup option resets the database and then keeps the Search
+Server running normally:
+
+```bash
+node dist/index.js --reset-db
+```
+
+It uses the same configured database and coordinated reset path as the
+environment variable. A reset failure stops startup rather than serving a
+partially initialized database. Like an environment value, an argument retained
+by a process manager is applied again on every restart.
+
+The repository wrapper accepts the same startup option:
+
+```bash
+./start-node gatekeeper keymaster hypr-mediator cli search-server --reset-db
+```
+
+It starts the requested services with database reset enabled for Search Server.
+The argument is valid only when `search-server` is explicitly selected or when
+no service list is supplied.
 
 PostgreSQL stores a generated lowercase copy of each document's JSONB-rendered
 text in `did_docs.search_text` and maintains one trigram GIN index on that

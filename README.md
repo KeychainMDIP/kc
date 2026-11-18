@@ -22,6 +22,16 @@ $ ./start-node gatekeeper keymaster hypr-mediator cli
 
 `start-node` is a repository-root Docker Compose wrapper. The command above starts a core node that exchanges operations over Hyperswarm and includes the CLI container, without starting the Bitcoin-family nodes. Running `./start-node` without service names starts every Compose service, including all blockchain nodes and mediators. See the [deployment guide](https://keychain.org/docs/server/deployment/) for isolated and optional-service configurations.
 
+To rebuild Search Server's disposable index during local startup, include
+`search-server` and the reset option. Search Server resets its database and
+then continues running normally:
+
+```bash
+./start-node gatekeeper keymaster hypr-mediator cli search-server --reset-db
+```
+
+See the [Search Server reset documentation](services/search-server/README.md#resetting-the-search-database) before using this destructive option.
+
 REST API references: [Gatekeeper OpenAPI](doc/gatekeeper-api.json) and [Keymaster OpenAPI](doc/keymaster-api.json).
 
 ### Local Development (for developers)
@@ -214,9 +224,9 @@ Commands:
   get-status                                                   Report gatekeeper status
   hash-dids <file>                                             Compute hash of batch
   help [command]                                               display help for command
-  import-batch-file <file> [registry]                          Import batch of events
-  import-did <file>                                            Import DID from file
-  import-dids <file>                                           Import DIDs from file
+  import-batch-file <file> [registry]                          Import and process batch of events
+  import-did <file>                                            Import and process DID from file
+  import-dids <file>                                           Import and process DIDs from file
   list-registries                                              List supported registries
   perf-test [full]                                             DID resolution performance test
   process-events                                               Process events queue

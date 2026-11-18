@@ -97,6 +97,25 @@ are evicted, and a successful database reset clears the cache.
 Incoming operation CIDs and signatures are still verified. Explicit database
 audits recompute historical CIDs independently of the import cache.
 
+### Bounded event imports
+
+Imported events use a bounded transient page and a bounded retained-pending
+queue. `importBatch()` reports retryable admission backpressure through
+`capacityDeferredIndices` and identifies events already held by Gatekeeper
+through `processedIndices`. Callers must retry capacity-deferred inputs later.
+
+`processEvents()` returns one bounded page. Call it again while `hasMore` is
+true, handling each result before requesting the next page. A false `hasMore`
+with a non-zero `pending` count means the retained events are waiting for a
+missing controller or predecessor and should not be retried immediately.
+Retained events are retried when their target or a traversed controller changes,
+including local submissions and DID-prefix aliases. Unidentified or unusually
+large dependency sets are conservatively retried after any DID mutation.
+Unrelated arrivals do not repeatedly revalidate known, unchanged dependencies.
+`rejectedEvents` identifies the exact rejected envelopes, including their registry
+and ordering metadata. A rejection of the same signed operation in another
+envelope does not prove a submitted native confirmation was rejected.
+
 ### Client
 
 Incremental `exportIndex()` requests include changed DID histories by default.

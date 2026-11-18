@@ -18,11 +18,11 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      
+
       - name: Setup env for Testing
         working-directory: ./tests/cli-tests
         run: |
-          sudo apt update
+          sudo apt-get update
           sudo apt-get install -y expect
           ./generate_test_env.sh
           ln -s "$GITHUB_WORKSPACE/kc" /usr/local/bin/kc
@@ -49,7 +49,8 @@ jobs:
       - name: Grab logs
         if: always()
         run: |
-          docker compose logs --no-color keymaster cli gatekeeper redis search-server > docker-compose-logs.txt
+          docker compose ps -a > docker-compose-logs.txt
+          docker compose logs --no-color >> docker-compose-logs.txt
           cat docker-compose-logs.txt
       
 

@@ -98,10 +98,37 @@ counts.
 }
 ```
 
-Queue categories are disjoint. `staged` means queued work not last classified
-as deferred, `pending` means queued work waiting after a deferred import, and
-`processing` means work remaining in active import passes. `total` is their
+Queue categories are disjoint. `staged` means admitted work awaiting processing,
+`pending` means retained work waiting after a deferred import, and
+`processing` means events reserved by the active processing page. `total` is their
 sum. Raw operation bodies are not included. Memory counters are byte counts.
+
+## Bounded event imports
+
+Gatekeeper reserves a transient admission window of at most 300 events and
+1.25 MiB of serialized event data. Its retained pending queue holds at most
+10,000 events and 64 MiB. Existing pending events are retained when capacity is
+full. New events that cannot fit are refused with retryable capacity outcomes.
+
+`POST /api/v1/batch/import` and `POST /api/v1/dids/import` return
+`capacityDeferred` and `capacityDeferredIndices` for refused inputs. Callers
+must retain and retry those inputs later. `processedIndices` identifies events
+already held by Gatekeeper, which may still be awaiting validation or a
+dependency. These indices follow submitted batch order, with DID histories
+flattened for `/dids/import`. Admission does not prove durable acceptance.
+
+`POST /api/v1/events/process` attempts at most 300 events and 512 KiB per page.
+Consume each page and call again while `hasMore` is true. A false `hasMore` with
+non-zero `pending` means work is waiting for dependencies and should not be
+retried immediately. `capacityDeferredHashes` identifies operations that could
+not be retained after processing, so callers can retry them later. A busy
+response or client timeout does not cancel the server's active processing.
+`rejectedEvents` identifies the exact failed event envelopes. Match their registry
+and ordering metadata when attributing rejection to a submitted confirmation.
+
+Deploy Gatekeeper and its mediators together for this processing contract.
+The admin file-import commands drain processing pages and retain refused inputs
+for bounded retries. No database reset is required.
 
 ## Event requests across a database reset
 

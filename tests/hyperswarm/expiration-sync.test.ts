@@ -5,11 +5,67 @@ import DbJsonMemory from '@mdip/gatekeeper/db/json-memory.ts';
 import type { IndexExportRequest, Operation } from '@mdip/gatekeeper/types';
 import InMemoryOperationSyncStore from '../../services/mediators/hyperswarm/src/db/memory.ts';
 import { createImportPipeline } from '../../services/mediators/hyperswarm/src/import-pipeline.ts';
+import { createQueueCoordinator } from '../../services/mediators/hyperswarm/src/queue-coordinator.ts';
 import { createMediatorSyncStats } from '../../services/mediators/hyperswarm/src/sync-stats.ts';
 import { bootstrapSyncStoreFromGatekeeper } from '../../services/mediators/hyperswarm/src/bootstrap.ts';
 import TestHelper from '../gatekeeper/helper.ts';
 
 describe('expiration and historical synchronization', () => {
+    it('publishes accepted local operations after cleanup removes their controllers', async () => {
+        const cipher = new CipherNode();
+        const db = new DbJsonMemory('local-expiration-publication');
+        const gatekeeper = new Gatekeeper({ db, ipfsEnabled: false });
+        const helper = new TestHelper(gatekeeper, cipher);
+        const key = cipher.generateRandomJwk();
+        const stats = createMediatorSyncStats();
+        const store = new InMemoryOperationSyncStore();
+        const pipeline = createImportPipeline({
+            gatekeeper: {
+                importBatch: gatekeeper.importBatch.bind(gatekeeper),
+                processEvents: gatekeeper.processEvents.bind(gatekeeper),
+                exportIndex: async request => request.mode === 'snapshot'
+                    ? db.exportIndexSnapshot(request) : db.exportIndexChanges(request),
+                isReady: async () => true,
+                getStatus: async () => ({
+                    uptimeSeconds: 0, memoryUsage: process.memoryUsage(), eventsQueue: gatekeeper.getQueueStatus(),
+                }),
+            },
+            syncStore: store, cipher, syncStats: stats, retryDelayMs: 300_000,
+            beginStoreMutation: () => () => {}, onStoreChanged: () => {},
+        });
+        const relay = jest.fn(async () => {});
+        const coordinator = createQueueCoordinator({
+            registry: 'hyperswarm', gatekeeper, cipher, syncStats: stats,
+            getImportPipeline: () => pipeline, getNodeKey: () => 'local',
+            createQueueMessage: () => ({ type: 'queue', time: '', node: '', relays: [] }), relay,
+        });
+        try {
+            await pipeline.refreshIndex('startup');
+            const agent = await helper.createAgentOp(key, {
+                registry: 'hyperswarm', validUntil: new Date(Date.now() - 1000).toISOString(),
+            });
+            const did = await gatekeeper.createDID(agent);
+            await coordinator.flush();
+            expect(await gatekeeper.getQueue('hyperswarm')).toEqual([]);
+            const asset = await helper.createAssetOp(did, key, { registry: 'hyperswarm' });
+            await gatekeeper.createDID(asset);
+            await expect(gatekeeper.collectExpiredDIDs()).resolves.toMatchObject({ expired: 2 });
+            await expect(coordinator.flush()).resolves.toBeUndefined();
+            expect(await gatekeeper.getQueue('hyperswarm')).toEqual([]);
+            expect(await store.has(asset.signature!.hash)).toBe(true);
+            expect(relay).toHaveBeenLastCalledWith(expect.objectContaining({ data: [asset] }));
+
+            const subsequent = await helper.createAgentOp(cipher.generateRandomJwk(), { registry: 'hyperswarm' });
+            await gatekeeper.createDID(subsequent);
+            await expect(coordinator.flush()).resolves.toBeUndefined();
+            expect(await gatekeeper.getQueue('hyperswarm')).toEqual([]);
+            expect(relay).toHaveBeenCalledTimes(3);
+            expect(relay).toHaveBeenLastCalledWith(expect.objectContaining({ data: [subsequent] }));
+        } finally {
+            await pipeline.shutdown();
+        }
+    });
+
     it('orders accepted replacement history before a retained removed branch', async () => {
         const cipher = new CipherNode();
         const db = new DbJsonMemory('reorganization-sync');
@@ -81,6 +137,7 @@ describe('expiration and historical synchronization', () => {
             syncStore: store,
             cipher,
             syncStats: createMediatorSyncStats(),
+            retryDelayMs: 300_000,
             beginStoreMutation: () => () => {},
             onStoreChanged: () => {},
         });
