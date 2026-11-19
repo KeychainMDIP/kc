@@ -112,6 +112,7 @@ function createTransport(overrides: {
 } & Partial<Pick<
     TransportOptions,
     | 'frameAssemblyTimeoutMs'
+    | 'initialPingTimeoutMs'
     | 'maxConnections'
     | 'maxInboundBytesPerConnection'
     | 'maxInboundBytesTotal'
@@ -134,6 +135,7 @@ function createTransport(overrides: {
         syncStats,
         now: overrides.now,
         frameAssemblyTimeoutMs: overrides.frameAssemblyTimeoutMs,
+        initialPingTimeoutMs: overrides.initialPingTimeoutMs,
         maxConnections: overrides.maxConnections,
         maxInboundBytesPerConnection: overrides.maxInboundBytesPerConnection,
         maxInboundBytesTotal: overrides.maxInboundBytesTotal,
@@ -326,6 +328,7 @@ describe('hyperswarm transport routing', () => {
         await Promise.resolve();
         expect(admitted.destroyed).toBe(false);
         expect(transport.getConnection(peerKey)).toBeDefined();
+        await transport.shutdown();
     });
 
     it('does not penalize a replacement for a late violation from the old connection', () => {
@@ -375,6 +378,9 @@ describe('hyperswarm transport routing', () => {
             onSyncMessage: () => undefined,
             onDisconnected: () => undefined,
         })).toThrow('staleConnectionMs must be a positive finite number');
+        expect(() => createTransport({ initialPingTimeoutMs: 0 })).toThrow(
+            'initialPingTimeoutMs must be a positive safe integer',
+        );
     });
 
     it('rejects invalid outbound envelopes and payloads before writing', () => {
@@ -449,6 +455,123 @@ describe('hyperswarm transport routing', () => {
 });
 
 describe('hyperswarm transport resource bounds', () => {
+    it('expires a silent peer, frees its slot, and quarantines its key', async () => {
+        jest.useFakeTimers();
+        const { transport, syncStats, onDisconnected } = createTransport({
+            initialPingTimeoutMs: 10,
+            maxConnections: 1,
+        });
+        const silent = new FakeConnection(0x58);
+        const silentKey = silent.remotePublicKey.toString('hex');
+
+        try {
+            transport.addConnection(silent as unknown as HyperswarmConnection);
+            await transport.getConnection(silentKey)!.initialPingPromise;
+            expect(transport.getAccounting().connections).toBe(1);
+
+            await jest.advanceTimersByTimeAsync(10);
+
+            expect(silent.destroyed).toBe(true);
+            expect(transport.getConnection(silentKey)).toBeUndefined();
+            expect(transport.getAccounting().connections).toBe(0);
+            expect(onDisconnected).toHaveBeenCalledWith(
+                silentKey,
+                'initial_ping_timeout',
+                expect.anything(),
+            );
+            expect(syncStats.protocolViolationCooldowns).toBe(1);
+            expect(syncStats.hardening.protocolStrikes.other).toBe(1);
+
+            const fresh = new FakeConnection(0x59);
+            const freshKey = fresh.remotePublicKey.toString('hex');
+            transport.addConnection(fresh as unknown as HyperswarmConnection);
+            await transport.getConnection(freshKey)!.initialPingPromise;
+            expect(fresh.destroyed).toBe(false);
+            expect(transport.getAccounting().connections).toBe(1);
+
+            const refused = new FakeConnection(0x58);
+            transport.addConnection(refused as unknown as HyperswarmConnection);
+            expect(refused.destroyed).toBe(true);
+            expect(syncStats.protocolViolationConnectionsRejected).toBe(1);
+        }
+        finally {
+            await transport.shutdown();
+            jest.useRealTimers();
+        }
+    });
+
+    it('cancels the initial deadline after a compatible ping', async () => {
+        jest.useFakeTimers();
+        const pingStarted = deferred<void>();
+        const releasePing = deferred<void>();
+        const onPing = jest.fn(async () => {
+            pingStarted.resolve();
+            await releasePing.promise;
+        });
+        const { transport, syncStats } = createTransport({
+            initialPingTimeoutMs: 10,
+            onPing,
+        });
+        const connection = new FakeConnection(0x5a);
+        const peerKey = connection.remotePublicKey.toString('hex');
+
+        try {
+            transport.addConnection(connection as unknown as HyperswarmConnection);
+            await transport.getConnection(peerKey)!.initialPingPromise;
+            const processing = transport.processInboundPeerData(
+                peerKey,
+                encodeFramedMessage(JSON.stringify(ping())),
+            );
+            await pingStarted.promise;
+            await jest.advanceTimersByTimeAsync(20);
+
+            expect(connection.destroyed).toBe(false);
+            expect(transport.getConnection(peerKey)).toBeDefined();
+            expect(onPing).toHaveBeenCalledTimes(1);
+            expect(syncStats.protocolViolationCooldowns).toBe(0);
+            releasePing.resolve();
+            await processing;
+        }
+        finally {
+            releasePing.resolve();
+            await transport.shutdown();
+            jest.useRealTimers();
+        }
+    });
+
+    it('cancels the old deadline when replacing an unhandshaken connection', async () => {
+        jest.useFakeTimers();
+        const { transport, syncStats } = createTransport({ initialPingTimeoutMs: 10 });
+        const first = new FakeConnection(0x5b);
+        const peerKey = first.remotePublicKey.toString('hex');
+        const replacement = new FakeConnection(0x5b);
+
+        try {
+            transport.addConnection(first as unknown as HyperswarmConnection);
+            await transport.getConnection(peerKey)!.initialPingPromise;
+            await jest.advanceTimersByTimeAsync(5);
+
+            transport.addConnection(replacement as unknown as HyperswarmConnection);
+            await transport.getConnection(peerKey)!.initialPingPromise;
+            await transport.processInboundPeerData(
+                peerKey,
+                encodeFramedMessage(JSON.stringify(ping())),
+            );
+            await jest.advanceTimersByTimeAsync(20);
+
+            expect(first.destroyed).toBe(true);
+            expect(replacement.destroyed).toBe(false);
+            expect(transport.getConnection(peerKey)?.connection).toBe(replacement);
+            expect(syncStats.protocolViolationCooldowns).toBe(0);
+        }
+        finally {
+            await transport.shutdown();
+            const timerCount = jest.getTimerCount();
+            jest.useRealTimers();
+            expect(timerCount).toBe(0);
+        }
+    });
+
     it('contains stream lifecycle callback failures', async () => {
         const disconnectError = new Error('disconnect callback failed');
         const onDisconnected = jest.fn(() => { throw disconnectError; });

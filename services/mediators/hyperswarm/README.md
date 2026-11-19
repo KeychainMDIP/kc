@@ -35,7 +35,11 @@ recovers best-effort delivery failures.
 
 Every message must use framed transport v1, including the initial ping. Raw JSON
 peers cannot connect. A compatible initial ping must advertise Negentropy v2
-before any queue or synchronization traffic is accepted.
+before any queue or synchronization traffic is accepted. An admitted connection
+has 15 seconds to provide that compatible ping. Missing the deadline closes the
+connection and applies the existing bounded protocol cooldown; the separate
+stale-connection timeout still covers established peers that later stop
+communicating.
 
 Inbound and outbound operation pages have the same limits: 300 operations and
 512 KiB of serialized operation data. Offers and requests contain at most 1,000

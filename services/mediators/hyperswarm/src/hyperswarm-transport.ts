@@ -30,6 +30,7 @@ import { MAX_APPLICATION_CONNECTIONS } from './protocol-limits.js';
 
 const log = childLogger({ service: 'hyperswarm-transport' });
 const DEFAULT_PING_INTERVAL_MS = 10 * 1_000;
+const DEFAULT_INITIAL_PING_TIMEOUT_MS = 15 * 1_000;
 const DEFAULT_IO_TIMEOUT_MS = 2 * 60 * 1_000;
 const OPERATION_FRAME_OVERHEAD_BYTES = 64 * 1024;
 
@@ -37,6 +38,7 @@ interface InboundState {
     reservedBytes: number;
     queuedChunks: number;
     paused: boolean;
+    initialPingTimer: ReturnType<typeof setTimeout> | null;
     partialFrameTimer: ReturnType<typeof setTimeout> | null;
 }
 
@@ -77,6 +79,7 @@ export interface HyperswarmTransportOptions {
     maxPeerStates?: number;
     now?: () => number;
     pingIntervalMs?: number;
+    initialPingTimeoutMs?: number;
     staleConnectionMs?: number;
     frameAssemblyTimeoutMs?: number;
     writeTimeoutMs?: number;
@@ -106,6 +109,7 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
     );
     const now = options.now ?? (() => Date.now());
     const pingIntervalMs = options.pingIntervalMs ?? DEFAULT_PING_INTERVAL_MS;
+    const initialPingTimeoutMs = options.initialPingTimeoutMs ?? DEFAULT_INITIAL_PING_TIMEOUT_MS;
     const staleConnectionMs = options.staleConnectionMs ?? 3 * 60 * 1000;
     const frameAssemblyTimeoutMs = options.frameAssemblyTimeoutMs ?? DEFAULT_IO_TIMEOUT_MS;
     const writeTimeoutMs = options.writeTimeoutMs ?? DEFAULT_IO_TIMEOUT_MS;
@@ -129,6 +133,7 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
     }
 
     assertPositiveSafeInteger(maxMessageBytes, 'maxMessageBytes');
+    assertPositiveSafeInteger(initialPingTimeoutMs, 'initialPingTimeoutMs');
     assertPositiveSafeInteger(frameAssemblyTimeoutMs, 'frameAssemblyTimeoutMs');
     assertPositiveSafeInteger(writeTimeoutMs, 'writeTimeoutMs');
     assertPositiveSafeInteger(maxConnections, 'maxConnections');
@@ -155,6 +160,7 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
                 reservedBytes: 0,
                 queuedChunks: 0,
                 paused: false,
+                initialPingTimer: null,
                 partialFrameTimer: null,
             };
             inboundStates.set(connection, state);
@@ -227,6 +233,22 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
             clearTimeout(state.partialFrameTimer);
             state.partialFrameTimer = null;
         }
+    }
+
+    function clearInitialPingDeadline(connection: ConnectionInfo): void {
+        const state = getInboundState(connection);
+        if (state.initialPingTimer) {
+            clearTimeout(state.initialPingTimer);
+            state.initialPingTimer = null;
+        }
+    }
+
+    function startInitialPingDeadline(peerKey: string, connection: ConnectionInfo): void {
+        const state = getInboundState(connection);
+        state.initialPingTimer = setTimeout(() => {
+            state.initialPingTimer = null;
+            reportProtocolViolation(peerKey, 'initial_ping_timeout', connection);
+        }, initialPingTimeoutMs);
     }
 
     function releaseInboundBytes(connection: ConnectionInfo, bytes: number): void {
@@ -348,6 +370,7 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
     }
 
     function cleanupConnection(peerKey: string, connection: ConnectionInfo, reason: string): void {
+        clearInitialPingDeadline(connection);
         clearPartialFrameDeadline(connection);
         closeWriter(peerKey, connection, reason);
         const draining = drainingConnections.get(peerKey) ?? new Set<ConnectionInfo>();
@@ -691,6 +714,7 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
             return;
         }
 
+        clearInitialPingDeadline(connection);
         const receivedAt = now();
         connection.lastSeen = receivedAt;
         if (connection.initialPingReceived
@@ -945,6 +969,7 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
         });
         connection.on('data', data => { void queueInboundPeerData(peerKey, data, state); });
 
+        startInitialPingDeadline(peerKey, state);
         state.initialPingPromise = sendInitialPing(peerKey, state).catch(error => {
             log.error({ error, peer: peerName }, 'failed to build initial hyperswarm ping');
             terminatePeer(peerKey, 'initial_ping_failed', state);
