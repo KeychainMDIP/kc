@@ -464,6 +464,38 @@ describe('queue coordinator', () => {
         ]);
     });
 
+    it('retries gossip when a persisted operation cannot fit a relay page', async () => {
+        const { cipher, operation } = makeOperation();
+        const oversized = { ...operation, extra: 'x'.repeat(1_000) } as Operation;
+        const enqueue = jest.fn(async () => importResult({
+            persistedIds: [operation.signature!.hash],
+            acceptedOperations: [oversized],
+        }));
+        const relay = jest.fn(async () => undefined);
+        const gatekeeper = {
+            getQueue: jest.fn(async () => []),
+            clearQueue: jest.fn(async () => true),
+        } as unknown as Pick<GatekeeperClient, 'getQueue' | 'clearQueue'>;
+        const coordinator = createQueueCoordinator({
+            registry: 'hyperswarm', maxOpsPerPage: 300, maxBytesPerPage: 512,
+            ...defaultRepairOptions(),
+            gatekeeper,
+            cipher, syncStats: createMediatorSyncStats(),
+            getImportPipeline: () => ({ available: true, enqueue } as unknown as ImportPipeline),
+            getNodeKey: () => 'local-key',
+            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            relay, onProtocolViolation: jest.fn(),
+        });
+        const message = { type: 'queue' as const, time: '', node: 'peer', relays: [], data: [operation] };
+
+        await coordinator.handleMessage('peer-key', message, connection);
+        await coordinator.handleMessage('peer-key', message, connection);
+
+        expect(enqueue).toHaveBeenCalledTimes(1);
+        expect(relay).not.toHaveBeenCalled();
+        await coordinator.shutdown();
+    });
+
     it('drains persisted pages after a relay failure without failing the import', async () => {
         const first = makeOperation('2026-08-01T12:00:00.000Z');
         const second = makeOperation('2026-08-01T12:00:01.000Z').operation;
@@ -1504,6 +1536,71 @@ describe('queue coordinator', () => {
 
         await expect(coordinator.flush()).rejects.toThrow('failed to merge local Gatekeeper queue');
         expect(clearQueue).not.toHaveBeenCalled();
+    });
+
+    it('leaves a local queue intact if processing pauses after merging', async () => {
+        const { cipher, operation } = makeOperation();
+        let available = true;
+        const enqueue = jest.fn<ImportPipeline['enqueue']>(async () => {
+            if (enqueue.mock.calls.length === 2) available = false;
+            return importResult({ persistedIds: [operation.signature!.hash] });
+        });
+        const clearQueue = jest.fn(async () => true);
+        const pipeline = { get available() { return available; }, enqueue } as unknown as ImportPipeline;
+        const gatekeeper = {
+            getQueue: jest.fn(async () => [operation]),
+            clearQueue,
+        } as unknown as Pick<GatekeeperClient, 'getQueue' | 'clearQueue'>;
+        const coordinator = createQueueCoordinator({
+            registry: 'hyperswarm', maxOpsPerPage: 300, maxBytesPerPage: 512 * 1024,
+            ...defaultRepairOptions(),
+            gatekeeper,
+            cipher, syncStats: createMediatorSyncStats(), getImportPipeline: () => pipeline,
+            getNodeKey: () => 'local-key',
+            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            relay: jest.fn(async () => undefined), onProtocolViolation: jest.fn(),
+        });
+
+        await coordinator.flush();
+
+        expect(enqueue).toHaveBeenCalledTimes(2);
+        expect(clearQueue).not.toHaveBeenCalled();
+        await coordinator.shutdown();
+    });
+
+    it('starts repair only while the failed relay connection is still current', async () => {
+        const getConnection = jest.fn<() => ConnectionInfo | undefined>()
+            .mockReturnValueOnce(connection)
+            .mockReturnValueOnce(undefined);
+        const requestRepair = jest.fn(async () => true);
+        const gatekeeper = {
+            getQueue: jest.fn(async () => []),
+            clearQueue: jest.fn(async () => true),
+        } as unknown as Pick<GatekeeperClient, 'getQueue' | 'clearQueue'>;
+        const base = {
+            registry: 'hyperswarm', maxOpsPerPage: 300, maxBytesPerPage: 512 * 1024,
+            gatekeeper,
+            cipher: new CipherNode(), syncStats: createMediatorSyncStats(),
+            getImportPipeline: () => ({ available: true } as ImportPipeline),
+            getNodeKey: () => 'local-key',
+            createQueueMessage: () => ({ type: 'queue' as const, time: '', node: 'local', relays: [] }),
+            relay: jest.fn(async () => undefined), onProtocolViolation: jest.fn(),
+        };
+        const disconnected = createQueueCoordinator({ ...base, getConnection, requestRepair });
+        disconnected.handleRelayFailure('peer-key', connection);
+        await disconnected.runRepairs();
+        expect(requestRepair).not.toHaveBeenCalled();
+        disconnected.handleRelayFailure('peer-key', connection);
+
+        const current = createQueueCoordinator({
+            ...base,
+            getConnection: () => connection,
+            requestRepair,
+        });
+        current.handleRelayFailure('peer-key', connection);
+        await current.runRepairs();
+        expect(requestRepair).toHaveBeenCalledWith('peer-key', connection);
+        await Promise.all([disconnected.shutdown(), current.shutdown()]);
     });
 
     it('retains a local queue when initial persistence is retryable', async () => {

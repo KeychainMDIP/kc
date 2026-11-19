@@ -105,6 +105,7 @@ type TransportOptions = Parameters<typeof createHyperswarmTransport>[0];
 function createTransport(overrides: {
     buildInitialPing?: () => Promise<PingMessage>;
     now?: () => number;
+    onDisconnected?: jest.Mock<(peerKey: string, reason: string, connection: ConnectionInfo) => void>;
     onPing?: jest.Mock<(peerKey: string, message: PingMessage, connection: ConnectionInfo) => void | Promise<void>>;
     onQueue?: jest.Mock<(peerKey: string, message: QueueMessage, connection: ConnectionInfo) => void | Promise<void>>;
     onSyncMessage?: jest.Mock<(peerKey: string, message: SyncMessage, connection: ConnectionInfo) => void | Promise<void>>;
@@ -118,13 +119,14 @@ function createTransport(overrides: {
     | 'maxOutboundBytesPerConnection'
     | 'maxOutboundBytesTotal'
     | 'onRelayFailure'
+    | 'staleConnectionMs'
     | 'writeTimeoutMs'
 >> = {}) {
     const syncStats = createMediatorSyncStats();
     const onPing = overrides.onPing ?? jest.fn<(peerKey: string, message: PingMessage, connection: ConnectionInfo) => void>();
     const onQueue = overrides.onQueue ?? jest.fn<(peerKey: string, message: QueueMessage, connection: ConnectionInfo) => void>();
     const onSyncMessage = overrides.onSyncMessage ?? jest.fn<(peerKey: string, message: SyncMessage, connection: ConnectionInfo) => void>();
-    const onDisconnected = jest.fn();
+    const onDisconnected = overrides.onDisconnected ?? jest.fn();
     const transport = createHyperswarmTransport({
         framingVersion: 1,
         requiredNegentropyVersion: 2,
@@ -138,6 +140,7 @@ function createTransport(overrides: {
         maxMessageBytes: overrides.maxMessageBytes,
         maxOutboundBytesPerConnection: overrides.maxOutboundBytesPerConnection,
         maxOutboundBytesTotal: overrides.maxOutboundBytesTotal,
+        staleConnectionMs: overrides.staleConnectionMs,
         writeTimeoutMs: overrides.writeTimeoutMs,
         buildInitialPing: overrides.buildInitialPing ?? (async () => ping({ node: 'local' })),
         onPing,
@@ -345,6 +348,9 @@ describe('hyperswarm transport routing', () => {
     });
 
     it('rejects invalid timing options', () => {
+        expect(() => createTransport({ maxMessageBytes: 0 })).toThrow(
+            'maxMessageBytes must be a positive safe integer',
+        );
         expect(() => createHyperswarmTransport({
             framingVersion: 1,
             requiredNegentropyVersion: 2,
@@ -443,6 +449,122 @@ describe('hyperswarm transport routing', () => {
 });
 
 describe('hyperswarm transport resource bounds', () => {
+    it('contains stream lifecycle callback failures', async () => {
+        const disconnectError = new Error('disconnect callback failed');
+        const onDisconnected = jest.fn(() => { throw disconnectError; });
+        const first = new FakeConnection(0x50);
+        first.destroy = () => { throw new Error('destroy failed'); };
+        const firstKey = first.remotePublicKey.toString('hex');
+        const firstTransport = createTransport({ onDisconnected }).transport;
+        firstTransport.setConnection(firstKey, createConnectionInfo({
+            connection: first as unknown as HyperswarmConnection,
+            peerName: 'first',
+        }));
+
+        expect(() => firstTransport.terminatePeer(firstKey, 'test')).not.toThrow();
+        expect(onDisconnected).toHaveBeenCalledTimes(1);
+
+        const second = new FakeConnection(0x51);
+        second.pause = () => { throw new Error('pause failed'); };
+        second.resume = () => { throw new Error('resume failed'); };
+        const secondKey = second.remotePublicKey.toString('hex');
+        const secondTransport = createTransport().transport;
+        secondTransport.setConnection(secondKey, createConnectionInfo({
+            connection: second as unknown as HyperswarmConnection,
+            peerName: 'second',
+        }));
+
+        await secondTransport.processInboundPeerData(
+            secondKey,
+            encodeFramedMessage(JSON.stringify(ping())),
+        );
+        expect(second.destroyed).toBe(true);
+        await Promise.all([firstTransport.shutdown(), secondTransport.shutdown()]);
+    });
+
+    it('contains rejected admission and initial-ping failures', async () => {
+        const stopped = createTransport().transport;
+        const existing = new FakeConnection(0x55);
+        const existingKey = existing.remotePublicKey.toString('hex');
+        stopped.setConnection(existingKey, createConnectionInfo({
+            connection: existing as unknown as HyperswarmConnection,
+            peerName: 'existing',
+        }));
+        const unadmitted = new FakeConnection(0x52);
+        unadmitted.destroy = () => { throw new Error('destroy failed'); };
+        stopped.stopAdmission();
+        await stopped.processInboundPeerData(existingKey, 'ignored');
+        expect(() => stopped.addConnection(unadmitted as unknown as HyperswarmConnection)).not.toThrow();
+
+        const failed = createTransport({
+            buildInitialPing: async () => { throw new Error('ping failed'); },
+        }).transport;
+        const connection = new FakeConnection(0x53);
+        failed.addConnection(connection as unknown as HyperswarmConnection);
+        await nextTurn();
+
+        expect(connection.destroyed).toBe(true);
+        const stoppedShutdown = stopped.shutdown();
+        expect(stopped.shutdown()).toBe(stoppedShutdown);
+        await Promise.all([stoppedShutdown, failed.shutdown()]);
+    });
+
+    it('ignores empty input and expires a stale connection', async () => {
+        const { transport } = createTransport({ staleConnectionMs: 100 });
+        const connection = new FakeConnection(0x54);
+        const peerKey = connection.remotePublicKey.toString('hex');
+        const state = createConnectionInfo({
+            connection: connection as unknown as HyperswarmConnection,
+            peerName: 'peer',
+        });
+        state.lastSeen = 0;
+        transport.setConnection(peerKey, state);
+
+        await transport.processInboundPeerData(peerKey, Buffer.alloc(0));
+        transport.expireStaleConnections(101);
+
+        expect(connection.destroyed).toBe(true);
+        await transport.shutdown();
+    });
+
+    it('ignores a message for a connection already being terminated', async () => {
+        const { transport, onPing } = createTransport();
+        const connection = new FakeConnection(0x56);
+        const peerKey = connection.remotePublicKey.toString('hex');
+        const state = createConnectionInfo({
+            connection: connection as unknown as HyperswarmConnection,
+            peerName: 'peer',
+        });
+        state.terminationStarted = true;
+        transport.setConnection(peerKey, state);
+
+        await transport.receiveMessage(peerKey, ping());
+
+        expect(onPing).not.toHaveBeenCalled();
+        await transport.shutdown();
+    });
+
+    it('notifies idle waiters after a pending bulk write flushes', async () => {
+        const { transport } = createTransport();
+        const connection = new FakeConnection(0x57);
+        connection.autoCompleteWrites = false;
+        const peerKey = connection.remotePublicKey.toString('hex');
+        transport.setConnection(peerKey, createConnectionInfo({
+            connection: connection as unknown as HyperswarmConnection,
+            peerName: 'peer',
+        }));
+        const message = { type: 'queue' as const, time: '', node: 'local', relays: [], data: [] };
+
+        const write = transport.sendBulkToPeer(peerKey, message);
+        await nextTurn();
+        const idle = transport.waitForIdleWrites();
+        connection.completeNextFlush();
+
+        await expect(write).resolves.toBe(true);
+        await expect(idle).resolves.toBeUndefined();
+        await transport.shutdown();
+    });
+
     const queueMessage = (node: string): QueueMessage => ({
         type: 'queue',
         time: '',

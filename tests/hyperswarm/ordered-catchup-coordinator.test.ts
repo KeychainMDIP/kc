@@ -66,6 +66,8 @@ function createCoordinator(overrides: Partial<Pick<
     | 'getConnection'
     | 'importPipeline'
     | 'onFailure'
+    | 'onComplete'
+    | 'onHandoffDeferred'
     | 'onIndexRefreshed'
     | 'onProtocolViolation'
     | 'bulkReads'
@@ -104,14 +106,60 @@ function createCoordinator(overrides: Partial<Pick<
         sendToPeer,
         sendBulkToPeer: overrides.sendBulkToPeer ?? (async (key, message) => sendToPeer(key, message)),
         onIndexRefreshed: overrides.onIndexRefreshed ?? jest.fn(async () => undefined),
-        onComplete: jest.fn(async () => false),
-        onHandoffDeferred: jest.fn(async () => undefined),
+        onComplete: overrides.onComplete ?? jest.fn(async () => false),
+        onHandoffDeferred: overrides.onHandoffDeferred ?? jest.fn(async () => undefined),
         onFailure: overrides.onFailure ?? jest.fn(async () => undefined),
         onProtocolViolation: overrides.onProtocolViolation ?? jest.fn(),
     });
 }
 
 describe('ordered catch-up coordinator shutdown', () => {
+    it.each(['wait', 'refresh'] as const)('stops a completion transition during %s when shutdown begins', async phase => {
+        let release!: () => void;
+        let markStarted!: () => void;
+        const started = new Promise<void>(resolve => { markStarted = resolve; });
+        const blocked = jest.fn(async () => {
+            markStarted();
+            await new Promise<void>(resolve => { release = resolve; });
+            return bootstrapResult;
+        });
+        const importPipeline = {
+            available: true,
+            waitForIdle: phase === 'wait' ? blocked : jest.fn(async () => undefined),
+            refreshIndex: phase === 'refresh' ? blocked : jest.fn(async () => bootstrapResult),
+        } as unknown as ImportPipeline;
+        const onIndexRefreshed = jest.fn(async () => undefined);
+        const onComplete = jest.fn(async () => false);
+        const coordinator = createCoordinator({ importPipeline, onComplete, onIndexRefreshed });
+
+        expect(coordinator.createClientSession(peerKey, `shutdown-${phase}`)).toBe(true);
+        await coordinator.handleMessage(peerKey, {
+            type: 'ordered_catchup_done', time: '', node: '', relays: [], sessionId: `shutdown-${phase}`,
+        });
+        await started;
+        const shutdown = coordinator.shutdown();
+        release();
+        await shutdown;
+
+        expect(onIndexRefreshed).not.toHaveBeenCalled();
+        expect(onComplete).not.toHaveBeenCalled();
+    });
+
+    it('contains a rejected deferred handoff after a completed client session', async () => {
+        const onHandoffDeferred = jest.fn(async () => { throw new Error('handoff failed'); });
+        const coordinator = createCoordinator({ onHandoffDeferred });
+
+        expect(coordinator.createClientSession(peerKey, 'handoff-error')).toBe(true);
+        await coordinator.handleMessage(peerKey, {
+            type: 'ordered_catchup_done', time: '', node: '', relays: [], sessionId: 'handoff-error',
+        });
+        await nextTurn();
+
+        expect(onHandoffDeferred).toHaveBeenCalledTimes(1);
+        expect(coordinator.getActiveSessionId(peerKey)).toBeNull();
+        await coordinator.shutdown();
+    });
+
     it.each([true, false])('classifies an epoch-cancelled import separately from other retries: %s', async indexEpochChanged => {
         const onFailure = jest.fn(async () => undefined);
         const importPipeline = {
@@ -401,6 +449,87 @@ describe('ordered catch-up coordinator shutdown', () => {
 });
 
 describe('ordered catch-up request authorization', () => {
+    it('fails a client when its prefetched continuation cannot be sent', async () => {
+        const operation = makeOperation();
+        const onFailure = jest.fn(async () => undefined);
+        const importPipeline = {
+            available: true,
+            enqueue: jest.fn<ImportPipeline['enqueue']>(async (_request, onComplete) => {
+                onComplete?.(importResult);
+                return importResult;
+            }),
+            waitForIdle: jest.fn(async () => undefined),
+            refreshIndex: jest.fn(async () => bootstrapResult),
+        } as unknown as ImportPipeline;
+        const coordinator = createCoordinator({ importPipeline, onFailure, sendToPeer: () => false });
+
+        expect(coordinator.createClientSession(peerKey, 'prefetch-failed')).toBe(true);
+        await coordinator.handleMessage(peerKey, {
+            type: 'ordered_catchup_push', time: '', node: '', relays: [], sessionId: 'prefetch-failed',
+            cursor: { syncOrder: 1, id: operation.signature.hash }, hasMore: true, data: [operation],
+        });
+        await nextTurn();
+
+        expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({
+            reason: 'send_ordered_catchup_req_failed',
+        }));
+        await coordinator.shutdown();
+    });
+
+    it('releases a page when import completion throws during prefetch', async () => {
+        const operation = makeOperation();
+        const sendToPeer = jest.fn<OrderedCatchupCoordinatorOptions['sendToPeer']>()
+            .mockImplementationOnce(() => { throw new Error('prefetch failed'); })
+            .mockReturnValue(true);
+        const importPipeline = {
+            available: true,
+            enqueue: jest.fn<ImportPipeline['enqueue']>(async (_request, onComplete) => {
+                onComplete?.(importResult);
+                return importResult;
+            }),
+        } as unknown as ImportPipeline;
+        const operationPages = createOperationPageBudget(1, 1_000_000);
+        const coordinator = createCoordinator({ importPipeline, operationPages, sendToPeer });
+
+        expect(coordinator.createClientSession(peerKey, 'completion-error')).toBe(true);
+        await coordinator.handleMessage(peerKey, {
+            type: 'ordered_catchup_push', time: '', node: '', relays: [], sessionId: 'completion-error',
+            cursor: { syncOrder: 1, id: operation.signature.hash }, hasMore: true, data: [operation],
+        });
+
+        expect(operationPages.getMetrics().pages).toBe(0);
+        await coordinator.shutdown();
+    });
+
+    it('ignores a repeated terminal response while completion is still draining', async () => {
+        let release!: () => void;
+        let markStarted!: () => void;
+        const started = new Promise<void>(resolve => { markStarted = resolve; });
+        const importPipeline = {
+            available: true,
+            waitForIdle: jest.fn(async () => {
+                markStarted();
+                await new Promise<void>(resolve => { release = resolve; });
+            }),
+            refreshIndex: jest.fn(async () => bootstrapResult),
+        } as unknown as ImportPipeline;
+        const coordinator = createCoordinator({ importPipeline });
+
+        expect(coordinator.createClientSession(peerKey, 'terminal')).toBe(true);
+        await coordinator.handleMessage(peerKey, {
+            type: 'ordered_catchup_done', time: '', node: '', relays: [], sessionId: 'terminal',
+        });
+        await started;
+        await coordinator.handleMessage(peerKey, {
+            type: 'ordered_catchup_done', time: '', node: '', relays: [], sessionId: 'terminal',
+        });
+        release();
+        await nextTurn();
+
+        expect(importPipeline.refreshIndex).toHaveBeenCalledTimes(1);
+        await coordinator.shutdown();
+    });
+
     it('enforces page bounds before ignoring an unknown session', async () => {
         const onProtocolViolation = jest.fn();
         const coordinator = createCoordinator({ onProtocolViolation });
@@ -621,6 +750,101 @@ describe('ordered catch-up server cursors and scheduling', () => {
             } as unknown as InMemoryOperationSyncStore,
         };
     }
+
+    it.each(['status', 'page'] as const)('clears server state when a %s read fails', async phase => {
+        const failure = new Error(`${phase} read failed`);
+        const { store } = createServerStore();
+        if (phase === 'status') {
+            jest.spyOn(store, 'count').mockRejectedValue(failure);
+        }
+        else {
+            jest.spyOn(store, 'iterateOrdered').mockRejectedValue(failure);
+        }
+        const coordinator = createCoordinator({ syncStore: store });
+
+        await expect(coordinator.handleMessage(peerKey, {
+            type: 'ordered_catchup_req', time: '', node: '', relays: [], sessionId: `failed-${phase}`,
+        })).rejects.toBe(failure);
+
+        expect(coordinator.getActiveSessionId(peerKey)).toBeNull();
+        await coordinator.shutdown();
+    });
+
+    it('drops messages when their connection disappears during dispatch', async () => {
+        const connection = makeCompatibleConnection();
+        const connections = [
+            connection, undefined,
+            connection,
+            connection, undefined,
+            connection,
+            connection, undefined,
+        ];
+        const onProtocolViolation = jest.fn();
+        const coordinator = createCoordinator({
+            getConnection: () => connections.shift(),
+            onProtocolViolation,
+        });
+        const operation = makeOperation();
+
+        await coordinator.handleMessage(peerKey, {
+            type: 'ordered_catchup_req', time: '', node: '', relays: [], sessionId: 'disconnected-request',
+        });
+        expect(coordinator.createClientSession(peerKey, 'disconnected-push')).toBe(true);
+        await coordinator.handleMessage(peerKey, {
+            type: 'ordered_catchup_push', time: '', node: '', relays: [], sessionId: 'disconnected-push',
+            cursor: { syncOrder: 1, id: operation.signature.hash }, hasMore: false, data: [operation],
+        });
+        coordinator.reset();
+        expect(coordinator.createClientSession(peerKey, 'disconnected-done')).toBe(true);
+        await coordinator.handleMessage(peerKey, {
+            type: 'ordered_catchup_done', time: '', node: '', relays: [], sessionId: 'disconnected-done',
+        });
+
+        expect(onProtocolViolation).not.toHaveBeenCalled();
+        await coordinator.shutdown();
+    });
+
+    it('records an initial request send failure and an idle client timeout', async () => {
+        const onFailure = jest.fn(async () => undefined);
+        const coordinator = createCoordinator({ sendToPeer: () => false, onFailure });
+
+        expect(coordinator.startClient(peerKey, 'test', 1)).toBe(true);
+        await nextTurn();
+        expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({
+            reason: 'send_ordered_catchup_req_failed',
+        }));
+
+        const idle = createCoordinator({ onFailure });
+        expect(idle.createClientSession(peerKey, 'idle')).toBe(true);
+        idle.expire(Date.now() + 120_001);
+        await nextTurn();
+        expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({ reason: 'idle_timeout' }));
+        await Promise.all([coordinator.shutdown(), idle.shutdown()]);
+    });
+
+    it('does not start a client while imports are unavailable', async () => {
+        const coordinator = createCoordinator({
+            importPipeline: { available: false } as ImportPipeline,
+        });
+
+        expect(coordinator.startClient(peerKey, 'unavailable', 1)).toBe(false);
+        const shutdown = coordinator.shutdown();
+        expect(coordinator.shutdown()).toBe(shutdown);
+        await shutdown;
+    });
+
+    it('keeps one live server expectation and expires it from the coordinator sweep', async () => {
+        const coordinator = createCoordinator();
+
+        coordinator.expectServerRequest(peerKey, 'first', 10);
+        const expected = coordinator.getPeerState(peerKey);
+        coordinator.expectServerRequest(peerKey, 'replacement', 20);
+        expect(coordinator.getPeerState(peerKey)).toEqual(expected);
+
+        coordinator.expire(expected.serverPendingUntil);
+        expect(coordinator.getPeerState(peerKey).serverPendingUntil).toBe(0);
+        await coordinator.shutdown();
+    });
 
     it('does not materialize an outbound page when page capacity is unavailable', async () => {
         const operationPages = createOperationPageBudget(1, 1_000_000);
