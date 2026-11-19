@@ -1,6 +1,15 @@
 import { EcdsaJwkPublic } from '@mdip/cipher/types';
 import { IPFSClient } from "@mdip/ipfs/types";
 
+export const MAX_OPERATION_PAGE_COUNT = 300;
+export const MAX_OPERATION_PAGE_BYTES = 512 * 1024;
+export const QUEUE_OPERATION_EXCEEDS_PAGE_LIMIT = 'queue_operation_exceeds_page_limit';
+
+export interface QueueReadOptions {
+    limit?: number;
+    maxBytes?: number;
+}
+
 export interface JsonDbFile {
     dids: Record<string, GatekeeperEvent[]>
     queue?: Record<string, Operation[]>
@@ -289,7 +298,7 @@ export interface GatekeeperDb {
     saveExpirationJob(suffix: string, job: ExpirationJob | null): Promise<void>;
     getAllKeys(): Promise<string[]>;
     queueOperation(registry: string, op: Operation): Promise<number>;
-    getQueue(registry: string): Promise<Operation[]>;
+    getQueue(registry: string, limit?: number): Promise<Operation[]>;
     clearQueue(registry: string, batch: Operation[]): Promise<boolean>;
     addBlock(registry: string, blockInfo: BlockInfo): Promise<boolean>;
     getBlock(registry: string, blockId?: BlockId): Promise<BlockInfo | null>;
@@ -369,7 +378,7 @@ export interface GatekeeperInterface {
     exportBatch(dids?: string[]): Promise<GatekeeperEvent[]>;
     importBatch(batch: GatekeeperEvent[], expectedIndexEpoch?: string): Promise<ImportBatchResult>;
     processEvents(expectedIndexEpoch?: string): Promise<ProcessEventsResult>;
-    getQueue(registry: string): Promise<Operation[]>;
+    getQueue(registry: string, options?: QueueReadOptions): Promise<Operation[]>;
     clearQueue(registry: string, events: Operation[] | string[], expectedIndexEpoch?: string): Promise<boolean>;
     addData(data: Buffer): Promise<string>;
     getData(cid: string): Promise<Buffer | null>;

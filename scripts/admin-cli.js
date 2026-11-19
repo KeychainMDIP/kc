@@ -321,7 +321,7 @@ program
 
 program
     .command('show-queue <registry>')
-    .description('Show queue for a registry')
+    .description('Show the current bounded queue page for a registry')
     .action(async (registry) => {
         try {
             const batch = await gatekeeper.getQueue(registry);

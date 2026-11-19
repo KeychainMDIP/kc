@@ -472,6 +472,15 @@ describe.each(kinds)('%s native lifecycle persistence', kind => {
         expect(await fixture.db.getDueDIDs(cutoff, 10)).toMatchObject([{ suffix: 'zAgent', expiresAt: cutoff - 1000, type: 'agent' }]);
     });
 
+    it('limits publication queue reads at the storage adapter', async () => {
+        const operations = ['zFirst', 'zSecond', 'zThird'].map(suffix => createEvent(suffix).operation);
+        for (const operation of operations) {
+            await fixture.db.queueOperation('hyperswarm', operation);
+        }
+
+        expect(await fixture.db.getQueue('hyperswarm', 2)).toEqual(operations.slice(0, 2));
+    });
+
     it('uses exact due boundaries and keyset pages for equal expirations', async () => {
         for (const suffix of ['zC', 'zA', 'zB']) await fixture.db.addEvent(did(suffix), createEvent(suffix));
         await fixture.db.addEvent(did('zEqual'), createEvent('zEqual', new Date(cutoff).toISOString()));

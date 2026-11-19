@@ -781,18 +781,14 @@ export default class DbRedis implements GatekeeperDb {
         return this.redis.rpush(queueKey, JSON.stringify(op));
     }
 
-    async getQueue(registry: string): Promise<Operation[]> {
+    async getQueue(registry: string, limit?: number): Promise<Operation[]> {
         if (!this.redis) {
             throw new Error(REDIS_NOT_STARTED_ERROR)
         }
 
-        try {
-            const queueKey = this.queueKey(registry);
-            const ops = await this.redis.lrange(queueKey, 0, -1);
-            return ops.map(op => JSON.parse(op));
-        } catch {
-            return [];
-        }
+        const queueKey = this.queueKey(registry);
+        const ops = await this.redis.lrange(queueKey, 0, limit === undefined ? -1 : limit - 1);
+        return ops.map(op => JSON.parse(op));
     }
 
     async clearQueue(registry: string, batch: Operation[]): Promise<boolean> {

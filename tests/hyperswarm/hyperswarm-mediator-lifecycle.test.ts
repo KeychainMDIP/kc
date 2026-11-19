@@ -1323,9 +1323,13 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         await running.node.run(() => jest.advanceTimersByTimeAsync(2_000));
         await eventually(async () => await running.store.has(operation.signature!.hash));
 
+        expect(running.node.gatekeeperClient.getQueue).toHaveBeenCalledWith('hyperswarm', {
+            limit: 300,
+            maxBytes: 512 * 1024,
+        });
         expect(running.node.gatekeeperClient.clearQueue).toHaveBeenCalledWith(
             'hyperswarm',
-            [operation.signature!.hash],
+            [operation],
             (await running.node.gatekeeperDb.getLifecycleMetadata()).epoch,
         );
         expect(peer.pair.transcript).toEqual(expect.arrayContaining([

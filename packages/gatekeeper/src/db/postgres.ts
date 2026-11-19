@@ -950,26 +950,35 @@ export default class DbPostgres implements GatekeeperDb {
         return this.toNumber(result.rows[0].length);
     }
 
-    async getQueue(registry: string): Promise<Operation[]> {
+    async getQueue(registry: string, limit?: number): Promise<Operation[]> {
         const pool = this.getPool();
 
-        try {
-            const result = await pool.query<QueueRow>(
+        const result = limit === undefined
+            ? await pool.query<QueueRow>(
                 `SELECT ops
                  FROM gatekeeper_queue
                  WHERE namespace = $1 AND id = $2
                  LIMIT 1`,
                 [this.dbName, registry]
+            )
+            : await pool.query<QueueRow>(
+                `SELECT COALESCE(jsonb_agg(entry.value ORDER BY entry.ordinality), '[]'::jsonb) AS ops
+                 FROM gatekeeper_queue queue
+                 CROSS JOIN LATERAL (
+                    SELECT value, ordinality
+                    FROM jsonb_array_elements(queue.ops)
+                        WITH ORDINALITY AS elements(value, ordinality)
+                    LIMIT $3
+                 ) AS entry
+                 WHERE queue.namespace = $1 AND queue.id = $2`,
+                [this.dbName, registry, limit]
             );
 
-            if (result.rowCount === 0) {
-                return [];
-            }
-
-            return this.parseArray<Operation>(result.rows[0].ops);
-        } catch {
+        if (result.rowCount === 0) {
             return [];
         }
+
+        return this.parseArray<Operation>(result.rows[0].ops);
     }
 
     async clearQueue(registry: string, batch: Operation[]): Promise<boolean> {

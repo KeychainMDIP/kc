@@ -119,6 +119,12 @@ operation can have different outcomes in other envelopes.
 
 ## Queues and custom headers
 
+`getQueue(registry)` returns one bounded queue head page, containing at most
+300 operations and 512 KiB of operation JSON. Use
+`getQueue(registry, limit, maxBytes)` to request a smaller page. Clear the
+returned operations after successful publication, then call `getQueue()` again
+for the next page.
+
 `clearQueue()` accepts either a list of operations or a list of their signature
 hash strings. Registry values are encoded as individual path segments.
 

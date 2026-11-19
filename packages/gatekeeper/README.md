@@ -118,6 +118,12 @@ envelope does not prove a submitted native confirmation was rejected.
 
 ### Client
 
+`getQueue(registry)` returns the current publication-queue head page, not the
+complete queue. A page contains at most 300 operations and 512 KiB of operation
+JSON. Pass `{ limit, maxBytes }` to request a smaller page, clear the returned
+operations after successful publication, then read again to obtain the next
+page. Re-reading before clearing returns the same head page.
+
 Incremental `exportIndex()` requests include changed DID histories by default.
 Set `includeDIDHistories: false` in changes mode to skip those history reads and
 receive only per-page DID removal records in `dids`. Set `includeOperations: true`

@@ -17,7 +17,8 @@ upgrade together because Negentropy v1 peers are intentionally incompatible.
 
 Realtime propagation uses best-effort Gatekeeper queue gossip:
 
-- mediator polls `gatekeeper.getQueue('hyperswarm')`
+- mediator polls one bounded `gatekeeper.getQueue('hyperswarm')` head page per
+  existing flush
 - relays queue operations with a `queue` message
 - peers import operations, persist the shareable results, then relay them with
   fresh relay metadata
@@ -40,6 +41,9 @@ Inbound and outbound operation pages have the same limits: 300 operations and
 512 KiB of serialized operation data. Offers and requests contain at most 1,000
 IDs. Synchronization windows contain at most 25,000 records. A single operation
 larger than the page limit fails that transfer rather than bypassing the limit.
+Local publication pages remain in Gatekeeper until imported and cleared; the
+next existing flush drains the next head page without adding another queue or
+worker.
 
 Ordered catch-up accepts pages only against outstanding requests and checks the
 exact continuation cursor. It permits one active import plus two requested pages

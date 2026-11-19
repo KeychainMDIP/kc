@@ -386,9 +386,24 @@ export default class DbSqlite implements GatekeeperDb {
         );
     }
 
-    private async getQueueStrict(registry: string): Promise<Operation[]> {
+    private async getQueueStrict(registry: string, limit?: number): Promise<Operation[]> {
         if (!this.db) {
             throw new Error(SQLITE_NOT_STARTED_ERROR);
+        }
+
+        if (limit !== undefined) {
+            const rows = await this.db.all<{ value: string | Operation }[]>(
+                `SELECT json_each.value AS value
+                 FROM queue, json_each(queue.ops)
+                 WHERE queue.id = ?
+                 ORDER BY CAST(json_each.key AS INTEGER)
+                 LIMIT ?`,
+                registry,
+                limit,
+            );
+            return rows.map(row => typeof row.value === 'string'
+                ? JSON.parse(row.value) as Operation
+                : row.value);
         }
 
         const row = await this.db.get<QueueRow>('SELECT ops FROM queue WHERE id = ?', registry);
@@ -404,16 +419,12 @@ export default class DbSqlite implements GatekeeperDb {
         return ops as Operation[];
     }
 
-    async getQueue(registry: string): Promise<Operation[]> {
+    async getQueue(registry: string, limit?: number): Promise<Operation[]> {
         if (!this.db) {
             throw new Error(SQLITE_NOT_STARTED_ERROR);
         }
 
-        try {
-            return await this.getQueueStrict(registry);
-        } catch {
-            return [];
-        }
+        return this.getQueueStrict(registry, limit);
     }
 
     async clearQueue(registry: string, batch: Operation[]): Promise<boolean> {

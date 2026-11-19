@@ -4,6 +4,10 @@ import { createHash, randomBytes } from 'crypto';
 import { EventEmitter } from 'events';
 
 import GatekeeperClient from '@mdip/gatekeeper/client';
+import {
+    MAX_OPERATION_PAGE_BYTES,
+    MAX_OPERATION_PAGE_COUNT,
+} from '@mdip/gatekeeper';
 import KeymasterClient from '@mdip/keymaster/client';
 import KuboClient from '@mdip/ipfs/kubo';
 import CipherNode from '@mdip/cipher/node';
@@ -77,8 +81,8 @@ const TRANSPORT_FRAMING_VERSION = 1;
 const NEG_SESSION_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
 const NEG_MAX_IDS_PER_OPS_REQ = 1_000;
 const NEG_MAX_IDS_PER_LOOKUP = 32;
-const NEG_MAX_OPS_PER_PUSH = 300;
-const NEG_MAX_BYTES_PER_PUSH = 512 * 1024;
+const NEG_MAX_OPS_PER_PUSH = MAX_OPERATION_PAGE_COUNT;
+const NEG_MAX_BYTES_PER_PUSH = MAX_OPERATION_PAGE_BYTES;
 const NEG_REPAIR_INTERVAL_MS = config.negentropyIntervalSeconds * 1000;
 const syncStats = createMediatorSyncStats();
 const dependencyRequests = new AbortController();

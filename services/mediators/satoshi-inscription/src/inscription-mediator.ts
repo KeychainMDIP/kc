@@ -756,10 +756,7 @@ async function anchorBatch(): Promise<void> {
         log.info(`Commit TXID ${commitTxid}`);
         log.info(`Reveal TXID ${revealTxid}`);
 
-        const hashes = batch
-            .map(op => op.signature?.hash)
-            .filter((hash): hash is string => !!hash);
-        const ok = await gatekeeper.clearQueue(REGISTRY, hashes);
+        const ok = await gatekeeper.clearQueue(REGISTRY, batch);
 
         if (ok) {
             const blockCount = await btcClient.getBlockCount();

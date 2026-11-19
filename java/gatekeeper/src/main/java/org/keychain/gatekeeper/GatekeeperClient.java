@@ -356,11 +356,21 @@ public class GatekeeperClient implements GatekeeperInterface, AutoCloseable {
 
     @Override
     public java.util.List<Operation> getQueue(String registry) {
-        HttpUrl url = baseUrl.newBuilder()
+        return getQueue(registry, null, null);
+    }
+
+    @Override
+    public java.util.List<Operation> getQueue(String registry, Integer limit, Integer maxBytes) {
+        HttpUrl.Builder builder = baseUrl.newBuilder()
             .addPathSegment("queue")
-            .addPathSegment(registry)
-            .build();
-        return getJsonType(url, new TypeReference<>() {});
+            .addPathSegment(registry);
+        if (limit != null) {
+            builder.addQueryParameter("limit", limit.toString());
+        }
+        if (maxBytes != null) {
+            builder.addQueryParameter("maxBytes", maxBytes.toString());
+        }
+        return getJsonType(builder.build(), new TypeReference<>() {});
     }
 
     @Override

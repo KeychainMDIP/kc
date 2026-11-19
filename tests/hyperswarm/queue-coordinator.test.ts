@@ -88,7 +88,7 @@ describe('queue coordinator', () => {
             available = false;
             return { knownIds: [], persistedIds: ['operation-hash'], retryable: false };
         });
-        const clearQueue = jest.fn(async () => true);
+        const clearQueue = jest.fn(async (_registry: string, _page: Operation[]) => true);
         const relay = jest.fn(async () => {});
         const pipeline = { get available() { return available; }, enqueue } as unknown as ImportPipeline;
         const coordinator = createQueueCoordinator({
@@ -172,7 +172,7 @@ describe('queue coordinator', () => {
 
         if (reset) await expect(coordinator.flush()).resolves.toBeUndefined();
         else await expect(coordinator.flush()).rejects.toBe(error);
-        expect(clearQueue).toHaveBeenCalledWith('hyperswarm', ['operation-hash'], 'old-epoch');
+        expect(clearQueue).toHaveBeenCalledWith('hyperswarm', [operation], 'old-epoch');
         expect(enqueue).toHaveBeenCalledTimes(2);
         expect(relay).not.toHaveBeenCalled();
     });
@@ -205,6 +205,36 @@ describe('queue coordinator', () => {
         expect(clearQueue).not.toHaveBeenCalled();
         expect(relay).not.toHaveBeenCalled();
     });
+
+    it('does not relay a local page when Gatekeeper reports a failed clear', async () => {
+        const { cipher, operation } = makeOperation();
+        const relay = jest.fn(async () => undefined);
+        const syncStats = createMediatorSyncStats();
+        const coordinator = createQueueCoordinator({
+            registry: 'hyperswarm',
+            maxOpsPerPage: 300,
+            maxBytesPerPage: 512 * 1024,
+            gatekeeper: {
+                getQueue: jest.fn(async () => [operation]),
+                clearQueue: jest.fn(async () => false),
+            } as unknown as Pick<GatekeeperClient, 'getQueue' | 'clearQueue'>,
+            cipher,
+            syncStats,
+            getImportPipeline: () => ({
+                available: true,
+                enqueue: jest.fn(async () => importResult()),
+            } as unknown as ImportPipeline),
+            getNodeKey: () => 'local-key',
+            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            relay,
+            onProtocolViolation: jest.fn(),
+        });
+
+        await expect(coordinator.flush()).rejects.toThrow('failed to clear local Gatekeeper queue');
+        expect(relay).not.toHaveBeenCalled();
+        expect(syncStats.queueOpsRelayed).toBe(0);
+    });
+
     it('suppresses duplicate gossip and preserves local flush ordering', async () => {
         const { cipher, operation } = makeOperation();
         const order: string[] = [];
@@ -215,7 +245,7 @@ describe('queue coordinator', () => {
                 acceptedOperations: [operation],
             });
         });
-        const clearQueue = jest.fn(async () => { order.push('clear'); });
+        const clearQueue = jest.fn(async () => { order.push('clear'); return true; });
         const relay = jest.fn(async () => { order.push('relay'); });
         const coordinator = createQueueCoordinator({
             registry: 'hyperswarm',
@@ -1537,7 +1567,7 @@ describe('queue coordinator', () => {
         expect(getQueue).toHaveBeenCalledTimes(1);
     });
 
-    it('relays a local queue in protocol-bounded pages', async () => {
+    it('drains one protocol-bounded local queue page per flush', async () => {
         const first = makeOperation();
         const secondUnsigned = {
             type: 'create' as const,
@@ -1552,11 +1582,13 @@ describe('queue coordinator', () => {
                 value: 'signature',
             },
         } as Operation;
-        const batch = [first.operation, second];
+        const pages = [[first.operation], [second], []];
         const enqueue = jest.fn(async () => importResult({
-            persistedIds: batch.map(operation => operation.signature!.hash),
-            acceptedOperations: batch,
+            persistedIds: [],
+            acceptedOperations: [],
         }));
+        const getQueue = jest.fn(async () => pages.shift() ?? []);
+        const clearQueue = jest.fn(async (_registry: string, _page: Operation[]) => true);
         const relay = jest.fn(async (_message: QueueMessage) => undefined);
         const coordinator = createQueueCoordinator({
             registry: 'hyperswarm',
@@ -1564,8 +1596,8 @@ describe('queue coordinator', () => {
             maxBytesPerPage: 512 * 1024,
             ...defaultRepairOptions(),
             gatekeeper: {
-                getQueue: jest.fn(async () => batch),
-                clearQueue: jest.fn(async () => true),
+                getQueue,
+                clearQueue,
             } as unknown as Pick<GatekeeperClient, 'getQueue' | 'clearQueue'>,
             cipher: first.cipher,
             syncStats: createMediatorSyncStats(),
@@ -1582,9 +1614,20 @@ describe('queue coordinator', () => {
         });
 
         await coordinator.flush();
+        await coordinator.flush();
+        await coordinator.flush();
 
         expect(relay).toHaveBeenCalledTimes(2);
         expect(relay.mock.calls.map(([message]) => message.data)).toEqual([
+            [first.operation],
+            [second],
+        ]);
+        expect(getQueue).toHaveBeenCalledTimes(3);
+        expect(getQueue).toHaveBeenCalledWith('hyperswarm', {
+            limit: 1,
+            maxBytes: 512 * 1024,
+        });
+        expect(clearQueue.mock.calls.map(([, page]) => page)).toEqual([
             [first.operation],
             [second],
         ]);
@@ -1592,6 +1635,6 @@ describe('queue coordinator', () => {
         await coordinator.handleMessage('peer', {
             type: 'queue', time: '', node: 'peer', relays: [], data: [first.operation],
         }, connection);
-        expect(enqueue).toHaveBeenCalledTimes(2);
+        expect(enqueue).toHaveBeenCalledTimes(4);
     });
 });

@@ -146,7 +146,9 @@ function createGatekeeperClientDelegates(context: MediatorNodeContext): Gatekeep
         exportBatch: jest.fn<GatekeeperClient['exportBatch']>(dids => context.gatekeeper.exportBatch(dids)),
         importBatch: jest.fn<GatekeeperClient['importBatch']>((...args) => context.gatekeeper.importBatch(...args)),
         processEvents: jest.fn<GatekeeperClient['processEvents']>((...args) => context.gatekeeper.processEvents(...args)),
-        getQueue: jest.fn<GatekeeperClient['getQueue']>(registry => context.gatekeeper.getQueue(registry)),
+        getQueue: jest.fn<GatekeeperClient['getQueue']>(
+            (registry, options) => context.gatekeeper.getQueue(registry, options),
+        ),
         clearQueue: jest.fn<GatekeeperClient['clearQueue']>(
             (...args) => context.gatekeeper.clearQueue(...args),
         ),

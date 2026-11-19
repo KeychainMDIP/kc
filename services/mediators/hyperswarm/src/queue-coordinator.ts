@@ -409,7 +409,10 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
         try {
             if (!options.getImportPipeline().available) return;
             const indexEpoch = options.getImportPipeline().indexEpoch;
-            const batch = await options.gatekeeper.getQueue(options.registry);
+            const batch = await options.gatekeeper.getQueue(options.registry, {
+                limit: options.maxOpsPerPage,
+                maxBytes: options.maxBytesPerPage,
+            });
             if (batch.length === 0) {
                 return;
             }
@@ -440,37 +443,28 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
                 throw new Error('failed to merge local Gatekeeper queue');
             }
 
-            // Accepted local operations remain Gatekeeper's responsibility while pending.
-            options.syncStats.queueOpsRelayed += batch.length;
-            for (const sample of collectQueueDelaySamples(batch)) {
-                addAggregateSample(options.syncStats.queueDelayMs, sample);
-            }
-
-            const pages = chunkOperationsForPush(batch, {
-                maxOpsPerPush: options.maxOpsPerPage,
-                maxBytesPerPush: options.maxBytesPerPage,
-            });
-            const hashes = batch
-                .map(operation => operation.signature?.hash)
-                .filter((hash): hash is string => !!hash);
             if (!options.getImportPipeline().available) return;
             try {
-                if (indexEpoch === undefined) await options.gatekeeper.clearQueue(options.registry, hashes);
-                else await options.gatekeeper.clearQueue(options.registry, hashes, indexEpoch);
+                const cleared = indexEpoch === undefined
+                    ? await options.gatekeeper.clearQueue(options.registry, batch)
+                    : await options.gatekeeper.clearQueue(options.registry, batch, indexEpoch);
+                if (!cleared) throw new Error('failed to clear local Gatekeeper queue');
             }
             catch (error) {
                 const conflict = error as { error?: string; code?: string } | null;
                 if ((conflict?.error ?? conflict?.code) === 'gatekeeper_index_epoch_changed') return;
                 throw error;
             }
-            for (const page of pages) {
-                if (generation === resetGeneration) {
-                    rememberOutcome(options.cipher.hashJSON(page), { kind: 'completed' });
-                }
-                await options.relay({
-                    ...options.createQueueMessage(),
-                    data: page,
-                });
+            await options.relay({
+                ...options.createQueueMessage(),
+                data: batch,
+            });
+            options.syncStats.queueOpsRelayed += batch.length;
+            for (const sample of collectQueueDelaySamples(batch)) {
+                addAggregateSample(options.syncStats.queueDelayMs, sample);
+            }
+            if (generation === resetGeneration) {
+                rememberOutcome(options.cipher.hashJSON(batch), { kind: 'completed' });
             }
         }
         finally {
