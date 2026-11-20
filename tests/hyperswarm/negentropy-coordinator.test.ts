@@ -21,7 +21,7 @@ jest.unstable_mockModule('@mdip/common/logger', () => ({
 }));
 
 describe('Negentropy coordinator', () => {
-    it('contains rejected outbound transfer work and releases the session slot', async () => {
+    it('contains invalid or failed transfer work and releases the session slot', async () => {
         const [
             { createNegentropyCoordinator }, { default: InMemoryOperationSyncStore },
             { createConnectionInfo }, { createMediatorSyncStats },
@@ -139,9 +139,13 @@ describe('Negentropy coordinator', () => {
             return response!;
         }
 
-        async function requestOperation(sessionId: string) {
+        async function requestOperation(sessionId: string, requestedOperation = operation) {
             const open = await startLocal();
-            outcomes.push({ nextMsg: null, haveIds: [], needIds: [operation.signature.hash] });
+            outcomes.push({
+                nextMsg: null,
+                haveIds: [],
+                needIds: [requestedOperation.signature!.hash],
+            });
             const before = sent.length;
             await coordinator.handleMessage(peerKey, {
                 type: 'neg_msg', sessionId: open.sessionId, windowId: open.windowId, round: 1,
@@ -153,6 +157,187 @@ describe('Negentropy coordinator', () => {
         }
 
         try {
+            const unknownSession = {
+                sessionId: 'unknown', windowId: 'unknown-window', round: 0,
+                time: '', node: '', relays: [],
+            };
+            for (const message of [
+                { ...unknownSession, type: 'neg_msg', frame: { encoding: 'base64', data: '' } },
+                { ...unknownSession, type: 'ops_offer', offerId: 0, ids: [operation.signature.hash] },
+                { ...unknownSession, type: 'ops_req', requestId: 0, ids: [operation.signature.hash] },
+                {
+                    ...unknownSession, type: 'ops_push', requestId: 0, page: 0,
+                    hasMore: false, data: [operation],
+                },
+                { ...unknownSession, type: 'ops_ack', requestId: 0, page: 0 },
+                { ...unknownSession, type: 'neg_close', reason: 'complete' },
+            ]) {
+                await coordinator.handleMessage(peerKey, message as never);
+            }
+            expect(coordinator.getActiveSessionCount()).toBe(0);
+
+            const guardOpen = await startLocal();
+            coordinator.reset();
+            coordinator.setAdapter(null);
+            await coordinator.handleMessage(peerKey, {
+                ...guardOpen, sessionId: 'remote-no-adapter', round: 0,
+            });
+            expect(coordinator.hasActiveSession(peerKey)).toBe(false);
+
+            coordinator.setAdapter(adapter as never);
+            connection.peerTransportFramingVersion = 0;
+            await coordinator.handleMessage(peerKey, {
+                ...guardOpen, sessionId: 'remote-incompatible', round: 0,
+            });
+            expect(coordinator.hasActiveSession(peerKey)).toBe(false);
+            connection.peerTransportFramingVersion = 1;
+
+            const authorizationOpen = await startLocal();
+            const activeTransfer = {
+                sessionId: authorizationOpen.sessionId,
+                windowId: authorizationOpen.windowId,
+                round: 0,
+                time: '', node: '', relays: [],
+            };
+            for (const message of [
+                {
+                    ...activeTransfer, type: 'ops_offer', offerId: 0,
+                    ids: [operation.signature.hash],
+                },
+                {
+                    ...activeTransfer, type: 'ops_req', requestId: 0,
+                    ids: [operation.signature.hash],
+                },
+                {
+                    ...activeTransfer, type: 'ops_push', requestId: 0, page: 0,
+                    hasMore: false, data: [operation],
+                },
+                { ...activeTransfer, type: 'ops_ack', requestId: 0, page: 0 },
+                {
+                    ...activeTransfer, type: 'ops_offer', round: 1, offerId: 0,
+                    ids: [operation.signature.hash],
+                },
+                {
+                    ...activeTransfer, type: 'ops_req', windowId: 'wrong-window', requestId: 0,
+                    ids: [operation.signature.hash],
+                },
+                {
+                    ...activeTransfer, type: 'neg_msg', round: 1, windowId: 'wrong-window',
+                    frame: { encoding: 'base64', data: '' },
+                },
+                { ...activeTransfer, type: 'neg_close', windowId: 'wrong-window', reason: 'complete' },
+            ]) {
+                await coordinator.handleMessage(peerKey, message as never);
+            }
+            expect(onProtocolViolation).toHaveBeenCalledTimes(8);
+            expect(importPipeline.enqueue).not.toHaveBeenCalled();
+            coordinator.reset();
+            onProtocolViolation.mockClear();
+            mockLogger.warn.mockClear();
+
+            let open: NegOpenMessage;
+            failedType = 'neg_close';
+            const cappedOpen = await startLocal();
+            for (let attempt = 0; attempt < 50 && coordinator.hasActiveSession(peerKey); attempt += 1) {
+                const currentOpen = [...sent].reverse().find(message =>
+                    message.type === 'neg_open' && message.sessionId === cappedOpen.sessionId
+                );
+                expect(currentOpen?.type).toBe('neg_open');
+                outcomes.push({ nextMsg: new Uint8Array([1]), haveIds: [], needIds: [] });
+                await coordinator.handleMessage(peerKey, {
+                    type: 'neg_msg', sessionId: cappedOpen.sessionId,
+                    windowId: currentOpen?.type === 'neg_open' ? currentOpen.windowId : '',
+                    round: coordinator.getExpectedInboundRound(peerKey, 'neg_msg'),
+                    frame: { encoding: 'base64', data: '' }, time: '', node: '', relays: [],
+                });
+            }
+            expect(coordinator.hasActiveSession(peerKey)).toBe(false);
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'send_neg_close_failed');
+            outcomes.splice(0);
+            failedType = null;
+
+            open = await startLocal();
+            outcomes.push({ nextMsg: new Uint8Array([1]), haveIds: [], needIds: [] });
+            failedType = 'neg_msg';
+            await coordinator.handleMessage(peerKey, {
+                type: 'neg_msg', sessionId: open.sessionId, windowId: open.windowId, round: 1,
+                frame: { encoding: 'base64', data: '' }, time: '', node: '', relays: [],
+            });
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'send_neg_msg_failed');
+
+            failedType = 'neg_close';
+            open = await startLocal();
+            outcomes.push({ nextMsg: null, haveIds: [], needIds: [] });
+            await coordinator.handleMessage(peerKey, {
+                type: 'neg_msg', sessionId: open.sessionId, windowId: open.windowId, round: 1,
+                frame: { encoding: 'base64', data: '' }, time: '', node: '', relays: [],
+            });
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'send_neg_close_failed');
+
+            const filterRetryDelayedIds = importPipeline.filterRetryDelayedIds.bind(importPipeline);
+            importPipeline.filterRetryDelayedIds = ids => ({
+                eligibleIds: [], pendingIds: ids, capacityDeferredIds: [],
+            });
+            open = await startLocal();
+            outcomes.push({ nextMsg: null, haveIds: [], needIds: [operation.signature.hash] });
+            onSessionClosed.mockClear();
+            await coordinator.handleMessage(peerKey, {
+                type: 'neg_msg', sessionId: open.sessionId, windowId: open.windowId, round: 1,
+                frame: { encoding: 'base64', data: '' }, time: '', node: '', relays: [],
+            });
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'send_neg_close_failed');
+            importPipeline.filterRetryDelayedIds = filterRetryDelayedIds;
+            failedType = null;
+
+            await expect(coordinator.startSession('33'.repeat(32), {
+                source: 'connect', modeReason: 'negentropy_supported', initiator: true,
+            })).resolves.toBe(false);
+
+            open = await startLocal();
+            coordinator.reset();
+            failedType = 'neg_msg';
+            await openRemote(open, 'remote-frame-failure');
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'send_neg_msg_failed');
+
+            failedType = null;
+            open = await startLocal();
+            coordinator.reset();
+            let remote = await openRemote(open, 'remote-reopen');
+            await coordinator.handleMessage(peerKey, {
+                ...open, sessionId: 'remote-reopen', round: remote.round!,
+            });
+            expect(onProtocolViolation).toHaveBeenLastCalledWith(
+                peerKey,
+                'neg_open reopens the active window',
+                connection,
+            );
+            await coordinator.handleMessage(peerKey, {
+                type: 'ops_ack', sessionId: 'remote-reopen', windowId: open.windowId,
+                round: 0, requestId: 0, page: 0, time: '', node: '', relays: [],
+            });
+            coordinator.reset();
+            await coordinator.handleMessage(peerKey, {
+                ...open, sessionId: 'remote-future', round: 1,
+            });
+            expect(onProtocolViolation).toHaveBeenLastCalledWith(
+                peerKey,
+                'neg_open is for a future round',
+                connection,
+            );
+            onProtocolViolation.mockClear();
+
+            open = await startLocal();
+            coordinator.reset();
+            remote = await openRemote(open, 'remote-offer-send-failure');
+            failedType = 'ops_req';
+            await coordinator.handleMessage(peerKey, {
+                type: 'ops_offer', sessionId: 'remote-offer-send-failure', windowId: open.windowId,
+                round: remote.round!, offerId: 0, ids: ['e'.repeat(64)],
+                time: '', node: '', relays: [],
+            });
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'send_ops_req_failed');
+            failedType = null;
+
             failedType = 'neg_open';
             expect(await coordinator.startSession(peerKey, {
                 source: 'connect', modeReason: 'negentropy_supported', initiator: true,
@@ -160,7 +345,7 @@ describe('Negentropy coordinator', () => {
             expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'send_neg_open_failed');
 
             failedType = null;
-            let open = await startLocal();
+            open = await startLocal();
             outcomes.push({ nextMsg: null, haveIds: [], needIds: [operation.signature.hash] });
             failedType = 'ops_req';
             await coordinator.handleMessage(peerKey, {
@@ -181,8 +366,34 @@ describe('Negentropy coordinator', () => {
 
             failedType = null;
             open = await startLocal();
+            outcomes.push({ nextMsg: null, haveIds: [operation.signature.hash], needIds: [] });
+            const offerStart = sent.length;
+            await coordinator.handleMessage(peerKey, {
+                type: 'neg_msg', sessionId: open.sessionId, windowId: open.windowId, round: 1,
+                frame: { encoding: 'base64', data: '' }, time: '', node: '', relays: [],
+            });
+            const offer = sent.slice(offerStart).find(message => message.type === 'ops_offer');
+            expect(offer?.type).toBe('ops_offer');
+            await coordinator.handleMessage(peerKey, {
+                type: 'ops_req', sessionId: open.sessionId, windowId: open.windowId, round: 1,
+                requestId: 0, offerId: 99, ids: [], time: '', node: '', relays: [],
+            });
+            expect(onProtocolViolation).toHaveBeenLastCalledWith(
+                peerKey,
+                'ops_req does not match the active offer',
+                connection,
+            );
+            await coordinator.handleMessage(peerKey, {
+                type: 'ops_req', sessionId: open.sessionId, windowId: open.windowId, round: 1,
+                requestId: 0, offerId: offer?.type === 'ops_offer' ? offer.offerId : 0,
+                ids: [], deferred: true, time: '', node: '', relays: [],
+            });
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'incomplete');
+            onProtocolViolation.mockClear();
+
+            open = await startLocal();
             coordinator.reset();
-            let remote = await openRemote(open, 'remote-capacity');
+            remote = await openRemote(open, 'remote-capacity');
             const held = operationPages.reserve(512 * 1024)!;
             await coordinator.handleMessage(peerKey, {
                 type: 'ops_req', sessionId: 'remote-capacity', windowId: open.windowId,
@@ -205,7 +416,145 @@ describe('Negentropy coordinator', () => {
 
             failBulk = false;
             failedType = null;
-            let requested = await requestOperation('capacity-push');
+            open = await startLocal();
+            coordinator.reset();
+            remote = await openRemote(open, 'remote-offer-lookup');
+            jest.spyOn(store, 'getByIds').mockRejectedValueOnce(new Error('lookup failed'));
+            await coordinator.handleMessage(peerKey, {
+                type: 'ops_offer', sessionId: 'remote-offer-lookup', windowId: open.windowId,
+                round: remote.round!, offerId: 0, ids: [operation.signature.hash],
+                time: '', node: '', relays: [],
+            });
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'ops_offer_lookup_failed');
+            mockLogger.warn.mockClear();
+
+            open = await startLocal();
+            coordinator.reset();
+            remote = await openRemote(open, 'remote-corrupt-record');
+            const corruptOperation = { ...operation, mdip: { ...operation.mdip, registry: 'local' } };
+            jest.spyOn(store, 'getByIds').mockResolvedValueOnce([{
+                id: operation.signature.hash, ts: 1_767_225_600, signedTs: 1_767_225_600,
+                insertedAt: 1_767_225_600, syncOrder: 1,
+                operation: corruptOperation,
+            }]);
+            await coordinator.handleMessage(peerKey, {
+                type: 'ops_req', sessionId: 'remote-corrupt-record', windowId: open.windowId,
+                round: remote.round!, requestId: 0, ids: [operation.signature.hash],
+                time: '', node: '', relays: [],
+            });
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'ops_push_lookup_failed');
+            mockLogger.warn.mockClear();
+
+            open = await startLocal();
+            coordinator.reset();
+            remote = await openRemote(open, 'remote-mismatched-record');
+            jest.spyOn(store, 'getByIds').mockResolvedValueOnce([{
+                id: 'f'.repeat(64), ts: 1_767_225_600, signedTs: 1_767_225_600,
+                insertedAt: 1_767_225_600, syncOrder: 1, operation,
+            }]);
+            onSessionClosed.mockClear();
+            await coordinator.handleMessage(peerKey, {
+                type: 'ops_req', sessionId: 'remote-mismatched-record', windowId: open.windowId,
+                round: remote.round!, requestId: 0, ids: [operation.signature.hash],
+                time: '', node: '', relays: [],
+            });
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'ops_push_lookup_failed');
+            mockLogger.warn.mockClear();
+
+            open = await startLocal();
+            coordinator.reset();
+            remote = await openRemote(open, 'remote-ack');
+            const pushStart = sent.length;
+            const directRequest = {
+                type: 'ops_req' as const,
+                sessionId: 'remote-ack', windowId: open.windowId,
+                round: remote.round!, requestId: 0, ids: [operation.signature.hash],
+                time: '', node: '', relays: [],
+            };
+            await coordinator.handleMessage(peerKey, directRequest);
+            await coordinator.handleMessage(peerKey, directRequest);
+            expect(onProtocolViolation).toHaveBeenLastCalledWith(
+                peerKey,
+                'invalid or overlapping ops_req',
+                connection,
+            );
+            const pushed = sent.slice(pushStart).find(message => message.type === 'ops_push');
+            expect(pushed?.type).toBe('ops_push');
+            await coordinator.handleMessage(peerKey, {
+                type: 'ops_ack', sessionId: 'remote-ack', windowId: open.windowId,
+                round: remote.round!, requestId: 1, page: 0,
+                time: '', node: '', relays: [],
+            });
+            expect(onProtocolViolation).toHaveBeenLastCalledWith(
+                peerKey,
+                'ops_ack does not match the outstanding page',
+                connection,
+            );
+            await coordinator.handleMessage(peerKey, {
+                type: 'ops_ack', sessionId: 'remote-ack', windowId: open.windowId,
+                round: remote.round!, requestId: pushed?.type === 'ops_push' ? pushed.requestId : 0,
+                page: pushed?.type === 'ops_push' ? pushed.page : 0,
+                time: '', node: '', relays: [],
+            });
+            expect(coordinator.hasActiveSession(peerKey)).toBe(true);
+            coordinator.reset();
+            onProtocolViolation.mockClear();
+
+            let requested = await requestOperation('invalid-push');
+            const pushMessage = {
+                type: 'ops_push' as const,
+                sessionId: requested.request.sessionId!,
+                windowId: requested.request.windowId!,
+                round: requested.request.round!,
+                requestId: requested.request.type === 'ops_req' ? requested.request.requestId : 0,
+                page: 0,
+                hasMore: false,
+                time: '', node: '', relays: [],
+            };
+            const forged = { ...operation, mdip: { ...operation.mdip, registry: 'local' } };
+            await coordinator.handleMessage(peerKey, { ...pushMessage, data: [forged] });
+            await coordinator.handleMessage(peerKey, { ...pushMessage, data: [operation, operation] });
+            const otherUnsigned = { ...unsigned, created: '2026-01-02T00:00:00.000Z' };
+            const unsolicited = { ...otherUnsigned, signature: {
+                hash: cipher.hashJSON(otherUnsigned), signed: otherUnsigned.created, value: 'signature',
+            } };
+            await coordinator.handleMessage(peerKey, { ...pushMessage, data: [unsolicited] });
+            await coordinator.handleMessage(peerKey, { ...pushMessage, hasMore: true, data: [operation] });
+            await coordinator.handleMessage(peerKey, { ...pushMessage, data: [] });
+            expect(onProtocolViolation).toHaveBeenCalledTimes(4);
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'missing_requested_operations');
+            onProtocolViolation.mockClear();
+
+            const terminalUnsigned = { ...unsigned, created: '2026-01-03T00:00:00.000Z' };
+            const terminalOperation = { ...terminalUnsigned, signature: {
+                hash: cipher.hashJSON(terminalUnsigned),
+                signed: terminalUnsigned.created,
+                value: 'signature',
+            } };
+            requested = await requestOperation('terminal-retry', terminalOperation);
+            const emptyImport = {
+                knownIds: [], persistedIds: [], pendingIds: [], capacityDeferredIds: [],
+                acceptedOperations: [], portableTerminalOperations: [], unaddressableOperations: [],
+                retryable: false,
+            };
+            (importPipeline.enqueue as jest.MockedFunction<ImportPipeline['enqueue']>)
+                .mockResolvedValueOnce(emptyImport)
+                .mockResolvedValueOnce({ ...emptyImport, retryable: true });
+            failedType = 'neg_close';
+            await coordinator.handleMessage(peerKey, {
+                type: 'ops_push', sessionId: requested.request.sessionId!,
+                windowId: requested.request.windowId!, round: requested.request.round!,
+                requestId: requested.request.type === 'ops_req' ? requested.request.requestId : 0,
+                page: 0, hasMore: false, data: [terminalOperation],
+                time: '', node: '', relays: [],
+            });
+            expect(importPipeline.enqueue).toHaveBeenLastCalledWith(expect.objectContaining({
+                kind: 'terminal', data: [terminalOperation],
+            }));
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'send_neg_close_failed');
+            failedType = null;
+
+            requested = await requestOperation('capacity-push');
             const inboundHeld = operationPages.reserve(512 * 1024)!;
             await coordinator.handleMessage(peerKey, {
                 type: 'ops_push', sessionId: requested.request.sessionId!,
@@ -240,6 +589,17 @@ describe('Negentropy coordinator', () => {
         }
         finally {
             await coordinator.shutdown();
+            await coordinator.shutdown();
+            await expect(coordinator.startSession(peerKey, {
+                source: 'connect', modeReason: 'negentropy_supported', initiator: true,
+            })).resolves.toBe(false);
+            await coordinator.handleMessage(peerKey, {
+                type: 'neg_close', sessionId: 'closed', windowId: 'closed', round: 0,
+                reason: 'complete', time: '', node: '', relays: [],
+            });
+            await coordinator.handleIndexRefreshed('closed', {
+                mode: 'changes', inserted: 1, updated: 0, deleted: 0,
+            } as never);
             await store.stop();
         }
     });
