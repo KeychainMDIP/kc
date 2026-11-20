@@ -87,6 +87,7 @@ describe('hyperswarm protocol validation', () => {
     it('accepts a bounded ping and rejects malformed common fields', () => {
         const valid = { ...base('ping'), peers: [validDid], transportFramingVersion: 1 };
         expect(validateHyperMessageEnvelope(valid).ok).toBe(true);
+        expect(validateHyperMessageEnvelope({ ...valid, relays: 'invalid' })).toMatchObject({ ok: false });
         expect(validateHyperMessageEnvelope({ ...valid, relays: ['not-a-key'] })).toMatchObject({ ok: false });
         expect(validateHyperMessageEnvelope({ ...valid, node: 'é'.repeat(129) })).toMatchObject({ ok: false });
         expect(validateHyperMessageEnvelope({ ...valid, peers: 'invalid' })).toMatchObject({ ok: false });
@@ -208,11 +209,18 @@ describe('hyperswarm protocol validation', () => {
             requestId: 0, offerId: 0, ids: [], deferred: 'true',
         } as never, limits)).toMatchObject({ ok: false });
         expect(validateHyperMessagePayload({
+            ...base('ops_req'), sessionId: 's', windowId: 'w', round: 0,
+            requestId: 0, ids: ['a'.repeat(64)], deferred: false,
+        } as never, limits)).toMatchObject({ ok: false });
+        expect(validateHyperMessagePayload({
             ...base('ops_ack'), sessionId: 's', windowId: 'w', round: 0,
             requestId: 0, page: 0, deferred: 'true',
         } as never, limits)).toMatchObject({ ok: false });
         expect(validateHyperMessagePayload({
             ...base('ordered_catchup_req'), sessionId: 's', cursor: { syncOrder: '1', id: 'a'.repeat(64) },
+        } as never, limits)).toMatchObject({ ok: false });
+        expect(validateHyperMessagePayload({
+            ...base('ordered_catchup_req'), sessionId: 's', cursor: { syncOrder: 1, id: 'invalid' },
         } as never, limits)).toMatchObject({ ok: false });
         expect(validateHyperMessagePayload({
             ...base('ordered_catchup_req'), sessionId: 's', cursor: 'invalid',
@@ -234,6 +242,14 @@ describe('hyperswarm protocol validation', () => {
             ...base('neg_open'), sessionId: 's', windowId: 'w', round: 0,
             window: validWindow, frame: { encoding: 'utf8', data: '' },
             previousWindowProgress: { cappedByRecords: 'true' },
+        } as never, limits)).toMatchObject({ ok: false });
+        expect(validateHyperMessagePayload({
+            ...base('neg_open'), sessionId: 's', windowId: 'w', round: 0,
+            window: validWindow, frame: { encoding: 'utf8', data: '' },
+            previousWindowProgress: {
+                cappedByRecords: true,
+                lastCursor: { ts: 1, id: 'invalid' },
+            },
         } as never, limits)).toMatchObject({ ok: false });
         expect(validateHyperMessagePayload({
             ...base('neg_open'), sessionId: 's', windowId: 'w', round: 0,

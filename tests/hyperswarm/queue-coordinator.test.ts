@@ -95,6 +95,59 @@ describe('queue coordinator', () => {
         requestRepair: jest.fn(async () => false),
     });
 
+    it('accepts the minimal successful import result and suppresses its duplicate', async () => {
+        const { cipher, operation } = makeOperation();
+        const enqueue = jest.fn(async () => ({
+            knownIds: [],
+            persistedIds: [operation.signature!.hash],
+            retryable: false,
+        }) as unknown as ImportQueueResult);
+        const coordinator = createQueueCoordinator({
+            registry: 'hyperswarm', maxOpsPerPage: 300, maxBytesPerPage: 512 * 1024,
+            gatekeeper: {} as Pick<GatekeeperClient, 'getQueue' | 'clearQueue'>,
+            cipher, syncStats: createMediatorSyncStats(),
+            getImportPipeline: () => ({ available: true, enqueue } as unknown as ImportPipeline),
+            getNodeKey: () => 'local',
+            createQueueMessage: () => ({ type: 'queue', time: '', node: '', relays: [] }),
+            relay: jest.fn(async () => undefined), onProtocolViolation: jest.fn(),
+        });
+        const message = { type: 'queue' as const, time: '', node: '', relays: [], data: [operation] };
+
+        await coordinator.handleMessage('peer', message, connection);
+        await coordinator.handleMessage('peer', message, connection);
+
+        expect(enqueue).toHaveBeenCalledTimes(1);
+        expect(coordinator.getMetrics()).toMatchObject({ inFlight: 0, recentOutcomes: 1 });
+        await coordinator.shutdown();
+    });
+
+    it('does not retain a failed import outcome after a reset', async () => {
+        const { cipher, operation } = makeOperation();
+        let rejectImport!: (error: Error) => void;
+        const enqueue = jest.fn(() => new Promise<ImportQueueResult>((_resolve, reject) => {
+            rejectImport = reject;
+        }));
+        const coordinator = createQueueCoordinator({
+            registry: 'hyperswarm', maxOpsPerPage: 300, maxBytesPerPage: 512 * 1024,
+            gatekeeper: {} as Pick<GatekeeperClient, 'getQueue' | 'clearQueue'>,
+            cipher, syncStats: createMediatorSyncStats(),
+            getImportPipeline: () => ({ available: true, enqueue } as unknown as ImportPipeline),
+            getNodeKey: () => 'local',
+            createQueueMessage: () => ({ type: 'queue', time: '', node: '', relays: [] }),
+            relay: jest.fn(async () => undefined), onProtocolViolation: jest.fn(),
+        });
+        const message = { type: 'queue' as const, time: '', node: '', relays: [], data: [operation] };
+
+        const handling = coordinator.handleMessage('peer', message, connection);
+        await Promise.resolve();
+        coordinator.reset();
+        rejectImport(new Error('import failed'));
+        await handling;
+
+        expect(coordinator.getMetrics()).toMatchObject({ inFlight: 0, recentOutcomes: 0, repairsPending: 0 });
+        await coordinator.shutdown();
+    });
+
     it('does not clear or relay the publication queue if processing pauses while persistence finishes', async () => {
         let available = true;
         const operation = { signature: { hash: 'operation-hash' } } as Operation;

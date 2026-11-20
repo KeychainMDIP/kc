@@ -7,6 +7,7 @@ import { normalizePeerCapabilities } from '../../services/mediators/hyperswarm/s
 import { makeWindowId } from '../../services/mediators/hyperswarm/src/negentropy/windows.ts';
 import { createBulkWorkScheduler } from '../../services/mediators/hyperswarm/src/bulk-work-scheduler.ts';
 import { createOperationPageBudget } from '../../services/mediators/hyperswarm/src/operation-page-budget.ts';
+import type { HyperMessage, NegOpenMessage } from '../../services/mediators/hyperswarm/src/protocol-messages.ts';
 
 const mockLogger = {
     debug: jest.fn(),
@@ -20,6 +21,229 @@ jest.unstable_mockModule('@mdip/common/logger', () => ({
 }));
 
 describe('Negentropy coordinator', () => {
+    it('contains rejected outbound transfer work and releases the session slot', async () => {
+        const [
+            { createNegentropyCoordinator }, { default: InMemoryOperationSyncStore },
+            { createConnectionInfo }, { createMediatorSyncStats },
+        ] = await Promise.all([
+            import('../../services/mediators/hyperswarm/src/negentropy-coordinator.ts'),
+            import('../../services/mediators/hyperswarm/src/db/memory.ts'),
+            import('../../services/mediators/hyperswarm/src/mediator-state.ts'),
+            import('../../services/mediators/hyperswarm/src/sync-stats.ts'),
+        ]);
+        const peerKey = '22'.repeat(32);
+        const connection = createConnectionInfo({
+            connection: { write() {}, destroy() {}, remotePublicKey: Buffer.from(peerKey, 'hex') } as never,
+            peerName: 'test-peer',
+        });
+        connection.capabilities = normalizePeerCapabilities({ negentropy: true, negentropyVersion: 2 });
+        connection.peerTransportFramingVersion = 1;
+        const store = new InMemoryOperationSyncStore();
+        await store.start();
+        const cipher = new CipherNode();
+        const unsigned = {
+            type: 'create' as const,
+            created: '2026-01-01T00:00:00.000Z',
+            mdip: { version: 1, type: 'agent' as const, registry: 'hyperswarm' },
+        };
+        const operation = { ...unsigned, signature: {
+            hash: cipher.hashJSON(unsigned), signed: unsigned.created, value: 'signature',
+        } };
+        await store.upsertMany([{
+            id: operation.signature.hash, ts: 1_767_225_600, syncOrder: 1, operation,
+        }]);
+        const outcomes: Array<{ nextMsg: Uint8Array | null; haveIds: string[]; needIds: string[] }> = [];
+        const adapter = {
+            async buildSnapshotForWindow(window: ReconciliationWindow) {
+                return {
+                    window, storage: {} as never,
+                    stats: {
+                        loaded: 1, skipped: 0, durationMs: 0, frameSizeLimit: 0,
+                        windowName: window.name, fromTs: window.fromTs, toTs: window.toTs,
+                        rounds: 0, completed: false, cappedByRecords: false, cappedByRounds: false,
+                    },
+                };
+            },
+            createEngineForSnapshot() {
+                return {
+                    initiate: async () => new Uint8Array(),
+                    reconcile: async () => outcomes.shift()
+                        ?? { nextMsg: null, haveIds: [], needIds: [] },
+                };
+            },
+        };
+        const importPipeline = {
+            available: true, recovering: false, queued: 0, running: 0, indexEpoch: 'epoch',
+            enqueue: jest.fn(async () => ({
+                knownIds: [operation.signature.hash], persistedIds: [], pendingIds: [],
+                capacityDeferredIds: [], acceptedOperations: [], portableTerminalOperations: [],
+                unaddressableOperations: [], retryable: false,
+            })),
+            filterRetryDelayedIds: (ids: string[]) => ({
+                eligibleIds: ids, pendingIds: [], capacityDeferredIds: [],
+            }),
+        } as unknown as ImportPipeline;
+        const operationPages = createOperationPageBudget(1, 512 * 1024);
+        let failedType: string | null = null;
+        let failBulk = false;
+        let nextSession = 0;
+        const sent: HyperMessage[] = [];
+        const sendToPeer = jest.fn<Parameters<typeof createNegentropyCoordinator>[0]['sendToPeer']>((_key, message) => {
+            sent.push(message);
+            return message.type !== failedType;
+        });
+        const sendBulkToPeer = jest.fn<Parameters<typeof createNegentropyCoordinator>[0]['sendBulkToPeer']>(
+            async (_key, message) => {
+                sent.push(message);
+                return !failBulk;
+            },
+        );
+        const onSessionClosed = jest.fn(async () => undefined);
+        const onProtocolViolation = jest.fn();
+        const coordinator = createNegentropyCoordinator({
+            version: 2, transportFramingVersion: 1, frameSizeLimit: 0,
+            maxRecordsPerWindow: 16, maxRoundsPerSession: 8, maxIdsPerRequest: 1_000,
+            maxIdsPerLookup: 1_000, maxOpsPerPush: 300, maxBytesPerPush: 512 * 1024,
+            idleTimeoutMs: 120_000, repairIntervalMs: 60_000,
+            syncStore: store, importPipeline, syncStats: createMediatorSyncStats(), cipher,
+            bulkReads: createBulkWorkScheduler(2), operationPages,
+            getConnection: key => key === peerKey ? connection : undefined,
+            createSessionId: () => `local-${nextSession++}`,
+            createBaseMessage: type => ({ type, time: '', node: '', relays: [] }),
+            sendToPeer, sendBulkToPeer,
+            canStartBackgroundPrebuild: () => false, terminatePeerConnection: jest.fn(),
+            onProtocolViolation, onSessionClosed, onIndexRefreshed: async () => {},
+        });
+        coordinator.setAdapter(adapter as never);
+
+        async function startLocal(): Promise<NegOpenMessage> {
+            const before = sent.length;
+            expect(await coordinator.startSession(peerKey, {
+                source: 'connect', modeReason: 'negentropy_supported', initiator: true,
+            })).toBe(true);
+            return sent.slice(before).find(message => message.type === 'neg_open') as NegOpenMessage;
+        }
+
+        async function openRemote(template: NegOpenMessage, sessionId: string) {
+            const before = sent.length;
+            connection.negentropyRetryAfter = 0;
+            outcomes.push({ nextMsg: new Uint8Array([1]), haveIds: [], needIds: [] });
+            await coordinator.handleMessage(peerKey, {
+                ...template, type: 'neg_open', sessionId, round: 0,
+            } as never);
+            const messages = sent.slice(before);
+            expect(onProtocolViolation).not.toHaveBeenCalled();
+            expect(mockLogger.warn.mock.calls).toEqual([]);
+            expect(messages).toContainEqual(expect.objectContaining({ type: 'neg_msg' }));
+            const response = messages.find(message => message.type === 'neg_msg');
+            return response!;
+        }
+
+        async function requestOperation(sessionId: string) {
+            const open = await startLocal();
+            outcomes.push({ nextMsg: null, haveIds: [], needIds: [operation.signature.hash] });
+            const before = sent.length;
+            await coordinator.handleMessage(peerKey, {
+                type: 'neg_msg', sessionId: open.sessionId, windowId: open.windowId, round: 1,
+                frame: { encoding: 'base64', data: '' }, time: '', node: '', relays: [],
+            });
+            const request = sent.slice(before).find(message => message.type === 'ops_req');
+            expect(request).toBeDefined();
+            return { open: { ...open, sessionId }, request: request! };
+        }
+
+        try {
+            failedType = 'neg_open';
+            expect(await coordinator.startSession(peerKey, {
+                source: 'connect', modeReason: 'negentropy_supported', initiator: true,
+            })).toBe(false);
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'send_neg_open_failed');
+
+            failedType = null;
+            let open = await startLocal();
+            outcomes.push({ nextMsg: null, haveIds: [], needIds: [operation.signature.hash] });
+            failedType = 'ops_req';
+            await coordinator.handleMessage(peerKey, {
+                type: 'neg_msg', sessionId: open.sessionId, windowId: open.windowId, round: 1,
+                frame: { encoding: 'base64', data: '' }, time: '', node: '', relays: [],
+            });
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'send_ops_req_failed');
+
+            failedType = null;
+            open = await startLocal();
+            outcomes.push({ nextMsg: null, haveIds: [operation.signature.hash], needIds: [] });
+            failedType = 'ops_offer';
+            await coordinator.handleMessage(peerKey, {
+                type: 'neg_msg', sessionId: open.sessionId, windowId: open.windowId, round: 1,
+                frame: { encoding: 'base64', data: '' }, time: '', node: '', relays: [],
+            });
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'send_ops_offer_failed');
+
+            failedType = null;
+            open = await startLocal();
+            coordinator.reset();
+            let remote = await openRemote(open, 'remote-capacity');
+            const held = operationPages.reserve(512 * 1024)!;
+            await coordinator.handleMessage(peerKey, {
+                type: 'ops_req', sessionId: 'remote-capacity', windowId: open.windowId,
+                round: remote.round!, requestId: 0, ids: [operation.signature.hash],
+                time: '', node: '', relays: [],
+            });
+            held.release();
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'ops_push_output_capacity');
+
+            open = await startLocal();
+            coordinator.reset();
+            remote = await openRemote(open, 'remote-send');
+            failBulk = true;
+            await coordinator.handleMessage(peerKey, {
+                type: 'ops_req', sessionId: 'remote-send', windowId: open.windowId,
+                round: remote.round!, requestId: 0, ids: [operation.signature.hash],
+                time: '', node: '', relays: [],
+            });
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'send_ops_push_failed');
+
+            failBulk = false;
+            failedType = null;
+            let requested = await requestOperation('capacity-push');
+            const inboundHeld = operationPages.reserve(512 * 1024)!;
+            await coordinator.handleMessage(peerKey, {
+                type: 'ops_push', sessionId: requested.request.sessionId!,
+                windowId: requested.request.windowId!, round: requested.request.round!,
+                requestId: requested.request.type === 'ops_req' ? requested.request.requestId : 0,
+                page: 0, hasMore: false, data: [operation], time: '', node: '', relays: [],
+            });
+            inboundHeld.release();
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'ops_push_import_capacity');
+
+            requested = await requestOperation('missing-push');
+            failedType = 'neg_close';
+            await coordinator.handleMessage(peerKey, {
+                type: 'ops_push', sessionId: requested.request.sessionId!,
+                windowId: requested.request.windowId!, round: requested.request.round!,
+                requestId: requested.request.type === 'ops_req' ? requested.request.requestId : 0,
+                page: 0, hasMore: false, data: [], time: '', node: '', relays: [],
+            });
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'send_neg_close_failed');
+
+            failedType = null;
+            requested = await requestOperation('ack-push');
+            failedType = 'ops_ack';
+            await coordinator.handleMessage(peerKey, {
+                type: 'ops_push', sessionId: requested.request.sessionId!,
+                windowId: requested.request.windowId!, round: requested.request.round!,
+                requestId: requested.request.type === 'ops_req' ? requested.request.requestId : 0,
+                page: 0, hasMore: false, data: [operation], time: '', node: '', relays: [],
+            });
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'send_ops_ack_failed');
+            expect(coordinator.getActiveSessionCount()).toBe(0);
+        }
+        finally {
+            await coordinator.shutdown();
+            await store.stop();
+        }
+    });
+
     it('filters retry-delayed IDs from direct needs and offered requests', async () => {
         const [
             { createNegentropyCoordinator }, { default: InMemoryOperationSyncStore },

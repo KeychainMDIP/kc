@@ -35,13 +35,14 @@ describe('peer sync coordinator targeted repair', () => {
         } as unknown as ReturnType<typeof createOrderedCatchupCoordinator>;
         const waitForInitialPing = jest.fn(async () => true);
         let current: ConnectionInfo | undefined = connection;
+        const syncStats = createMediatorSyncStats();
         const coordinator = createPeerSyncCoordinator({
             negentropyVersion: 2,
             orderedCatchupVersion: 1,
             transportFramingVersion: 1,
             windowSize: 25_000,
             repairIntervalMs: 1_000,
-            syncStats: createMediatorSyncStats(),
+            syncStats,
             getNodeKey: () => 'f'.repeat(64),
             getPeerKeys: () => current ? [peerKey] : [],
             getConnection: () => current,
@@ -64,9 +65,63 @@ describe('peer sync coordinator targeted repair', () => {
                 current = value;
             },
             startSession,
+            syncStats,
             waitForInitialPing,
         };
     }
+
+    it.each([
+        {
+            capabilities: normalizePeerCapabilities(undefined),
+            framing: 1,
+            counter: 'modeSelectionsNoModeMissingCapabilities' as const,
+        },
+        {
+            capabilities: normalizePeerCapabilities({ negentropy: false }),
+            framing: 1,
+            counter: 'modeSelectionsNoModeNegentropyDisabled' as const,
+        },
+        {
+            capabilities: normalizePeerCapabilities({ negentropy: true, negentropyVersion: 1 }),
+            framing: 1,
+            counter: 'modeSelectionsNoModeVersionMismatch' as const,
+        },
+        {
+            capabilities: normalizePeerCapabilities({ negentropy: true, negentropyVersion: 2 }),
+            framing: 0,
+            counter: 'modeSelectionsNoModeTransportFramingUnsupported' as const,
+        },
+    ])('records an unavailable sync mode in $counter', async ({ capabilities, framing, counter }) => {
+        const harness = createHarness();
+        harness.connection.capabilities = capabilities;
+        harness.connection.peerTransportFramingVersion = framing;
+        harness.connection.syncStarted = false;
+
+        await harness.coordinator.maybeStartPeerSync(harness.peerKey);
+
+        expect(harness.syncStats.modeSelectionsNoMode).toBe(1);
+        expect(harness.syncStats[counter]).toBe(1);
+        expect(harness.startSession).not.toHaveBeenCalled();
+        await harness.coordinator.shutdown();
+    });
+
+    it('clears local scheduling state and keeps public work inert after shutdown', async () => {
+        const harness = createHarness();
+        harness.coordinator.reset();
+        await harness.coordinator.shutdown();
+
+        await expect(harness.coordinator.handleOrderedCatchupComplete({
+            peerKey: harness.peerKey, sessionId: 'stopped', reason: 'complete', durationMs: 0,
+        })).resolves.toBe(false);
+        await expect(harness.coordinator.requestRepair(
+            harness.peerKey,
+            harness.connection,
+        )).resolves.toBe(false);
+        await expect(harness.coordinator.runPeriodicRepairs()).resolves.toBeUndefined();
+
+        expect(harness.startSession).not.toHaveBeenCalled();
+        expect(harness.coordinator.canStartBackgroundPrebuild()).toBe(false);
+    });
 
     it('starts a receiver-requested repair even after the connection was synchronized', async () => {
         const harness = createHarness();
