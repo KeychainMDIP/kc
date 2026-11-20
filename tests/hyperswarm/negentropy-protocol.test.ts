@@ -9,6 +9,7 @@ import {
     extractOperationHashes,
     normalizeNegentropyIds,
     normalizePeerCapabilities,
+    parseRemoteWindow,
 } from '../../services/mediators/hyperswarm/src/negentropy/protocol.ts';
 
 const h = (c: string) => c.repeat(64);
@@ -213,5 +214,25 @@ describe('negentropy protocol helpers', () => {
 
         const hashes = extractOperationHashes(operations);
         expect(hashes).toStrictEqual([a, b]);
+    });
+
+    it('rejects malformed remote reconciliation windows', () => {
+        const window = {
+            name: 'history_paged', fromTs: 1, toTs: 2, maxRecords: 16, order: 0,
+        };
+        const malformed = [
+            null,
+            { ...window, fromTs: Number.NaN },
+            { ...window, toTs: Number.NaN },
+            { ...window, fromTs: 3 },
+            { ...window, order: 0.5 },
+            { ...window, order: -1 },
+            { ...window, after: { ts: 1.5, id: h('a') } },
+            { ...window, after: { ts: 1, id: 'invalid' } },
+        ];
+
+        for (const candidate of malformed) {
+            expect(parseRemoteWindow(candidate as never, 16)).toBeNull();
+        }
     });
 });

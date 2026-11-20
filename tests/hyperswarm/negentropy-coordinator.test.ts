@@ -771,6 +771,120 @@ describe('Negentropy coordinator', () => {
             expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'send_ops_ack_failed');
             expect(coordinator.getActiveSessionCount()).toBe(0);
 
+            failedType = null;
+            open = await startLocal();
+            outcomes.push({
+                nextMsg: null,
+                haveIds: Array.from({ length: 17 }, (_, index) => index.toString(16).padStart(64, '0')),
+                needIds: [],
+            });
+            await coordinator.handleMessage(peerKey, {
+                type: 'neg_msg', sessionId: open.sessionId, windowId: open.windowId, round: 1,
+                frame: { encoding: 'base64', data: '' }, time: '', node: '', relays: [],
+            });
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'negentropy_outcome_exceeds_window');
+
+            const normalFilterRetryDelayedIds = importPipeline.filterRetryDelayedIds.bind(importPipeline);
+            importPipeline.filterRetryDelayedIds = ids => ({
+                eligibleIds: [], pendingIds: [], capacityDeferredIds: ids,
+            });
+            open = await startLocal();
+            outcomes.push({
+                nextMsg: new Uint8Array([1]), haveIds: [], needIds: ['e'.repeat(64)],
+            });
+            await coordinator.handleMessage(peerKey, {
+                type: 'neg_msg', sessionId: open.sessionId, windowId: open.windowId, round: 1,
+                frame: { encoding: 'base64', data: '' }, time: '', node: '', relays: [],
+            });
+            failedType = 'neg_close';
+            await coordinator.handleMessage(peerKey, {
+                type: 'neg_close', sessionId: open.sessionId, windowId: open.windowId, round: 1,
+                reason: 'max_rounds_reached', time: '', node: '', relays: [],
+            });
+            expect(sendToPeer).toHaveBeenLastCalledWith(
+                peerKey,
+                expect.objectContaining({ type: 'neg_close', reason: 'incomplete' }),
+            );
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'send_neg_close_failed');
+
+            failedType = null;
+            open = await startLocal();
+            for (let round = 1; round <= 8; round += 1) {
+                outcomes.push({
+                    nextMsg: new Uint8Array([round]),
+                    haveIds: [],
+                    needIds: round === 1 ? ['a'.repeat(64)] : [],
+                });
+                await coordinator.handleMessage(peerKey, {
+                    type: 'neg_msg', sessionId: open.sessionId, windowId: open.windowId, round,
+                    frame: { encoding: 'base64', data: '' }, time: '', node: '', relays: [],
+                });
+            }
+            failedType = 'neg_close';
+            await coordinator.handleMessage(peerKey, {
+                type: 'neg_msg', sessionId: open.sessionId, windowId: open.windowId, round: 9,
+                frame: { encoding: 'base64', data: '' }, time: '', node: '', relays: [],
+            });
+            expect(sendToPeer).toHaveBeenLastCalledWith(
+                peerKey,
+                expect.objectContaining({ type: 'neg_close', reason: 'incomplete' }),
+            );
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'send_neg_close_failed');
+            failedType = null;
+            importPipeline.filterRetryDelayedIds = normalFilterRetryDelayedIds;
+
+            const unresolvedOperations = Array.from({ length: 5 }, (_, index) => {
+                const unresolvedUnsigned = {
+                    ...unsigned,
+                    created: `2026-01-${String(index + 10).padStart(2, '0')}T00:00:00.000Z`,
+                };
+                return {
+                    ...unresolvedUnsigned,
+                    signature: {
+                        hash: cipher.hashJSON(unresolvedUnsigned),
+                        signed: unresolvedUnsigned.created,
+                        value: 'x'.repeat(430 * 1024),
+                    },
+                };
+            });
+            open = await startLocal();
+            outcomes.push({
+                nextMsg: null,
+                haveIds: [],
+                needIds: unresolvedOperations.map(item => item.signature.hash),
+            });
+            const unresolvedRequestStart = sent.length;
+            await coordinator.handleMessage(peerKey, {
+                type: 'neg_msg', sessionId: open.sessionId, windowId: open.windowId, round: 1,
+                frame: { encoding: 'base64', data: '' }, time: '', node: '', relays: [],
+            });
+            const unresolvedBudgetRequest = sent.slice(unresolvedRequestStart)
+                .find(message => message.type === 'ops_req');
+            expect(unresolvedBudgetRequest?.type).toBe('ops_req');
+            (importPipeline.enqueue as jest.MockedFunction<ImportPipeline['enqueue']>)
+                .mockResolvedValue(emptyImport);
+            for (const [page, unresolvedOperation] of unresolvedOperations.entries()) {
+                if (page === unresolvedOperations.length - 1) {
+                    failedType = 'neg_close';
+                }
+                await coordinator.handleMessage(peerKey, {
+                    type: 'ops_push', sessionId: open.sessionId, windowId: open.windowId,
+                    round: 1,
+                    requestId: unresolvedBudgetRequest?.type === 'ops_req'
+                        ? unresolvedBudgetRequest.requestId
+                        : 0,
+                    page, hasMore: page < unresolvedOperations.length - 1,
+                    data: [unresolvedOperation], time: '', node: '', relays: [],
+                });
+            }
+            expect(sendToPeer).toHaveBeenLastCalledWith(
+                peerKey,
+                expect.objectContaining({ type: 'neg_close', reason: 'unresolved_limit_exceeded' }),
+            );
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'send_neg_close_failed');
+            expect(coordinator.getActiveSessionCount()).toBe(0);
+            failedType = null;
+
             coordinator.setAdapter(null);
             await expect(coordinator.startSession(peerKey, {
                 source: 'connect', modeReason: 'negentropy_supported', initiator: true,
