@@ -24,13 +24,19 @@ export interface ConnectionInfo {
     syncMode: SyncMode | 'unknown';
     syncStarted: boolean;
     lastNegentropyAttemptAt: number;
+    negentropyRetryAfter: number;
+    negentropyBusyGeneration: number;
+    negentropyBusyRetryAfter: number;
     negentropySynced: boolean;
     orderedCatchupAttempted: boolean;
+    orderedCatchupRetryAfter: number;
     initialPingSent: boolean;
     initialPingPromise: Promise<void>;
-    initialInboundMessageReceived: boolean;
+    initialPingReceived: boolean;
+    lastProcessedPingAt: number;
     peerTransportFramingVersion: number | null;
-    legacyTransportQuarantined: boolean;
+    protocolViolationReported: boolean;
+    terminationStarted: boolean;
     inboundBuffer: Buffer;
     inboundReceiveChain: Promise<void>;
 }
@@ -65,13 +71,19 @@ export function createConnectionInfo(options: ConnectionInfoOptions): Connection
         syncMode: 'unknown',
         syncStarted: false,
         lastNegentropyAttemptAt: 0,
+        negentropyRetryAfter: 0,
+        negentropyBusyGeneration: -1,
+        negentropyBusyRetryAfter: 0,
         negentropySynced: false,
         orderedCatchupAttempted: false,
+        orderedCatchupRetryAfter: 0,
         initialPingSent: options.requireInitialPing !== true,
         initialPingPromise: Promise.resolve(),
-        initialInboundMessageReceived: false,
+        initialPingReceived: false,
+        lastProcessedPingAt: 0,
         peerTransportFramingVersion: null,
-        legacyTransportQuarantined: false,
+        protocolViolationReported: false,
+        terminationStarted: false,
         inboundBuffer: Buffer.alloc(0),
         inboundReceiveChain: Promise.resolve(),
     };

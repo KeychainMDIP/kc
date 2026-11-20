@@ -48,6 +48,7 @@ export interface NegOpenMessage extends HyperMessageBase {
     window: NegentropyWindowPayload;
     round: number;
     frame: NegentropyFrame;
+    previousWindowProgress?: NegentropyWindowProgress;
 }
 
 export interface NegMsgMessage extends HyperMessageBase {
@@ -73,6 +74,18 @@ export interface OpsReqMessage extends HyperMessageBase {
     sessionId: string;
     windowId: string;
     round: number;
+    requestId: number;
+    offerId?: number;
+    ids: string[];
+    deferred?: boolean;
+}
+
+export interface OpsOfferMessage extends HyperMessageBase {
+    type: 'ops_offer';
+    sessionId: string;
+    windowId: string;
+    round: number;
+    offerId: number;
     ids: string[];
 }
 
@@ -81,7 +94,20 @@ export interface OpsPushMessage extends HyperMessageBase {
     sessionId: string;
     windowId: string;
     round: number;
+    requestId: number;
+    page: number;
+    hasMore: boolean;
     data: Operation[];
+}
+
+export interface OpsAckMessage extends HyperMessageBase {
+    type: 'ops_ack';
+    sessionId: string;
+    windowId: string;
+    round: number;
+    requestId: number;
+    page: number;
+    deferred?: boolean;
 }
 
 export interface OrderedCatchupReqMessage extends HyperMessageBase {
@@ -109,8 +135,10 @@ export type HyperMessage =
     | NegOpenMessage
     | NegMsgMessage
     | NegCloseMessage
+    | OpsOfferMessage
     | OpsReqMessage
     | OpsPushMessage
+    | OpsAckMessage
     | OrderedCatchupReqMessage
     | OrderedCatchupPushMessage
     | OrderedCatchupDoneMessage;
@@ -123,20 +151,12 @@ const SYNC_MESSAGE_TYPES = new Set<SyncMessage['type']>([
     'ordered_catchup_done',
     'neg_open',
     'neg_msg',
+    'ops_offer',
     'ops_req',
     'ops_push',
+    'ops_ack',
     'neg_close',
 ]);
-
-export function isHyperMessage(value: unknown): value is HyperMessage {
-    if (!value || typeof value !== 'object' || !('type' in value)) {
-        return false;
-    }
-
-    const type = (value as { type?: unknown }).type;
-    return type === 'ping' || type === 'queue'
-        || (typeof type === 'string' && SYNC_MESSAGE_TYPES.has(type as SyncMessage['type']));
-}
 
 export function isSyncMessage(message: HyperMessage): message is SyncMessage {
     return SYNC_MESSAGE_TYPES.has(message.type as SyncMessage['type']);

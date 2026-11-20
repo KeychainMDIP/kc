@@ -10,6 +10,8 @@ import {
     SyncStoreListOptions,
     SyncStoreOrderedListOptions,
     SyncStorePage,
+    SyncStateEntry,
+    SyncStateListOptions,
     SyncStoreWriteResult,
 } from './types.js';
 
@@ -189,6 +191,29 @@ export default class PostgresOperationSyncStore implements OperationSyncStore {
         );
 
         return result.rows[0]?.value ?? null;
+    }
+
+    async loadSyncStateByPrefix(prefix: string, options: SyncStateListOptions): Promise<SyncStateEntry[]> {
+        if (!Number.isSafeInteger(options.limit) || options.limit < 1) {
+            throw new Error('Sync state page limit must be a positive safe integer');
+        }
+
+        const after = options.after;
+        const params: Array<number | string> = [prefix];
+        const afterPredicate = after === undefined
+            ? ''
+            : `AND key COLLATE "C" > $${params.push(after)}`;
+        const limitParam = params.push(options.limit);
+        const result = await this.getPool().query<SyncStateEntry>(
+            `SELECT key, value
+             FROM hyperswarm_sync_state
+             WHERE LEFT(key, char_length($1)) COLLATE "C" = $1 COLLATE "C"
+               ${afterPredicate}
+             ORDER BY key COLLATE "C"
+             LIMIT $${limitParam}`,
+            params,
+        );
+        return result.rows;
     }
 
     async saveSyncState(key: string, value: string | null): Promise<void> {

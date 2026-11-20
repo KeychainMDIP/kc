@@ -754,18 +754,16 @@ export default class DbMongo implements GatekeeperDb {
         return result?.ops.length ?? 0;
     }
 
-    async getQueue(registry: string): Promise<Operation[]> {
+    async getQueue(registry: string, limit?: number): Promise<Operation[]> {
         if (!this.db) {
             throw new Error(MONGO_NOT_STARTED_ERROR)
         }
 
-        try {
-            const row = await this.db.collection('queue').findOne({ id: registry });
-            return row?.ops ?? [];
-        }
-        catch {
-            return [];
-        }
+        const row = await this.db.collection<QueueDoc>('queue').findOne(
+            { id: registry },
+            limit === undefined ? undefined : { projection: { ops: { $slice: limit } } },
+        );
+        return row?.ops ?? [];
     }
 
     async clearQueue(registry: string, batch: Operation[]): Promise<boolean> {

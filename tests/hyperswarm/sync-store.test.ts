@@ -66,6 +66,27 @@ async function runStoreContractTests(store: OperationSyncStore): Promise<void> {
     await store.saveSyncState('cursor', null);
     expect(await store.loadSyncState('cursor')).toBeNull();
 
+    await store.saveSyncState('retry.b', 'pending:2');
+    await store.saveSyncState('retry.a', 'pending:1');
+    await store.saveSyncState('unrelated', 'value');
+    await store.saveSyncState('', 'empty-key');
+    expect(await store.loadSyncStateByPrefix('retry.', { limit: 1 })).toStrictEqual([
+        { key: 'retry.a', value: 'pending:1' },
+    ]);
+    expect(await store.loadSyncStateByPrefix('retry.', { after: 'retry.a', limit: 2 })).toStrictEqual([
+        { key: 'retry.b', value: 'pending:2' },
+    ]);
+    expect(await store.loadSyncStateByPrefix('missing.', { limit: 1 })).toStrictEqual([]);
+    expect(await store.loadSyncStateByPrefix('', { after: '', limit: 1 })).toStrictEqual([
+        { key: 'retry.a', value: 'pending:1' },
+    ]);
+    await expect(store.loadSyncStateByPrefix('retry.', { limit: 0 })).rejects
+        .toThrow('Sync state page limit must be a positive safe integer');
+    await store.saveSyncState('retry.a', null);
+    await store.saveSyncState('retry.b', null);
+    await store.saveSyncState('unrelated', null);
+    await store.saveSyncState('', null);
+
     const pageResult = await store.applySyncPage({
         records: [],
         deleteIds: [recB.id, recB.id, h('d')],
@@ -280,6 +301,7 @@ describe('SqliteOperationSyncStore', () => {
         await expect(store.upsertMany([recA])).rejects.toThrow('Call start() first');
         await expect(store.applySyncPage({ records: [] })).rejects.toThrow('Call start() first');
         await expect(store.loadSyncState('cursor')).rejects.toThrow('Call start() first');
+        await expect(store.loadSyncStateByPrefix('cursor', { limit: 1 })).rejects.toThrow('Call start() first');
         await expect(store.saveSyncState('cursor', '1')).rejects.toThrow('Call start() first');
         await expect(store.getByIds([recA.id])).rejects.toThrow('Call start() first');
         await expect(store.iterateSortedKeys()).rejects.toThrow('Call start() first');
@@ -304,6 +326,21 @@ describe('SqliteOperationSyncStore', () => {
 
         expect(await store.upsertMany([])).toStrictEqual({ inserted: 0, updated: 0 });
         expect(await store.getByIds([])).toStrictEqual([]);
+    });
+
+    it('preserves sync-state rows across reopen', async () => {
+        const dataFolder = path.join(tmpRoot, 'data/hyperswarm');
+        const first = new SqliteOperationSyncStore('operations.db', dataFolder);
+        await first.start();
+        await first.saveSyncState('retry.a', 'pending:1');
+        await first.stop();
+
+        const reopened = new SqliteOperationSyncStore('operations.db', dataFolder);
+        await reopened.start();
+        await expect(reopened.loadSyncStateByPrefix('retry.', { limit: 10 })).resolves.toStrictEqual([
+            { key: 'retry.a', value: 'pending:1' },
+        ]);
+        await reopened.stop();
     });
 
     it('migrates legacy operations columns and backfills signed timestamps from ts', async () => {
@@ -427,6 +464,27 @@ describe('SqliteOperationSyncStore', () => {
 });
 
 describe('PostgresOperationSyncStore', () => {
+    it('loads a bounded keyset page of sync state', async () => {
+        const store = new PostgresOperationSyncStore();
+        const calls: Array<{ sql: string; params: unknown[] }> = [];
+        (store as any).pool = {
+            query: async (sql: string, params: unknown[]) => {
+                calls.push({ sql, params });
+                return { rows: [{ key: 'retry.b', value: 'pending:2' }] };
+            },
+        };
+
+        await expect(store.loadSyncStateByPrefix('retry.', { after: 'retry.a', limit: 10 }))
+            .resolves.toStrictEqual([{ key: 'retry.b', value: 'pending:2' }]);
+
+        const sql = calls[0].sql.replace(/\s+/g, ' ').trim();
+        expect(sql).toContain('LEFT(key, char_length($1)) COLLATE "C" = $1 COLLATE "C"');
+        expect(sql).toContain('key COLLATE "C" > $2');
+        expect(sql).toContain('ORDER BY key COLLATE "C"');
+        expect(sql).toContain('LIMIT $3');
+        expect(calls[0].params).toStrictEqual(['retry.', 'retry.a', 10]);
+    });
+
     it('reads the latest signed timestamp without loading operation payloads', async () => {
         const store = new PostgresOperationSyncStore();
         const calls: string[] = [];

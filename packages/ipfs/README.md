@@ -26,6 +26,13 @@ const retrieve = await ipfs.getJSON(cid); // retrieve == data
 await ipfs.stop();
 ```
 
+### Kubo peering deadlines
+
+`KuboClient.addPeeringPeer()` applies `timeoutMs` to the complete addition,
+including every advertised-address connection attempt and the peering
+configuration read and write. Its deadline is combined with the optional
+caller `AbortSignal`.
+
 ### Create factory
 
 The static factory method `create` can be used to create and start an IPFS instance:

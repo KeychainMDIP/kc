@@ -1839,11 +1839,35 @@
               "type": "string"
             },
             "description": "The name of the registry whose queue is being retrieved. Valid values may include \"local\", \"hyperswarm\", \"TBTC\", \"TFTC\", etc.\n"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 300,
+              "default": 300
+            },
+            "description": "Maximum operations to return in the head page."
+          },
+          {
+            "in": "query",
+            "name": "maxBytes",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 524288,
+              "default": 524288
+            },
+            "description": "Maximum combined UTF-8 JSON bytes of operations in the head page."
           }
         ],
         "responses": {
           "200": {
-            "description": "An array of queued event objects for the specified registry.",
+            "description": "The bounded head page of queued event objects for the specified registry.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1898,6 +1922,27 @@
                         "type": "string",
                         "description": "The DID that this queue event references (often identical to `operation.did`)."
                       }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid queue page limit."
+          },
+          "409": {
+            "description": "The head operation exceeds the requested queue page byte limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "queue_operation_exceeds_page_limit"
+                      ]
                     }
                   }
                 }

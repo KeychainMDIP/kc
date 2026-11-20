@@ -7,6 +7,8 @@ import {
     SyncStoreListOptions,
     SyncStoreOrderedListOptions,
     SyncStorePage,
+    SyncStateEntry,
+    SyncStateListOptions,
     SyncStoreWriteResult,
 } from './types.js';
 
@@ -99,6 +101,19 @@ export default class InMemoryOperationSyncStore implements OperationSyncStore {
 
     async loadSyncState(key: string): Promise<string | null> {
         return this.syncState.get(key) ?? null;
+    }
+
+    async loadSyncStateByPrefix(prefix: string, options: SyncStateListOptions): Promise<SyncStateEntry[]> {
+        if (!Number.isSafeInteger(options.limit) || options.limit < 1) {
+            throw new Error('Sync state page limit must be a positive safe integer');
+        }
+
+        return Array.from(this.syncState.entries())
+            .filter(([key]) => key.startsWith(prefix)
+                && (options.after === undefined || key > options.after))
+            .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
+            .slice(0, options.limit)
+            .map(([key, value]) => ({ key, value }));
     }
 
     async saveSyncState(key: string, value: string | null): Promise<void> {

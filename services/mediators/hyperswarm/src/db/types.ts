@@ -47,6 +47,16 @@ export interface SyncStorePage {
     syncStateUpdates?: Record<string, string | null>;
 }
 
+export interface SyncStateEntry {
+    key: string;
+    value: string;
+}
+
+export interface SyncStateListOptions {
+    after?: string;
+    limit: number;
+}
+
 export interface SyncStoreWriteResult {
     inserted: number;
     updated: number;
@@ -69,6 +79,7 @@ export interface OperationSyncStore {
     upsertMany(records: SyncOperationWriteRecord[]): Promise<SyncStoreWriteResult>;
     applySyncPage(page: SyncStorePage): Promise<ApplySyncStorePageResult>;
     loadSyncState(key: string): Promise<string | null>;
+    loadSyncStateByPrefix(prefix: string, options: SyncStateListOptions): Promise<SyncStateEntry[]>;
     saveSyncState(key: string, value: string | null): Promise<void>;
     getByIds(ids: string[]): Promise<SyncOperationRecord[]>;
     iterateSortedKeys(options?: SyncStoreListOptions): Promise<SyncStoreCursor[]>;

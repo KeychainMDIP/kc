@@ -72,6 +72,22 @@ describe('hyperswarm config', () => {
         expect(config.protocol).toBe('/MDIP/v1.0-test');
     });
 
+    it('accepts a node name at the UTF-8 byte limit', async () => {
+        process.env.KC_NODE_NAME = 'é'.repeat(128);
+
+        const config = await importConfigIsolated();
+
+        expect(config.nodeName).toBe(process.env.KC_NODE_NAME);
+    });
+
+    it('rejects a node name above the UTF-8 byte limit', async () => {
+        process.env.KC_NODE_NAME = `${'é'.repeat(128)}a`;
+
+        await expect(importConfigIsolated())
+            .rejects
+            .toThrow('KC_NODE_NAME must be <= 256 UTF-8 bytes');
+    });
+
     it('treats KC_IPFS_ENABLE=false as disabled', async () => {
         process.env.KC_IPFS_ENABLE = 'false';
 
@@ -133,6 +149,22 @@ describe('hyperswarm config', () => {
         const config = await importConfigIsolated();
 
         expect(config.negentropyMaxRecordsPerWindow).toBe(500);
+    });
+
+    it('accepts the maximum Negentropy window size', async () => {
+        process.env.KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW = '25000';
+
+        const config = await importConfigIsolated();
+
+        expect(config.negentropyMaxRecordsPerWindow).toBe(25000);
+    });
+
+    it('rejects a Negentropy window size above the hard limit', async () => {
+        process.env.KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW = '25001';
+
+        await expect(importConfigIsolated())
+            .rejects
+            .toThrow('KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW must be <= 25000');
     });
 
     it('throws when KC_HYPR_DB is empty or whitespace', async () => {

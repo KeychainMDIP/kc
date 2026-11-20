@@ -8,9 +8,10 @@ import InMemoryOperationSyncStore from '../../services/mediators/hyperswarm/src/
 import { HYPR_INDEX_SYNC_STATE_KEYS } from '../../services/mediators/hyperswarm/src/bootstrap.ts';
 import NegentropyAdapter from '../../services/mediators/hyperswarm/src/negentropy/adapter.ts';
 import { encodeNegentropyFrame } from '../../services/mediators/hyperswarm/src/negentropy/protocol.ts';
+import { makeWindowId } from '../../services/mediators/hyperswarm/src/negentropy/windows.ts';
 import {
     decodeFramedMessages,
-    encodeFramedMessage,
+    encodeFramedMessage as encodeTransportFrame,
 } from '../../services/mediators/hyperswarm/src/transport-framing.ts';
 import TestHelper from '../gatekeeper/helper.ts';
 import {
@@ -27,7 +28,7 @@ import {
 
 installMediatorMocks();
 
-const NEGENTROPY_VERSION = 1;
+const NEGENTROPY_VERSION = 2;
 
 interface RunningNode {
     node: MediatorNode;
@@ -72,6 +73,7 @@ function peerPing(overrides: Record<string, unknown> = {}): Record<string, unkno
         type: 'ping',
         time: new Date().toISOString(),
         node: 'peer',
+        relays: [],
         peers: [],
         capabilities: {
             negentropy: true,
@@ -80,6 +82,29 @@ function peerPing(overrides: Record<string, unknown> = {}): Record<string, unkno
         transportFramingVersion: 1,
         ...overrides,
     };
+}
+
+function encodeFramedMessage(payload: string | Uint8Array): Buffer {
+    if (typeof payload !== 'string') {
+        return encodeTransportFrame(payload);
+    }
+    let value: unknown;
+    try {
+        value = JSON.parse(payload);
+    }
+    catch {
+        return encodeTransportFrame(payload);
+    }
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return encodeTransportFrame(payload);
+    }
+    return encodeTransportFrame(JSON.stringify({
+        time: new Date().toISOString(),
+        node: 'peer',
+        relays: [],
+        round: 0,
+        ...(value as Record<string, unknown>),
+    }));
 }
 
 function queueMessage(operation: Operation): Record<string, unknown> {
@@ -237,6 +262,35 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         expect(jest.getTimerCount()).toBeGreaterThanOrEqual(2);
     });
 
+    it('preserves pre-existing Kubo peering entries during IPFS startup', async () => {
+        const existingPeers = [{ ID: 'operator-peer', Addrs: ['/ip4/203.0.113.1/tcp/4001'] }];
+        const running = await createRunningNode({
+            env: {
+                KC_IPFS_ENABLE: 'true',
+                KC_NODE_ID: 'node',
+            },
+            beforeStart: async node => {
+                node.keymasterClient.resolveDID.mockResolvedValue({
+                    didDocument: { id: 'did:test:node' },
+                });
+                node.kuboClient.getPeerID.mockResolvedValue('local-peer');
+                node.kuboClient.getAddresses.mockResolvedValue(['/ip4/203.0.113.2/tcp/4001']);
+                node.kuboClient.getPeeringPeers.mockResolvedValue(existingPeers);
+            },
+        });
+
+        expect(running.node.kuboClient.connect).toHaveBeenCalledTimes(1);
+        expect(running.node.kuboClient.getPeeringPeers).toHaveBeenCalled();
+        expect(running.node.kuboClient.resetPeeringPeers).not.toHaveBeenCalled();
+        expect(running.node.kuboClient.removePeeringPeer).not.toHaveBeenCalled();
+        expect(running.node.keymasterClient.updateAsset).toHaveBeenCalledWith(
+            'did:test:node',
+            expect.objectContaining({
+                node: expect.objectContaining({ name: expect.any(String) }),
+            }),
+        );
+    });
+
     it('aborts Gatekeeper requests during shutdown', async () => {
         const running = await createRunningNode();
         const options = running.node.gatekeeperClient.connect.mock.calls[0][0] as {
@@ -255,7 +309,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         const peer = await attachConnection(running, 0x22);
         const [operation] = await makeOperations(1);
         const capabilities = {
-            negentropy: true, negentropyVersion: 1,
+            negentropy: true, negentropyVersion: 2,
             orderedCatchup: true, orderedCatchupVersion: 1, orderedCatchupReady: true,
             operationCount: 100, orderedOperationCount: 100,
         };
@@ -283,9 +337,16 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
             await running.node.run(() => jest.advanceTimersByTimeAsync(60_000));
         }
         await settle();
+        const outageWindow = {
+            name: 'outage-window',
+            fromTs: 0,
+            toTs: 10,
+            maxRecords: 16,
+            order: 0,
+        };
         await sendPeerMessage(other, {
-            type: 'neg_open', sessionId: 'inbound-during-outage', windowId: 'window', round: 0,
-            time: '', node: '', relays: [], frame: '', window: { fromTs: 0, toTs: 10 },
+            type: 'neg_open', sessionId: 'inbound-during-outage', windowId: makeWindowId(outageWindow), round: 0,
+            time: '', node: '', relays: [], frame: encodeNegentropyFrame('outage-open'), window: outageWindow,
         });
         await sendPeerMessage(other, queueMessage(operation));
         expect(running.node.gatekeeperClient.importBatch).toHaveBeenCalledTimes(imports);
@@ -307,9 +368,27 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         const running = await createRunningNode({ keyByte: 0x33 });
         const peer = await attachConnection(running, 0x11);
         const [first, missed] = await makeOperations(2);
+        const adapter = await NegentropyAdapter.create({
+            syncStore: running.store,
+            maxRecordsPerWindow: 16,
+            maxRoundsPerSession: 8,
+            deferInitialBuild: true,
+        });
+        const createEngine = adapter.createEngineForSnapshot.bind(adapter);
+        jest.spyOn(adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
+            const engine = createEngine(snapshot);
+            jest.spyOn(engine, 'reconcile').mockResolvedValueOnce({
+                nextMsg: null,
+                haveIds: [],
+                needIds: [missed.signature!.hash],
+            });
+            return engine;
+        });
+        running.node.run(() => running.node.mediator.__test.setNegentropyAdapter(adapter));
         running.node.run(() => running.node.mediator.__test.addConnection(peer.peerKey, {
             connection: peer.pair.connectionA,
-            capabilities: { advertised: true, negentropy: true, version: 1 },
+            initialPingReceived: true,
+            capabilities: { advertised: true, negentropy: true, version: 2 },
             syncMode: 'negentropy', syncStarted: true, negentropySynced: true,
         }));
         running.node.gatekeeperClient.processEvents.mockResolvedValueOnce({ busy: true });
@@ -331,7 +410,14 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         const open = peer.pair.transcript.filter(entry => entry.messageType === 'neg_open').at(-1)!;
         const message = JSON.parse(decodeFramedMessages(open.raw).messages[0].toString('utf8'));
         await running.node.run(() => running.node.mediator.__test.receiveMsg(peer.peerKey, {
-            type: 'ops_push', sessionId: message.sessionId, windowId: message.windowId,
+            type: 'neg_msg', sessionId: message.sessionId, windowId: message.windowId, round: 1,
+            time: '', node: '', relays: [], frame: encodeNegentropyFrame('recovery-repair'),
+        }));
+        const requestEntry = peer.pair.transcript.filter(entry => entry.messageType === 'ops_req').at(-1)!;
+        const request = JSON.parse(decodeFramedMessages(requestEntry.raw).messages[0].toString('utf8'));
+        await running.node.run(() => running.node.mediator.__test.receiveMsg(peer.peerKey, {
+            type: 'ops_push', sessionId: message.sessionId, windowId: message.windowId, round: request.round,
+            requestId: request.requestId, page: 0, hasMore: false,
             time: '', node: '', relays: [], data: [missed],
         }));
         await eventually(async () => await running.store.has(missed.signature!.hash));
@@ -678,7 +764,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         expect(outboundTypes).toContain('neg_open');
     });
 
-    it('cools down malformed framed connections and accepts them after expiry', async () => {
+    it('escalates cooldowns for repeated malformed framed connections', async () => {
         const running = await createRunningNode({
             env: {
                 KC_HYPR_EXPORT_INTERVAL: '3600',
@@ -686,20 +772,16 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         });
         const peerKeyByte = 0x44;
 
-        for (let strike = 0; strike < 3; strike += 1) {
-            await strikeMalformedFramedPeer(running, await attachConnection(running, peerKeyByte));
-        }
+        await strikeMalformedFramedPeer(running, await attachConnection(running, peerKeyByte));
+        const firstRejected = emitConnection(running, peerKeyByte);
+        await eventually(() => firstRejected.pair.connectionA.destroyed);
 
-        for (let attempt = 0; attempt < 2; attempt += 1) {
-            const rejected = emitConnection(running, peerKeyByte);
-            await eventually(() => rejected.pair.connectionA.destroyed);
-            expect(rejected.pair.transcript.filter(entry => entry.direction === 'a-to-b')).toHaveLength(0);
-            expect(running.node.run(
-                () => running.node.mediator.__test.getConnectionState(rejected.peerKey),
-            )).toBeNull();
-        }
+        await running.node.run(() => jest.advanceTimersByTimeAsync(60_001));
+        await strikeMalformedFramedPeer(running, await attachConnection(running, peerKeyByte));
+        const secondRejected = emitConnection(running, peerKeyByte);
+        await eventually(() => secondRejected.pair.connectionA.destroyed);
 
-        running.node.run(() => jest.setSystemTime(Date.now() + (5 * 60 * 1_000) + 1));
+        await running.node.run(() => jest.advanceTimersByTimeAsync((5 * 60 * 1_000) + 1));
         const accepted = await attachConnection(running, peerKeyByte);
         expect(accepted.pair.connectionA.destroyed).toBe(false);
         expect(running.node.run(
@@ -707,7 +789,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         )).not.toBeNull();
     });
 
-    it('clears malformed-peer strikes after a valid framed ping', async () => {
+    it('does not clear prior strikes after a valid framed ping', async () => {
         const running = await createRunningNode({
             env: {
                 KC_HYPR_EXPORT_INTERVAL: '3600',
@@ -716,7 +798,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         const peerKeyByte = 0x55;
 
         await strikeMalformedFramedPeer(running, await attachConnection(running, peerKeyByte));
-
+        await running.node.run(() => jest.advanceTimersByTimeAsync(60_001));
         const cleared = await attachConnection(running, peerKeyByte);
         cleared.pair.connectionB.write(encodeFramedMessage(JSON.stringify(peerPing())));
         await cleared.pair.pumpUntilIdle();
@@ -728,21 +810,18 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
             () => running.node.mediator.__test.getConnectionState(cleared.peerKey),
         )).toBeNull();
 
-        await strikeMalformedFramedPeer(running, await attachConnection(running, peerKeyByte));
+        const rejected = emitConnection(running, peerKeyByte);
+        await eventually(() => rejected.pair.connectionA.destroyed);
 
-        const accepted = emitConnection(running, peerKeyByte);
-        await eventually(() => (
-            accepted.pair.connectionA.destroyed
-            || accepted.pair.transcript.some(entry => entry.messageType === 'ping')
-        ));
+        await running.node.run(() => jest.advanceTimersByTimeAsync((5 * 60 * 1_000) + 1));
+        const accepted = await attachConnection(running, peerKeyByte);
         expect(accepted.pair.connectionA.destroyed).toBe(false);
-        expect(accepted.pair.transcript.some(entry => entry.messageType === 'ping')).toBe(true);
         expect(running.node.run(
             () => running.node.mediator.__test.getConnectionState(accepted.peerKey),
         )).not.toBeNull();
     });
 
-    it('keeps an active quarantined peer and expires it after traffic stops', async () => {
+    it('temporarily refuses an incompatible peer without a punitive strike', async () => {
         const running = await createRunningNode({
             env: {
                 KC_HYPR_EXPORT_INTERVAL: '3600',
@@ -750,47 +829,30 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         });
         const peer = await attachConnection(running, 0x66);
 
-        peer.pair.connectionB.write(Buffer.from(JSON.stringify(peerPing({
+        peer.pair.connectionB.write(encodeFramedMessage(JSON.stringify(peerPing({
             transportFramingVersion: undefined,
         }))));
         await peer.pair.pumpUntilIdle();
-        await eventually(() => running.node.run(
-            () => running.node.mediator.__test.getConnectionState(peer.peerKey)?.legacyTransportQuarantined,
-        ) === true);
-
-        const outboundWrites = peer.pair.transcript.filter(entry => entry.direction === 'a-to-b').length;
-        await running.node.run(() => jest.advanceTimersByTimeAsync(2 * 60 * 1_000));
-        const legacyTraffic = Buffer.from(JSON.stringify(peerPing()));
-        peer.pair.connectionB.write(legacyTraffic);
-        await peer.pair.pumpUntilIdle();
-        await running.node.run(() => jest.advanceTimersByTimeAsync(2 * 60 * 1_000));
-        await settle();
-
-        expect(peer.pair.connectionA.destroyed).toBe(false);
-        expect(running.node.swarms).toHaveLength(1);
+        await eventually(() => peer.pair.connectionA.destroyed);
         expect(running.node.run(
             () => running.node.mediator.__test.getConnectionState(peer.peerKey),
-        )).toMatchObject({
-            activeSession: null,
-            legacyTransportQuarantined: true,
-        });
-        expect(peer.pair.transcript.filter(entry => entry.direction === 'a-to-b')).toHaveLength(outboundWrites);
+        )).toBeNull();
+
+        const rejected = emitConnection(running, 0x66);
+        await eventually(() => rejected.pair.connectionA.destroyed);
         expect(running.node.run(
             () => running.node.mediator.__test.getSyncStatsSnapshot(),
         )).toMatchObject({
             transport: {
-                malformedPeerCooldowns: 0,
-                malformedPeerConnectionsRejected: 0,
-                legacyTransportConnectionsQuarantined: 1,
+                protocolViolationCooldowns: 0,
+                transportFramingIncompatibilityClosures: 1,
+                compatibilityConnectionsRejected: 1,
             },
         });
 
-        await running.node.run(() => jest.advanceTimersByTimeAsync(2 * 60 * 1_000));
-        await settle();
-        expect(running.node.run(
-            () => running.node.mediator.__test.getConnectionState(peer.peerKey),
-        )).toBeNull();
-        expect(peer.pair.connectionA.destroyed).toBe(true);
+        await running.node.run(() => jest.advanceTimersByTimeAsync(60_001));
+        const accepted = await attachConnection(running, 0x66);
+        expect(accepted.pair.connectionA.destroyed).toBe(false);
     });
 
     it('recreates the swarm from the connection loop when no peers remain', async () => {
@@ -875,6 +937,8 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
             .mockImplementation(count);
 
         await running.node.run(() => jest.advanceTimersByTimeAsync(60_000));
+        expect(negOpenEntries()).toHaveLength(initialNegOpenCount);
+        await running.node.run(() => jest.advanceTimersByTimeAsync(60_000));
         await eventually(() => {
             const state = running.node.run(
                 () => running.node.mediator.__test.getConnectionState(peer.peerKey),
@@ -896,9 +960,10 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         expect(countSpy.mock.calls.length).toBeGreaterThanOrEqual(3);
     });
 
-    it('refreshes idle activity for cached progress but not exact duplicates', async () => {
-        const [operation] = await makeOperations(1);
+    it('refreshes idle activity for a requested operation already in the sync store', async () => {
+        const [operation, knownOperation] = await makeOperations(2);
         const operationId = operation.signature!.hash;
+        const knownOperationId = knownOperation.signature!.hash;
         const running = await createRunningNode({
             env: {
                 KC_HYPR_EXPORT_INTERVAL: '3600',
@@ -926,7 +991,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
                 .mockResolvedValueOnce({
                     nextMsg: 'second-response',
                     haveIds: [],
-                    needIds: [operationId],
+                    needIds: [knownOperationId],
                 });
             return engine;
         });
@@ -943,7 +1008,11 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         };
         const messages = () => peer.pair.transcript.flatMap(entry => (
             decodeFramedMessages(entry.raw).messages.map(message => (
-                JSON.parse(message.toString('utf8')) as { type?: string }
+                JSON.parse(message.toString('utf8')) as {
+                    type?: string;
+                    requestId?: number;
+                    round?: number;
+                }
             ))
         ));
         const sendFramed = async (message: Record<string, unknown>): Promise<void> => {
@@ -956,42 +1025,53 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
             type: 'neg_msg',
             sessionId: open.sessionId,
             windowId: open.windowId,
+            round: 1,
             frame: encodeNegentropyFrame('first-round'),
         });
         await eventually(() => messages().filter(message => message.type === 'ops_req').length === 1);
+        const firstRequest = messages().filter(message => message.type === 'ops_req').at(-1)!;
         await sendFramed({
             type: 'ops_push',
             sessionId: open.sessionId,
             windowId: open.windowId,
+            round: firstRequest.round,
+            requestId: firstRequest.requestId,
+            page: 0,
+            hasMore: false,
             data: [operation],
         });
         await eventually(() => running.store.has(operationId));
+        await running.store.upsertMany([{
+            id: knownOperationId,
+            signedTs: Math.floor(Date.parse(knownOperation.signature!.signed) / 1000),
+            operation: knownOperation,
+        }]);
         await sendFramed({
             type: 'neg_msg',
             sessionId: open.sessionId,
             windowId: open.windowId,
+            round: 2,
             frame: encodeNegentropyFrame('second-round'),
         });
         await eventually(() => messages().filter(message => message.type === 'ops_req').length === 2);
+        const secondRequest = messages().filter(message => message.type === 'ops_req').at(-1)!;
 
         await running.node.run(() => jest.advanceTimersByTimeAsync(119_000));
         await sendFramed({
             type: 'ops_push',
             sessionId: open.sessionId,
             windowId: open.windowId,
-            data: [operation],
+            round: secondRequest.round,
+            requestId: secondRequest.requestId,
+            page: 0,
+            hasMore: false,
+            data: [knownOperation],
         });
         await running.node.run(() => jest.advanceTimersByTimeAsync(2_000));
         expect(running.node.run(
             () => running.node.mediator.__test.getConnectionState(peer.peerKey)?.activeSession,
         )).toEqual({ mode: 'negentropy', sessionId: open.sessionId });
 
-        await sendFramed({
-            type: 'ops_push',
-            sessionId: open.sessionId,
-            windowId: open.windowId,
-            data: [operation],
-        });
         await running.node.run(() => jest.advanceTimersByTimeAsync(60_000));
         expect(running.node.run(
             () => running.node.mediator.__test.getConnectionState(peer.peerKey)?.activeSession,
@@ -1012,9 +1092,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
             },
         });
         const peer = await attachConnection(running, 0x22);
-        await sendPeerMessage(peer, peerPing({
-            capabilities: { negentropy: false },
-        }));
+        await sendPeerMessage(peer, peerPing());
         expect(running.node.run(
             () => running.node.mediator.__test.getConnectionState(peer.peerKey),
         )).not.toBeNull();
@@ -1109,9 +1187,11 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
                 ));
                 return stored.every(Boolean);
             });
-            await eventually(() => running.node.run(
-                () => running.node.mediator.__test.getConnectionState(peer.peerKey)?.activeSession === null,
-            ));
+            await eventually(() => running.node.run(() => {
+                const activeSession = running.node.mediator.__test
+                    .getConnectionState(peer.peerKey)?.activeSession as { mode?: string } | null | undefined;
+                return activeSession?.mode !== 'ordered_catchup';
+            }));
             expect(processEvents).toHaveBeenCalledTimes(4);
         }
         finally {
@@ -1123,8 +1203,8 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
     it('waits for queued imports before refreshing the index and then resumes polling', async () => {
         const operations = await makeOperations(2);
         const running = await createRunningNode();
-        const peer = await attachConnection(running, 0x22);
-        await sendPeerMessage(peer, peerPing({ capabilities: { negentropy: false } }));
+        const peer = await attachConnection(running, 0x00);
+        await sendPeerMessage(peer, peerPing());
         const processEvents = running.node.gatekeeperClient.processEvents;
         const processEventsImplementation = processEvents.getMockImplementation();
         if (!processEventsImplementation) {
@@ -1243,9 +1323,13 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         await running.node.run(() => jest.advanceTimersByTimeAsync(2_000));
         await eventually(async () => await running.store.has(operation.signature!.hash));
 
+        expect(running.node.gatekeeperClient.getQueue).toHaveBeenCalledWith('hyperswarm', {
+            limit: 300,
+            maxBytes: 512 * 1024,
+        });
         expect(running.node.gatekeeperClient.clearQueue).toHaveBeenCalledWith(
             'hyperswarm',
-            [operation.signature!.hash],
+            [operation],
             (await running.node.gatekeeperDb.getLifecycleMetadata()).epoch,
         );
         expect(peer.pair.transcript).toEqual(expect.arrayContaining([
@@ -1319,7 +1403,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
             order: 0,
         };
         const sessionId = 'index-backfill-session';
-        const windowId = 'index-backfill-window';
+        const windowId = makeWindowId(window);
         peer.pair.connectionB.write(encodeFramedMessage(JSON.stringify({
             type: 'neg_open',
             sessionId,
@@ -1347,9 +1431,27 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         });
         const getByIds = jest.spyOn(running.store, 'getByIds');
         peer.pair.connectionB.write(encodeFramedMessage(JSON.stringify({
+            type: 'ops_offer',
+            sessionId,
+            windowId,
+            round: 1,
+            offerId: 0,
+            ids: [operationId],
+        })));
+        await peer.pair.pumpUntilIdle();
+        const requestEntry = peer.pair.transcript.filter(
+            entry => entry.direction === 'a-to-b' && entry.messageType === 'ops_req',
+        ).at(-1)!;
+        const [requestPayload] = decodeFramedMessages(requestEntry.raw).messages;
+        const request = JSON.parse(requestPayload.toString('utf8')) as { requestId: number; round: number };
+        peer.pair.connectionB.write(encodeFramedMessage(JSON.stringify({
             type: 'ops_push',
             sessionId,
             windowId,
+            round: request.round,
+            requestId: request.requestId,
+            page: 0,
+            hasMore: false,
             data: [operation],
         })));
         await peer.pair.pumpUntilIdle();
@@ -1366,6 +1468,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
             type: 'neg_close',
             sessionId,
             windowId,
+            round: 1,
             reason: 'complete',
         })));
         await peer.pair.pumpUntilIdle();
@@ -1627,7 +1730,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
                 entry => entry.direction === 'a-to-b' && entry.messageType === 'neg_open',
             )).toHaveLength(initialNegOpenCount);
             expect(running.node.run(
-                () => running.node.mediator.__test.getConnectionState(peer.peerKey)?.activeSession,
+                () => running.node.mediator.__test.getConnectionState(peer.peerKey),
             )).toBeNull();
             expect(running.stopSpy).toHaveBeenCalledTimes(1);
             running.node.run(() => {
@@ -1663,19 +1766,20 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         const peer = await attachConnection(running, 0x22);
         await sendPeerMessage(peer, peerPing());
         const sessionId = 'shutdown-index-result-session';
-        const windowId = 'shutdown-index-result-window';
+        const window = {
+            name: 'shutdown-index-result',
+            fromTs: 0,
+            toTs: Math.floor(Date.now() / 1_000),
+            maxRecords: 16,
+            order: 0,
+        };
+        const windowId = makeWindowId(window);
         peer.pair.connectionB.write(encodeFramedMessage(JSON.stringify({
             type: 'neg_open',
             sessionId,
             windowId,
             round: 0,
-            window: {
-                name: 'shutdown-index-result',
-                fromTs: 0,
-                toTs: Math.floor(Date.now() / 1_000),
-                maxRecords: 16,
-                order: 0,
-            },
+            window,
             frame: encodeNegentropyFrame('shutdown-index-result-open'),
         })));
         await peer.pair.pumpUntilIdle();
@@ -1696,9 +1800,27 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
             acceptedEvents: [],
         });
         peer.pair.connectionB.write(encodeFramedMessage(JSON.stringify({
+            type: 'ops_offer',
+            sessionId,
+            windowId,
+            round: 1,
+            offerId: 0,
+            ids: [operation.signature!.hash],
+        })));
+        await peer.pair.pumpUntilIdle();
+        const requestEntry = peer.pair.transcript.filter(
+            entry => entry.direction === 'a-to-b' && entry.messageType === 'ops_req',
+        ).at(-1)!;
+        const [requestPayload] = decodeFramedMessages(requestEntry.raw).messages;
+        const request = JSON.parse(requestPayload.toString('utf8')) as { requestId: number; round: number };
+        peer.pair.connectionB.write(encodeFramedMessage(JSON.stringify({
             type: 'ops_push',
             sessionId,
             windowId,
+            round: request.round,
+            requestId: request.requestId,
+            page: 0,
+            hasMore: false,
             data: [operation],
         })));
         await peer.pair.pumpUntilIdle();
@@ -1831,7 +1953,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
                         || entry.messageType === 'ordered_catchup_done')
                 ))).toBe(false);
                 expect(running.node.run(
-                    () => running.node.mediator.__test.getConnectionState(peer.peerKey)?.activeSession,
+                    () => running.node.mediator.__test.getConnectionState(peer.peerKey),
                 )).toBeNull();
                 running.node.run(() => {
                     getMediatorNodeContext().shutdownHook = null;

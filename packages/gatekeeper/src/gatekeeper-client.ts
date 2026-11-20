@@ -17,6 +17,7 @@ import {
     IndexExportRequest,
     IndexExportResponse,
     ProcessEventsResult,
+    QueueReadOptions,
     VerifyDbResult,
 } from './types.js';
 
@@ -313,9 +314,9 @@ export default class GatekeeperClient implements GatekeeperInterface {
         }
     }
 
-    async getQueue(registry: string): Promise<Operation[]> {
+    async getQueue(registry: string, options: QueueReadOptions = {}): Promise<Operation[]> {
         try {
-            const response = await this.axios.get(`${this.API}/queue/${registry}`);
+            const response = await this.axios.get(`${this.API}/queue/${registry}`, { params: options });
             return response.data;
         }
         catch (error) {

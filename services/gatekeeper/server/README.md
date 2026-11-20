@@ -130,6 +130,20 @@ Deploy Gatekeeper and its mediators together for this processing contract.
 The admin file-import commands drain processing pages and retain refused inputs
 for bounded retries. No database reset is required.
 
+## Bounded publication queue reads
+
+`GET /api/v1/queue/{registry}` returns the current queue head page rather than
+the complete publication queue. A page contains at most 300 operations and
+512 KiB of operation JSON. Optional `limit` and `maxBytes` query parameters may
+request smaller positive bounds, but cannot raise those server maximums.
+
+Clear a successfully published page with
+`POST /api/v1/queue/{registry}/clear`, then read again for the next page.
+Reading again before clearing returns the same head page. If the first operation
+cannot fit within the requested byte bound, the read returns HTTP 409 with
+`{ "error": "queue_operation_exceeds_page_limit" }` and leaves the queue
+unchanged.
+
 ## Event requests across a database reset
 
 `POST /api/v1/batch/import`, `POST /api/v1/events/process` and

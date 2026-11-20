@@ -1,9 +1,7 @@
 import {
-    decodeLegacyJsonMessages,
     decodeFramedMessages,
     DEFAULT_MAX_FRAMED_MESSAGE_BYTES,
     encodeFramedMessage,
-    FramedMessageParser,
 } from '../../services/mediators/hyperswarm/src/transport-framing.ts';
 
 describe('hyperswarm transport framing', () => {
@@ -51,77 +49,41 @@ describe('hyperswarm transport framing', () => {
         expect(() => decodeFramedMessages(Buffer.alloc(0), 0)).toThrow('maxMessageBytes must be a positive integer');
     });
 
-    it('decodes one raw compatibility ping and leaves following framed bytes untouched', () => {
-        const ping = JSON.stringify({
-            type: 'ping',
-            node: 'old-node',
-            transportFramingVersion: 1,
-        });
-        const framed = encodeFramedMessage(JSON.stringify({ type: 'neg_close' }));
-        const decoded = decodeLegacyJsonMessages(
-            Buffer.concat([Buffer.from(ping), framed]),
-            DEFAULT_MAX_FRAMED_MESSAGE_BYTES,
-            1,
-        );
-
-        expect(decoded.error).toBeUndefined();
-        expect(decoded.messages.map(message => message.toString('utf8'))).toStrictEqual([ping]);
-        expect(decoded.remaining).toStrictEqual(framed);
-    });
-
     it('buffers a message split across multiple chunks', () => {
-        const parser = new FramedMessageParser();
         const json = JSON.stringify({ type: 'ops_push', data: [{ id: 'abc' }] });
         const framed = encodeFramedMessage(json);
 
-        const first = parser.push(framed.subarray(0, 3));
+        const first = decodeFramedMessages(framed.subarray(0, 3));
         expect(first.error).toBeUndefined();
         expect(first.messages).toStrictEqual([]);
 
-        const second = parser.push(framed.subarray(3, 11));
+        const second = decodeFramedMessages(Buffer.concat([first.remaining, framed.subarray(3, 11)]));
         expect(second.error).toBeUndefined();
         expect(second.messages).toStrictEqual([]);
 
-        const third = parser.push(framed.subarray(11));
+        const third = decodeFramedMessages(Buffer.concat([second.remaining, framed.subarray(11)]));
         expect(third.error).toBeUndefined();
         expect(third.messages).toHaveLength(1);
         expect(third.messages[0].toString('utf8')).toBe(json);
-        expect(parser.pendingBytes).toBe(0);
+        expect(third.remaining.length).toBe(0);
     });
 
     it('preserves a partial trailing frame for the next chunk', () => {
-        const parser = new FramedMessageParser();
         const first = JSON.stringify({ type: 'ping', node: 'a' });
         const second = JSON.stringify({ type: 'ping', node: 'b' });
         const framedFirst = encodeFramedMessage(first);
         const framedSecond = encodeFramedMessage(second);
 
         const partialChunk = Buffer.concat([framedFirst, framedSecond.subarray(0, 6)]);
-        const initial = parser.push(partialChunk);
+        const initial = decodeFramedMessages(partialChunk);
         expect(initial.error).toBeUndefined();
         expect(initial.messages.map(message => message.toString('utf8'))).toStrictEqual([first]);
-        expect(parser.pendingBytes).toBe(6);
+        expect(initial.remaining.length).toBe(6);
 
-        const completed = parser.push(framedSecond.subarray(6));
+        const completed = decodeFramedMessages(Buffer.concat([initial.remaining, framedSecond.subarray(6)]));
         expect(completed.error).toBeUndefined();
         expect(completed.messages.map(message => message.toString('utf8'))).toStrictEqual([second]);
-        expect(parser.pendingBytes).toBe(0);
-    });
-
-    it('validates parser construction, ignores empty chunks, and clears malformed frame state', () => {
-        expect(() => new FramedMessageParser(0)).toThrow('maxMessageBytes must be a positive integer');
-
-        const parser = new FramedMessageParser();
-        expect(parser.push(new Uint8Array())).toStrictEqual({ messages: [] });
-
-        const invalid = Buffer.alloc(4);
-        invalid.writeUInt32BE(DEFAULT_MAX_FRAMED_MESSAGE_BYTES + 1, 0);
-        const malformed = parser.push(invalid);
-        expect(malformed.messages).toStrictEqual([]);
-        expect(malformed.error).toBe(
-            `framed message length ${DEFAULT_MAX_FRAMED_MESSAGE_BYTES + 1} exceeds max ${DEFAULT_MAX_FRAMED_MESSAGE_BYTES}`
-        );
-        expect(parser.pendingBytes).toBe(0);
+        expect(completed.remaining.length).toBe(0);
     });
 
     it('rejects an invalid zero-length frame', () => {
@@ -159,41 +121,12 @@ describe('hyperswarm transport framing', () => {
             round: 10,
             reason: 'complete',
         });
-        const parser = new FramedMessageParser();
-
-        const result = parser.push(Buffer.concat([encodeFramedMessage(opsPush), encodeFramedMessage(negClose)]));
+        const result = decodeFramedMessages(Buffer.concat([encodeFramedMessage(opsPush), encodeFramedMessage(negClose)]));
         expect(result.error).toBeUndefined();
         expect(result.messages.map(message => JSON.parse(message.toString('utf8')).type)).toStrictEqual([
             'ops_push',
             'neg_close',
         ]);
-    });
-
-    it('decodes message boundaries correctly when multiple frames are split across chunks', () => {
-        const parser = new FramedMessageParser();
-        const payloads = [
-            JSON.stringify({ type: 'neg_msg', round: 1, frame: 'a' }),
-            JSON.stringify({ type: 'ops_req', round: 1, ids: ['x', 'y'] }),
-            JSON.stringify({ type: 'neg_close', round: 1, reason: 'complete' }),
-        ];
-        const framed = Buffer.concat(payloads.map(payload => encodeFramedMessage(payload)));
-        const chunkSizes = [5, 13, 7, framed.length];
-        const decoded: string[] = [];
-        let offset = 0;
-
-        for (const size of chunkSizes) {
-            if (offset >= framed.length) {
-                break;
-            }
-
-            const chunk = framed.subarray(offset, Math.min(offset + size, framed.length));
-            const result = parser.push(chunk);
-            expect(result.error).toBeUndefined();
-            decoded.push(...result.messages.map(message => message.toString('utf8')));
-            offset += size;
-        }
-
-        expect(decoded).toStrictEqual(payloads);
-        expect(parser.pendingBytes).toBe(0);
+        expect(result.remaining.length).toBe(0);
     });
 });
