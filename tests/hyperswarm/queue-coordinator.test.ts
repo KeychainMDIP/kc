@@ -1544,11 +1544,13 @@ describe('queue coordinator', () => {
         await coordinator.handleMessage('peer-key', message, original);
         coordinator.handleDisconnected('peer-key', 'connection_replaced', original);
         connections.set('peer-key', replacement);
+        coordinator.handleDisconnected('peer-key', 'connection_closed', original);
         await coordinator.runRepairs();
         expect(requestRepair).toHaveBeenCalledWith('peer-key', replacement);
 
         coordinator.handleDisconnected('peer-key', 'connection_closed', replacement);
         connections.delete('peer-key');
+        coordinator.handleDisconnected('peer-key', 'connection_closed', replacement);
         await coordinator.runRepairs();
         expect(requestRepair).toHaveBeenCalledTimes(1);
     });
@@ -1596,6 +1598,7 @@ describe('queue coordinator', () => {
         await active;
         await expect(shutdown).resolves.toBeUndefined();
         await expect(coordinator.shutdown()).resolves.toBeUndefined();
+        await expect(coordinator.runRepairs()).resolves.toBeUndefined();
         expect(operationPages.pages).toBe(0);
     });
 
