@@ -3,6 +3,7 @@ import type { Operation } from '@mdip/gatekeeper/types';
 import type {
     HyperMessage,
     PingMessage,
+    QueueMessage,
 } from './protocol-messages.js';
 import { NEG_SYNC_ID_RE } from './negentropy/protocol.js';
 import {
@@ -10,6 +11,7 @@ import {
     validateOperationPage,
     type OpsPushBatchingOptions,
     type TransferValidationResult,
+    type ValidatedOperationPage,
 } from './negentropy/transfer.js';
 import { mapOperationToSyncKey } from './sync-mapping.js';
 import { hasContentVerifiedOperationId } from './sync-persistence.js';
@@ -278,19 +280,29 @@ export function validateHyperMessageEnvelope(value: unknown): ProtocolValidation
     return { ok: true, value: value as unknown as HyperMessage };
 }
 
+export function validateQueueMessagePayload(
+    message: QueueMessage,
+    limits: OpsPushBatchingOptions,
+): ProtocolValidationResult<ValidatedOperationPage> {
+    if (Object.prototype.hasOwnProperty.call(message, 'deferred')) {
+        return { ok: false, reason: 'deferred is not valid for queue' };
+    }
+    return validateOperationPage(message.data, limits);
+}
+
 export function validateHyperMessagePayload(
     message: HyperMessage,
     limits: ProtocolPayloadLimits,
 ): ProtocolValidationResult<HyperMessage> {
     let reason: string | null = null;
     const messageType = message.type;
+    if (message.type === 'queue') {
+        const result = validateQueueMessagePayload(message, limits);
+        return result.ok ? { ok: true, value: message } : result;
+    }
     if (messageType !== 'ops_req' && messageType !== 'ops_ack'
         && Object.prototype.hasOwnProperty.call(message, 'deferred')) {
         return { ok: false, reason: `deferred is not valid for ${messageType}` };
-    }
-    if (message.type === 'queue') {
-        const result = validateOperationPage(message.data, limits);
-        return result.ok ? { ok: true, value: message } : result;
     }
     if (message.type === 'ops_push') {
         if (typeof message.hasMore !== 'boolean') {

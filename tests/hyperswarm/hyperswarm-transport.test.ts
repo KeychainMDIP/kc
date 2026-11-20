@@ -107,7 +107,7 @@ function createTransport(overrides: {
     now?: () => number;
     onDisconnected?: jest.Mock<(peerKey: string, reason: string, connection: ConnectionInfo) => void>;
     onPing?: jest.Mock<(peerKey: string, message: PingMessage, connection: ConnectionInfo) => void | Promise<void>>;
-    onQueue?: jest.Mock<(peerKey: string, message: QueueMessage, connection: ConnectionInfo) => void | Promise<void>>;
+    onQueue?: jest.Mock<TransportOptions['onQueue']>;
     onSyncMessage?: jest.Mock<(peerKey: string, message: SyncMessage, connection: ConnectionInfo) => void | Promise<void>>;
 } & Partial<Pick<
     TransportOptions,
@@ -125,7 +125,7 @@ function createTransport(overrides: {
 >> = {}) {
     const syncStats = createMediatorSyncStats();
     const onPing = overrides.onPing ?? jest.fn<(peerKey: string, message: PingMessage, connection: ConnectionInfo) => void>();
-    const onQueue = overrides.onQueue ?? jest.fn<(peerKey: string, message: QueueMessage, connection: ConnectionInfo) => void>();
+    const onQueue = overrides.onQueue ?? jest.fn<TransportOptions['onQueue']>();
     const onSyncMessage = overrides.onSyncMessage ?? jest.fn<(peerKey: string, message: SyncMessage, connection: ConnectionInfo) => void>();
     const onDisconnected = overrides.onDisconnected ?? jest.fn();
     const transport = createHyperswarmTransport({
@@ -178,9 +178,10 @@ describe('hyperswarm transport routing', () => {
         const peerKey = Buffer.alloc(32, 0x22).toString('hex');
         const routes: string[] = [];
         const connection = new FakeConnection();
+        const onQueue = jest.fn<TransportOptions['onQueue']>(() => { routes.push('queue'); });
         const { transport } = createTransport({
             onPing: jest.fn(() => { routes.push('ping'); }),
-            onQueue: jest.fn(() => { routes.push('queue'); }),
+            onQueue,
             onSyncMessage: jest.fn(() => { routes.push('sync'); }),
         });
         transport.setConnection(peerKey, createConnectionInfo({
@@ -197,6 +198,7 @@ describe('hyperswarm transport routing', () => {
         await transport.processInboundPeerData(peerKey, Buffer.concat(messages));
 
         expect(routes).toEqual(['ping', 'queue', 'sync']);
+        expect(onQueue.mock.calls[0][3]).toEqual({ operations: [], bytes: 0 });
     });
 
     it('rejects a raw initial ping as malformed framing', async () => {

@@ -93,7 +93,7 @@ async function createHarness() {
         onPing: (_key, message, connection) => {
             connection.capabilities = normalizePeerCapabilities(message.capabilities);
         },
-        onQueue: (key, message, connection) => queue.handleMessage(key, message, connection),
+        onQueue: (key, message, connection, page) => queue.handleMessage(key, message, connection, page),
         onSyncMessage: (key, message) => {
             if (message.type === 'ordered_catchup_push' || message.type === 'ordered_catchup_done'
                 || message.type === 'ordered_catchup_req') { return; }
@@ -228,7 +228,7 @@ describe('hostile peer integration', () => {
                 await h.send(sockets[2], message(operation));
                 expect(h.queue.getMetrics().recentOutcomes).toBeLessThanOrEqual(4_096);
             }
-            expect(h.queue.getMetrics()).toEqual({ admitted: 2, inFlight: 2, recentOutcomes: 4_096, repairsPending: 1 });
+            expect(h.queue.getMetrics()).toEqual({ admitted: 2, inFlight: 2, recentOutcomes: 0, repairsPending: 1 });
             expect(h.pipeline.queued + h.pipeline.running).toBe(2);
             expect(h.pages.pages).toBe(2);
             expect(h.pages.bytes).toBeLessThanOrEqual(5 * 512 * 1024);

@@ -24,8 +24,10 @@ import { createPeerAdmissionPolicy } from './peer-admission.js';
 import {
     validateHyperMessageEnvelope,
     validateHyperMessagePayload,
+    validateQueueMessagePayload,
     type ProtocolPayloadLimits,
 } from './protocol-validation.js';
+import type { ValidatedOperationPage } from './negentropy/transfer.js';
 import { MAX_APPLICATION_CONNECTIONS } from './protocol-limits.js';
 
 const log = childLogger({ service: 'hyperswarm-transport' });
@@ -71,7 +73,12 @@ export interface HyperswarmTransportOptions {
     syncStats: MediatorSyncStats;
     buildInitialPing(): Promise<PingMessage>;
     onPing(peerKey: string, message: PingMessage, connection: ConnectionInfo): void | Promise<void>;
-    onQueue(peerKey: string, message: QueueMessage, connection: ConnectionInfo): void | Promise<void>;
+    onQueue(
+        peerKey: string,
+        message: QueueMessage,
+        connection: ConnectionInfo,
+        page: ValidatedOperationPage,
+    ): void | Promise<void>;
     onSyncMessage(peerKey: string, message: SyncMessage, connection: ConnectionInfo): void | Promise<void>;
     onDisconnected(peerKey: string, reason: string, connection: ConnectionInfo): void;
     onRelayFailure?(peerKey: string, connection: ConnectionInfo): void;
@@ -770,14 +777,14 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
         }
 
         if (message.type === 'queue') {
-            const payload = validateHyperMessagePayload(message, options.payloadLimits);
+            const payload = validateQueueMessagePayload(message, options.payloadLimits);
             if (!payload.ok) {
                 reportProtocolViolation(peerKey, 'invalid_queue_payload', connection, {
                     validationError: payload.reason,
                 });
                 return;
             }
-            await options.onQueue(peerKey, message, connection);
+            await options.onQueue(peerKey, message, connection, payload.value);
         } else if (isSyncMessage(message)) {
             await options.onSyncMessage(peerKey, message, connection);
         }

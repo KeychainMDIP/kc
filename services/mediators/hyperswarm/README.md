@@ -27,6 +27,10 @@ Each receiver admits at most two gossip batches and bounds recent outcomes.
 Overload, incomplete imports and outbound delivery failures schedule targeted
 Negentropy repair without penalizing the source peer. Persisted pages are relayed
 as they drain, so older accepted operations do not wait for a complete batch.
+Queue shape and byte limits are validated once at transport ingress. Saturated
+gossip is dropped before content-ID hashing and schedules the same bounded
+repair. Admitted outcomes are keyed by sorted verified operation IDs, so changing
+wire order does not bypass duplicate suppression.
 
 This keeps low latency for new operations while Negentropy handles catch-up and
 recovers best-effort delivery failures.

@@ -18,7 +18,7 @@ import {
 import { mapOperationToSyncKey } from './sync-mapping.js';
 import {
     chunkOperationsForPush,
-    validateOperationPage,
+    type ValidatedOperationPage,
 } from './negentropy/transfer.js';
 import { validateOperationContentIds } from './protocol-validation.js';
 import type { OperationPageBudget } from './operation-page-budget.js';
@@ -274,26 +274,46 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
         }
     }
 
+    function gossipOutcomeHash(operations: Operation[]): string | undefined {
+        const ids: string[] = [];
+        for (const operation of operations) {
+            const mapped = mapOperationToSyncKey(operation);
+            if (!mapped.ok) {
+                return undefined;
+            }
+            ids.push(mapped.value.idHex);
+        }
+        return options.cipher.hashJSON(ids.sort());
+    }
+
+    function noteSaturatedDrop(source: GossipSource): void {
+        options.syncStats.hardening.gossipOverloadDrops += 1;
+        if (!rememberRepair(source)) {
+            return;
+        }
+        repairYieldNeeded = true;
+        if (admittedGossip === 0) {
+            void startRepairOpportunity();
+        }
+    }
+
     async function processMessage(
         peerKey: string,
         message: QueueMessage,
         connection: ConnectionInfo,
+        page: ValidatedOperationPage,
     ): Promise<void> {
-        const page = validateOperationPage(message.data, {
-            maxOpsPerPush: options.maxOpsPerPage,
-            maxBytesPerPush: options.maxBytesPerPage,
-        });
-        if (!page.ok) {
-            options.onProtocolViolation(peerKey, `invalid_queue_payload: ${page.reason}`, connection);
+        const source = { peerKey, connection };
+        if (repairYieldNeeded || admittedGossip >= MAX_ADMITTED_GOSSIP) {
+            noteSaturatedDrop(source);
             return;
         }
-        const content = validateOperationContentIds(page.value.operations, options.cipher);
+        const content = validateOperationContentIds(page.operations, options.cipher);
         if (!content.ok) {
             options.onProtocolViolation(peerKey, `invalid_queue_operation: ${content.reason}`, connection);
             return;
         }
-        const source = { peerKey, connection };
-        const batchHash = options.cipher.hashJSON(page.value.operations);
+        const batchHash = gossipOutcomeHash(page.operations)!;
         const recent = getRecentOutcome(batchHash);
         if (recent?.kind === 'completed') {
             return;
@@ -307,14 +327,10 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
             rememberAlternative(existing, source);
             return;
         }
-        if (repairYieldNeeded || admittedGossip >= MAX_ADMITTED_GOSSIP) {
-            noteAdmissionDrop(batchHash, source);
-            return;
-        }
         if (!options.getImportPipeline().available) {
             return;
         }
-        const reservation = options.operationPages.reserve(page.value.bytes);
+        const reservation = options.operationPages.reserve(page.bytes);
         if (!reservation) {
             noteAdmissionDrop(batchHash, source);
             return;
@@ -332,7 +348,7 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
                     kind: 'remote',
                     name: peerKey,
                     node: message.node,
-                    data: page.value.operations,
+                    data: page.operations,
                     queueGossip: true,
                     onPersistedPage: async persisted => {
                         if (!await relayPersistedPage(peerKey, persisted)) {
@@ -361,7 +377,7 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
             && (imported.pendingIds?.length ?? 0) === 0
             && (imported.capacityDeferredIds?.length ?? 0) === 0
             && (imported.unaddressableOperations?.length ?? 0) === 0
-            && page.value.operations.every(operation => {
+            && page.operations.every(operation => {
                 const mapped = mapOperationToSyncKey(operation);
                 return mapped.ok
                     && hasContentVerifiedOperationId(operation, options.cipher)
@@ -464,7 +480,10 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
                 addAggregateSample(options.syncStats.queueDelayMs, sample);
             }
             if (generation === resetGeneration) {
-                rememberOutcome(options.cipher.hashJSON(batch), { kind: 'completed' });
+                const batchHash = gossipOutcomeHash(batch);
+                if (batchHash) {
+                    rememberOutcome(batchHash, { kind: 'completed' });
+                }
             }
         }
         finally {
@@ -484,9 +503,10 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
             peerKey: string,
             message: QueueMessage,
             connection: ConnectionInfo,
+            page: ValidatedOperationPage,
         ): Promise<void> {
             return accepting
-                ? trackWork(processMessage(peerKey, message, connection))
+                ? trackWork(processMessage(peerKey, message, connection, page))
                 : Promise.resolve();
         },
         handleDisconnected(

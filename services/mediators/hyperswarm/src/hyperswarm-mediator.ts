@@ -240,7 +240,12 @@ transport = createHyperswarmTransport({
     syncStats,
     buildInitialPing: buildPingMessage,
     onPing: (peerKey, message, connection) => peerSyncCoordinator.handlePing(peerKey, message, connection),
-    onQueue: (peerKey, message, connection) => queueCoordinator.handleMessage(peerKey, message, connection),
+    onQueue: (peerKey, message, connection, page) => queueCoordinator.handleMessage(
+        peerKey,
+        message,
+        connection,
+        page,
+    ),
     onSyncMessage: (peerKey, message) => peerSyncCoordinator.handleMessage(peerKey, message),
     onDisconnected: (peerKey, reason, connection) => {
         peerSyncCoordinator.handleDisconnected(peerKey, reason);

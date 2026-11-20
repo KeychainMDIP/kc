@@ -5,7 +5,9 @@ import {
     validateHyperMessageEnvelope,
     validateHyperMessagePayload,
     validateOperationContentIds,
+    validateQueueMessagePayload,
 } from '../../services/mediators/hyperswarm/src/protocol-validation.ts';
+import type { QueueMessage } from '../../services/mediators/hyperswarm/src/protocol-messages.ts';
 
 const limits = {
     maxIdsPerRequest: 2,
@@ -42,6 +44,46 @@ function operation(): { cipher: CipherNode; value: Operation } {
 }
 
 describe('hyperswarm protocol validation', () => {
+    it('returns queue page metadata without weakening queue payload rules', () => {
+        const { value } = operation();
+        const message = {
+            ...base('queue'),
+            data: [value],
+        } as QueueMessage;
+        const validated = validateQueueMessagePayload(message, limits);
+
+        expect(validated).toEqual({
+            ok: true,
+            value: {
+                operations: message.data,
+                bytes: Buffer.byteLength(JSON.stringify(value), 'utf8'),
+            },
+        });
+        expect(validateQueueMessagePayload({
+            ...message,
+            data: 'invalid',
+        } as unknown as QueueMessage, limits)).toMatchObject({
+            ok: false,
+            reason: 'operation page must be an array',
+        });
+        expect(validateQueueMessagePayload({
+            ...message,
+            data: [value, value, value],
+        }, limits)).toMatchObject({
+            ok: false,
+            reason: 'operation page exceeds 2 operations',
+        });
+        const deferred = { ...message, deferred: false } as unknown as QueueMessage;
+        expect(validateQueueMessagePayload(deferred, limits)).toMatchObject({
+            ok: false,
+            reason: 'deferred is not valid for queue',
+        });
+        expect(validateHyperMessagePayload(deferred, limits)).toMatchObject({
+            ok: false,
+            reason: 'deferred is not valid for queue',
+        });
+    });
+
     it('accepts a bounded ping and rejects malformed common fields', () => {
         const valid = { ...base('ping'), peers: [validDid], transportFramingVersion: 1 };
         expect(validateHyperMessageEnvelope(valid).ok).toBe(true);
