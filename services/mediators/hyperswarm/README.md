@@ -84,7 +84,8 @@ even if they already exceed the limit, and eviction removes only peers added by
 this process. Automatic discovery stops when the persistent limit is full or its
 configuration cannot be read. Operators must review unwanted entries to free
 capacity. The mediator never deletes protected operator configuration to make
-room. Kubo discovery requests have a ten-second deadline.
+room. A complete Kubo peer-addition attempt, including all advertised addresses
+and its internal configuration I/O, shares one ten-second deadline.
 
 ## Invalid input, quarantine, and recovery
 
