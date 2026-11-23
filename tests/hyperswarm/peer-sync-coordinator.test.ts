@@ -1,5 +1,6 @@
 import { jest } from '@jest/globals';
 
+import { logger } from '@mdip/common/logger';
 import type { OperationSyncStore } from '../../services/mediators/hyperswarm/src/db/types.ts';
 import type { ImportPipeline } from '../../services/mediators/hyperswarm/src/import-pipeline.ts';
 import type { ConnectionInfo } from '../../services/mediators/hyperswarm/src/mediator-state.ts';
@@ -23,9 +24,11 @@ describe('peer sync coordinator targeted repair', () => {
             syncStarted: true,
         } as ConnectionInfo;
         const pipeline = { available: true, queued: 0, running: 0 } as ImportPipeline;
+        const count = jest.fn(async () => 0);
         const startSession = jest.fn(async () => true);
+        const getActiveSessionCount = jest.fn(() => 0);
         const negentropy = {
-            getActiveSessionCount: jest.fn(() => 0),
+            getActiveSessionCount,
             startSession,
         } as unknown as ReturnType<typeof createNegentropyCoordinator>;
         const ordered = {
@@ -46,7 +49,7 @@ describe('peer sync coordinator targeted repair', () => {
             getNodeKey: () => 'f'.repeat(64),
             getPeerKeys: () => current ? [peerKey] : [],
             getConnection: () => current,
-            getSyncStore: () => ({}) as OperationSyncStore,
+            getSyncStore: () => ({ count }) as unknown as OperationSyncStore,
             getImportPipeline: () => pipeline,
             getNegentropyCoordinator: () => negentropy,
             getOrderedCatchupCoordinator: () => ordered,
@@ -56,7 +59,9 @@ describe('peer sync coordinator targeted repair', () => {
 
         return {
             connection,
+            count,
             coordinator,
+            getActiveSessionCount,
             negentropy,
             ordered,
             peerKey,
@@ -212,5 +217,26 @@ describe('peer sync coordinator targeted repair', () => {
 
         await expect(repair).resolves.toBe(false);
         expect(replaced.startSession).not.toHaveBeenCalled();
+    });
+
+    it('handles a failed active-session preselection count without rejecting the scheduler', async () => {
+        const harness = createHarness();
+        const error = new Error('count failed');
+        harness.getActiveSessionCount.mockReturnValue(1);
+        harness.count.mockRejectedValueOnce(error);
+        const child = logger.child as jest.MockedFunction<typeof logger.child>;
+        const index = child.mock.calls.findIndex(([bindings]) => bindings.service === 'hyperswarm-mediator');
+        const log = child.mock.results[index].value as ReturnType<typeof logger.child>;
+        log.error.mockClear();
+
+        await expect(harness.coordinator.schedulePreferredSyncs()).resolves.toBeUndefined();
+
+        expect(harness.count).toHaveBeenCalledTimes(1);
+        expect(log.error).toHaveBeenCalledWith(
+            { error },
+            'periodic negentropy repair error',
+        );
+        expect(harness.startSession).not.toHaveBeenCalled();
+        await harness.coordinator.shutdown();
     });
 });

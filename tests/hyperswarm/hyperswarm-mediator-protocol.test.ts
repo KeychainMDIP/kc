@@ -1113,6 +1113,68 @@ describe('hyperswarm mediator protocol characterization', () => {
         ]));
     });
 
+    it('counts the store once when active reconciliation has no eligible ordered peer', async () => {
+        const protocolNode = await createNode({ maxRecords: 25_000 });
+        const count = jest.spyOn(protocolNode.store, 'count').mockResolvedValue(99_000);
+        const fallback = attachPeer(protocolNode);
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.maybeStartPeerSync(fallback.peerKey));
+        count.mockClear();
+        const first = attachPeer(protocolNode, {
+            peerKeyByte: 0x33,
+            overrides: { capabilities: compatibleCapabilities({
+                orderedCatchup: true, orderedCatchupVersion: 1, orderedCatchupReady: true,
+                operationCount: 100_000, orderedOperationCount: 100_000,
+            }) },
+        });
+        const second = attachPeer(protocolNode, {
+            peerKeyByte: 0x44,
+            overrides: { capabilities: compatibleCapabilities({
+                orderedCatchup: true, orderedCatchupVersion: 1, orderedCatchupReady: true,
+                operationCount: 100_100, orderedOperationCount: 100_100,
+            }) },
+        });
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.schedulePreferredSyncs());
+
+        expect(count).toHaveBeenCalledTimes(1);
+        expect(decodeWrites(fallback.pair).filter(message => message.type === 'neg_close')).toHaveLength(0);
+        expect(decodeWrites(first.pair)).toHaveLength(0);
+        expect(decodeWrites(second.pair)).toHaveLength(0);
+    });
+
+    it('selects the largest ordered gap with one preselection and one handoff count', async () => {
+        const protocolNode = await createNode({ maxRecords: 25_000 });
+        const count = jest.spyOn(protocolNode.store, 'count').mockResolvedValue(10);
+        const fallback = attachPeer(protocolNode);
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.maybeStartPeerSync(fallback.peerKey));
+        count.mockClear();
+        const smaller = attachPeer(protocolNode, {
+            peerKeyByte: 0x33,
+            overrides: { capabilities: compatibleCapabilities({
+                orderedCatchup: true, orderedCatchupVersion: 1, orderedCatchupReady: true,
+                operationCount: 30_000, orderedOperationCount: 30_000,
+            }) },
+        });
+        const larger = attachPeer(protocolNode, {
+            peerKeyByte: 0x44,
+            overrides: { capabilities: compatibleCapabilities({
+                orderedCatchup: true, orderedCatchupVersion: 1, orderedCatchupReady: true,
+                operationCount: 40_000, orderedOperationCount: 40_000,
+            }) },
+        });
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.schedulePreferredSyncs());
+
+        expect(count).toHaveBeenCalledTimes(2);
+        expect(decodeWrites(fallback.pair)).toEqual(expect.arrayContaining([
+            expect.objectContaining({ type: 'neg_close', reason: 'ordered_catchup_active' }),
+        ]));
+        expect(decodeWrites(smaller.pair)).toHaveLength(0);
+        expect(decodeWrites(larger.pair)).toEqual(expect.arrayContaining([
+            expect.objectContaining({ type: 'ordered_catchup_req' }),
+        ]));
+    });
+
     it('keeps fallback Negentropy when a ready ordered peer is only one percent ahead', async () => {
         const protocolNode = await createNode({ maxRecords: 25_000 });
         jest.spyOn(protocolNode.store, 'count').mockResolvedValue(99_000);

@@ -408,11 +408,36 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
 
     async function schedulePreferredSyncs(orderedOnly = false): Promise<void> {
         const negentropy = options.getNegentropyCoordinator();
-        if (orderedCatchupPending) {
+        if (orderedCatchupPending || outboundStartInProgress) {
             return;
         }
         const hadActiveNegentropy = negentropy.getActiveSessionCount() > 0;
-        if (hadActiveNegentropy && !preferredOrderedPeer(0)) {
+        if (hadActiveNegentropy) {
+            let peerKey: string | undefined;
+            outboundStartInProgress = true;
+            try {
+                const localOperationCount = await options.getSyncStore().count();
+                if (!accepting || !options.getImportPipeline().available
+                    || negentropy.getActiveSessionCount() === 0
+                    || options.getOrderedCatchupCoordinator().hasActiveOutbound()) {
+                    return;
+                }
+                const preferred = preferredOrderedPeer(localOperationCount);
+                if (!preferred) {
+                    return;
+                }
+                peerKey = preferred.peerKey;
+                await startOrderedCatchupSession(peerKey);
+            }
+            catch (error) {
+                log.error({
+                    error,
+                    ...(peerKey ? { peer: shortName(peerKey) } : {}),
+                }, 'periodic negentropy repair error');
+            }
+            finally {
+                outboundStartInProgress = false;
+            }
             return;
         }
         const peerKeys = [...options.getPeerKeys()].sort();
