@@ -24,6 +24,7 @@ import type {
     OrderedCatchupReqMessage,
 } from './protocol-messages.js';
 import type { MediatorSyncStats } from './sync-stats.js';
+import { mapOperationToSyncKey } from './sync-mapping.js';
 import {
     validateHyperMessagePayload,
     validateOperationContentIds,
@@ -631,11 +632,6 @@ export function createOrderedCatchupCoordinator(
             rejectProtocolMessage(peerKey, session, connection, 'non_advancing_ordered_catchup_cursor');
             return;
         }
-        if (cursor.id !== message.data[message.data.length - 1].signature!.hash.toLowerCase()) {
-            rejectProtocolMessage(peerKey, session, connection, 'mismatched_ordered_catchup_cursor');
-            return;
-        }
-
         const page = validateOperationPage(message.data, {
             maxOpsPerPush: options.maxOpsPerPage,
             maxBytesPerPush: options.maxBytesPerPage,
@@ -644,9 +640,23 @@ export function createOrderedCatchupCoordinator(
             rejectProtocolMessage(peerKey, session, connection, `invalid_ordered_catchup_push: ${page.reason}`);
             return;
         }
+        const finalOperation = mapOperationToSyncKey(message.data[message.data.length - 1]);
+        if (!finalOperation.ok) {
+            rejectProtocolMessage(peerKey, session, connection, `invalid_ordered_catchup_push: ${finalOperation.reason}`);
+            return;
+        }
+        if (cursor.id !== finalOperation.value.idHex) {
+            rejectProtocolMessage(peerKey, session, connection, 'mismatched_ordered_catchup_cursor');
+            return;
+        }
         const content = validateOperationContentIds(message.data, options.cipher);
         if (!content.ok) {
             rejectProtocolMessage(peerKey, session, connection, `invalid_ordered_catchup_push: ${content.reason}`);
+            return;
+        }
+        const batch = normalizeInboundOpsPushBatch(message.data);
+        if (batch.length !== message.data.length) {
+            rejectProtocolMessage(peerKey, session, connection, 'ordered_catchup_push_contains_duplicate_operations');
             return;
         }
         const reservation = options.operationPages.reserve(page.value.bytes);
@@ -657,7 +667,6 @@ export function createOrderedCatchupCoordinator(
         }
 
         session.requestOutstanding = false;
-        const batch = normalizeInboundOpsPushBatch(message.data);
         options.syncStats.orderedCatchupPagesReceived += 1;
         options.syncStats.orderedCatchupOpsReceived += batch.length;
         touchClient(session);

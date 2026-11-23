@@ -74,6 +74,7 @@ function createCoordinator(overrides: Partial<Pick<
     | 'operationPages'
     | 'sendBulkToPeer'
     | 'sendToPeer'
+    | 'syncStats'
     | 'syncStore'
 >> = {}) {
     const connection = {
@@ -96,7 +97,7 @@ function createCoordinator(overrides: Partial<Pick<
         idleTimeoutMs: 120_000,
         syncStore: overrides.syncStore ?? new InMemoryOperationSyncStore(),
         importPipeline: overrides.importPipeline ?? importPipeline,
-        syncStats: createMediatorSyncStats(),
+        syncStats: overrides.syncStats ?? createMediatorSyncStats(),
         cipher: new CipherNode(),
         bulkReads: overrides.bulkReads ?? createBulkWorkScheduler(2),
         operationPages: overrides.operationPages ?? createOperationPageBudget(5, 5_000_000),
@@ -646,6 +647,126 @@ describe('ordered catch-up request authorization', () => {
             'empty_ordered_catchup_push',
             expect.any(Object),
         );
+        expect(coordinator.getActiveSessionId(peerKey)).toBeNull();
+        await coordinator.shutdown();
+    });
+
+    it.each([
+        [
+            'missing signature',
+            () => {
+                const operation = makeOperation();
+                return {
+                    type: operation.type,
+                    created: operation.created,
+                    mdip: operation.mdip,
+                };
+            },
+            'operation.signature is required',
+        ],
+        [
+            'missing signature hash',
+            () => {
+                const operation = makeOperation();
+                return {
+                    ...operation,
+                    signature: {
+                        signed: operation.signature.signed,
+                        value: operation.signature.value,
+                    },
+                };
+            },
+            'operation.signature.hash is required',
+        ],
+        [
+            'non-string signature hash',
+            () => {
+                const operation = makeOperation();
+                return { ...operation, signature: { ...operation.signature, hash: 7 } };
+            },
+            'operation.signature.hash must be a string',
+        ],
+    ])('rejects a final operation with %s through the protocol path', async (_name, makeMalformed, reason) => {
+        const enqueue = jest.fn(async () => importResult);
+        const onProtocolViolation = jest.fn();
+        const operationPages = createOperationPageBudget(5, 5_000_000);
+        const syncStats = createMediatorSyncStats();
+        const coordinator = createCoordinator({
+            importPipeline: {
+                available: true,
+                enqueue,
+                waitForIdle: jest.fn(async () => undefined),
+                refreshIndex: jest.fn(async () => bootstrapResult),
+            } as unknown as ImportPipeline,
+            onProtocolViolation,
+            operationPages,
+            syncStats,
+        });
+
+        expect(coordinator.createClientSession(peerKey, 'malformed-page')).toBe(true);
+        await expect(coordinator.handleMessage(peerKey, {
+            type: 'ordered_catchup_push',
+            time: '',
+            node: '',
+            relays: [],
+            sessionId: 'malformed-page',
+            cursor: { syncOrder: 1, id: 'a'.repeat(64) },
+            hasMore: false,
+            data: [makeMalformed() as never],
+        })).resolves.toBeUndefined();
+
+        expect(onProtocolViolation).toHaveBeenCalledWith(
+            peerKey,
+            expect.stringContaining(reason),
+            expect.any(Object),
+        );
+        expect(enqueue).not.toHaveBeenCalled();
+        expect(operationPages.getMetrics().pages).toBe(0);
+        expect(syncStats.orderedCatchupPagesReceived).toBe(0);
+        expect(syncStats.orderedCatchupOpsReceived).toBe(0);
+        expect(coordinator.getActiveSessionId(peerKey)).toBeNull();
+        await coordinator.shutdown();
+    });
+
+    it('rejects duplicate operations within one page before reserving import capacity', async () => {
+        const enqueue = jest.fn(async () => importResult);
+        const onProtocolViolation = jest.fn();
+        const operationPages = createOperationPageBudget(5, 5_000_000);
+        const syncStats = createMediatorSyncStats();
+        const coordinator = createCoordinator({
+            importPipeline: {
+                available: true,
+                enqueue,
+                waitForIdle: jest.fn(async () => undefined),
+                refreshIndex: jest.fn(async () => bootstrapResult),
+            } as unknown as ImportPipeline,
+            onProtocolViolation,
+            operationPages,
+            syncStats,
+        });
+        const operation = makeOperation();
+
+        expect(coordinator.createClientSession(peerKey, 'duplicate-operations')).toBe(true);
+        await coordinator.handleMessage(peerKey, {
+            type: 'ordered_catchup_push',
+            time: '',
+            node: '',
+            relays: [],
+            sessionId: 'duplicate-operations',
+            cursor: { syncOrder: 1, id: operation.signature.hash },
+            hasMore: false,
+            data: [operation, operation],
+        });
+
+        expect(onProtocolViolation).toHaveBeenCalledWith(
+            peerKey,
+            'ordered_catchup_push_contains_duplicate_operations',
+            expect.any(Object),
+        );
+        expect(enqueue).not.toHaveBeenCalled();
+        expect(operationPages.getMetrics().pages).toBe(0);
+        expect(syncStats.orderedCatchupPagesReceived).toBe(0);
+        expect(syncStats.orderedCatchupOpsReceived).toBe(0);
         expect(coordinator.getActiveSessionId(peerKey)).toBeNull();
         await coordinator.shutdown();
     });
