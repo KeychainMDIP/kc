@@ -294,7 +294,6 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
             driver.nodeB.run(() => driver!.nodeB.mediator.__test.addConnection(peerKeyA, {
                 connection: replacement!.connectionA,
                 capabilities: normalizePeerCapabilities({
-                    negentropy: true,
                     negentropyVersion: 2,
                     orderedCatchup: false,
                 }),

@@ -93,7 +93,6 @@ function ping(overrides: Record<string, unknown> = {}) {
         peers: [],
         transportFramingVersion: 1,
         capabilities: {
-            negentropy: true,
             negentropyVersion: 2,
         },
         ...overrides,
@@ -244,7 +243,7 @@ describe('hyperswarm transport routing', () => {
 
     it.each([
         ['missing', undefined],
-        ['unsupported', { negentropy: true, negentropyVersion: 1 }],
+        ['unsupported', { negentropyVersion: 1 }],
     ])('closes a peer with %s Negentropy capabilities before routing application traffic', async (
         _case,
         capabilities,

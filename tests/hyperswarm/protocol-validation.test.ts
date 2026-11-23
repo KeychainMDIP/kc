@@ -95,7 +95,7 @@ describe('hyperswarm protocol validation', () => {
         expect(validateHyperMessageEnvelope({ ...valid, capabilities: [] })).toMatchObject({ ok: false });
         expect(validateHyperMessageEnvelope({
             ...valid,
-            capabilities: { negentropy: 'true' },
+            capabilities: { negentropyVersion: '2' },
         })).toMatchObject({ ok: false });
         expect(validateHyperMessageEnvelope({
             ...valid,
@@ -103,7 +103,7 @@ describe('hyperswarm protocol validation', () => {
         })).toMatchObject({ ok: false });
         expect(validateHyperMessageEnvelope({
             ...valid,
-            capabilities: { negentropy: true, operationCount: 1 },
+            capabilities: { negentropyVersion: 2, operationCount: 1 },
         }).ok).toBe(true);
         expect(validateHyperMessageEnvelope({ ...valid, type: 'unknown' })).toMatchObject({ ok: false });
     });

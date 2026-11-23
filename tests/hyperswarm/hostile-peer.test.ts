@@ -26,7 +26,7 @@ const limits = {
 const base = { node: 'test', time: '', relays: [] };
 const ping = {
     ...base, type: 'ping' as const, peers: [], transportFramingVersion: 1,
-    capabilities: { negentropy: true, negentropyVersion: 2 },
+    capabilities: { negentropyVersion: 2 },
 };
 
 class Socket extends EventEmitter {
@@ -306,7 +306,7 @@ describe('hostile peer integration', () => {
         try {
             const peer = await h.connect(1);
             await h.negentropy.initializeAdapter();
-            expect(await h.negentropy.startSession(peer.key, { source: 'connect', modeReason: null, initiator: true })).toBe(true);
+            expect(await h.negentropy.startSession(peer.key, { source: 'connect', initiator: true })).toBe(true);
             const open = JSON.parse(decodeFramedMessages(peer.lastWrite).messages[0].toString());
             await h.send(peer, { ...base, type: 'ops_push', sessionId: open.sessionId,
                 windowId: open.windowId, round: open.round, requestId: 999, page: 0,

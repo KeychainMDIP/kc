@@ -1,7 +1,4 @@
-import type { SyncMode } from './protocol.js';
-
 export interface RepairSchedulingInput {
-    syncMode: SyncMode | 'unknown';
     hasActiveSession: boolean;
     orderedCatchupActive?: boolean;
     importQueueLength: number;
@@ -15,7 +12,6 @@ export interface RepairSchedulingInput {
 }
 
 export interface PostOrderedCatchupNegentropyInput {
-    syncMode: SyncMode | 'unknown';
     peerConnected: boolean;
     peerSupportsNegentropyTransport: boolean;
     hasActiveSession: boolean;
@@ -30,7 +26,7 @@ export interface OrderedCatchupStateInput {
     orderedCatchupServerSessionId?: string | null;
 }
 
-export type ActivePeerSessionMode = SyncMode | 'ordered_catchup';
+export type ActivePeerSessionMode = 'negentropy' | 'ordered_catchup';
 
 export interface InboundNegOpenConflictInput {
     activeSessionMode?: ActivePeerSessionMode | null;
@@ -67,7 +63,6 @@ export function decideInboundNegOpenConflict(
 }
 
 export function shouldStartConnectTimeNegentropy(
-    syncMode: SyncMode | 'unknown',
     hasActiveSession: boolean,
     isInitiator: boolean,
     orderedCatchupActive = false,
@@ -76,14 +71,10 @@ export function shouldStartConnectTimeNegentropy(
         return false;
     }
 
-    return syncMode === 'negentropy' && !hasActiveSession && isInitiator;
+    return !hasActiveSession && isInitiator;
 }
 
 export function shouldSchedulePeriodicRepair(input: RepairSchedulingInput): boolean {
-    if (input.syncMode !== 'negentropy') {
-        return false;
-    }
-
     if (input.orderedCatchupActive === true) {
         return false;
     }
@@ -117,10 +108,6 @@ export function shouldSchedulePeriodicRepair(input: RepairSchedulingInput): bool
 
 export function shouldStartPostOrderedCatchupNegentropy(input: PostOrderedCatchupNegentropyInput): boolean {
     if (!input.peerConnected) {
-        return false;
-    }
-
-    if (input.syncMode !== 'negentropy') {
         return false;
     }
 

@@ -6,8 +6,6 @@ import type { NegotiatedPeerCapabilities } from '../../services/mediators/hypers
 
 function makePeer(overrides: Partial<NegotiatedPeerCapabilities> = {}): NegotiatedPeerCapabilities {
     return {
-        advertised: true,
-        negentropy: true,
         version: 1,
         orderedCatchup: true,
         orderedCatchupVersion: 1,

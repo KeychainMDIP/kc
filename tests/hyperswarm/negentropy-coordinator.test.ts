@@ -36,7 +36,7 @@ describe('Negentropy coordinator', () => {
             connection: { write() {}, destroy() {}, remotePublicKey: Buffer.from(peerKey, 'hex') } as never,
             peerName: 'test-peer',
         });
-        connection.capabilities = normalizePeerCapabilities({ negentropy: true, negentropyVersion: 2 });
+        connection.capabilities = normalizePeerCapabilities({ negentropyVersion: 2 });
         connection.peerTransportFramingVersion = 1;
         const store = new InMemoryOperationSyncStore();
         await store.start();
@@ -121,7 +121,7 @@ describe('Negentropy coordinator', () => {
         async function startLocal(): Promise<NegOpenMessage> {
             const before = sent.length;
             expect(await coordinator.startSession(peerKey, {
-                source: 'connect', modeReason: 'negentropy_supported', initiator: true,
+                source: 'connect', initiator: true,
             })).toBe(true);
             return sent.slice(before).find(message => message.type === 'neg_open') as NegOpenMessage;
         }
@@ -292,7 +292,7 @@ describe('Negentropy coordinator', () => {
             failedType = null;
 
             await expect(coordinator.startSession('33'.repeat(32), {
-                source: 'connect', modeReason: 'negentropy_supported', initiator: true,
+                source: 'connect', initiator: true,
             })).resolves.toBe(false);
 
             open = await startLocal();
@@ -342,7 +342,7 @@ describe('Negentropy coordinator', () => {
 
             failedType = 'neg_open';
             expect(await coordinator.startSession(peerKey, {
-                source: 'connect', modeReason: 'negentropy_supported', initiator: true,
+                source: 'connect', initiator: true,
             })).toBe(false);
             expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'send_neg_open_failed');
 
@@ -723,7 +723,7 @@ describe('Negentropy coordinator', () => {
                 return null;
             });
             await expect(coordinator.startSession(peerKey, {
-                source: 'connect', modeReason: 'negentropy_supported', initiator: true,
+                source: 'connect', initiator: true,
             })).resolves.toBe(false);
 
             latestTimestamp.mockImplementationOnce(async () => {
@@ -732,7 +732,7 @@ describe('Negentropy coordinator', () => {
             });
             onSessionClosed.mockClear();
             await expect(coordinator.startSession(peerKey, {
-                source: 'connect', modeReason: 'negentropy_supported', initiator: true,
+                source: 'connect', initiator: true,
             })).resolves.toBe(false);
             expect(onSessionClosed).toHaveBeenCalledTimes(1);
             expect(onSessionClosed).toHaveBeenCalledWith(peerKey, 'gatekeeper_processing_unavailable');
@@ -887,7 +887,7 @@ describe('Negentropy coordinator', () => {
 
             coordinator.setAdapter(null);
             await expect(coordinator.startSession(peerKey, {
-                source: 'connect', modeReason: 'negentropy_supported', initiator: true,
+                source: 'connect', initiator: true,
             })).rejects.toThrow('negentropy adapter unavailable');
             coordinator.setAdapter(adapter as never);
 
@@ -904,7 +904,7 @@ describe('Negentropy coordinator', () => {
             await coordinator.shutdown();
             await coordinator.shutdown();
             await expect(coordinator.startSession(peerKey, {
-                source: 'connect', modeReason: 'negentropy_supported', initiator: true,
+                source: 'connect', initiator: true,
             })).resolves.toBe(false);
             await coordinator.handleMessage(peerKey, {
                 type: 'neg_close', sessionId: 'closed', windowId: 'closed', round: 0,
@@ -946,7 +946,7 @@ describe('Negentropy coordinator', () => {
             connection: { write() {}, destroy() {}, remotePublicKey: Buffer.from(peerKey, 'hex') } as never,
             peerName: 'test-peer',
         });
-        connection.capabilities = normalizePeerCapabilities({ negentropy: true, negentropyVersion: 2 });
+        connection.capabilities = normalizePeerCapabilities({ negentropyVersion: 2 });
         connection.peerTransportFramingVersion = 1;
         const store = new InMemoryOperationSyncStore();
         await store.start();
@@ -999,7 +999,7 @@ describe('Negentropy coordinator', () => {
 
         async function runDirectNeed(): Promise<Record<string, unknown> & { sessionId: string; windowId: string }> {
             await coordinator.startSession(peerKey, {
-                source: 'connect', modeReason: 'negentropy_supported', initiator: true,
+                source: 'connect', initiator: true,
             });
             const open = sendToPeer.mock.calls.at(-1)?.[1] as unknown as Record<string, unknown>
                 & { sessionId: string; windowId: string };
@@ -1075,9 +1075,9 @@ describe('Negentropy coordinator', () => {
                 connection: { write() {}, destroy() {}, remotePublicKey: Buffer.from(peerKey, 'hex') } as never,
                 peerName: peerKey,
             });
-            conn.capabilities = normalizePeerCapabilities({ negentropy: true, negentropyVersion: 1 });
+            conn.capabilities = normalizePeerCapabilities({ negentropyVersion: 1 });
             conn.peerTransportFramingVersion = 1;
-            conn.syncMode = 'negentropy';
+            conn.initialPingReceived = true;
             conn.syncStarted = true;
             conn.negentropySynced = true;
             conn.orderedCatchupAttempted = true;
@@ -1144,7 +1144,7 @@ describe('Negentropy coordinator', () => {
             connection: { write() {}, destroy() {}, remotePublicKey: Buffer.from(peerKey, 'hex') } as never,
             peerName: 'test-peer',
         });
-        connection.capabilities = normalizePeerCapabilities({ negentropy: true, negentropyVersion: 2 });
+        connection.capabilities = normalizePeerCapabilities({ negentropyVersion: 2 });
         connection.peerTransportFramingVersion = 1;
         const store = new InMemoryOperationSyncStore();
         const cipher = new CipherNode();
@@ -1196,7 +1196,7 @@ describe('Negentropy coordinator', () => {
         });
         try {
             await coordinator.initializeAdapter();
-            await coordinator.startSession(peerKey, { source: 'connect', modeReason: 'negentropy_supported', initiator: true });
+            await coordinator.startSession(peerKey, { source: 'connect', initiator: true });
             const open = sendToPeer.mock.calls[0]?.[1] as NegOpenMessage;
             coordinator.reset();
             const sessionId = 'remote-session';
@@ -1275,7 +1275,7 @@ describe('Negentropy coordinator', () => {
             connection: { write() {}, destroy() {}, remotePublicKey: Buffer.from(peerKey, 'hex') } as never,
             peerName: 'test-peer',
         });
-        connection.capabilities = normalizePeerCapabilities({ negentropy: true, negentropyVersion: 2 });
+        connection.capabilities = normalizePeerCapabilities({ negentropyVersion: 2 });
         connection.peerTransportFramingVersion = 1;
         const store = new InMemoryOperationSyncStore();
         let releaseImport!: () => void;
@@ -1325,7 +1325,7 @@ describe('Negentropy coordinator', () => {
         });
         try {
             await coordinator.initializeAdapter();
-            await coordinator.startSession(peerKey, { source: 'connect', modeReason: 'negentropy_supported', initiator: true });
+            await coordinator.startSession(peerKey, { source: 'connect', initiator: true });
             const open = sendToPeer.mock.calls[0]?.[1] as { windowId: string };
             coordinator.reset();
             const sessionId = 'remote-reset-session';
@@ -1470,21 +1470,18 @@ describe('Negentropy coordinator', () => {
         await coordinator.initializeAdapter();
         expect(await coordinator.startSession(peerKey, {
             source: 'connect',
-            modeReason: 'negentropy_supported',
             initiator: true,
         })).toBe(true);
 
         coordinator.removePeer(peerKey, 'test_close');
         expect(await coordinator.startSession(peerKey, {
             source: 'connect',
-            modeReason: 'negentropy_supported',
             initiator: true,
         })).toBe(true);
         coordinator.reset();
         expect(coordinator.getActiveSessionCount()).toBe(0);
         expect(await coordinator.startSession(peerKey, {
             source: 'connect',
-            modeReason: 'negentropy_supported',
             initiator: true,
         })).toBe(true);
         cancelBulkReads.mockClear();
@@ -1551,7 +1548,7 @@ describe('Negentropy coordinator', () => {
             } as never,
             peerName: 'test-peer',
         });
-        connection.capabilities = normalizePeerCapabilities({ negentropy: true, negentropyVersion: 2 });
+        connection.capabilities = normalizePeerCapabilities({ negentropyVersion: 2 });
         connection.peerTransportFramingVersion = 1;
         const importPipeline = {
             available: true, recovering: false, queued: 0, running: 0, indexEpoch: 'epoch',
@@ -1578,7 +1575,7 @@ describe('Negentropy coordinator', () => {
         try {
             coordinator.setAdapter(adapter as never);
             await coordinator.startSession(peerKey, {
-                source: 'connect', modeReason: 'negentropy_supported', initiator: true,
+                source: 'connect', initiator: true,
             });
             const open = sendToPeer.mock.calls[0]?.[1] as NegOpenMessage;
 
@@ -1683,7 +1680,6 @@ describe('Negentropy coordinator', () => {
             peerName: 'test-peer',
         });
         connection.capabilities = normalizePeerCapabilities({
-            negentropy: true,
             negentropyVersion: 2,
         });
         connection.peerTransportFramingVersion = 1;
@@ -1750,7 +1746,6 @@ describe('Negentropy coordinator', () => {
         try {
             starting = coordinator.startSession(peerKey, {
                 source: 'connect',
-                modeReason: 'negentropy_supported',
                 initiator: true,
             });
             await firstBuildCaptured;
@@ -1819,7 +1814,6 @@ describe('Negentropy coordinator', () => {
             markDirty();
             const contending = coordinator.startSession(peerKey, {
                 source: 'periodic',
-                modeReason: 'negentropy_supported',
                 initiator: true,
             });
             await thirdBuildStarted;
@@ -1838,7 +1832,6 @@ describe('Negentropy coordinator', () => {
 
             expect(await coordinator.startSession(peerKey, {
                 source: 'periodic',
-                modeReason: 'negentropy_supported',
                 initiator: true,
             })).toBe(true);
             expect(buildSnapshot).toHaveBeenCalledTimes(5);
@@ -1879,7 +1872,6 @@ describe('Negentropy coordinator', () => {
             finishShutdownMutation = coordinator.beginStoreMutation();
             const waitingForMutation = coordinator.startSession(peerKey, {
                 source: 'periodic',
-                modeReason: 'negentropy_supported',
                 initiator: true,
             });
             await new Promise<void>(resolve => setImmediate(resolve));

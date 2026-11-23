@@ -704,8 +704,7 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
         const peerNegentropyVersion = Number.isInteger(message.capabilities?.negentropyVersion)
             ? Number(message.capabilities?.negentropyVersion)
             : null;
-        if (message.capabilities?.negentropy !== true
-            || peerNegentropyVersion !== options.requiredNegentropyVersion) {
+        if (peerNegentropyVersion !== options.requiredNegentropyVersion) {
             closeIncompatiblePeer(
                 peerKey,
                 peerNegentropyVersion === null

@@ -186,7 +186,7 @@ function validateCapabilities(value: unknown): string | null {
     if (!isObject(value)) {
         return 'capabilities must be an object';
     }
-    for (const name of ['negentropy', 'orderedCatchup', 'orderedCatchupReady'] as const) {
+    for (const name of ['orderedCatchup', 'orderedCatchupReady'] as const) {
         if (value[name] !== undefined && typeof value[name] !== 'boolean') {
             return `capabilities.${name} must be a boolean`;
         }

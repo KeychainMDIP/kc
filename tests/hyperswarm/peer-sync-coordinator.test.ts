@@ -15,12 +15,12 @@ describe('peer sync coordinator targeted repair', () => {
         const peerKey = 'b'.repeat(64);
         const connection = {
             capabilities: normalizePeerCapabilities({
-                negentropy: true,
                 negentropyVersion: 2,
             }),
             peerTransportFramingVersion: 1,
+            initialPingSent: true,
+            initialPingReceived: true,
             negentropySynced: true,
-            syncMode: 'negentropy',
             syncStarted: true,
         } as ConnectionInfo;
         const pipeline = { available: true, queued: 0, running: 0 } as ImportPipeline;
@@ -76,36 +76,19 @@ describe('peer sync coordinator targeted repair', () => {
     }
 
     it.each([
-        {
-            capabilities: normalizePeerCapabilities(undefined),
-            framing: 1,
-            counter: 'modeSelectionsNoModeMissingCapabilities' as const,
-        },
-        {
-            capabilities: normalizePeerCapabilities({ negentropy: false }),
-            framing: 1,
-            counter: 'modeSelectionsNoModeNegentropyDisabled' as const,
-        },
-        {
-            capabilities: normalizePeerCapabilities({ negentropy: true, negentropyVersion: 1 }),
-            framing: 1,
-            counter: 'modeSelectionsNoModeVersionMismatch' as const,
-        },
-        {
-            capabilities: normalizePeerCapabilities({ negentropy: true, negentropyVersion: 2 }),
-            framing: 0,
-            counter: 'modeSelectionsNoModeTransportFramingUnsupported' as const,
-        },
-    ])('records an unavailable sync mode in $counter', async ({ capabilities, framing, counter }) => {
+        { capabilities: normalizePeerCapabilities(), framing: 1 },
+        { capabilities: normalizePeerCapabilities({ negentropyVersion: 1 }), framing: 1 },
+        { capabilities: normalizePeerCapabilities({ negentropyVersion: 2 }), framing: 0 },
+    ])('rejects repair for an incompatible asynchronous handoff', async ({ capabilities, framing }) => {
         const harness = createHarness();
         harness.connection.capabilities = capabilities;
         harness.connection.peerTransportFramingVersion = framing;
-        harness.connection.syncStarted = false;
 
-        await harness.coordinator.maybeStartPeerSync(harness.peerKey);
+        await expect(harness.coordinator.requestRepair(
+            harness.peerKey,
+            harness.connection,
+        )).resolves.toBe(false);
 
-        expect(harness.syncStats.modeSelectionsNoMode).toBe(1);
-        expect(harness.syncStats[counter]).toBe(1);
         expect(harness.startSession).not.toHaveBeenCalled();
         await harness.coordinator.shutdown();
     });
@@ -139,7 +122,6 @@ describe('peer sync coordinator targeted repair', () => {
         expect(harness.connection.negentropySynced).toBe(false);
         expect(harness.startSession).toHaveBeenCalledWith(harness.peerKey, {
             source: 'periodic',
-            modeReason: null,
             initiator: true,
         });
     });
@@ -236,6 +218,18 @@ describe('peer sync coordinator targeted repair', () => {
             { error },
             'periodic negentropy repair error',
         );
+        expect(harness.startSession).not.toHaveBeenCalled();
+        await harness.coordinator.shutdown();
+    });
+
+    it('does not schedule traffic before receiving a compatible remote ping', async () => {
+        const harness = createHarness();
+        harness.connection.initialPingReceived = false;
+        harness.connection.negentropySynced = false;
+
+        await harness.coordinator.schedulePreferredSyncs();
+
+        expect(harness.count).not.toHaveBeenCalled();
         expect(harness.startSession).not.toHaveBeenCalled();
         await harness.coordinator.shutdown();
     });

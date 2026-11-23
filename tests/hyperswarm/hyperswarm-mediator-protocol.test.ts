@@ -71,7 +71,6 @@ async function eventually(assertion: () => boolean | Promise<boolean>, turns = 1
 
 function compatibleCapabilities(overrides: Record<string, unknown> = {}) {
     return normalizePeerCapabilities({
-        negentropy: true,
         negentropyVersion: NEGENTROPY_VERSION,
         orderedCatchup: false,
         ...overrides,
@@ -86,7 +85,6 @@ function peerPing(overrides: Record<string, unknown> = {}): Record<string, unkno
         relays: [],
         peers: [],
         capabilities: {
-            negentropy: true,
             negentropyVersion: NEGENTROPY_VERSION,
         },
         transportFramingVersion: 1,
@@ -513,7 +511,6 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(decodeWrites(pair)[0]).toMatchObject({
             transportFramingVersion: 1,
             capabilities: {
-                negentropy: true,
                 negentropyVersion: 2,
                 orderedCatchup: true,
                 orderedCatchupVersion: 1,
@@ -531,7 +528,6 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
         )).toMatchObject({
-            syncMode: 'negentropy',
             activeSession: { mode: 'negentropy' },
         });
         expect(pair.transcript.map(entry => entry.messageType)).toEqual(
@@ -563,7 +559,6 @@ describe('hyperswarm mediator protocol characterization', () => {
         }
         const { peerKey, pair } = attachPeer(protocolNode, { peerKeyByte: 0x22 });
         const capabilities = {
-            negentropy: true,
             negentropyVersion: NEGENTROPY_VERSION,
             ...(peerLatestSignedTimestamp === null ? {} : { latestSignedTimestamp: peerLatestSignedTimestamp }),
         };
@@ -589,7 +584,7 @@ describe('hyperswarm mediator protocol characterization', () => {
 
     it.each([
         ['missing capabilities', undefined],
-        ['version mismatch', { negentropy: true, negentropyVersion: 1 }],
+        ['version mismatch', { negentropyVersion: 1 }],
     ])('closes a peer with %s', async (
         _case,
         capabilities,
@@ -650,7 +645,9 @@ describe('hyperswarm mediator protocol characterization', () => {
     it('buffers fragmented frames and processes coalesced frames in order', async () => {
         const operations = await makeOperations(2);
         const protocolNode = await createNode({ keyByte: 0x33 });
-        const { peerKey } = attachPeer(protocolNode);
+        const { peerKey } = attachPeer(protocolNode, {
+            overrides: { initialPingReceived: false },
+        });
         const pingFrame = encodeFramedMessage(JSON.stringify(peerPing()));
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
@@ -658,15 +655,15 @@ describe('hyperswarm mediator protocol characterization', () => {
             pingFrame.subarray(0, 3),
         ));
         expect(protocolNode.node.run(
-            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.syncMode,
-        )).toBe('unknown');
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.initialPingReceived,
+        )).toBe(false);
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
             peerKey,
             pingFrame.subarray(3),
         ));
         expect(protocolNode.node.run(
-            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.syncMode,
-        )).toBe('negentropy');
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.initialPingReceived,
+        )).toBe(true);
 
         const coalesced = Buffer.concat(operations.map(operation => encodeFramedMessage(JSON.stringify({
             type: 'queue',
@@ -1095,7 +1092,6 @@ describe('hyperswarm mediator protocol characterization', () => {
         const ready = attachPeer(protocolNode, {
             peerKeyByte: 0x44,
             overrides: {
-                syncMode: 'negentropy',
                 capabilities: compatibleCapabilities({
                     orderedCatchup: true, orderedCatchupVersion: 1, orderedCatchupReady: true,
                     operationCount: 10, orderedOperationCount: 10,
@@ -1415,7 +1411,6 @@ describe('hyperswarm mediator protocol characterization', () => {
         }));
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, peerPing({
             capabilities: {
-                negentropy: true,
                 negentropyVersion: 1,
             },
         })));
@@ -2652,7 +2647,6 @@ describe('hyperswarm mediator protocol characterization', () => {
     it('offers periodic synchronization opportunities in peer-key order and advances past a disconnect', async () => {
         const protocolNode = await createNode({ keyByte: 0x11 });
         const ready = {
-            syncMode: 'negentropy',
             syncStarted: true,
             lastNegentropyAttemptAt: 0,
             negentropySynced: false,
@@ -2830,7 +2824,6 @@ describe('hyperswarm mediator protocol characterization', () => {
             }
 
             expect(replacementState).toMatchObject({
-                syncMode: 'unknown',
                 syncStarted: false,
                 activeSession: null,
                 orderedCatchupServerPendingSince: 0,
@@ -4600,7 +4593,6 @@ describe('hyperswarm mediator protocol characterization', () => {
         const protocolNode = await createNode();
         const { peerKey, pair } = attachPeer(protocolNode, {
             overrides: {
-                syncMode: 'negentropy',
                 syncStarted: true,
                 lastNegentropyAttemptAt: 0,
                 negentropySynced: false,
@@ -4713,7 +4705,6 @@ describe('hyperswarm mediator protocol characterization', () => {
             expect(protocolNode.node.run(
                 () => protocolNode.node.mediator.__test.getConnectionState(secondPeer.peerKey),
             )).toMatchObject({
-                syncMode: 'negentropy',
                 syncStarted: false,
                 activeSession: null,
             });
@@ -5863,9 +5854,6 @@ describe('hyperswarm mediator protocol characterization', () => {
         });
         const { peerKey } = attachPeer(protocolNode, {
             peerKeyByte: 0x22,
-            overrides: {
-                capabilities: compatibleCapabilities({ negentropy: false }),
-            },
         });
         const processEvents = protocolNode.node.gatekeeperClient.processEvents;
         const processEventsImplementation = processEvents.getMockImplementation();
@@ -5924,7 +5912,9 @@ describe('hyperswarm mediator protocol characterization', () => {
             release();
             await eventually(() => protocolNode.store.has(acceptedOperation.signature!.hash));
             await eventually(() => protocolNode.node.run(
-                () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession === null,
+                () => (protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession as {
+                    mode?: string;
+                } | null)?.mode !== 'ordered_catchup',
             ));
             await nextTurn();
 
@@ -6626,7 +6616,6 @@ describe('hyperswarm mediator protocol characterization', () => {
             expect(protocolNode.node.run(
                 () => protocolNode.node.mediator.__test.getConnectionState(otherPeer.peerKey),
             )).toMatchObject({
-                syncMode: 'negentropy',
                 syncStarted: false,
                 activeSession: null,
             });
@@ -6747,7 +6736,6 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
         )).toMatchObject({
-            syncMode: 'unknown',
             syncStarted: false,
             activeSession: null,
         });

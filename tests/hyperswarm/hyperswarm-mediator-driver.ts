@@ -641,11 +641,9 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
                 const createConnectionOverrides = () => source === 'periodic'
                     ? {
                         capabilities: normalizePeerCapabilities({
-                            negentropy: true,
                             negentropyVersion: 2,
                             orderedCatchup: false,
                         }),
-                        syncMode: 'negentropy',
                         initialPingReceived: true,
                     }
                     : {};

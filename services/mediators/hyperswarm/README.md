@@ -120,17 +120,11 @@ Gatekeeper and every mediator must also support the bounded pending-event and
 paged-processing contract. Deploy the companion Gatekeeper ingress changes
 before claiming end-to-end memory protection.
 
-## Sync mode behavior
-
-| peer mode | connect-time behavior | periodic behavior | queue gossip |
-| --- | --- | --- | --- |
-| `negentropy` | optional ordered catch-up, then full-history windowed reconciliation | periodic retry until sync completes, then stop | enabled |
-
 ## Observability
 
 The mediator emits periodic structured sync metrics in `connectionLoop` including:
 
-- negentropy mode selection and incompatibility counts
+- Negentropy session and version-incompatibility counts
 - negentropy rounds and have/need totals
 - ops requested/pushed sent and received
 - gatekeeper apply/reject totals

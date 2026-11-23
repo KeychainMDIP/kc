@@ -6,13 +6,6 @@ import {
 
 export interface MediatorSyncStats {
     hardening: ReturnType<typeof createHardeningStats>;
-    modeSelectionsTotal: number;
-    modeSelectionsNegentropy: number;
-    modeSelectionsNoMode: number;
-    modeSelectionsNoModeMissingCapabilities: number;
-    modeSelectionsNoModeNegentropyDisabled: number;
-    modeSelectionsNoModeVersionMismatch: number;
-    modeSelectionsNoModeTransportFramingUnsupported: number;
     queueOpsRelayed: number;
     queueOpsImported: number;
     queueDelayMs: AggregateMetric;
@@ -103,13 +96,6 @@ export function recordProtocolStrike(stats: MediatorSyncStats, reason: string, v
 export function createMediatorSyncStats(): MediatorSyncStats {
     return {
         hardening: createHardeningStats(),
-        modeSelectionsTotal: 0,
-        modeSelectionsNegentropy: 0,
-        modeSelectionsNoMode: 0,
-        modeSelectionsNoModeMissingCapabilities: 0,
-        modeSelectionsNoModeNegentropyDisabled: 0,
-        modeSelectionsNoModeVersionMismatch: 0,
-        modeSelectionsNoModeTransportFramingUnsupported: 0,
         queueOpsRelayed: 0,
         queueOpsImported: 0,
         queueDelayMs: createAggregateMetric(),
@@ -149,19 +135,6 @@ export function buildSyncStatsSnapshot(syncStats: MediatorSyncStats): object {
         hardening: {
             ...syncStats.hardening,
             protocolStrikes: { ...syncStats.hardening.protocolStrikes },
-        },
-        modeSelections: {
-            total: syncStats.modeSelectionsTotal,
-            negentropy: syncStats.modeSelectionsNegentropy,
-            noMode: {
-                total: syncStats.modeSelectionsNoMode,
-                reasons: {
-                    missingCapabilities: syncStats.modeSelectionsNoModeMissingCapabilities,
-                    negentropyDisabled: syncStats.modeSelectionsNoModeNegentropyDisabled,
-                    versionMismatch: syncStats.modeSelectionsNoModeVersionMismatch,
-                    transportFramingUnsupported: syncStats.modeSelectionsNoModeTransportFramingUnsupported,
-                },
-            },
         },
         queue: {
             relayed: syncStats.queueOpsRelayed,

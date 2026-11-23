@@ -2,12 +2,10 @@ import { Operation } from '@mdip/gatekeeper/types';
 import type { SyncStoreCursor } from '../db/types.js';
 import type { ReconciliationWindow } from './adapter.js';
 
-export type SyncMode = 'negentropy';
 export type NegentropyFrameEncoding = 'utf8' | 'base64';
 export const NEG_SYNC_ID_RE = /^[a-f0-9]{64}$/i;
 
 export interface PeerCapabilities {
-    negentropy?: boolean;
     negentropyVersion?: number;
     orderedCatchup?: boolean;
     orderedCatchupVersion?: number;
@@ -24,8 +22,6 @@ export interface OrderedCatchupCapabilityOptions {
 }
 
 export interface NegotiatedPeerCapabilities {
-    advertised: boolean;
-    negentropy: boolean;
     version: number | null;
     orderedCatchup: boolean;
     orderedCatchupVersion: number | null;
@@ -33,18 +29,6 @@ export interface NegotiatedPeerCapabilities {
     operationCount: number | null;
     orderedOperationCount: number | null;
     latestSignedTimestamp: number | null;
-}
-
-export type ConnectSyncModeReason =
-    | 'negentropy_supported'
-    | 'missing_capabilities'
-    | 'negentropy_disabled'
-    | 'version_mismatch'
-    | 'transport_framing_unsupported';
-
-export interface ConnectSyncModeDecision {
-    mode: SyncMode | null;
-    reason: ConnectSyncModeReason;
 }
 
 export interface NegentropyFrame {
@@ -116,8 +100,6 @@ export function parseRemoteWindow(
 export function normalizePeerCapabilities(capabilities?: PeerCapabilities): NegotiatedPeerCapabilities {
     if (!capabilities) {
         return {
-            advertised: false,
-            negentropy: false,
             version: null,
             orderedCatchup: false,
             orderedCatchupVersion: null,
@@ -129,8 +111,6 @@ export function normalizePeerCapabilities(capabilities?: PeerCapabilities): Nego
     }
 
     return {
-        advertised: true,
-        negentropy: capabilities.negentropy === true,
         version: normalizeNonNegativeInteger(capabilities.negentropyVersion),
         orderedCatchup: capabilities.orderedCatchup === true,
         orderedCatchupVersion: normalizeNonNegativeInteger(capabilities.orderedCatchupVersion),
@@ -168,50 +148,7 @@ export function supportsPeerNegentropy(
     capabilities: NegotiatedPeerCapabilities,
     requiredVersion: number
 ): boolean {
-    return capabilities.advertised
-        && capabilities.negentropy
-        && capabilities.version === requiredVersion;
-}
-
-export function chooseSyncMode(
-    capabilities: NegotiatedPeerCapabilities,
-    requiredVersion: number
-): SyncMode | null {
-    if (!capabilities.advertised) {
-        return null;
-    }
-
-    return supportsPeerNegentropy(capabilities, requiredVersion)
-        ? 'negentropy'
-        : null;
-}
-
-export function chooseConnectSyncMode(
-    capabilities: NegotiatedPeerCapabilities,
-    requiredVersion: number,
-    transportFramingSupported = true,
-): ConnectSyncModeDecision {
-    const unavailable = (reason: ConnectSyncModeReason): ConnectSyncModeDecision => ({
-        mode: null,
-        reason,
-    });
-
-    if (supportsPeerNegentropy(capabilities, requiredVersion)) {
-        if (!transportFramingSupported) {
-            return unavailable('transport_framing_unsupported');
-        }
-        return { mode: 'negentropy', reason: 'negentropy_supported' };
-    }
-
-    if (!capabilities.advertised) {
-        return unavailable('missing_capabilities');
-    }
-
-    if (!capabilities.negentropy) {
-        return unavailable('negentropy_disabled');
-    }
-
-    return unavailable('version_mismatch');
+    return capabilities.version === requiredVersion;
 }
 
 export function encodeNegentropyFrame(frame: string | Uint8Array): NegentropyFrame {

@@ -60,14 +60,13 @@ describe('negentropy sync policy', () => {
     });
 
     it('starts connect-time negentropy only for initiator without active session', () => {
-        expect(shouldStartConnectTimeNegentropy('negentropy', false, true)).toBe(true);
-        expect(shouldStartConnectTimeNegentropy('negentropy', true, true)).toBe(false);
-        expect(shouldStartConnectTimeNegentropy('negentropy', false, false)).toBe(false);
+        expect(shouldStartConnectTimeNegentropy(false, true)).toBe(true);
+        expect(shouldStartConnectTimeNegentropy(true, true)).toBe(false);
+        expect(shouldStartConnectTimeNegentropy(false, false)).toBe(false);
     });
 
     it('suppresses normal negentropy while ordered catch-up is active', () => {
         const repairBase = {
-            syncMode: 'negentropy' as const,
             hasActiveSession: false,
             importQueueLength: 0,
             activeNegentropySessions: 0,
@@ -90,14 +89,13 @@ describe('negentropy sync policy', () => {
 
         for (const state of states) {
             const orderedCatchupActive = hasActiveOrderedCatchupSession(state);
-            expect(shouldStartConnectTimeNegentropy('negentropy', false, true, orderedCatchupActive)).toBe(false);
+            expect(shouldStartConnectTimeNegentropy(false, true, orderedCatchupActive)).toBe(false);
             expect(shouldSchedulePeriodicRepair({ ...repairBase, orderedCatchupActive })).toBe(false);
         }
     });
 
     it('schedules periodic repair only when all guards pass', () => {
         const base = {
-            syncMode: 'negentropy' as const,
             hasActiveSession: false,
             importQueueLength: 0,
             activeNegentropySessions: 0,
@@ -123,7 +121,6 @@ describe('negentropy sync policy', () => {
 
     it('starts post ordered catch-up negentropy only after import work drains', () => {
         const base = {
-            syncMode: 'negentropy' as const,
             peerConnected: true,
             peerSupportsNegentropyTransport: true,
             hasActiveSession: false,

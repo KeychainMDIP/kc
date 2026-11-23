@@ -23,7 +23,6 @@ import {
     normalizeNegentropyIds,
     parseRemoteWindow,
     supportsPeerNegentropy,
-    type ConnectSyncModeReason,
 } from './negentropy/protocol.js';
 import { decideInboundNegOpenConflict } from './negentropy/policy.js';
 import { addAggregateSample } from './negentropy/observability.js';
@@ -451,7 +450,6 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         peerSessions.set(peerKey, session);
         const conn = options.getConnection(peerKey);
         if (conn) {
-            conn.syncMode = 'negentropy';
             conn.syncStarted = true;
             conn.lastNegentropyAttemptAt = now;
         }
@@ -2584,7 +2582,6 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         peerKey: string,
         settings: {
             source: 'connect' | 'periodic' | 'ordered_catchup_complete';
-            modeReason: ConnectSyncModeReason | 'ordered_catchup_complete' | null;
             initiator: boolean;
         },
     ): Promise<boolean> {
@@ -2615,8 +2612,6 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             log.info(
                 {
                     peer: shortName(peerKey),
-                    mode: 'negentropy',
-                    modeReason: settings.modeReason,
                     initiator: settings.initiator,
                     sessionId: session.sessionId,
                     source: settings.source,
@@ -2624,7 +2619,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                     peerLatestSignedTimestamp,
                     sessionToTs: initialWindow.toTs,
                 },
-                'peer sync mode selected',
+                'negentropy session started',
             );
             await startNextNegentropyWindow(peerKey, session);
             return peerSessions.get(peerKey) === session;

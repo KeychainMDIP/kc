@@ -764,7 +764,6 @@ export const __test = {
         if (orderedCatchupCoordinator.createClientSession(peerKey, sessionId, requestOutstanding)) {
             const conn = transport.getConnection(peerKey);
             if (conn) {
-                conn.syncMode = 'negentropy';
                 conn.syncStarted = true;
                 conn.orderedCatchupAttempted = true;
             }
@@ -800,7 +799,6 @@ export const __test = {
         const orderedSessionId = orderedState.clientSessionId ?? orderedState.serverSessionId;
 
         return {
-            syncMode: conn.syncMode,
             syncStarted: conn.syncStarted,
             activeSession: sessionId
                 ? {

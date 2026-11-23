@@ -7,7 +7,10 @@ import { jest } from '@jest/globals';
 import InMemoryOperationSyncStore from '../../services/mediators/hyperswarm/src/db/memory.ts';
 import { HYPR_INDEX_SYNC_STATE_KEYS } from '../../services/mediators/hyperswarm/src/bootstrap.ts';
 import NegentropyAdapter from '../../services/mediators/hyperswarm/src/negentropy/adapter.ts';
-import { encodeNegentropyFrame } from '../../services/mediators/hyperswarm/src/negentropy/protocol.ts';
+import {
+    encodeNegentropyFrame,
+    normalizePeerCapabilities,
+} from '../../services/mediators/hyperswarm/src/negentropy/protocol.ts';
 import { makeWindowId } from '../../services/mediators/hyperswarm/src/negentropy/windows.ts';
 import {
     decodeFramedMessages,
@@ -76,7 +79,6 @@ function peerPing(overrides: Record<string, unknown> = {}): Record<string, unkno
         relays: [],
         peers: [],
         capabilities: {
-            negentropy: true,
             negentropyVersion: NEGENTROPY_VERSION,
         },
         transportFramingVersion: 1,
@@ -309,7 +311,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         const peer = await attachConnection(running, 0x22);
         const [operation] = await makeOperations(1);
         const capabilities = {
-            negentropy: true, negentropyVersion: 2,
+            negentropyVersion: 2,
             orderedCatchup: true, orderedCatchupVersion: 1, orderedCatchupReady: true,
             operationCount: 100, orderedOperationCount: 100,
         };
@@ -388,8 +390,8 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         running.node.run(() => running.node.mediator.__test.addConnection(peer.peerKey, {
             connection: peer.pair.connectionA,
             initialPingReceived: true,
-            capabilities: { advertised: true, negentropy: true, version: 2 },
-            syncMode: 'negentropy', syncStarted: true, negentropySynced: true,
+            capabilities: normalizePeerCapabilities({ negentropyVersion: 2 }),
+            syncStarted: true, negentropySynced: true,
         }));
         running.node.gatekeeperClient.processEvents.mockResolvedValueOnce({ busy: true });
         running.node.gatekeeperClient.getStatus.mockResolvedValue({
@@ -1261,7 +1263,6 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         const peer = await attachConnection(running, 0x22);
         peer.pair.connectionB.write(encodeFramedMessage(JSON.stringify(peerPing({
             capabilities: {
-                negentropy: true,
                 negentropyVersion: NEGENTROPY_VERSION,
                 orderedCatchup: true,
                 orderedCatchupVersion: 1,
@@ -1618,6 +1619,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         const resetState = running.node.run(
             () => running.node.mediator.__test.getConnectionState(peer.peerKey),
         );
+        expect(resetState?.initialPingReceived).toBe(true);
         const resetSessionId = (resetState?.activeSession as { sessionId?: string } | null)?.sessionId;
         expect(resetSessionId).toEqual(expect.any(String));
         expect(resetSessionId).not.toBe(firstSessionId);
@@ -1884,7 +1886,6 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
             const peer = await attachConnection(running, 0x22);
             await sendPeerMessage(peer, peerPing({
                 capabilities: {
-                    negentropy: true,
                     negentropyVersion: NEGENTROPY_VERSION,
                     orderedCatchup: true,
                     orderedCatchupVersion: 1,
@@ -2133,7 +2134,6 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         try {
             await sendPeerMessage(peer, peerPing({
                 capabilities: {
-                    negentropy: true,
                     negentropyVersion: NEGENTROPY_VERSION,
                     orderedCatchup: true,
                     orderedCatchupVersion: 1,

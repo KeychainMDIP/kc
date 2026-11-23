@@ -2,14 +2,13 @@ import { Operation } from '@mdip/gatekeeper/types';
 import {
     NEG_SYNC_ID_RE,
     buildOrderedCatchupCapabilities,
-    chooseConnectSyncMode,
-    chooseSyncMode,
     decodeNegentropyFrame,
     encodeNegentropyFrame,
     extractOperationHashes,
     normalizeNegentropyIds,
     normalizePeerCapabilities,
     parseRemoteWindow,
+    supportsPeerNegentropy,
 } from '../../services/mediators/hyperswarm/src/negentropy/protocol.ts';
 
 const h = (c: string) => c.repeat(64);
@@ -42,7 +41,7 @@ describe('negentropy protocol helpers', () => {
         expect(Buffer.from(decoded as Uint8Array)).toStrictEqual(Buffer.from(bytes));
     });
 
-    it('normalizes peer capabilities and chooses sync mode', () => {
+    it('normalizes peer capabilities and requires the exact Negentropy version', () => {
         const unknown = normalizePeerCapabilities();
         expect(unknown).toMatchObject({
             orderedCatchup: false,
@@ -52,27 +51,22 @@ describe('negentropy protocol helpers', () => {
             orderedOperationCount: null,
             latestSignedTimestamp: null,
         });
-        expect(chooseSyncMode(unknown, currentNegentropyVersion)).toBeNull();
-
-        const unsupported = normalizePeerCapabilities({ negentropy: false });
-        expect(chooseSyncMode(unsupported, currentNegentropyVersion)).toBeNull();
+        expect(supportsPeerNegentropy(unknown, currentNegentropyVersion)).toBe(false);
 
         const negentropy = normalizePeerCapabilities({
-            negentropy: true,
             negentropyVersion: currentNegentropyVersion,
         });
-        expect(chooseSyncMode(negentropy, currentNegentropyVersion)).toBe('negentropy');
+        expect(supportsPeerNegentropy(negentropy, currentNegentropyVersion)).toBe(true);
 
-        const missingVersion = normalizePeerCapabilities({ negentropy: true });
-        expect(chooseSyncMode(missingVersion, currentNegentropyVersion)).toBeNull();
+        const missingVersion = normalizePeerCapabilities();
+        expect(supportsPeerNegentropy(missingVersion, currentNegentropyVersion)).toBe(false);
 
-        const futureVersion = normalizePeerCapabilities({ negentropy: true, negentropyVersion: 2 });
-        expect(chooseSyncMode(futureVersion, currentNegentropyVersion)).toBeNull();
+        const futureVersion = normalizePeerCapabilities({ negentropyVersion: 2 });
+        expect(supportsPeerNegentropy(futureVersion, currentNegentropyVersion)).toBe(false);
     });
 
     it('normalizes ordered catch-up capability fields', () => {
         const capabilities = normalizePeerCapabilities({
-            negentropy: true,
             negentropyVersion: currentNegentropyVersion,
             orderedCatchup: true,
             orderedCatchupVersion: 1,
@@ -147,45 +141,6 @@ describe('negentropy protocol helpers', () => {
             orderedOperationCount: 0,
         })).toMatchObject({
             orderedCatchupReady: false,
-        });
-    });
-
-    it('chooses connect sync mode with explicit unavailability reasons', () => {
-        const missing = normalizePeerCapabilities();
-        expect(chooseConnectSyncMode(missing, currentNegentropyVersion)).toStrictEqual({
-            mode: null,
-            reason: 'missing_capabilities',
-        });
-
-        const disabled = normalizePeerCapabilities({ negentropy: false, negentropyVersion: 1 });
-        expect(chooseConnectSyncMode(disabled, currentNegentropyVersion)).toStrictEqual({
-            mode: null,
-            reason: 'negentropy_disabled',
-        });
-
-        const missingVersion = normalizePeerCapabilities({ negentropy: true });
-        expect(chooseConnectSyncMode(missingVersion, currentNegentropyVersion)).toStrictEqual({
-            mode: null,
-            reason: 'version_mismatch',
-        });
-
-        const futureVersion = normalizePeerCapabilities({ negentropy: true, negentropyVersion: 2 });
-        expect(chooseConnectSyncMode(futureVersion, currentNegentropyVersion)).toStrictEqual({
-            mode: null,
-            reason: 'version_mismatch',
-        });
-
-        const supported = normalizePeerCapabilities({
-            negentropy: true,
-            negentropyVersion: currentNegentropyVersion,
-        });
-        expect(chooseConnectSyncMode(supported, currentNegentropyVersion)).toStrictEqual({
-            mode: 'negentropy',
-            reason: 'negentropy_supported',
-        });
-        expect(chooseConnectSyncMode(supported, currentNegentropyVersion, false)).toStrictEqual({
-            mode: null,
-            reason: 'transport_framing_unsupported',
         });
     });
 

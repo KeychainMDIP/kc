@@ -2,7 +2,6 @@ import type { HyperswarmConnection } from 'hyperswarm';
 import type { OperationSyncStore } from './db/types.js';
 import type {
     NegotiatedPeerCapabilities,
-    SyncMode,
 } from './negentropy/protocol.js';
 
 export interface MediatorMainOptions {
@@ -21,7 +20,6 @@ export interface ConnectionInfo {
     nodeName: string;
     lastSeen: number;
     capabilities: NegotiatedPeerCapabilities;
-    syncMode: SyncMode | 'unknown';
     syncStarted: boolean;
     lastNegentropyAttemptAt: number;
     negentropyRetryAfter: number;
@@ -58,8 +56,6 @@ export function createConnectionInfo(options: ConnectionInfoOptions): Connection
         nodeName: options.nodeName ?? 'anon',
         lastSeen: now,
         capabilities: {
-            advertised: false,
-            negentropy: false,
             version: null,
             orderedCatchup: false,
             orderedCatchupVersion: null,
@@ -68,7 +64,6 @@ export function createConnectionInfo(options: ConnectionInfoOptions): Connection
             orderedOperationCount: null,
             latestSignedTimestamp: null,
         },
-        syncMode: 'unknown',
         syncStarted: false,
         lastNegentropyAttemptAt: 0,
         negentropyRetryAfter: 0,
