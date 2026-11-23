@@ -275,15 +275,15 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
     }
 
     function gossipOutcomeHash(operations: Operation[]): string | undefined {
-        const ids: string[] = [];
+        const ids = new Set<string>();
         for (const operation of operations) {
             const mapped = mapOperationToSyncKey(operation);
             if (!mapped.ok) {
                 return undefined;
             }
-            ids.push(mapped.value.idHex);
+            ids.add(mapped.value.idHex);
         }
-        return options.cipher.hashJSON(ids.sort());
+        return options.cipher.hashJSON([...ids].sort());
     }
 
     function noteSaturatedDrop(source: GossipSource): void {
@@ -313,7 +313,8 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
             options.onProtocolViolation(peerKey, `invalid_queue_operation: ${content.reason}`, connection);
             return;
         }
-        const batchHash = gossipOutcomeHash(page.operations)!;
+        const operations = dedupeOperationsByHash(page.operations);
+        const batchHash = gossipOutcomeHash(operations)!;
         const recent = getRecentOutcome(batchHash);
         if (recent?.kind === 'completed') {
             return;
@@ -348,7 +349,7 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
                     kind: 'remote',
                     name: peerKey,
                     node: message.node,
-                    data: page.operations,
+                    data: operations,
                     queueGossip: true,
                     onPersistedPage: async persisted => {
                         if (!await relayPersistedPage(peerKey, persisted)) {
@@ -377,7 +378,7 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
             && (imported.pendingIds?.length ?? 0) === 0
             && (imported.capacityDeferredIds?.length ?? 0) === 0
             && (imported.unaddressableOperations?.length ?? 0) === 0
-            && page.operations.every(operation => {
+            && operations.every(operation => {
                 const mapped = mapOperationToSyncKey(operation);
                 return mapped.ok
                     && hasContentVerifiedOperationId(operation, options.cipher)

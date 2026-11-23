@@ -100,7 +100,6 @@ interface LocalRequest {
     round: number;
     expectedIds: Set<string>;
     deliveredIds: Set<string>;
-    satisfiedIds: Set<string>;
     nextPage: number;
 }
 
@@ -1285,7 +1284,6 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                 round: session.rounds,
                 expectedIds: new Set(ids),
                 deliveredIds: new Set<string>(),
-                satisfiedIds: new Set<string>(),
                 nextPage: 0,
             };
         }
@@ -2432,7 +2430,6 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                 session.receivedKnownPushIds.add(id);
             }
             for (const id of [...imported.knownIds, ...imported.persistedIds]) {
-                request.satisfiedIds.add(id);
                 session.provenStoredPushIds.add(id);
                 session.pendingNeedIds.delete(id);
                 clearUnresolvedOperation(session, id);

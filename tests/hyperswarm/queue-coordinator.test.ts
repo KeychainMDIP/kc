@@ -342,7 +342,7 @@ describe('queue coordinator', () => {
             time: '',
             node: 'peer',
             relays: [],
-            data: operations,
+            data: [operations[0], operations[0], operations[1]],
         };
 
         await coordinator.handleMessage('peer-key', message, connection);
@@ -351,6 +351,7 @@ describe('queue coordinator', () => {
             data: [...operations].reverse(),
         }, connection);
         expect(enqueue).toHaveBeenCalledTimes(1);
+        expect(enqueue.mock.calls[0][0].data).toEqual(operations);
         expect(relay).toHaveBeenCalledTimes(1);
 
         order.length = 0;
@@ -371,7 +372,7 @@ describe('queue coordinator', () => {
             maxBytesPerPage: 512 * 1024,
             ...defaultRepairOptions(),
             gatekeeper: {
-                getQueue: jest.fn(async () => operations),
+                getQueue: jest.fn(async () => [operations[0], operations[0], operations[1]]),
                 clearQueue: jest.fn(async () => true),
             } as unknown as Pick<GatekeeperClient, 'getQueue' | 'clearQueue'>,
             cipher: first.cipher,

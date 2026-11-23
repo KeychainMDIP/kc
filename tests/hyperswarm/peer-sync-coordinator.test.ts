@@ -209,7 +209,7 @@ describe('peer sync coordinator targeted repair', () => {
         const child = logger.child as jest.MockedFunction<typeof logger.child>;
         const index = child.mock.calls.findIndex(([bindings]) => bindings.service === 'hyperswarm-mediator');
         const log = child.mock.results[index].value as ReturnType<typeof logger.child>;
-        log.error.mockClear();
+        jest.mocked(log.error).mockClear();
 
         await expect(harness.coordinator.schedulePreferredSyncs()).resolves.toBeUndefined();
 
